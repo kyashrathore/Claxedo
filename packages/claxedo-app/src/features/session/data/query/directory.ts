@@ -12,12 +12,6 @@ type ProjectClient = {
   }
 }
 
-type AgentClient = {
-  app: {
-    agents: (input?: { directory?: string }) => Promise<{ data?: Agent[] }>
-  }
-}
-
 type PathClient = {
   path: {
     get: () => Promise<{ data?: Path }>
@@ -43,12 +37,11 @@ export function projectCurrentQuery(input: {
 }
 
 export function agentListQuery(input: {
-  baseUrl?: string
+  baseUrl: string
   directory: string
   harnessType?: string
-  request?: typeof fetch
+  request: typeof fetch
   workspace?: WorkspaceRuntimeSnapshot | null
-  client: AgentClient
 }) {
   return {
     queryKey: queryKeys.directory.agents(
@@ -59,27 +52,22 @@ export function agentListQuery(input: {
     ),
     staleTime: 30 * 1000,
     queryFn: async () => {
-      if (input.request && input.baseUrl) {
-        const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
-        const signedWorkspace = cachedSignedWorkspace(input.baseUrl, input.directory)
-        const workspace = input.workspace ?? signedWorkspace ?? (
-          input.workspace !== undefined
-            ? input.workspace
-            : await workspaceRuntimeRoutingRecord({ baseUrl: input.baseUrl, request: input.request, directory: input.directory })
-        )
-        return workspaceScopedResourceList({
-          baseUrl,
-          directory: input.directory,
-          harnessType: input.harnessType,
-          request: input.request,
-          workspace,
-          resource: { plural: "agents", singular: "agent", scopeCentralUrl: true },
-          parse: agentListFromUnknown,
-        })
-      }
-      const data = (await input.client.app.agents({ directory: input.directory })).data
-      if (!data) throw new Error("Agent list response omitted agents")
-      return data
+      const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
+      const signedWorkspace = cachedSignedWorkspace(input.baseUrl, input.directory)
+      const workspace = input.workspace ?? signedWorkspace ?? (
+        input.workspace !== undefined
+          ? input.workspace
+          : await workspaceRuntimeRoutingRecord({ baseUrl: input.baseUrl, request: input.request, directory: input.directory })
+      )
+      return workspaceScopedResourceList({
+        baseUrl,
+        directory: input.directory,
+        harnessType: input.harnessType,
+        request: input.request,
+        workspace,
+        resource: { plural: "agents", singular: "agent", scopeCentralUrl: true },
+        parse: agentListFromUnknown,
+      })
     },
   }
 }

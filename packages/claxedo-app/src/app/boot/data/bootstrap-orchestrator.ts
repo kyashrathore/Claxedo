@@ -8,7 +8,7 @@ import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { isCancelledError } from "@tanstack/solid-query"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
-import { agentListQuery, pathQuery } from "../../../features/session/data/query/directory"
+import { pathQuery } from "../../../features/session/data/query/directory"
 import { providerAuthQuery, providerListQuery } from "@/platform/query/control-plane"
 import { workspaceCatalogQuery } from "@/features/workspaces/data/workspace-catalog"
 import { mapInventoryToSessions } from "../../../features/session/data/query/inventory"
@@ -29,20 +29,15 @@ import {
   type DirectorySessionCacheRefreshOptions,
   type DirectorySessionLoadMeta,
 } from "../../../features/session/data/sync/directory-session-cache"
-import type { ClaxedoConfig as Config } from "@/platform/api/claxedo-api-types"
 import { trimSessions } from "../../../platform/sync/global-sync/session-trim"
 import { shouldUseSignedControlPlaneInventory, type InventoryGlobalSession } from "../../../features/session/data/sync/inventory-source"
 
 type DirectoryRef = string
 type SessionRow = SessionCacheValue["session"][number]
-type GlobalConfig = Config
 type QueryOptionsClient =
   Parameters<typeof workspaceCatalogQuery>[0]["client"] &
-  Parameters<typeof pathQuery>[0]["client"] &
-  Parameters<typeof agentListQuery>[0]["client"] & {
-    global: { config: { get: () => Promise<{ data?: GlobalConfig }> } }
+  Parameters<typeof pathQuery>[0]["client"] & {
     mcp: { status: () => Promise<{ data?: unknown }> }
-    lsp: { status: () => Promise<{ data?: unknown[] }> }
   }
 type SessionListClient = {
   session: {
@@ -127,12 +122,6 @@ export const loadMcpQuery = (directory: DirectoryRef, sdk?: QueryOptionsClient) 
     queryFn: sdk ? () => sdk.mcp.status().then((r) => r.data ?? {}) : skipToken,
   })
 
-export const loadLspQuery = (directory: DirectoryRef, sdk?: QueryOptionsClient) =>
-  queryOptions({
-    queryKey: [directory, "lsp"],
-    queryFn: sdk ? () => sdk.lsp.status().then((r) => r.data ?? []) : skipToken,
-  })
-
 export function workspaceScopedCacheKey(input: { directory: DirectoryRef; workspaceId?: string }) {
   return input.workspaceId ?? input.directory
 }
@@ -197,16 +186,7 @@ export function createQueryOptionsApi(input: {
         directory: directory ?? "",
         client: directory === null ? input.globalSDK() : input.sdkFor(directory),
       }),
-    agents: (directory: DirectoryRef) =>
-      agentListQuery({
-        baseUrl: input.baseUrl,
-        directory,
-        harnessType: input.harnessType,
-        request: input.request,
-        client: input.sdkFor(directory),
-      }),
     mcp: (directory: DirectoryRef) => loadMcpQuery(directory, input.sdkFor(directory)),
-    lsp: (directory: DirectoryRef) => loadLspQuery(directory, input.sdkFor(directory)),
     sessions: (directory: DirectoryRef) => ({ queryKey: [directory, "loadSessions"] as const }),
   }
 }
@@ -475,7 +455,7 @@ export function createBootstrapOrchestrator(input: {
           sdk: input.sdkFor(directory),
           loadSessions,
           translate: input.translate,
-          fetch: input.platformFetch(),
+          fetch: input.platformFetch() ?? fetch,
           baseUrl: input.baseUrl(),
           harnessType: effectiveHarnessType,
           quiet: opts.quiet,

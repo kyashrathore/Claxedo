@@ -160,7 +160,6 @@ const globalSDKContextInput = {
 
     const key = (directory: string, payload: Event) => {
       if (payload.type === "session.status") return `session.status:${payload.properties.sessionID}`
-      if (payload.type === "lsp.updated") return `lsp.updated:${directory}`
       if (payload.type === "message.part.updated") {
         const part = payload.properties.part
         return `message.part.updated:${directory}:${part.messageID}:${part.id}`

@@ -11,10 +11,7 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type {
-  ClaxedoAgentProfile,
   ClaxedoCommand,
-  ClaxedoConfig,
-  ClaxedoLspStatus,
   ClaxedoMcpStatus,
   ClaxedoPath,
   ClaxedoProject,
@@ -109,11 +106,6 @@ export type ClaxedoServerClient = {
   }
   global: {
     health(options?: ServerClientRequestOptions): Promise<ServerClientResponse<{ healthy: boolean; version?: string }>>
-    config: {
-      get(options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoConfig>>
-      update(input?: { config?: ClaxedoConfig }, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoConfig>>
-    }
-    dispose(options?: ServerClientRequestOptions): Promise<ServerClientResponse<boolean>>
   }
   worktree: {
     create(input?: ServerScope & { worktreeCreateInput?: { name?: string; baseRef?: string } }, options?: ServerClientRequestOptions): Promise<ServerClientResponse<{ directory: string; name?: string }>>
@@ -126,11 +118,9 @@ export type ClaxedoServerClient = {
     }
   }
   path: { get(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoPath>> }
-  app: { agents(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoAgentProfile[]>> }
   command: { list(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoCommand[]>> }
   vcs: { get(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoVcsInfo>> }
   mcp: { status(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<Record<string, ClaxedoMcpStatus>>> }
-  lsp: { status(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoLspStatus[]>> }
 }
 
 export type CreateClaxedoServerClientOptions = {
@@ -251,11 +241,6 @@ export function createClaxedoServerClient(options: CreateClaxedoServerClientOpti
     },
     global: {
       health: (opts) => request("global.health", "GET", "/global/health", undefined, { options: opts }),
-      config: {
-        get: (opts) => request("global.config.get", "GET", "/global/config", undefined, { options: opts }),
-        update: (input, opts) => request("global.config.update", "PATCH", "/global/config", undefined, { body: input?.config ?? {}, options: opts }),
-      },
-      dispose: (opts) => request("global.dispose", "POST", "/global/dispose", undefined, { options: opts }),
     },
     worktree: {
       create: (input, opts) => request("worktree.create", "POST", "/experimental/worktree", input, { body: input?.worktreeCreateInput ?? {}, options: opts }),
@@ -268,11 +253,9 @@ export function createClaxedoServerClient(options: CreateClaxedoServerClientOpti
       },
     },
     path: { get: (input, opts) => request("path.get", "GET", "/path", input, { options: opts }) },
-    app: { agents: (input, opts) => request("app.agents", "GET", "/app/agents", input, { options: opts }) },
     command: { list: (input, opts) => request("command.list", "GET", "/command", input, { options: opts }) },
     vcs: { get: (input, opts) => request("vcs.get", "GET", "/vcs", input, { options: opts }) },
     mcp: { status: (input, opts) => request("mcp.status", "GET", "/mcp", input, { options: opts }) },
-    lsp: { status: (input, opts) => request("lsp.status", "GET", "/lsp", input, { options: opts }) },
   }
 }
 

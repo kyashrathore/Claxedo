@@ -614,7 +614,6 @@ async function installUserHostedRuntimeMock(
 
       if (runtimePath === "/vcs") return json(route, {})
       if (runtimePath === "/mcp") return json(route, {})
-      if (runtimePath === "/lsp") return json(route, [])
       if (runtimePath === "/agent") return json(route, [{ id: "build", name: "build", description: "Build agent", mode: "primary" }])
       if (runtimePath === "/command") return json(route, [])
       if (runtimePath === "/permission") return json(route, [])
@@ -1156,9 +1155,8 @@ test.describe("core user-hosted workspace @core", () => {
       if (url.pathname === "/provider/auth" || url.pathname === "/api/claxedo/agent-config/providers/auth") return json(route, {})
       if (url.pathname === "/path") return json(route, { worktree: DIR })
       if (url.pathname === "/config") return json(route, { provider: { id: "opencode", model: BIG_PICKLE.id }, agent: { id: "build" } })
-      if (url.pathname === "/agent" || url.pathname === "/app/agents") return json(route, [{ id: "build", name: "build", description: "Build agent" }])
+      if (url.pathname === "/agent") return json(route, [{ id: "build", name: "build", description: "Build agent" }])
       if (url.pathname === "/mcp") return json(route, {})
-      if (url.pathname === "/lsp") return json(route, [])
       if (url.pathname === "/vcs") return json(route, {})
       if (url.pathname === "/command") return json(route, [])
       if (url.pathname === "/permission") return json(route, [])

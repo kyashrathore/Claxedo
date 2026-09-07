@@ -32,7 +32,7 @@ describe("Claxedo server client", () => {
     ])
   })
 
-  test("uses explicit global configuration routes and merges request headers", async () => {
+  test("merges default and per-request headers and sends JSON bodies", async () => {
     const calls: Request[] = []
     const client = createClaxedoServerClient({
       baseUrl: "https://server.example/base/",
@@ -40,43 +40,28 @@ describe("Claxedo server client", () => {
       request: async (input, init) => {
         const request = new Request(input, init)
         calls.push(request)
-        if (request.method === "GET") return Response.json({ provider: { openai: {} } })
-        return Response.json({ provider: { anthropic: {} } })
+        if (request.method === "GET") return Response.json({ healthy: true })
+        return Response.json({ id: "proj_1", name: "renamed" })
       },
     })
 
-    await expect(client.global.config.get({ headers: { "X-Request": "get" } }).then((result) => result.data)).resolves.toEqual({
-      provider: { openai: {} },
+    await expect(client.global.health({ headers: { "X-Request": "get" } }).then((result) => result.data)).resolves.toEqual({
+      healthy: true,
     })
-    await expect(client.global.config.update({ config: { provider: { anthropic: {} } } }, {
+    await expect(client.project.update({ projectID: "proj_1", name: "renamed" }, {
       headers: { "X-Default": "overridden" },
-    }).then((result) => result.data)).resolves.toEqual({ provider: { anthropic: {} } })
+    }).then((result) => result.data)).resolves.toEqual({ id: "proj_1", name: "renamed" })
 
     expect(calls.map((request) => [request.method, request.url])).toEqual([
-      ["GET", "https://server.example/base/global/config"],
-      ["PATCH", "https://server.example/base/global/config"],
+      ["GET", "https://server.example/base/global/health"],
+      ["PATCH", "https://server.example/base/project/proj_1"],
     ])
     expect(calls[0]?.headers.get("authorization")).toBe("Basic token")
     expect(calls[0]?.headers.get("x-default")).toBe("default")
     expect(calls[0]?.headers.get("x-request")).toBe("get")
     expect(calls[1]?.headers.get("x-default")).toBe("overridden")
     expect(calls[1]?.headers.get("content-type")).toBe("application/json")
-    await expect(calls[1]?.json()).resolves.toEqual({ provider: { anthropic: {} } })
-  })
-
-  test("disposes the server through the explicit global route", async () => {
-    let call: Request | undefined
-    const client = createClaxedoServerClient({
-      baseUrl: "https://server.example",
-      request: async (input, init) => {
-        call = new Request(input, init)
-        return Response.json(true)
-      },
-    })
-
-    await expect(client.global.dispose().then((result) => result.data)).resolves.toBe(true)
-    expect(call?.method).toBe("POST")
-    expect(call?.url).toBe("https://server.example/global/dispose")
+    await expect(calls[1]?.json()).resolves.toEqual({ name: "renamed" })
   })
 
   test("throws typed response and payload errors", async () => {
@@ -89,14 +74,14 @@ describe("Claxedo server client", () => {
       request: async () => new Response("not json", { headers: { "Content-Type": "application/json" } }),
     })
 
-    await expect(failed.global.config.get()).rejects.toMatchObject({
+    await expect(failed.global.health()).rejects.toMatchObject({
       name: "ServerClientResponseError",
-      operation: "global.config.get",
+      operation: "global.health",
       status: 403,
       code: "denied",
       message: "Not allowed",
     } satisfies Partial<ServerClientResponseError>)
-    await expect(invalid.global.config.get()).rejects.toBeInstanceOf(ServerClientPayloadError)
+    await expect(invalid.global.health()).rejects.toBeInstanceOf(ServerClientPayloadError)
   })
 
   test("forwards AbortSignal and preserves native AbortError cancellation", async () => {
@@ -110,7 +95,7 @@ describe("Claxedo server client", () => {
       },
     })
 
-    const result = client.global.config.get({ signal: controller.signal }).catch((error) => error)
+    const result = client.global.health({ signal: controller.signal }).catch((error) => error)
     controller.abort(aborted)
     expect(await result).toBe(aborted)
   })

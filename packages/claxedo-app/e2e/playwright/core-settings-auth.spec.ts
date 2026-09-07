@@ -357,22 +357,11 @@ async function mockProviderCatalog(page: Page, input: {
   await page.route("**/api/claxedo/agent-config/providers?**", fulfillProvider)
 }
 
-async function mockAuthAndGlobalConfigRoutes(page: Page, hits: { authDelete: string[]; configPatch: unknown[] }) {
+async function mockAuthRoutes(page: Page, hits: { authDelete: string[] }) {
   await page.route("**/auth/**", (route) => {
     if (route.request().method() !== "DELETE") return route.continue()
     hits.authDelete.push(new URL(route.request().url()).pathname)
     return json(route, true)
-  })
-  await page.route("**/global/config**", (route) => {
-    const method = route.request().method()
-    if (method === "PATCH") {
-      hits.configPatch.push(route.request().postDataJSON())
-      return json(route, { disabled_providers: route.request().postDataJSON()?.config?.disabled_providers ?? [] })
-    }
-    if (method === "GET") {
-      return json(route, { provider: {}, disabled_providers: [] })
-    }
-    return route.continue()
   })
 }
 
@@ -982,8 +971,8 @@ test.describe("core settings + auth @core", () => {
       })
       const credHits = { put: [] as unknown[], delete: [] as string[] }
       await mockCredentialRoutes(page, credHits)
-      const authHits = { authDelete: [] as string[], configPatch: [] as unknown[] }
-      await mockAuthAndGlobalConfigRoutes(page, authHits)
+      const authHits = { authDelete: [] as string[] }
+      await mockAuthRoutes(page, authHits)
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "providers")
@@ -1016,8 +1005,8 @@ test.describe("core settings + auth @core", () => {
       })
       const credentialHits = { put: [] as unknown[], delete: [] as string[] }
       await mockCredentialRoutes(page, credentialHits)
-      const authHits = { authDelete: [] as string[], configPatch: [] as unknown[] }
-      await mockAuthAndGlobalConfigRoutes(page, authHits)
+      const authHits = { authDelete: [] as string[] }
+      await mockAuthRoutes(page, authHits)
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "providers")
@@ -1026,7 +1015,7 @@ test.describe("core settings + auth @core", () => {
       await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22pi%22%7D"]').click()
       await expect(row.getByText("Config", { exact: true })).toBeVisible()
       await expect(row.getByRole("button", { name: "Disconnect" })).toHaveCount(0)
-      expect(authHits).toEqual({ authDelete: [], configPatch: [] })
+      expect(authHits).toEqual({ authDelete: [] })
       expect(credentialHits.delete).toEqual([])
     })
 

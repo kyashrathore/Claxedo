@@ -128,8 +128,7 @@ function targetedQueryKeys(event: RoutableEvent) {
   if (workspaceId && (
     event.type.startsWith("file.") ||
     event.type.startsWith("vcs.") ||
-    event.type.startsWith("mcp.") ||
-    event.type.startsWith("lsp.")
+    event.type.startsWith("mcp.")
   )) {
     return [
       shellDataKeys.workspace(workspaceId, event.type.split(".")[0]),

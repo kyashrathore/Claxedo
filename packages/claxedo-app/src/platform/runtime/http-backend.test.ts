@@ -145,17 +145,12 @@ describe("http backend ports", () => {
         expect(req.headers.get("authorization")).toBe("Bearer rat_1")
         return new Response(JSON.stringify({ local: { status: "connected" } }), { status: 200 })
       }
-      if (url.toString() === "https://relay.test/workspaces/ws_backend_relay/lsp") {
-        expect(req.headers.get("authorization")).toBe("Bearer rat_1")
-        return new Response(JSON.stringify([{ id: "ts", status: "connected" }]), { status: 200 })
-      }
       throw new Error(`unexpected request: ${req.method} ${req.url}`)
     }
 
     const client = {
       vcs: { get: mock(async () => ({ data: undefined })) },
       mcp: { status: mock(async () => ({ data: {} })) },
-      lsp: { status: mock(async () => ({ data: [] })) },
     }
     const backend = createHttpWorkspaceRuntimeBackend({
       baseUrl: "http://claxedo.test",
@@ -166,15 +161,12 @@ describe("http backend ports", () => {
     await withGlobalFetch(request, async () => {
       expect(await backend.getVcs({ directory: "/tmp/ws" })).toMatchObject({ branch: "feature/relay" })
       expect(await backend.getMcpStatus({ directory: "/tmp/ws" })).toMatchObject({ local: { status: "connected" } })
-      expect(await backend.getLspStatus({ directory: "/tmp/ws" })).toMatchObject([{ id: "ts", status: "connected" }])
     })
     expect(client.vcs.get).toHaveBeenCalledTimes(0)
     expect(client.mcp.status).toHaveBeenCalledTimes(0)
-    expect(client.lsp.status).toHaveBeenCalledTimes(0)
     expect(calls.some((call) =>
       call.includes("http://claxedo.test/vcs") ||
-      call.includes("http://claxedo.test/mcp") ||
-      call.includes("http://claxedo.test/lsp")
+      call.includes("http://claxedo.test/mcp")
     )).toBe(false)
   })
 

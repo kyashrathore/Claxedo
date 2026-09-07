@@ -604,7 +604,7 @@ describe("workspace runtime route audit", () => {
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
       const text = await Bun.file(path.join(root, file)).text()
-      if (/["'`](?:\/vcs|\/mcp|\/lsp)["'`]/.test(text)) {
+      if (/["'`](?:\/vcs|\/mcp)["'`]/.test(text)) {
         offenders.push(file)
       }
     }
@@ -1862,8 +1862,7 @@ describe("workspace runtime route audit", () => {
     // The status itself still has an owner: the runtime backend reads it per
     // directory, so no UI surface grows its own directory-scoped query.
     expect(backend).toMatch(/getMcpStatus: async/)
-    expect(backend).toMatch(/getLspStatus: async/)
-    expect(claxedoSessionHeader).not.toMatch(/directoryMcpQuery|directoryLspQuery/)
+    expect(claxedoSessionHeader).not.toMatch(/directoryMcpQuery/)
   })
 
   test("legacy SyncProvider bridge is deleted after DataProvider cutover", async () => {

@@ -96,7 +96,6 @@ describe("route ownership", () => {
   test("Agent Config Registry routes are centrally owned when current code already handles them centrally", () => {
     const paths = [
       "/config",
-      "/global/config",
       "/provider/auth",
       "/provider/claude-acp/oauth/start",
       "/auth/openai",
@@ -186,7 +185,6 @@ describe("route ownership", () => {
       "/api/wr/runtime-events",
       "/api/wr/hook",
       "/api/wr/hook/agent-lifecycle",
-      "/lsp",
       "/vcs",
     ]
 

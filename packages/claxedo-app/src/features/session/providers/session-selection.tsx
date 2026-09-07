@@ -183,7 +183,6 @@ const localContextInput = {
         harnessType: harnessType(),
         request: platform.fetch ?? fetch,
         workspace: sdk.workspace(sdk.directory),
-        client: sdk.client,
       }),
       workspaceId: sdk.workspace(sdk.directory)?.workspaceId,
       enabled: !input.agents && hydrateDirectoryAgents(),

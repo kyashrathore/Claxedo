@@ -506,7 +506,6 @@ export async function journeyD1toD3E1(ctx: JourneyCtx) {
 function isForbiddenDirectPath(pathname: string) {
   return (
     /^\/(session|file|config|mcp|agent|command|permission|question)(\/|$)/.test(pathname) ||
-    pathname === "/global/dispose" ||
     pathname === "/global/event" ||
     pathname === "/event" ||
     /^\/api\/claxedo\/(pty|process|diff|hook)(?:\/|$)/.test(pathname)

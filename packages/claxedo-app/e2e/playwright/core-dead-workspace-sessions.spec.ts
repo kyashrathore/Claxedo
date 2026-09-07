@@ -313,7 +313,7 @@ async function installDeadWorkspace(page: Page, opts: { sessions?: StoredSession
       })
     }
     if (path === "/config") return json(route, { provider: { id: "opencode", model: "big-pickle" }, agent: { id: "build" } })
-    if (path === "/agent" || path === "/app/agents") return json(route, [{ id: "build", name: "build", description: "Build agent" }])
+    if (path === "/agent") return json(route, [{ id: "build", name: "build", description: "Build agent" }])
     if (path === "/mcp" || path === "/command") return json(route, [])
     if (path === "/global/event" || path === "/event" || path === "/api/claxedo/events") {
       return sse(route, { directory: "global", payload: { type: "server.connected", properties: {} } })

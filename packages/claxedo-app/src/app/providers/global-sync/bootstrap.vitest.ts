@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "@/app/boot/data/bootstrap"
-import type { ClaxedoAgentProfile as Agent, ClaxedoCommand as Command, ClaxedoConfig as Config, ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoAgentProfile as Agent, ClaxedoCommand as Command, ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import { type NormalizedProviderListResponse, normalizeProviderList } from "@/platform/query/provider-list"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -17,7 +17,6 @@ type GlobalSdk = Parameters<typeof bootstrapGlobal>[0]["globalSDK"]
 type DirectorySdk = Parameters<typeof bootstrapDirectory>[0]["sdk"]
 
 const defaultPath: Path = { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" }
-const emptyConfig: Config = {}
 
 function project(input: Partial<Project> = {}): Project {
   return {
@@ -53,9 +52,6 @@ function directorySdk(input: Partial<DirectorySdk> = {}): DirectorySdk {
     project: {
       current: async () => ({ data: project() }),
     },
-    app: {
-      agents: async () => ({ data: [] }),
-    },
     path: {
       get: async () => ({ data: defaultPath }),
     },
@@ -73,9 +69,6 @@ function globalSdk(input: Partial<GlobalSdk> = {}): GlobalSdk {
   return {
     global: {
       health: async () => ({ data: { healthy: true } }),
-      config: {
-        get: async () => ({ data: emptyConfig }),
-      },
     },
     path: {
       get: async () => ({ data: defaultPath }),
@@ -365,7 +358,6 @@ describe("override bootstrapDirectory", () => {
   test("critical path is inventory hydration only", async () => {
     const returned = {
       project: 0,
-      agent: 0,
       path: 0,
       workspace: 0,
     }
@@ -379,13 +371,6 @@ describe("override bootstrapDirectory", () => {
           await pending
           returned.project++
           return { data: project() }
-        },
-      },
-      app: {
-        agents: async () => {
-          await pending
-          returned.agent++
-          return { data: [] }
         },
       },
       path: {
@@ -418,7 +403,6 @@ describe("override bootstrapDirectory", () => {
 
     expect(returned).toEqual({
       project: 0,
-      agent: 0,
       path: 0,
       workspace: 0,
     })
@@ -560,11 +544,6 @@ describe("override bootstrapDirectory", () => {
     const urls: string[] = []
     const localUrls: string[] = []
     const sdk = directorySdk({
-      app: {
-        agents: async () => {
-          throw new Error("unexpected runner agent profile client")
-        },
-      },
     })
 
     const previousFetch = globalThis.fetch
@@ -629,11 +608,6 @@ describe("override bootstrapDirectory", () => {
 
   test("loads native agent profiles into the harness-scoped cache", async () => {
     const sdk = directorySdk({
-      app: {
-        agents: async () => {
-          throw new Error("unexpected runner agent profile client")
-        },
-      },
     })
 
     const previousFetch = globalThis.fetch
@@ -693,11 +667,6 @@ describe("override bootstrapDirectory", () => {
       project: {
         current: async () => {
           throw new Error("expected signed cloud project metadata")
-        },
-      },
-      app: {
-        agents: async () => {
-          throw new Error("expected relay agent fetch")
         },
       },
       path: {
@@ -785,11 +754,6 @@ describe("override bootstrapDirectory", () => {
           throw new Error("expected signed cloud project metadata")
         },
       },
-      app: {
-        agents: async () => {
-          throw new Error("expected relay agent fetch")
-        },
-      },
       path: {
         get: async () => {
           throw new Error("expected signed cloud path metadata")
@@ -862,11 +826,6 @@ describe("override bootstrapDirectory", () => {
           throw new Error("expected signed cloud bootstrap to skip path.get")
         },
       },
-      app: {
-        agents: async () => {
-          throw new Error("expected signed cloud bootstrap to fetch agents through relay")
-        },
-      },
       command: {
         list: async () => {
           throw new Error("expected signed cloud bootstrap to fetch commands through relay")
@@ -932,11 +891,6 @@ describe("override bootstrapDirectory", () => {
   test("does not invent a harness for signed cloud workspace refs", async () => {
     const urls: string[] = []
     const sdk = directorySdk({
-      app: {
-        agents: async () => {
-          throw new Error("expected relay agent fetch")
-        },
-      },
       command: {
         list: async () => {
           throw new Error("expected relay command fetch")
@@ -997,11 +951,6 @@ describe("override bootstrapDirectory", () => {
   test("raw workspace id bootstrap resolves identity before caching its native catalog", async () => {
     const urls: string[] = []
     const sdk = directorySdk({
-      app: {
-        agents: async () => {
-          throw new Error("expected relay agent fetch")
-        },
-      },
       command: {
         list: async () => {
           throw new Error("expected relay command fetch")
@@ -1068,6 +1017,8 @@ describe("directory session-load failure reporting", () => {
     await bootstrapDirectory({
       directory: "/tmp/failed-inventory", sdk: directorySdk(), loadSessions,
       translate: (key) => key, quiet,
+      baseUrl: "https://app.claxedo.test",
+      fetch: async () => Response.json([]),
     })
     expect(loadSessions).toHaveBeenCalledWith("/tmp/failed-inventory", expect.objectContaining({ quiet }))
     if (quiet) expect(toast).not.toHaveBeenCalled()

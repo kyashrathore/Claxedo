@@ -37,7 +37,6 @@ export async function centralSmoke(env: NodeJS.ProcessEnv = process.env) {
 
   const checks = [
     await jsonProbe("central.health", route(centralUrl, "/global/health")),
-    await jsonProbe("central.config", route(centralUrl, "/global/config")),
   ]
 
   const token = trimToUndefined(env.CLAXEDO_SMOKE_BEARER_TOKEN)

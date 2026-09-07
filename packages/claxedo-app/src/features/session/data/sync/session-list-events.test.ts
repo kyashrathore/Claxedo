@@ -118,17 +118,6 @@ describe("claxedo applyDirectorySessionCacheEvent", () => {
     expect(pushes).toEqual(["/tmp/ws"])
   })
 
-  test("lsp updates do not revive the Solid store LSP mirror", () => {
-    const next = applyDirectorySessionCacheEvent({
-      event: { type: "lsp.updated" },
-      cache: cache(),
-      push() {},
-      directory: "/tmp/ws",
-    })
-
-    expect(next).toBeUndefined()
-  })
-
   test("session.created does not evict an open session outside the trimmed set", () => {
     setOpenSessions([{ directory: "/tmp/ws", sessionId: "ses_z" }])
     queryClient.setQueryData(shellDataKeys.sessionId("ses_z", "todo"), [{ id: "todo_z" }])

@@ -136,10 +136,6 @@ describe("relay connection grain", () => {
     // this same `/api/claxedo` family the old allow-list also refused.
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/api/claxedo/health" })).toBeUndefined()
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/api/claxedo/host-serving" })).toBeUndefined()
-    // A daemon-wide operation (disposes every workspace's cached OpenCode
-    // state), denied even though it IS part of the OpenCode-compat family the
-    // daemon root serves for a loopback caller.
-    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/global/dispose" })).toBeUndefined()
   })
 
   /**

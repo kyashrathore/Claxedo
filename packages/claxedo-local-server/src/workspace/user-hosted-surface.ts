@@ -66,8 +66,6 @@ const DENY = [
   // that could ask this daemon `/api/runtime-authority/*` could ask a laptop
   // to adjudicate its own access).
   "/api/runtime-authority",
-  // Daemon-wide disposal is never authorized by a workspace token.
-  "/global/dispose",
   // The workspace-relay family itself (`route-ownership.ts`:
   // `RouteDomain.WorkspaceRelay`). A relay-delivered `path` never legitimately
   // re-enters it — the relay already stripped the `/workspaces/:id` prefix —

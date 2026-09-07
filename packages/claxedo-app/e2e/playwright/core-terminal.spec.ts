@@ -191,7 +191,7 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
   })
   await page.route("**/agent**", (r) => {
     if (!api(r)) return r.continue()
-    if (!["/agent", "/app/agents"].includes(new URL(r.request().url()).pathname)) return r.fallback()
+    if (new URL(r.request().url()).pathname !== "/agent") return r.fallback()
     return json(r, [{ id: "build", name: "build", mode: "primary" }])
   })
   await page.route("**/command**", (r) => {
@@ -213,11 +213,6 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/mcp") return r.fallback()
     return json(r, {})
-  })
-  await page.route("**/lsp**", (r) => {
-    if (!api(r)) return r.continue()
-    if (new URL(r.request().url()).pathname !== "/lsp") return r.fallback()
-    return json(r, [])
   })
   await page.route("**/vcs**", (r) => {
     if (!api(r)) return r.continue()

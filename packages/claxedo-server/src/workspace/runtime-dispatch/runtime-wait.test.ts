@@ -339,7 +339,6 @@ describe("embedded workspace runtime config hydration", () => {
       "/api/wr/pty/abc123/connect",
       "/api/wr/process",
       "/api/wr/diff/vcs",
-      "/lsp",
       "/vcs",
     ]) {
       expect(embeddedConfigModeForPath(path)).toBe("skip")

@@ -1,4 +1,4 @@
-import type { ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoConfig as Config, ClaxedoAgentProfile, ClaxedoCommand, ClaxedoVcsInfo } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoCommand, ClaxedoVcsInfo } from "@/platform/api/claxedo-api-types"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 import { asRecord, readBoolean, readString } from "@/lib/record"
 import { retry } from "@/lib/retry"
@@ -29,7 +29,6 @@ type DataResponse<T> = Promise<{ data?: T }>
 export type GlobalBootstrapSdk = {
   global: {
     health(): DataResponse<{ healthy: boolean; version?: string }>
-    config: { get(): DataResponse<Config> }
   }
   path: { get(): DataResponse<Path> }
   project: { list(): DataResponse<Project[]> }
@@ -37,7 +36,6 @@ export type GlobalBootstrapSdk = {
 
 export type DirectoryBootstrapSdk = {
   project: { current(): DataResponse<Project> }
-  app: { agents(input?: { directory?: string }): DataResponse<ClaxedoAgentProfile[]> }
   path: { get(): DataResponse<Path> }
   command: { list(): DataResponse<ClaxedoCommand[]> }
   vcs: { get(): DataResponse<ClaxedoVcsInfo> }
@@ -273,8 +271,8 @@ export async function bootstrapDirectory(input: {
   sdk: DirectoryBootstrapSdk
   loadSessions: (directory: BootstrapDirectory, opts?: DirectorySessionCacheRefreshOptions) => Promise<void> | void
   translate: (key: string, vars?: Record<string, string | number>) => string
-  fetch?: typeof globalThis.fetch
-  baseUrl?: string
+  fetch: typeof globalThis.fetch
+  baseUrl: string
   harnessType?: string
   quiet?: boolean
   workspace?: WorkspaceRuntimeSnapshot & { workspaceId: string; kind: "cloud" | "user-hosted" }
@@ -424,7 +422,6 @@ export async function bootstrapDirectory(input: {
               harnessType,
               request: input.fetch,
               workspace: ws,
-              client: input.sdk,
             })),
           ),
           isRemoteWorkspace(ws)

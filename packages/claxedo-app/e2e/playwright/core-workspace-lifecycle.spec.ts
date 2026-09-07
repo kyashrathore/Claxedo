@@ -140,7 +140,7 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   })
   await page.route("**/agent**", (r) => {
     if (!api(r.request())) return r.continue()
-    if (!["/agent", "/app/agents"].includes(new URL(r.request().url()).pathname)) return r.fallback()
+    if (new URL(r.request().url()).pathname !== "/agent") return r.fallback()
     return json(r, [{ id: "build", name: "build", description: "Build agent" }])
   })
   await page.route("**/provider**", (r) => {
@@ -159,7 +159,6 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
     return json(r, bootstrapBody.config)
   })
   await page.route("**/mcp**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/mcp" ? json(r, {}) : r.continue()))
-  await page.route("**/lsp**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/lsp" ? json(r, []) : r.continue()))
   await page.route("**/vcs**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/vcs" ? json(r, {}) : r.continue()))
   await page.route("**/command**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/command" ? json(r, []) : r.continue()))
   await page.route("**/permission**", (r) => (api(r.request()) && new URL(r.request().url()).pathname === "/permission" ? json(r, []) : r.continue()))

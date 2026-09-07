@@ -79,7 +79,7 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     id: "local-config",
     owner: "local-server",
     serves: "The local configuration document the settings surfaces read and write.",
-    paths: ["/config", "/global/config"],
+    paths: ["/config"],
   },
   {
     id: "runtime-transport",
@@ -90,7 +90,7 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "project-files",
     owner: "local-server",
-    serves: "Project, file, diff, search, VCS, LSP, worktree, and process surfaces backed by Workspace Runtime.",
+    serves: "Project, file, diff, search, VCS, worktree, and process surfaces backed by Workspace Runtime.",
     paths: [
       "/project",
       "/project/",
@@ -100,7 +100,6 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
       "/find/",
       "/path",
       "/vcs",
-      "/lsp",
       "/agent",
       "/command",
       "/question",
@@ -110,7 +109,6 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
       "/experimental/worktree",
       "/experimental/worktree/",
       "/global/event",
-      "/global/dispose",
     ],
   },
   {

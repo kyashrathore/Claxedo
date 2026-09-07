@@ -341,7 +341,6 @@ export function embeddedConfigModeForPath(
     || pathname === "/event"
     || pathname === "/api/wr/events"
     || pathname === "/api/wr/runtime-events"
-    || pathname === "/lsp"
     || pathname === "/vcs"
     || pathname === "/file"
     || pathname.startsWith("/file/")

@@ -447,7 +447,6 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
       }
       if (runtimePath === "/vcs") return json(route, { branch: "main", default_branch: "main" })
       if (runtimePath === "/mcp") return json(route, {})
-      if (runtimePath === "/lsp") return json(route, [])
       if (runtimePath === "/agent") return json(route, [{ id: "build", name: "build", mode: "primary" }])
       if (runtimePath === "/command") return json(route, [])
       if (runtimePath === "/file" || runtimePath.startsWith("/file/")) return json(route, [])

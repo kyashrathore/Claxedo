@@ -141,7 +141,6 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         "/global",
         "/instance",
         "^/log(/.*)?$",
-        "/lsp",
         "/mcp",
         "/path",
         "/permission",

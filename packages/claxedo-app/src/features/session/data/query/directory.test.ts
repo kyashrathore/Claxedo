@@ -68,28 +68,6 @@ describe("directory query factories", () => {
     expect(await query.queryFn()).toEqual(path)
   })
 
-  test("agentListQuery includes opencode runner type and passes directory to the SDK", async () => {
-    const calls: unknown[] = []
-    const query = agentListQuery({
-      baseUrl: "http://example.test",
-      directory: "/tmp/ws",
-      harnessType: "opencode",
-      client: {
-        app: {
-          agents: async (input?: { directory?: string }) => {
-            calls.push(input)
-            return { data: [agent("build")] }
-          },
-        },
-      },
-    })
-
-    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "opencode", ""])
-    expect(query.staleTime).toBe(30 * 1000)
-    expect(await query.queryFn()).toMatchObject([{ name: "build" }])
-    expect(calls).toEqual([{ directory: "/tmp/ws" }])
-  })
-
   test("agentListQuery resolves the workspace through the canonical routing record — no clock of its own", async () => {
     queryClient.clear()
     let resolves = 0
@@ -110,7 +88,6 @@ describe("directory query factories", () => {
       directory: "/tmp/ws",
       harnessType: "opencode",
       request,
-      client: { app: { agents: async () => ({ data: [] }) } },
     })
 
     await query.queryFn()
@@ -136,13 +113,6 @@ describe("directory query factories", () => {
         calls.push(input instanceof Request ? input.url : String(input))
         return Response.json([])
       }) as typeof fetch,
-      client: {
-        app: {
-          agents: async () => {
-            throw new Error("sdk agent profile request should not run for an unknown harness")
-          },
-        },
-      },
     })
 
     expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "", "local:ws_local"])
@@ -161,13 +131,6 @@ describe("directory query factories", () => {
         calls.push(input instanceof Request ? input.url : String(input))
         return Response.json([agent("connection-profile")])
       }) as typeof fetch,
-      client: {
-        app: {
-          agents: async () => {
-            throw new Error("sdk agent profile request should not run for harness transports")
-          },
-        },
-      },
     })
 
     expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "codex-acp", "local:ws_local"])
@@ -205,13 +168,6 @@ describe("directory query factories", () => {
         workspaceId: "ws_1",
         directory: "/tmp/ws",
         kind: "cloud",
-      },
-      client: {
-        app: {
-          agents: async () => {
-            throw new Error("expected Workspace Relay")
-          },
-        },
       },
     })
 
@@ -258,13 +214,6 @@ describe("directory query factories", () => {
           }
           throw new Error(`unexpected request: ${req.method} ${req.url}`)
         }) as typeof fetch,
-        client: {
-          app: {
-            agents: async () => {
-              throw new Error("expected Workspace Relay")
-            },
-          },
-        },
       })
 
       expect(await query.queryFn()).toEqual([{ name: "plan", mode: "primary" }])
@@ -315,13 +264,6 @@ describe("directory query factories", () => {
           }
           throw new Error(`unexpected request: ${req.method} ${req.url}`)
         }) as typeof fetch,
-        client: {
-          app: {
-            agents: async () => {
-              throw new Error("expected Workspace Relay")
-            },
-          },
-        },
       })
 
       expect(await query.queryFn()).toEqual([{ name: "build", mode: "primary" }])
@@ -377,13 +319,6 @@ describe("directory query factories", () => {
           }
           throw new Error(`unexpected request: ${req.method} ${req.url}`)
         }) as typeof fetch,
-        client: {
-          app: {
-            agents: async () => {
-              throw new Error("expected Workspace Relay")
-            },
-          },
-        },
       })
 
       expect(await query.queryFn()).toEqual([{ name: "plan", mode: "primary" }])
@@ -442,13 +377,6 @@ describe("directory query factories", () => {
           }
           throw new Error(`unexpected signed request: ${req.method} ${req.url}`)
         }) as typeof fetch,
-        client: {
-          app: {
-            agents: async () => {
-              throw new Error("expected local agent-config route")
-            },
-          },
-        },
       })
 
       expect(await query.queryFn()).toEqual([{ name: "build", mode: "primary" }])
@@ -483,13 +411,6 @@ describe("directory query factories", () => {
         directory: "/tmp/ws",
         kind: "local",
       },
-      client: {
-        app: {
-          agents: async () => {
-            throw new Error("expected Claxedo agent config API")
-          },
-        },
-      },
     })
 
     expect(await query.queryFn()).toEqual([{ name: "build", mode: "primary" }])
@@ -516,13 +437,6 @@ describe("directory query factories", () => {
           workspaceId: "ws_local",
           directory: "/tmp/ws",
           kind: "local",
-        },
-        client: {
-          app: {
-            agents: async () => {
-              throw new Error("expected Claxedo agent config API")
-            },
-          },
         },
       })
 

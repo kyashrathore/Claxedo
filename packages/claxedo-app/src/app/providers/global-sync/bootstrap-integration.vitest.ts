@@ -23,7 +23,6 @@ function session(input: Partial<Session> = {}): Session {
 function directorySdk(calls: string[]): DirectorySdk {
   return {
     project: { current: async () => (calls.push("project"), { data: { id: "proj_1", worktree: "/tmp/ws", time: { created: 1, updated: 1 }, sandboxes: [] } }) },
-    app: { agents: async () => (calls.push("agent"), { data: [] }) },
     path: { get: async () => (calls.push("path"), { data: { state: "", config: "", worktree: "", directory: "/tmp/ws", home: "" } }) },
     command: { list: async () => (calls.push("command"), { data: [] }) },
     vcs: { get: async () => (calls.push("vcs"), { data: undefined }) },
@@ -90,7 +89,6 @@ describe("global sync bootstrap integration", () => {
 
     expect(calls).toContain("vcs")
     expect(calls).not.toContain("mcp")
-    expect(calls).not.toContain("lsp")
     expect(calls.some((item) => item.endsWith("/config"))).toBe(false)
     expect(queryClient.getQueryCache().getAll().some((query) => query.queryKey[2] === "config")).toBe(false)
     expect(calls.filter((item) => item === "inventory")).toHaveLength(1)

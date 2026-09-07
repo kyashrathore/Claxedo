@@ -22,9 +22,6 @@ describe("deny — the daemon's own families never cross the tunnel", () => {
     "/api/workspace/resolve",
     "/api/auth/device/code",
     "/api/runtime-authority/revoke",
-    // Daemon-wide, not this workspace's to trigger — even though it IS part
-    // of the OpenCode-compat family root serves for a loopback caller.
-    "/global/dispose",
     // Nested workspace-relay paths: a relayed path never legitimately
     // re-enters this family, since the relay already stripped the
     // `/workspaces/:id` prefix before handing the path to this tunnel.

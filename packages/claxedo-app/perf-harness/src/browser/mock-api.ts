@@ -230,7 +230,6 @@ function apiPath(pathName: string) {
     "/find",
     "/formatter",
     "/global",
-    "/lsp",
     "/mcp",
     "/path",
     "/permission",
@@ -353,7 +352,7 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
     return fixture.project
   }
   if (pathName === "/worktree") return fixture.workspaceDirectories.slice(1)
-  if (pathName === "/global/config" || pathName === "/config") return {}
+  if (pathName === "/config") return {}
   if (pathName === "/agent") return agents()
   if (pathName === "/command") return commands()
   if (pathName === "/vcs") return { branch: "dev", default_branch: "dev" }
@@ -361,7 +360,7 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   if (pathName === "/vcs/diff") return fixture.changedFiles
   if (pathName === "/session/status") return Object.fromEntries(fixture.sessions.map((session) => [session.id, { type: "idle" }]))
   if (pathName === "/session") return sessionsForDirectory(fixture, url.searchParams.get("directory"))
-  if (["/skill", "/formatter", "/permission", "/question", "/lsp", "/mcp"].includes(pathName)) return []
+  if (["/skill", "/formatter", "/permission", "/question", "/mcp"].includes(pathName)) return []
   const fileResource = workspaceFileResourcePath(pathName)
   if (fileResource && method === "GET") {
     if (fileResource === "/file/status") return fixture.changedFiles.map((item) => ({

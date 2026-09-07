@@ -435,9 +435,8 @@ async function installCloudRuntimeMock(
     }
     if (url.pathname === "/project" || url.pathname === "/experimental/project") return json(route, [projectRow()])
     if (/^\/project\/[^/]+$/.test(url.pathname)) return json(route, projectRow())
-    if (url.pathname === "/agent" || url.pathname === "/app/agents") return json(route, [{ id: "build", name: "build", description: "Build agent" }])
+    if (url.pathname === "/agent") return json(route, [{ id: "build", name: "build", description: "Build agent" }])
     if (url.pathname === "/mcp") return json(route, {})
-    if (url.pathname === "/lsp") return json(route, [])
     if (url.pathname === "/vcs") return json(route, {})
     if (url.pathname === "/command") return json(route, [{ name: "build", description: "Build command" }])
     if (url.pathname === "/permission") return json(route, [])
@@ -547,7 +546,6 @@ async function installCloudRuntimeMock(
 
       if (runtimePath === "/vcs") return json(route, {})
       if (runtimePath === "/mcp") return json(route, {})
-      if (runtimePath === "/lsp") return json(route, [])
       if (runtimePath === "/agent") return json(route, [{ id: "build", name: "build", description: "Build agent", mode: "primary" }])
       if (runtimePath === "/command") return json(route, [])
       if (runtimePath === "/permission") return json(route, [])

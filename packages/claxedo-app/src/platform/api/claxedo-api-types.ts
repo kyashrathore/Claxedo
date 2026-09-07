@@ -81,16 +81,6 @@ export type ClaxedoAgentProfile = {
   steps?: number
 }
 
-export type ClaxedoLspStatus = {
-  id: string
-  // A status row identifies a server and says whether it came up; the display
-  // name and project root are what the runtime knows about it, and an older
-  // runtime answers `{ id, status }` alone.
-  name?: string
-  root?: string
-  status: "connected" | "error"
-}
-
 export type ClaxedoMcpStatus =
   | { status: "connected" }
   | { status: "disabled" }
@@ -163,20 +153,9 @@ export type ClaxedoProviderAuthorization = {
   instructions: string
 }
 
-export type ClaxedoConfig = {
-  disabled_providers?: string[]
-  enabled_providers?: string[]
-  model?: string
-  small_model?: string
-  default_agent?: string
-  provider?: Record<string, { npm?: string; models?: Record<string, unknown>; [key: string]: unknown } | undefined>
-  [key: string]: unknown
-}
-
 /** Workspace-operational events consumed by browser surfaces. */
 export type ClaxedoWorkspaceEvent =
   | { id?: string; type: "file.watcher.updated"; properties: { file: string; event?: string } }
-  | { id?: string; type: "lsp.updated"; properties: Record<string, unknown> }
   | { id?: string; type: "project.updated"; properties: { info: ClaxedoProject } }
   | { id?: string; type: "vcs.branch.updated"; properties: { branch?: string } }
   | { id?: string; type: "global.disposed"; properties: Record<string, unknown> }

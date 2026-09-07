@@ -83,7 +83,6 @@ const ROUTE_RULES = [
   exact(
     [
       "/global/health",
-      "/global/dispose",
       "/path",
       "/api/claxedo/health",
       "/api/claxedo/track",
@@ -92,7 +91,6 @@ const ROUTE_RULES = [
     RouteDomain.ClaxedoControlPlane,
     central,
   ),
-  exact(["/global/config"], RouteDomain.AgentConfigRegistry, central),
   exact(["/global/event", "/api/claxedo/events"], RouteDomain.ClaxedoControlPlane, central),
   prefix(["/api/claxedo/remote-access"], RouteDomain.ClaxedoControlPlane, central),
   prefix(
@@ -147,7 +145,7 @@ const ROUTE_RULES = [
     RouteDomain.SandboxRuntime,
     runtime,
   ),
-  exact(["/lsp", "/vcs"], RouteDomain.SandboxRuntime, runtime),
+  exact(["/vcs"], RouteDomain.SandboxRuntime, runtime),
   prefix(["/session", "/permission", "/question", "/event"], RouteDomain.AgentSessionRuntime, runtime),
   prefix(
     ["/mcp"],

@@ -32,7 +32,6 @@ type EventDirectory = string
  */
 const CLAXEDO_WORKSPACE_EVENT_TYPES = {
   "file.watcher.updated": true,
-  "lsp.updated": true,
   "project.updated": true,
   "vcs.branch.updated": true,
   "global.disposed": true,

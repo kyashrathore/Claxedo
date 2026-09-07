@@ -2093,7 +2093,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   await page.route("**/agent**", (r) => {
     if (!api(r)) return r.continue()
-    if (!["/agent", "/app/agents"].includes(new URL(r.request().url()).pathname)) return r.fallback()
+    if (new URL(r.request().url()).pathname !== "/agent") return r.fallback()
     return json(r, [{ id: "build", name: "build", description: "Build agent" }])
   })
 
@@ -2136,11 +2136,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/mcp") return r.fallback()
     return json(r, {})
-  })
-  await page.route("**/lsp**", (r) => {
-    if (!api(r)) return r.continue()
-    if (new URL(r.request().url()).pathname !== "/lsp") return r.fallback()
-    return json(r, [])
   })
   await page.route("**/vcs**", (r) => {
     if (!api(r)) return r.continue()
@@ -3099,12 +3094,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       })
     })
     await page.route(`${base}/mcp**`, (r) => json(r, {}))
-    await page.route(`${base}/lsp**`, (r) => json(r, []))
     await page.route(`${base}/agent**`, (r) =>
       json(r, [{ id: "build", name: "build", description: "Build agent", mode: "primary" }]),
-    )
-    await page.route(`${base}/app/agents**`, (r) =>
-      json(r, [{ id: "build", name: "build", description: "Build agent" }]),
     )
     await page.route(`${base}/command**`, (r) => json(r, [{ name: "build", description: "Build command" }]))
     await page.route(`${base}/permission**`, (r) => {

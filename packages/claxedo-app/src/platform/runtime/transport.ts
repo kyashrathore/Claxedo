@@ -31,8 +31,8 @@ export type RuntimeTransport = {
    *
    * The transport knows a path and a status; it does not know what any runtime
    * route answers, so it does not claim to. Callers narrow with the decoder
-   * their own resource owns — see `http-backend.ts`, which owns the vcs, mcp
-   * and lsp shapes it reads through here.
+   * their own resource owns — see `http-backend.ts`, which owns the vcs and
+   * mcp shapes it reads through here.
    */
   json(path: string, init?: RequestInit): Promise<unknown>
 }
