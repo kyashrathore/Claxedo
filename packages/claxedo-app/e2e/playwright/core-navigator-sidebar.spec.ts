@@ -24,22 +24,27 @@
  * it. Every pattern ends in `**` or has a `?**` twin: without one Playwright demands an
  * exact end-of-URL match and the app's `?directory=` suffix makes it miss silently.
  *
- * The Changes list reads the OpenCode `/file/status` route, which the shared mock answers
- * empty; the Review tab reads the workspace-runtime `/api/wr/diff/vcs` routes, which the
- * shared mock drives against an EMPTY git backend. Both are overridden here from one
- * fixture so the file the user clicks in Changes is the file the review focuses.
+ * The sidebar's Changes tab is `SourceControlView`: it reads the workspace-runtime
+ * `/api/wr/git/status` and `/api/wr/git/log` routes and writes through
+ * `/api/wr/git/{stage,unstage,commit-staged,push}`. The shared mock serves none of the six,
+ * so `installGitFixture` answers them from one in-memory repo whose staged and unstaged
+ * lists, commits and upstream the writes mutate, the way `git` would. The classic
+ * overlay's Changes list still reads the OpenCode `/file/status` route, and the Review
+ * tab the workspace-runtime `/api/wr/diff/vcs` routes; both are seeded here from the same
+ * files so the file the user clicks in Changes is the file the review focuses.
+ *
+ * Create PR reads the workspace's remote from the project catalog (`GET /project`,
+ * `useWorkspaceRemoteUrl`), which the shared mock serves without a remote; the scenarios
+ * that need one serve the project row with a `git.remote` of their own.
  *
  * The rail reads `/api/control/session-list` (loopback spelling `/api/claxedo/session-list`),
  * which the shared mock answers EMPTY; one row for `SESSION_ID` is served here in the
  * shape `core-sidebar-tree.spec.ts` uses so the rail oracle has a row to name.
- *
- * A Changes click carries `intent: "review"`, which `review-workspace.tsx`'s focus effect
- * reads only AFTER `onFocusConsumed` has cleared the request it belongs to, so the intent
- * reads as undefined and a file tab opens instead of the Review tab. That is the same in
- * classic placement. The one scenario asserting the Review contract is red until that is
- * fixed; every other scenario asserts the panel state the click produced instead.
  */
-import { expect, test, type Page, type TestInfo } from "@playwright/test"
+import { writeFile } from "node:fs/promises"
+import { expect, test, type Locator, type Page, type Route, type TestInfo } from "@playwright/test"
+// CONTRACT BINDING: the row and commit shapes `GET /api/wr/git/status` and `/log` return.
+import type { GitCommitSummary, GitStatusEntry } from "../../../workspace-runtime/src/workspace-files/git-worktree"
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectNavigatorSidebar, expectNavigatorSidebarAbsent, expectRailRowVisible } from "../helpers/rail-oracle"
@@ -60,10 +65,57 @@ const CLASSIC_PANEL_MIN_WIDTH = 360
 
 type NavigatorPlacement = "panel" | "sidebar"
 
-const SEEDED_STATUS = [
-  { path: FOCUS_FILE, status: "modified", added: 1, removed: 1 },
-  { path: "src/util.ts", status: "added", added: 2, removed: 0 },
-] as const
+const DEFAULT_BRANCH = "main"
+/** Off the default branch, with a `/` so the compare URL's encoding is exercised. */
+const FEATURE_BRANCH = "feat/source-control"
+const GITHUB_REMOTE = "git@github.com:acme/app.git"
+const GITLAB_REMOTE = "git@gitlab.com:acme/app.git"
+const PUSH_REJECTION = "remote: rejected"
+
+const STAGED_FILE = FOCUS_FILE
+const UNSTAGED_FILE = "src/util.ts"
+const DELETED_FILE = "README.md"
+const UNTRACKED_FILE = "docs/notes.md"
+
+function seededHash(n: number) {
+  return n.toString(16).padStart(2, "0").repeat(20)
+}
+
+function seededCommit(n: number, subject: string, refs: string[], parents: string[]): GitCommitSummary {
+  const hash = seededHash(n)
+  return {
+    hash,
+    shortHash: hash.slice(0, 7),
+    subject,
+    author: "E2E Author",
+    date: new Date(Date.now() - n * 3_600_000).toISOString(),
+    refs,
+    parents,
+  }
+}
+
+/** One staged file, two unstaged, one untracked, on a branch with no upstream. */
+const SEEDED_GIT = {
+  branch: DEFAULT_BRANCH,
+  staged: [{ path: STAGED_FILE, status: "modified", additions: 1, deletions: 1 }],
+  unstaged: [
+    { path: UNSTAGED_FILE, status: "modified", additions: 2, deletions: 0 },
+    { path: DELETED_FILE, status: "deleted", additions: 0, deletions: 4 },
+    { path: UNTRACKED_FILE, status: "untracked", additions: 3, deletions: 0 },
+  ],
+  commits: [
+    seededCommit(2, "feat: second seeded commit", [`HEAD -> ${DEFAULT_BRANCH}`], [seededHash(1)]),
+    seededCommit(1, "chore: first seeded commit", [], []),
+  ],
+} satisfies Pick<GitFixtureSeed, "branch" | "staged" | "unstaged" | "commits">
+
+/** The classic overlay's list reads OpenCode `/file/status`, which knows no untracked state. */
+const SEEDED_STATUS = [...SEEDED_GIT.staged, ...SEEDED_GIT.unstaged].map((entry) => ({
+  path: entry.path,
+  status: entry.status === "untracked" ? "added" : entry.status,
+  added: entry.additions,
+  removed: entry.deletions,
+}))
 
 const SEEDED_DIFFS = [
   {
@@ -84,7 +136,208 @@ const SEEDED_DIFFS = [
     after: "export function noop() {}\nexport const two = 2\n",
     patch: "--- /dev/null\n+++ b/src/util.ts\n@@ -0,0 +1,2 @@\n+export function noop() {}\n+export const two = 2\n",
   },
+  {
+    file: DELETED_FILE,
+    status: "deleted",
+    additions: 0,
+    deletions: 4,
+    before: "# app\n\nA seeded readme.\n\n",
+    after: "",
+    patch: "--- a/README.md\n+++ /dev/null\n@@ -1,4 +0,0 @@\n-# app\n-\n-A seeded readme.\n-\n",
+  },
+  {
+    file: UNTRACKED_FILE,
+    status: "added",
+    additions: 3,
+    deletions: 0,
+    before: "",
+    after: "one\ntwo\nthree\n",
+    patch: "--- /dev/null\n+++ b/docs/notes.md\n@@ -0,0 +1,3 @@\n+one\n+two\n+three\n",
+  },
 ]
+
+type GitFixtureSeed = {
+  branch: string
+  upstream?: string
+  ahead?: number
+  behind?: number
+  staged: readonly GitStatusEntry[]
+  unstaged: readonly GitStatusEntry[]
+  commits: readonly GitCommitSummary[]
+  /** When set, every push is refused the way the runtime maps a rejected push: 502 `git_push_rejected` carrying git's stderr. */
+  pushRejected?: string
+}
+
+type GitRequest = {
+  method: string
+  route: string
+  url: string
+  /** The worktree the request scoped itself to, by `?directory=` or the `x-claxedo-directory` header. */
+  directory: string | undefined
+  body?: unknown
+}
+
+type GitFixture = {
+  /** The repo as `GET /api/wr/git/status` reports it now. */
+  status(): { branch: string; upstream?: string; ahead: number; behind: number; staged: GitStatusEntry[]; unstaged: GitStatusEntry[] }
+  /** Newest first, as `GET /api/wr/git/log` reports it now. */
+  commits(): GitCommitSummary[]
+  requests: GitRequest[]
+}
+
+function isApiRequest(route: Route) {
+  const type = route.request().resourceType()
+  return type === "fetch" || type === "xhr"
+}
+
+function json(body: string) {
+  return { status: 200, contentType: "application/json", body }
+}
+
+/**
+ * The six `/api/wr/git/*` routes over one in-memory repo. Stage moves an entry from
+ * `unstaged` to `staged` (an untracked file becomes `added`), unstage the reverse, a
+ * commit consumes the staged list and becomes the new head with the `HEAD -> branch`
+ * ref, and a push sets the upstream and clears `ahead`. Failures use the runtime's
+ * codes and status numbers (`routes/git-worktree.ts` ERROR_STATUS).
+ */
+async function installGitFixture(page: Page, seed: GitFixtureSeed): Promise<GitFixture> {
+  const repo = {
+    branch: seed.branch,
+    upstream: seed.upstream,
+    ahead: seed.ahead ?? 0,
+    behind: seed.behind ?? 0,
+    staged: seed.staged.map((entry) => ({ ...entry })),
+    unstaged: seed.unstaged.map((entry) => ({ ...entry })),
+    commits: seed.commits.map((commit) => ({ ...commit, refs: [...commit.refs], parents: [...commit.parents] })),
+  }
+  const requests: GitRequest[] = []
+  let sequence = 0
+  const byPath = (a: GitStatusEntry, b: GitStatusEntry) => a.path.localeCompare(b.path)
+  const status = () => ({
+    branch: repo.branch,
+    ...(repo.upstream ? { upstream: repo.upstream } : {}),
+    ahead: repo.ahead,
+    behind: repo.behind,
+    staged: [...repo.staged].sort(byPath),
+    unstaged: [...repo.unstaged].sort(byPath),
+  })
+  const move = (from: GitStatusEntry[], to: GitStatusEntry[], paths: string[], status: (entry: GitStatusEntry) => GitStatusEntry["status"]) => {
+    for (const path of paths) {
+      const index = from.findIndex((entry) => entry.path === path)
+      if (index < 0) continue
+      const [entry] = from.splice(index, 1)
+      const kept = to.filter((existing) => existing.path !== path)
+      to.splice(0, to.length, ...kept, { ...entry!, status: status(entry!) })
+    }
+  }
+  const stage = (paths: string[]) =>
+    move(repo.unstaged, repo.staged, paths, (entry) => (entry.status === "untracked" ? "added" : entry.status))
+  const unstage = (paths: string[]) =>
+    move(repo.staged, repo.unstaged, paths, (entry) => (entry.status === "added" ? "untracked" : entry.status))
+  const commit = (message: string, amend: boolean) => {
+    sequence += 1
+    const hash = seededHash(0x60 + sequence)
+    const head = repo.commits[0]
+    if (head) head.refs = head.refs.filter((ref) => !ref.startsWith("HEAD"))
+    const created: GitCommitSummary = {
+      hash,
+      shortHash: hash.slice(0, 7),
+      subject: message.trim().split("\n")[0]!,
+      author: "E2E Author",
+      date: new Date().toISOString(),
+      refs: [`HEAD -> ${repo.branch}`],
+      parents: amend ? head?.parents ?? [] : head ? [head.hash] : [],
+    }
+    if (amend) repo.commits.shift()
+    repo.commits.unshift(created)
+    repo.staged = []
+    if (repo.upstream) repo.ahead += 1
+    return hash
+  }
+
+  await page.route("**/api/wr/git/**", async (route) => {
+    if (!isApiRequest(route)) return route.continue()
+    const request = route.request()
+    const url = new URL(request.url())
+    const method = request.method()
+    const name = url.pathname.replace(/^\/workspaces\/[^/]+/, "").replace(/^\/api\/wr\/git\//, "")
+    let body: unknown
+    if (method === "POST") {
+      try {
+        body = request.postDataJSON()
+      } catch {
+        body = request.postData()
+      }
+    }
+    requests.push({
+      method,
+      route: name,
+      url: request.url(),
+      directory: url.searchParams.get("directory") ?? request.headers()["x-claxedo-directory"],
+      ...(body === undefined ? {} : { body }),
+    })
+    const reply = (status: number, payload?: unknown) =>
+      route.fulfill(payload === undefined ? { status, body: "" } : { status, contentType: "application/json", body: JSON.stringify(payload) })
+    const refuse = (status: number, code: string, message: string) => reply(status, { error: { code, message } })
+
+    if (method === "GET" && name === "status") return reply(200, status())
+    if (method === "GET" && name === "log") {
+      const limit = Number(url.searchParams.get("limit") ?? "50") || 50
+      return reply(200, { commits: repo.commits.slice(0, limit) })
+    }
+    if (method !== "POST") return route.fallback()
+    const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {}
+    const paths = Array.isArray(record.paths) ? record.paths.filter((path): path is string => typeof path === "string") : []
+    switch (name) {
+      case "stage":
+        stage(paths)
+        return reply(204)
+      case "unstage":
+        unstage(paths)
+        return reply(204)
+      case "commit-staged": {
+        const message = typeof record.message === "string" ? record.message : ""
+        const amend = record.amend === true
+        if (!message.trim()) return refuse(400, "git_empty_message", "Aborting commit due to empty commit message.")
+        if (repo.staged.length === 0 && !amend) return refuse(400, "git_nothing_staged", "no changes added to commit")
+        return reply(200, { commit: commit(message, amend) })
+      }
+      case "push": {
+        if (seed.pushRejected) return refuse(502, "git_push_rejected", seed.pushRejected)
+        repo.upstream = `origin/${repo.branch}`
+        repo.ahead = 0
+        return reply(200, { remote: "origin", branch: repo.branch })
+      }
+      default:
+        return route.fallback()
+    }
+  })
+
+  return { status, commits: () => repo.commits, requests }
+}
+
+/** The project catalog row for `DIR` with a git remote: what `useWorkspaceRemoteUrl` reads Create PR's target from. */
+async function serveProjectRemote(page: Page, remote: string) {
+  const row = {
+    id: PROJECT_ID,
+    worktree: DIR,
+    name: "navigator-sidebar",
+    git: { remote },
+    workspaces: {
+      [PROJECT_ID]: { id: PROJECT_ID, workspaceId: PROJECT_ID, project_id: PROJECT_ID, kind: "local", available: true, directory: DIR },
+    },
+    time: { created: Date.now(), updated: Date.now() },
+  }
+  await page.route("**/project**", (route) => {
+    if (!isApiRequest(route)) return route.continue()
+    if (route.request().method() !== "GET") return route.fallback()
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname === "/project/current") return route.fulfill(json(JSON.stringify(row)))
+    if (pathname === "/project" || pathname === "/experimental/project") return route.fulfill(json(JSON.stringify([row])))
+    return route.fallback()
+  })
+}
 
 async function seedProject(page: Page, opts: { dir: string; navigatorPlacement?: NavigatorPlacement }) {
   await page.addInitScript(
@@ -169,15 +422,32 @@ function seededTurnRows(count: number) {
 /** The last seeded user turn's text, the one a floating session keeps on screen. */
 const LAST_TURN_TEXT = `navigator sidebar history message ${TURNS}`
 
-async function installSeededWorkspace(page: Page, opts: { navigatorPlacement?: NavigatorPlacement } = {}) {
-  await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "navigator-sidebar" })
+async function installSeededWorkspace(
+  page: Page,
+  opts: {
+    navigatorPlacement?: NavigatorPlacement
+    /** The project's git remote; absent by default, like the shared mock's project row. */
+    remote?: string
+    git?: Partial<Pick<GitFixtureSeed, "branch" | "upstream" | "ahead" | "pushRejected">>
+  } = {},
+) {
+  const branch = opts.git?.branch ?? SEEDED_GIT.branch
+  await installMockRuntime(page, {
+    dir: DIR,
+    sessionId: SESSION_ID,
+    projectId: PROJECT_ID,
+    workspaceId: PROJECT_ID,
+    projectName: "navigator-sidebar",
+    currentBranch: branch,
+  })
   await seedProject(page, { dir: DIR, navigatorPlacement: opts.navigatorPlacement })
+  const git = await installGitFixture(page, { ...SEEDED_GIT, ...opts.git, branch })
+  if (opts.remote) await serveProjectRemote(page, opts.remote)
 
   const sessionRow = seededSessionRow()
   const listBody = JSON.stringify([sessionRow])
   const sessionBody = JSON.stringify(sessionRow)
   const messageBody = JSON.stringify({ messages: seededTurnRows(TURNS), maxEventOrdinal: 0 })
-  const json = (body: string) => ({ status: 200, contentType: "application/json", body })
 
   await page.route("**/session", (route) => (route.request().method() === "GET" ? route.fulfill(json(listBody)) : route.fallback()))
   await page.route("**/session?**", (route) => (route.request().method() === "GET" ? route.fulfill(json(listBody)) : route.fallback()))
@@ -220,6 +490,7 @@ async function installSeededWorkspace(page: Page, opts: { navigatorPlacement?: N
     }
     return route.fallback()
   })
+  return { git }
 }
 
 async function gotoSession(page: Page) {
@@ -313,15 +584,82 @@ async function persistedNavigatorPlacement(page: Page) {
   })
 }
 
-/** Clicks `path` in the sidebar's Changes list. The list is the sidebar's, never the
- * panel overlay's, so a click that opened the overlay instead would fail here. */
-async function clickChangedFileInSidebar(page: Page, path: string) {
+function sourceControlView(page: Page) {
+  return page.locator('[data-testid="navigator-sidebar"] [data-testid="source-control-view"]')
+}
+
+function changeGroup(page: Page, id: "staged" | "changes") {
+  return sourceControlView(page).locator(`[data-testid="source-control-group-${id}"]`)
+}
+
+function changeRow(page: Page, path: string) {
+  return sourceControlView(page).locator(`[data-testid="source-control-row"][data-path="${path}"]`)
+}
+
+function commitRows(page: Page) {
+  return sourceControlView(page).locator('[data-testid="source-control-graph"] [data-testid="source-control-commit-row"]')
+}
+
+function commitMessage(page: Page) {
+  return sourceControlView(page).getByTestId("source-control-message")
+}
+
+function commitButton(page: Page) {
+  return sourceControlView(page).getByTestId("source-control-commit")
+}
+
+/** The sidebar's Changes tab, selected and past its loading skeleton. The view is the
+ * sidebar's, never the panel overlay's, so a click that opened the overlay instead would
+ * fail here. */
+async function openSourceControl(page: Page): Promise<Locator> {
   const sidebar = await expectNavigatorSidebar({ page })
-  await sidebar.locator('[role="tab"][data-tab="changes"]').click()
+  if ((await sidebar.getAttribute("data-tab")) !== "changes") await sidebar.locator('[role="tab"][data-tab="changes"]').click()
   await expect(sidebar).toHaveAttribute("data-tab", "changes")
-  const list = sidebar.locator('[data-testid="workspace-changed-file-list"]')
-  await expect(list).toBeVisible({ timeout: 15_000 })
-  await list.locator(`button[data-file-tree-path="${path}"]`).click()
+  const view = sourceControlView(page)
+  await expect(view).toBeVisible({ timeout: 15_000 })
+  await expect(view.getByTestId("source-control-loading")).toHaveCount(0, { timeout: 15_000 })
+  return view
+}
+
+/** Both group headers carry `count`, and no write is in flight. */
+async function expectGroupCounts(page: Page, staged: number, changes: number) {
+  await expect(changeGroup(page, "staged")).toHaveAttribute("data-count", String(staged), { timeout: 15_000 })
+  await expect(changeGroup(page, "changes")).toHaveAttribute("data-count", String(changes), { timeout: 15_000 })
+  await expect(sourceControlView(page)).not.toHaveAttribute("data-pending", /./)
+}
+
+async function expectRow(page: Page, path: string, group: "staged" | "changes", status: GitStatusEntry["status"], letter: string) {
+  const row = changeRow(page, path)
+  await expect(row).toHaveAttribute("data-group", group, { timeout: 15_000 })
+  await expect(row).toHaveAttribute("data-status", status)
+  await expect(row.locator('[data-slot="open"] > span').first()).toHaveText(letter)
+}
+
+/** The row's Stage / Unstage action is hidden until the row is hovered; hover, see it appear, click it. */
+async function clickRowAction(page: Page, path: string, action: "stage" | "unstage") {
+  const row = changeRow(page, path)
+  const button = row.locator(`[data-action="${action}"]`)
+  await expect(button).toHaveCSS("opacity", "0")
+  await row.hover()
+  await expect(button).toHaveCSS("opacity", "1")
+  await button.click()
+}
+
+async function clickChangedFileInSidebar(page: Page, path: string) {
+  await openSourceControl(page)
+  await changeRow(page, path).locator('[data-slot="open"]').click()
+}
+
+/** The mode the Review tab is in, as its L2 toolbar names it. `exact`: "Unstaged" contains "staged". */
+async function expectReviewMode(page: Page, label: "Staged" | "Unstaged") {
+  await expect(page.locator('[data-testid="l2-review-toolbar-slot"]').getByText(label, { exact: true })).toBeVisible({ timeout: 15_000 })
+}
+
+/** The fixture's request ledger, as a file in the test's output directory and on the report. */
+async function attachGitRequests(git: GitFixture, testInfo: TestInfo) {
+  const path = testInfo.outputPath("git-requests.json")
+  await writeFile(path, JSON.stringify(git.requests, null, 2))
+  await testInfo.attach("git-requests", { path, contentType: "application/json" })
 }
 
 /** The panel is open at full view: it covers the `role="main"` column, the pane column is
@@ -349,7 +687,9 @@ async function expectReviewFocused(page: Page, path: string) {
   const panel = panelShell(page)
   await expect(panel.locator('[data-slot="workspace-tab"][data-workspace-tab-id="review"]')).toHaveAttribute("data-selected", "true", { timeout: 15_000 })
   await expect(panel.locator('[data-testid="review-pane-root"]')).toBeVisible({ timeout: 15_000 })
-  await expect(panel.locator(`[data-component="session-review"] [data-review-file="${path}"]`)).toBeVisible({ timeout: 15_000 })
+  const file = panel.locator(`[data-component="session-review"] [data-review-file="${path}"]`)
+  await expect(file).toBeVisible({ timeout: 15_000 })
+  await expect(file, `${path} is listed but not the focused (selected) diff`).toHaveAttribute("data-selected", "", { timeout: 15_000 })
 }
 
 /** Opens the classic panel from the floating chrome's toggle, then selects `navigator`
@@ -431,10 +771,10 @@ test.describe("core navigator sidebar placement @core", () => {
     await expectSessionDocked(page)
     await expect(panelShell(page)).toHaveCount(0)
 
-    const sidebar = await expectNavigatorSidebar({ page, tab: "changes" })
-    const list = sidebar.locator('[data-testid="workspace-changed-file-list"]')
-    await expect(list.locator("button[data-file-tree-path]")).toHaveCount(SEEDED_STATUS.length, { timeout: 15_000 })
-    for (const file of SEEDED_STATUS) await expect(list.locator(`button[data-file-tree-path="${file.path}"]`)).toBeVisible()
+    await expectNavigatorSidebar({ page, tab: "changes" })
+    const view = await openSourceControl(page)
+    await expect(view.locator('[data-testid="source-control-row"]')).toHaveCount(SEEDED_GIT.staged.length + SEEDED_GIT.unstaged.length, { timeout: 15_000 })
+    for (const entry of [...SEEDED_GIT.staged, ...SEEDED_GIT.unstaged]) await expect(changeRow(page, entry.path)).toBeVisible()
 
     await clickChangedFileInSidebar(page, FOCUS_FILE)
     await expectPanelAtFullView(page)
@@ -550,6 +890,9 @@ test.describe("core navigator sidebar placement @core", () => {
   })
 
   test("a Changes click focuses the clicked file in the Review tab, from the sidebar and from the classic overlay alike", async ({ page }) => {
+    // Same defect as the Staged / Unstaged scenario below: the focus is consumed before
+    // `ReviewTab` reads its path, so the file is listed but never the selected diff.
+    test.fail(true, "review-workspace.tsx:351 consumes the file focus before ReviewTab reads its path and reviewMode")
     await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
     await gotoSession(page)
 
@@ -568,4 +911,197 @@ test.describe("core navigator sidebar placement @core", () => {
     await expectReviewFocused(page, "src/util.ts")
   })
 
+  test("the Changes tab shows the commit box, both groups with status letters, the graph, and Publish Branch without Create PR off a non-GitHub remote", async ({ page }, testInfo) => {
+    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar", remote: GITLAB_REMOTE })
+    await gotoSession(page)
+    const view = await openSourceControl(page)
+
+    await expect(commitMessage(page)).toBeVisible()
+    await expect(commitMessage(page)).toHaveValue("")
+    await expect(commitButton(page)).toBeDisabled()
+    await expect(view.getByTestId("source-control-commit-menu")).toBeVisible()
+
+    await expectGroupCounts(page, 1, 3)
+    await expectRow(page, STAGED_FILE, "staged", "modified", "M")
+    await expectRow(page, UNSTAGED_FILE, "changes", "modified", "M")
+    await expectRow(page, DELETED_FILE, "changes", "deleted", "D")
+    await expectRow(page, UNTRACKED_FILE, "changes", "untracked", "U")
+
+    const rows = commitRows(page)
+    await expect(rows).toHaveCount(SEEDED_GIT.commits.length, { timeout: 15_000 })
+    for (const [index, commit] of SEEDED_GIT.commits.entries()) {
+      await expect(rows.nth(index)).toHaveAttribute("data-hash", commit.hash)
+      await expect(rows.nth(index)).toContainText(commit.subject)
+    }
+
+    // No upstream: Publish Branch, not Push; a GitLab remote: no compare link.
+    await expect(view.getByTestId("source-control-publish")).toBeVisible()
+    await expect(view.getByTestId("source-control-push")).toHaveCount(0)
+    await expect(view.getByTestId("source-control-up-to-date")).toHaveCount(0)
+    await expect(view.getByTestId("source-control-create-pr")).toHaveCount(0)
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-seeded" })
+
+    // Both reads went to the fixture.
+    expect(git.requests.map((request) => `${request.method} ${request.route}`)).toEqual(expect.arrayContaining(["GET status", "GET log"]))
+    await attachGitRequests(git, testInfo)
+  })
+
+  test("every git request names the worktree it is scoped to", async ({ page }, testInfo) => {
+    // `sdk.tsx` builds the git client over `runtimeClient(directory)`, whose fetch adds
+    // neither `?directory=` nor `x-claxedo-directory` (`transport.ts` → `unsignedFetchWith`),
+    // and the workspace-runtime client's `git` namespace takes no directory, unlike its
+    // `file` namespace. The real server resolves the workspace from exactly those two
+    // (`runtime-dispatch/internals.ts` requestWorkspace → `resolveWorkspace`, which returns
+    // undefined without a directory), so against a real runtime every Changes-tab read and
+    // write is unscoped. The fixture answers regardless, which is why this is its own
+    // scenario: it turns green the moment the client scopes its requests.
+    test.fail(true, "sdk.tsx:207 git client sends no ?directory= / x-claxedo-directory; workspace-runtime client git namespace has no directory input")
+    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
+    await gotoSession(page)
+    await openSourceControl(page)
+    await expectGroupCounts(page, 1, 3)
+    await clickRowAction(page, UNSTAGED_FILE, "stage")
+    await expectGroupCounts(page, 2, 2)
+    await attachGitRequests(git, testInfo)
+    expect(git.requests.map((request) => request.route)).toEqual(expect.arrayContaining(["status", "log", "stage"]))
+    for (const request of git.requests) {
+      expect(request.directory, `${request.method} ${request.url} names no worktree`).toBe(DIR)
+    }
+  })
+
+  test("hovering a Changes row stages it, Unstage returns it, and Stage all empties the Changes group", async ({ page }) => {
+    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
+    await gotoSession(page)
+    const view = await openSourceControl(page)
+    await expectGroupCounts(page, 1, 3)
+
+    await clickRowAction(page, UNSTAGED_FILE, "stage")
+    await expectGroupCounts(page, 2, 2)
+    await expectRow(page, UNSTAGED_FILE, "staged", "modified", "M")
+    expect(git.requests.filter((request) => request.route === "stage").map((request) => request.body)).toEqual([{ paths: [UNSTAGED_FILE] }])
+
+    await clickRowAction(page, UNSTAGED_FILE, "unstage")
+    await expectGroupCounts(page, 1, 3)
+    await expectRow(page, UNSTAGED_FILE, "changes", "modified", "M")
+    expect(git.requests.filter((request) => request.route === "unstage").map((request) => request.body)).toEqual([{ paths: [UNSTAGED_FILE] }])
+
+    // Stage all lives in the Changes header and is hidden until the header is hovered.
+    // The pointer still rests where the unstaged row's action was, which the shrunken
+    // Staged group has just slid the Changes header under; park it on the message box.
+    await commitMessage(page).hover()
+    const header = changeGroup(page, "changes")
+    const stageAll = header.locator('[data-action="stage-all"]')
+    await expect(stageAll).toHaveCSS("opacity", "0")
+    await header.hover()
+    await expect(stageAll).toHaveCSS("opacity", "1")
+    await stageAll.click()
+    await expectGroupCounts(page, 4, 0)
+    await expect(view.locator('[data-testid="source-control-row"][data-group="changes"]')).toHaveCount(0)
+    // Staging an untracked file adds it: the letter follows the index, as git's does.
+    await expectRow(page, UNTRACKED_FILE, "staged", "added", "A")
+    await expectRow(page, DELETED_FILE, "staged", "deleted", "D")
+    expect(git.status().staged.map((entry) => entry.path).sort()).toEqual([DELETED_FILE, UNTRACKED_FILE, STAGED_FILE, UNSTAGED_FILE].sort())
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-staged-all" })
+  })
+
+  test("Commit needs a message; committing empties Staged, tops the Graph with the subject, and clears the box", async ({ page }) => {
+    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
+    await gotoSession(page)
+    await openSourceControl(page)
+    await expectGroupCounts(page, 1, 3)
+    await expect(commitButton(page)).toBeDisabled()
+
+    const subject = "feat: commit from the Changes tab"
+    await commitMessage(page).fill(`${subject}\n\nA body line the graph never shows.`)
+    await expect(commitButton(page)).toBeEnabled()
+    await commitButton(page).click()
+
+    await expectGroupCounts(page, 0, 3)
+    const rows = commitRows(page)
+    await expect(rows).toHaveCount(SEEDED_GIT.commits.length + 1, { timeout: 15_000 })
+    await expect(rows.first()).toHaveAttribute("data-hash", git.commits()[0]!.hash)
+    await expect(rows.first()).toContainText(subject)
+    await expect(rows.nth(1)).toHaveAttribute("data-hash", SEEDED_GIT.commits[0]!.hash)
+    await expect(commitMessage(page)).toHaveValue("")
+    await expect(commitButton(page)).toBeDisabled()
+    expect(git.requests.filter((request) => request.route === "commit-staged").map((request) => request.body)).toEqual([
+      { message: `${subject}\n\nA body line the graph never shows.`, amend: false },
+    ])
+    expect(git.status().staged).toEqual([])
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-committed" })
+  })
+
+  test("⌘⏎ in the message box commits", async ({ page }) => {
+    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
+    await gotoSession(page)
+    await openSourceControl(page)
+    await expectGroupCounts(page, 1, 3)
+
+    const subject = "feat: commit from the keyboard"
+    await commitMessage(page).fill(subject)
+    await commitMessage(page).press("ControlOrMeta+Enter")
+
+    await expectGroupCounts(page, 0, 3)
+    await expect(commitRows(page).first()).toContainText(subject, { timeout: 15_000 })
+    await expect(commitMessage(page)).toHaveValue("")
+    expect(git.commits()[0]?.subject).toBe(subject)
+  })
+
+  test("a staged row opens the Review tab in Staged mode and an unstaged row in Unstaged mode", async ({ page }) => {
+    // `review-workspace.tsx`'s file-focus effect calls `onFocusConsumed()` before it
+    // activates the Review tab; `workspace-panel-body.tsx`'s `consumeFocus` retargets the
+    // panel with `focus: null`, so `focusPath`, `focusFileIntent` and `focusReviewMode` are
+    // already undefined when `ReviewTab` reads `focusedDiffPath` / `focusedDiffMode`. The
+    // review therefore stays in its opening mode ("Uncommitted") with no selected diff.
+    test.fail(true, "review-workspace.tsx:351 consumes the file focus before ReviewTab reads its path and reviewMode")
+    await installSeededWorkspace(page, { navigatorPlacement: "sidebar" })
+    await gotoSession(page)
+
+    await clickChangedFileInSidebar(page, STAGED_FILE)
+    await expectPanelAtFullView(page)
+    await expectPanelInReviewForChanges(page)
+    await expectReviewFocused(page, STAGED_FILE)
+    await expectReviewMode(page, "Staged")
+    await expect(changeRow(page, STAGED_FILE)).toHaveClass(/bg-surface-base-active/)
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-review-staged" })
+
+    await changeRow(page, UNSTAGED_FILE).locator('[data-slot="open"]').click()
+    await expectReviewFocused(page, UNSTAGED_FILE)
+    await expectReviewMode(page, "Unstaged")
+    await expect(changeRow(page, UNSTAGED_FILE)).toHaveClass(/bg-surface-base-active/)
+    await expect(changeRow(page, STAGED_FILE)).not.toHaveClass(/bg-surface-base-active/)
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-review-unstaged" })
+  })
+
+  test("Create PR links to the GitHub compare page for a branch off the default", async ({ page }) => {
+    await installSeededWorkspace(page, { navigatorPlacement: "sidebar", remote: GITHUB_REMOTE, git: { branch: FEATURE_BRANCH } })
+    await gotoSession(page)
+    const view = await openSourceControl(page)
+
+    const link = view.getByTestId("source-control-create-pr")
+    await expect(link).toBeVisible({ timeout: 15_000 })
+    await expect(link).toHaveAttribute(
+      "href",
+      `https://github.com/acme/app/compare/${DEFAULT_BRANCH}...${encodeURIComponent(FEATURE_BRANCH)}?expand=1`,
+    )
+    await expect(link).toHaveAttribute("target", "_blank")
+    await expect(link).toHaveAttribute("rel", "noopener noreferrer")
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-create-pr" })
+  })
+
+  test("a rejected push reports git's message under the commit box", async ({ page }) => {
+    const { git } = await installSeededWorkspace(page, { navigatorPlacement: "sidebar", git: { pushRejected: PUSH_REJECTION } })
+    await gotoSession(page)
+    const view = await openSourceControl(page)
+
+    await view.getByTestId("source-control-publish").click()
+    const error = view.getByTestId("source-control-error")
+    await expect(error).toBeVisible({ timeout: 15_000 })
+    await expect(error).toHaveText(`Push rejected: ${PUSH_REJECTION}`)
+    await expect(commitMessage(page)).toHaveAttribute("aria-invalid", "true")
+    // Still unpublished: the button stays, and the fixture saw one upstream-setting push.
+    await expect(view.getByTestId("source-control-publish")).toBeVisible()
+    expect(git.requests.filter((request) => request.route === "push").map((request) => request.body)).toEqual([{ setUpstream: true }])
+    await captureEvidence({ page, spec: SPEC, scenario: "source-control-push-rejected" })
+  })
 })
