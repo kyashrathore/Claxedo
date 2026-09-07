@@ -20,6 +20,10 @@ export type McpTextToolResult = Readonly<{
   isError?: boolean
 }>
 
+export function mcpToolRefusal(message: string): McpTextToolResult {
+  return { content: [{ type: "text", text: message }], isError: true }
+}
+
 export type McpToolConfig<Shape> = Readonly<{
   description: string
   inputSchema: Shape

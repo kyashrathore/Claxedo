@@ -1,7 +1,7 @@
 import type { McpServer, ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { ShapeOutput } from "@modelcontextprotocol/sdk/server/zod-compat.js"
 import { assertToolAccess, McpAccessDenied, toolListed, type McpToolAccess, type McpToolContext } from "../context"
-import { toCallToolResult, type McpToolResult, type McpToolShape } from "../mcp-tool"
+import { mcpToolRefusal, toCallToolResult, type McpToolResult, type McpToolShape } from "../mcp-tool"
 
 export type McpToolDefinition<Shape extends McpToolShape> = Readonly<{
   description: string
@@ -22,10 +22,6 @@ export type ToolRegistry = {
   /** Every name registered, listed or not, with its access; the pinned-list tests read this. */
   readonly declared: ReadonlyMap<string, McpToolAccess>
   readonly listed: readonly string[]
-}
-
-export function denied(message: string): McpToolResult {
-  return { content: [{ type: "text", text: message }], isError: true }
 }
 
 /**
@@ -60,7 +56,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
                 message: `Confirm ${name}?`,
                 requestedSchema: { type: "object", properties: {} },
               })
-              if (answer.action !== "accept") return toCallToolResult(denied(`${name} was not confirmed`))
+              if (answer.action !== "accept") return toCallToolResult(mcpToolRefusal(`${name} was not confirmed`))
             }
             if (definition.access.write) {
               const sessionId = definition.sessionIdOf?.(args)
@@ -73,7 +69,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
             }
             return toCallToolResult(await handler(args, ctx))
           } catch (error) {
-            if (error instanceof McpAccessDenied) return toCallToolResult(denied(error.message))
+            if (error instanceof McpAccessDenied) return toCallToolResult(mcpToolRefusal(error.message))
             throw error
           }
         }) as unknown as ToolCallback<Shape>
