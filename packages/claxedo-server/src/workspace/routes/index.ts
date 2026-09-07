@@ -17,6 +17,7 @@ import {
   ensureWorkspace,
   getProjectWorkspace,
   listProjects,
+  listWorkspaces,
   projectEnv,
   resolveWorkspace,
   workspaceIdFromDirectoryRef,
@@ -30,6 +31,7 @@ import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "@
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { apiError, captureWorkspaceTelemetry, parsedBody, signedAccessOptions, signedOrError, type WorkspaceRouteOptions } from "../route-support"
+import { workspaceResponse } from "@claxedo/server-core/workspace/store/response"
 import { asRecord } from "@claxedo/helpers/guards"
 import { controlPlaneRateLimitError } from "../runtime-token-guards"
 import { repoNameFromUrl } from "../git"
@@ -122,6 +124,28 @@ function startCloudWorkspaceProvisioning(input: {
     await discardSupervisorSandbox(input.ws.id, "provision_failed").catch(() => {})
     await deleteWorkspace(input.ws.id).catch(() => {})
   }))
+}
+
+/**
+ * The access-scoped list for a node with no signed identity: its own store,
+ * projected into the rows the signed authority branch answers with, so a
+ * caller cannot tell which branch served it. Local-only workspaces are absent
+ * by construction — they carry `access: "local"`, which this query never asks
+ * for.
+ */
+async function unsignedWorkspaceList(access: "cloud" | "user-hosted") {
+  return (await listWorkspaces()).flatMap((workspace) => {
+    const row = workspaceResponse(workspace)
+    if (!row || row.access !== access) return []
+    return [{
+      workspace_id: row.workspaceId,
+      project_id: row.projectId,
+      access: row.access,
+      backing: row.backing.kind,
+      ...(row.workspaceName ? { display_name: row.workspaceName } : {}),
+      ...(row.directory ? { remote_directory: row.directory } : {}),
+    }]
+  })
 }
 
 export function WorkspaceRoutes(services?: ControlPlaneServices, options: WorkspaceRouteOptions = {}) {
@@ -250,6 +274,9 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
             throw err
           }
+        }
+        if (access === "cloud" || access === "user-hosted") {
+          return c.json({ workspaces: await unsignedWorkspaceList(access) })
         }
         return c.json(await listProjects())
       })

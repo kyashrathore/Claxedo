@@ -290,6 +290,27 @@ describe("desktop-local product contract", () => {
     expect(await global.json()).toMatchObject({ healthy: true })
   })
 
+  test("answers the workspace list in one envelope, signed or not, so the MCP client can read it", async () => {
+    const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
+    const shared = await ensureWorkspace({ kind: "cloud", workspace_name: "shared box", directory: "/srv/repo", remote_directory: "/srv/repo" })
+    if (!shared) throw new Error("the store refused the fixture workspace")
+    const app = localApp()
+
+    for (const access of ["cloud", "user-hosted"] as const) {
+      const response = await app.request(`/api/workspace?access=${access}`)
+      expect(response.status, access).toBe(200)
+      expect(await response.json(), access).toMatchObject({ workspaces: expect.any(Array) })
+    }
+
+    const client = createClaxedoMcpClient({
+      deployment: "node",
+      local: { fetch: (path, init) => app.request(path, init), workspace: { workspaceId: shared.id } },
+      controlPlane: { fetch: (path, init) => app.request(path, init) },
+    })
+    expect((await client.workspaces()).map((row) => ({ id: row.id, kind: row.kind, name: row.name })))
+      .toEqual([{ id: shared.id, kind: "user-hosted", name: "shared box" }])
+  })
+
   test("resolves the profile root from the product data directory, not the package location", async () => {
     // A package move must not relocate durable state: the same env var selects
     // the same profile whichever package serves it.
