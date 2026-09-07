@@ -10,8 +10,10 @@ import {
   runWithOwner,
   useContext,
   type JSX,
+  onMount,
   startTransition,
   For,
+  Suspense,
 } from "solid-js"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -25,6 +27,17 @@ type Active = {
   owner: Owner
   onClose?: () => void
   setClosing: (closing: boolean) => void
+  pending: () => boolean
+}
+
+/**
+ * Mounts with the dialog's content, so it is the moment the stack can hand the
+ * screen over. A dialog whose component is loaded lazily suspends the boundary
+ * above until its chunk lands, and nothing it renders reaches the DOM before.
+ */
+function ReadySentinel(props: { ready: () => void }) {
+  onMount(props.ready)
+  return null
 }
 
 const Context = createContext<ReturnType<typeof init>>()
@@ -33,11 +46,24 @@ function init() {
   const [stack, setStack] = createSignal<Active[]>([])
   const timer = { current: undefined as ReturnType<typeof setTimeout> | undefined }
   const lock = { value: false }
+  const retired = new Set<Active>()
 
   onCleanup(() => {
     if (timer.current === undefined) return
     clearTimeout(timer.current)
     timer.current = undefined
+  })
+
+  // A dialog replaced by `show()` keeps its root — and so its portal, and so
+  // the screen — until the replacement has content to put there. A dialog that
+  // loads its component lazily renders nothing for as long as its chunk takes,
+  // so disposing on the call instead leaves the app with no dialog at all for
+  // that whole span.
+  createEffect(() => {
+    const loading = stack().some((item) => item.pending())
+    if (loading || retired.size === 0) return
+    for (const item of retired) item.dispose()
+    retired.clear()
   })
 
   const close = (id?: string) => {
@@ -75,17 +101,21 @@ function init() {
     makeEventListener(window, "keydown", onKeyDown, { capture: true })
   })
 
-  const mount = (element: DialogElement, owner: Owner, onClose: (() => void) | undefined, layer: number) => {
+  const mount = (element: DialogElement, owner: Owner, onClose: (() => void) | undefined) => {
     const id = Math.random().toString(36).slice(2)
-    const zIndex = 50 + layer * 10
+    const layer = () => Math.max(0, stack().findIndex((item) => item.id === id))
+    const zIndex = () => 50 + layer() * 10
     let dispose: (() => void) | undefined
     let setClosing: ((closing: boolean) => void) | undefined
+    let pending: (() => boolean) | undefined
 
     const node = runWithOwner(owner, () =>
       createRoot((d: () => void) => {
         dispose = d
         const [closing, setClosingSignal] = createSignal(false)
         setClosing = setClosingSignal
+        const [isPending, setPending] = createSignal(true)
+        pending = isPending
         return (
           <Kobalte
             modal
@@ -99,22 +129,25 @@ function init() {
               <Kobalte.Overlay
                 data-component="dialog-overlay"
                 class="ui-dialog-overlay"
-                style={{ "z-index": String(zIndex) }}
+                style={{ "z-index": String(zIndex()) }}
                 onClick={() => close(id)}
               />
               <div
-                data-dialog-layer={layer}
+                data-dialog-layer={layer()}
                 style={{
                   position: "fixed",
                   inset: "0",
-                  "z-index": String(zIndex),
+                  "z-index": String(zIndex()),
                   display: "flex",
                   "align-items": "center",
                   "justify-content": "center",
                   "pointer-events": "none",
                 }}
               >
-                {element()}
+                <Suspense fallback={null}>
+                  {element()}
+                  <ReadySentinel ready={() => setPending(false)} />
+                </Suspense>
               </div>
             </Kobalte.Portal>
           </Kobalte>
@@ -122,9 +155,9 @@ function init() {
       }),
     )
 
-    if (!dispose || !setClosing) return
+    if (!dispose || !setClosing || !pending) return
 
-    const active: Active = { id, node, dispose, owner, onClose, setClosing }
+    const active: Active = { id, node, dispose, owner, onClose, setClosing, pending }
     setStack((items) => [...items, active])
   }
 
@@ -134,18 +167,19 @@ function init() {
       timer.current = undefined
     }
     lock.value = false
-    mount(element, owner, onClose, stack().length)
+    mount(element, owner, onClose)
   }
 
   const show = (element: DialogElement, owner: Owner, onClose?: () => void) => {
-    for (const item of stack()) item.dispose()
-    setStack([])
     if (timer.current !== undefined) {
       clearTimeout(timer.current)
       timer.current = undefined
     }
     lock.value = false
-    mount(element, owner, onClose, 0)
+    const replaced = stack()
+    for (const item of replaced) retired.add(item)
+    mount(element, owner, onClose)
+    setStack((items) => items.filter((item) => !replaced.includes(item)))
   }
 
   return {

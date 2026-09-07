@@ -600,7 +600,7 @@ export const dict = {
   "settings.shortcuts.group.prompt": "提示",
 
   "settings.providers.title": "提供者",
-  "settings.providers.description": "選擇一個工作區和一個代理，然後連接它在那裡使用的供應商。",
+  "settings.providers.description": "查看本機已有的代理登入資訊，然後連接目前工作區的提供者。",
   "settings.providers.section.agents": "本機上的代理",
   "settings.providers.detect.action": "偵測憑證",
   "settings.providers.detect.running": "偵測中…",

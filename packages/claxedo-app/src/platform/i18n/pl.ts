@@ -537,7 +537,7 @@ export const dict = {
   "settings.shortcuts.group.terminal": "Terminal",
   "settings.shortcuts.group.prompt": "Prompt",
   "settings.providers.title": "Dostawcy",
-  "settings.providers.description": "Wybierz obszar roboczy i agenta, a następnie połącz dostawców, których tam używa.",
+  "settings.providers.description": "Zobacz logowania agentów, które ten komputer już ma, a następnie połącz dostawców dla obszaru roboczego, w którym jesteś.",
   "settings.providers.section.agents": "Agenci na tym komputerze",
   "settings.providers.detect.action": "Wykryj poświadczenia",
   "settings.providers.detect.running": "Wykrywanie…",

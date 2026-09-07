@@ -602,7 +602,7 @@ export const dict = {
   "settings.shortcuts.group.prompt": "提示",
 
   "settings.providers.title": "提供商",
-  "settings.providers.description": "选择一个工作区和一个智能体，然后连接它在那里使用的提供商。",
+  "settings.providers.description": "查看本机已有的代理登录信息，然后连接当前工作区的提供商。",
   "settings.providers.section.agents": "本机上的代理",
   "settings.providers.detect.action": "检测凭据",
   "settings.providers.detect.running": "检测中…",

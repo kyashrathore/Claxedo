@@ -602,7 +602,7 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Prompt",
 
   "settings.providers.title": "Udbydere",
-  "settings.providers.description": "Vælg et arbejdsområde og en agent, og forbind derefter de udbydere, den bruger der.",
+  "settings.providers.description": "Se de agentlogins, denne maskine allerede har, og forbind derefter udbyderne til det arbejdsområde, du er i.",
   "settings.providers.section.agents": "Agenter på denne maskine",
   "settings.providers.detect.action": "Registrer legitimationsoplysninger",
   "settings.providers.detect.running": "Registrerer…",

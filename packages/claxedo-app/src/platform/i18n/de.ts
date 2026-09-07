@@ -549,7 +549,7 @@ export const dict = {
   "settings.shortcuts.group.terminal": "Terminal",
   "settings.shortcuts.group.prompt": "Prompt",
   "settings.providers.title": "Anbieter",
-  "settings.providers.description": "Wähle einen Arbeitsbereich und einen Agenten und verbinde dann die Anbieter, die er dort verwendet.",
+  "settings.providers.description": "Sieh die Agenten-Logins, die dieser Rechner schon hat, und verbinde dann die Anbieter für den Arbeitsbereich, in dem du gerade bist.",
   "settings.providers.section.agents": "Agenten auf diesem Rechner",
   "settings.providers.detect.action": "Zugangsdaten erkennen",
   "settings.providers.detect.running": "Erkenne…",

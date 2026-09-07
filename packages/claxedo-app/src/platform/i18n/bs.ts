@@ -611,7 +611,7 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Upit",
 
   "settings.providers.title": "Provajderi",
-  "settings.providers.description": "Odaberite radni prostor i agenta, zatim povežite provajdere koje tamo koristi.",
+  "settings.providers.description": "Pogledajte prijave agenata koje ova mašina već ima, zatim povežite provajdere za radni prostor u kojem se nalazite.",
   "settings.providers.section.agents": "Agenti na ovoj mašini",
   "settings.providers.detect.action": "Otkrij akreditive",
   "settings.providers.detect.running": "Otkrivanje…",

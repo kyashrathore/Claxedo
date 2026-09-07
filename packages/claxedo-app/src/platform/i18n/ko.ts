@@ -531,7 +531,7 @@ export const dict = {
   "settings.shortcuts.group.terminal": "터미널",
   "settings.shortcuts.group.prompt": "프롬프트",
   "settings.providers.title": "공급자",
-  "settings.providers.description": "워크스페이스와 에이전트를 선택한 다음, 거기서 사용할 제공자를 연결하세요.",
+  "settings.providers.description": "이 컴퓨터에 이미 있는 에이전트 로그인을 확인하고, 현재 워크스페이스의 공급자를 연결하세요.",
   "settings.providers.section.agents": "이 컴퓨터의 에이전트",
   "settings.providers.detect.action": "자격 증명 감지",
   "settings.providers.detect.running": "감지 중…",

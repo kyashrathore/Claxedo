@@ -620,7 +620,7 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Komut",
 
   "settings.providers.title": "Sağlayıcılar",
-  "settings.providers.description": "Bir çalışma alanı ve bir aracı seçin, ardından orada kullandığı sağlayıcıları bağlayın.",
+  "settings.providers.description": "Bu makinede hâlihazırda bulunan aracı oturumlarını görün, ardından bulunduğunuz çalışma alanının sağlayıcılarını bağlayın.",
   "settings.providers.section.agents": "Bu makinedeki aracılar",
   "settings.providers.detect.action": "Kimlik bilgilerini algıla",
   "settings.providers.detect.running": "Algılanıyor…",

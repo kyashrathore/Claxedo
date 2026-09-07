@@ -611,7 +611,7 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Запрос",
 
   "settings.providers.title": "Провайдеры",
-  "settings.providers.description": "Выберите рабочее пространство и агента, затем подключите провайдеров, которых он там использует.",
+  "settings.providers.description": "Посмотрите входы агентов, которые уже есть на этом компьютере, затем подключите провайдеров для рабочего пространства, в котором вы находитесь.",
   "settings.providers.section.agents": "Агенты на этом компьютере",
   "settings.providers.detect.action": "Обнаружить учётные данные",
   "settings.providers.detect.running": "Обнаружение…",

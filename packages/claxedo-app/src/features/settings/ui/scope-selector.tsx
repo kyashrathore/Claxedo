@@ -9,11 +9,11 @@ type HarnessChoice = { value: string; selectionKey: string; label: string }
 /**
  * Which workspace and which harness these settings are about.
  *
- * A provider catalog, the credentials behind it and a model's visibility all
- * belong to (the machine serving a workspace, the harness) — so this pair is
- * the first thing the Providers and Models surfaces ask, not something they
- * assume. Each picker appears only where there is a choice to make: a select
- * offering one option asks a question whose answer is already on screen.
+ * A model's visibility belongs to (the machine serving a workspace, the
+ * harness), and one harness's catalog is not the other's, so Models asks the
+ * pair rather than assuming it. Each picker appears only where there is a
+ * choice to make: a select offering one option asks a question whose answer is
+ * already on screen.
  */
 export const SettingsScopeSelector: Component = () => {
   const language = useLanguage()

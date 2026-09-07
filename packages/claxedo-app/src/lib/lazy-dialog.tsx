@@ -1,16 +1,15 @@
-import { lazy, onMount, Suspense, type Component, type ComponentProps } from "solid-js"
+import { lazy, onMount, type Component, type ComponentProps } from "solid-js"
 
 /**
  * `lazy()` for components mounted through `useDialog().show/push`.
  *
- * The dialog host (`@opencode-ai/ui` DialogProvider) mounts dialog elements
- * inside `startTransition` under the CALLER's owner, with no Suspense boundary
- * of its own. A bare `lazy()` dialog therefore suspends the nearest ancestor
- * boundary — in practice the one wrapping the whole workbench — and the
- * transition re-renders that entire subtree when the chunk lands: the session
- * timeline remounts, per-row UI state (fold/expand) resets, and scroll snaps.
- * Wrapping the lazy component in its own local Suspense keeps the suspension
- * contained to the dialog overlay.
+ * The Suspense boundary these suspend belongs to the dialog host
+ * (`@opencode-ai/ui` DialogProvider): it wraps each mounted dialog, which both
+ * keeps the suspension off the workbench boundary — where the transition would
+ * remount the session timeline and reset per-row fold state and scroll when the
+ * chunk landed — and is how `show()` knows a replacement has content before it
+ * takes the replaced dialog off the screen. A local boundary here would absorb
+ * the suspension and hide that.
  */
 export function lazyDialog<T extends Component<any>>(
   load: () => Promise<{ default: T }>,
@@ -21,10 +20,10 @@ export function lazyDialog<T extends Component<any>>(
   // over the same props, and it was only ever claimed to be the SAME component
   // so that callers kept their prop types. They still do.
   const Wrapped: Component<ComponentProps<T>> = (props) => (
-    <Suspense fallback={null}>
+    <>
       <Inner {...props} />
       <AriaHiddenPortalRepair />
-    </Suspense>
+    </>
   )
   return Wrapped
 }
@@ -45,8 +44,8 @@ export function lazyDialog<T extends Component<any>>(
  * (`getByRole` finds nothing, screen readers announce nothing) even though it
  * paints on screen.
  *
- * Mounted as a sibling of the lazy content inside the same Suspense, this
- * sentinel runs exactly when the real dialog content lands: at that instant
+ * Mounted as a sibling of the lazy content inside the same Suspense boundary,
+ * this sentinel runs exactly when the real dialog content lands: at that instant
  * this dialog is the top-most modal, so its portal (the direct `body` child
  * containing it) must not be aria-hidden. Kobalte's refcount bookkeeping stays
  * consistent — the outer modal's cleanup removes the attribute again on close,

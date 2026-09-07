@@ -531,7 +531,7 @@ export const dict = {
   "settings.shortcuts.group.terminal": "المحطة الطرفية",
   "settings.shortcuts.group.prompt": "موجه",
   "settings.providers.title": "الموفرون",
-  "settings.providers.description": "اختر مساحة عمل ووكيلاً، ثم قم بتوصيل المزودين الذين يستخدمهم هناك.",
+  "settings.providers.description": "اطّلع على تسجيلات دخول الوكلاء الموجودة على هذا الجهاز، ثم وصّل المزودين لمساحة العمل التي أنت فيها.",
   "settings.providers.section.agents": "الوكلاء على هذا الجهاز",
   "settings.providers.detect.action": "اكتشاف بيانات الاعتماد",
   "settings.providers.detect.running": "جارٍ الاكتشاف…",

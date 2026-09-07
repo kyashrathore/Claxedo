@@ -535,7 +535,7 @@ export const dict = {
   "settings.shortcuts.group.terminal": "ターミナル",
   "settings.shortcuts.group.prompt": "プロンプト",
   "settings.providers.title": "プロバイダー",
-  "settings.providers.description": "ワークスペースとエージェントを選び、そこで使うプロバイダーを接続します。",
+  "settings.providers.description": "このマシンにすでにあるエージェントのログインを確認し、現在のワークスペースのプロバイダーを接続します。",
   "settings.providers.section.agents": "このマシン上のエージェント",
   "settings.providers.detect.action": "認証情報を検出",
   "settings.providers.detect.running": "検出中…",

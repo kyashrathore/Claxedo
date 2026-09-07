@@ -3,8 +3,8 @@
  *
  * A provider catalog, its credentials and a model's visibility all belong to
  * (the machine serving a workspace, the harness), so Settings → Providers and
- * → Models name both. These are the pure parts: turning the workspace catalog into
- * pickable rows, and choosing which row a freshly opened dialog starts on.
+ * → Models resolve both. These are the pure parts: turning the workspace catalog
+ * into pickable rows, and choosing which row a freshly opened dialog starts on.
  */
 
 import { sessionRowDirectory, modelStoreWorkspaceKey } from "@/platform/identity/workspace-address"

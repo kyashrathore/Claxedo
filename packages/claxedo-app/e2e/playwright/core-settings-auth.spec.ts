@@ -944,8 +944,6 @@ test.describe("core settings + auth @core", () => {
       await selectTab(page, "providers")
 
       const harnessSection = page.locator('[data-component="pi-providers-section"]')
-      await page.locator('[data-action="settings-scope-harness"]').click()
-      await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22pi%22%7D"]').click()
       await expect(harnessSection.getByText("Anthropic")).toBeVisible()
       const row = harnessSection.locator("div.border-b").filter({ hasText: "Anthropic" })
       await row.getByRole("button", { name: "Connect" }).click()
@@ -978,8 +976,6 @@ test.describe("core settings + auth @core", () => {
       await selectTab(page, "providers")
 
       const harnessSection = page.locator('[data-component="pi-providers-section"]')
-      await page.locator('[data-action="settings-scope-harness"]').click()
-      await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22pi%22%7D"]').click()
       const envRow = harnessSection.locator('[data-provider="anthropic"]')
       await expect(envRow).toHaveCount(1)
       await expect(envRow.getByText("Environment", { exact: true })).toBeVisible()
@@ -1011,8 +1007,6 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "providers")
       const row = page.locator('[data-component="pi-providers-section"] [data-provider="clinepass-2"]')
-      await page.locator('[data-action="settings-scope-harness"]').click()
-      await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22pi%22%7D"]').click()
       await expect(row.getByText("Config", { exact: true })).toBeVisible()
       await expect(row.getByRole("button", { name: "Disconnect" })).toHaveCount(0)
       expect(authHits).toEqual({ authDelete: [] })
@@ -1048,9 +1042,8 @@ test.describe("core settings + auth @core", () => {
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "models")
-      // Settings reads under an explicit (workspace, harness); a workspace with
-      // nothing remembered selects no harness and requests no catalog until one
-      // is chosen (settings-scope.tsx, providers.vitest.tsx). Choose OpenCode.
+      // Models edits one harness's catalog, and this workspace remembers none,
+      // so name the harness whose models the assertions below expect.
       await page.locator('[data-action="settings-scope-harness"]').click()
       await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22opencode%22%7D"]').click()
 

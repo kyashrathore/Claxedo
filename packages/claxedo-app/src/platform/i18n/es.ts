@@ -616,7 +616,7 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Prompt",
 
   "settings.providers.title": "Proveedores",
-  "settings.providers.description": "Elige un espacio de trabajo y un agente, luego conecta los proveedores que usa allí.",
+  "settings.providers.description": "Consulta los inicios de sesión de agentes que ya tiene esta máquina y conecta los proveedores del espacio de trabajo en el que estás.",
   "settings.providers.section.agents": "Agentes en esta máquina",
   "settings.providers.detect.action": "Detectar credenciales",
   "settings.providers.detect.running": "Detectando…",

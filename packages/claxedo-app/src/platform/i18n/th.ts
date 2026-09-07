@@ -604,7 +604,7 @@ export const dict = {
   "settings.shortcuts.group.prompt": "พร้อมท์",
 
   "settings.providers.title": "ผู้ให้บริการ",
-  "settings.providers.description": "เลือกพื้นที่ทำงานและเอเจนต์ จากนั้นเชื่อมต่อผู้ให้บริการที่ใช้ที่นั่น",
+  "settings.providers.description": "ดูการเข้าสู่ระบบของเอเจนต์ที่เครื่องนี้มีอยู่แล้ว จากนั้นเชื่อมต่อผู้ให้บริการสำหรับพื้นที่ทำงานที่คุณอยู่",
   "settings.providers.section.agents": "เอเจนต์บนเครื่องนี้",
   "settings.providers.detect.action": "ตรวจหาข้อมูลรับรอง",
   "settings.providers.detect.running": "กำลังตรวจหา…",

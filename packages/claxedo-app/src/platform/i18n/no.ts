@@ -609,7 +609,7 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Prompt",
 
   "settings.providers.title": "Leverandører",
-  "settings.providers.description": "Velg et arbeidsområde og en agent, og koble deretter til leverandørene den bruker der.",
+  "settings.providers.description": "Se agentpåloggingene denne maskinen allerede har, og koble deretter til leverandørene for arbeidsområdet du er i.",
   "settings.providers.section.agents": "Agenter på denne maskinen",
   "settings.providers.detect.action": "Oppdag påloggingsinformasjon",
   "settings.providers.detect.running": "Oppdager…",

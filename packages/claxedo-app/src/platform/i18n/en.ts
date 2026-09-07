@@ -648,7 +648,7 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Prompt",
 
   "settings.providers.title": "Providers",
-  "settings.providers.description": "Choose a workspace and a harness, then connect the providers it uses there.",
+  "settings.providers.description": "See the agent logins this machine already has, then connect the providers for the workspace you're in.",
   "settings.providers.connected.environmentDescription": "Connected from your environment variables",
   "settings.providers.section.agents": "Agents on this machine",
   "settings.providers.detect.action": "Detect credentials",

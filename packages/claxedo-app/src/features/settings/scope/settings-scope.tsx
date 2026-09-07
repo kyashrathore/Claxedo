@@ -59,11 +59,13 @@ function focusedWorkspace() {
 }
 
 /**
- * Settings' explicit (workspace, harness) selection.
+ * Settings' (workspace, harness) pair.
  *
  * The catalog reads, the provider-auth writes and the dialogs these surfaces
- * open all carry `scopeRef` and the selected harness, so the two pickers are
- * the only place the question "which machine, which harness" is answered here.
+ * open all carry `scopeRef` and the harness, so this is the only place the
+ * question "which machine, which harness" is answered. Providers takes the
+ * answer as it resolves — the workspace in view, the harness that workspace
+ * remembers; Models lets the pickers override it.
  */
 export function SettingsScopeProvider(props: ParentProps) {
   const queryOptions = useShellQueryOptions()

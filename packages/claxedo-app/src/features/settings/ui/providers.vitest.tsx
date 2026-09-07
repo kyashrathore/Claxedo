@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 const clients = new Set<QueryClient>()
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal, type JSX } from "solid-js"
-import { nativeHarness, connectionHarness, harnessSelectionKey, type HarnessSelection } from "@/platform/identity/harness-selection"
+import { nativeHarness, connectionHarness, type HarnessSelection } from "@/platform/identity/harness-selection"
 
 type CatalogProject = {
   id: string
@@ -41,6 +41,8 @@ const state = vi.hoisted(() => ({
   authReads: [] as string[],
   /** The harness the workspace's draft-default record remembers, if any. */
   rememberedHarness: undefined as HarnessSelection | undefined,
+  /** The workspace the pane behind Settings is on, when Settings opened over one. */
+  focusedWorkspace: undefined as { workspaceId: string; directory: string } | undefined,
   projects: [] as CatalogProject[],
   /** What the credential store already holds, as the list route reports it. */
   storedCredentials: [] as Array<{ provider_id: string }>,
@@ -69,7 +71,8 @@ vi.mock("@/features/settings/app-ports", async () => {
       }),
     }),
     useSDK: () => {
-      throw new Error("no workspace SDK scope")
+      if (!state.focusedWorkspace) throw new Error("no workspace SDK scope")
+      return state.focusedWorkspace
     },
     useEnabledAcpHarnesses: () => () => [
       { key: "team-agent", label: "Team Agent" },
@@ -87,7 +90,8 @@ vi.mock("@/features/settings/app-ports", async () => {
 
 vi.mock("@/app/providers/sdk/sdk", () => ({
   useSDK: () => {
-    throw new Error("no focused workspace")
+    if (!state.focusedWorkspace) throw new Error("no focused workspace")
+    return state.focusedWorkspace
   },
 }))
 vi.mock("@/features/workspaces/data/use-workspace-query", async () => {
@@ -142,32 +146,6 @@ vi.mock("@/platform/api/api", async (importOriginal) => ({
   getClaxedoServerUrl: () => "http://127.0.0.1:2593",
 }))
 
-// The two pickers are the surface under test, so they render as native selects
-// whose options and change events the test can drive directly.
-vi.mock("@opencode-ai/ui/select", () => ({
-  Select: (props: {
-    "data-action"?: string
-    options: Array<Record<string, string>>
-    current?: Record<string, string>
-    value: (option: Record<string, string>) => string
-    onSelect: (option: Record<string, string>) => void
-  }) => (
-    <select
-      data-testid={props["data-action"]}
-      value={props.current ? props.value(props.current) : ""}
-      onChange={(event) => {
-        const next = props.options.find((option) => props.value(option) === event.currentTarget.value)
-        if (next) props.onSelect(next)
-      }}
-    >
-      <option value="" disabled />
-      {props.options.map((option) => (
-        <option value={props.value(option)}>{props.value(option)}</option>
-      ))}
-    </select>
-  ),
-}))
-
 const { SettingsScopeProvider } = await import("@/features/settings/scope/settings-scope")
 const { SettingsProviders } = await import("./providers")
 const { useProviderAuth } = await import("@/app/providers/use-providers")
@@ -193,9 +171,13 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
   return new Response("not found", { status: 404 })
 }) as typeof globalThis.fetch
 
-function mount() {
+function newClient() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   clients.add(client)
+  return client
+}
+
+function mount(client = newClient()) {
   return render(() => (
     <QueryClientProvider client={client}>
       <SettingsScopeProvider>
@@ -236,19 +218,10 @@ function agentStatus(id: string) {
   return agentRow(id).querySelector('[data-component="tag"]')?.textContent ?? ""
 }
 
-function select(testId: string) {
-  return screen.getByTestId(testId)
-}
-
-function choose(testId: string, value: string) {
-  const element = select(testId)
-  element.value = testId === "settings-scope-harness" ? encodeURIComponent(value) : value
-  element.dispatchEvent(new Event("change", { bubbles: true }))
-}
-
 beforeEach(() => {
   state.requests.length = 0
   state.rememberedHarness = nativeHarness("pi")
+  state.focusedWorkspace = undefined
   state.connected = []
   state.sources = {}
   state.credentialDeletes.length = 0
@@ -274,7 +247,7 @@ afterEach(() => {
   clients.clear()
 })
 
-describe("Settings → Providers reads under the selected (workspace, harness)", () => {
+describe("Settings → Providers reads both credential stores for the workspace in view", () => {
   test("provider authentication waits for explicit selection and uses the control plane", async () => {
     const [harness, setHarness] = createSignal("")
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -298,68 +271,54 @@ describe("Settings → Providers reads under the selected (workspace, harness)",
     )
   })
 
-  test("both credential stores are read for the selected workspace, each under its own harness", async () => {
+  test("both credential stores are read for the workspace the pane behind Settings is on", async () => {
+    state.focusedWorkspace = { workspaceId: "ws_cloud", directory: "/workspace" }
     mount()
-    await waitFor(() => expect(select("settings-scope-workspace").value).toBe("/repo"))
-    expect(select("settings-scope-harness").value).toBe(encodeURIComponent(harnessSelectionKey(nativeHarness("pi"))))
-    await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
-    expect(providerIds("opencode")).toEqual(["external-backend"])
+    await waitFor(() => expect(providerIds("pi")).toEqual(["cloud-backend"]))
+    expect(providerIds("opencode")).toEqual(["cloud-opencode"])
     expect([...state.requests].sort((a, b) => a.harness.localeCompare(b.harness))).toEqual([
-      { scope: "workspace:ws_local", harness: "opencode" },
-      { scope: "workspace:ws_local", harness: "pi" },
+      { scope: "workspace:ws_cloud", harness: "opencode" },
+      { scope: "workspace:ws_cloud", harness: "pi" },
     ])
   })
 
-  test.each([nativeHarness("claude"), nativeHarness("cursor"), connectionHarness("team-agent")])(
-    "%j is named as managing its own credentials, and Claxedo's own stores stay on the page",
-    async (harness) => {
-      state.rememberedHarness = harness
-      mount()
-      await waitFor(() =>
-        expect(select("settings-scope-harness").value).toBe(encodeURIComponent(harnessSelectionKey(harness))))
-      expect(document.querySelector('[data-component="providers-externally-managed"]')).not.toBeNull()
-      await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
-      expect(state.requests.some((request) => request.harness === harnessSelectionKey(harness))).toBe(false)
-    },
-  )
-
-  test("a harness that keeps its credentials in Claxedo is not called externally managed", async () => {
+  test.each([
+    ["a harness that manages its own credentials", nativeHarness("claude")],
+    ["another such harness", nativeHarness("cursor")],
+    ["an operator ACP connection", connectionHarness("team-agent")],
+    ["nothing at all", undefined],
+  ] as const)("with %s remembered, both Claxedo stores render and neither is read under it", async (_label, remembered) => {
+    state.rememberedHarness = remembered
     mount()
     await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
+    expect(providerIds("opencode")).toEqual(["external-backend"])
+    expect([...state.requests].map((request) => request.harness).sort()).toEqual(["opencode", "pi"])
+  })
+
+  test("the page offers no scope picker and no externally-managed note", async () => {
+    state.rememberedHarness = nativeHarness("claude")
+    mount()
+    await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
+    expect(document.querySelector('[data-component="settings-scope-selector"]')).toBeNull()
     expect(document.querySelector('[data-component="providers-externally-managed"]')).toBeNull()
   })
 
-  test("catalog caches stay isolated when changing workspace", async () => {
-    mount()
+  test("catalog caches stay isolated when the page reopens on another workspace", async () => {
+    const client = newClient()
+    state.focusedWorkspace = { workspaceId: "ws_local", directory: "/repo" }
+    mount(client)
     await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
-    choose("settings-scope-workspace", "ws_cloud")
+
+    cleanup()
+    state.focusedWorkspace = { workspaceId: "ws_cloud", directory: "/workspace" }
+    mount(client)
     await waitFor(() => expect(providerIds("pi")).toEqual(["cloud-backend"]))
     expect(providerIds("opencode")).toEqual(["cloud-opencode"])
-    choose("settings-scope-workspace", "/repo")
+
+    cleanup()
+    state.focusedWorkspace = { workspaceId: "ws_local", directory: "/repo" }
+    mount(client)
     await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
-  })
-
-  test("the workspace picker is hidden when the catalog offers a single workspace", async () => {
-    state.projects = [LOCAL_PROJECT]
-    mount()
-    await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
-    expect(screen.queryByTestId("settings-scope-workspace")).toBeNull()
-    expect(state.requests.every((request) => request.scope === "workspace:ws_local")).toBe(true)
-  })
-
-  test("a workspace that remembers no harness still names one, so neither surface renders blank", async () => {
-    state.rememberedHarness = undefined
-    mount()
-    await waitFor(() => expect(select("settings-scope-workspace").value).toBe("/repo"))
-    expect(select("settings-scope-harness").value).toBe(encodeURIComponent(harnessSelectionKey(nativeHarness("opencode"))))
-    await waitFor(() => expect(providerIds("opencode")).toEqual(["external-backend"]))
-  })
-
-  test("an unavailable remembered connection stays unselected instead of substituting a native harness", async () => {
-    state.rememberedHarness = connectionHarness("removed-connection")
-    mount()
-    await waitFor(() => expect(select("settings-scope-workspace").value).toBe("/repo"))
-    expect(select("settings-scope-harness").value).toBe("")
   })
 
   test("config and environment providers cannot disconnect but API and custom credentials can", async () => {
@@ -400,7 +359,7 @@ describe("Settings → Providers reads under the selected (workspace, harness)",
     })
   })
 
-  test("the OpenCode section opens the custom-provider dialog under the selected workspace", async () => {
+  test("the OpenCode section opens the custom-provider dialog under the workspace in view", async () => {
     mount()
     await waitFor(() => expect(providerIds("opencode")).toEqual(["external-backend"]))
     expect(section("pi").querySelector('[data-action="settings-providers-add-custom"]')).toBeNull()
