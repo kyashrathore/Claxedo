@@ -12,10 +12,12 @@ type Options = WorkspaceRuntimeRequestOptions
 type Reply<T> = Promise<WorkspaceRuntimeResponse<T>>
 
 /**
- * The routes claxedo-server answers itself rather than dispatching to a
- * workspace runtime: the project inventory, the path and health probes,
- * provider OAuth and worktree creation. They speak the same scoped-URL and error-envelope
- * contract as the runtime routes, so the runtime client's caller sends them.
+ * The routes this client reaches on claxedo-server: the project inventory, the
+ * path and health probes, provider OAuth and worktree creation. All but
+ * `/global/health` are answered by claxedo-server alone; the workspace runtime
+ * serves a health probe of its own at the same path. They speak the same
+ * scoped-URL and error-envelope contract as the runtime routes, so the runtime
+ * client's caller sends them.
  */
 export type ServerRoutesClient = {
   project: {

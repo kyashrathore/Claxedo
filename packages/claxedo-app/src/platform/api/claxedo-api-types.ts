@@ -9,10 +9,8 @@ export type ClaxedoProject = {
   name?: string
   icon?: { url?: string; override?: string; color?: string }
   commands?: { start?: string }
-  // Optional because the embedded OpenCode engine's `project.updated` payload
-  // carries neither: it sends `{ id, worktree, vcs }`. Readers already wrote
-  // `project.sandboxes ?? []` and `project.time?.created` against that reality
-  // while the DTO claimed both were guaranteed.
+  // The embedded OpenCode engine's `project.updated` payload carries neither:
+  // it sends `{ id, worktree, vcs }`.
   time?: { created: number; updated: number; initialized?: number }
   sandboxes?: string[]
   git?: { remote?: string | null }
