@@ -3,13 +3,14 @@ import { createRenderEffect, onCleanup } from "solid-js"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { invalidateReviewVcsDirectory, type ReviewVcsDirectory } from "@/features/review/ui/review-vcs-cache"
 import { createReviewVcsDirectoryClassifier, type ReviewVcsEvent } from "@/features/review/ui/review-vcs-invalidation"
+import { workspaceGitLogKey, workspaceGitStatusKey, type WorkspaceGitScope } from "@/platform/files/workspace-git-status-query"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 
 const FILE_STATUS_DEBOUNCE_MS = 250
 
 /** The identity one freshness owner is responsible for. */
-type HonestyIdentity = ReviewVcsDirectory & {
+export type WorkspaceVcsIdentity = ReviewVcsDirectory & {
   serverUrl: string | undefined
   workspaceId: string | undefined
 }
@@ -51,12 +52,42 @@ const registry: {
   keysWithOwnerlessGap: new Set(),
 }
 
-function ownerKey(identity: HonestyIdentity) {
+function ownerKey(identity: WorkspaceVcsIdentity) {
   return JSON.stringify([identity.serverUrl ?? "", identity.workspaceId ?? "", identity.directory])
 }
 
-function fileStatusKey(identity: HonestyIdentity) {
+function fileStatusKey(identity: WorkspaceVcsIdentity) {
   return queryKeys.directory.fileStatus(identity.serverUrl, identity.directory, identity.workspaceId)
+}
+
+function gitScope(identity: WorkspaceVcsIdentity): WorkspaceGitScope {
+  return { baseUrl: identity.serverUrl, directoryPath: identity.directory, workspaceKey: identity.workspaceId }
+}
+
+/** The caches that describe the worktree's changed files: review reads, file status, git status. */
+function invalidateWorktreeChanges(identity: WorkspaceVcsIdentity) {
+  invalidateReviewVcsDirectory({ directory: identity.directory })
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: fileStatusKey(identity) }),
+    queryClient.invalidateQueries({ queryKey: workspaceGitStatusKey(gitScope(identity)) }),
+  ])
+}
+
+/** The caches that describe where HEAD is: the runtime branch summary and the commit log. */
+function invalidateBranchState(identity: WorkspaceVcsIdentity) {
+  return Promise.all([
+    queryClient.invalidateQueries({ queryKey: runtimeVcsKey(identity) }),
+    queryClient.invalidateQueries({ queryKey: workspaceGitLogKey(gitScope(identity)) }),
+  ])
+}
+
+/**
+ * Every event-owned VCS cache for one worktree at once. This is what a git
+ * write through the app calls on success, and what ownership resumption calls
+ * after an ownerless gap: both are moments where anything may have changed.
+ */
+export async function invalidateWorkspaceVcs(identity: WorkspaceVcsIdentity) {
+  await Promise.all([invalidateWorktreeChanges(identity), invalidateBranchState(identity)])
 }
 
 /**
@@ -65,11 +96,11 @@ function fileStatusKey(identity: HonestyIdentity) {
  * and through each session pane's SDK scope, and those resolve the workspaceId
  * independently (and late, once the signed inventory loads).
  */
-function runtimeVcsKey(identity: HonestyIdentity) {
+function runtimeVcsKey(identity: WorkspaceVcsIdentity) {
   return queryKeys.runtime.vcsDirectory(identity.serverUrl, identity.directory)
 }
 
-function createHonestyOwner(identity: HonestyIdentity, listen: HonestyListen): HonestyOwner {
+function createHonestyOwner(identity: WorkspaceVcsIdentity, listen: HonestyListen): HonestyOwner {
   const stale = createReviewVcsDirectoryClassifier()
   let fileStatusTimer: ReturnType<typeof setTimeout> | undefined
   const unlisten = listen((event) => {
@@ -79,13 +110,14 @@ function createHonestyOwner(identity: HonestyIdentity, listen: HonestyListen): H
     // (the session environment card), so invalidate -- not remove -- and let
     // them refetch in place. Undebounced: HEAD writes are single events, not
     // the burst the file watcher produces for a save.
-    if (invalidation.branch) void queryClient.invalidateQueries({ queryKey: runtimeVcsKey(identity) })
+    if (invalidation.branch) void invalidateBranchState(identity)
     if (!invalidation.diffs) return
     invalidateReviewVcsDirectory({ directory: identity.directory })
     if (fileStatusTimer) clearTimeout(fileStatusTimer)
     fileStatusTimer = setTimeout(() => {
       fileStatusTimer = undefined
       void queryClient.invalidateQueries({ queryKey: fileStatusKey(identity) })
+      void queryClient.invalidateQueries({ queryKey: workspaceGitStatusKey(gitScope(identity)) })
     }, FILE_STATUS_DEBOUNCE_MS)
   })
   return {
@@ -97,7 +129,7 @@ function createHonestyOwner(identity: HonestyIdentity, listen: HonestyListen): H
   }
 }
 
-function acquireWorkspaceVcsCacheHonesty(identity: HonestyIdentity, listen: HonestyListen): () => void {
+function acquireWorkspaceVcsCacheHonesty(identity: WorkspaceVcsIdentity, listen: HonestyListen): () => void {
   const key = ownerKey(identity)
   const existing = registry.owners.get(key)
   if (existing) {
@@ -105,11 +137,7 @@ function acquireWorkspaceVcsCacheHonesty(identity: HonestyIdentity, listen: Hone
   } else {
     // A change may have landed while nothing observed the stream: reconcile
     // once so the infinite-stale caches cannot restore pre-gap data.
-    if (registry.keysWithOwnerlessGap.delete(key)) {
-      invalidateReviewVcsDirectory({ directory: identity.directory })
-      void queryClient.invalidateQueries({ queryKey: fileStatusKey(identity) })
-      void queryClient.invalidateQueries({ queryKey: runtimeVcsKey(identity) })
-    }
+    if (registry.keysWithOwnerlessGap.delete(key)) void invalidateWorkspaceVcs(identity)
     registry.owners.set(key, createHonestyOwner(identity, listen))
   }
   let released = false
