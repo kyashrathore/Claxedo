@@ -1,4 +1,5 @@
 import type {
+  AgentMessage,
   AgentPermission,
   AgentPresentationSession,
   AgentPromptResponse,
@@ -17,7 +18,6 @@ import type {
   SessionConfig,
   SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
-import type { AgentMessagePage } from "@claxedo/agent-sdk-runtime/adapters"
 import { namedMembers, without, type WorkspaceRuntimeCaller, type WorkspaceRuntimeRequestOptions, type WorkspaceRuntimeResponse, type WorkspaceScope } from "./request"
 
 type Options = WorkspaceRuntimeRequestOptions
@@ -68,7 +68,8 @@ export type WorkspaceSessionClient = {
   harnessCapabilities(input?: WorkspaceScope, options?: Options): Reply<HarnessCapabilities>
   capabilities(input: SessionInput, options?: Options): Reply<HarnessCapabilities>
   subagents(input: SessionInput, options?: Options): Reply<unknown[]>
-  messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessagePage>
+  /** The page's messages alone; its cursor rides the `X-Next-Cursor` response header. */
+  messages(input: SessionMessagePageInput, options?: Options): Reply<AgentMessage[]>
   todo(input: SessionInput, options?: Options): Reply<AgentTodo[]>
   fork(input: SessionInput & { messageID?: string }, options?: Options): Reply<AgentPresentationSession>
   abort(input: SessionInput, options?: Options): Reply<AgentRuntimeAbortResult>

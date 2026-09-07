@@ -186,7 +186,10 @@ function fakeRuntime(options: { turnMs?: number; parentMode?: string } = {}) {
     })
     .get("/session/capabilities", (c) => c.json({ harness: "codex", subagents: true }))
     .get("/session/:id/subagents", (c) => c.json(childrenOf(c.req.param("id"))))
-    .get("/session/:id/message", (c) => c.json({ messages: messages.get(c.req.param("id")) ?? [] }))
+    // `messagePageResponse` answers with the messages alone and puts the cursor
+    // on `X-Next-Cursor`; a `{ messages }` envelope here is what let
+    // `summaryOf` read `page.data.messages` and crash against the real route.
+    .get("/session/:id/message", (c) => c.json(messages.get(c.req.param("id")) ?? []))
     .get("/session/:id", (c) => {
       const session = sessions.get(c.req.param("id"))
       if (!session) return c.json(error("session_not_found", "not found"), 404)

@@ -47,9 +47,10 @@ function filesUnder(dir: string): string[] {
  * walking it here would count its dynamic-import expressions and external
  * packages as authored modules.
  *
- * Tests are dropped (not shipped, and allowed edges a product module is not —
- * a test may reach for a hosted package to assert it stays out), and so are
- * ambient `.d.ts` files (erased whole, no runtime edge).
+ * Test code is dropped — a `.test.` file and anything under `test-support/`
+ * (not shipped, and allowed edges a product module is not: a test may reach for
+ * a hosted package to assert it stays out) — and so are ambient `.d.ts` files
+ * (erased whole, no runtime edge).
  */
 function producers(): string[] {
   const sources = filesUnder(path.join(ROOT, "src")).map(
@@ -73,7 +74,7 @@ function producers(): string[] {
   }
   return [...matched]
     .map((file) => file.replace(/^\.\//, ""))
-    .filter((file) => !file.includes(".test.") && !file.endsWith(".d.ts"))
+    .filter((file) => !file.includes(".test.") && !file.includes("/test-support/") && !file.endsWith(".d.ts"))
     .sort()
 }
 

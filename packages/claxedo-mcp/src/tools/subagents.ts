@@ -254,7 +254,7 @@ async function waitForChild(ctx: McpToolContext, parent: string, subagentKey: st
 
 async function summaryOf(ctx: McpToolContext, sessionId: string): Promise<{ summary?: string }> {
   const page = await (await ownRuntimeClient(ctx)).session.messages({ sessionID: sessionId, view: "latest-turn" })
-  for (const message of [...page.data.messages].reverse()) {
+  for (const message of [...page.data].reverse()) {
     if (message.info.role !== "assistant") continue
     const summary = text(message.parts.map((part) => part.type === "text" ? part.text : "").join("").trim())
     if (summary) return { summary }
