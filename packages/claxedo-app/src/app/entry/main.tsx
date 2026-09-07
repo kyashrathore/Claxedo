@@ -42,6 +42,13 @@ const HostedOAuthConsentRoute = () => (
   </Suspense>
 )
 
+const DeviceApprovalPage = lazy(() => import("@/app/routes/device-approval"))
+const HostedDeviceApprovalRoute = () => (
+  <Suspense>
+    <DeviceApprovalPage request={authFetch} apiOrigin={getClaxedoServerUrl()} />
+  </Suspense>
+)
+
 /**
  * Bind the hosted workspace-startup implementation.
  *
@@ -221,7 +228,7 @@ async function startApp() {
       <ConfigProvider config={config}>
         <PlatformProvider value={platform}>
           <AppBaseProviders>
-            <AppInterface oauthConsent={HostedOAuthConsentRoute} />
+            <AppInterface oauthConsent={HostedOAuthConsentRoute} deviceApproval={HostedDeviceApprovalRoute} />
           </AppBaseProviders>
         </PlatformProvider>
       </ConfigProvider>

@@ -562,12 +562,14 @@ function AuthenticatedLayout(
 export function AppInterface(props: {
   children?: JSX.Element
   oauthConsent?: Component
+  deviceApproval?: Component
   defaultServer?: ServerConnection.Key
   servers?: Array<ServerConnection.Any>
   router?: Component<BaseRouterProps>
 }) {
   const RouterComponent = props.router ?? Router
   const OAuthConsentRoute = props.oauthConsent ?? (() => <Navigate href="/" />)
+  const DeviceApprovalRoute = props.deviceApproval ?? (() => <Navigate href="/" />)
 
   return (
     <RouterComponent>
@@ -588,6 +590,10 @@ export function AppInterface(props: {
       <Route
         path="/oauth/consent"
         component={OAuthConsentRoute}
+      />
+      <Route
+        path="/device"
+        component={DeviceApprovalRoute}
       />
       <Route
         path="/bootstrap-owner"

@@ -14,3 +14,13 @@ test("mounts the hosted OAuth consent component from the direct route spine", as
 
   expect(await screen.findByRole("heading", { name: "Hosted consent route" })).toBeInTheDocument()
 })
+
+test("mounts the hosted device approval component from the direct route spine", async () => {
+  window.history.replaceState({}, "", "/device?user_code=ABCD-EFGH")
+
+  render(() => (
+    <AppInterface deviceApproval={() => <h1>Hosted device route</h1>} />
+  ))
+
+  expect(await screen.findByRole("heading", { name: "Hosted device route" })).toBeInTheDocument()
+})
