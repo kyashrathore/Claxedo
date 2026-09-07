@@ -1,3 +1,4 @@
+import { createSignal } from "solid-js"
 /**
  * ReviewWorkspace inner-tab lifecycle, at the real component boundary.
  *
@@ -347,5 +348,25 @@ describe("the working-set boundary retains the latest Review state", () => {
       openDiffs: ["src/x.ts"],
       diffStyle: "split",
     })
+  })
+})
+
+describe("review-intent focus", () => {
+  test("activates Review even though consuming the request clears the intent synchronously", () => {
+    const [intent, setIntent] = createSignal<"tab" | "review" | undefined>("review")
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId="ses_test"
+        directory="/repo/main"
+        mode="uncommitted"
+        focusPath="src/new.ts"
+        focusVersion={1}
+        focusFileIntent={intent()}
+        onFocusConsumed={() => setIntent(undefined)}
+      />
+    ))
+    flushFrames()
+    expect(activeTabId(container)).toBe("review")
+    expect(container.querySelector('[data-workspace-tab-id="file:src/new.ts"]')).toBeNull()
   })
 })

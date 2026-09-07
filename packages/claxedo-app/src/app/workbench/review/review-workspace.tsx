@@ -353,12 +353,15 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     () => [props.focusVersion, props.focusPath] as const,
     ([, path]) => {
       if (!path) return
+      // Consuming the request clears it upstream, so read the intent first.
+      const intent = props.focusFileIntent
+      const line = props.focusLine
       props.onFocusConsumed?.()
-      if (props.focusFileIntent === "review") {
+      if (intent === "review") {
         activateTab(REVIEW_TAB_ID)
         return
       }
-      openFileTab(path, props.focusLine)
+      openFileTab(path, line)
     },
   ))
 

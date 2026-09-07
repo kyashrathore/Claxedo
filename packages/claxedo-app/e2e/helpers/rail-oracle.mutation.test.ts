@@ -4,6 +4,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "bun:test"
 import { chromium, type Browser, type Page } from "playwright-core"
 import {
+  expectNavigatorSidebar,
+  expectNavigatorSidebarAbsent,
   expectRailRowMovesToTop,
   expectRailRowUnique,
   expectRailRowVisible,
@@ -200,4 +202,80 @@ describe("expectRailStatus — idle -> working -> done on an unfocused row, dot 
     },
     8000,
   )
+})
+
+/** A rail plus a navigator sidebar per rail-oracle.ts's sidebar contract. `selected`
+ * chooses which tab carries `aria-selected="true"`; `dataTab` is the aside's own attribute
+ * and defaults to the selected tab. */
+function navigatorHtml(opts: {
+  selected?: "files" | "changes" | "processes" | null
+  dataTab?: string
+  extraSelected?: "files" | "changes" | "processes"
+  order?: string[]
+  insideRail?: boolean
+}): string {
+  const selected = opts.selected === undefined ? "changes" : opts.selected
+  const order = opts.order ?? ["files", "changes", "processes"]
+  const tabs = order
+    .map((tab) => {
+      const on = tab === selected || tab === opts.extraSelected
+      return `<button role="tab" data-tab="${tab}" aria-selected="${on ? "true" : "false"}" style="width:60px;height:24px">${tab}</button>`
+    })
+    .join("")
+  const aside = `<aside data-testid="navigator-sidebar" data-tab="${opts.dataTab ?? selected ?? ""}" style="width:240px;height:400px"><div role="tablist">${tabs}</div></aside>`
+  const rail = opts.insideRail
+    ? `<div data-testid="rail-sidebar" style="width:260px;height:400px">${aside}</div>`
+    : `<div data-testid="rail-sidebar" style="width:260px;height:400px"></div>${aside}`
+  return `<div style="display:flex">${rail}</div>`
+}
+
+describe("expectNavigatorSidebar — one sidebar beside the rail, three ordered tabs, one selected", () => {
+  test("healthy: rail plus sidebar with Changes selected resolves, and the tab claim matches", async () => {
+    await page.setContent(`<body>${navigatorHtml({ selected: "changes" })}</body>`)
+    await expect(expectNavigatorSidebar({ page, tab: "changes", timeout: 500 })).resolves.toBeDefined()
+  })
+
+  test("broken: no sidebar mounted at all", async () => {
+    await page.setContent(`<body><div data-testid="rail-sidebar" style="width:260px;height:400px"></div></body>`)
+    await expect(expectNavigatorSidebar({ page, timeout: 300 })).rejects.toThrow(/expected exactly one navigator sidebar/)
+  })
+
+  test("broken: the sidebar mounted inside the rail instead of beside it", async () => {
+    await page.setContent(`<body>${navigatorHtml({ insideRail: true })}</body>`)
+    await expect(expectNavigatorSidebar({ page, timeout: 300 })).rejects.toThrow(/nested inside the rail/)
+  })
+
+  test("broken: tabs render out of order", async () => {
+    await page.setContent(`<body>${navigatorHtml({ order: ["changes", "files", "processes"] })}</body>`)
+    await expect(expectNavigatorSidebar({ page, timeout: 300 })).rejects.toThrow(/out of order/)
+  })
+
+  test("broken: two tabs selected at once", async () => {
+    await page.setContent(`<body>${navigatorHtml({ selected: "changes", extraSelected: "files" })}</body>`)
+    await expect(expectNavigatorSidebar({ page, timeout: 300 })).rejects.toThrow(/exactly one selected tab/)
+  })
+
+  test("broken: the aside's data-tab disagrees with the selected tab", async () => {
+    await page.setContent(`<body>${navigatorHtml({ selected: "changes", dataTab: "files" })}</body>`)
+    await expect(expectNavigatorSidebar({ page, timeout: 300 })).rejects.toThrow(/data-tab disagrees/)
+  })
+
+  test("broken: a different tab is selected than the one claimed", async () => {
+    await page.setContent(`<body>${navigatorHtml({ selected: "files" })}</body>`)
+    await expect(expectNavigatorSidebar({ page, tab: "changes", timeout: 300 })).rejects.toThrow(
+      /expected the "changes" navigator tab to be selected/,
+    )
+  })
+})
+
+describe("expectNavigatorSidebarAbsent — classic placement mounts no sidebar", () => {
+  test("healthy: only the rail is mounted", async () => {
+    await page.setContent(`<body><div data-testid="rail-sidebar" style="width:260px;height:400px"></div></body>`)
+    await expect(expectNavigatorSidebarAbsent({ page, timeout: 500 })).resolves.toBeUndefined()
+  })
+
+  test("broken: a sidebar is still mounted", async () => {
+    await page.setContent(`<body>${navigatorHtml({})}</body>`)
+    await expect(expectNavigatorSidebarAbsent({ page, timeout: 300 })).rejects.toThrow(/placement forbids one/)
+  })
 })

@@ -16,23 +16,23 @@
   pointer-events: none;
 }
 
-/* The `@container` column becomes the stack: anchored to the pane's bottom
-   edge, centred at the composer's reading width, never taller than the pane. */
+/* The `@container` column becomes the stack: anchored near the pane's bottom
+   edge, centred at the composer's reading width, never taller than the pane.
+   The stack itself paints nothing; the composer's own frame is the card, and
+   the peek strip is a tab tucked behind it. */
 [data-session-presentation="floating"] .session-floating-overlay {
   position: absolute;
   inset-inline: 0;
-  bottom: 0;
+  bottom: 0.75rem;
   z-index: 40;
   flex: none;
   width: 100%;
   max-width: 48rem;
   height: auto;
-  max-height: 100%;
+  max-height: calc(100% - 0.75rem);
   margin-inline: auto;
-  border: var(--surface-card-border, none);
-  border-radius: var(--surface-card-radius, var(--radius-lg)) var(--surface-card-radius, var(--radius-lg)) 0 0;
-  background: var(--overlay-surface);
-  box-shadow: var(--surface-card-shadow, var(--v2-elevation-raised));
+  padding: 0;
+  background: transparent;
   pointer-events: auto;
 }
 
@@ -42,35 +42,71 @@
   }
 }
 
+/* The peek strip and the transcript share one tab surface behind the composer
+   card, inset from the card's edges and rounded only at the top. Whichever of
+   them is the last thing above the card tucks under it by the same amount. */
+[data-session-presentation="floating"] .session-floating-peek,
+[data-session-presentation="floating"] .session-floating-timeline {
+  margin-inline: 1.75rem;
+  background: var(--overlay-surface);
+  border: var(--surface-card-border, 1px solid var(--border-weak-base));
+}
+
+[data-session-presentation="floating"] .session-floating-peek {
+  flex: none;
+  padding: 0.125rem 0.75rem 0.875rem;
+  margin-bottom: -0.75rem;
+  border-bottom: none;
+  border-radius: var(--surface-card-radius, var(--radius-lg)) var(--surface-card-radius, var(--radius-lg)) 0 0;
+}
+
+[data-session-presentation="floating"] .session-floating-peek [data-component="previous-messages"] > div {
+  display: none;
+}
+
 /* The timeline slot sizes to its content up to the turn height and hands its
    viewport a definite height once clamped, so the last turn scrolls instead
    of clipping. A flex item cannot do this: with the stack's height indefinite
    the viewport's `height: 100%` resolves to auto and the overflow is cut off.
    A grid track is re-resolved against the clamped size, so `minmax(0, 1fr)`
-   is content-sized when short and exactly the clamp when tall. The slot also
-   yields first when a dock (question, permission) needs the room. */
+   is content-sized when short and exactly the clamp when tall. */
 [data-session-presentation="floating"] .session-floating-timeline {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
   flex: 1 1 auto;
   min-height: 0;
   max-height: var(--session-floating-turn-height, min(40vh, 28rem));
-}
-
-/* The dock keeps its place at the bottom of the stack; the stack owns the
-   surface, so the dock only keeps the docked bottom inset. */
-[data-session-presentation="floating"] .session-floating-dock {
+  border-top: none;
+  border-bottom: none;
   padding-bottom: 0.75rem;
+  margin-bottom: -0.75rem;
 }
 
-/* Collapsed transcript: the slot keeps its timeline mounted at zero height so a
-   peek re-expands the same instance; the strip above it is the only thing shown. */
+/* Collapsed transcript: the slot keeps its timeline mounted at zero height so
+   a peek re-expands the same instance; the strip above it is all that shows. */
 [data-session-presentation="floating"] .session-floating-timeline-collapsed {
   max-height: 0;
+  padding: 0;
+  margin-bottom: 0;
+  border: none;
   visibility: hidden;
 }
 
-[data-session-presentation="floating"] .session-floating-peek {
-  flex: none;
-  padding-inline: 1rem;
+/* The composer card sits in front of the tab and shrinks to one line until the
+   user types more. */
+[data-session-presentation="floating"] .session-floating-dock {
+  position: relative;
+  z-index: 1;
+  padding-bottom: 0;
+}
+
+[data-session-presentation="floating"] .session-floating-dock .group\/prompt-input,
+[data-session-presentation="floating"] .session-floating-dock .group\/prompt-input > div {
+  min-height: auto;
+}
+
+[data-session-presentation="floating"] .session-floating-dock [data-component="prompt-input"] {
+  min-height: 2.25rem;
+  padding-top: 0.625rem;
+  padding-bottom: 0.25rem;
 }

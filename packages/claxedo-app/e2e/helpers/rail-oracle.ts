@@ -217,3 +217,78 @@ export async function expectRailStatus(opts: {
 
   return row
 }
+
+// Navigator sidebar assertions. The sidebar is the rail's sibling under the
+// `claxedo.navigator-sidebar` preset; it never lives inside the rail, and the rail's own
+// contract above is byte-for-byte the same in either placement.
+//
+// DOM contract:
+//   sidebar: aside[data-testid="navigator-sidebar"][data-tab="files|changes|processes"]
+//   tab:     [role="tab"][data-tab="<tab>"][aria-selected]   exactly three, in that order
+//   rail:    [data-testid="rail-sidebar"]                     unchanged, not an ancestor
+export const NAVIGATOR_SIDEBAR_TABS = ["files", "changes", "processes"] as const
+export type NavigatorSidebarTab = (typeof NAVIGATOR_SIDEBAR_TABS)[number]
+
+export const navigatorSidebar = {
+  sidebar: 'aside[data-testid="navigator-sidebar"]',
+  tab: (tab: NavigatorSidebarTab) => `[role="tab"][data-tab="${tab}"]`,
+  allTabs: '[role="tab"][data-tab]',
+  rail: '[data-testid="rail-sidebar"]',
+} as const
+
+/**
+ * Exactly one navigator sidebar is mounted, beside (never inside) the rail, with the three
+ * tabs in order and exactly one selected. The selected tab is the sidebar's `data-tab`,
+ * and `tab` when given. Returns the sidebar locator.
+ *
+ * The rail is asserted here too because the preset's whole promise is "the rail does not
+ * change": a sidebar that mounted by replacing or wrapping the rail would satisfy every
+ * sidebar-only check.
+ */
+export async function expectNavigatorSidebar(opts: {
+  page: Page
+  tab?: NavigatorSidebarTab
+  timeout?: number
+  evidence?: Evidence
+}): Promise<Locator> {
+  const { page, tab, timeout = DEFAULT_TIMEOUT, evidence } = opts
+  const sidebar = page.locator(navigatorSidebar.sidebar)
+  if (evidence) await captureEvidence({ page, spec: evidence.spec, scenario: evidence.scenario })
+
+  await expect(sidebar, "expected exactly one navigator sidebar").toHaveCount(1, { timeout })
+  await expect(sidebar, "navigator sidebar is mounted but not visible").toBeVisible({ timeout })
+  await expect(
+    page.locator(navigatorSidebar.rail),
+    "the rail sidebar is not visible beside the navigator sidebar",
+  ).toBeVisible({ timeout })
+  await expect(
+    page.locator(`${navigatorSidebar.rail} ${navigatorSidebar.sidebar}`),
+    "navigator sidebar is nested inside the rail; it must be the rail's sibling",
+  ).toHaveCount(0, { timeout })
+
+  const tabs = sidebar.locator(navigatorSidebar.allTabs)
+  await expect(tabs, "navigator sidebar must render exactly three tabs").toHaveCount(3, { timeout })
+  const order = await tabs.evaluateAll((nodes) => nodes.map((node) => node.getAttribute("data-tab")))
+  expect(order, "navigator sidebar tabs are out of order").toEqual([...NAVIGATOR_SIDEBAR_TABS])
+
+  const selected = sidebar.locator(`${navigatorSidebar.allTabs}[aria-selected="true"]`)
+  await expect(selected, "navigator sidebar must have exactly one selected tab").toHaveCount(1, { timeout })
+  const selectedTab = await selected.getAttribute("data-tab")
+  await expect(
+    sidebar,
+    `navigator sidebar data-tab disagrees with its selected tab "${selectedTab}"`,
+  ).toHaveAttribute("data-tab", selectedTab ?? "", { timeout })
+  if (tab !== undefined) {
+    expect(selectedTab, `expected the "${tab}" navigator tab to be selected`).toBe(tab)
+  }
+  return sidebar
+}
+
+/** No navigator sidebar is in the DOM at all (classic placement, or below `BP_MD`). */
+export async function expectNavigatorSidebarAbsent(opts: { page: Page; timeout?: number }): Promise<void> {
+  const { page, timeout = DEFAULT_TIMEOUT } = opts
+  await expect(
+    page.locator(navigatorSidebar.sidebar),
+    "a navigator sidebar is mounted where the placement forbids one",
+  ).toHaveCount(0, { timeout })
+}
