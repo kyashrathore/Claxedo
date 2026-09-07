@@ -1,5 +1,8 @@
 import { HTTPException } from "hono/http-exception"
 import { createSessionRoutes, type SessionRouteContext } from "./session-core"
+import { createChildSessionHost, type ChildWakeAuthor, type PendingChildWake } from "./session-children"
+import { isAgentRuntimeTurnConflictError, type SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime"
+import { runRuntimePromptTurn, runSessionPromptTurn } from "../session/service"
 import {
   type AgentRuntime,
   type AgentMessage,
@@ -21,7 +24,8 @@ import { rec, str } from "../json-value"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
 import { requestedSessionHarness } from "./config"
-import type { SessionPromptBody } from "../session/service"
+import type { RuntimeSessionBusEvent, SessionPromptBody } from "../session/service"
+import type { CompatEnvelope } from "../compat-events"
 import type { SessionAccessPolicy } from "../session-access-policy"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 
@@ -123,8 +127,18 @@ export function SessionRoutes(
      * the host's session store learns about a create directly rather than from
      * the list-time adapter fan-out.
      */
-    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string) => Promise<{ id: string }>
+    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string, create?: { parentID?: string }) => Promise<{ id: string }>
     afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+    /**
+     * Host-owned child sessions (`POST /session` with `parentID`). The host
+     * lends its subagent admission, a secret for idempotent child ids and the
+     * durable pending-wake list; the routes own the rest.
+     */
+    childSessions?: {
+      admission: SubagentAdmissionStore
+      secret: () => string
+      pendingWakes: () => PendingChildWake[] | Promise<PendingChildWake[]>
+    }
     listSubagents?: (input: {
       directory: string
       parentSessionId: string
@@ -211,6 +225,79 @@ export function SessionRoutes(
   }) {
     return requestedSessionHarness(c.req)
   }
+  const childSessions = options?.childSessions && options.listSubagents && options.getSession && options.getMessages
+    ? createChildSessionHost({
+        admission: options.childSessions.admission,
+        secret: options.childSessions.secret,
+        pendingWakes: options.childSessions.pendingWakes,
+        listSubagents: (parentSessionId, directory) => options.listSubagents!({ directory, parentSessionId }),
+        getSession: (sessionId, directory) => options.getSession!({ directory, sessionId }),
+        getMessages: (sessionId, directory) => options.getMessages!({ directory, sessionId }),
+        publishRuntime: eventHub.publishRuntime,
+        subscribeGlobal: eventHub.subscribeGlobal,
+        startTurn: (input) => startWakeTurn(input),
+      })
+    : undefined
+
+  /**
+   * A completion wake is a runtime-originated turn on the parent, driven by
+   * the same turn runners the prompt routes use. It carries no control-plane
+   * turn lease: the runtime that owns the parent is the one waking it.
+   */
+  async function startWakeTurn(input: {
+    parentSessionId: string
+    directory: string
+    body: SessionPromptBody
+    author: ChildWakeAuthor
+    onSettled: () => void
+  }): Promise<"started" | "busy"> {
+    const adapter = await getAdapter({ sessionId: input.parentSessionId, directory: input.directory })
+    const runtime = await options?.resolveRuntime?.({ sessionId: input.parentSessionId, directory: input.directory })
+    const publishGlobal = (event: CompatEnvelope) => eventHub.publishGlobal(event)
+    const publishStatus = (event: RuntimeSessionBusEvent) => workspaceRuntimeBus.publish(event)
+    const scope = () => options?.createActiveTurnScope?.({ adapter, directory: input.directory, sessionId: input.parentSessionId })
+    return await new Promise<"started" | "busy">((resolve) => {
+      const run = runtime
+        ? runRuntimePromptTurn({
+            runtime,
+            sessionId: input.parentSessionId,
+            directory: input.directory,
+            body: input.body,
+            publishGlobal,
+            publishStatus,
+            createActiveTurnScope: scope,
+            author: input.author,
+            onAdmissionSettled: (error) => resolve(isAgentRuntimeTurnConflictError(error) ? "busy" : "started"),
+          })
+        : (async () => {
+            const binding = await options?.resolveExecutionBinding?.({ adapter, directory: input.directory, sessionId: input.parentSessionId })
+            if (!binding) throw new Error(`Session ${input.parentSessionId} has no complete execution binding`)
+            resolve("started")
+            return runSessionPromptTurn({
+              adapter,
+              binding,
+              sessionId: input.parentSessionId,
+              directory: input.directory,
+              body: input.body,
+              publishGlobal,
+              publishStatus,
+              createActiveTurnScope: ({ adapter, directory, sessionId }) =>
+                options?.createActiveTurnScope?.({ adapter, directory: requiredDirectory(directory), sessionId }),
+            })
+          })()
+      run
+        .then(() => input.onSettled(), (error: unknown) => {
+          if (isAgentRuntimeTurnConflictError(error)) {
+            resolve("busy")
+            return
+          }
+          console.error(`child session wake for ${input.parentSessionId} failed`, error)
+          resolve("started")
+          input.onSettled()
+        })
+    })
+  }
+
   return createSessionRoutes({
     requestedSessionHarness: (c) => requestedHarness(c),
     resolveAdapter: async (c, input) => {
@@ -249,8 +336,9 @@ export function SessionRoutes(
       ? (c, directory) => options.listSessions!(c, requiredDirectory(directory))
       : undefined,
     createSession: options?.createSession
-      ? (c, directory, title, id) => options.createSession!(c, requiredDirectory(directory), title, id)
+      ? (c, directory, title, id, create) => options.createSession!(c, requiredDirectory(directory), title, id, create)
       : undefined,
+    childSessions,
     afterCreateSession: options?.afterCreateSession
       ? (_c, directory, session) => options.afterCreateSession!({
           directory: requiredDirectory(directory),

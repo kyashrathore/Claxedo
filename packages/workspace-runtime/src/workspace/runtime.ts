@@ -102,7 +102,10 @@ export type WorkspaceRuntimeStore =
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
     getSessionMaxSeq(sessionId: string): number
     getSessionFencingToken?: (sessionId: string) => number | undefined
-    listSubagents?: (parentSessionId: string) => unknown[]
+    listSubagents: (parentSessionId: string) => unknown[]
+    /** Per-store secret keyed material; child ids derived from `clientRequestId` need it. */
+    runtimeSecret?: (name: string) => string
+    listPendingSubagentWakes?: () => Array<{ parentSessionId: string; subagentKey: string; childSessionId: string; directory: string }>
     bindSession(input: {
       sessionId: string
       workspaceId?: string
@@ -1545,7 +1548,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         sessionAccessPolicy,
         resolveRuntime: (input) => runtimeForSession(input),
         resolveExecutionBinding: ({ sessionId, directory }) => canonicalExecutionBinding(sessionId, directory),
-        createSession: async (c, directory, title, id) => {
+        createSession: async (c, directory, title, id, create) => {
           // Write through to the durable store on CREATE.
           //
           // Creation binds the canonical session immediately. Provider-native
@@ -1606,6 +1609,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             store().bindSession({
               ...binding,
               ...(title ? { title } : {}),
+              ...(create?.parentID ? { parentSessionId: create.parentID } : {}),
               agentSessionId: upstreamSessionId,
             })
             if (!store().getSessionConfig(session.id)) {
@@ -1635,7 +1639,16 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         afterCreateSession: hostOptions.afterCreateSession,
         listSessions: async (_c, directory) => listSessions(directory),
         getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory)),
-        listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
+        listSubagents: ({ parentSessionId }) => store().listSubagents(parentSessionId),
+        childSessions: {
+          admission: hostOptions.subagentAdmission,
+          secret: () => {
+            const secret = store().runtimeSecret
+            if (!secret) throw new Error("workspace runtime store cannot derive idempotent child session ids")
+            return secret.call(store(), "child-session")
+          },
+          pendingWakes: () => store().listPendingSubagentWakes?.() ?? [],
+        },
         listPermissions: (c, directory) => listPermissions(c.req.query("sessionId"), directory),
         listQuestions: (c, directory) => listQuestions(c.req.query("sessionId"), directory),
         createActiveTurnScope: (input) => createActiveTurnScope(input),

@@ -50,7 +50,16 @@ import {
   parseSessionPromptBody,
   type SessionPromptBody,
 } from "../session/service"
-import { normalizeSessionConfigUpdate, normalizeSessionCreateConfig } from "../session-config"
+import { normalizeSessionConfigUpdate, normalizeSessionCreateConfig, normalizeSessionCreateBody } from "../session-config"
+import { MAX_ACTIVE_CHILDREN_PER_PARENT, type ChildSessionHost } from "./session-children"
+import {
+  narrowerPermissionLevel,
+  permissionCeilingAdmits,
+  permissionModeLevel,
+  widestPermissionModeUnder,
+  type AgentPermissionMode,
+  type AutoLevel,
+} from "@claxedo/agent-sdk-runtime"
 import { arr, bool, num, rec, str } from "../json-value"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
 import {
@@ -152,6 +161,115 @@ async function requireExecutionBinding(
   const binding = await opts.resolveExecutionBinding?.(c, directory, sessionId, adapter)
   if (!binding) throw new HTTPException(409, { message: `Session ${sessionId} has no complete execution binding` })
   return binding
+}
+
+/**
+ * The level a new session may not exceed: the narrower of the parent's
+ * current mode and the ceiling the caller declared. A parent whose harness
+ * reports no current mode caps at `ask`, the floor.
+ */
+async function effectivePermissionCeiling(
+  opts: Opts,
+  c: Ctx,
+  directory: RuntimeDirectory,
+  parent: AgentSession | undefined,
+  declared: AutoLevel | undefined,
+): Promise<AutoLevel | undefined> {
+  if (!parent) return declared
+  const adapter = await opts.resolveAdapter(c, { sessionId: parent.id, directory })
+  const state = adapter.listPermissionModes
+    ? await adapter.listPermissionModes(await requireExecutionBinding(opts, c, directory, parent.id, adapter))
+    : undefined
+  const current = state?.modes.find((mode) => mode.id === state.currentModeId)
+  const parentLevel = permissionModeLevel(current)
+  return declared ? narrowerPermissionLevel(parentLevel, declared) : parentLevel
+}
+
+/**
+ * The mode the new session starts in. A requested mode that widens the
+ * ceiling is refused; with none requested the widest mode under the ceiling is
+ * chosen, so a child never inherits a harness default above its parent.
+ */
+async function permissionModeUnderCeiling(
+  c: Ctx,
+  adapter: AgentHarnessAdapter,
+  directory: RuntimeDirectory,
+  ceiling: AutoLevel | undefined,
+  requested: string | undefined,
+): Promise<{ mode?: AgentPermissionMode; refusal?: Response }> {
+  if (!requested && !ceiling) return {}
+  if (!adapter.listDraftPermissionModes || !adapter.setPermissionMode) {
+    if (!requested) return {}
+    return { refusal: c.json(errorBody("permission_mode_unsupported", "This harness cannot be told about permission modes"), 400) }
+  }
+  const modes = (await adapter.listDraftPermissionModes(directory)).modes
+  if (requested) {
+    const mode = modes.find((candidate) => candidate.id === requested)
+    if (!mode) return { refusal: c.json(errorBody("unknown_permission_mode", `Unknown permission mode "${requested}"`), 400) }
+    const level = permissionModeLevel(mode)
+    if (ceiling && !permissionCeilingAdmits(ceiling, level)) {
+      return {
+        refusal: c.json({
+          error: {
+            code: "permission_ceiling_exceeded",
+            message: `Permission mode "${mode.id}" (${level}) widens the ${ceiling} ceiling`,
+            ceiling,
+            requested: { modeId: mode.id, level },
+          },
+        }, 403),
+      }
+    }
+    return { mode }
+  }
+  const mode = widestPermissionModeUnder(modes, ceiling!)
+  return mode ? { mode } : {}
+}
+
+/**
+ * A child session lives under its parent: archiving the parent cancels and
+ * archives every host-owned child, deleting it deletes them. Children may run
+ * on a different harness than the parent, so each is reached through its own
+ * adapter rather than the parent's.
+ */
+async function cascadeToChildren(
+  opts: Opts,
+  c: Ctx,
+  directory: RuntimeDirectory,
+  parentSessionId: string,
+  action: "archive" | "delete",
+  updates: { archived?: number } = {},
+) {
+  if (!opts.childSessions) return
+  for (const child of await opts.childSessions.children(parentSessionId, directory)) {
+    const childSessionId = child.childSessionId
+    if (!await readSession(opts, c, directory, childSessionId)) continue
+    const childAdapter = await opts.resolveAdapter(c, { sessionId: childSessionId, directory })
+    const binding = await requireExecutionBinding(opts, c, directory, childSessionId, childAdapter)
+    if (action === "delete") {
+      await disposeRuntimeSessionDocuments(childSessionId)
+      await childAdapter.deleteSession(binding)
+      await after(opts.afterDeleteSession?.(c, directory, childSessionId))
+      continue
+    }
+    await childAdapter.abort?.(binding).catch(() => undefined)
+    const body = { time: { archived: updates.archived ?? Date.now() } }
+    const session = await childAdapter.updateSession(binding, body)
+    if (!session) continue
+    await after(opts.afterUpdateSession?.(c, directory, session, body))
+    opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionUpdated(session)))
+  }
+}
+
+function createdSessionBody(session: unknown, created: Record<string, unknown>) {
+  return { ...(rec(session) ?? {}), ...created }
+}
+
+async function settleChildTurn(opts: Opts, sessionId: string, directory: RuntimeDirectory) {
+  try {
+    await opts.childSessions?.onTurnSettled(sessionId, directory)
+  } catch (error) {
+    console.error(`child session bookkeeping for ${sessionId} failed`, error)
+  }
 }
 
 function noStoreJson(c: Ctx, data: unknown, status?: ContentfulStatusCode) {
@@ -277,7 +395,9 @@ type Opts = {
   ) => Promise<RuntimeDirectory> | RuntimeDirectory
   listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSession[]>
   listSubagents?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string) => Promise<unknown[]> | unknown[]
-  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string) => Promise<{ id: string }>
+  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { parentID?: string }) => Promise<{ id: string }>
+  /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
+  childSessions?: ChildSessionHost
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
   /**
@@ -1048,6 +1168,12 @@ export function createSessionRoutes(opts: Opts) {
     sensitive: sensitiveSessionBusEvent,
   })
   sessionEventSource.open({ mode: "unmanaged-local", connectionId: "local-replay" })
+  // Wakes left pending by a previous process are re-offered on the first
+  // request, once the host has a store and adapters to deliver them with.
+  app.use("*", async (_c, next) => {
+    void opts.childSessions?.recover()
+    await next()
+  })
   app
     .get("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
@@ -1095,9 +1221,37 @@ export function createSessionRoutes(opts: Opts) {
     .post("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
       const wire = await requestBody(c)
-      const body = { id: str(wire.id), title: str(wire.title) }
+      const body = normalizeSessionCreateBody(wire)
       const guarded = await sessionOperationGuard(opts, c, "", "session_create")
       if (guarded) return guarded
+      const children = opts.childSessions
+      if ((body.parentID || body.clientRequestId) && !children) {
+        return c.json(errorBody("child_sessions_unsupported", "This runtime cannot create child sessions"), 501)
+      }
+      const parent = body.parentID && children ? await readSession(opts, c, directory, body.parentID) : undefined
+      if (body.parentID && children) {
+        if (!parent) return c.json(errorBody("parent_session_not_found", `Parent session ${body.parentID} not found`), 404)
+        if (parent.parentID) {
+          return c.json(errorBody("subagent_recursion_denied", "A child session cannot create children of its own"), 409)
+        }
+        if (parent.time?.archived !== undefined) {
+          return c.json(errorBody("parent_session_archived", "An archived session cannot create children"), 409)
+        }
+        const active = await children.activeChildren(body.parentID, directory)
+        if (active.length >= MAX_ACTIVE_CHILDREN_PER_PARENT) {
+          return c.json(errorBody(
+            "subagent_child_cap_reached",
+            `Session ${body.parentID} already has ${active.length} active children (limit ${MAX_ACTIVE_CHILDREN_PER_PARENT})`,
+          ), 409)
+        }
+      }
+      if (!body.id && body.clientRequestId && children) {
+        const callerIdentity = body.parentID ?? sessionAccessContext(c).actor?.actorId
+        if (!callerIdentity) {
+          return c.json(errorBody("client_request_id_requires_identity", "clientRequestId needs a parent session or an authenticated caller"), 400)
+        }
+        body.id = children.deriveSessionId({ callerIdentity, clientRequestId: body.clientRequestId })
+      }
       const operationId = registrationOperationId(c)
       if (managedRegistration(opts) && (!body.id || !operationId)) {
         return c.json(errorBody(
@@ -1131,8 +1285,19 @@ export function createSessionRoutes(opts: Opts) {
             throw new HTTPException(409, { message: "Session already belongs to another harness" })
           }
         }
+        if (existing && body.parentID && children) {
+          if (existing.parentID !== body.parentID) {
+            return c.json(errorBody("session_parent_mismatch", `Session ${existing.id} does not belong to ${body.parentID}`), 409)
+          }
+          const row = await children.childOf(existing.id, directory)
+          if (!row) return c.json(errorBody("subagent_row_missing", `Session ${existing.id} has no subagent row`), 409)
+          return c.json(createdSessionBody(normalizeSession(existing, directory), { parentID: body.parentID, subagentKey: row.subagentKey }), 200)
+        }
+        const ceiling = await effectivePermissionCeiling(opts, c, directory, parent, body.permissionCeiling)
+        const childMode = await permissionModeUnderCeiling(c, adapter, directory, ceiling, body.permissionMode)
+        if (childMode.refusal) return childMode.refusal
         const session = existing ?? (opts.createSession
-          ? await opts.createSession(c, directory, body.title, body.id)
+          ? await opts.createSession(c, directory, body.title, body.id, body.parentID ? { parentID: body.parentID } : undefined)
           : await adapter.createSession(directory, body.title, body.id))
         if (Object.keys(config).length > 0) {
           try {
@@ -1145,6 +1310,33 @@ export function createSessionRoutes(opts: Opts) {
             await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             throw error
           }
+        }
+        let subagentKey: string | undefined
+        try {
+          if (childMode.mode) {
+            await adapter.setPermissionMode!(await requireExecutionBinding(opts, c, directory, session.id, adapter), childMode.mode.id)
+          }
+          if (body.parentID && children) {
+            const harness = requestedHarness ?? config.harness ?? (opts.getSessionConfig
+              ? (await opts.getSessionConfig(c, directory, session.id, adapter)).harness
+              : (await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter))).harness)
+            subagentKey = (await children.admitCreated({
+              parentSessionId: body.parentID,
+              childSessionId: session.id,
+              directory,
+              harness: harness.id,
+              ...(body.role ? { role: body.role } : {}),
+              ...(body.title ? { title: body.title } : {}),
+            })).subagentKey
+          }
+        } catch (error) {
+          await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+          throw error
+        }
+        const created = {
+          ...(body.parentID ? { parentID: body.parentID } : {}),
+          ...(subagentKey ? { subagentKey } : {}),
+          ...(childMode.mode ? { permissionMode: childMode.mode.id } : {}),
         }
         const registration = await registerCreatedSession(opts, c, session.id, operationId, body.title)
         if (registration.kind === "ambiguous") {
@@ -1199,7 +1391,7 @@ export function createSessionRoutes(opts: Opts) {
           info: sessionLifecycleInfo({ session, directory, title: body.title, workspaceId }),
           ts: Date.now(),
         })
-        return c.json(normalizeSession(session, directory), 201)
+        return c.json(createdSessionBody(normalizeSession(session, directory), created), 201)
       } catch (error) {
         opts.publishSessionLifecycle?.({
           type: "session.lifecycle",
@@ -1315,6 +1507,7 @@ export function createSessionRoutes(opts: Opts) {
       if (!session) return c.json(sessionNotFound(), 404)
       await after(opts.afterUpdateSession?.(c, directory, session, body))
       opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
+      if (archived !== undefined) await cascadeToChildren(opts, c, directory, sessionId, "archive", { archived })
       return c.json(normalizeSession(session, directory))
     })
     .patch("/session/:id/config", async (c) => {
@@ -1353,6 +1546,7 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      await cascadeToChildren(opts, c, directory, sessionId, "delete")
       await disposeRuntimeSessionDocuments(sessionId)
       await adapter.deleteSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
       await after(opts.afterDeleteSession?.(c, directory, sessionId))
@@ -1380,6 +1574,7 @@ export function createSessionRoutes(opts: Opts) {
       const activeTurn = runtime && opts.createActiveTurnScope
         ? turnScope(opts.createActiveTurnScope({ c, adapter, directory, sessionId: id }), turnAdmission.lease)
         : undefined
+      await opts.childSessions?.onTurnStarted(id, directory)
       try {
         const turn = await (async () => {
         try {
@@ -1414,6 +1609,7 @@ export function createSessionRoutes(opts: Opts) {
               })
         } finally {
           if (!turnAdmission.lease?.lost()) await flushDocumentsAfterTurn(opts, id)
+          await settleChildTurn(opts, id, directory)
         }
         })()
         if (turnAdmission.lease?.lost() || (turnAdmission.lease && !turnAdmission.lease.valid())) {
@@ -1794,6 +1990,7 @@ export function createSessionRoutes(opts: Opts) {
             settleAdmission = resolve
           })
         : undefined
+      await opts.childSessions?.onTurnStarted(id, directory)
       // prompt_async answers as soon as the turn is ADMITTED; the turn itself
       // runs on after the response. The IIFE below has its own catch/finally,
       // so nothing here can reject unobserved.
@@ -1860,6 +2057,7 @@ export function createSessionRoutes(opts: Opts) {
             }
           }
           await turnAdmission.lease?.release().catch(() => undefined)
+          await settleChildTurn(opts, id, directory)
         }
       })()
       const admissionError = admission ? await awaitAdmissionAck(admission) : undefined
