@@ -380,19 +380,6 @@ function registerBrowserIpcHandlers(registry: BrowserRegistry | undefined) {
     },
   )
 
-  ipcMain.handle("browser:evaluate", async (_event: IpcMainInvokeEvent, paneId: string, expression: string) => {
-    const handle = registry.get(paneId)
-    if (!handle) return { ok: false as const, error: { code: "no-pane" as const, message: `no browser pane registered for ${paneId}` } }
-    return handle.evaluate(expression)
-  })
-
-  ipcMain.handle("browser:setAgentAllowed", (_event: IpcMainInvokeEvent, paneId: string, allowed: unknown) => {
-    const handle = registry.get(paneId)
-    if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }
-    handle.setAgentAllowed(allowed === true)
-    return { ok: true as const }
-  })
-
   ipcMain.handle("browser:setInspectMode", async (_event: IpcMainInvokeEvent, paneId: string, enabled: unknown) => {
     const handle = registry.get(paneId)
     if (!handle) return { ok: false as const, error: `no browser pane registered for ${paneId}` }

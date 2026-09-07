@@ -86,17 +86,6 @@ export type BrowserNodeSelectedPayload =
       frameUrl?: string
     }
 
-export type BrowserEvaluateResult =
-  | { ok: true; result: unknown }
-  | {
-      ok: false
-      error: {
-        code: "eval-denied" | "not-attached" | "cdp-error" | "script-error" | "no-pane"
-        message?: string
-        stack?: string
-      }
-    }
-
 export type BrowserNavigationState =
   | { ok: true; url: string; canGoBack: boolean; canGoForward: boolean }
   | { ok: false; error: string }
@@ -119,8 +108,6 @@ export type BrowserBridge = {
     paneId: string,
     opts?: { clip?: BrowserScreenshotClip },
   ) => Promise<BrowserScreenshotResult>
-  evaluate: (paneId: string, expression: string) => Promise<BrowserEvaluateResult>
-  setAgentAllowed: (paneId: string, allowed: boolean) => Promise<BrowserResult>
   setInspectMode: (paneId: string, enabled: boolean) => Promise<BrowserResult>
   onNodeSelected: (
     paneId: string,

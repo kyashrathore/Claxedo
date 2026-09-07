@@ -4,10 +4,6 @@ import { MAX_CONSOLE_ENTRIES, sanitizeConsoleString } from "./console-buffer"
 import { BrowserHandle, type BrowserWc } from "./handle"
 
 /**
- * Handle.test.ts — unit coverage for the CDP state machine, console buffer
- * routing, sanitization, screenshot size caps, evaluate gating, and the
- * crash / cross-origin / DevTools reattach paths.
- *
  * No Electron runtime; a `makeFakeWc()` factory stubs the thin
  * `BrowserWc` surface the handle actually touches.
  */
@@ -496,57 +492,6 @@ describe("BrowserHandle.screenshot", () => {
     expect(r.ok).toBe(true)
     if (r.ok) expect(r.mimeType).toBe("image/jpeg")
     expect(lastOpts?.maxLongEdge).toBe(1920)
-  })
-})
-
-describe("BrowserHandle.evaluate", () => {
-  test("refuses when agentAllowed is false — no CDP call made", async () => {
-    const fake = makeFakeWc({ initialUrl: "https://example.com" })
-    const handle = new BrowserHandle(fake.wc)
-    fake.emitWc("dom-ready")
-    await new Promise((r) => setTimeout(r, 0))
-
-    const before = fake.sendCommandCalls.length
-    const r = await handle.evaluate("1 + 1")
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error.code).toBe("eval-denied")
-    // No Runtime.evaluate call issued.
-    const evalCalls = fake.sendCommandCalls.slice(before).filter((c) => c.method === "Runtime.evaluate")
-    expect(evalCalls.length).toBe(0)
-  })
-
-  test("returns result when agentAllowed is true", async () => {
-    const fake = makeFakeWc({ initialUrl: "https://example.com" })
-    fake.responses.set("Runtime.evaluate", { result: { value: 2 } })
-    const handle = new BrowserHandle(fake.wc)
-    fake.emitWc("dom-ready")
-    await new Promise((r) => setTimeout(r, 0))
-    handle.setAgentAllowed(true)
-
-    const r = await handle.evaluate("1 + 1")
-    expect(r.ok).toBe(true)
-    if (r.ok) expect(r.result).toBe(2)
-  })
-
-  test("wraps exceptionDetails as a script-error", async () => {
-    const fake = makeFakeWc({ initialUrl: "https://example.com" })
-    fake.responses.set("Runtime.evaluate", {
-      exceptionDetails: {
-        text: "Uncaught",
-        exception: { description: "ReferenceError: x is not defined" },
-      },
-    })
-    const handle = new BrowserHandle(fake.wc)
-    fake.emitWc("dom-ready")
-    await new Promise((r) => setTimeout(r, 0))
-    handle.setAgentAllowed(true)
-
-    const r = await handle.evaluate("x.y")
-    expect(r.ok).toBe(false)
-    if (!r.ok) {
-      expect(r.error.code).toBe("script-error")
-      expect(r.error.message).toBe("ReferenceError: x is not defined")
-    }
   })
 })
 

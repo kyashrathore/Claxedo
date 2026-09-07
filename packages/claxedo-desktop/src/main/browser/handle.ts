@@ -1,8 +1,8 @@
 /**
- * BrowserHandle — main-process wrapper around a single agent-browser
- * `<webview>`'s `webContents`. Owns the CDP attach state machine, streams
- * console entries into a ring buffer, and exposes `screenshot`, `evaluate`,
- * and `getConsoleLogs` for the IPC layer to call through.
+ * BrowserHandle — main-process wrapper around a single in-app browser pane's
+ * `<webview>` `webContents`. Owns the CDP attach state machine, streams
+ * console entries into a ring buffer, and exposes `screenshot` and
+ * `getConsoleLogs` for the IPC layer to call through.
  *
  * CDP attach state machine:
  *
@@ -21,9 +21,7 @@
  *     `"canceled by user"`) → mark Detached; reattach on `devtools-closed`.
  *   - `destroyed` → `try { detach() } catch {}` and drop listeners.
  *
- * Screenshot and evaluate are plain CDP round-trips. Evaluate is gated on
- * `agentAllowed`, enforced *here* (main process) so UI-only toggles can't be
- * worked around by calling the IPC directly.
+ * Screenshot is a plain CDP round-trip.
  *
  * Tests live in `handle.test.ts` and use a `makeFakeWc()` factory — this file
  * must therefore talk to `webContents` only through the minimal surface the
@@ -59,13 +57,6 @@ export type ScreenshotOptions = { clip?: ScreenshotClip }
 export type ScreenshotSuccess = { ok: true; dataUrl: string; mimeType: "image/png" | "image/jpeg" }
 export type ScreenshotFailure = { ok: false; error: { code: "no-page" | "not-attached" | "cdp-error"; message?: string } }
 export type ScreenshotResult = ScreenshotSuccess | ScreenshotFailure
-
-export type EvaluateSuccess = { ok: true; result: unknown }
-export type EvaluateFailure = {
-  ok: false
-  error: { code: "eval-denied" | "not-attached" | "cdp-error" | "script-error"; message?: string; stack?: string }
-}
-export type EvaluateResult = EvaluateSuccess | EvaluateFailure
 
 export type ConsoleEntryListener = (entry: ConsoleEntry) => void
 
@@ -189,7 +180,6 @@ export class BrowserHandle {
   #state: BrowserHandleState = "detached"
   #console = new ConsoleBuffer()
   #listeners: Set<ConsoleEntryListener> = new Set()
-  #agentAllowed = false
   #recompress: RecompressFn
 
   /** Child sessions discovered via Target.attachedToTarget (flat mode). */
@@ -254,16 +244,9 @@ export class BrowserHandle {
   get state(): BrowserHandleState {
     return this.#state
   }
-  get agentAllowed(): boolean {
-    return this.#agentAllowed
-  }
   /** Exposed for tests and IPC diagnostics. */
   get consoleBuffer(): ConsoleBuffer {
     return this.#console
-  }
-
-  setAgentAllowed(allowed: boolean): void {
-    this.#agentAllowed = allowed
   }
 
   /**
@@ -498,39 +481,6 @@ export class BrowserHandle {
       dataUrl: `data:${downscaled.mimeType};base64,${downscaled.base64}`,
       mimeType: downscaled.mimeType,
     }
-  }
-
-  // ─── Evaluate ─────────────────────────────────────────────────────────────
-
-  async evaluate(expression: string): Promise<EvaluateResult> {
-    if (!this.#agentAllowed) {
-      return { ok: false, error: { code: "eval-denied", message: "pane has not opted into agent JS execution" } }
-    }
-    if (this.#state !== "attached") {
-      return { ok: false, error: { code: "not-attached" } }
-    }
-
-    let resp: unknown
-    try {
-      resp = await this.#wc.debugger.sendCommand("Runtime.evaluate", {
-        expression,
-        returnByValue: true,
-        awaitPromise: true,
-      })
-    } catch (err) {
-      return { ok: false, error: { code: "cdp-error", message: errMsg(err) } }
-    }
-
-    const exceptionDetails = readRecord(resp, "exceptionDetails")
-    if (exceptionDetails) {
-      const { message, stack } = parseExceptionDetails(exceptionDetails, "script error")
-      return {
-        ok: false,
-        error: { code: "script-error", message, stack: stack ? formatCallFrames(stack) : undefined },
-      }
-    }
-
-    return { ok: true, result: readUnknown(readRecord(resp, "result"), "value") }
   }
 
   // ─── Internal: state transitions ──────────────────────────────────────────
