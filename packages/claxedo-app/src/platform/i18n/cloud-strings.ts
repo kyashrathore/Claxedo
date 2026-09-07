@@ -22,6 +22,12 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "Log out",
     "settings.general.account.logout.description": "Sign out of your Claxedo account",
     "settings.general.account.logout.button": "Log out",
+
+    // Connected applications
+    "settings.general.section.connectedApps": "Connected applications",
+    "settings.general.connectedApps.empty": "No application has been given access to your Claxedo account.",
+    "settings.general.connectedApps.revoke": "Disconnect",
+    "settings.general.connectedApps.revoking": "Disconnecting...",
   },
 
   zh: {
@@ -34,6 +40,12 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "退出登录",
     "settings.general.account.logout.description": "退出您的 Claxedo 账户",
     "settings.general.account.logout.button": "退出登录",
+
+    // Connected applications
+    "settings.general.section.connectedApps": "已连接的应用",
+    "settings.general.connectedApps.empty": "还没有应用获得您 Claxedo 账户的访问权限。",
+    "settings.general.connectedApps.revoke": "断开连接",
+    "settings.general.connectedApps.revoking": "正在断开...",
   },
 
   zht: {
@@ -46,6 +58,12 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "登出",
     "settings.general.account.logout.description": "登出您的 Claxedo 帳戶",
     "settings.general.account.logout.button": "登出",
+
+    // Connected applications
+    "settings.general.section.connectedApps": "已連接的應用程式",
+    "settings.general.connectedApps.empty": "尚未有應用程式取得您 Claxedo 帳戶的存取權。",
+    "settings.general.connectedApps.revoke": "中斷連接",
+    "settings.general.connectedApps.revoking": "正在中斷...",
   },
 
   ja: {
@@ -58,6 +76,12 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "ログアウト",
     "settings.general.account.logout.description": "Claxedoアカウントからログアウト",
     "settings.general.account.logout.button": "ログアウト",
+
+    // Connected applications
+    "settings.general.section.connectedApps": "連携アプリケーション",
+    "settings.general.connectedApps.empty": "Claxedoアカウントへのアクセスを許可したアプリケーションはありません。",
+    "settings.general.connectedApps.revoke": "連携を解除",
+    "settings.general.connectedApps.revoking": "解除しています...",
   },
 
   ko: {
@@ -70,6 +94,12 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "로그아웃",
     "settings.general.account.logout.description": "Claxedo 계정에서 로그아웃",
     "settings.general.account.logout.button": "로그아웃",
+
+    // Connected applications
+    "settings.general.section.connectedApps": "연결된 애플리케이션",
+    "settings.general.connectedApps.empty": "Claxedo 계정에 접근 권한을 부여한 애플리케이션이 없습니다.",
+    "settings.general.connectedApps.revoke": "연결 해제",
+    "settings.general.connectedApps.revoking": "연결 해제 중...",
   },
 
   de: {
@@ -82,6 +112,12 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "Abmelden",
     "settings.general.account.logout.description": "Von Ihrem Claxedo-Konto abmelden",
     "settings.general.account.logout.button": "Abmelden",
+
+    // Connected applications
+    "settings.general.section.connectedApps": "Verbundene Anwendungen",
+    "settings.general.connectedApps.empty": "Keine Anwendung hat Zugriff auf Ihr Claxedo-Konto erhalten.",
+    "settings.general.connectedApps.revoke": "Trennen",
+    "settings.general.connectedApps.revoking": "Wird getrennt...",
   },
 
   fr: {
@@ -94,6 +130,12 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "Se deconnecter",
     "settings.general.account.logout.description": "Se deconnecter de votre compte Claxedo",
     "settings.general.account.logout.button": "Se deconnecter",
+
+    // Connected applications
+    "settings.general.section.connectedApps": "Applications connectees",
+    "settings.general.connectedApps.empty": "Aucune application n a recu l acces a votre compte Claxedo.",
+    "settings.general.connectedApps.revoke": "Deconnecter",
+    "settings.general.connectedApps.revoking": "Deconnexion...",
   },
 
   es: {
@@ -106,6 +148,12 @@ export const cloudStrings = {
     "settings.general.account.logout.title": "Cerrar sesion",
     "settings.general.account.logout.description": "Cerrar sesion de su cuenta Claxedo",
     "settings.general.account.logout.button": "Cerrar sesion",
+
+    // Connected applications
+    "settings.general.section.connectedApps": "Aplicaciones conectadas",
+    "settings.general.connectedApps.empty": "Ninguna aplicacion tiene acceso a su cuenta Claxedo.",
+    "settings.general.connectedApps.revoke": "Desconectar",
+    "settings.general.connectedApps.revoking": "Desconectando...",
   },
 } as const satisfies Record<string, Record<string, string>>
 
