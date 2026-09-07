@@ -204,9 +204,6 @@ export function createEmbeddedAuth(
 
   const auth = betterAuth(options)
 
-  // better-auth normally migrates via its CLI; an embedded self-host issuer
-  // has no separate deploy step, so run the schema migrations in-process at
-  // construction. Both the handler and the verifier await this.
   /**
    * The confidential client the box introspects with. Better Auth offers no
    * server-side call that reads an access token's claims without one, and its
@@ -241,12 +238,16 @@ export function createEmbeddedAuth(
     await adapter.create({ model: "oauthClient", data: row })
   }
 
+  // better-auth normally migrates via its CLI; an embedded self-host issuer has
+  // no separate deploy step, so the schema migrations and the client row this
+  // box needs are written in-process at construction. Every consumer below
+  // awaits this.
   const ready = getMigrations(options)
     .then(({ runMigrations }) => runMigrations())
     .then(seedIntrospectionClient)
-  // Every consumer below awaits `ready` and so sees a boot failure; this only
-  // stops an instance nobody went on to use — one closed while the schema work
-  // was still in flight — from raising an unhandled rejection.
+  // A boot failure still reaches whoever awaits `ready`; this only stops an
+  // instance nobody went on to use — one closed while the schema work was
+  // still in flight — from raising an unhandled rejection.
   void ready.catch(() => undefined)
 
   const handler = async (request: Request) => {
