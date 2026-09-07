@@ -211,11 +211,16 @@ describe("@claxedo/local-server closure", () => {
     // in it. The 23rd package is `@claxedo/mcp`, the first-party MCP endpoint
     // the desktop composition mounts at `/api/claxedo/mcp` for the sessions it
     // launches; it reaches only the MCP SDK, hono, zod, helpers and the runtime
-    // contract, all already present here. The numbers below are the last
-    // MEASURED values (80 modules, 23 packages) and must be re-run, never
-    // summed from increments.
+    // contract, all already present here. The 81st module is
+    // `agent-config/hosted-mcp-install.ts`, the one-click write of the hosted
+    // `claxedo` entry into the Claude Code, Cursor and Codex configs on this
+    // machine — the desktop's own agent-config routes are what a user clicks,
+    // so this is where it belongs; it reads node builtins only and adds no
+    // package edge. The numbers below are the last MEASURED values
+    // (81 modules, 23 packages) and must be re-run, never summed from
+    // increments.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(80)
+    expect(modules.size).toBeLessThanOrEqual(81)
     expect(packages.size).toBeLessThanOrEqual(23)
   })
 })
