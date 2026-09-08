@@ -549,49 +549,65 @@ test.describe("live real-harness smoke @live", () => {
     })
     }
 
-    test(`${harness} live permission approval gates a file write through reload`, async ({ page }) => {
-      const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
-      test.skip(!binary, `The live approval flow requires the installed and authenticated ${harness} CLI.`)
-      const dir = await makeWorkspace(`${harness}-live-permission`)
-      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-approved-"))
-      const output = path.join(outputDir, "result.txt")
-      try {
-        await seedOneProject(page, dir)
-        const input = await openDraftPrompt(page, dir)
-        await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
-        await waitForHarnessReady(page)
-        const permissionMode = page.locator('[data-action="prompt-permission-mode"]').last()
-        const mode = harness === "claude" ? "default" : "workspace-write"
-        await permissionMode.click()
-        await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
-        await expect(permissionMode).toHaveAttribute("data-mode", mode)
-        const marker = `LIVE-APPROVED-${Date.now()}`
-        await composePrompt(page, input,
-          `Run exactly this shell command once: printf '${marker}' | tee '${output}'. ` +
-          (harness === "codex" ? 'Use exec_command with sandbox_permissions="require_escalated" and justification="Write the isolated test file". ' : "Use the Bash tool. ") +
-          `Wait for approval. After execution, reply with exactly the command output. Do not run any other tools or use any alternative way to write the file.`,
-        )
-        await page.locator(SELECTORS.submitControl).last().click()
-        await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
-        const sessionUrl = page.url()
-        const dock = page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
-        await expect(dock).toBeVisible({ timeout: 60_000 })
-        expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
-        await page.reload({ waitUntil: "domcontentloaded" })
-        await expect(dock).toBeVisible({ timeout: 30_000 })
-        expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
-        await page.screenshot({ path: test.info().outputPath("live-permission-pending.png") })
-        await dock.getByRole("button", { name: "Allow once", exact: true }).click()
-        await expect.poll(() => fs.readFile(output, "utf8").catch(() => ""), { timeout: 30_000 }).toBe(marker)
-        await expectAssistantReplyVisible(page, marker, { spec: "live-real-harness-smoke", scenario: `${harness}-permission-approved` })
-        await expect(page).toHaveURL(sessionUrl)
-        await page.reload({ waitUntil: "domcontentloaded" })
-        await expectAssistantReplyVisible(page, marker)
-        await expect(dock).toHaveCount(0)
-      } finally {
-        await fs.rm(outputDir, { recursive: true, force: true })
-      }
-    })
+    for (const decision of ["Allow once", "Deny"] as const) {
+      test(`${harness} live permission ${decision === "Allow once" ? "approval" : "denial"} gates a file write through reload`, async ({ page }) => {
+        const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+        test.skip(!binary, `The live approval flow requires the installed and authenticated ${harness} CLI.`)
+        const dir = await makeWorkspace(`${harness}-live-permission`)
+        const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-approved-"))
+        const output = path.join(outputDir, "result.txt")
+        try {
+          await seedOneProject(page, dir)
+          const input = await openDraftPrompt(page, dir)
+          await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+          await waitForHarnessReady(page)
+          const permissionMode = page.locator('[data-action="prompt-permission-mode"]').last()
+          const mode = harness === "claude" ? "default" : "workspace-write"
+          await permissionMode.click()
+          await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
+          await expect(permissionMode).toHaveAttribute("data-mode", mode)
+          const marker = `LIVE-PERMISSION-${Date.now()}`
+          const expectedReply = decision === "Deny" ? `DENIED-${marker}` : marker
+          await composePrompt(page, input,
+            `Run exactly this shell command once: printf '${marker}' | tee '${output}'. ` +
+            (harness === "codex" ? 'Use exec_command with sandbox_permissions="require_escalated" and justification="Write the isolated test file". ' : "Use the Bash tool. ") +
+            `Wait for approval. After execution, reply with exactly the command output. If permission is denied, reply exactly DENIED-${marker}. Do not run any other tools or use any alternative way to write the file.`,
+          )
+          await page.locator(SELECTORS.submitControl).last().click()
+          await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+          const sessionUrl = page.url()
+          const dock = page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
+          await expect(dock).toBeVisible({ timeout: 60_000 })
+          expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+          await page.reload({ waitUntil: "domcontentloaded" })
+          await expect(dock).toBeVisible({ timeout: 30_000 })
+          expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+          await page.screenshot({ path: test.info().outputPath("live-permission-pending.png") })
+          await dock.getByRole("button", { name: decision, exact: true }).click()
+          if (decision === "Allow once") {
+            await expect.poll(() => fs.readFile(output, "utf8").catch(() => ""), { timeout: 30_000 }).toBe(marker)
+          }
+          await expectAssistantReplyVisible(page, expectedReply, { spec: "live-real-harness-smoke", scenario: `${harness}-permission-${decision}` })
+          if (decision === "Deny") expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+          await expect(page).toHaveURL(sessionUrl)
+          await page.reload({ waitUntil: "domcontentloaded" })
+          await expectAssistantReplyVisible(page, expectedReply)
+          await expect(dock).toHaveCount(0)
+          if (decision === "Deny") {
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            const followup = `AFTER-DENIAL-${Date.now()}`
+            await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+              `Reply exactly ${followup}. Do not use tools or retry the denied action.`)
+            await page.locator(SELECTORS.submitControl).last().click()
+            await expectAssistantReplyVisible(page, followup)
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            await expect(page).toHaveURL(sessionUrl)
+          }
+        } finally {
+          await fs.rm(outputDir, { recursive: true, force: true })
+        }
+      })
+    }
   }
 
   test("codex ACP harness (real codex-acp subprocess) completes 3 real turns and survives reload", async ({
