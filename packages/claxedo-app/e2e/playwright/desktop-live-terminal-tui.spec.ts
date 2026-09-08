@@ -69,6 +69,13 @@ test("packaged Codex terminal completes a real TUI turn and survives app restart
     await expect(rows).not.toContainText(/model:\s+loading|Booting MCP server/, { timeout: 45_000 })
     await packaged.page.keyboard.press("Enter")
     await expect(rows).toContainText("DESKTOP_TUI_OK", { timeout: 90_000 })
+    const lifecycleUrl = `${server}/api/wr/hook/terminal-session?terminalId=${pty.id}&directory=${encodeURIComponent(directory)}`
+    await expect.poll(async () => {
+      const response = await fetch(lifecycleUrl)
+      expect(response.ok).toBe(true)
+      const body = await response.json() as { session: { eventType?: string } | null }
+      return body.session?.eventType
+    }, { timeout: 15_000, message: "Actual Codex completion must reach the terminal hook store" }).toBe("Idle")
     await packaged.page.screenshot({ path: test.info().outputPath("codex-tui-completed.png") })
     const before = await (await fetch(ptyUrl)).json() as { pid: number; status: string }
     expect(before.status).toBe("running")

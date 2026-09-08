@@ -1,4 +1,7 @@
 import { describe, expect, it } from "bun:test"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
 import {
   generateNotifyScript,
   generateGeminiHook,
@@ -11,6 +14,45 @@ import { NOTIFY_MARKER } from "./core/constants"
 // ── Notify script ───────────────────────────────────────────────────────────
 
 describe("generateNotifyScript", () => {
+  it("delivers a real shell hook with workspace routing identity outside the form body", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-notify-test-"))
+    let delivered: { workspace: string | null; terminal: string | null; event: string | null } | undefined
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        // The dispatcher selects a workspace before its runtime parses the form.
+        const workspace = request.headers.get("x-workspace-id")
+        if (!workspace) return new Response("Workspace not routed", { status: 404 })
+        const form = new URLSearchParams(await request.text())
+        delivered = { workspace, terminal: form.get("terminalId"), event: form.get("eventType") }
+        return Response.json({ success: true })
+      },
+    })
+    try {
+      const script = path.join(root, "notify.sh")
+      await writeFile(script, generateNotifyScript(server.port!))
+      const child = Bun.spawn(["/bin/bash", script, JSON.stringify({ type: "agent-turn-complete" })], {
+        env: {
+          ...process.env,
+          CLAXEDO_SERVER_PORT: String(server.port),
+          CLAXEDO_WORKSPACE_ID: "ws_notify_test",
+          CLAXEDO_TERMINAL_ID: "pty_notify_test",
+          CLAXEDO_TAB_ID: "tab_notify_test",
+          WORKSPACE_RUNTIME_STATE_DIR: root,
+        },
+        stdout: "ignore", stderr: "pipe",
+      })
+      expect(await child.exited).toBe(0)
+      const deadline = Date.now() + 3000
+      while (!delivered && Date.now() < deadline) await Bun.sleep(20)
+      expect(delivered).toEqual({ workspace: "ws_notify_test", terminal: "pty_notify_test", event: "Idle" })
+    } finally {
+      server.stop(true)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
   it("includes marker and port", () => {
     const script = generateNotifyScript(7860)
     expect(script).toContain(NOTIFY_MARKER)
