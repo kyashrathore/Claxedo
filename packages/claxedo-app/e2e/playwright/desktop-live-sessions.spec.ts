@@ -19,7 +19,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["unavailable model recovery across full restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of ["unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -94,7 +94,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await packaged.page.keyboard.press("Escape")
     }
 
-    if (flow === "unavailable model recovery across full restart") {
+    if (flow.startsWith("unavailable model recovery")) {
       const warmup = `MODEL_WARMUP_${Date.now()}`
       await compose(input, `Reply with exactly this token: ${warmup}`)
       const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
@@ -103,6 +103,13 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       expect(created.ok()).toBe(true)
       const session = await created.json() as { id: string }
       await expectAssistantReplyVisible(packaged.page, warmup)
+      if (flow.endsWith("after daemon restart")) {
+        await packaged.close()
+        await shutdownPackagedTestDaemon(profile)
+        packaged = await launch()
+        expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+        await expectAssistantReplyVisible(packaged.page, warmup)
+      }
       const marker = `MODEL_RECOVERED_${Date.now()}`
       const prompt = `Context: café — नमस्ते.\n\nReply with exactly this token: ${marker}`
       // Seed a stale/unavailable model through the actual prompt API. The real

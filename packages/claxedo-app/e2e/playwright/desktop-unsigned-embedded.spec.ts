@@ -25,6 +25,7 @@ import * as path from "node:path"
 import { promisify } from "node:util"
 import { expectNoBootErrors, installBootObserver } from "../helpers/boot-observer"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
+import { shutdownPackagedTestDaemon } from "../helpers/desktop-daemon"
 import { expectRowGeometry } from "../helpers/geometry-oracle"
 import {
   expectRailRowMovesToTop,
@@ -987,20 +988,19 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     scripted = await startScriptedModelServer()
     claudeConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-e2e-claude-config-"))
     const guardedClaude = await installClaudeNetworkGuard(claudeConfigDir, scripted.url)
-    packaged = await launchPackagedApp({
-      timeoutMs: BOOT_TIMEOUT,
-      env: {
-        ...scripted.piEnv,
-        ...claudeScriptedEnv(scripted.url, claudeConfigDir),
-        // A safety fuse, not the redirect mechanism. Localhost bypasses the
-        // proxy; if a future Claude build ignores ANTHROPIC_BASE_URL, external
-        // HTTPS fails closed instead of touching the developer's real account.
-        HTTPS_PROXY: "http://127.0.0.1:9",
-        HTTP_PROXY: "http://127.0.0.1:9",
-        NO_PROXY: "127.0.0.1,localhost",
-        CLAUDE_CODE_EXECUTABLE: guardedClaude.wrapper,
-      },
-    })
+    const env = {
+      ...scripted.piEnv,
+      ...claudeScriptedEnv(scripted.url, claudeConfigDir),
+      // A safety fuse, not the redirect mechanism. Localhost bypasses the
+      // proxy; if a future Claude build ignores ANTHROPIC_BASE_URL, external
+      // HTTPS fails closed instead of touching the developer's real account.
+      HTTPS_PROXY: "http://127.0.0.1:9",
+      HTTP_PROXY: "http://127.0.0.1:9",
+      NO_PROXY: "127.0.0.1,localhost",
+      CLAUDE_CODE_EXECUTABLE: guardedClaude.wrapper,
+    }
+    const launch = (userDataDir?: string) => launchPackagedApp({ timeoutMs: BOOT_TIMEOUT, userDataDir, env })
+    packaged = await launch()
 
     const serverBase = new URL(await expectServerReachable(packaged, 45_000)).origin
     await installClaudeFixtureCredential(serverBase)
@@ -1111,6 +1111,11 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       scenario: "c4-real-claude-reload",
     })
 
+    const profile = packaged.userDataDir
+    await packaged.app.close()
+    await shutdownPackagedTestDaemon(profile)
+    packaged = await launch(profile)
+    expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
     const failureMarker = "C4_CLAUDE_PROVIDER_ERROR"
     const explanation = `Request blocked for ${failureMarker}. Start a new session or choose another model.`
     const releaseError = scripted.scriptError({ marker: failureMarker, status: 400, message: explanation })
