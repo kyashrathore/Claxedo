@@ -169,3 +169,41 @@ describe("generateCopilotProjectHooks", () => {
     expect(json).toContain("/tmp/hooks/copilot-hook.sh")
   })
 })
+
+for (const [provider, generate, event, argument] of [
+  ["gemini", generateGeminiHook, "BeforeAgent", ""],
+  ["cursor", generateCursorHook, "beforeSubmitPrompt", "Start"],
+] as const) {
+  it(`${provider} forwards complete provider JSON and waits for the HTTP acknowledgement`, async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-provider-hook-"))
+    let received: string | null = null
+    let acknowledged = false
+    const payload = JSON.stringify({ hook_event_name: event, conversation_id: "conversation", session_id: "provider-session", prompt: 'Keep "quotes" and\nnewlines', transcript_path: "/tmp/provider-session.jsonl" }, null, 2)
+    const server = Bun.serve({
+      hostname: "127.0.0.1", port: 0,
+      async fetch(request) {
+        received = new URLSearchParams(await request.text()).get("providerEvent")
+        await Bun.sleep(100)
+        acknowledged = true
+        return Response.json({ success: true })
+      },
+    })
+    try {
+      const notify = path.join(root, "notify.sh")
+      const script = path.join(root, "hook.sh")
+      await writeFile(notify, generateNotifyScript(server.port!), { mode: 0o700 })
+      await writeFile(script, generate(notify))
+      const child = Bun.spawn(["/bin/bash", script, argument], {
+        stdin: new Blob([payload]), stdout: "pipe", stderr: "pipe",
+        env: { ...process.env, CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "provider-hook-tab", CLAXEDO_TERMINAL_ID: "provider-hook-terminal", CLAXEDO_AGENT: provider },
+      })
+      expect(await child.exited).toBe(0)
+      expect(acknowledged, "The next provider hook must not overtake an unacknowledged event").toBe(true)
+      expect<string | null>(received).toBe(payload)
+      expect(JSON.parse(await new Response(child.stdout).text())).toEqual({})
+    } finally {
+      server.stop(true)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+}

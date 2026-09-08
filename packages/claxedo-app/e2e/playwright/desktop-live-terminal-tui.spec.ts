@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page } from "@playwright/test"
 import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -29,14 +29,42 @@ for (const { harness, child, pause } of [
       : harness === "gemini" ? { name: "Gemini", command: "gemini --yolo" } : undefined
     let packaged: PackagedApp | undefined
     let ptyUrl: string | undefined
-    const traffic: { at: number; kind: string; data: string }[] = []
+    const traffic: { at: number; launch: number; kind: string; data: string }[] = []
     const ptyStates: unknown[] = []
     let trafficBytes = 0
-    const launch = () => launchPackagedApp({
-      userDataDir: profile,
-      preserveUserDataDir: true,
-      env: providerEnv,
-    })
+    let launches = 0
+    const rawHookDirectory = path.join(root, "raw-hooks")
+    const launch = () => {
+      const launchNumber = ++launches
+      const observe = (page: Page) => {
+        page.on("request", (request) => {
+          if (request.method() === "PUT" && new URL(request.url()).pathname.includes("/pty/")) {
+            ptyStates.push({ phase: "update", launch: launchNumber, at: Date.now(), body: request.postData() })
+          }
+        })
+        page.on("websocket", (socket) => {
+          if (!socket.url().includes("/pty/")) return
+          const record = (kind: string, payload: string | Buffer) => {
+            if (trafficBytes > 512_000) return
+            const data = payload.toString()
+            trafficBytes += data.length
+            traffic.push({ at: Date.now(), launch: launchNumber, kind, data })
+          }
+          socket.on("framesent", ({ payload }) => record("input", payload))
+          socket.on("framereceived", ({ payload }) => record("output", payload))
+          socket.on("close", () => record("close", ""))
+        })
+      }
+      return launchPackagedApp({
+        userDataDir: profile,
+        preserveUserDataDir: true,
+        env: providerEnv,
+        beforeShellWindow: async (context) => {
+          context.on("page", observe)
+          for (const page of context.pages()) observe(page)
+        },
+      })
+    }
     try {
       await fs.mkdir(path.join(home, ".codex"), { recursive: true })
       await fs.mkdir(directory)
@@ -76,7 +104,9 @@ for (const { harness, child, pause } of [
         await fs.mkdir(path.join(home, ".claude"), { recursive: true })
         await fs.writeFile(path.join(home, ".claude/.credentials.json"), credential, { mode: 0o600 })
         if (child) {
-          const command = `input=$(cat); printf '%s\\n' "$input" >> '${path.join(root, "raw-hooks.jsonl")}'`
+          await fs.mkdir(rawHookDirectory)
+          // Each invocation owns a file: concurrent hooks must not interleave JSON writes.
+          const command = `file=$(mktemp '${path.join(rawHookDirectory, "hook.XXXXXX")}'); cat > "$file"`
           await fs.writeFile(path.join(home, ".claude/settings.json"), JSON.stringify({ hooks: Object.fromEntries(
             ["UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PostToolUse"].map((event) => [event, [{ hooks: [{ type: "command", command }] }]]),
           ) }))
@@ -84,23 +114,6 @@ for (const { harness, child, pause } of [
       }
       await exec("git", ["init"], { cwd: directory })
       packaged = await launch()
-      packaged.page.on("request", (request) => {
-        if (request.method() === "PUT" && new URL(request.url()).pathname.includes("/pty/")) {
-          ptyStates.push({ phase: "update", at: Date.now(), body: request.postData() })
-        }
-      })
-      packaged.page.on("websocket", (socket) => {
-        if (!socket.url().includes("/pty/")) return
-        const record = (kind: string, payload: string | Buffer) => {
-          if (trafficBytes > 512_000) return
-          const data = payload.toString()
-          trafficBytes += data.length
-          traffic.push({ at: Date.now(), kind, data })
-        }
-        socket.on("framesent", ({ payload }) => record("input", payload))
-        socket.on("framereceived", ({ payload }) => record("output", payload))
-        socket.on("close", () => record("close", ""))
-      })
       const server = new URL(await expectServerReachable(packaged)).origin
       const response = await fetch(`${server}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
       expect(response.ok).toBe(true)
@@ -275,7 +288,13 @@ for (const { harness, child, pause } of [
       }
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-restarted.png`) })
     } finally {
-      if (child) await test.info().attach("raw-provider-hooks", { body: await fs.readFile(path.join(root, "raw-hooks.jsonl"), "utf8").catch(() => ""), contentType: "application/jsonl" })
+      if (child) {
+        const files = await fs.readdir(rawHookDirectory).catch(() => [])
+        const hooks = await Promise.all(files.map(async (file) => ({
+          file, payload: await fs.readFile(path.join(rawHookDirectory, file), "utf8"),
+        })))
+        await test.info().attach("raw-provider-hooks", { body: JSON.stringify(hooks), contentType: "application/json" })
+      }
       if (ptyUrl) ptyStates.push({ phase: "cleanup", at: Date.now(), pty: await fetch(ptyUrl).then((response) => response.json()).catch(() => null) })
       await test.info().attach("pty-state", { body: JSON.stringify(ptyStates), contentType: "application/json" })
       await test.info().attach("pty-traffic", { body: JSON.stringify(traffic), contentType: "application/json" })
