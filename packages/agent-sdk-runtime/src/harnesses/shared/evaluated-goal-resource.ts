@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentGoalResource } from "../../adapter-contract"
 import { goalCapabilities, GOAL_ACTIONS } from "../../capabilities"
@@ -10,6 +11,7 @@ export function createEvaluatedGoalResource(input: {
   runIteration(turn: SdkRuntimeTurnInput, prompt: string, objective: string): Promise<GoalEvaluation>
 }) {
   const { host } = input
+  const pendingRequests = new Map<string, { id: string; text: string }>()
   const runs = new Map<string, { abort: AbortController; done: Promise<void> }>()
   const publish = (sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) =>
     host.publishGoal({ sessionId, directory, goal })
@@ -39,7 +41,9 @@ export function createEvaluatedGoalResource(input: {
           : goalInitialPrompt(goal.objective)
         let evaluation: GoalEvaluation | undefined
         let failure: unknown
-        const admitted = await host.runProviderTurn({ sessionId, directory }, async (turn) => {
+        const userMessage = pendingRequests.get(sessionId)
+        const admitted = await host.runProviderTurn({ sessionId, directory, ...(userMessage ? { userMessage } : {}) }, async (turn) => {
+          if (pendingRequests.get(sessionId) === userMessage) pendingRequests.delete(sessionId)
           try {
             evaluation = await input.runIteration(turn, prompt, goal.objective)
           } catch (error) {
@@ -112,6 +116,7 @@ export function createEvaluatedGoalResource(input: {
         updatedAt: now,
         iteration: 0,
       }
+      pendingRequests.set(sessionId, { id: randomUUID(), text: request.objective })
       publish(sessionId, directory, goal)
       launch(sessionId, directory)
       return { ok: true, goal }
@@ -132,6 +137,7 @@ export function createEvaluatedGoalResource(input: {
     },
     delete: async (sessionId, directory) => {
       await pause(sessionId, directory ?? "")
+      pendingRequests.delete(sessionId)
       publish(sessionId, directory ?? "", null)
       return { ok: true, goal: null }
     },

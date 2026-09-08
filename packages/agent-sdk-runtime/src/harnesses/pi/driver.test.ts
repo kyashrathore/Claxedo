@@ -294,7 +294,12 @@ test("a goal accounts for work and evaluator usage before its single terminal ev
     expect(usage.map((event) => event.properties.observation?.tokens.input)).toEqual([11, 5])
     expect(recorded.filter((event) => event.type === "session.idle")).toHaveLength(1)
     expect(recorded.indexOf(usage[1])).toBeLessThan(recorded.findIndex((event) => event.type === "session.idle"))
-    expect(JSON.stringify(f.store.getMessages(f.binding.sessionId))).not.toContain('"met"')
+    const messages = f.store.getMessages(f.binding.sessionId)
+    const users = messages.filter((message) => message.info.role === "user")
+    expect(users).toHaveLength(1)
+    expect(users[0].parts).toContainEqual(expect.objectContaining({ type: "text", text: "Write and verify the file" }))
+    expect(messages.filter((message) => message.info.role === "assistant").every((message) => message.info.parentID === users[0].info.id)).toBe(true)
+    expect(JSON.stringify(messages)).not.toContain('"met"')
   } finally {
     await f.cleanup()
   }

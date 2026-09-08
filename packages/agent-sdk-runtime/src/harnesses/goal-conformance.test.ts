@@ -59,11 +59,17 @@ async function codexHarness(): Promise<ConformanceHarness> {
 
 async function claudeHarness(): Promise<ConformanceHarness> {
   const fakeQuery = ((input: {
+    prompt: string
     options: {
       sessionStore: { append(key: { projectKey: string; sessionId: string }, entries: unknown[]): Promise<void> }
     }
   }) => {
     const stream = (async function* () {
+      if (input.prompt === "/goal clear") {
+        yield { type: "result", subtype: "success", is_error: false, num_turns: 0 }
+        return
+      }
+      yield { type: "system", subtype: "init", session_id: "claude-session" }
       await input.options.sessionStore.append(
         { projectKey: "/repo", sessionId: "claude-session" },
         [{

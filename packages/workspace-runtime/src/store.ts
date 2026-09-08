@@ -35,7 +35,7 @@ import type {
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
-import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   type CompatEvent,
@@ -179,6 +179,7 @@ type Control =
   | NoticeCreated
   | ProjectionResetRequested
   | ConfigUpdate
+  | { type: "goal.update"; goal: RuntimeGoalSnapshot | null }
 
 /** What both `bun:sqlite` and `better-sqlite3` return from a write statement. */
 type SqliteRunResult = {
@@ -669,6 +670,7 @@ export class RuntimeStore {
         variant TEXT,
         agent TEXT,
         handoff_json TEXT,
+        goal_json TEXT,
         permission_mode TEXT,
         permission_state_json TEXT,
         created_at INTEGER NOT NULL,
@@ -917,6 +919,7 @@ export class RuntimeStore {
       "ALTER TABLE session ADD COLUMN variant TEXT",
       "ALTER TABLE session ADD COLUMN agent TEXT",
       "ALTER TABLE session ADD COLUMN handoff_json TEXT",
+      "ALTER TABLE session ADD COLUMN goal_json TEXT",
       "ALTER TABLE session ADD COLUMN permission_mode TEXT",
       "ALTER TABLE session ADD COLUMN permission_state_json TEXT",
     ]) {
@@ -2156,6 +2159,11 @@ export class RuntimeStore {
       return
     }
     if (control.type === "turn.finish") return
+    if (control.type === "goal.update") {
+      this.db.prepare("UPDATE session SET goal_json = ? WHERE id = ?")
+        .run(control.goal ? JSON.stringify(control.goal) : null, row.sessionId)
+      return
+    }
     if (control.type === "config.update") {
       this.applyConfigUpdate(row.sessionId, control.patch, row.ts, control.directory)
       return
@@ -3783,6 +3791,19 @@ export class RuntimeStore {
         prev.updated_at,
         id,
       )
+  }
+
+  getGoal(id: string): RuntimeGoalSnapshot | null {
+    const row = this.db.prepare<{ goal_json: string | null }>("SELECT goal_json FROM session WHERE id = ?").get(id)
+    return row?.goal_json ? JSON.parse(row.goal_json) : null
+  }
+
+  setGoal(id: string, goal: RuntimeGoalSnapshot | null) {
+    if (!this.getSession(id)) return
+    this.commit({
+      seq: this.next(id), ts: Date.now(), sessionId: id, kind: "control",
+      control: { type: "goal.update", goal },
+    })
   }
 
   updateSessionConfig(id: string, update: SessionConfigUpdate, input: { directory?: string } = {}) {

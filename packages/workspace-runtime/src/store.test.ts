@@ -2512,3 +2512,23 @@ void describe("provisional user parts", () => {
     store.close()
   })
 })
+
+
+void it("persists Goal state across reopen and clears it with the session", () => {
+  const root = tmp()
+  const store = new RuntimeStore(root)
+  store.bindSession({ sessionId: "goal-session", directory: "/work", agentSessionId: "pi-native" })
+  const goal = { sessionId: "goal-session", objective: "Verify the workspace", status: "active" as const, iteration: 0, createdAt: 1, updatedAt: 1 }
+  store.setGoal("goal-session", goal)
+  assert.deepEqual(store.getGoal("goal-session"), goal)
+  assert.ok(journal(root, "goal-session").some((row) => row.type === "goal.update"))
+  const reopened = new RuntimeStore(root)
+  assert.deepEqual(reopened.getGoal("goal-session"), goal)
+  reopened.setGoal("goal-session", { ...goal, status: "paused", updatedAt: 2 })
+  assert.equal(store.getGoal("goal-session")?.status, "paused")
+  reopened.setGoal("goal-session", null)
+  assert.equal(new RuntimeStore(root).getGoal("goal-session"), null)
+  reopened.setGoal("goal-session", goal)
+  reopened.deleteSession("goal-session")
+  assert.equal(store.getGoal("goal-session"), null)
+})

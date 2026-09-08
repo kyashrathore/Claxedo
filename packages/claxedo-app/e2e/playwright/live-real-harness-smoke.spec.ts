@@ -560,7 +560,7 @@ test.describe("live real-harness smoke @live", () => {
     })
   }
 
-  for (const harness of ["claude", "codex"] as const) {
+  for (const harness of ["claude", "codex", "pi"] as const) {
     for (const goalMode of [false, true]) {
     test(`${harness} live Stop ends the tool process and recovers the session${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
@@ -572,17 +572,23 @@ test.describe("live real-harness smoke @live", () => {
       try {
         await seedOneProject(page, dir)
         const input = await openDraftPrompt(page, dir)
-        await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+        await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : harness === "codex" ? /^Codex$/ : /^Pi$/, 0)
+        if (harness === "pi") {
+          await page.locator('[data-action="prompt-harness-model"]').last().click()
+          await page.locator('[data-component="harness-model-picker"] [data-key="pi:openai-codex/gpt-5.4"]').click()
+        }
         await waitForHarnessReady(page)
+        if (harness !== "pi") {
         await page.locator('[data-action="prompt-permission-mode"]').last().click()
         const mode = harness === "claude" ? "bypassPermissions" : "full-access"
         await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
+        }
         const workload = path.join(dir, "interrupt-workload.cjs")
         await fs.writeFile(workload, `const fs = require("node:fs"); fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); const timer = setInterval(() => { if (!fs.existsSync(${JSON.stringify(releaseFile)})) return; fs.writeFileSync(${JSON.stringify(finishedFile)}, "leaked"); clearInterval(timer); }, 50);`)
         const command = `node '${workload}'`
         await composePrompt(page, input,
           `${goalMode ? "/goal " : ""}Run exactly this shell command: ${command}. ` +
-          (harness === "claude" ? "Use Bash with timeout 120000. " : "Use exec_command with yield_time_ms 30000. ") +
+          (harness === "claude" ? "Use Bash with timeout 120000. " : harness === "codex" ? "Use exec_command with yield_time_ms 30000. " : "Use bash. ") +
           "Do not create the release file or run any other tools. The test runner controls this command's lifecycle.",
         )
         await page.locator(SELECTORS.submitControl).last().click()
@@ -622,6 +628,8 @@ test.describe("live real-harness smoke @live", () => {
       }
     })
     }
+
+    if (harness === "pi") continue
 
     for (const delegation of ["native", "claxedo-mcp"] as const) {
     test(`${harness} live ${delegation === "native" ? "subagent" : "Claxedo MCP cross-harness child"} completes an openable child transcript and survives reload`, async ({ page }) => {
