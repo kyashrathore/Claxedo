@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { getCapabilityResponses } from "./capability-responder"
+import { getCapabilityResponses as respond } from "./capability-responder"
+
+const getCapabilityResponses = (data: string) => respond(data, () => ({ foreground: 0xd4d4d4ff, background: 0x1c1c1cff }))
 
 describe("terminal capability responder", () => {
   // -------------------------------------------------------------------------
@@ -76,6 +78,19 @@ describe("terminal capability responder", () => {
     const r = getCapabilityResponses("\x1b]10;?\x07\x1b]11;?\x07")
     expect(r).toContain("\x1b]10;rgb:d4d4/d4d4/d4d4\x07")
     expect(r).toContain("\x1b]11;rgb:1c1c/1c1c/1c1c\x07")
+  })
+
+  test("reports light theme channels and ignores alpha", () => {
+    expect(respond("\x1b]10;?\x07\x1b]11;?\x07", () => ({ foreground: 0x211e1eff, background: 0xfcfcfc80 }))).toEqual([
+      "\x1b]10;rgb:2121/1e1e/1e1e\x07",
+      "\x1b]11;rgb:fcfc/fcfc/fcfc\x07",
+    ])
+  })
+
+  test("does not read colors for ordinary output or device queries", () => {
+    const unexpected = () => { throw new Error("unexpected color read") }
+    expect(respond("hello", unexpected)).toEqual([])
+    expect(respond("\x1b[c", unexpected)).toEqual(["\x1b[?64;1;2;4;6;9;15;22;29c"])
   })
 
   // getCapabilityResponses is the only producer of these RGB values; the

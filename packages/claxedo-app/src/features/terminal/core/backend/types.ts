@@ -52,6 +52,8 @@ export interface TerminalBackend {
 
   // Options (reactive updates from SolidJS effects)
   setTheme(theme: TerminalColors): void
+  /** Parsed foreground/background RGBA values owned by the renderer. */
+  getDefaultColors(): { foreground: number; background: number }
   setFontFamily(font: string): void
   setCursorBlink(blink: boolean): void
   /** Toggle xterm's accessible (screen-reader) DOM layer on a live terminal. */

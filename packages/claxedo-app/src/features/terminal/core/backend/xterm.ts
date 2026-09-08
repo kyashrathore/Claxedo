@@ -1,3 +1,4 @@
+import { objectProperty } from "./reflect"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import "@xterm/xterm/css/xterm.css"
 import "../terminal.css"
@@ -291,6 +292,16 @@ export const createBackend: CreateBackendFn = async (
       }
     },
 
+    getDefaultColors() {
+      // xterm owns parsed colors, including changes made by OSC commands.
+      const colors = objectProperty(objectProperty(objectProperty(xterm, "_core"), "_themeService"), "colors")
+      const foreground = objectProperty(objectProperty(colors, "foreground"), "rgba")
+      const background = objectProperty(objectProperty(colors, "background"), "rgba")
+      if (typeof foreground !== "number" || typeof background !== "number") {
+        throw new Error("xterm parsed default colors are unavailable")
+      }
+      return { foreground, background }
+    },
     setTheme(theme) {
       xterm.options.theme = theme
     },

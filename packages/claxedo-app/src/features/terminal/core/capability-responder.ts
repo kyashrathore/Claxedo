@@ -24,14 +24,22 @@ const osc11QueryRe = /\x1b\]11;\?(?:\x1b\\|\x07)/
  *   - DA2 (\x1b[>c, \x1b[>0c) — Secondary Device Attributes
  *   - Kitty keyboard query (\x1b[?u) — report current flags (0 = none active)
  */
-export function getCapabilityResponses(data: string): string[] {
+export function getCapabilityResponses(
+  data: string,
+  getColors: () => { foreground: number; background: number },
+): string[] {
   if (!data.includes("\x1b]") && !data.includes("\x1b[")) return []
 
   const responses: string[] = []
 
   if (data.includes("\x1b]")) {
-    if (osc10QueryRe.test(data)) responses.push("\x1b]10;rgb:d4d4/d4d4/d4d4\x07")
-    if (osc11QueryRe.test(data)) responses.push("\x1b]11;rgb:1c1c/1c1c/1c1c\x07")
+    const foreground = osc10QueryRe.test(data)
+    const background = osc11QueryRe.test(data)
+    if (foreground || background) {
+      const colors = getColors()
+      if (foreground) responses.push(`\x1b]10;rgb:${rgbChannels(colors.foreground)}\x07`)
+      if (background) responses.push(`\x1b]11;rgb:${rgbChannels(colors.background)}\x07`)
+    }
   }
 
   if (data.includes("\x1b[c") || data.includes("\x1b[0c")) {
@@ -47,4 +55,8 @@ export function getCapabilityResponses(data: string): string[] {
   }
 
   return responses
+}
+
+function rgbChannels(rgba: number): string {
+  return [24, 16, 8].map((shift) => (((rgba >>> shift) & 255) * 257).toString(16).padStart(4, "0")).join("/")
 }

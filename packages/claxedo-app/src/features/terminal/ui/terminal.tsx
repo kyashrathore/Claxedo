@@ -1021,7 +1021,7 @@ export const Terminal = (props: TerminalProps) => {
           // unconditionally so the PTY gets the answers now regardless of
           // whether buffer restoration is in progress. Messages still queue
           // for rendering as normal.
-          const capabilityResponses = getCapabilityResponses(data)
+          const capabilityResponses = getCapabilityResponses(data, () => b.getDefaultColors())
           if (capabilityResponses.length > 0 && replayReady) {
             const responseSock = socketRef.current
             if (responseSock && responseSock.readyState === WebSocket.OPEN) {
