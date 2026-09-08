@@ -518,6 +518,8 @@ test.describe("live real-harness smoke @live", () => {
         await test.info().attach("mcp-child-readback.json", { body: JSON.stringify(readback, null, 2), contentType: "application/json" })
         expect(children).toHaveLength(1)
         expect(readback[0]?.config.harness.id).toBe(harness === "claude" ? "codex" : "claude")
+        await expect(page.getByRole("navigation", { name: "Projects and sessions" })
+          .getByRole("button", { name: /^Reply with exactly LIVE-CHILD-/ })).toHaveCount(0)
         if (!(await card.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
       }
       await expect(card).toBeVisible({ timeout: 90_000 })

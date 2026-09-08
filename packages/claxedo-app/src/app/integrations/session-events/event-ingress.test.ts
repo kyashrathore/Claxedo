@@ -654,6 +654,24 @@ describe("global sync event ingress", () => {
     globalEvents.emit({ name: HOST_DIR, details: createdFrame("ses_stream", "ws_1") })
     claxedoEvents.emit(lifecycleFrame("ses_lifecycle", "ws_1"))
 
+    const childCreated = createdFrame("ses_child_stream", "ws_1")
+    Object.assign(childCreated.properties.info, { parentID: "ses_stream" })
+    globalEvents.emit({ name: HOST_DIR, details: childCreated })
+    const childLifecycle = lifecycleFrame("ses_child_lifecycle", "ws_1")
+    Object.assign(childLifecycle.info, { parentID: "ses_lifecycle" })
+    claxedoEvents.emit(childLifecycle)
+
+    // Parent linkage can arrive after a session was initially projected as a root.
+    const linkedLater = createdFrame("ses_linked_later", "ws_1")
+    globalEvents.emit({ name: HOST_DIR, details: linkedLater })
+    globalEvents.emit({
+      name: HOST_DIR,
+      details: {
+        type: "session.updated",
+        properties: { info: { ...linkedLater.properties.info, parentID: "ses_stream" } },
+      },
+    })
+
     const items = queryClient.getQueryData<SessionListResponse>(key)?.items
     expect(items?.map((item) => item.sessionId)).toEqual(["ses_lifecycle", "ses_stream"])
     expect(items?.map((item) => item.directory)).toEqual(["workspace:ws_1", "workspace:ws_1"])

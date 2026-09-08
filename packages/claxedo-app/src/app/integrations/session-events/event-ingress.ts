@@ -545,17 +545,25 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
     typeof info.workspaceID === "string" ? info.workspaceID : event.workspaceId,
     input.projects(),
   )
-  upsertCreatedSessionListRow({
-    row: {
+  if (txt(info.parentID)) {
+    removeSessionListQueryData({
       sessionId: info.id,
-      title: info.title,
       directory: sessionRowDirectory({ workspaceId, hostDirectory: info.directory }),
-      projectId: info.projectID,
       ...(workspaceId ? { workspaceId } : {}),
-      createdAt: info.time.created,
-      updatedAt: info.time.updated,
-    },
-  })
+    })
+  } else {
+    upsertCreatedSessionListRow({
+      row: {
+        sessionId: info.id,
+        title: info.title,
+        directory: sessionRowDirectory({ workspaceId, hostDirectory: info.directory }),
+        projectId: info.projectID,
+        ...(workspaceId ? { workspaceId } : {}),
+        createdAt: info.time.created,
+        updatedAt: info.time.updated,
+      },
+    })
+  }
   applySessionStatusSseEvent({
     directory: event.directory,
     event: { type: "session.idle", properties: { sessionID: info.id } },
@@ -624,7 +632,7 @@ function applySessionEventToSessionList(input: {
     directory,
     ...(workspaceId ? { workspaceId } : {}),
   }
-  if (input.type === "deleted") {
+  if (input.type === "deleted" || txt(info?.parentID)) {
     removeSessionListQueryData(identity)
     return
   }
