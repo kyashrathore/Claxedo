@@ -28,6 +28,19 @@ const DEFAULT_TIMEOUT = 15_000
 
 const PLACEHOLDER_TITLE = /^(New Session|Untitled session)$/
 
+export async function expectTerminalRailStatus(opts: {
+  page: Page
+  terminalId: string
+  status: "working" | "permission" | "done"
+  timeout?: number
+}) {
+  const row = opts.page.locator(SELECTORS.terminalRow(opts.terminalId))
+  await expect(row).toBeVisible({ timeout: opts.timeout ?? DEFAULT_TIMEOUT })
+  await expect(row.locator(SELECTORS.statusDot)).toHaveAttribute("data-sidebar-status", opts.status, {
+    timeout: opts.timeout ?? DEFAULT_TIMEOUT,
+  })
+}
+
 /**
  * The row for `sessionId` is visible without a reload and, when `index` is given, sits at
  * that position among session rows. A duplicate row fails strict mode here (see

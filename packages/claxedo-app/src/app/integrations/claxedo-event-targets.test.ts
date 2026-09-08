@@ -56,13 +56,6 @@ describe("claxedoEventStreamTargets", () => {
       }],
     })).toEqual([
       { kind: "central", url: new URL("http://127.0.0.1:3001/api/claxedo/events") },
-      {
-        kind: "workspace",
-        serverUrl: "http://127.0.0.1:3001",
-        workspaceId: "ws_local",
-        workspaceKind: "local",
-        directory: "/repo/local",
-      },
     ])
   })
 
@@ -313,17 +306,11 @@ describe("claxedoEventStreamTargets", () => {
     ])
   })
 
-  test("a local workspace opens its stream with no connection to wait for", () => {
-    // There is no mint for a local workspace and never will be: it is served by
-    // this surface's own embedded runtime over loopback, which composes the
-    // unbound local policy by construction. Waiting on the connection there
-    // waits forever, and a harness-created session's `session.lifecycle` —
-    // published on the workspace bus and nowhere else — would have no stream to
-    // arrive on.
+  test.each([false, true])("a local workspace has one runtime event feed when accountSigned=%s", (accountSigned) => {
     expect(claxedoEventStreamTargets({
       serverUrl: "http://127.0.0.1:3001",
       directory: "/repo/local",
-      accountSigned: false,
+      accountSigned,
       projects: [{
         workspaces: {
           "/repo/local": {
@@ -335,13 +322,13 @@ describe("claxedoEventStreamTargets", () => {
       }],
     })).toEqual([
       { kind: "central", url: new URL("http://127.0.0.1:3001/api/claxedo/events") },
-      {
+      ...(accountSigned ? [{
         kind: "workspace",
         serverUrl: "http://127.0.0.1:3001",
         workspaceId: "ws_local_only",
         workspaceKind: "local",
         directory: "/repo/local",
-      },
+      }] : []),
     ])
   })
 

@@ -5,6 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
+import { expectTerminalRailStatus } from "../helpers/rail-oracle"
 
 const exec = promisify(execFile)
 
@@ -85,15 +86,46 @@ test("packaged Codex terminal completes a real TUI turn and survives app restart
     await expect.poll(() => previousApp.exitCode !== null || previousApp.signalCode !== null).toBe(true)
     packaged = await launch()
     await expect(packaged.page.locator(selector)).toBeVisible({ timeout: 45_000 })
+    await packaged.page.evaluate(() => {
+      const events: { src: string; time: number; muted: boolean; volume: number }[] = []
+      Object.assign(window, { __claxedoAudioEnded: events })
+      const play = HTMLMediaElement.prototype.play
+      HTMLMediaElement.prototype.play = function () {
+        this.addEventListener("ended", () => events.push({
+          src: this.currentSrc, time: this.currentTime, muted: this.muted, volume: this.volume,
+        }), { once: true })
+        // Delegate to Chromium's actual player; neither playback nor its promise is mocked.
+        return play.call(this)
+      }
+    })
     await expect(packaged.page.locator(`${selector} .xterm-rows`)).toContainText("DESKTOP_TUI_OK", { timeout: 30_000 })
     const after = await (await fetch(ptyUrl)).json() as { pid: number; status: string }
     expect(after).toMatchObject({ pid: before.pid, status: "running" })
     await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
-    await packaged.page.keyboard.type("Reply with the concatenation of RESTART and _TUI_OK, nothing else.", { delay: 20 })
+    await packaged.page.keyboard.type("Run sleep 8 in the terminal, then reply with the concatenation of RESTART and _TUI_OK, nothing else.", { delay: 20 })
     await packaged.page.keyboard.press("Enter")
-    await expect(packaged.page.locator(`${selector} .xterm-rows`)).toContainText("RESTART_TUI_OK", { timeout: 90_000 })
+    await expect.poll(async () => {
+      const response = await fetch(lifecycleUrl)
+      expect(response.ok).toBe(true)
+      const body = await response.json() as { session: { eventType?: string } | null }
+      return body.session?.eventType
+    }, { timeout: 15_000, message: "The next real Codex turn must replace the previous idle status" }).toBe("Busy")
+    await expectTerminalRailStatus({ page: packaged.page, terminalId: pty.id, status: "working" })
+    await packaged.page.getByRole("button", { name: "New Session", exact: true }).click()
+    await expect(packaged.page.locator(selector)).not.toBeVisible()
+    await expect.poll(async () => {
+      const body = await (await fetch(lifecycleUrl)).json() as { session: { eventType?: string } | null }
+      return body.session?.eventType
+    }, { timeout: 90_000 }).toBe("Idle")
+    await expect.poll(() => packaged!.page.evaluate(() =>
+      (window as unknown as { __claxedoAudioEnded: { time: number; muted: boolean; volume: number }[] }).__claxedoAudioEnded
+        .filter((event) => event.time > 0 && !event.muted && event.volume > 0).length,
+    ), { timeout: 15_000, message: "Background completion must play the real notification audio through to its end" }).toBe(1)
+    await packaged.page.locator(`[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${pty.id}"]`).click()
+    await expect(packaged.page.locator(`${selector} .xterm-rows`)).toContainText("RESTART_TUI_OK", { timeout: 30_000 })
     await packaged.page.screenshot({ path: test.info().outputPath("codex-tui-restarted.png") })
   } finally {
+    if (packaged && !packaged.page.isClosed()) await test.info().attach("audio-ended", { body: JSON.stringify(await packaged.page.evaluate(() => (window as unknown as { __claxedoAudioEnded?: unknown }).__claxedoAudioEnded ?? [])), contentType: "application/json" })
     if (packaged && !packaged.page.isClosed()) await packaged.page.screenshot({ path: test.info().outputPath("terminal-final-state.png") }).catch(() => undefined)
     if (packaged) await test.info().attach("desktop-log", { body: packaged.appLog.join(""), contentType: "text/plain" })
     if (ptyUrl) await fetch(ptyUrl, { method: "DELETE" }).catch(() => undefined)

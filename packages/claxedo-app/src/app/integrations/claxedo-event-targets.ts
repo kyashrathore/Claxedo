@@ -104,11 +104,8 @@ export function claxedoEventStreamTargets(input: {
   const routeWorkspace = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory }) : undefined
   const workspace = routeWorkspace
     ?? signedWorkspaceFromProjects(input.projects ?? [], input.directory)
-      // A local workspace has no signed identity, so both lookups above are
-      // empty; it still needs the per-workspace stream, which is where every
-      // workspace-scoped event (`pty.*`, `agent.lifecycle`, session status) is
-      // published — the bare central stream carries only `server.connected`
-      // and heartbeats.
+      // Local workspaces have no relay identity. Resolve them separately so
+      // signed desktop can still read their events alongside the account feed.
       ?? localWorkspaceForDirectory(input.projects ?? [], input.directory)
 
   // Which deployment this is decides whether the central stream exists at all —
@@ -123,6 +120,14 @@ export function claxedoEventStreamTargets(input: {
     ? [central]
     : []
   if (!workspace) return base
+  // The local central handler subscribes to the same workspaceRuntimeBus as
+  // /api/wr/events, plus the global bus. Opening both delivers every terminal
+  // lifecycle twice and plays completion sounds twice. When signed in, the
+  // central target uses the hosted account bridge instead, so local workspace
+  // events still need their own stream.
+  if (workspace.kind === "local" && centralTransportForServer(serverUrl) === "loopback" && input.accountSigned !== true) {
+    return base
+  }
   const sessionID = input.sessionID?.trim()
   // Only a MANAGED-PRIVATE runtime serves session-scoped streams and nothing
   // else: `authorizeSessionEventScope` (workspace-runtime
@@ -146,10 +151,8 @@ export function claxedoEventStreamTargets(input: {
   // minted carries the answer. It does decide whether there is a connection to
   // ask at all: a LOCAL workspace is served by this surface's own embedded
   // runtime over loopback, which composes the unbound local policy by
-  // construction and mints nothing. Waiting there waits forever, and a
-  // harness-created session's `session.lifecycle` — published on the workspace
-  // bus and nowhere else — then has no stream to arrive on, so the rail never
-  // learns the session exists.
+  // construction and mints nothing. Signed desktop reads those local events
+  // here while its central target reads hosted account events.
   const sessionAuthority = workspace.kind === "local"
     ? ("local" as const)
     : input.sessionAuthority?.(workspace.workspaceId)
