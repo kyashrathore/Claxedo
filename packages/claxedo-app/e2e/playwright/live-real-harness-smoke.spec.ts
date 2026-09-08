@@ -581,8 +581,8 @@ test.describe("live real-harness smoke @live", () => {
     })
     }
 
-    for (const decision of ["Allow once", "Deny"] as const) {
-      test(`${harness} live permission ${decision === "Allow once" ? "approval" : "denial"} gates a file write through reload`, async ({ page }) => {
+    for (const decision of ["Allow once", "Allow always", "Deny"] as const) {
+      test(`${harness} live permission ${decision === "Deny" ? "denial" : decision === "Allow always" ? "always" : "approval"} gates a file write through reload`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
         test.skip(!binary, `The live approval flow requires the installed and authenticated ${harness} CLI.`)
         const dir = await makeWorkspace(`${harness}-live-permission`)
@@ -616,7 +616,7 @@ test.describe("live real-harness smoke @live", () => {
           expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
           await page.screenshot({ path: test.info().outputPath("live-permission-pending.png") })
           await dock.getByRole("button", { name: decision, exact: true }).click()
-          if (decision === "Allow once") {
+          if (decision !== "Deny") {
             await expect.poll(() => fs.readFile(output, "utf8").catch(() => ""), { timeout: 30_000 }).toBe(marker)
           }
           await expectAssistantReplyVisible(page, expectedReply, { spec: "live-real-harness-smoke", scenario: `${harness}-permission-${decision}` })
@@ -625,6 +625,19 @@ test.describe("live real-harness smoke @live", () => {
           await page.reload({ waitUntil: "domcontentloaded" })
           await expectAssistantReplyVisible(page, expectedReply)
           await expect(dock).toHaveCount(0)
+          if (decision === "Allow always") {
+            await fs.rm(output)
+            const followup = `AFTER-ALWAYS-${Date.now()}`
+            await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+              `Run exactly the same shell command again: printf '${marker}' | tee '${output}'. ` +
+              (harness === "codex" ? 'Use exec_command with sandbox_permissions="require_escalated" and justification="Write the isolated test file". ' : "Use the Bash tool. ") +
+              `After it succeeds, reply exactly ${followup}. Do not use other tools or alternative write methods.`)
+            await page.locator(SELECTORS.submitControl).last().click()
+            await expect.poll(async () => (await dock.count()) ? "approval requested again" : fs.readFile(output, "utf8").catch(() => ""), { timeout: 60_000 })
+              .toBe(marker)
+            await expectAssistantReplyVisible(page, followup)
+            await expect(dock).toHaveCount(0)
+          }
           if (decision === "Deny") {
             expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
             const followup = `AFTER-DENIAL-${Date.now()}`

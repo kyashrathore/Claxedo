@@ -1578,7 +1578,7 @@ test.describe("real harness journeys @core @tier-real", () => {
       }
     })
 
-    for (const decision of ["Allow once", "Deny"] as const) {
+    for (const decision of ["Allow once", "Allow always", "Deny"] as const) {
       test(`${harness} native permission ${decision} gates a real file write after reload`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
         requireBinary(binary, harness, "install the native CLI to exercise its tool approval boundary.")
@@ -1619,7 +1619,7 @@ test.describe("real harness journeys @core @tier-real", () => {
           await dock.getByRole("button", { name: decision, exact: true }).click()
           await expect(dock).toHaveCount(0)
           await expectAssistantReplyVisible(page, marker)
-          if (decision === "Allow once") {
+          if (decision !== "Deny") {
             await expect.poll(() => fs.readFile(output, "utf8").catch(() => "")).toBe("approved-write")
           } else {
             expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
@@ -1628,6 +1628,18 @@ test.describe("real harness journeys @core @tier-real", () => {
           await page.reload({ waitUntil: "domcontentloaded" })
           await expectAssistantReplyVisible(page, marker)
           await expect(dock).toHaveCount(0)
+          if (decision === "Allow always") {
+            await fs.rm(output)
+            const followupMarker = `SECOND-${marker}`
+            scripted!.scriptTool({ ...tool, whenPromptIncludes: followupMarker })
+            await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+              `Run the same command again, then reply with exactly this one token: ${followupMarker}`)
+            await page.locator(SELECTORS.submitControl).last().click()
+            await expect.poll(async () => (await dock.count()) ? "approval requested again" : fs.readFile(output, "utf8").catch(() => ""), { timeout: 30_000 })
+              .toBe("approved-write")
+            await expectAssistantReplyVisible(page, followupMarker)
+            await expect(dock).toHaveCount(0)
+          }
           if (decision === "Allow once") {
             await fs.rm(output)
             const followupMarker = `SECOND-${marker}`
