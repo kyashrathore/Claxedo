@@ -8,19 +8,31 @@ import { installFakeCodexAppServer } from "../../test-utils/fake-codex-app-serve
 import { CodexHarnessAdapter } from "./index"
 
 for (const terminateFails of [false, true]) {
-  test(terminateFails ? "Stop reports terminal cleanup failure" : "Stop before start acknowledgement awaits cleanup of only its turn across terminal pages", async () => {
+  for (const goalMode of [false, true]) {
+  test(`${goalMode ? "Goal " : ""}${terminateFails ? "Stop reports terminal cleanup failure" : "Stop awaits cleanup of only its turn across terminal pages"}`, async () => {
     const fake = await installFakeCodexAppServer({ command: true, terminateFails })
+    const store = createMemoryRuntimeStore()
+    const eventHub = createRuntimeEventHub()
+    const events: unknown[] = []
+    eventHub.subscribeRuntime((event) => events.push(event.payload))
     const adapter = new CodexHarnessAdapter({
       binary: fake.binary,
-      store: createMemoryRuntimeStore(),
-      eventHub: createRuntimeEventHub(),
+      store,
+      eventHub,
       codexHome: path.join(fake.directory, "codex-home"),
     })
     let commandStarted!: () => void
     const started = new Promise<void>((resolve) => { commandStarted = resolve })
     try {
       const session = await adapter.createSession(fake.directory)
-      const turn = (async () => {
+      const turn = goalMode ? (async () => {
+        expect(await adapter.goals!.start(session.id, { objective: "hold-turn command" }, fake.directory)).toMatchObject({ ok: true })
+        for (let attempt = 0; attempt < 100 && !JSON.stringify(store.getMessages(session.id)).includes("cmd-current"); attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+        expect(JSON.stringify(store.getMessages(session.id))).toContain("cmd-current")
+        commandStarted()
+      })() : (async () => {
         for await (const event of executeTestTurn(adapter, session.id, {
           parts: [{ type: "text", text: "Run a command" }],
           userMessageId: "user-1",
@@ -32,14 +44,20 @@ for (const terminateFails of [false, true]) {
         }
       })()
       await started
-      const stopping = adapter.abort(executionBinding(session.id, fake.directory, "native:codex"))
+      const stopping = goalMode ? adapter.goals!.stop(session.id, fake.directory) : adapter.abort(executionBinding(session.id, fake.directory, "native:codex"))
       if (terminateFails) {
         await expect(stopping).rejects.toThrow("terminal cleanup failed")
       } else {
-        await expect(stopping).resolves.toEqual({ ok: true, status: "cancelled" })
+        await expect(stopping).resolves.toMatchObject(goalMode ? { ok: true, goal: { status: "paused" } } : { ok: true, status: "cancelled" })
         expect(await fs.readFile(fake.goalFile + ".terminated", "utf8")).toBe("process-current")
       }
       await turn
+      if (!terminateFails) {
+        for (let attempt = 0; attempt < 100 && !events.some((event) => JSON.stringify(event) === JSON.stringify({ type: "session-status", status: "idle" })); attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 10))
+        }
+        expect(events).toContainEqual({ type: "session-status", status: "idle" })
+      }
       const requests = (await fs.readFile(fake.log, "utf8")).trim().split("\n").map((line) => JSON.parse(line))
       expect(requests.filter((request) => request.method === "thread/backgroundTerminals/terminate"))
         .toEqual([{ method: "thread/backgroundTerminals/terminate", processId: "process-current" }])
@@ -48,4 +66,5 @@ for (const terminateFails of [false, true]) {
       await fs.rm(fake.directory, { recursive: true, force: true })
     }
   })
+  }
 }

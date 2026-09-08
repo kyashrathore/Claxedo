@@ -1553,7 +1553,8 @@ test.describe("real harness journeys @core @tier-real", () => {
   })
 
   for (const harness of ["claude", "codex", "pi"] as const) {
-    test(`${harness} Stop kills a running shell and the same session accepts a follow-up`, async ({ page }) => {
+    for (const goalMode of [false, true]) {
+    test(`${harness} Stop kills a running shell and the same session accepts a follow-up${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       requireBinary(binary, harness, "install the native CLI to exercise interruption of a real tool process.")
       const dir = await makeWorkspace(`${harness}-stop-tool`, harness)
@@ -1583,7 +1584,7 @@ test.describe("real harness journeys @core @tier-real", () => {
             : { command, timeout: 120 },
           whenPromptIncludes: marker,
         })
-        await composePrompt(page, input, `Run the command, then reply with exactly this one token: ${marker}`)
+        await composePrompt(page, input, `${goalMode ? "/goal " : ""}Run the command, then reply with exactly this one token: ${marker}`)
         await page.locator(SELECTORS.submitControl).last().click()
         await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
         const sessionUrl = page.url()
@@ -1603,21 +1604,25 @@ test.describe("real harness journeys @core @tier-real", () => {
         expect(await fs.stat(finishedFile).then(() => true, () => false)).toBe(false)
         await page.getByRole("button", { name: "Stop", exact: true }).click()
         await expect.poll(alive, { timeout: 15_000, message: `${harness} left the interrupted shell running` }).toBe(false)
+        if (goalMode) await expect(goalStatus(page.locator('[data-component="session-goal-dock"]'), "Paused")).toBeVisible()
         await fs.writeFile(releaseFile, "release")
         const followup = page.getByRole("textbox", { name: /Ask anything/i }).last()
         await expect(followup).toBeVisible()
         const nextMarker = `AFTER-${marker}`
         await composePrompt(page, followup, `Reply with exactly this one token: ${nextMarker}`)
+        await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Send")
         await page.locator(SELECTORS.submitControl).last().click()
         await expectAssistantReplyVisible(page, nextMarker)
         await expect(page).toHaveURL(sessionUrl)
         await page.reload({ waitUntil: "domcontentloaded" })
         await expectAssistantReplyVisible(page, nextMarker)
+        if (goalMode) await expect(page.locator('[data-component="session-goal-dock"]').getByText("Paused", { exact: true })).toBeVisible()
         expect(await fs.stat(finishedFile).then(() => true, () => false)).toBe(false)
       } finally {
         await fs.writeFile(releaseFile, "release")
       }
     })
+    }
   }
 
   for (const harness of ["claude", "codex"] as const) {

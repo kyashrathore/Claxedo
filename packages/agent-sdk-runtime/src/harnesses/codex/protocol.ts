@@ -11,6 +11,50 @@ import {
 } from "../shared/sdk-runtime-adapter"
 import type { CodexAppServerProcess } from "./app-server-process"
 
+/** Cancel generation and terminate only command processes owned by this turn. */
+export function createCodexTurnStop(input: {
+  process: Pick<CodexAppServerProcess, "request">
+  threadId: string
+  turnId: () => Promise<string> | string
+}) {
+  const commandProcesses = new Map<string, Set<string>>()
+  let stopping: Promise<void> | undefined
+  return {
+    observe(params: JsonRecord) {
+      if (params.threadId !== input.threadId) return
+      const item = asRecord(params.item)
+      if (item?.type !== "commandExecution") return
+      const processId = text(item.processId)
+      const turnId = text(params.turnId)
+      if (!processId || !turnId) return
+      const processes = commandProcesses.get(turnId) ?? new Set<string>()
+      processes.add(processId)
+      commandProcesses.set(turnId, processes)
+    },
+    stop: () => stopping ??= (async () => {
+      const turnId = await input.turnId()
+      if (!turnId) return
+      await input.process.request("turn/interrupt", { threadId: input.threadId, turnId })
+      const processes = commandProcesses.get(turnId)
+      if (!processes?.size) return
+      const remaining = new Set<string>()
+      let cursor: string | undefined
+      do {
+        const response = asRecord(await input.process.request("thread/backgroundTerminals/list", { threadId: input.threadId, ...(cursor ? { cursor } : {}) }))
+        if (!Array.isArray(response?.data)) throw new Error("Codex returned an invalid background terminal list")
+        for (const terminal of response.data) {
+          const processId = text(asRecord(terminal)?.processId)
+          if (processId && processes.has(processId)) remaining.add(processId)
+        }
+        cursor = text(response?.nextCursor)
+      } while (cursor)
+      for (const processId of remaining) {
+        await input.process.request("thread/backgroundTerminals/terminate", { threadId: input.threadId, processId })
+      }
+    })(),
+  }
+}
+
 export type CodexActiveThread = {
   sessionId: string
   agentSessionId: string
@@ -139,4 +183,3 @@ export function codexAppServerModel(model: string | undefined) {
 export function codexTurnModel(input: PromptInput, configuredModel: string) {
   return codexAppServerModel(text(input.model.modelID) ?? text(configuredModel))
 }
-

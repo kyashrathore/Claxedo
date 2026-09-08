@@ -734,6 +734,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
 
     if (abort.signal.reason === EXPLICIT_TURN_ABORT_REASON) {
+      const source = { dir: "in" as const, method: "prompt.aborted" }
+      for (const event of router.terminalizeParent("Aborted by user", source)) yield event
       const updated = messageUpdated(buildAssistantMessage({
         id: router.assistantMessageId(),
         sessionID: id,
@@ -754,6 +756,11 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         source: { dir: "in", method: "prompt.aborted" },
       })
       yield updated
+      // Provider-originated Goal turns have no ordinary turn subscriber to
+      // publish their cancellation. Settle through the same projector so the
+      // persisted status and the native runtime feed both observe idle.
+      parentProjector.project({ type: "session-status", status: "idle" }, source)
+      for (const event of queue.splice(0)) yield event
       return
     }
     if (!promptError) return

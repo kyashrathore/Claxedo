@@ -17,6 +17,7 @@ import {
 import type { CodexAppServerProcess } from "./app-server-process"
 import {
   GoalTurnEventQueue,
+  createCodexTurnStop,
   type CodexActiveThread,
   codexGoalSnapshot,
   startTurnWithThreadRecovery,
@@ -329,6 +330,7 @@ export class CodexGoalController {
       void this.host.driverHost.runProviderTurn({ ...binding, ...(userMessage ? { userMessage } : {}) }, async (input) => {
         if (this.pendingGoalRequests.get(threadId) === userMessage) this.pendingGoalRequests.delete(threadId)
         const proc = await this.host.ensureProcess(binding.directory)
+        const cancellation = createCodexTurnStop({ process: proc, threadId, turnId: () => turnId })
         const project = (eventMethod: string, payload: JsonRecord, frame: unknown) => input.ingest({
           source: CODEX_SOURCE,
           method: eventMethod,
@@ -345,10 +347,15 @@ export class CodexGoalController {
           project,
           observeSubagent: input.observeSubagent,
         })
-        const onAbort = () => queue.end()
+        const onAbort = () => {
+          void cancellation.stop().catch(() => {})
+          queue.end()
+        }
         input.abort.signal.addEventListener("abort", onAbort, { once: true })
+        this.host.driverHost.lifecycle().set(binding.sessionId, { abort: input.abort, close: cancellation.stop, turnId })
         try {
           for await (const event of queue) {
+            cancellation.observe(asRecord(event.payload) ?? {})
             const eventMethod = event.method ?? "codex.goal-turn"
             await this.host.projectThreadNotification(
               input,
@@ -359,9 +366,13 @@ export class CodexGoalController {
             )
           }
         } finally {
-          input.abort.signal.removeEventListener("abort", onAbort)
-          this.host.activeThreads.delete(threadId)
-          this.releaseGoalTurn(threadId)
+          try {
+            if (input.abort.signal.aborted) await cancellation.stop()
+          } finally {
+            input.abort.signal.removeEventListener("abort", onAbort)
+            this.host.activeThreads.delete(threadId)
+            this.releaseGoalTurn(threadId)
+          }
         }
       }).then((admitted) => {
         if (admitted || this.turnQueues.get(threadId)?.queue !== queue) return

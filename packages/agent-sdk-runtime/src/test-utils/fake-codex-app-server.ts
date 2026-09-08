@@ -86,7 +86,7 @@ process.stdin.on("data", (chunk) => {
     }
     else if (message.method === "turn/interrupt") {
       write({ id: message.id, result: {} })
-      write({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: "turn-1", status: "interrupted" } } })
+      write({ method: "turn/completed", params: { threadId: "thread-1", turn: { id: message.params.turnId, status: "interrupted" } } })
     }
     else if (message.method === "thread/goal/set") {
       if (!threadKnown) {
@@ -110,6 +110,10 @@ process.stdin.on("data", (chunk) => {
       if (message.params.objective) setTimeout(() => {
         const objective = message.params.objective
         write({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "goal-turn-1", status: "inProgress" } } })
+        if (command) {
+          write({ method: "item/started", params: { threadId: "thread-1", turnId: "previous-turn", item: { id: "cmd-previous", type: "commandExecution", processId: "process-previous", command: "sleep 100", status: "inProgress" } } })
+          write({ method: "item/started", params: { threadId: "thread-1", turnId: "goal-turn-1", item: { id: "cmd-current", type: "commandExecution", processId: "process-current", command: "sleep 100", status: "inProgress" } } })
+        }
         write({ method: "thread/started", params: { thread: { id: "goal-child-1", parentThreadId: "thread-1", preview: "Inspect", status: { type: "active", activeFlags: [] } } } })
         write({ method: "item/agentMessage/delta", params: { threadId: "thread-1", turnId: "goal-turn-1", itemId: "goal-message-1", delta: "Working" } })
         if (objective.includes("provider-pauses")) {

@@ -47,6 +47,7 @@ import { handleCodexServerRequest } from "./server-request"
 import { CodexGoalController } from "./goal"
 import {
   CODEX_DYNAMIC_TOOLS,
+  createCodexTurnStop,
   type CodexActiveThread,
   codexAppServerModel,
   codexGoalSnapshot,
@@ -298,36 +299,18 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const proc = await this.ensureProcess(input.directory)
     let turnId = ""
     let startPending: Promise<JsonRecord> | undefined
-    let stopping: Promise<void> | undefined
-    // Codex interrupts generation but can retain exec_command terminals. Keep
-    // provider process IDs by turn so Stop preserves earlier background work.
-    const commandProcesses = new Map<string, Set<string>>()
-    const stop = () => stopping ??= (async () => {
-      if (startPending) {
-        const result = await startPending
-        turnId = text(asRecord(result.turn)?.id) ?? turnId
-      }
-      if (!turnId) return
-      await proc.request("turn/interrupt", { threadId, turnId })
-      const processes = commandProcesses.get(turnId)
-      if (!processes?.size) return
-      const remaining = new Set<string>()
-      let cursor: string | undefined
-      do {
-        const response = asRecord(await proc.request("thread/backgroundTerminals/list", { threadId, ...(cursor ? { cursor } : {}) }))
-        if (!Array.isArray(response?.data)) throw new Error("Codex returned an invalid background terminal list")
-        for (const terminal of response.data) {
-          const processId = text(asRecord(terminal)?.processId)
-          if (processId && processes.has(processId)) {
-            remaining.add(processId)
-          }
+    const cancellation = createCodexTurnStop({
+      process: proc,
+      threadId,
+      turnId: async () => {
+        if (startPending) {
+          const result = await startPending
+          turnId = text(asRecord(result.turn)?.id) ?? turnId
         }
-        cursor = text(response?.nextCursor)
-      } while (cursor)
-      for (const processId of remaining) {
-        await proc.request("thread/backgroundTerminals/terminate", { threadId, processId })
-      }
-    })()
+        return turnId
+      },
+    })
+    const stop = cancellation.stop
     let resolveCompleted: (() => void) | undefined
     let rejectCompleted: ((err: Error) => void) | undefined
     let rejectTurnStart: ((err: Error) => void) | undefined
@@ -383,16 +366,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       const method = text(message.method)
       const params = asRecord(message.params) ?? {}
       if (!method) return
-      const item = asRecord(params.item)
-      if (params.threadId === threadId && item?.type === "commandExecution") {
-        const processId = text(item.processId)
-        const commandTurnId = text(params.turnId)
-        if (processId && commandTurnId) {
-          const processes = commandProcesses.get(commandTurnId) ?? new Set<string>()
-          processes.add(processId)
-          commandProcesses.set(commandTurnId, processes)
-        }
-      }
+      cancellation.observe(params)
       if (method === "thread/goal/updated" || method === "thread/goal/cleared") return
       messageQueue = messageQueue.then(async () => {
         const { parentOwned } = await this.projectThreadNotification(input, threadId, method, params, message)
@@ -437,7 +411,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       await completed
     } finally {
       try {
-        await stopping
+        if (input.abort.signal.aborted) await stop()
       } finally {
         input.abort.signal.removeEventListener("abort", onAbort)
         unsubscribeStderr()

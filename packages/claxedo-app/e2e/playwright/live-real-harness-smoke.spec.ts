@@ -561,7 +561,8 @@ test.describe("live real-harness smoke @live", () => {
   }
 
   for (const harness of ["claude", "codex"] as const) {
-    test(`${harness} live Stop ends the tool process and recovers the session`, async ({ page }) => {
+    for (const goalMode of [false, true]) {
+    test(`${harness} live Stop ends the tool process and recovers the session${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       test.skip(!binary, `The live Stop flow requires the installed and authenticated ${harness} CLI.`)
       const dir = await makeWorkspace(`${harness}-live-stop`)
@@ -580,7 +581,7 @@ test.describe("live real-harness smoke @live", () => {
         await fs.writeFile(workload, `const fs = require("node:fs"); fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); const timer = setInterval(() => { if (!fs.existsSync(${JSON.stringify(releaseFile)})) return; fs.writeFileSync(${JSON.stringify(finishedFile)}, "leaked"); clearInterval(timer); }, 50);`)
         const command = `node '${workload}'`
         await composePrompt(page, input,
-          `Run exactly this shell command: ${command}. ` +
+          `${goalMode ? "/goal " : ""}Run exactly this shell command: ${command}. ` +
           (harness === "claude" ? "Use Bash with timeout 120000. " : "Use exec_command with yield_time_ms 30000. ") +
           "Do not create the release file or run any other tools. The test runner controls this command's lifecycle.",
         )
@@ -603,20 +604,24 @@ test.describe("live real-harness smoke @live", () => {
         await page.screenshot({ path: test.info().outputPath("live-tool-running.png") })
         await page.getByRole("button", { name: "Stop", exact: true }).click()
         await expect.poll(alive, { timeout: 15_000, message: `${harness} left the interrupted tool process running` }).toBe(false)
+        if (goalMode) await expect(page.locator('[data-component="session-goal-dock"]').getByText("Paused", { exact: true })).toBeVisible()
         await fs.writeFile(releaseFile, "release")
         const marker = `LIVE-AFTER-STOP-${Date.now()}`
         await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
           `Reply with exactly ${marker}. Do not run any tools or resume the interrupted command.`)
+        await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Send")
         await page.locator(SELECTORS.submitControl).last().click()
         await expectAssistantReplyVisible(page, marker, { spec: "live-real-harness-smoke", scenario: `${harness}-stop-recovered` })
         await expect(page).toHaveURL(sessionUrl)
         await page.reload({ waitUntil: "domcontentloaded" })
         await expectAssistantReplyVisible(page, marker)
+        if (goalMode) await expect(page.locator('[data-component="session-goal-dock"]').getByText("Paused", { exact: true })).toBeVisible()
         expect(await fs.stat(finishedFile).then(() => true, () => false)).toBe(false)
       } finally {
         await fs.writeFile(releaseFile, "release")
       }
     })
+    }
 
     for (const delegation of ["native", "claxedo-mcp"] as const) {
     test(`${harness} live ${delegation === "native" ? "subagent" : "Claxedo MCP cross-harness child"} completes an openable child transcript and survives reload`, async ({ page }) => {
