@@ -227,6 +227,13 @@ for (const { harness, child, pause } of [
       }
       await expect(rows).toContainText(harness === "codex" ? /OpenAI Codex/ : harness === "cursor" ? /Cursor/ : harness === "gemini" ? /Type your message/ : harness === "droid" ? /ctrl\+L for autonomy/ : harness === "amp" ? /ctrl\+o for commands/i : /bypass permissions on/i, { timeout: 30_000 })
       await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
+      if (harness === "amp") {
+        // The welcome animation exposes command help before the input box is
+        // mounted. Wait for Amp's composer frame, not xterm's hidden hardware cursor.
+        await expect(rows.locator(":scope > div").filter({ hasText: /╰.*workspace \(main\).*╯/ })).toBeVisible({ timeout: 15_000 })
+        await expect(rows.locator(".xterm-bg-257")).toBeVisible({ timeout: 15_000 })
+        await packaged.page.screenshot({ path: test.info().outputPath("amp-composer-ready.png") })
+      }
       await packaged.page.keyboard.type("Reply with the concatenation of DESKTOP and _TUI_OK, nothing else.", { delay: 20 })
       await expect(rows).not.toContainText(/model:\s+loading|Booting MCP server/, { timeout: 45_000 })
       await packaged.page.keyboard.press("Enter")
@@ -373,6 +380,7 @@ for (const { harness, child, pause } of [
       }
     } finally {
       if (harness === "amp" && packaged && !packaged.page.isClosed()) {
+        await test.info().attach("amp-rendered-rows", { body: await packaged.page.locator(".xterm-rows").evaluateAll((rows) => rows.map((row) => row.innerHTML).join("\n")), contentType: "text/html" })
         const events = await packaged.page.evaluate(() => {
           const state = window as unknown as { __ampCancellationEvents?: unknown[]; __ampCancellationStream?: EventSource }
           state.__ampCancellationStream?.close()
