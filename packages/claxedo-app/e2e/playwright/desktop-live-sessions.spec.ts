@@ -18,7 +18,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of ["permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -30,6 +30,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
     preserveUserDataDir: true,
     env: harness === "Codex" ? { CODEX_HOME: path.join(os.homedir(), ".codex") } : {},
   })
+  let permissionOutputDir: string | undefined
   let packaged: PackagedApp | undefined
   try {
     await execFileAsync("git", ["init"], { cwd: directory })
@@ -90,6 +91,70 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await picker.locator('[data-slot="list-item"]').filter({ has: packaged.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
       await expect(control).toContainText("Opus")
       await packaged.page.keyboard.press("Escape")
+    }
+
+    if (flow.startsWith("permission ")) {
+      const decision = flow.slice("permission ".length).replace(" across full restart", "")
+      permissionOutputDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-desktop-permission-"))
+      const output = path.join(permissionOutputDir, "result.txt")
+      const mode = harness === "Claude" ? "default" : "workspace-write"
+      await packaged.page.locator('[data-action="prompt-permission-mode"]').last().click()
+      await packaged.page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
+      const marker = `DESKTOP_PERMISSION_${Date.now()}`
+      const command = `printf '${marker}' | tee '${output}'`
+      const creation = packaged.page.waitForResponse((response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
+      await compose(input, `Run exactly this shell command once: ${command}. ` +
+        (harness === "Codex" ? 'Use exec_command with sandbox_permissions="require_escalated" and justification="Write the isolated test file". ' : "Use the Bash tool. ") +
+        `Wait for approval. After execution reply exactly ${marker}. If denied reply exactly DENIED-${marker}. Do not use other tools or alternative write methods.`)
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      const created = await creation
+      expect(created.ok()).toBe(true)
+      const session = await created.json() as { id: string }
+      const query = `?directory=${encodeURIComponent(directory)}`
+      const readPending = async () => {
+        const response = await fetch(`${serverBase}/permission${query}`)
+        expect(response.ok).toBe(true)
+        return (await response.json() as Array<{ id: string; sessionID: string }>).filter((row) => row.sessionID === session.id)
+      }
+      await expect(packaged.page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })).toBeVisible({ timeout: 60_000 })
+      const pending = await readPending()
+      expect(pending).toHaveLength(1)
+      expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+      const appProcess = packaged.app.process()
+      await packaged.close()
+      await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
+      packaged = await launch()
+      expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+      const dock = packaged.page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
+      await expect(dock).toBeVisible({ timeout: 30_000 })
+      await expect(dock.locator('[data-slot="permission-command"]')).toContainText(command)
+      expect(await readPending()).toEqual(pending)
+      expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+      await packaged.page.screenshot({ path: test.info().outputPath("permission-after-restart.png") })
+      await dock.getByRole("button", { name: decision, exact: true }).click()
+      await expect(dock).toHaveCount(0)
+      await expect.poll(readPending).toEqual([])
+      if (decision !== "Stop") await expectAssistantReplyVisible(packaged.page, decision === "Deny" ? `DENIED-${marker}` : marker)
+      if (decision === "Allow once") await expect.poll(() => fs.readFile(output, "utf8").catch(() => "")).toBe(marker)
+      else expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+      const late = await fetch(`${serverBase}/session/${session.id}/permissions/${pending[0]!.id}${query}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ response: "always" }),
+      })
+      expect(late.status).toBe(404)
+      const followup = `AFTER_PERMISSION_${Date.now()}`
+      await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(),
+        `This is a new task. The previous tool task is over; do not retry it or repeat its marker. Reply exactly ${followup}. Do not use tools.`)
+      await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAccessibleName("Send")
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      await expectAssistantReplyVisible(packaged.page, followup)
+      await packaged.page.reload()
+      await expectAssistantReplyVisible(packaged.page, followup)
+      expect(await readPending()).toEqual([])
+      await expect(dock).toHaveCount(0)
+      if (decision === "Allow once") expect(await fs.readFile(output, "utf8")).toBe(marker)
+      else expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+      return
     }
 
     if (flow === "question answer across full restart" || flow === "question dismiss across full restart" || flow === "question stop across full restart") {
@@ -301,6 +366,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
     await shutdownPackagedTestDaemon(profile)
     await fs.rm(profile, { recursive: true, force: true })
     await fs.rm(directory, { recursive: true, force: true })
+    if (permissionOutputDir) await fs.rm(permissionOutputDir, { recursive: true, force: true })
   }
 })
 }
