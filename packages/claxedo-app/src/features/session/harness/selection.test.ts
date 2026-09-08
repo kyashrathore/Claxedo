@@ -228,3 +228,14 @@ describe("harnessModelKeyForSubmit — thought level", () => {
     })
   })
 })
+
+
+test("an explicitly disconnected native model cannot become a submit key", () => {
+  const state: HarnessSelectionState = {
+    ...base, harness: { kind: "native", harnessId: "pi" },
+    selectedModel: "openai/gpt", dynamicModels: [{ id: "openai/gpt", name: "GPT", connected: false }],
+  }
+  expect(harnessModelKeyForSubmit(state)).toBeUndefined()
+  expect(harnessReadyForSubmit(state)).toBe(false)
+  expect(harnessModelKeyForSubmit({ ...state, dynamicModels: [{ id: "openai/gpt", name: "GPT", connected: true }] })).toEqual({ providerID: "pi", modelID: "openai/gpt" })
+})

@@ -175,6 +175,9 @@ describe("native Pi through the shared adapter", () => {
       const models = payload.options.find((option) => option.category === "model")?.selectOptions ?? []
       expect(models.some((model) => model.id.startsWith("anthropic/"))).toBe(true)
       expect(models.every((model) => model.connected === false)).toBe(true)
+      adapter.setModel(models[0].id)
+      const selected = await adapter.probeConfigOptions(root)
+      expect(selected.options.find((option) => option.category === "model")?.selectOptions).toEqual(models)
     } finally {
       await adapter.dispose()
       await fs.rm(root, { recursive: true, force: true })

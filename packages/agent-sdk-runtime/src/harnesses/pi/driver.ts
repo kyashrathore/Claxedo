@@ -500,7 +500,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
         ...model,
         connected: availableIds.has(model.id),
       }))
-      if (currentModel.includes("/")) {
+      if (availableIds.has(currentModel)) {
         const slash = currentModel.indexOf("/")
         await probe.request("set_model", {
           provider: currentModel.slice(0, slash),

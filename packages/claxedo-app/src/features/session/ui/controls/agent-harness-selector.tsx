@@ -405,7 +405,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       if (!modelKey) return
       const hit = rows().find((row) => row.id === modelKey.modelID && row.provider.id === modelKey.providerID)
       if (!hit) return
-      if (harness() && isCatalogHarness(harness()) && hit.connected === false) {
+      if (hit.connected === false) {
         openProviders()
         return
       }

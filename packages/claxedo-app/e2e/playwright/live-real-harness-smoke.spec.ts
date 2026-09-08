@@ -560,6 +560,34 @@ test.describe("live real-harness smoke @live", () => {
     })
   }
 
+  for (const goalMode of [false, true]) {
+    test(`pi disconnected model opens provider settings without starting ${goalMode ? "a Goal" : "a turn"}`, async ({ page }) => {
+      const binary = await resolveBinary("pi", "CLAXEDO_E2E_PI_BIN")
+      test.skip(!binary, "Pi must be installed for native catalog discovery")
+      const dir = await makeWorkspace("pi-disconnected")
+      await seedOneProject(page, dir)
+      const input = await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, /^Pi$/, 0)
+      const providers = await (await fetch(`${BACKEND_URL}/api/claxedo/agent-config/providers?nativeHarness=pi`)).json() as { connected: string[] }
+      test.skip(providers.connected.length > 0, "This negative flow requires Pi with no connected providers")
+      const submitted: string[] = []
+      page.on("request", (request) => {
+        if (request.method() === "POST" && /\/(?:message|goal)(?:\?|$)/.test(request.url())) submitted.push(request.url())
+      })
+      const draftUrl = page.url()
+      await composePrompt(page, input, `${goalMode ? "/goal " : ""}Reply with DISCONNECTED-MUST-NOT-RUN`)
+      await input.press("Enter")
+      await expect(page).toHaveURL(draftUrl)
+      await page.keyboard.press("Escape")
+      await page.locator('[data-action="prompt-harness-model"]').last().click()
+      await page.locator('[data-component="harness-model-picker"] [data-key="pi:openai-codex/gpt-5.4"]').click()
+      await expect(page.getByRole("dialog")).toBeVisible()
+      await expect(page.getByRole("dialog").getByText("Providers", { exact: true }).first()).toBeVisible()
+      expect(submitted).toEqual([])
+      await page.screenshot({ path: test.info().outputPath("pi-connect-provider.png") })
+    })
+  }
+
   for (const harness of ["claude", "codex", "pi"] as const) {
     for (const goalMode of [false, true]) {
     test(`${harness} live Stop ends the tool process and recovers the session${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {

@@ -735,6 +735,9 @@ describe("AgentHarnessSelector — native Pi models", () => {
     expect(container.querySelector("[data-testid='model-option-amazon-bedrock/nova']")?.getAttribute("data-connected")).toBe("false")
     expect(container.querySelector("[data-testid='model-option-amazon-bedrock/nova']")?.getAttribute("data-provider-name")).toBe("Amazon Bedrock")
     expect(container.querySelector("[data-testid='model-option-anthropic/sonnet']")?.getAttribute("data-connected")).toBe("true")
+    fireEvent.click(container.querySelector("[data-testid='model-option-amazon-bedrock/nova']") as HTMLButtonElement)
+    expect(setModelCalls).toEqual([])
+    expect(openSettingsProviders).toHaveBeenCalled()
     expect(container.querySelector("[data-testid='model-option-anthropic/sonnet']")?.getAttribute("data-provider-name")).toBe("Anthropic")
   })
 
