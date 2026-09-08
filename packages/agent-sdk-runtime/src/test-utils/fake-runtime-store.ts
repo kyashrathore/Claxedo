@@ -45,6 +45,7 @@ export function fakeRuntimeStore(
     finishTurn: () => ({ events: [] }),
     appendEvent: committedAppend,
     getMessages: () => [],
+    getLatestUserMessageId: () => undefined,
     getTodos: () => [],
     listPermissions: () => [],
     listQuestions: () => [],

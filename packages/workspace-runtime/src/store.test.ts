@@ -733,6 +733,24 @@ void describe("RuntimeStore", () => {
     store.close()
   })
 
+  void it("persists Goal continuations under their original user boundary through reopen", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "goal-session", directory: "/work", agentSessionId: "native-goal", createdAt: 1 })
+    const common = { sessionId: "goal-session", agent: "build", model: { providerID: "openai", modelID: "codex" } }
+    store.startTurn({ ...common, userMessageId: "goal-request", assistantMessageId: "first", parts: [{ type: "text", text: "Finish the requested work" }] })
+    const user = store.getMessages("goal-session").find((message) => message.info.role === "user")
+    store.startTurn({ ...common, parentMessageId: "goal-request", assistantMessageId: "continuation", parts: [] })
+    assert.deepEqual(store.getMessages("goal-session").filter((message) => message.info.role === "user"), [user])
+    assert.equal(store.getMessages("goal-session").find((message) => message.info.id === "continuation")?.info.parentID, "goal-request")
+    assert.ok(store.getMessagePage("goal-session", { view: "latest-surface" }))
+    store.close()
+    const reopened = new RuntimeStore(root)
+    assert.equal(reopened.getMessages("goal-session").find((message) => message.info.id === "continuation")?.info.parentID, "goal-request")
+    assert.ok(reopened.getMessagePage("goal-session", { view: "latest-surface" }))
+    reopened.close()
+  })
+
   void it("pages projected messages backward with an opaque cursor and bounded hydration", () => {
     const store = new RuntimeStore(tmp())
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })

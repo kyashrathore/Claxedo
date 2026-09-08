@@ -1,4 +1,5 @@
 import type { RawHarnessEvent, RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { randomUUID } from "crypto"
 import { codexStartedSubagent } from "@claxedo/agent-event-runtime/harnesses/codex"
 import type { AgentGoalMutationResult, AgentGoalResource } from "../../adapter-contract"
 import { GOAL_ACTIONS, goalCapabilities } from "../../capabilities"
@@ -81,6 +82,7 @@ export class CodexGoalController {
   private statusByThread = new Map<string, RuntimeGoalSnapshot["status"]>()
   private turnQueues = new Map<string, { turnId: string; queue: GoalTurnEventQueue }>()
   private childOwners = new Map<string, string>()
+  private pendingGoalRequests = new Map<string, { id: string; text: string }>()
 
   constructor(private readonly host: CodexGoalControllerHost) {}
 
@@ -141,8 +143,12 @@ export class CodexGoalController {
     directory: string,
     update: { objective?: string; status?: "active" | "paused" },
   ): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>> {
+    let requestedThread: string | undefined
+    const userMessage = update.objective === undefined ? undefined : { id: randomUUID(), text: update.objective }
     try {
       const threadId = this.threadId(sessionId, directory)
+      requestedThread = threadId
+      if (userMessage) this.pendingGoalRequests.set(threadId, userMessage)
       const proc = await this.host.ensureProcess(directory)
       const result = await this.requestWithThreadRecovery(
         proc,
@@ -157,6 +163,7 @@ export class CodexGoalController {
       this.reconcileLease(sessionId, goal)
       return { ok: true, goal }
     } catch (error) {
+      if (requestedThread && this.pendingGoalRequests.get(requestedThread) === userMessage) this.pendingGoalRequests.delete(requestedThread)
       return { ok: false, status: "failed", message: errorMessage(error) }
     }
   }
@@ -231,6 +238,7 @@ export class CodexGoalController {
 
   /** Session-scoped cleanup when the driver deletes an agent session. */
   private releaseSession(sessionId: string, agentSessionId: string) {
+    this.pendingGoalRequests.delete(agentSessionId)
     this.bindings.delete(agentSessionId)
     this.statusByThread.delete(agentSessionId)
     this.leases.get(sessionId)?.release()
@@ -317,7 +325,9 @@ export class CodexGoalController {
       if (!turnId) return
       const queue = new GoalTurnEventQueue()
       this.turnQueues.set(threadId, { turnId, queue })
-      void this.host.driverHost.runProviderTurn(binding, async (input) => {
+      const userMessage = this.pendingGoalRequests.get(threadId)
+      void this.host.driverHost.runProviderTurn({ ...binding, ...(userMessage ? { userMessage } : {}) }, async (input) => {
+        if (this.pendingGoalRequests.get(threadId) === userMessage) this.pendingGoalRequests.delete(threadId)
         const proc = await this.host.ensureProcess(binding.directory)
         const project = (eventMethod: string, payload: JsonRecord, frame: unknown) => input.ingest({
           source: CODEX_SOURCE,
@@ -379,5 +389,6 @@ export class CodexGoalController {
     for (const turn of this.turnQueues.values()) turn.queue.end()
     this.turnQueues.clear()
     this.childOwners.clear()
+    this.pendingGoalRequests.clear()
   }
 }

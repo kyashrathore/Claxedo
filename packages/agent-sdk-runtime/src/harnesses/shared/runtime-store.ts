@@ -62,6 +62,7 @@ export type AgentRuntimeTurnStartInput = {
   sessionId: string
   agentSessionId?: string
   userMessageId?: string
+  parentMessageId?: string
   assistantMessageId: string
   agent: string
   model: { providerID: string; modelID: string }
@@ -123,6 +124,7 @@ export type AgentRuntimeStoreCore = {
   finishTurn(input: AgentRuntimeTurnFinishInput): AgentRuntimeTurnFinishOutput
   appendEvent(input: AgentRuntimeAppendEventInput): AgentRuntimeCommittedCompatOutput
   getMessages(id: string): AgentMessage[]
+  getLatestUserMessageId(id: string): string | undefined
   getTodos(sessionId: string): AgentTodo[]
   listPermissions(directory: string): AgentPermission[]
   listQuestions(directory: string): AgentQuestion[]

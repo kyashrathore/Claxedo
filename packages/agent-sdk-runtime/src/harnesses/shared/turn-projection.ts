@@ -40,7 +40,7 @@ export function createTurnEventProjector(options: {
   store: RuntimeEventStore
   owner: TurnProjectionOwner
   directory: string
-  input: Pick<PromptInput, "userMessageId" | "agent" | "model" | "variant">
+  input: Pick<PromptInput, "userMessageId" | "parentMessageId" | "agent" | "model" | "variant">
   assistantMessageId: string
   created: number
   fencingToken?: number
@@ -95,7 +95,7 @@ export function createTurnEventProjector(options: {
       append(messageUpdated(buildAssistantMessage({
         id: assistantMessageId,
         sessionID: options.owner.sessionId,
-        parentID: options.input.userMessageId ?? options.owner.sessionId,
+        parentID: options.input.userMessageId ?? options.input.parentMessageId ?? options.owner.sessionId,
         agent: options.input.agent,
         model: options.input.model,
         directory: options.directory,

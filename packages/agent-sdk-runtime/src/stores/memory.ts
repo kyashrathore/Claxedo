@@ -298,7 +298,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       messageUpdated(buildAssistantMessage({
         id: input.assistantMessageId,
         sessionID: input.sessionId,
-        parentID: input.userMessageId ?? input.sessionId,
+        parentID: input.userMessageId ?? input.parentMessageId ?? input.sessionId,
         agent: input.agent,
         model: input.model,
         directory: session?.directory ?? "",
@@ -385,6 +385,10 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   getMessages(id: string) {
     return this.messages.get(id) ?? []
+  }
+
+  getLatestUserMessageId(id: string) {
+    return this.messages.get(id)?.findLast((message) => message.info.role === "user")?.info.id
   }
 
   getTodos(sessionId: string) {

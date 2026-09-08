@@ -347,6 +347,27 @@ describe("SdkRuntimeAdapter", () => {
     await adapter.dispose()
   })
 
+  test("provider Goal turns persist one user request and attach continuations to it", async () => {
+    const store = createMemoryRuntimeStore()
+    let host!: SdkRuntimeDriverHost
+    const adapter = new SdkRuntimeAdapter({ store, driver: (value) => {
+      host = value
+      return minimalSdkRuntimeDriver()
+    } })
+    const directory = path.resolve("/repo")
+    const session = await adapter.createSession(directory)
+    expect(await host.runProviderTurn({ sessionId: session.id, directory, userMessage: {
+      id: "goal-request", text: "Ship verified work",
+    } }, async () => {})).toBe(true)
+    const original = store.getMessages(session.id).find((message) => message.info.role === "user")!
+    expect(original.parts).toMatchObject([{ type: "text", text: "Ship verified work" }])
+    expect(await host.runProviderTurn({ sessionId: session.id, directory }, async () => {})).toBe(true)
+    const messages = store.getMessages(session.id)
+    expect(messages.filter((message) => message.info.role === "user")).toEqual([original])
+    expect(messages.filter((message) => message.info.role === "assistant").map((message) => message.info.parentID)).toEqual(["goal-request", "goal-request"])
+    await adapter.dispose()
+  })
+
   test("restores the accepted permission mode before a provider turn in a new adapter", async () => {
     const order: string[] = []
     const store = createMemoryRuntimeStore()

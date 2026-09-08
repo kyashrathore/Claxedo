@@ -164,7 +164,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         })) throw new Error(`Cannot persist permissions for missing session ${sessionId}`)
       },
       publishGoal: (input) => this.publishGoal(input.sessionId, input.directory, input.goal),
-      runProviderTurn: (input, execute) => this.runProviderTurn(input.sessionId, input.directory, execute),
+      runProviderTurn: (input, execute) => this.runProviderTurn(input.sessionId, input.directory, execute, input.userMessage),
     })
     this.goals = this.createGoalResource()
   }
@@ -264,16 +264,20 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     sessionId: string,
     directory: string,
     execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
+    userMessage?: { id: string; text: string },
   ): Promise<boolean> {
-    const config = this.store.getSessionConfig(sessionId)
-    const input: PromptInput = {
-      parts: [],
-      assistantMessageId: randomUUID(),
-      agent: config?.agent ?? "build",
-      model: config?.model ?? { providerID: this.driver.type, modelID: this.currentModel || "default" },
-      ...(config?.variant ? { variant: config.variant } : {}),
-    }
     return (async () => {
+      const config = this.store.getSessionConfig(sessionId)
+      const parent = userMessage ? undefined : this.store.getLatestUserMessageId(sessionId)
+      if (!userMessage && !parent) throw new Error(`Provider turn has no user intent for session ${sessionId}`)
+      const input: PromptInput = {
+        parts: userMessage ? [{ type: "text", text: userMessage.text }] : [],
+        ...(userMessage ? { userMessageId: userMessage.id } : { parentMessageId: parent! }),
+        assistantMessageId: randomUUID(),
+        agent: config?.agent ?? "build",
+        model: config?.model ?? { providerID: this.driver.type, modelID: this.currentModel || "default" },
+        ...(config?.variant ? { variant: config.variant } : {}),
+      }
       let admitted = false
       for await (const _event of this.streamMessage(sessionId, input, directory, async (turn) => {
         admitted = true
@@ -485,7 +489,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       messageUpdated(buildAssistantMessage({
         id: input.assistantMessageId,
         sessionID: id,
-        parentID: input.userMessageId ?? id,
+        parentID: input.userMessageId ?? input.parentMessageId ?? id,
         agent: input.agent,
         model: input.model,
         directory,
@@ -497,6 +501,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       sessionId: id,
       agentSessionId,
       userMessageId: input.userMessageId,
+      parentMessageId: input.parentMessageId,
       assistantMessageId: input.assistantMessageId,
       agent: input.agent,
       model: input.model,
@@ -732,7 +737,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       const updated = messageUpdated(buildAssistantMessage({
         id: router.assistantMessageId(),
         sessionID: id,
-        parentID: input.userMessageId ?? id,
+        parentID: input.userMessageId ?? input.parentMessageId ?? id,
         agent: input.agent,
         model: input.model,
         directory,
@@ -756,7 +761,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     const updated = messageUpdated(buildAssistantMessage({
       id: router.assistantMessageId(),
       sessionID: id,
-      parentID: input.userMessageId ?? id,
+      parentID: input.userMessageId ?? input.parentMessageId ?? id,
       agent: input.agent,
       model: input.model,
       directory,

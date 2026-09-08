@@ -99,7 +99,7 @@ export type SdkRuntimeDriverHost = {
     goal: RuntimeGoalSnapshot | null
   }): void
   runProviderTurn(
-    input: { sessionId: string; directory: string },
+    input: { sessionId: string; directory: string; userMessage?: { id: string; text: string } },
     execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
   ): Promise<boolean>
 }

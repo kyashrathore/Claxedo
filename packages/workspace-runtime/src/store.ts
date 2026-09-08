@@ -77,6 +77,7 @@ type Bind = {
 type Turn = {
   type: "turn.start"
   userMessageId?: string
+  parentMessageId?: string
   assistantMessageId: string
   agent: string
   model: Model
@@ -2136,7 +2137,7 @@ export class RuntimeStore {
         buildAssistantMessage({
           id: control.assistantMessageId,
           sessionID: row.sessionId,
-          parentID: control.userMessageId ?? row.sessionId,
+          parentID: control.userMessageId ?? control.parentMessageId ?? row.sessionId,
           agent: control.agent,
           model: control.model,
           directory,
@@ -2472,7 +2473,7 @@ export class RuntimeStore {
         buildAssistantMessage({
           id: control.assistantMessageId,
           sessionID: row.sessionId,
-          parentID: control.userMessageId ?? row.sessionId,
+          parentID: control.userMessageId ?? control.parentMessageId ?? row.sessionId,
           agent: control.agent,
           model: control.model,
           directory: session?.directory ?? "",
@@ -2486,6 +2487,7 @@ export class RuntimeStore {
     sessionId: string
     agentSessionId?: string
     userMessageId?: string
+    parentMessageId?: string
     assistantMessageId: string
     agent: string
     model: Model
@@ -2557,6 +2559,7 @@ export class RuntimeStore {
       control: {
         type: "turn.start",
         userMessageId: input.userMessageId,
+        parentMessageId: input.parentMessageId,
         assistantMessageId: input.assistantMessageId,
         agent: input.agent,
         model: input.model,
@@ -2729,7 +2732,7 @@ export class RuntimeStore {
           buildAssistantMessage({
             id: active.assistant_message_id,
             sessionID: input.sessionId,
-            parentID: active.user_message_id ?? input.sessionId,
+            parentID: active.user_message_id ?? control.parentMessageId ?? input.sessionId,
             agent: control.agent ?? "build",
             model: control.model,
             directory: session?.directory ?? "",
@@ -3358,6 +3361,12 @@ export class RuntimeStore {
       .prepare<MessageProjectionRow>("SELECT id, ord, info_json FROM message WHERE session_id = ? ORDER BY ord ASC")
       .all(sessionId)
     return this.hydrateMessages(sessionId, msgs)
+  }
+
+  getLatestUserMessageId(sessionId: string) {
+    return this.db.prepare<{ id: string }>(
+      "SELECT id FROM message WHERE session_id = ? AND role = 'user' ORDER BY ord DESC LIMIT 1",
+    ).get(sessionId)?.id
   }
 
   getMessagePage(sessionId: string, page: AgentMessagePageInput): AgentMessagePage | undefined {

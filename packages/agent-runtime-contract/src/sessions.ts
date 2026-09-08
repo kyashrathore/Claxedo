@@ -100,6 +100,8 @@ export type PromptFormat =
 export type PromptInput = {
   parts: Array<AgentTextPartInput | AgentFilePartInput | AgentAgentPartInput>
   userMessageId?: string
+  /** Existing user intent that owns a provider-initiated continuation. */
+  parentMessageId?: string
   assistantMessageId: string
   agent: string
   model: PromptModel

@@ -212,6 +212,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   getMessages(id: string) { return this.memory.getMessages(id) }
+  getLatestUserMessageId(id: string) { return this.memory.getLatestUserMessageId(id) }
   getTodos(sessionId: string) { return this.memory.getTodos(sessionId) }
   listPermissions(directory: string) { return this.memory.listPermissions(directory) }
   listQuestions(directory: string) { return this.memory.listQuestions(directory) }
