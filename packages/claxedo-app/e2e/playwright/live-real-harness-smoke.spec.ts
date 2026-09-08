@@ -401,8 +401,8 @@ test.describe("live real-harness smoke @live", () => {
   }
 
   for (const harness of ["claude", "codex"] as const) {
-    for (const action of ["answer", "dismiss", "stop"] as const) {
-    test(`${harness} native SDK question ${action} survives reload and preserves session usability`, async ({ page }) => {
+    for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true]] as const) {
+    test(`${harness} native SDK question ${action} survives reload and preserves session usability${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       test.skip(!binary, `The live question flow requires the installed and authenticated ${harness} CLI.`)
       const dir = await makeWorkspace(`${harness}-live-question`)
@@ -412,7 +412,7 @@ test.describe("live real-harness smoke @live", () => {
       await waitForHarnessReady(page)
       const prefix = `LIVE-QUESTION-${Date.now()}`
       await composePrompt(page, input,
-        (harness === "claude"
+        (goalMode ? "/goal " : "") + (harness === "claude"
           ? 'Use the AskUserQuestion tool now with exactly one question: "Which test environment?", header "Environment", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}], multiSelect false. '
           : 'Use request_user_input now with one question: id "environment", header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}]. ') +
         `Wait for my answer, then reply with exactly ${prefix}- followed by the selected option label. If dismissed, reply exactly ${prefix}-DISMISSED and do not ask again. Do not run any other tools.`,
@@ -444,6 +444,7 @@ test.describe("live real-harness smoke @live", () => {
         expect(late.status()).toBe(404)
         await page.reload({ waitUntil: "domcontentloaded" })
         await expect(dock).toHaveCount(0)
+        if (goalMode) await expect(page.locator('[data-component="session-goal-dock"] [data-slot="session-goal-status"]')).toHaveText("Paused")
         const followup = `AFTER-${action.toUpperCase()}-${Date.now()}`
         await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply exactly ${followup}. Do not use tools.`)
         await page.locator(SELECTORS.submitControl).last().click()

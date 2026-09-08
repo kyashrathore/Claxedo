@@ -1218,8 +1218,8 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   }
 
-  for (const action of ["answer", "dismiss"] as const) {
-    test(`codex native structured question ${action} reaches the question dock`, async ({ page }) => {
+  for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true]] as const) {
+    test(`codex native structured question ${action} reaches the question dock${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
       requireBinary(binary, "codex", "install the Codex CLI to exercise its structured question tool.")
       const dir = await makeWorkspace("codex-question", "codex")
@@ -1240,10 +1240,24 @@ test.describe("real harness journeys @core @tier-real", () => {
       const toolResults = () => scripted!.requests.flatMap(({ body }) =>
         "input" in body && Array.isArray(body.input) ? body.input.filter((item) => item.type === "function_call_output") : [])
       try {
-        await composePrompt(page, input, `Ask which environment to use, then reply with exactly this one token: ${marker}`)
+        await composePrompt(page, input, `${goalMode ? "/goal " : ""}Ask which environment to use, then reply with exactly this one token: ${marker}`)
         await page.locator(SELECTORS.submitControl).last().click()
         const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
         await expect(dock).toBeVisible({ timeout: 20_000 })
+        if (action === "stop") {
+          await page.reload({ waitUntil: "domcontentloaded" })
+          await expect(dock).toBeVisible()
+          await dock.getByRole("button", { name: "Stop", exact: true }).click()
+          await expect(dock).toHaveCount(0)
+          await page.reload({ waitUntil: "domcontentloaded" })
+          await expect(dock).toHaveCount(0)
+          if (goalMode) await expect(goalStatus(page.locator('[data-component="session-goal-dock"]'), "Paused")).toBeVisible()
+          const followup = `FOLLOWUP-${Date.now()}`
+          await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${followup}`)
+          await page.locator(SELECTORS.submitControl).last().click()
+          await expectAssistantReplyVisible(page, followup)
+          return
+        }
         if (action === "dismiss") {
           await dock.getByRole("button", { name: "Dismiss", exact: true }).click()
         } else {
@@ -1265,8 +1279,8 @@ test.describe("real harness journeys @core @tier-real", () => {
   }
 
 
-  for (const action of ["answer", "custom", "dismiss", "stop"] as const) {
-    test(`claude native SDK provider-issued question: ${action} after reload`, async ({ page }) => {
+  for (const [action, goalMode] of [["answer", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true]] as const) {
+    test(`claude native SDK provider-issued question: ${action} after reload${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
       requireBinary(binary, "claude", "install the Claude CLI to exercise its AskUserQuestion tool.")
       const dir = await makeWorkspace("claude-question", "claude")
@@ -1299,7 +1313,7 @@ test.describe("real harness journeys @core @tier-real", () => {
         },
         whenPromptIncludes: marker,
       })
-      await composePrompt(page, input, `Ask which environment to use, then reply with exactly this one token: ${marker}`)
+      await composePrompt(page, input, `${goalMode ? "/goal " : ""}Ask which environment to use, then reply with exactly this one token: ${marker}`)
       await page.locator(SELECTORS.submitControl).last().click()
       await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
       const sessionUrl = page.url()
@@ -1321,6 +1335,7 @@ test.describe("real harness journeys @core @tier-real", () => {
           await stop.click()
         }
         await expect(dock).toHaveCount(0)
+        if (goalMode) await expect(goalStatus(page.locator('[data-component="session-goal-dock"]'), "Paused")).toBeVisible()
         const followup = page.getByRole("textbox", { name: /Ask anything/i }).last()
         await expect(followup).toBeVisible()
         const nextMarker = `FOLLOWUP-${marker}`
