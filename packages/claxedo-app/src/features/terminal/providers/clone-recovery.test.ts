@@ -16,7 +16,6 @@ const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?clone-recovery-restore`)) }
 const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?clone-recovery-restore`)) }
 const realRouterModule = { ...(await import("@solidjs/router")) }
-const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?clone-recovery-restore`)) }
 
 // `mock.module` returns a promise; awaiting it means the hook does not resolve
 // until the module graph has actually been swapped back, so a later file in the
@@ -25,7 +24,6 @@ afterAll(async () => {
   await mock.module("@/platform/api/api", () => realApiModule)
   await mock.module("@/platform/persistence/persist", () => realPersistModule)
   await mock.module("@solidjs/router", () => realRouterModule)
-  await mock.module("@/features/terminal/core/terminal-recovery", () => realRecoveryModule)
 })
 
 await mock.module("@opencode-ai/ui/context", () => ({
@@ -88,28 +86,7 @@ await mock.module("@solidjs/router", () => ({
   useParams: () => ({ dir: "/workspace" }),
 }))
 
-await mock.module("@/features/terminal/core/terminal-recovery", () => {
-  const executed = new Set<string>()
-  const claimed = new Set<string>()
-  const initialCommandKey = (id: string) => `opencode.pty.${id}.initial-command-ran`
-  return {
-    clearInitialCommandMarker: (id: string) => { executed.delete(id); claimed.delete(id) },
-    markInitialCommandRan: (id: string) => { executed.add(id); claimed.delete(id) },
-    shouldRunInitialCommand: (pty: { id: string; initialCommand?: string }) => {
-      if (!pty.initialCommand) return false
-      if (executed.has(pty.id)) return false
-      if (claimed.has(pty.id)) return false
-      return true
-    },
-    claimInitialCommand: (pty: { id: string; initialCommand?: string }) => {
-      if (!pty.initialCommand || executed.has(pty.id) || claimed.has(pty.id)) return false
-      claimed.add(pty.id)
-      return true
-    },
-    releaseInitialCommandClaim: (id: string) => { claimed.delete(id) },
-    initialCommandKey,
-  }
-})
+
 
 const { createTerminalSession } = await import("@/features/terminal/providers/provider")
 

@@ -22,7 +22,6 @@ const LEGACY_KEY = `${RAW_SCOPE}:workspace:terminal`
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?zombie-restore`)) }
 const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?zombie-restore`)) }
-const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?zombie-restore`)) }
 
 // `mock.module` returns a promise; awaiting it means the hook does not resolve
 // until the module graph has actually been swapped back, so a later file in the
@@ -30,7 +29,6 @@ const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/termin
 afterAll(async () => {
   await mock.module("@/platform/api/api", () => realApiModule)
   await mock.module("@/platform/persistence/persist", () => realPersistModule)
-  await mock.module("@/features/terminal/core/terminal-recovery", () => realRecoveryModule)
 })
 
 // Mock persisted() to use our in-memory storage instead of localStorage
@@ -92,37 +90,7 @@ await mock.module("@/platform/persistence/persist", () => ({
   },
 }))
 
-await mock.module("@/features/terminal/core/terminal-recovery", () => {
-  const executed = new Set<string>()
-  const claimed = new Set<string>()
-  const initialCommandKey = (id: string) => `opencode.pty.${id}.initial-command-ran`
-  return {
-    clearInitialCommandMarker: (id: string) => {
-      executed.delete(id)
-      claimed.delete(id)
-      if (typeof localStorage !== "undefined") localStorage.removeItem(initialCommandKey(id))
-    },
-    markInitialCommandRan: (id: string) => {
-      executed.add(id)
-      claimed.delete(id)
-      if (typeof localStorage !== "undefined") localStorage.setItem(initialCommandKey(id), "1")
-    },
-    shouldRunInitialCommand: (pty: { id: string; initialCommand?: string }) => {
-      if (!pty.initialCommand) return false
-      if (executed.has(pty.id)) return false
-      if (claimed.has(pty.id)) return false
-      if (typeof localStorage !== "undefined" && localStorage.getItem(initialCommandKey(pty.id))) return false
-      return true
-    },
-    claimInitialCommand: (pty: { id: string; initialCommand?: string }) => {
-      if (!pty.initialCommand || executed.has(pty.id) || claimed.has(pty.id)) return false
-      claimed.add(pty.id)
-      return true
-    },
-    releaseInitialCommandClaim: (id: string) => { claimed.delete(id) },
-    initialCommandKey,
-  }
-})
+
 
 // Now import the module under test
 const { createTerminalSession } = await import("@/features/terminal/providers/provider")

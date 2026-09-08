@@ -4,7 +4,6 @@ import { useSDK, useClaxedoEventsOptional } from "@/features/terminal/app-ports"
 import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { scopeUrl } from "@/lib/url"
 import { defaultTitleNumber } from "@/lib/terminal-title"
-import { clearInitialCommandMarker } from "@/features/terminal/core/terminal-recovery"
 import { pickPersistBufferEvictions } from "@/features/terminal/core/terminal-buffer"
 import { mergeCreatedTerminal, nextTerminalNumber, type LocalPTY, type NewTerminalInput } from "@/features/terminal/providers/shared"
 import { legacyDirectoryFromRouteKey } from "@/platform/identity/route"
@@ -263,7 +262,6 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
         setStore("active", remaining[0]?.id)
       }
     })
-    clearInitialCommandMarker(id)
   })
   onCleanup(unsub)
 
@@ -313,7 +311,6 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
         setStore("active", remaining[0]?.id)
       }
     })
-    clearInitialCommandMarker(id)
   })
   onCleanup(unsubDeleted)
 

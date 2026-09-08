@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { cursorPlan, initialDelay, isLikelyTui, restoreSize } from "./reconnect-heuristics"
+import { cursorPlan, isLikelyTui, restoreSize } from "./reconnect-heuristics"
 
 describe("terminal reconnect/restore heuristics", () => {
   test("isLikelyTui: matches title", () => {
@@ -117,19 +117,7 @@ describe("terminal reconnect/restore heuristics", () => {
     expect(size.rows).toBe(44)
   })
 
-  test("initialDelay: gives TUIs more time to settle", () => {
-    expect(initialDelay({ likelyTui: true })).toEqual({
-      settleMs: 180,
-      fallbackMs: 1200,
-    })
-  })
 
-  test("initialDelay: keeps shells snappy", () => {
-    expect(initialDelay({ likelyTui: false })).toEqual({
-      settleMs: 100,
-      fallbackMs: 500,
-    })
-  })
 })
 
 describe("cursorPlan: a client with no local copy must ask the server to replay", () => {

@@ -10,7 +10,6 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useTheme } from "@opencode-ai/ui/theme"
 import { useLanguage } from "@/platform/i18n/provider"
 import { showToast } from "@opencode-ai/ui/toast"
-import { claimInitialCommand, markInitialCommandRan, releaseInitialCommandClaim } from "@/features/terminal/core/terminal-recovery"
 import { preparePersistBuffer, prepareRestoreBuffer } from "@/features/terminal/core/terminal-buffer"
 import { hostStable, shouldRecoverDesync, shouldSendResize, sizeSane } from "@/features/terminal/core/terminal-geometry"
 import {
@@ -25,14 +24,13 @@ import {
   openTerminalWebSocket,
 } from "@/features/terminal/core/terminal-connection"
 import { createTerminalRuntimeQueue } from "@/features/terminal/core/terminal-runtime-queue"
-import { cursorPlan, initialDelay, isLikelyTui, restoreSize } from "@/features/terminal/core/reconnect-heuristics"
+import { cursorPlan, isLikelyTui, restoreSize } from "@/features/terminal/core/reconnect-heuristics"
 import { stripTerminalRepliesFromInput } from "@/features/terminal/core/input-reply-filter"
 import { getCapabilityResponses } from "@/features/terminal/core/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./pty-key-migration"
-import { resolveInitialCommand } from "./initial-command"
 import { buildRestoreWrite, shouldTrimRestoredTail, trimTrailingLines } from "./restore"
 import { classifyTerminalClose } from "./close"
 import { MIN_CONTAINER_PX, TERMINAL_OPTIONS } from "../core/config"
@@ -432,17 +430,6 @@ export const Terminal = (props: TerminalProps) => {
         snapshotWasAltScreen:  snapshotWasAltScreen,
         snapshotCursor,
       })
-      const launch = initialDelay({ likelyTui })
-      const { command: initialCmd, clearStored: clearStoredInitialCmd } = resolveInitialCommand(local.pty.initialCommand)
-      if (clearStoredInitialCmd) props.onUpdate?.({ id: local.pty.id, initialCommand: undefined })
-      const initialReady = initialCmd ? claimInitialCommand({ id: local.pty.id, initialCommand: initialCmd }) : false
-      let initialSent = false
-      let gated = likelyTui && initialReady
-      let gate: WebSocket | undefined
-      let owner: WebSocket | undefined
-      let settleTimer: ReturnType<typeof setTimeout> | undefined
-      let fallbackTimer: ReturnType<typeof setTimeout> | undefined
-
       // --- Reconnect state ---
       // Mutable reference so all handlers (onData, publishResize) always use
       // the current socket across reconnections.
@@ -455,91 +442,15 @@ export const Terminal = (props: TerminalProps) => {
       let replayReady = false
 
       cleanups.push(() => {
-        if (initialReady && !initialSent) {
-          releaseInitialCommandClaim(local.pty.id)
-        }
-        gate = undefined
         if (reconnectTimer) {
           clearTimeout(reconnectTimer)
           reconnectTimer = undefined
-        }
-        if (settleTimer) {
-          clearTimeout(settleTimer)
-          settleTimer = undefined
-        }
-        if (fallbackTimer) {
-          clearTimeout(fallbackTimer)
-          fallbackTimer = undefined
         }
         const sock = socketRef.current
         if (sock && (sock.readyState === WebSocket.OPEN || sock.readyState === WebSocket.CONNECTING)) {
           sock.close()
         }
       })
-
-      const clearInitialTimers = (ws?: WebSocket) => {
-        if (ws && owner !== ws) return
-        if (settleTimer) {
-          clearTimeout(settleTimer)
-          settleTimer = undefined
-        }
-        if (fallbackTimer) {
-          clearTimeout(fallbackTimer)
-          fallbackTimer = undefined
-        }
-        owner = undefined
-      }
-
-      const releaseGate = (ws: WebSocket, reason: string) => {
-        if (!gated || gate !== ws) return
-        if (socketRef.current !== ws || ws.readyState !== WebSocket.OPEN) {
-          return
-        }
-        gated = false
-        gate = undefined
-        if (!initialSent) queueInitial(ws, reason)
-      }
-
-      const sendInitial = (ws: WebSocket, _reason: string) => {
-        if (!initialReady || initialSent || !initialCmd) return
-        if (socketRef.current !== ws || ws.readyState !== WebSocket.OPEN) {
-          return
-        }
-        clearInitialTimers()
-        initialSent = true
-        markInitialCommandRan(local.pty.id)
-        ws.send(initialCmd + "\n")
-        props.onUpdate?.({ id: local.pty.id, initialCommand: undefined })
-      }
-
-      const armInitial = (ws: WebSocket, reason: string) => {
-        if (!initialReady || initialSent || !initialCmd) return
-        owner = ws
-        if (settleTimer) clearTimeout(settleTimer)
-        settleTimer = setTimeout(() => {
-          settleTimer = undefined
-          sendInitial(ws, reason)
-        }, launch.settleMs)
-      }
-
-      const armInitialFallback = (ws: WebSocket) => {
-        if (!initialReady || initialSent || !initialCmd || fallbackTimer) return
-        owner = ws
-        fallbackTimer = setTimeout(() => {
-          fallbackTimer = undefined
-          sendInitial(ws, "fallback")
-        }, launch.fallbackMs)
-      }
-
-      const queueInitial = (ws: WebSocket, reason: string) => {
-        if (!initialReady || initialSent || !initialCmd) return
-        if (owner && owner !== ws) {
-          clearInitialTimers(owner)
-        }
-        owner = ws
-        armInitialFallback(ws)
-        armInitial(ws, reason)
-      }
 
       // Single user-input path: xterm keystrokes AND the mobile accessory row
       // (Esc/Tab/Ctrl/arrows) both flow through here (same interrupt detection,
@@ -925,9 +836,7 @@ export const Terminal = (props: TerminalProps) => {
           if (!shouldForceSigwinch) {
             holdResizeUntil = Date.now() + OPEN_RESIZE_SETTLE_MS
             scheduleOpenResize("socket-open")
-            releaseGate(ws, "socket-open")
           } else {
-            gate = gated ? ws : undefined
             holdResizeUntil = 0
             if (openResizeSettleTimer) {
               clearTimeout(openResizeSettleTimer)
@@ -946,31 +855,12 @@ export const Terminal = (props: TerminalProps) => {
               .then(() => {
                 return updatePty({ size: second })
               })
-              .then(() => {
-                releaseGate(ws, "sigwinch")
-              })
-              .catch(() => {
-                releaseGate(ws, "sigwinch-failed")
-              })
+              .catch(() => {})
           }
 
-          // Execute initial command only once per PTY, including across reloads.
-          // Wait for shell output to settle instead of firing blindly after a
-          // fixed delay. This avoids racing shell startup on fresh PTYs.
-          if (gated) {
-            armInitialFallback(ws)
-          }
-          if (!gated && !initialSent) {
-            queueInitial(ws, wasReconnect ? "reconnect-open" : "socket-open")
-          }
         }
         ws.addEventListener("open", handleOpen)
         socketCleanups.push(() => ws.removeEventListener("open", handleOpen))
-        socketCleanups.push(() => {
-          if (gate === ws) gate = undefined
-        })
-        socketCleanups.push(() => clearInitialTimers(ws))
-
         // --- handleMessage ---
         const handleMessage = (event: MessageEvent) => {
           if (disposed) return
@@ -1002,9 +892,6 @@ export const Terminal = (props: TerminalProps) => {
 
           if (!data) {
             return
-          }
-          if (!gated && !initialSent) {
-            queueInitial(ws, "output-settled")
           }
           // The cursor is an INDEX INTO THE SERVER'S UTF-16 STRING BUFFER — the
           // server advances it by `data.length` and `connect()` feeds it

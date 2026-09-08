@@ -5,7 +5,6 @@ import { createMockSDK, createMockStorage, createTerminalApiModule } from "./tes
 const storage = createMockStorage()
 const realApiModule = { ...(await import(`${import.meta.dir}/../../../platform/api/api.ts?relay-lifecycle-restore`)) }
 const realPersistModule = { ...(await import(`${import.meta.dir}/../../../platform/persistence/persist.ts?relay-lifecycle-restore`)) }
-const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/terminal-recovery.ts?relay-lifecycle-restore`)) }
 
 // `mock.module` returns a promise; awaiting it means the hook does not resolve
 // until the module graph has actually been swapped back, so a later file in the
@@ -13,7 +12,6 @@ const realRecoveryModule = { ...(await import(`${import.meta.dir}/../core/termin
 afterAll(async () => {
   await mock.module("@/platform/api/api", () => realApiModule)
   await mock.module("@/platform/persistence/persist", () => realPersistModule)
-  await mock.module("@/features/terminal/core/terminal-recovery", () => realRecoveryModule)
 })
 
 await mock.module("@opencode-ai/ui/context", () => ({
@@ -65,16 +63,6 @@ await mock.module("@/platform/persistence/persist", () => ({
     storage.removeItem(target.key)
     return Promise.resolve()
   },
-}))
-
-// Spread the real module for the same reason as persist above: a PARTIAL mock
-// leaves every other export bound to whatever the previously-registered mock
-// happened to install, and the no-op `clearInitialCommandMarker` then leaks
-// into terminal-recovery.test.ts (which runs later in CI's file order) and
-// silently breaks its `executed`-set clearing.
-await mock.module("@/features/terminal/core/terminal-recovery", () => ({
-  ...realRecoveryModule,
-  clearInitialCommandMarker: () => {},
 }))
 
 const { createTerminalSession } = await import("@/features/terminal/providers/provider")
