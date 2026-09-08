@@ -47,7 +47,6 @@ export interface TerminalProps extends ComponentProps<"div"> {
   onUpdate?: (pty: Partial<LocalPTY> & { id: string }) => void
   onConnect?: () => void
   onConnectError?: (error: unknown) => void
-  onAgentInterrupt?: () => void
   onSplitVertical?: () => void
   onSplitHorizontal?: () => void
   onFileLinkOpen?: (path: string, line?: number, col?: number, lineEnd?: number, colEnd?: number) => void
@@ -453,12 +452,9 @@ export const Terminal = (props: TerminalProps) => {
       })
 
       // Single user-input path: xterm keystrokes AND the mobile accessory row
-      // (Esc/Tab/Ctrl/arrows) both flow through here (same interrupt detection,
-      // reply filtering, and socket send).
+      // (Esc/Tab/Ctrl/arrows) both use the same reply filtering and socket send.
+      // Keystrokes are requests; provider lifecycle events own agent status.
       const handleUserInput = (data: string) => {
-        // Ctrl+C ("\x03") or bare Escape ("\x1b", length 1 — excludes escape sequences like "\x1b[A")
-        if (data === "\x03" || data === "\x1b") props.onAgentInterrupt?.()
-
         // Shell protection: capability replies are already handled from PTY
         // output in handleMessage() via getCapabilityResponses(). If xterm
         // also surfaces OSC 10/11 replies on onData(), forwarding them here

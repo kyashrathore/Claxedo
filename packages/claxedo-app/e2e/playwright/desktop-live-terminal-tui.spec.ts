@@ -359,7 +359,14 @@ for (const { harness, child, pause } of [
         await expect(terminal.locator(".xterm-rows > div").filter({ hasText: /^[^A-Za-z]*sleep 60\s*$/ })).toBeVisible({ timeout: 45_000 })
         await packaged.page.screenshot({ path: test.info().outputPath("amp-before-cancel.png") })
         await packaged.page.keyboard.press("Escape")
+        await packaged.page.screenshot({ path: test.info().outputPath("amp-first-escape.png") })
+        const afterFirstEscape = await (await fetch(lifecycleUrl)).json() as { session: { eventType?: string } | null }
+        await test.info().attach("amp-first-escape-status", { body: JSON.stringify(afterFirstEscape.session?.eventType), contentType: "application/json" })
+        if (afterFirstEscape.session?.eventType === "Busy") {
+          await expectTerminalRailStatus({ page: packaged.page, terminalId: pty.id, status: "working" })
+        }
         await packaged.page.keyboard.press("Escape")
+        await packaged.page.screenshot({ path: test.info().outputPath("amp-second-escape.png") })
         await packaged.page.getByRole("button", { name: "New Session", exact: true }).click()
         await expect.poll(async () => {
           const body = await (await fetch(lifecycleUrl)).json() as { session: { eventType?: string } | null }
@@ -380,6 +387,8 @@ for (const { harness, child, pause } of [
       }
     } finally {
       if (harness === "amp" && packaged && !packaged.page.isClosed()) {
+        const row = packaged.page.locator('[data-testid="rail-sidebar-terminal-row"]').first()
+        if (await row.isVisible()) await row.click()
         await test.info().attach("amp-rendered-rows", { body: await packaged.page.locator(".xterm-rows").evaluateAll((rows) => rows.map((row) => row.innerHTML).join("\n")), contentType: "text/html" })
         const events = await packaged.page.evaluate(() => {
           const state = window as unknown as { __ampCancellationEvents?: unknown[]; __ampCancellationStream?: EventSource }

@@ -186,6 +186,7 @@ function useAgentLifecycleListener() {
 
       batch(() => {
         state.terminal.setAgentStatus(actualTerminalId, terminalStatus)
+        if (event.outcome === "cancelled") state.terminal.clearSeen(actualTerminalId)
 
         // Find the content this event maps to.
         let content: ContentMeta | undefined =

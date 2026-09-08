@@ -590,14 +590,6 @@ function TerminalContentInner(props: {
                 onCleanup={terminal.update}
                 onUpdate={terminal.update}
                 onConnectError={handleConnectError}
-                onAgentInterrupt={() => {
-                  if (!state.terminal.isTracked(id)) return
-                  if (state.terminal.agentStatus(id) === "idle") return
-
-                  batch(() => {
-                    state.terminal.setAgentStatus(id, "idle")
-                  })
-                }}
                 onSplitVertical={() => requestTerminalFitOnPaneChange()}
                 onSplitHorizontal={() => requestTerminalFitOnPaneChange()}
                 onFileLinkOpen={(filePath, line, col) => {
