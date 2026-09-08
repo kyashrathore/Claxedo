@@ -33,7 +33,7 @@ describe("AI connect state", () => {
 
     const results = [
       { credentialId: "c1", providerId: "anthropic", result: "ok" as const },
-      { credentialId: "c2", providerId: "codex-acp", result: "expired" as const },
+      { credentialId: "c2", providerId: "codex-app-server", result: "expired" as const },
     ]
     expect(aiConnectTransition(saved, { type: "settled", results })).toEqual({ phase: "settled", results })
   })
@@ -153,8 +153,8 @@ describe("AI connect state", () => {
 
   test("two Codex accounts stay two rows — different accounts are different credentials", () => {
     const rows = groupDiscoveryItems([
-      { providerId: "codex-acp", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…a", origin: "~/.codex/auth.json" },
-      { providerId: "codex-acp", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…b", origin: "~/.codex/accounts/b.auth.json" },
+      { providerId: "codex-app-server", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…a", origin: "~/.codex/auth.json" },
+      { providerId: "codex-app-server", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…b", origin: "~/.codex/accounts/b.auth.json" },
     ])
 
     expect(rows.map((row) => row.accountId)).toEqual(["account…a", "account…b"])
@@ -176,12 +176,12 @@ describe("AI connect state", () => {
     const results = groupConnectResults([
       { credentialId: "c1", providerId: "claude-acp", result: "ok" },
       { credentialId: "c2", providerId: "claude-sdk", result: "auth_failed" },
-      { credentialId: "c3", providerId: "codex-acp", result: "ok" },
+      { credentialId: "c3", providerId: "codex-app-server", result: "ok" },
     ])
 
     expect(results).toEqual([
       { credentialId: "c2", providerId: "claude-sdk", result: "auth_failed" },
-      { credentialId: "c3", providerId: "codex-acp", result: "ok" },
+      { credentialId: "c3", providerId: "codex-app-server", result: "ok" },
     ])
   })
 
@@ -208,7 +208,7 @@ describe("AI connect state", () => {
 
   test("a found login with no probe at all is unverifiable, not assumed good", () => {
     const statuses = localHarnessStatuses(groupDiscoveryItems([
-      { providerId: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json" },
+      { providerId: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json" },
     ]))
 
     expect(statuses.find((harness) => harness.id === "codex")?.state).toBe("unverifiable")
@@ -228,7 +228,7 @@ describe("AI connect state", () => {
 
   test("a rejected login is broken and carries its reason", () => {
     const statuses = localHarnessStatuses(groupDiscoveryItems([
-      { providerId: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } },
+      { providerId: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } },
     ]))
 
     expect(statuses.find((harness) => harness.id === "codex")).toMatchObject({
@@ -248,8 +248,8 @@ describe("AI connect state", () => {
       type: "discovery-succeeded",
       discoveryId: "discovery-1",
       items: [
-        { providerId: "codex-acp", kind: "oauth_token", label: "Codex A", accountId: "account-a", origin: "~/.codex/accounts/a.auth.json" },
-        { providerId: "codex-acp", kind: "oauth_token", label: "Codex B", accountId: "account-b", origin: "~/.codex/accounts/b.auth.json" },
+        { providerId: "codex-app-server", kind: "oauth_token", label: "Codex A", accountId: "account-a", origin: "~/.codex/accounts/a.auth.json" },
+        { providerId: "codex-app-server", kind: "oauth_token", label: "Codex B", accountId: "account-b", origin: "~/.codex/accounts/b.auth.json" },
       ],
     })
     if (preview.phase !== "preview") throw new Error("expected preview")

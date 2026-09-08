@@ -391,7 +391,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     state.discoveryItems = [
       { provider_id: "claude-acp", kind: "oauth", label: "Claude Code login · ACP", origin: "keychain", probe: { state: "working" } },
       { provider_id: "claude-sdk", kind: "oauth", label: "Claude Code login · agent SDK", origin: "keychain", probe: { state: "working" } },
-      { provider_id: "codex-acp", kind: "oauth", label: "Codex", origin: "config", probe: { state: "broken", reason: "token expired" } },
+      { provider_id: "codex-app-server", kind: "oauth", label: "Codex", origin: "config", probe: { state: "broken", reason: "token expired" } },
       { provider_id: "cursor-acp", kind: "oauth", label: "Cursor", origin: "config" },
     ]
     mount()

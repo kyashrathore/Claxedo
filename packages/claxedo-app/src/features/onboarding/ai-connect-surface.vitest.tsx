@@ -125,7 +125,7 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([Response.json({
       discovery_id: "discovery-1",
-      items: [{ provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } }],
+      items: [{ provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } }],
     })])
     render(() => <Harness destination="cloud" request={stub.request} />)
 
@@ -216,7 +216,7 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([Response.json({
       discovery_id: "discovery-1",
-      items: [{ provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } }],
+      items: [{ provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } }],
     })])
     render(() => <Harness destination="local" request={stub.request} />)
 
@@ -293,8 +293,8 @@ describe("AIConnectSurface", () => {
     const stub = requests([Response.json({
       discovery_id: "discovery-1",
       items: [
-        { provider_id: "codex-acp", kind: "oauth_token", label: "Codex A", account_id: "account-a", origin: "~/.codex/auth.json", probe: { state: "working" } },
-        { provider_id: "codex-acp", kind: "oauth_token", label: "Codex B", account_id: "account-b", origin: "~/.codex/accounts/b.auth.json", probe: { state: "working" } },
+        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex A", account_id: "account-a", origin: "~/.codex/auth.json", probe: { state: "working" } },
+        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex B", account_id: "account-b", origin: "~/.codex/accounts/b.auth.json", probe: { state: "working" } },
       ],
     })])
     const submits: Array<{ count: () => number }> = []
@@ -363,7 +363,7 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([Response.json({
       discovery_id: "discovery-1",
-      items: [{ provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } }],
+      items: [{ provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } }],
     })])
     const submits: Array<{ count: () => number }> = []
     render(() => <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />)
@@ -379,9 +379,9 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([
       Response.json({ discovery_id: "discovery-1", items: [
-        { provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
+        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
       ] }),
-      Response.json({ saved: [{ credential_id: "cred-codex", provider_id: "codex-acp" }] }),
+      Response.json({ saved: [{ credential_id: "cred-codex", provider_id: "codex-app-server" }] }),
       Response.json({ result: "ok" }),
     ])
     const order: string[] = []
@@ -407,11 +407,11 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([
       Response.json({ discovery_id: "discovery-1", items: [
-        { provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
+        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
         { provider_id: "openai", kind: "api_key", label: "OpenAI", origin: "OpenCode auth", probe: { state: "working" } },
       ] }),
       Response.json({ saved: [
-        { credential_id: "cred-codex", provider_id: "codex-acp" },
+        { credential_id: "cred-codex", provider_id: "codex-app-server" },
         { credential_id: "cred-openai", provider_id: "openai" },
       ] }),
       Response.json({ result: "ok" }),
@@ -434,7 +434,7 @@ describe("AIConnectSurface", () => {
 
     await waitFor(() => expect(events).toEqual([
       { name: "step_verify_failed", step: "ai", class: "auth_failed" },
-      { name: "provider_connected", provider: "codex-acp" },
+      { name: "provider_connected", provider: "codex-app-server" },
     ]))
   })
 
@@ -442,11 +442,11 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([
       Response.json({ discovery_id: "discovery-1", items: [
-        { provider_id: "codex-acp", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
+        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
         { provider_id: "openai", kind: "api_key", label: "OpenAI", origin: "OpenCode auth", probe: { state: "working" } },
       ] }),
       Response.json({ saved: [
-        { credential_id: "cred-codex", provider_id: "codex-acp" },
+        { credential_id: "cred-codex", provider_id: "codex-app-server" },
         { credential_id: "cred-openai", provider_id: "openai" },
       ] }),
       Response.json({ result: "ok" }),

@@ -560,6 +560,33 @@ test.describe("live real-harness smoke @live", () => {
     })
   }
 
+  test("machine credential detection reports native logins without connecting Pi", async ({ page }) => {
+    const binary = await resolveBinary("pi", "CLAXEDO_E2E_PI_BIN")
+    test.skip(!binary, "Pi must be installed for native catalog discovery")
+    const dir = await makeWorkspace("pi-detect-credentials")
+    await seedOneProject(page, dir)
+    await openDraftPrompt(page, dir)
+    await switchDraftHarness(page, /^Pi$/, 0)
+    const providerUrl = `${BACKEND_URL}/api/claxedo/agent-config/providers?nativeHarness=pi`
+    const before = await (await fetch(providerUrl)).json() as { connected: string[] }
+    test.skip(before.connected.length > 0, "This detection flow requires an unconnected Pi profile")
+    await page.locator('[data-action="prompt-harness-model"]').last().click()
+    await page.locator('[data-component="harness-model-picker"] [data-key="pi:openai-codex/gpt-5.4"]').click()
+    const detected = page.waitForResponse((response) => response.url().includes("/credentials/discover") && response.request().method() === "POST")
+    await page.locator('[data-action="settings-providers-detect"]').click()
+    const response = await detected
+    expect(response.ok()).toBe(true)
+    const body = await response.json() as { items: Array<{ provider_id: string; probe?: { state: string } }> }
+    const codex = body.items.find((item) => item.provider_id === "codex-app-server" && item.probe?.state === "working")
+    expect(codex, "Installed authenticated Codex login was not discovered").toBeTruthy()
+    const row = page.locator('[data-component="agents-providers-section"] [data-provider="openai"]')
+    await expect(row.getByText("Detected", { exact: true })).toBeVisible()
+    await expect(page.locator('[data-action="settings-providers-detect"]')).toBeEnabled()
+    const after = await (await fetch(providerUrl)).json() as { connected: string[] }
+    expect(after.connected).toEqual(before.connected)
+    await page.screenshot({ path: test.info().outputPath("machine-logins-detected.png") })
+  })
+
   for (const goalMode of [false, true]) {
     test(`pi disconnected model opens provider settings without starting ${goalMode ? "a Goal" : "a turn"}`, async ({ page }) => {
       const binary = await resolveBinary("pi", "CLAXEDO_E2E_PI_BIN")
