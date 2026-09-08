@@ -9,6 +9,7 @@ import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
 import { fileURLToPath } from "node:url"
+import { shutdownPackagedTestDaemon } from "./desktop-daemon"
 
 // `import.meta.url`, not `__dirname`: this suite is ESM and `__dirname` is not
 // defined there — it fails at module load, before any test is collected, with
@@ -280,6 +281,7 @@ export async function launchPackagedApp(
       if (app.process().exitCode === null) app.process().kill("SIGKILL")
     }
     if (!input.preserveUserDataDir) {
+      await shutdownPackagedTestDaemon(userDataDir)
       await fs.rm(userDataDir, { recursive: true, force: true }).catch(() => {})
     }
   }
