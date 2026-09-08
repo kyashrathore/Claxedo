@@ -18,7 +18,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of ["running tool completes across full restart", "running tool stops across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -91,6 +91,77 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await picker.locator('[data-slot="list-item"]').filter({ has: packaged.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
       await expect(control).toContainText("Opus")
       await packaged.page.keyboard.press("Escape")
+    }
+
+    if (flow === "running tool completes across full restart" || flow === "running tool stops across full restart") {
+      const stop = flow === "running tool stops across full restart"
+      const pidFile = path.join(directory, "running.pid")
+      const journal = path.join(directory, "execution.log")
+      const script = path.join(directory, "running.cjs")
+      const marker = `RUNNING_TOOL_${Date.now()}`
+      await fs.writeFile(script, `const fs=require('node:fs');fs.appendFileSync(${JSON.stringify(journal)},'start\\n');fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));const timer=setInterval(()=>{if(!fs.existsSync(${JSON.stringify(releaseFile)}))return;clearInterval(timer);fs.appendFileSync(${JSON.stringify(journal)},'finish\\n');console.log(${JSON.stringify(marker)});},50);`)
+      await packaged.page.locator('[data-action="prompt-permission-mode"]').last().click()
+      await packaged.page.locator(`[data-permission-mode-row][data-mode="${harness === "Claude" ? "bypassPermissions" : "full-access"}"]`).click()
+      const command = `node '${script}'`
+      await compose(input, `Run exactly this command once: ${command}. ` +
+        (harness === "Claude" ? 'Use Bash with timeout 120000. ' : 'Use exec_command with yield_time_ms 30000. ') +
+        `Wait for it to finish. The test runner releases it; do not create the release file, retry the command or use other tools. After it finishes, reply exactly ${marker}.`)
+      const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      const created = await creation
+      expect(created.ok()).toBe(true)
+      const session = await created.json() as { id: string }
+      await expect.poll(() => fs.readFile(pidFile, "utf8").catch(() => ""), { timeout: 60_000 }).toMatch(/^\d+$/)
+      const pid = Number(await fs.readFile(pidFile, "utf8"))
+      const alive = async () => {
+        try {
+          const { stdout } = await execFileAsync("ps", ["-o", "stat=", "-p", String(pid)])
+          return !!stdout.trim() && !stdout.trim().startsWith("Z")
+        } catch (error) { if ((error as { code?: number }).code === 1) return false; throw error }
+      }
+      const readTools = async () => {
+        const response = await fetch(`${serverBase}/session/${session.id}/message?directory=${encodeURIComponent(directory)}`)
+        expect(response.ok).toBe(true)
+        const rows = await response.json() as Array<{ parts: Array<{ type: string; id: string; state?: { status: string; input?: unknown; output?: string } }> }>
+        return rows.flatMap((row) => row.parts).filter((part) => part.type === "tool" && JSON.stringify(part.state?.input).includes(script))
+      }
+      const tools = await readTools()
+      expect(tools).toHaveLength(1)
+      expect(tools[0]!.state?.status).toBe("running")
+      expect(await fs.readFile(journal, "utf8")).toBe("start\n")
+      const appProcess = packaged.app.process()
+      await packaged.close()
+      await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
+      expect(await alive()).toBe(true)
+      packaged = await launch()
+      expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+      expect(await alive()).toBe(true)
+      expect(await readTools()).toEqual(tools)
+      await expect(packaged.page.getByRole("button", { name: "Stop", exact: true })).toBeVisible()
+      expect(await fs.readFile(journal, "utf8")).toBe("start\n")
+      await packaged.page.screenshot({ path: test.info().outputPath("running-tool-after-restart.png") })
+      if (stop) {
+        await packaged.page.getByRole("button", { name: "Stop", exact: true }).click()
+        await expect.poll(alive, { timeout: 15_000 }).toBe(false)
+      }
+      await fs.writeFile(releaseFile, "release")
+      if (!stop) await expectAssistantReplyVisible(packaged.page, marker)
+      await expect.poll(async () => (await readTools())[0]?.state?.status).toBe(stop ? "error" : "completed")
+      const settled = await readTools()
+      expect(settled).toHaveLength(1)
+      expect(settled[0]!.id).toBe(tools[0]!.id)
+      if (!stop) expect(settled[0]!.state?.output).toContain(marker)
+      expect(await fs.readFile(journal, "utf8")).toBe(stop ? "start\n" : "start\nfinish\n")
+      const next = `AFTER_RUNNING_TOOL_${Date.now()}`
+      await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), `New task: the previous command task is over. Reply exactly ${next}. Do not use tools or retry it.`)
+      await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAccessibleName("Send")
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      await expectAssistantReplyVisible(packaged.page, next)
+      await packaged.page.reload()
+      await expectAssistantReplyVisible(packaged.page, next)
+      expect(await readTools()).toEqual(settled)
+      expect(await fs.readFile(journal, "utf8")).toBe(stop ? "start\n" : "start\nfinish\n")
+      return
     }
 
     if (flow.startsWith("permission ")) {
