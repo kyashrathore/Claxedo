@@ -882,6 +882,34 @@ describe("createClientPresentationProjection", () => {
     })
   })
 
+  test("preserves provider question descriptions, headers, multi-select and custom answers", () => {
+    const projection = makeProjection()
+    expect(projection.ingest({
+      type: "question",
+      requestId: "question-details",
+      questions: [{
+        text: "Which checks?",
+        header: "Checks",
+        options: ["Unit", "Browser"],
+        optionDescriptions: { Unit: "Fast isolated checks", Browser: "Exercise the UI" },
+        multiple: true,
+        custom: true,
+      }],
+    })[0]?.payload).toMatchObject({
+      type: "question.asked",
+      properties: { questions: [{
+        question: "Which checks?",
+        header: "Checks",
+        options: [
+          { label: "Unit", description: "Fast isolated checks" },
+          { label: "Browser", description: "Exercise the UI" },
+        ],
+        multiple: true,
+        custom: true,
+      }] },
+    })
+  })
+
   test("projects questions and config updates to session surfaces", () => {
     const projection = makeProjection()
 

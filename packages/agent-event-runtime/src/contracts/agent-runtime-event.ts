@@ -1,4 +1,5 @@
 import type { AvailableCommand, ContentBlock, ToolCallContent } from "@agentclientprotocol/sdk"
+import type { RuntimeQuestion } from "@claxedo/agent-runtime-contract"
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
@@ -149,7 +150,7 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "file-diff"; toolCallId?: string; path: string; oldText?: string; newText: string }
   | { type: "step-start"; newMessageId: string }
   | { type: "permission-request"; requestId: string; tool: string; paths: string[] }
-  | { type: "question"; requestId: string; questions: Array<{ text: string; options?: string[] }> }
+  | { type: "question"; requestId: string; questions: RuntimeQuestion[] }
   | { type: "question-answered"; requestId: string; answers: Record<string, string | string[]> }
   | { type: "proposed-plan-delta"; delta: string }
   | { type: "proposed-plan-complete"; planMarkdown: string }

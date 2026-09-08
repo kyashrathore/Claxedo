@@ -547,14 +547,34 @@ function questionFromToolUse(message: Record<string, unknown>, context: HarnessE
   const row = payload({ payload: message })
   const toolName = text(row.toolName) ?? text(row.name)
   if (toolName !== "AskUserQuestion") return []
-  const input = asRecord(row.input) ?? row
-  const prompt = text(input.question) ?? text(input.prompt)
-  if (!prompt) return []
-  const options = optionLabels(input.options)
+  const input = asRecord(row.input)
+  if (!Array.isArray(input?.questions)) return []
+  const questions = input.questions.flatMap((value) => {
+    const question = asRecord(value)
+    const prompt = text(question?.question)
+    if (!prompt) return []
+    const options = optionLabels(question?.options)
+    const optionDescriptions = Object.fromEntries((Array.isArray(question?.options) ? question.options : [])
+      .flatMap((value) => {
+        const option = asRecord(value)
+        const label = text(option?.label)
+        const description = text(option?.description)
+        return label && description ? [[label, description]] : []
+      }))
+    return [{
+      text: prompt,
+      options,
+      optionDescriptions,
+      header: text(question?.header),
+      multiple: question?.multiSelect === true,
+      custom: true,
+    }]
+  })
+  if (!questions.length) return []
   return [{
     type: "question",
     requestId: text(row.requestId) ?? context.createId("question"),
-    questions: [{ text: prompt, ...(options?.length ? { options } : {}) }],
+    questions,
   }] satisfies AgentRuntimeEvent[]
 }
 

@@ -454,6 +454,37 @@ describe("claudeSdkAdapter", () => {
     }).events).not.toContainEqual(expect.objectContaining({ type: "usage" }))
   })
 
+  test("maps the SDK questions array without losing choices or multi-select behavior", () => {
+    expect(runtime().ingest({
+      source: "claude.sdk.message",
+      method: "claude/can-use-tool",
+      payload: {
+        requestId: "question-1",
+        toolName: "AskUserQuestion",
+        input: { questions: [{
+          question: "Which checks?",
+          header: "Checks",
+          multiSelect: true,
+          options: [
+            { label: "Unit", description: "Fast isolated checks" },
+            { label: "Browser", description: "Exercise the UI" },
+          ],
+        }] },
+      },
+    }).events).toMatchObject([{
+      type: "question",
+      requestId: "question-1",
+      questions: [{
+        text: "Which checks?",
+        header: "Checks",
+        options: ["Unit", "Browser"],
+        optionDescriptions: { Unit: "Fast isolated checks", Browser: "Exercise the UI" },
+        multiple: true,
+        custom: true,
+      }],
+    }])
+  })
+
   test("maps non-question canUseTool callbacks to permission requests", () => {
     const agent = runtime()
 

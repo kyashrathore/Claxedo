@@ -219,6 +219,11 @@ async function runLiveHarnessSmoke(page: Page, dir: string, harness: HarnessCase
     await waitForHarnessReady(page)
   }
 
+  const modelControl = page.locator('[data-action="prompt-harness-model"]').filter({ visible: true }).last()
+  await expect(modelControl).toHaveAttribute("data-harness", harness.seededHarness ?? harness.id)
+  await expect(modelControl).toHaveAttribute("data-model", /\S+/)
+  const selectedModel = (await modelControl.getAttribute("data-model"))!
+
   const markers: string[] = []
   for (let turn = 1; turn <= 3; turn += 1) {
     const marker = `LIVE-${harness.id.replace(/[^a-z0-9]/gi, "")}-${runId}-T${turn}`
@@ -234,13 +239,13 @@ async function runLiveHarnessSmoke(page: Page, dir: string, harness: HarnessCase
       spec: "live-real-harness-smoke",
       scenario: `${harness.id}-turn-${turn}`,
     })
+    await expect(modelControl).toHaveAttribute("data-harness", harness.seededHarness ?? harness.id)
+    await expect(modelControl).toHaveAttribute("data-model", selectedModel)
   }
 
   await expectLiveUserRowCount(page, markers.length)
 
-  if (harness.option) {
-    await expect(page.getByRole("button", { name: harness.option }).last()).toBeEnabled()
-  }
+  await expect(modelControl).toBeEnabled()
 
   await page.reload({ waitUntil: "domcontentloaded" })
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -249,6 +254,8 @@ async function runLiveHarnessSmoke(page: Page, dir: string, harness: HarnessCase
     scenario: `${harness.id}-reload`,
   })
   await expectLiveTurnsSettledAfterReload(page, markers)
+  await expect(modelControl).toHaveAttribute("data-harness", harness.seededHarness ?? harness.id)
+  await expect(modelControl).toHaveAttribute("data-model", selectedModel)
 }
 
 test.describe("live real-harness smoke @live", () => {
@@ -281,7 +288,7 @@ test.describe("live real-harness smoke @live", () => {
   }) => {
     const dir = await makeWorkspace("opencode")
     await seedOneProject(page, dir)
-    await runLiveHarnessSmoke(page, dir, { id: "opencode" })
+    await runLiveHarnessSmoke(page, dir, { id: "opencode", option: /^OpenCode$/, optionIndex: 0 })
   })
 
   test("claude ACP harness (real claude-agent-acp subprocess) completes 3 real turns and survives reload", async ({
@@ -310,7 +317,42 @@ test.describe("live real-harness smoke @live", () => {
     )
     const dir = await makeWorkspace("claude-sdk")
     await seedOneProject(page, dir)
-    await runLiveHarnessSmoke(page, dir, { id: "claude-sdk", option: /^Claude$/, optionIndex: 0 })
+    await runLiveHarnessSmoke(page, dir, { id: "claude", option: /^Claude$/, optionIndex: 0 })
+  })
+
+  test("claude native SDK question survives reload and returns the answer to the live model", async ({ page }) => {
+    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+    test.skip(!binary, "The live question flow requires the installed and authenticated Claude CLI.")
+    const dir = await makeWorkspace("claude-live-question")
+    await seedOneProject(page, dir)
+    const input = await openDraftPrompt(page, dir)
+    await switchDraftHarness(page, /^Claude$/, 0)
+    await waitForHarnessReady(page)
+    const prefix = `LIVE-QUESTION-${Date.now()}`
+    await composePrompt(page, input,
+      'Use the AskUserQuestion tool now with exactly one question: "Which test environment?", ' +
+      'header "Environment", options [{"label":"Staging","description":"Isolated test environment"},' +
+      '{"label":"Production","description":"Production environment"}], multiSelect false. ' +
+      `Wait for my answer, then reply with exactly ${prefix}- followed by the selected option label. Do not run any other tools.`,
+    )
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+    const sessionUrl = page.url()
+    const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
+    await expect(dock).toBeVisible({ timeout: 60_000 })
+    await expect(dock).toContainText("Which test environment?")
+    await page.screenshot({ path: test.info().outputPath("live-question-pending.png") })
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(dock).toBeVisible({ timeout: 30_000 })
+    await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+    await dock.getByRole("button", { name: "Submit", exact: true }).click()
+    await expect(dock).toHaveCount(0)
+    await expectAssistantReplyVisible(page, `${prefix}-Staging`, {
+      spec: "live-real-harness-smoke",
+      scenario: "claude-question-answer",
+    })
+    await expect(page).toHaveURL(sessionUrl)
+    await expect(page.locator('[data-action="prompt-harness-model"]').filter({ visible: true })).toHaveAttribute("data-harness", "claude")
   })
 
   test("codex ACP harness (real codex-acp subprocess) completes 3 real turns and survives reload", async ({
@@ -342,6 +384,6 @@ test.describe("live real-harness smoke @live", () => {
     )
     const dir = await makeWorkspace("codex-sdk")
     await seedOneProject(page, dir)
-    await runLiveHarnessSmoke(page, dir, { id: "codex-sdk", option: /^Codex$/, optionIndex: 0 })
+    await runLiveHarnessSmoke(page, dir, { id: "codex", option: /^Codex$/, optionIndex: 0 })
   })
 })

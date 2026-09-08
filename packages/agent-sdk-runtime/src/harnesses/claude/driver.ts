@@ -25,7 +25,7 @@ import {
   type SpawnedProcess,
   type SdkPluginConfig,
 } from "@anthropic-ai/claude-agent-sdk"
-import type { AgentConfigOption } from "../../index"
+import type { AgentConfigOption, AgentQuestionAnswer } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import { goalCapabilities } from "../../capabilities"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
@@ -310,6 +310,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       }
     }
     const requestPermission: CanUseTool = async (toolName, toolInput, options) => {
+      const questions = toolName === "AskUserQuestion" ? toolInput.questions : undefined
+      if (toolName === "AskUserQuestion" && (!Array.isArray(questions) || !questions.length || questions.some((question) => !text(asRecord(question)?.question)))) {
+        throw new Error("Claude AskUserQuestion requires a non-empty questions array")
+      }
       const requestId = randomUUID()
       input.ingest({
         source: "claude.sdk",
@@ -325,6 +329,40 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         method: "claude.canUseTool",
         frame: { toolName, toolInput },
       })
+      if (Array.isArray(questions)) {
+        let cancel: () => void = () => {}
+        try {
+          const answers = await new Promise<AgentQuestionAnswer[] | undefined>((resolve) => {
+            cancel = () => {
+              this.host.pendingQuestions.delete(requestId)
+              resolve(undefined)
+            }
+            this.host.pendingQuestions.set(requestId, {
+              sessionId: input.sessionId,
+              agentSessionId: input.getAgentSessionId(),
+              questions,
+              resolve,
+              reject: () => resolve(undefined),
+            })
+            options.signal.addEventListener("abort", cancel, { once: true })
+            if (options.signal.aborted) cancel()
+          })
+          if (!answers) return { behavior: "deny", message: "User dismissed the question" }
+          if (answers.length !== questions.length) throw new Error("Claude question reply must answer each question")
+          return {
+            behavior: "allow",
+            updatedInput: {
+              ...toolInput,
+              answers: Object.fromEntries(questions.map((question, index) => [
+                text(asRecord(question)?.question)!,
+                answers[index]!.join(", "),
+              ])),
+            },
+          }
+        } finally {
+          options.signal.removeEventListener("abort", cancel)
+        }
+      }
       const decision = await new Promise<"allow_once" | "allow_always" | "deny" | "reject_always">((resolve) => {
         this.host.pendingPermissions.set(requestId, {
           sessionId: input.sessionId,

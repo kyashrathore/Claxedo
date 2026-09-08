@@ -1182,6 +1182,109 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
+  for (const action of ["answer", "custom", "dismiss", "stop"] as const) {
+    test(`claude native SDK provider-issued question: ${action} after reload`, async ({ page }) => {
+      const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+      requireBinary(binary, "claude", "install the Claude CLI to exercise its AskUserQuestion tool.")
+      const dir = await makeWorkspace("claude-question", "claude")
+      await seedOneProject(page, dir)
+      const input = await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, "claude")
+      await waitForHarnessReady(page)
+      const marker = `CLAUDE-QUESTION-${Date.now()}`
+      scripted!.resetCounts()
+      scripted!.scriptTool({
+        name: "AskUserQuestion",
+        input: {
+          questions: [{
+            question: "Which environment should the test use?",
+            header: "Environment",
+            options: [
+              { label: "Staging", description: "Use the isolated test environment." },
+              { label: "Production", description: "Use the production environment." },
+            ],
+            multiSelect: false,
+          }, {
+            question: "Which checks should run?",
+            header: "Checks",
+            options: [
+              { label: "Unit", description: "Run isolated checks." },
+              { label: "Browser", description: "Exercise the UI." },
+            ],
+            multiSelect: true,
+          }],
+        },
+        whenPromptIncludes: marker,
+      })
+      await composePrompt(page, input, `Ask which environment to use, then reply with exactly this one token: ${marker}`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+      const sessionUrl = page.url()
+      const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
+      await expect(dock).toBeVisible({ timeout: 30_000 })
+      await expect(dock).toContainText("Which environment should the test use?")
+      await expect(dock).toContainText("Use the isolated test environment.")
+      await page.screenshot({ path: test.info().outputPath("question-pending.png") })
+      await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expect(dock).toBeVisible({ timeout: 30_000 })
+      if (action === "dismiss" || action === "stop") {
+        if (action === "dismiss") {
+          await dock.getByRole("button", { name: "Dismiss", exact: true }).click()
+          await expectAssistantReplyVisible(page, marker)
+        } else {
+          const sessionId = decodeURIComponent(new URL(sessionUrl).pathname.split("/").at(-1)!)
+          const response = await page.request.post(`${BACKEND_URL}/session/${sessionId}/abort?directory=${encodeURIComponent(dir)}`)
+          expect(response.ok(), await response.text()).toBe(true)
+        }
+        await expect(dock).toHaveCount(0)
+        const followup = page.getByRole("textbox", { name: /Ask anything/i }).last()
+        await expect(followup).toBeVisible()
+        const nextMarker = `FOLLOWUP-${marker}`
+        await composePrompt(page, followup, `Reply with exactly this one token: ${nextMarker}`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expectAssistantReplyVisible(page, nextMarker)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expect(dock).toHaveCount(0)
+        await expectAssistantReplyVisible(page, nextMarker)
+        return
+      }
+      const environment = action === "custom" ? "Preview environment" : "Staging"
+      const environmentOption = action === "custom"
+        ? dock.locator('[data-slot="question-option"][data-custom="true"]')
+        : dock.locator('[data-slot="question-option"]', { hasText: "Staging" })
+      await environmentOption.click()
+      if (action === "custom") {
+        const customInput = dock.locator('[data-slot="question-custom-input"]')
+        await customInput.fill(environment)
+        await customInput.press("Enter")
+      }
+      await dock.getByRole("button", { name: "Next", exact: true }).click()
+      await expect(dock).toContainText("Which checks should run?")
+      await expect(dock).toContainText("Select all answers that apply")
+      await dock.locator('[data-slot="question-option"]', { hasText: "Unit" }).click()
+      await dock.locator('[data-slot="question-option"]', { hasText: "Browser" }).click()
+      await dock.getByRole("button", { name: "Back", exact: true }).click()
+      await expect(environmentOption).toHaveAttribute("data-picked", "true")
+      await dock.getByRole("button", { name: "Next", exact: true }).click()
+      await expect(dock.locator('[data-slot="question-option"]', { hasText: "Unit" })).toHaveAttribute("data-picked", "true")
+      await expect(dock.locator('[data-slot="question-option"]', { hasText: "Browser" })).toHaveAttribute("data-picked", "true")
+      await page.screenshot({ path: test.info().outputPath("question-answered.png") })
+      await dock.getByRole("button", { name: "Submit", exact: true }).click()
+      await expect(dock).toHaveCount(0)
+      await expectAssistantReplyVisible(page, marker)
+      await expect(page).toHaveURL(sessionUrl)
+      const results = scripted!.requests.flatMap((request) => {
+        if (request.dialect !== "messages" || !("messages" in request.body)) return []
+        return request.body.messages.flatMap((message) => Array.isArray(message.content)
+          ? message.content.filter((block) => block.type === "tool_result")
+          : [])
+      })
+      expect(JSON.stringify(results)).toContain(environment)
+      expect(JSON.stringify(results)).toContain("Unit, Browser")
+    })
+  }
+
   test("claude native SDK runs a provider-issued Agent call as an openable subagent", async ({ page }) => {
     const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
     requireBinary(binary, "claude", "install the Claude CLI to exercise its native Agent tool.")

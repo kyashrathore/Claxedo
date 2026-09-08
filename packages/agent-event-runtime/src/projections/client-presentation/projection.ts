@@ -944,12 +944,13 @@ function todos(chunk: Extract<AgentRuntimeEvent, { type: "todo-update" }>) {
 function questions(chunk: Extract<AgentRuntimeEvent, { type: "question" }>) {
   return chunk.questions.map((question, i) => ({
     question: question.text,
-    header: question.text.slice(0, 30) || `Question ${i + 1}`,
+    header: question.header ?? (question.text.slice(0, 30) || `Question ${i + 1}`),
     options: (question.options ?? []).map((label) => ({
       label,
-      description: label,
+      description: question.optionDescriptions?.[label] ?? label,
     })),
-    custom: !question.options?.length,
+    ...(question.multiple !== undefined ? { multiple: question.multiple } : {}),
+    custom: question.custom ?? !question.options?.length,
   }))
 }
 

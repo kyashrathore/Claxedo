@@ -95,6 +95,15 @@ export type AgentEventEnvelope<Event extends AgentPresentationEvent = AgentPrese
 
 export type RawHarnessEvent = { source: string; method?: string; payload: unknown; receivedAt?: number }
 
+export type RuntimeQuestion = {
+  text: string
+  options?: string[]
+  optionDescriptions?: Record<string, string>
+  header?: string
+  multiple?: boolean
+  custom?: boolean
+}
+
 export type AgentRuntimeEvent = ({ harness?: string; threadId?: string; raw?: RawHarnessEvent; diagnostics?: Array<{ code: string; message: string; severity: "debug" | "info" | "warn" | "error"; details?: Record<string, unknown> }> }) & (
   | { type: "text-delta"; delta: string }
   | { type: "thinking-delta"; delta: string }
@@ -108,7 +117,7 @@ export type AgentRuntimeEvent = ({ harness?: string; threadId?: string; raw?: Ra
   | { type: "file-diff"; toolCallId?: string; path: string; oldText?: string; newText: string }
   | { type: "step-start"; newMessageId: string }
   | { type: "permission-request"; requestId: string; tool: string; paths: string[] }
-  | { type: "question"; requestId: string; questions: Array<{ text: string; options?: string[] }> }
+  | { type: "question"; requestId: string; questions: RuntimeQuestion[] }
   | { type: "question-answered"; requestId: string; answers: Record<string, string | string[]> }
   | { type: "proposed-plan-delta"; delta: string }
   | { type: "proposed-plan-complete"; planMarkdown: string }
