@@ -13,7 +13,6 @@ const exec = promisify(execFile)
 for (const { harness, child, pause } of [
   { harness: "codex", child: false, pause: false },
   { harness: "cursor", child: false, pause: false },
-  { harness: "gemini", child: false, pause: false },
   { harness: "droid", child: false, pause: false },
   { harness: "amp", child: false, pause: false },
   { harness: "claude", child: false, pause: false },
@@ -29,7 +28,6 @@ for (const { harness, child, pause } of [
     const providerEnv: Record<string, string> = { HOME: home, CODEX_HOME: path.join(home, ".codex") }
     const customLauncher = harness === "cursor"
       ? { name: "Cursor", command: "AGENT_CLI_CREDENTIAL_STORE=file cursor-agent --force" }
-      : harness === "gemini" ? { name: "Gemini", command: "gemini --yolo" }
       : harness === "droid" ? { name: "Droid", command: "droid --auto high" }
       : harness === "amp" ? { name: "Amp", command: "amp --dangerously-allow-all --visibility private --no-ide" } : undefined
     let packaged: PackagedApp | undefined
@@ -87,15 +85,6 @@ for (const { harness, child, pause } of [
           ].map(async ([field, service]) => [field, (await exec("security", ["find-generic-password", "-s", service!, "-a", "cursor-user", "-w"])).stdout.trim()])))
           : JSON.parse(await fs.readFile(path.join(os.homedir(), ".config/cursor/auth.json"), "utf8"))
         await fs.writeFile(path.join(authDirectory, "auth.json"), JSON.stringify(credentials), { mode: 0o600 })
-      } else if (harness === "gemini") {
-        await fs.mkdir(path.join(home, ".gemini"), { recursive: true })
-        for (const file of ["oauth_creds.json", "google_accounts.json"]) {
-          await fs.copyFile(path.join(os.homedir(), ".gemini", file), path.join(home, ".gemini", file))
-          await fs.chmod(path.join(home, ".gemini", file), 0o600)
-        }
-        await fs.writeFile(path.join(home, ".gemini/settings.json"), JSON.stringify({
-          security: { auth: { selectedType: "oauth-personal" } },
-        }))
       } else if (harness === "amp") {
         const authDirectory = path.join(home, ".local/share/amp")
         await fs.mkdir(authDirectory, { recursive: true })
@@ -175,17 +164,6 @@ for (const { harness, child, pause } of [
       ptyStates.push({ phase: "created", at: Date.now(), pty })
       const selector = `[data-testid="terminal-pane"][data-terminal-id="${pty.id}"]`
       const rows = packaged.page.locator(`${selector} .xterm-rows`)
-      if (harness === "gemini") {
-        await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
-        for (let gate = 0; gate < 3; gate++) {
-          await expect(rows).toContainText(/Type your message|Do you want to connect IDE|Do you trust the files in this folder/, { timeout: 45_000 })
-          const screen = await rows.innerText()
-          if (screen.includes("Type your message")) break
-          await packaged.page.keyboard.press(screen.includes("Do you want to connect IDE") ? "Escape" : "Enter")
-          if (screen.includes("Do you want to connect IDE")) await expect(rows).not.toContainText("Do you want to connect IDE", { timeout: 45_000 })
-          else await expect(rows).not.toContainText("Do you trust the files in this folder?", { timeout: 45_000 })
-        }
-      }
       if (harness === "cursor") {
         await expect(rows).toContainText("Workspace Trust Required", { timeout: 45_000 })
         await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
@@ -208,7 +186,7 @@ for (const { harness, child, pause } of [
           await packaged.page.keyboard.press("Enter")
           await expect(rows).not.toContainText("Enter to get started")
         }
-      } else await expect(rows).toContainText(/Codex|Claude|Cursor|Gemini|trust the contents/i, { timeout: 45_000 })
+      } else await expect(rows).toContainText(/Codex|Claude|Cursor|trust the contents/i, { timeout: 45_000 })
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-launched.png`) })
       if ((harness === "claude" || harness === "codex") && /trust|allow Codex to work/i.test(await rows.innerText())) {
         await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
@@ -226,7 +204,7 @@ for (const { harness, child, pause } of [
           await packaged.page.keyboard.press("Enter")
         }
       }
-      await expect(rows).toContainText(harness === "codex" ? /OpenAI Codex/ : harness === "cursor" ? /Cursor/ : harness === "gemini" ? /Type your message/ : harness === "droid" ? /ctrl\+L for autonomy/ : harness === "amp" ? /ctrl\+o for commands/i : /bypass permissions on/i, { timeout: 30_000 })
+      await expect(rows).toContainText(harness === "codex" ? /OpenAI Codex/ : harness === "cursor" ? /Cursor/ : harness === "droid" ? /ctrl\+L for autonomy/ : harness === "amp" ? /ctrl\+o for commands/i : /bypass permissions on/i, { timeout: 30_000 })
       await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
       if (harness === "amp") {
         // The welcome animation exposes command help before the input box is
@@ -250,11 +228,9 @@ for (const { harness, child, pause } of [
         const body = await response.json() as { session: { eventType?: string } | null }
         return body.session?.eventType
       }, { timeout: 15_000, message: `Actual ${harness} completion must reach the terminal hook store` }).toBe("Idle")
-      if (harness === "amp") {
-        const received = await (await fetch(lifecycleUrl)).json() as { session: { prompt?: string } }
-        await test.info().attach("amp-received-first-prompt", { body: JSON.stringify(received.session.prompt), contentType: "application/json" })
-        expect(received.session.prompt, "Amp must receive the entire typed prompt").toBe("Reply with the concatenation of DESKTOP and _TUI_OK, nothing else.")
-      }
+      const received = await (await fetch(lifecycleUrl)).json() as { session: { prompt?: string } }
+      await test.info().attach(`${harness}-received-first-prompt`, { body: JSON.stringify(received.session), contentType: "application/json" })
+      expect(received.session.prompt, `${harness} must report the entire received prompt`).toBe("Reply with the concatenation of DESKTOP and _TUI_OK, nothing else.")
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-completed.png`) })
       const before = await (await fetch(ptyUrl)).json() as { pid: number; status: string }
       expect(before.status).toBe("running")
