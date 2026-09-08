@@ -660,7 +660,7 @@ describe("codexAppServerAdapter", () => {
     }])
   })
 
-  test("stamps the last Codex usage-limit sentence onto a later systemError", () => {
+  test("retains rate-limit evidence without terminalizing an early systemError", () => {
     const agent = runtime()
 
     agent.ingest({
@@ -680,23 +680,24 @@ describe("codexAppServerAdapter", () => {
       .toBe("You've reached your Codex rate limit. It will reset in about 5 hours.")
 
     expect(agent.ingest({
-      source: "codex.app-server",
-      method: "thread/status/changed",
+      source: "codex.app-server", method: "thread/status/changed",
       payload: { threadId: "thread-1", status: { type: "systemError" } },
-    }).events).toMatchObject([
-      { type: "session-status", status: "error" },
-      { type: "error", error: "You've reached your Codex rate limit. It will reset in about 5 hours." },
-    ])
+    }).events).toEqual([])
   })
 
-  test("keeps a generic systemError when no usage limit has fired", () => {
-    expect(runtime().ingest({
-      source: "codex.app-server",
-      method: "thread/status/changed",
+  test("waits for the authoritative error after an early systemError", () => {
+    const agent = runtime()
+    expect(agent.ingest({
+      source: "codex.app-server", method: "thread/status/changed",
       payload: { threadId: "thread-1", status: { type: "systemError" } },
+    }).events).toEqual([])
+    expect(agent.ingest({
+      source: "codex.app-server", method: "error",
+      payload: { threadId: "thread-1", turnId: "turn-1", willRetry: false,
+        error: { message: "Provider rejected this request. Choose another model." } },
     }).events).toMatchObject([
       { type: "session-status", status: "error" },
-      { type: "error", error: "session error" },
+      { type: "error", error: "Provider rejected this request. Choose another model." },
     ])
   })
 

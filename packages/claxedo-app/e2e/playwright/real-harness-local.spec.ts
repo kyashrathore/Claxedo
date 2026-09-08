@@ -1558,6 +1558,45 @@ test.describe("real harness journeys @core @tier-real", () => {
 
 
   for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} native provider error preserves explanation through reload and recovery`, async ({ page }) => {
+      const dir = await makeWorkspace(`${harness}-provider-error`, harness)
+      await seedOneProject(page, dir)
+      await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness)
+      await waitForHarnessReady(page)
+      const marker = `PROVIDER_ERROR_${Date.now()}`
+      const explanation = `Request blocked for ${marker}. Start a new session or choose another model.`
+      const releaseError = scripted!.scriptError({ marker, status: 400, message: explanation })
+      await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${marker}`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+      await expect(page.getByText(explanation, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
+      const url = page.url()
+      const sessionID = new URL(url).pathname.split("/").at(-1)!
+      const read = async () => {
+        const response = await page.request.get(`${BACKEND_URL}/session/${sessionID}/message?directory=${encodeURIComponent(dir)}`)
+        expect(response.ok()).toBe(true)
+        return response.json()
+      }
+      expect(JSON.stringify(await read())).toContain(explanation)
+      expect(scripted!.requests.filter((request) => request.reply.kind === "error").length).toBeGreaterThan(0)
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expect(page.getByText(explanation, { exact: false }).first()).toBeVisible()
+      expect(JSON.stringify(await read())).toContain(explanation)
+      releaseError()
+      const next = `RECOVERED_${Date.now()}`
+      await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${next}`)
+      await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Send")
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expectAssistantReplyVisible(page, next)
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expectAssistantReplyVisible(page, next)
+      expect(JSON.stringify(await read())).toContain(explanation)
+      await expect(page).toHaveURL(url)
+    })
+  }
+
+  for (const harness of ["claude", "codex"] as const) {
     test(`${harness} native tool failure survives reload and a successful next tool`, async ({ page }) => {
       const dir = await makeWorkspace(`${harness}-tool-error`, harness)
       await seedOneProject(page, dir)

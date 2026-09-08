@@ -845,9 +845,10 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
 
         case "assistant": {
           if (message.error) {
+            const explanation = assistantSnapshotText(rawMessage)
             return [
               { type: "session-status", status: "error" },
-              { type: "error", error: `Claude assistant message failed: ${message.error}` },
+              { type: "error", error: [`Claude assistant message failed: ${message.error}`, explanation].filter(Boolean).join("\n") },
             ] satisfies AgentRuntimeEvent[]
           }
           const completeTools = assistantToolBlocks(rawMessage)

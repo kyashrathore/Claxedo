@@ -1110,6 +1110,21 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       spec: "desktop-unsigned-embedded",
       scenario: "c4-real-claude-reload",
     })
+
+    const failureMarker = "C4_CLAUDE_PROVIDER_ERROR"
+    const explanation = `Request blocked for ${failureMarker}. Start a new session or choose another model.`
+    const releaseError = scripted.scriptError({ marker: failureMarker, status: 400, message: explanation })
+    await composeText(packaged.page, composerInput(packaged.page), `Reply with exactly this one token: ${failureMarker}`)
+    await submitDraft(packaged.page)
+    await expect(packaged.page.getByText(explanation, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
+    await packaged.page.reload()
+    await expect(packaged.page.getByText(explanation, { exact: false }).first()).toBeVisible()
+    releaseError()
+    await composeText(packaged.page, composerInput(packaged.page), "Reply with exactly this one token: C4_CLAUDE_RECOVERED")
+    await submitDraft(packaged.page)
+    await expectAssistantReplyVisible(packaged.page, "C4_CLAUDE_RECOVERED")
+    await packaged.page.reload()
+    await expectAssistantReplyVisible(packaged.page, "C4_CLAUDE_RECOVERED")
   })
 
   test("D1/D3: a real terminal streams a live prompt and its row aligns with session rows", async () => {

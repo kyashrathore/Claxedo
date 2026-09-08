@@ -20,6 +20,22 @@ function runtime(initialSnapshot?: RuntimeSnapshot<ClaudeSdkAdapterState>) {
 }
 
 describe("claudeSdkAdapter", () => {
+  test("preserves provider error explanation and recovery guidance", () => {
+    const explanation = "API Error: This request was blocked. Try a new session or change your model."
+    const events = runtime().ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "assistant", error: "invalid_request",
+        message: { content: [{ type: "text", text: explanation }] },
+      },
+    }).events
+    expect(events).toMatchObject([
+      { type: "session-status", status: "error" },
+      { type: "error", error: `Claude assistant message failed: invalid_request\n${explanation}` },
+    ])
+    expect(events.some((event) => event.type === "text-delta")).toBe(false)
+  })
+
   test("maps text deltas and suppresses duplicate assistant snapshots", () => {
     const agent = runtime()
 

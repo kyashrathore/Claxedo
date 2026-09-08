@@ -67,7 +67,7 @@ export type ScriptedModelRequest = {
   model: string
   /** Flattened prompt text the reply was derived from. */
   prompt: string
-  reply: { kind: "text"; text: string } | { kind: "tool"; name: string; input: unknown; namespace?: string }
+  reply: { kind: "text"; text: string } | { kind: "tool"; name: string; input: unknown; namespace?: string } | { kind: "error"; status: number; message: string }
   tools: { name: string; inputSchema?: unknown }[]
 }
 
@@ -89,6 +89,8 @@ export type ScriptedModelServer = {
    * not already carry the tool's result gets `tool_use` instead of text.
    */
   scriptTool(call: ScriptedToolCall): void
+  /** Reject matching requests, including native retries, until released. */
+  scriptError(input: { marker: string; status: number; message: string }): () => void
   /** Hold matching text replies until released; tool replies still execute. */
   holdTextReplies(marker: string): () => void
   /**
@@ -159,6 +161,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   const requests: ScriptedModelRequest[] = []
   let counts: Record<ScriptedDialect, number> = { chat: 0, messages: 0, responses: 0 }
   let pendingTool: ScriptedToolCall | undefined
+  let pendingError: { marker: string; status: number; message: string } | undefined
   let autoModeCommand: string | undefined
   let textGate: { marker: string; promise: Promise<void>; release: () => void } | undefined
   let goalEvaluationCount = 0
@@ -191,7 +194,9 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
         && message.content.some((block) => block.type === "text" && block.text.includes("Respond with <severity>N</severity> ONLY.")))
       && request.body.messages.some((message) => Array.isArray(message.content)
         && message.content.some((block) => block.type === "text" && block.text.trim() === JSON.stringify({ Bash: autoModeCommand })))
-    if (classifier) {
+    if (pendingError && prompt.includes(pendingError.marker) && !prompt.includes(TITLE_PROMPT)) {
+      reply = { kind: "error", status: pendingError.status, message: pendingError.message }
+    } else if (classifier) {
       reply = { kind: "text", text: "<severity>0</severity>" }
     } else if (prompt.includes(TITLE_PROMPT)) {
       reply = { kind: "text", text: SCRIPTED_TITLE }
@@ -220,6 +225,12 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
       reply = { kind: "text", text: marker ?? "ok" }
     }
     requests.push({ dialect: request.dialect, path, body, model: body.model ?? "scripted", prompt, reply, tools: modelTools(body) })
+    if (reply.kind === "error") {
+      outgoing.writeHead(reply.status, { "content-type": "application/json" }).end(JSON.stringify({
+        type: "error", error: { type: "invalid_request_error", message: reply.message },
+      }))
+      return
+    }
     if (reply.kind === "text" && textGate && prompt.includes(textGate.marker) && !prompt.includes(TITLE_PROMPT)) {
       await textGate.promise
     }
@@ -265,6 +276,10 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
       goalEvaluationCount = 0
       autoModeCommand = undefined
       requests.splice(0)
+    },
+    scriptError: (input) => {
+      pendingError = input
+      return () => { if (pendingError === input) pendingError = undefined }
     },
     scriptTool: (call) => {
       pendingTool = call
@@ -413,7 +428,7 @@ function textDeltaChunks(text: string, chunks: number) {
 async function respondChat(
   outgoing: ServerResponse,
   sequence: number,
-  reply: ScriptedModelRequest["reply"],
+  reply: Exclude<ScriptedModelRequest["reply"], { kind: "error" }>,
   pacing?: { chunks: number; delayMs: number },
 ) {
   const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
@@ -470,7 +485,7 @@ function respondMessages(
   outgoing: ServerResponse,
   sequence: number,
   body: MessageCreateParams,
-  reply: ScriptedModelRequest["reply"],
+  reply: Exclude<ScriptedModelRequest["reply"], { kind: "error" }>,
 ) {
   const content: ScriptedMessageBlock[] =
     reply.kind === "text"
@@ -562,7 +577,7 @@ function respondResponses(
   outgoing: ServerResponse,
   sequence: number,
   body: ResponseCreateParams,
-  reply: ScriptedModelRequest["reply"],
+  reply: Exclude<ScriptedModelRequest["reply"], { kind: "error" }>,
 ) {
   const toolItem = reply.kind === "tool"
     ? {

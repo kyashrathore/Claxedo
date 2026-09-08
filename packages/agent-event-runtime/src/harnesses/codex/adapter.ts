@@ -620,23 +620,13 @@ function turnErrorMessage(error: Record<string, unknown> | undefined, lastLimite
   return head
 }
 
-function threadStatusEvents(row: Record<string, unknown>, lastLimitedRateLimitMessage?: string) {
+function threadStatusEvents(row: Record<string, unknown>) {
   const status = asRecord(row.status)
   const type = text(status?.type)
   if (type === "active") return [{ type: "session-status", status: "busy" }] satisfies AgentRuntimeEvent[]
   if (type === "idle" || type === "notLoaded") return [{ type: "session-status", status: "idle" }] satisfies AgentRuntimeEvent[]
-  if (type === "systemError") {
-    const message = lastLimitedRateLimitMessage
-      ?? turnErrorMessage(asRecord(status) ?? asRecord(row.error), lastLimitedRateLimitMessage)
-      ?? text(asRecord(status)?.message)
-      ?? text(row.message)
-      ?? text(asRecord(row.error)?.message)
-      ?? "session error"
-    return [
-      { type: "session-status", status: "error" },
-      { type: "error", error: message },
-    ] satisfies AgentRuntimeEvent[]
-  }
+  // systemError precedes the authoritative error and turn/completed frames.
+  // Publishing a terminal error here closes consumers before those details arrive.
   return []
 }
 
@@ -795,7 +785,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           return { state: pruneTurnState(state), events: completionEvents(event, context, state.lastLimitedRateLimitMessage) }
 
         case "thread/status/changed":
-          return threadStatusEvents(row, state.lastLimitedRateLimitMessage)
+          return threadStatusEvents(row)
 
         case "thread/closed":
           return {
