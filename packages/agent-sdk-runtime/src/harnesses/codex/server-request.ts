@@ -27,7 +27,7 @@ export async function handleCodexServerRequest(input: {
   if (method === "item/tool/requestUserInput") {
     active?.project(method, payload, input.message)
     const questions = Array.isArray(params.questions) ? params.questions : []
-    const answers = await new Promise<AgentQuestionAnswer[]>((resolve, reject) => {
+    const answers = await new Promise<AgentQuestionAnswer[] | undefined>((resolve, reject) => {
       if (!active) {
         reject(new Error("No active session for Codex question"))
         return
@@ -37,9 +37,10 @@ export async function handleCodexServerRequest(input: {
         agentSessionId: active.agentSessionId,
         questions,
         resolve,
-        reject,
+        reject: () => resolve(undefined),
       })
     })
+    if (!answers) return { answers: {} }
     const ids = questionIds(params)
     return {
       answers: Object.fromEntries(

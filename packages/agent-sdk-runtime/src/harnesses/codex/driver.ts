@@ -151,7 +151,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       ensureProcess: (directory) => this.ensureProcess(directory),
       liveProcess: () => this.process,
       lease: () => this.idle.lease(),
-      firstPartyThreadConfig: (sessionId) => this.firstPartyThreadConfig(sessionId),
+      threadConfig: (sessionId) => this.threadConfig(sessionId),
       activeThreads: this.activeThreads,
       projectThreadNotification: (input, threadId, method, params, frame) =>
         this.projectThreadNotification(input, threadId, method, params, frame),
@@ -191,16 +191,14 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     if (proc?.alive) await this.syncProcessAuth(proc)
   }
 
-  /**
-   * The app-server reads MCP servers per thread from the `config` override on
-   * `thread/start` and `thread/resume` (0.153.4 opens the HTTP client with these
-   * headers as the thread comes up), so the session-scoped entry rides the
-   * request and never touches CODEX_HOME or the child environment.
-   */
-  private firstPartyThreadConfig(sessionId: string): { config?: JsonRecord } {
+  /** The same native overrides enable questions and bind MCP credentials on start and resume. */
+  private threadConfig(sessionId: string): { config: JsonRecord } {
     const server = this.firstPartyMcp?.server(sessionId)
-    if (!server) return {}
-    return { config: { mcp_servers: { [server.name]: { url: server.url, http_headers: server.headers } } } }
+    return { config: {
+      // Claxedo advertises structured questions in ordinary coding turns.
+      features: { default_mode_request_user_input: true },
+      ...(server ? { mcp_servers: { [server.name]: { url: server.url, http_headers: server.headers } } } : {}),
+    } }
   }
 
   private async applyPluginLaunch(launch: CodexPluginLaunch | undefined) {
@@ -243,7 +241,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       dynamicTools: CODEX_DYNAMIC_TOOLS,
       ...(input.system ? { developerInstructions: input.system } : {}),
       ...(model ? { model } : {}),
-      ...this.firstPartyThreadConfig(input.sessionId),
+      ...this.threadConfig(input.sessionId),
     }).then((response) => asRecord(response) ?? {})
     const thread = asRecord(result.thread)
     const threadId = text(thread?.id)
@@ -429,7 +427,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         startTurn,
         resumeThread: async () => {
           log.info("codex thread missing from app-server process; resuming from disk", { threadId })
-          await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.firstPartyThreadConfig(input.sessionId) })
+          await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.threadConfig(input.sessionId) })
         },
       })
       const result = await Promise.race([startPending, turnStartFailed])

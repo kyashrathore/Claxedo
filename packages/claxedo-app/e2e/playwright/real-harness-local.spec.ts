@@ -1184,6 +1184,53 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
+  for (const action of ["answer", "dismiss"] as const) {
+    test(`codex native structured question ${action} reaches the question dock`, async ({ page }) => {
+      const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
+      requireBinary(binary, "codex", "install the Codex CLI to exercise its structured question tool.")
+      const dir = await makeWorkspace("codex-question", "codex")
+      await seedOneProject(page, dir)
+      const input = await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, "codex")
+      await waitForHarnessReady(page)
+      const marker = `CODEX-QUESTION-${Date.now()}`
+      scripted!.resetCounts()
+      scripted!.scriptTool({
+        name: "request_user_input",
+        input: { questions: [{ id: "environment", header: "Environment", question: "Which environment?", options: [
+          { label: "Staging", description: "Isolated environment" },
+          { label: "Production", description: "Production environment" },
+        ] }] },
+        whenPromptIncludes: marker,
+      })
+      const toolResults = () => scripted!.requests.flatMap(({ body }) =>
+        "input" in body && Array.isArray(body.input) ? body.input.filter((item) => item.type === "function_call_output") : [])
+      try {
+        await composePrompt(page, input, `Ask which environment to use, then reply with exactly this one token: ${marker}`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
+        await expect(dock).toBeVisible({ timeout: 20_000 })
+        if (action === "dismiss") {
+          await dock.getByRole("button", { name: "Dismiss", exact: true }).click()
+        } else {
+          await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+          await dock.getByRole("button", { name: "Submit", exact: true }).click()
+        }
+        await expectAssistantReplyVisible(page, marker)
+        expect(toolResults().length).toBeGreaterThan(0)
+        if (action === "answer") expect(JSON.stringify(toolResults())).toContain("Staging")
+        else expect(JSON.stringify(toolResults())).not.toContain("Staging")
+      } finally {
+        await test.info().attach("codex-question-tool-contract.json", {
+          contentType: "application/json",
+          body: JSON.stringify({ tools: scripted!.requests.map(({ tools }) => tools.map((tool) => tool.name)), results: toolResults() }),
+        })
+      }
+    })
+
+  }
+
+
   for (const action of ["answer", "custom", "dismiss", "stop"] as const) {
     test(`claude native SDK provider-issued question: ${action} after reload`, async ({ page }) => {
       const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")

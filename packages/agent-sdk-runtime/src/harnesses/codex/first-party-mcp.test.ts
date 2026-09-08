@@ -115,8 +115,8 @@ describe("Codex first-party MCP injection", () => {
 
       const starts = await fake.requests()
       expect(starts.map((row) => row.params.config)).toEqual([
-        { mcp_servers: { claxedo: { url: "http://127.0.0.1:2593/api/claxedo/mcp?session=session-a", http_headers: { Authorization: `Bearer ${TOKEN}` } } } },
-        { mcp_servers: { claxedo: { url: "http://127.0.0.1:2593/api/claxedo/mcp?session=session-b", http_headers: { Authorization: `Bearer ${TOKEN}` } } } },
+        { features: { default_mode_request_user_input: true }, mcp_servers: { claxedo: { url: "http://127.0.0.1:2593/api/claxedo/mcp?session=session-a", http_headers: { Authorization: `Bearer ${TOKEN}` } } } },
+        { features: { default_mode_request_user_input: true }, mcp_servers: { claxedo: { url: "http://127.0.0.1:2593/api/claxedo/mcp?session=session-b", http_headers: { Authorization: `Bearer ${TOKEN}` } } } },
       ])
       expect(await fs.promises.readdir(fake.codexHome)).toEqual([])
     } finally {
@@ -162,20 +162,21 @@ describe("Codex first-party MCP injection", () => {
       expect(resumes).toHaveLength(1)
       expect(resumes[0]?.params).toMatchObject({
         threadId,
-        config: { mcp_servers: { claxedo: { url: "http://127.0.0.1:2593/api/claxedo/mcp?session=session-a", http_headers: { Authorization: `Bearer ${TOKEN}` } } } },
+        config: { features: { default_mode_request_user_input: true }, mcp_servers: { claxedo: { url: "http://127.0.0.1:2593/api/claxedo/mcp?session=session-a", http_headers: { Authorization: `Bearer ${TOKEN}` } } } },
       })
     } finally {
       await driver.dispose?.()
     }
   })
 
-  test("starts a thread with no config override when the runtime supplies no provider", async () => {
+  test("enables native questions without writing config files when no MCP provider is supplied", async () => {
     const fake = await fakeAppServer()
     const driver = driverFor(fake.binary, fake.codexHome)
     try {
       await driver.applyConfig({ mcp: {} })
       await driver.createAgentSession({ directory: fake.dir, model: "gpt-5-codex", sessionId: "session-a" })
-      expect((await fake.requests()).map((row) => "config" in row.params)).toEqual([false])
+      expect((await fake.requests()).map((row) => row.params.config)).toEqual([{ features: { default_mode_request_user_input: true } }])
+      expect(await fs.promises.readdir(fake.codexHome)).toEqual([])
     } finally {
       await driver.dispose?.()
     }

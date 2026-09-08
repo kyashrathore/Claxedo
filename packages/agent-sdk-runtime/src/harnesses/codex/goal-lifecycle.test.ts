@@ -127,7 +127,7 @@ function goalControllerHarness() {
     ensureProcess: async () => appServer,
     liveProcess: () => appServer,
     lease: () => ({ release: () => {} }),
-    firstPartyThreadConfig: () => ({}),
+    threadConfig: () => ({}),
     activeThreads,
     projectThreadNotification: async (_input, threadId, method, params) => {
       projected.push({ threadId, method, payload: params })

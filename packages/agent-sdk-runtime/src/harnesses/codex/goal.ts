@@ -41,7 +41,7 @@ export type CodexGoalControllerHost = {
    * app-server drops a thread's MCP clients when it reloads it, so a resume
    * that omits this leaves the Goal running without Claxedo's own tools.
    */
-  firstPartyThreadConfig(sessionId: string): { config?: JsonRecord }
+  threadConfig(sessionId: string): { config?: JsonRecord }
   /** Shared with the driver: a thread with a live prompt turn owns its frames. */
   activeThreads: Map<string, CodexActiveThread>
   projectThreadNotification(
@@ -130,7 +130,7 @@ export class CodexGoalController {
         await proc.request("thread/resume", {
           threadId,
           cwd: directory,
-          ...this.host.firstPartyThreadConfig(sessionId),
+          ...this.host.threadConfig(sessionId),
         })
       },
     })
