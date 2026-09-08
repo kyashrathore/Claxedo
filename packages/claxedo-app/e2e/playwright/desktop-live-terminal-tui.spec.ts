@@ -27,6 +27,9 @@ for (const { harness, child, pause } of [
     const directory = path.join(root, "workspace")
     const profile = path.join(root, "profile")
     const providerEnv: Record<string, string> = { HOME: home, CODEX_HOME: path.join(home, ".codex") }
+    // Cursor's native input handler treats 3+ events less than 35 ms apart as
+    // a paste burst and inserts a newline on Enter. Exercise ordinary typing.
+    const typingDelay = harness === "cursor" ? 50 : 20
     const customLauncher = harness === "cursor"
       ? { name: "Cursor", command: "AGENT_CLI_CREDENTIAL_STORE=file cursor-agent --force" }
       : harness === "droid" ? { name: "Droid", command: "droid --auto high" }
@@ -218,7 +221,7 @@ for (const { harness, child, pause } of [
         await expect(rows.locator(".xterm-bg-257")).toBeVisible({ timeout: 15_000 })
         await packaged.page.screenshot({ path: test.info().outputPath("amp-composer-ready.png") })
       }
-      await packaged.page.keyboard.type("Reply with the concatenation of DESKTOP and _TUI_OK, nothing else.", { delay: 20 })
+      await packaged.page.keyboard.type("Reply with the concatenation of DESKTOP and _TUI_OK, nothing else.", { delay: typingDelay })
       await expect(rows).not.toContainText(/model:\s+loading|Booting MCP server/, { timeout: 45_000 })
       await packaged.page.keyboard.press("Enter")
       if (harness === "amp") {
@@ -280,7 +283,7 @@ for (const { harness, child, pause } of [
           ? "First use the Agent tool with run_in_background=true to launch one general-purpose subagent with this task: run sleep 8 in the foreground, then reply CHILD_FINISHED, nothing else. Yield while awaiting its completion notification. After it finishes, you, the parent, must do the following yourself. "
           : "First use the Agent tool with run_in_background=false to launch one foreground general-purpose subagent with this task: reply CHILD_FINISHED, nothing else. Wait synchronously for its result, without ending your response. Then you, the parent, must do the following yourself. "
         : ""
-      await packaged.page.keyboard.type(`${delegation}Run sleep 8 in the foreground with a timeout of at least 20000 ms and run_in_background=false. Wait for it to finish, then reply with the concatenation of RESTART and _TUI_OK, nothing else.`, { delay: 20 })
+      await packaged.page.keyboard.type(`${delegation}Run sleep 8 in the foreground with a timeout of at least 20000 ms and run_in_background=false. Wait for it to finish, then reply with the concatenation of RESTART and _TUI_OK, nothing else.`, { delay: typingDelay })
       await packaged.page.keyboard.press("Enter")
       await expect.poll(async () => {
         const response = await fetch(lifecycleUrl)
