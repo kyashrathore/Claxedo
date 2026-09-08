@@ -157,7 +157,7 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "tool-error"; toolCallId: string; error: string; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "file-diff"; toolCallId?: string; path: string; oldText?: string; newText: string }
   | { type: "step-start"; newMessageId: string }
-  | { type: "permission-request"; requestId: string; tool: string; paths: string[] }
+  | { type: "permission-request"; requestId: string; tool: string; paths: string[]; details?: { command?: string; reason?: string } }
   | { type: "question"; requestId: string; questions: RuntimeQuestion[] }
   | { type: "question-answered"; requestId: string; answers: Record<string, string | string[]> }
   | { type: "proposed-plan-delta"; delta: string }

@@ -16,6 +16,13 @@ function makeProjection() {
 }
 
 describe("createClientPresentationProjection", () => {
+  test("preserves native approval details in the persisted permission payload", () => {
+    const projection = makeProjection()
+    expect(projection.ingest({ type: "permission-request", requestId: "approval", tool: "command", paths: ["/repo"], details: { command: "printf output > /tmp/result", reason: "Write result" } })[0]?.payload).toMatchObject({
+      type: "permission.asked", properties: { id: "approval", metadata: { command: "printf output > /tmp/result", reason: "Write result" } },
+    })
+  })
+
   test("preserves authoritative workspace identity on session-info compatibility events", () => {
     expect(makeProjection().ingest({
       type: "session-info",

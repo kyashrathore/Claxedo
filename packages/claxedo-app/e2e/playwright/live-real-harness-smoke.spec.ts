@@ -676,6 +676,7 @@ test.describe("live real-harness smoke @live", () => {
           await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
           await expect(permissionMode).toHaveAttribute("data-mode", mode)
           const marker = `LIVE-PERMISSION-${Date.now()}`
+          const command = `printf '${marker}' | tee '${output}'`
           const expectedReply = decision === "Deny" ? `DENIED-${marker}` : marker
           await composePrompt(page, input,
             `Run exactly this shell command once: printf '${marker}' | tee '${output}'. ` +
@@ -687,9 +688,11 @@ test.describe("live real-harness smoke @live", () => {
           const sessionUrl = page.url()
           const dock = page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
           await expect(dock).toBeVisible({ timeout: 60_000 })
+          await expect(dock.locator('[data-slot="permission-command"]')).toContainText(command)
           expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
           await page.reload({ waitUntil: "domcontentloaded" })
           await expect(dock).toBeVisible({ timeout: 30_000 })
+          await expect(dock.locator('[data-slot="permission-command"]')).toContainText(command)
           expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
           if (decision === "Deny") {
             await expectPermissionReplyIsolation(page, {

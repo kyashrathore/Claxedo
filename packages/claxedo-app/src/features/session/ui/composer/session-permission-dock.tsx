@@ -52,6 +52,9 @@ export function SessionPermissionDock(props: {
   }
   const patterns = () => Array.isArray(props.request.patterns) ? props.request.patterns : []
 
+  const command = () => typeof props.request.metadata.command === "string" ? props.request.metadata.command : undefined
+  const reason = () => typeof props.request.metadata.reason === "string" ? props.request.metadata.reason : undefined
+
   const toolDescription = () => {
     const key = TOOL_DESCRIPTION_KEYS[props.request.permission]
     return key ? language.t(key) : ""
@@ -102,6 +105,13 @@ export function SessionPermissionDock(props: {
           <span data-slot="permission-spacer" aria-hidden="true" />
           <div data-slot="permission-hint" class="ui-permission-hint">{toolDescription()}</div>
         </div>
+      </Show>
+
+      <Show when={command()}>
+        {(value) => <pre data-slot="permission-command" class="whitespace-pre-wrap break-all text-12-regular text-text-base">{value()}</pre>}
+      </Show>
+      <Show when={reason()}>
+        {(value) => <div data-slot="permission-reason" class="text-12-regular text-text-base">{value()}</div>}
       </Show>
 
       <Show when={patterns().length > 0}>

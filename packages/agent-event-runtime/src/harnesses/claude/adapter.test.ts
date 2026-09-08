@@ -494,13 +494,14 @@ describe("claudeSdkAdapter", () => {
       payload: {
         requestId: "perm-1",
         toolName: "Bash",
-        input: { command: "bun test", cwd: "/repo" },
+        input: { command: "bun test", cwd: "/repo", description: "Run tests" },
       },
     }).events).toMatchObject([{
       type: "permission-request",
       requestId: "perm-1",
       tool: "Bash",
       paths: ["/repo"],
+      details: { command: "bun test", reason: "Run tests" },
     }])
   })
 

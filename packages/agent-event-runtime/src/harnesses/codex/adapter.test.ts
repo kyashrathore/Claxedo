@@ -97,12 +97,13 @@ describe("codexAppServerAdapter", () => {
     expect(agent.ingest({
       source: "codex.app-server",
       method: "item/commandExecution/requestApproval",
-      payload: { requestId: "approval-1", command: "rm -rf tmp", cwd: "/repo" },
+      payload: { requestId: "approval-1", command: "rm -rf tmp", cwd: "/repo", reason: "Remove generated files" },
     }).events).toMatchObject([{
       type: "permission-request",
       requestId: "approval-1",
       tool: "command",
       paths: ["/repo"],
+      details: { command: "rm -rf tmp", reason: "Remove generated files" },
     }])
 
     expect(agent.ingest({

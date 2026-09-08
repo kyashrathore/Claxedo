@@ -1699,9 +1699,11 @@ test.describe("real harness journeys @core @tier-real", () => {
           const sessionUrl = page.url()
           const dock = page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
           await expect(dock).toBeVisible({ timeout: 60_000 })
+          await expect(dock.locator('[data-slot="permission-command"]')).toContainText(command)
           expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
           await page.reload({ waitUntil: "domcontentloaded" })
           await expect(dock).toBeVisible({ timeout: 30_000 })
+          await expect(dock.locator('[data-slot="permission-command"]')).toContainText(command)
           expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
           await page.screenshot({ path: test.info().outputPath("permission-pending.png") })
           if (decision === "Deny") {

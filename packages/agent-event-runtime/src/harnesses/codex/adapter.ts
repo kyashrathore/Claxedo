@@ -833,6 +833,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
             requestId: text(message.id) ?? text(row.requestId) ?? context.createId("request"),
             tool: requestTool(method, row),
             paths: pathsFromPayload(row),
+            details: { command: text(row.command), reason: text(row.reason) },
           }]
 
         case "item/tool/requestUserInput": {

@@ -31,3 +31,11 @@ test("an unavailable abort operation has no Stop action", () => {
   const view = render(() => <SessionPermissionDock request={request} responding={false} onDecide={() => {}} />)
   expect(view.queryByRole("button", { name: "prompt.action.stop" })).toBeNull()
 })
+
+test("shows native command and reason as text without interpreting shell or HTML", () => {
+  const command = "printf '<script>alert(1)</script>' > /tmp/result"
+  const view = render(() => <SessionPermissionDock request={{ ...request, metadata: { command, reason: "Write the requested result" } }} responding={false} onDecide={() => {}} />)
+  expect(view.container.querySelector('[data-slot="permission-command"]')?.textContent).toBe(command)
+  expect(view.getByText("Write the requested result")).toBeTruthy()
+  expect(view.container.querySelector("script")).toBeNull()
+})

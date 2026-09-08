@@ -616,6 +616,7 @@ function permissionFromToolUse(message: Record<string, unknown>, context: Harnes
     requestId: text(row.requestId) ?? context.createId("permission"),
     tool: toolName,
     paths: pathsFromToolInput(input),
+    details: { command: text(input.command), reason: text(input.description) },
   }] satisfies AgentRuntimeEvent[]
 }
 

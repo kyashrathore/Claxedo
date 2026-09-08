@@ -1340,7 +1340,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
         sessionID: ctx.sessionId,
         permission: chunk.tool,
         patterns: chunk.paths,
-        metadata: {},
+        metadata: { ...chunk.details },
         always: chunk.paths,
       }))]
 
