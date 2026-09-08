@@ -203,6 +203,15 @@ async function waitForHarnessReady(page: Page) {
     { timeout: 30_000 },
   )
   await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
+  const claudeModel = process.env.CLAXEDO_E2E_CLAUDE_MODEL
+  const control = page.locator('[data-action="prompt-harness-model"]').last()
+  if (claudeModel && await control.getAttribute("data-harness") === "claude") {
+    await control.click()
+    const picker = page.locator('[data-component="harness-model-picker"]')
+    await picker.locator('[data-slot="list-item"]').filter({ has: page.locator('[data-slot="list-item-name"]').filter({ hasText: claudeModel }) }).first().click()
+    await expect(control).toContainText(claudeModel)
+    await page.keyboard.press("Escape")
+  }
 }
 
 type HarnessCase = {
@@ -464,6 +473,7 @@ test.describe("live real-harness smoke @live", () => {
       const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
       await expect(dock).toBeVisible({ timeout: 60_000 })
       await expect(dock).toContainText("Which test environment?")
+      await expect(dock.locator('[data-slot="question-option"]', { hasText: "Staging" })).toContainText("Isolated test environment")
       const sessionId = new URL(sessionUrl).pathname.split("/").at(-1)!
       const readQuestions = async () => {
         const response = await page.request.get(`${BACKEND_URL}/question?directory=${encodeURIComponent(dir)}`)

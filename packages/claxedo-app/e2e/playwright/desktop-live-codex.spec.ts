@@ -17,7 +17,7 @@ async function compose(input: Locator, text: string) {
   await expect(input).toContainText(text, { timeout: 10_000 })
 }
 
-for (const flow of ["reply", "tasks across full restart", "tool error recovery across full restart"] as const) {
+for (const flow of ["reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real Codex-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-windows-live-codex-")))
@@ -84,6 +84,60 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
     )
     await packaged.page.keyboard.press("Escape")
     await expect(control).not.toContainText(/Loading models|Select model|^$/, { timeout: 45_000 })
+
+    if (flow === "question answer across full restart" || flow === "question dismiss across full restart" || flow === "question stop across full restart") {
+      const action = flow === "question answer across full restart" ? "answer" : flow === "question dismiss across full restart" ? "dismiss" : "stop"
+      const prefix = `DESKTOP_QUESTION_${Date.now()}`
+      const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
+      await compose(input,
+        'Use request_user_input now with one question: id "environment", header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}]. ' +
+        `Wait for my answer, then reply exactly ${prefix}- followed by the selected label. If dismissed, reply exactly ${prefix}-DISMISSED and do not ask again. Do not run other tools.`)
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      const created = await creation
+      expect(created.ok()).toBe(true)
+      const session = await created.json() as { id: string }
+      const readQuestions = async () => {
+        const response = await fetch(`${serverBase}/question?directory=${encodeURIComponent(directory)}`)
+        expect(response.ok).toBe(true)
+        return (await response.json() as Array<{ id: string; sessionID: string }>).filter((question) => question.sessionID === session.id)
+      }
+      await expect(packaged.page.locator('[data-component="dock-prompt"][data-kind="question"]')).toBeVisible({ timeout: 60_000 })
+      const pending = await readQuestions()
+      expect(pending).toHaveLength(1)
+      const appProcess = packaged.app.process()
+      await packaged.close()
+      await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
+      packaged = await launch()
+      expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+      const dock = packaged.page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
+      await expect(dock).toContainText("Which test environment?")
+      await expect(dock.locator('[data-slot="question-option"]', { hasText: "Staging" })).toContainText("Isolated test environment")
+      expect(await readQuestions()).toEqual(pending)
+      await packaged.page.screenshot({ path: test.info().outputPath("question-after-restart.png") })
+      if (action === "answer") {
+        await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+        await dock.getByRole("button", { name: "Submit", exact: true }).click()
+        await expectAssistantReplyVisible(packaged.page, `${prefix}-Staging`)
+      } else {
+        await dock.getByRole("button", { name: action === "dismiss" ? "Dismiss" : "Stop", exact: true }).click()
+        if (action === "dismiss") await expectAssistantReplyVisible(packaged.page, `${prefix}-DISMISSED`)
+      }
+      await expect(dock).toHaveCount(0)
+      expect(await readQuestions()).toEqual([])
+      const late = await fetch(`${serverBase}/question/${pending[0]!.id}/reply?directory=${encodeURIComponent(directory)}`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["Production"]] }),
+      })
+      expect(late.status).toBe(404)
+      const marker = `AFTER_DESKTOP_QUESTION_${Date.now()}`
+      await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${marker}. Do not use tools.`)
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      await expectAssistantReplyVisible(packaged.page, marker)
+      await packaged.page.reload()
+      await expectAssistantReplyVisible(packaged.page, marker)
+      await expect(dock).toHaveCount(0)
+      expect(await readQuestions()).toEqual([])
+      return
+    }
 
     if (flow === "tool error recovery across full restart") {
       await packaged.page.locator('[data-action="prompt-permission-mode"]').last().click()

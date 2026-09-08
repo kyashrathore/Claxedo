@@ -156,7 +156,7 @@ describe("codexAppServerAdapter", () => {
     }).events).toMatchObject([{
       type: "question",
       requestId: "question-1",
-      questions: [{ text: "Which mode?", options: ["workspace-write"] }],
+      questions: [{ text: "Which mode?", options: ["workspace-write"], optionDescriptions: { "workspace-write": "Allow workspace writes" } }],
     }])
 
   })

@@ -1255,6 +1255,7 @@ test.describe("real harness journeys @core @tier-real", () => {
         await page.locator(SELECTORS.submitControl).last().click()
         const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
         await expect(dock).toBeVisible({ timeout: 20_000 })
+        await expect(dock.locator('[data-slot="question-option"]', { hasText: "Staging" })).toContainText("Isolated environment")
         if (action === "stop") {
           await page.reload({ waitUntil: "domcontentloaded" })
           await expect(dock).toBeVisible()

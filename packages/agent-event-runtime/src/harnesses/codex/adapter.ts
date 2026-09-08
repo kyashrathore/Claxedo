@@ -234,8 +234,16 @@ function questions(row: Record<string, unknown>) {
     const prompt = text(item.question) ?? text(item.prompt) ?? text(item.text)
     if (!prompt) return []
     const options = optionLabels(item.options)
+    const optionDescriptions = Object.fromEntries((Array.isArray(item.options) ? item.options : []).flatMap((value) => {
+      const option = asRecord(value)
+      const label = text(option?.label)
+      const description = text(option?.description)
+      return label && description ? [[label, description]] : []
+    }))
     return [{
       text: prompt || `Question ${i + 1}`,
+      header: text(item.header),
+      optionDescriptions,
       ...(options.length ? { options } : {}),
     }]
   })
