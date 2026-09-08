@@ -735,7 +735,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
     if (abort.signal.reason === EXPLICIT_TURN_ABORT_REASON) {
       const source = { dir: "in" as const, method: "prompt.aborted" }
-      for (const event of router.terminalizeParent("Aborted by user", source)) yield event
+      yield* router.terminalizeParent("Aborted by user", source)
       const updated = messageUpdated(buildAssistantMessage({
         id: router.assistantMessageId(),
         sessionID: id,
@@ -760,7 +760,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       // publish their cancellation. Settle through the same projector so the
       // persisted status and the native runtime feed both observe idle.
       parentProjector.project({ type: "session-status", status: "idle" }, source)
-      for (const event of queue.splice(0)) yield event
+      yield* queue.splice(0)
       return
     }
     if (!promptError) return
