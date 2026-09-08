@@ -5,7 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
-import { expectTerminalRailStatus } from "../helpers/rail-oracle"
+import { expectTerminalRailStatus, expectTerminalRailStatusAbsent } from "../helpers/rail-oracle"
 
 const exec = promisify(execFile)
 
@@ -35,7 +35,7 @@ for (const { harness, child, pause } of [
     let ptyUrl: string | undefined
     const traffic: { at: number; launch: number; kind: string; data: string }[] = []
     const ptyStates: unknown[] = []
-    let trafficBytes = 0
+    const trafficBytes = { input: 0, output: 0, close: 0 }
     let launches = 0
     const rawHookDirectory = path.join(root, "raw-hooks")
     const launch = () => {
@@ -48,10 +48,10 @@ for (const { harness, child, pause } of [
         })
         page.on("websocket", (socket) => {
           if (!socket.url().includes("/pty/")) return
-          const record = (kind: string, payload: string | Buffer) => {
-            if (trafficBytes > 512_000) return
+          const record = (kind: keyof typeof trafficBytes, payload: string | Buffer) => {
+            if (trafficBytes[kind] > 512_000) return
             const data = payload.toString()
-            trafficBytes += data.length
+            trafficBytes[kind] += data.length
             traffic.push({ at: Date.now(), launch: launchNumber, kind, data })
           }
           socket.on("framesent", ({ payload }) => record("input", payload))
@@ -242,6 +242,11 @@ for (const { harness, child, pause } of [
         const body = await response.json() as { session: { eventType?: string } | null }
         return body.session?.eventType
       }, { timeout: 15_000, message: `Actual ${harness} completion must reach the terminal hook store` }).toBe("Idle")
+      if (harness === "amp") {
+        const received = await (await fetch(lifecycleUrl)).json() as { session: { prompt?: string } }
+        await test.info().attach("amp-received-first-prompt", { body: JSON.stringify(received.session.prompt), contentType: "application/json" })
+        expect(received.session.prompt, "Amp must receive the entire typed prompt").toBe("Reply with the concatenation of DESKTOP and _TUI_OK, nothing else.")
+      }
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-completed.png`) })
       const before = await (await fetch(ptyUrl)).json() as { pid: number; status: string }
       expect(before.status).toBe("running")
@@ -324,7 +329,57 @@ for (const { harness, child, pause } of [
         expect(events.slice(0, -1), "Child completion must never settle the still-running parent").not.toContain("Idle")
       }
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-restarted.png`) })
+      if (harness === "amp") {
+        await packaged.page.evaluate(async ({ server, terminalId }) => {
+          const events: unknown[] = []
+          const stream = new EventSource(`${server}/api/claxedo/events`)
+          Object.assign(window, { __ampCancellationEvents: events, __ampCancellationStream: stream })
+          stream.onmessage = (message) => {
+            const frame = JSON.parse(message.data)
+            const event = frame.payload ?? frame
+            if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
+          }
+          await new Promise<void>((resolve, reject) => {
+            stream.onopen = () => resolve()
+            stream.onerror = () => reject(new Error("Amp cancellation observation stream failed"))
+          })
+        }, { server, terminalId: pty.id })
+        const terminal = packaged.page.locator(selector)
+        await terminal.locator(".xterm-helper-textarea").focus()
+        await packaged.page.keyboard.type("Run sleep 60 in the foreground. Only after it finishes reply CANCEL_SHOULD_NOT_FINISH.", { delay: 15 })
+        await packaged.page.keyboard.press("Enter")
+        await expectTerminalRailStatus({ page: packaged.page, terminalId: pty.id, status: "working" })
+        await expect(terminal.locator(".xterm-rows > div").filter({ hasText: /^[^A-Za-z]*sleep 60\s*$/ })).toBeVisible({ timeout: 45_000 })
+        await packaged.page.screenshot({ path: test.info().outputPath("amp-before-cancel.png") })
+        await packaged.page.keyboard.press("Escape")
+        await packaged.page.keyboard.press("Escape")
+        await packaged.page.getByRole("button", { name: "New Session", exact: true }).click()
+        await expect.poll(async () => {
+          const body = await (await fetch(lifecycleUrl)).json() as { session: { eventType?: string } | null }
+          return body.session?.eventType
+        }, { timeout: 15_000, message: "Cancelling Amp must settle its real terminal state" }).toBe("Idle")
+        const observed = await packaged.page.evaluate(() => {
+          const state = window as unknown as { __ampCancellationEvents: unknown[]; __ampCancellationStream: EventSource }
+          state.__ampCancellationStream.close()
+          return state.__ampCancellationEvents
+        })
+        await test.info().attach("amp-cancellation-lifecycle", { body: JSON.stringify(observed), contentType: "application/json" })
+        expect(observed.at(-1), "The provider must identify cancellation, rather than successful completion").toMatchObject({ outcome: "cancelled" })
+        await packaged.page.screenshot({ path: test.info().outputPath("amp-cancelled-background.png") })
+        await expectTerminalRailStatusAbsent({ page: packaged.page, terminalId: pty.id })
+        // Allow an incorrectly queued audio clip to finish before checking silence.
+        await packaged.page.waitForTimeout(2000)
+        expect(await packaged.page.evaluate(() => (window as unknown as { __claxedoAudioEnded: unknown[] }).__claxedoAudioEnded.length)).toBe(1)
+      }
     } finally {
+      if (harness === "amp" && packaged && !packaged.page.isClosed()) {
+        const events = await packaged.page.evaluate(() => {
+          const state = window as unknown as { __ampCancellationEvents?: unknown[]; __ampCancellationStream?: EventSource }
+          state.__ampCancellationStream?.close()
+          return state.__ampCancellationEvents ?? []
+        })
+        await test.info().attach("amp-cancellation-observed", { body: JSON.stringify(events), contentType: "application/json" })
+      }
       if (child) {
         const files = await fs.readdir(rawHookDirectory).catch(() => [])
         const hooks = await Promise.all(files.map(async (file) => ({

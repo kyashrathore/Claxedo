@@ -42,6 +42,12 @@ export async function expectTerminalRailStatus(opts: {
   await expect(row.locator(SELECTORS.statusDot)).toBeVisible()
 }
 
+export async function expectTerminalRailStatusAbsent(opts: { page: Page; terminalId: string }) {
+  const row = opts.page.locator(SELECTORS.terminalRow(opts.terminalId))
+  await expect(row).toBeVisible()
+  await expect(row.locator(SELECTORS.statusDot), "Cancelled terminal work must not leave a done badge").toHaveCount(0)
+}
+
 /**
  * The row for `sessionId` is visible without a reload and, when `index` is given, sits at
  * that position among session rows. A duplicate row fails strict mode here (see
