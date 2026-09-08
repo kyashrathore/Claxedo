@@ -278,12 +278,36 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
         expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
         await fs.rm(output)
         const repeated = `REPEATED_${marker}`
-        await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(),
-          `Run exactly the same shell command once: ${command}. ` +
+        const repeatedPrompt = `Run exactly the same shell command once: ${command}. ` +
           (harness === "Codex" ? 'Use exec_command with sandbox_permissions="require_escalated" and justification="Write the isolated test file". ' : "Use the Bash tool. ") +
-          `After execution reply exactly ${repeated}. Do not use other tools or alternative write methods.`)
-        await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
-        await expect.poll(async () => (await readPending()).length ? "approval requested again" : fs.readFile(output, "utf8").catch(() => ""), { timeout: 60_000 }).toBe(marker)
+          `After execution reply exactly ${repeated}. Do not use other tools or alternative write methods.`
+        await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), repeatedPrompt)
+        const [submitted] = await Promise.all([
+          packaged.page.waitForResponse((response) => response.request().method() === "POST" &&
+            new URL(response.url()).pathname.endsWith(`/session/${session.id}/prompt_async`)),
+          packaged.page.locator('[data-action="prompt-submit"]:visible').last().click(),
+        ])
+        expect(submitted.ok(), `Repeated prompt returned ${submitted.status()}`).toBe(true)
+        expect(submitted.request().postDataJSON().parts.filter((part: { type: string }) => part.type === "text")
+          .map((part: { text: string }) => part.text).join("")).toBe(repeatedPrompt)
+        await expect.poll(async () => {
+          const response = await fetch(`${serverBase}/session/${session.id}/message${query}`)
+          expect(response.ok).toBe(true)
+          const history = await response.json() as Array<{ info: { role: string }; parts: Array<{ type: string; text?: string }> }>
+          return history.filter((row) => row.info.role === "user").map((row) =>
+            row.parts.filter((part) => part.type === "text").map((part) => part.text).join(""))
+        }).toContain(repeatedPrompt)
+        try {
+          await expect.poll(async () => (await readPending()).length ? "approval requested again" : fs.readFile(output, "utf8").catch(() => ""), { timeout: 60_000 }).toBe(marker)
+        } catch (error) {
+          const history = await fetch(`${serverBase}/session/${session.id}/message${query}`)
+          const status = await fetch(`${serverBase}/session/status${query}`)
+          await test.info().attach("permission-repeat-state", {
+            contentType: "application/json",
+            body: JSON.stringify({ history: await history.json(), statuses: await status.json(), pending: await readPending() }, null, 2),
+          })
+          throw error
+        }
         await expectAssistantReplyVisible(packaged.page, repeated)
         expect(await readPending()).toEqual([])
       }
