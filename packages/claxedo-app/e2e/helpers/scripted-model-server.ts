@@ -71,7 +71,7 @@ export type ScriptedModelRequest = {
   tools: { name: string; inputSchema?: unknown }[]
 }
 
-export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; whenPromptIncludes?: string }
+export type ScriptedToolCall = { name: string; input: unknown; namespace?: string; whenPromptIncludes?: string; autoModeSeverity?: 0 }
 
 export type ScriptedModelServer = {
   /** Origin without a trailing slash, e.g. http://127.0.0.1:52341 */
@@ -159,6 +159,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   const requests: ScriptedModelRequest[] = []
   let counts: Record<ScriptedDialect, number> = { chat: 0, messages: 0, responses: 0 }
   let pendingTool: ScriptedToolCall | undefined
+  let autoModeCommand: string | undefined
   let textGate: { marker: string; promise: Promise<void>; release: () => void } | undefined
   let goalEvaluationCount = 0
   let sequence = 0
@@ -185,7 +186,14 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     const toolResultSeen = hasToolResult(request)
 
     let reply: ScriptedModelRequest["reply"]
-    if (prompt.includes(TITLE_PROMPT)) {
+    const classifier = request.dialect === "messages" && autoModeCommand !== undefined
+      && request.body.messages.some((message) => Array.isArray(message.content)
+        && message.content.some((block) => block.type === "text" && block.text.includes("Respond with <severity>N</severity> ONLY.")))
+      && request.body.messages.some((message) => Array.isArray(message.content)
+        && message.content.some((block) => block.type === "text" && block.text.trim() === JSON.stringify({ Bash: autoModeCommand })))
+    if (classifier) {
+      reply = { kind: "text", text: "<severity>0</severity>" }
+    } else if (prompt.includes(TITLE_PROMPT)) {
       reply = { kind: "text", text: SCRIPTED_TITLE }
     } else if (isClaudeGoalEvaluatorPrompt(prompt)) {
       goalEvaluationCount += 1
@@ -255,10 +263,14 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     resetCounts: () => {
       counts = { chat: 0, messages: 0, responses: 0 }
       goalEvaluationCount = 0
+      autoModeCommand = undefined
       requests.splice(0)
     },
     scriptTool: (call) => {
       pendingTool = call
+      const input = asRecord(call.input)
+      autoModeCommand = call.name === "Bash" && call.autoModeSeverity === 0 && typeof input?.command === "string"
+        ? input.command : undefined
     },
     holdTextReplies: (marker) => {
       if (textGate) throw new Error("A scripted text reply gate is already active")

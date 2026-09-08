@@ -1583,12 +1583,16 @@ test.describe("real harness journeys @core @tier-real", () => {
             : harness === "codex" ? { cmd: command, yield_time_ms: 30000 }
             : { command, timeout: 120 },
           whenPromptIncludes: marker,
+          ...(harness === "claude" && goalMode ? { autoModeSeverity: 0 as const } : {}),
         })
         await composePrompt(page, input, `${goalMode ? "/goal " : ""}Run the command, then reply with exactly this one token: ${marker}`)
         await page.locator(SELECTORS.submitControl).last().click()
         await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
         const sessionUrl = page.url()
         await expect.poll(() => fs.readFile(pidFile, "utf8").catch(() => ""), { timeout: 30_000 }).toMatch(/^\d+$/)
+        if (harness === "claude" && goalMode) {
+          expect(scripted!.requests.some((request) => request.reply.kind === "text" && request.reply.text === "<severity>0</severity>"), "Claude did not execute the native Auto classifier protocol").toBe(true)
+        }
         const pid = Number(await fs.readFile(pidFile, "utf8"))
         const alive = async () => {
           try {
