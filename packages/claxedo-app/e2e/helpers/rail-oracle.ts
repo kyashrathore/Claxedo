@@ -39,6 +39,7 @@ export async function expectTerminalRailStatus(opts: {
   await expect(row.locator(SELECTORS.statusDot)).toHaveAttribute("data-sidebar-status", opts.status, {
     timeout: opts.timeout ?? DEFAULT_TIMEOUT,
   })
+  await expect(row.locator(SELECTORS.statusDot)).toBeVisible()
 }
 
 /**
