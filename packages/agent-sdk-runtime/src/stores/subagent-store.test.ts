@@ -75,6 +75,33 @@ describe("runtime subagent admission stores", () => {
     }])
   })
 
+  test("memory rows project the latest attention count and wake state", () => {
+    const store = new MemoryRuntimeStore()
+    const spawn = admit(store)
+    for (const [observationId, observation] of [
+      ["attention-2", { attention: 2 }],
+      ["attention-0", { attention: 0 }],
+      ["finished", { status: "completed" as const, wake: "pending" as const }],
+      ["woken", { wake: "delivered" as const }],
+    ] as const) {
+      store.admit({
+        parentSessionId: "parent",
+        observation: { observationId, harnessExecutionId: "run", subagentKey: spawn.event.subagentKey, ...observation },
+        allocateKey: () => "unused",
+      })
+    }
+
+    const restored = new MemoryRuntimeStore()
+    restored.importSnapshot(store.exportSnapshot())
+
+    expect(restored.listSubagents("parent")).toMatchObject([{
+      subagentKey: spawn.event.subagentKey,
+      status: "completed",
+      attention: 0,
+      wake: "delivered",
+    }])
+  })
+
   test("sqlite rows preserve admission across reopen", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-runtime-subagent-"))
     roots.push(root)

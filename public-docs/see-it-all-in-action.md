@@ -17,7 +17,7 @@ workspace, and deployment backends underneath.
 | Let others reach a local worktree through Relay | A workspace can be backed by a local worktree on a user's machine and still be accessed by teammates through [Workspace Relay](./relay-and-deployment.md), when your control plane authorizes and routes that access. |
 | Support local, container, and cloud VM workspaces | The runtime only needs to run next to the project directory. That directory can live on a laptop, inside Docker/a container, or on a real cloud VM. |
 | Keep long-running services close to the agent | Managed process APIs let the agent or UI add/start/stop/restart dev servers, watchers, tests, and other long-running workspace processes, then read logs and port mappings. |
-| Add an MCP orchestration layer | [Claxedo MCP](./mcp.md) exposes runtime tools to any MCP client. Current tools cover processes, logs, session messages, documents, spawning background sessions, log summaries, and browser panes. The same pattern can be extended with more MCP tools that call the Claxedo HTTP API stack, such as comparing session outputs or building consensus workflows. |
+| Add an MCP orchestration layer | [Claxedo MCP](./mcp.md) exposes runtime tools to any MCP client. Current tools cover processes, logs, session messages, documents, spawning background sessions, and log summaries. The same pattern can be extended with more MCP tools that call the Claxedo HTTP API stack, such as comparing session outputs or building consensus workflows. |
 
 ## One Stack, Different Workspace Backings
 
@@ -154,10 +154,9 @@ What happens after the client reads that config:
 1. The MCP client starts a subprocess by running `npx -y @claxedo/mcp`.
 2. That subprocess registers tools named `process`, `get_logs`,
    `session_messages`, `documents_list`, `documents_open`, `spawn_session`,
-   `summarize_logs`, and browser tools.
+   and `summarize_logs`.
 3. When an agent in the MCP client calls one of those tools, `@claxedo/mcp`
-   makes an HTTP request to `CLAXEDO_SERVER_URL` (or, for browser tools, to
-   the desktop bridge — see below).
+   makes an HTTP request to `CLAXEDO_SERVER_URL`.
 4. `CLAXEDO_SERVER_URL` points at the Claxedo server fronting the workspace.
    By default that is the control plane on `http://127.0.0.1:2593`, which
    proxies workspace calls to the runtime — not the runtime port `4096`
@@ -179,15 +178,13 @@ read-only mode):
 | `documents_open` | Opens a `claxedo://document/...` reference, exact id, or name as an honest canonical file path for this session. | `/documents`, `/documents/:id/agent-open` |
 | `spawn_session` | Spawns a background hybrid Claxedo session on the control plane (model turns run centrally; tool side-effects run in the target workspace runtime or a virtual sandbox) and optionally fires an initial prompt. | `/api/control/sessions`, `/api/control/session/:id/message` |
 | `summarize_logs` | Fetches logs or accepts raw log text, creates a temporary agent session, and asks the configured harness to summarize the output. | `/api/wr/process/logs`, `/session`, `/session/:id/message` |
-| Browser tools (`browser_list_tabs`, `browser_screenshot`, `browser_get_console_logs`, `browser_evaluate_js`, `browser_navigate`) | Lists browser tabs, captures screenshots, reads console logs, evaluates JavaScript, and navigates browser panes. | Not `CLAXEDO_SERVER_URL` — see below. |
 
-Browser tools use a different transport from every other tool in this table.
-They do not call `CLAXEDO_SERVER_URL`; instead `@claxedo/mcp` calls a local
-HTTP bridge exposed by the Claxedo **desktop** app (Electron), addressed by
-the `CLAXEDO_DESKTOP_URL` / `CLAXEDO_DESKTOP_TOKEN` environment variables that
-the desktop app injects into the MCP subprocess at spawn time. That bridge
-exists while the user is running the Claxedo desktop app; without it, browser tool calls return a
-legible "desktop app required" error instead of making a network call.
+`@claxedo/mcp` serves no browser tools. The browser pane in the desktop app is
+a surface for the person using Claxedo: it navigates, keeps a console, picks
+elements, and captures screenshots you can annotate and attach to a message.
+An agent that needs to drive a browser drives its own — an external Chrome
+through whatever browser tooling its harness already carries — so what the
+person is reading in the pane is never navigated out from under them.
 
 Example tool calls an MCP client could make:
 
@@ -240,7 +237,7 @@ startServer(port, await workspaceRelayRuntimeOptionsFromEnv(process.env, port))
 | Event runtime | Inside adapters/host projections | Canonical `AgentRuntimeEvent` stream and compatibility projections | `@claxedo/agent-event-runtime` |
 | Relay | Separate relay process | Bidirectional tunnel between gateway/browser traffic and workspace-runtime hosts | `@claxedo/workspace-relay` |
 | Relay protocol | Shared dependency | Tunnel frame types, protocol version, token verifier seam | `@claxedo/workspace-relay-protocol` |
-| MCP server | MCP client subprocess | Runtime tools for processes, logs, sessions, and browser panes | `@claxedo/mcp` |
+| MCP server | MCP client subprocess | Runtime tools for processes, logs, sessions, and documents | `@claxedo/mcp` |
 
 ## User Action: Open A Workspace
 

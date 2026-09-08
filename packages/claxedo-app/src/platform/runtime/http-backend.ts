@@ -1,7 +1,4 @@
-import type {
-  ClaxedoMcpStatus as McpStatus,
-  ClaxedoVcsInfo as VcsInfo,
-} from "@/platform/api/claxedo-api-types"
+import type { WorkspaceMcpStatus as McpStatus, WorkspaceVcsInfo as VcsInfo } from "@claxedo/workspace-runtime/client"
 import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import {
@@ -52,15 +49,11 @@ export const DEFAULT_SESSION_TRANSPORT_CAPABILITIES: SessionTransportCapabilitie
 }
 
 /**
- * The three status resources this backend reads off a workspace runtime,
- * decoded from the wire.
- *
- * The relay path and the SDK-client path answer the SAME three shapes, and only
- * the client path was typed by anything: the relay path used to name its DTO in
- * a type argument, which claimed the shape without checking it. These decode
- * what `claxedo-api-types` declares and drop rows that are not it, so a runtime
- * on an older build degrades to "nothing to show" instead of a status pill
- * bound to `undefined`.
+ * The two status resources this backend reads off a workspace runtime. The
+ * relay path and the SDK-client path answer the same two shapes, and both go
+ * through these decoders: a member that is not what `claxedo-api-types`
+ * declares is dropped, so a runtime on an older build degrades to "nothing to
+ * show" instead of a status pill bound to `undefined`.
  */
 function vcsInfoFromWire(raw: unknown): VcsInfo {
   return {

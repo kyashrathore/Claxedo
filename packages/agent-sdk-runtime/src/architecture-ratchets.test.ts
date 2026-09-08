@@ -35,10 +35,23 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // naming the teardowns nothing waits on; the fifth imports the shared
       // `stringRecord` reader that replaced this file's config cast. Owner
       // unchanged.
+      // Re-measured for host-owned subagents: the codex driver raises the
+      // observation that binds a completed `create_subagent` MCP item to its
+      // child from the one place thread notifications are projected. The
+      // classification and the observation shape live in
+      // `harnesses/codex/host-subagent.ts`; the three lines here are its import
+      // and the call.
+      // Re-measured for the per-thread first-party MCP config. The Codex
+      // app-server reads MCP servers from the `config` override on
+      // `thread/start` and `thread/resume`, and the entry names the Claxedo
+      // session, so the driver — the only owner that holds both the provider
+      // and the request — states it; `first-party-mcp.ts` owns the provider
+      // shape and validation. `sdk-runtime-adapter.ts` gains the one line that
+      // hands the driver the session id its thread will serve.
       "runtime.ts": 980,
       "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 663,
-      "harnesses/shared/sdk-runtime-adapter.ts": 874,
+      "harnesses/codex/driver.ts": 683,
+      "harnesses/shared/sdk-runtime-adapter.ts": 875,
       "harnesses/pi/index.ts": 12,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {

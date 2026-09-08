@@ -1,4 +1,6 @@
-import type { ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoCommand, ClaxedoVcsInfo } from "@/platform/api/claxedo-api-types"
+import type { AgentCommand } from "@claxedo/agent-runtime-contract"
+import type { WorkspaceVcsInfo } from "@claxedo/workspace-runtime/client"
+import type { ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 import { asRecord, readBoolean, readString } from "@/lib/record"
 import { retry } from "@/lib/retry"
@@ -37,8 +39,8 @@ export type GlobalBootstrapSdk = {
 export type DirectoryBootstrapSdk = {
   project: { current(): DataResponse<Project> }
   path: { get(): DataResponse<Path> }
-  command: { list(): DataResponse<ClaxedoCommand[]> }
-  vcs: { get(): DataResponse<ClaxedoVcsInfo> }
+  command: { list(): DataResponse<AgentCommand[]> }
+  vcs: { get(): DataResponse<WorkspaceVcsInfo> }
 }
 type BootstrapDirectory = string
 

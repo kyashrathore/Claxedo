@@ -1,18 +1,10 @@
 import { bearerToken } from "@claxedo/helpers/string"
 import { runtimeEnvText } from "../env"
 import { rec } from "../json-value"
+import { errorBody } from "./error-body"
 
 export { bearerToken }
-
-export function errorBody(code: string, message: string, details?: Record<string, unknown>) {
-  return {
-    error: {
-      code,
-      message,
-      ...(details ? { details } : {}),
-    },
-  }
-}
+export { errorBody }
 
 export const JSON_BODY_LIMIT_BYTES = jsonBodyLimit()
 

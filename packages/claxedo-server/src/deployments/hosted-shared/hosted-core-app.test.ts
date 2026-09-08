@@ -11,6 +11,8 @@ import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { hostedOrgCredentials } from "../../credentials/worker"
 import { fetchUrl, fetchBodyText } from "../../test-support/fetch-calls"
+import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
+import type { McpClientInputs } from "@claxedo/mcp"
 
 const ROOT = path.resolve(import.meta.dirname, "../../..")
 
@@ -197,6 +199,62 @@ describe("resource-closed hosted core app", () => {
     const base = createHostedCoreApp(plane(), options)
     expect((await base.fetch(new Request("https://core.test/api/claxedo/plugins"))).status).toBe(404)
     expect((await base.fetch(new Request("https://core.test/api/claxedo/integrations"))).status).toBe(404)
+  })
+
+  test("mounts the first-party MCP under its own owner and admits the CLI JWT as the whole account", async () => {
+    const inputs: McpClientInputs[] = []
+    const stubClient: ClaxedoMcpClient = {
+      deployment: "hosted",
+      runtime: async () => async () => new Response(null, { status: 204 }),
+      resolveTarget: async () => ({ kind: "relay", baseUrl: "", headers: {} }),
+      server: () => Promise.reject(new Error("unused")),
+      workspaces: async () => [],
+    }
+    const app = createHostedCoreApp(plane(), {
+      ...options,
+      firstPartyMcp: {
+        createClient: (input) => {
+          inputs.push(input)
+          return stubClient
+        },
+      },
+    })
+    const initialize = (headers: Record<string, string>) =>
+      app.fetch(new Request("https://core.test/api/claxedo/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "cli", version: "0" } },
+        }),
+      }))
+    expect(app.routes.map((route) => route.path)).toContain("/api/claxedo/mcp")
+    expect((await createHostedCoreApp(plane(), options).routes.map((route) => route.path))).not.toContain("/api/claxedo/mcp")
+
+    const anonymous = await initialize({})
+    expect(anonymous.status).toBe(401)
+    expect(anonymous.headers.get("www-authenticate")).toContain('resource_metadata="https://core.test/.well-known/oauth-protected-resource"')
+
+    const metadataUrl = /resource_metadata="([^"]+)"/.exec(anonymous.headers.get("www-authenticate") ?? "")?.[1]
+    const metadata = await app.fetch(new Request(metadataUrl!))
+    expect(metadata.status).toBe(200)
+    expect(await metadata.json()).toMatchObject({
+      resource: "https://core.test/api/claxedo/mcp",
+      authorization_servers: ["https://auth.test"],
+    })
+    // No endpoint, nothing to describe.
+    expect((await createHostedCoreApp(plane(), options).fetch(new Request(metadataUrl!))).status).toBe(404)
+
+    const signed = await initialize({ authorization: "Bearer user-1" })
+    expect(signed.status).toBe(200)
+    expect(signed.headers.get("mcp-session-id")).toMatch(/\S/)
+    expect(inputs[0]).toMatchObject({
+      deployment: "hosted",
+      credential: { kind: "user", actorId: "actor:user-1", clientId: "cli", readOnly: false },
+    })
+    expect(inputs[0]?.local).toBeUndefined()
   })
 
   test("authenticates org and session-share routes through the Better Auth cookie adapter", async () => {

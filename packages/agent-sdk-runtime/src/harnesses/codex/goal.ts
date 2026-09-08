@@ -35,6 +35,13 @@ export type CodexGoalControllerHost = {
   liveProcess(): CodexAppServerProcess | null
   /** Holds the app-server resident while a Goal is active. */
   lease(): { release(): void }
+  /**
+   * The `thread/resume` override that re-attaches the session's first-party MCP
+   * entry. A Goal turn resumes the same thread the driver started, and the
+   * app-server drops a thread's MCP clients when it reloads it, so a resume
+   * that omits this leaves the Goal running without Claxedo's own tools.
+   */
+  firstPartyThreadConfig(sessionId: string): { config?: JsonRecord }
   /** Shared with the driver: a thread with a live prompt turn owns its frames. */
   activeThreads: Map<string, CodexActiveThread>
   projectThreadNotification(
@@ -96,7 +103,7 @@ export class CodexGoalController {
   private async read(sessionId: string, directory: string) {
     const threadId = this.threadId(sessionId, directory)
     const proc = await this.host.ensureProcess(directory)
-    const result = await this.requestWithThreadRecovery(proc, threadId, directory, "thread/goal/get", { threadId })
+    const result = await this.requestWithThreadRecovery(proc, sessionId, threadId, directory, "thread/goal/get", { threadId })
     const rawGoal = result.goal
     const goal = rawGoal ? codexGoalSnapshot(sessionId, rawGoal) : null
     if (goal) this.statusByThread.set(threadId, goal.status)
@@ -107,6 +114,7 @@ export class CodexGoalController {
 
   private requestWithThreadRecovery(
     proc: CodexAppServerProcess,
+    sessionId: string,
     threadId: string,
     directory: string,
     method: string,
@@ -119,7 +127,11 @@ export class CodexGoalController {
         return response
       },
       resumeThread: async () => {
-        await proc.request("thread/resume", { threadId, cwd: directory })
+        await proc.request("thread/resume", {
+          threadId,
+          cwd: directory,
+          ...this.host.firstPartyThreadConfig(sessionId),
+        })
       },
     })
   }
@@ -134,6 +146,7 @@ export class CodexGoalController {
       const proc = await this.host.ensureProcess(directory)
       const result = await this.requestWithThreadRecovery(
         proc,
+        sessionId,
         threadId,
         directory,
         "thread/goal/set",
@@ -173,6 +186,7 @@ export class CodexGoalController {
           const proc = await this.host.ensureProcess(directory)
           const result = await this.requestWithThreadRecovery(
             proc,
+            sessionId,
             threadId,
             directory,
             "thread/goal/clear",
@@ -201,7 +215,7 @@ export class CodexGoalController {
     const proc = this.host.liveProcess()
     if (proc?.alive) {
       try {
-        await this.requestWithThreadRecovery(proc, agentSessionId, directory, "thread/goal/clear", {
+        await this.requestWithThreadRecovery(proc, sessionId, agentSessionId, directory, "thread/goal/clear", {
           threadId: agentSessionId,
         })
       } catch (error) {

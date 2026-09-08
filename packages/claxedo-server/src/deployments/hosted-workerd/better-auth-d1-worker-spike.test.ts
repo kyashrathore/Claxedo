@@ -19,10 +19,13 @@ import {
 } from "../../platform/auth/better-auth-d1-foundation"
 import { resolveBetterAuthConfiguration } from "../../platform/auth/better-auth-configuration"
 import {
+  BETTER_AUTH_CLI_CLIENT_ID,
+  BETTER_AUTH_DESKTOP_CLIENT_ID,
   BETTER_AUTH_DESKTOP_REDIRECT_URI,
   betterAuthNativeResource,
   provisionBetterAuthNativeClients,
 } from "../../platform/auth/better-auth-native-clients"
+import { CLAXEDO_MCP_OAUTH_SCOPES } from "../../platform/auth/mcp-oauth-scopes"
 import { compileBetterAuthD1Migration } from "../../platform/auth/better-auth-d1-migration"
 import {
   BETTER_AUTH_ACCESS_TOKEN_PREFIX,
@@ -370,7 +373,10 @@ describe("Better Auth + D1 inside Workerd", () => {
       code_challenge_methods_supported: ["S256"],
     })
     expect(metadata.grant_types_supported).toContain("urn:ietf:params:oauth:grant-type:device_code")
-    expect(metadata.registration_endpoint).toBeUndefined()
+    // MCP hosts arrive with no client id and a loopback redirect on an
+    // ephemeral port, so this deployment offers RFC 7591 registration. What
+    // bounds a registrant is checked below, not the absence of the endpoint.
+    expect(metadata.registration_endpoint).toBe(`${API_ORIGIN}/api/auth/oauth2/register`)
 
     expect(oidc.status).toBe(404)
     expect(jwks.status).toBe(200)
@@ -486,7 +492,10 @@ describe("Better Auth + D1 inside Workerd", () => {
       client: { kind: "browser", tokenKind: "browser-session" },
     })
 
-    const registration = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/oauth2/register`, {
+    // Better Auth classifies a registration without `application_type` as a
+    // web client, and a web client may not name a loopback redirect. An MCP
+    // host on a laptop is a native client and must say so.
+    const webLoopback = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/oauth2/register`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -495,7 +504,30 @@ describe("Better Auth + D1 inside Workerd", () => {
         token_endpoint_auth_method: "none",
       }),
     })
-    expect([401, 403, 404]).toContain(registration.status)
+    expect(webLoopback.status).toBe(400)
+
+    const registration = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/oauth2/register`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "untrusted",
+        redirect_uris: ["http://127.0.0.1:49152/callback"],
+        token_endpoint_auth_method: "none",
+        application_type: "native",
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+      }),
+    })
+    expect(registration.status, await registration.clone().text()).toBe(201)
+    const registered = (await registration.json()) as { client_id?: string; scope?: string }
+    // The authorization server mints the id, so a registrant cannot present
+    // itself as one of the clients this deployment registers for itself...
+    expect(registered.client_id).toBeTruthy()
+    expect([BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_DESKTOP_CLIENT_ID]).not.toContain(registered.client_id)
+    // ...and its only resource is the MCP endpoint, so the account-wide
+    // control-plane scopes are not on offer to it at all.
+    expect(registered.scope?.split(" ")).toEqual(expect.arrayContaining([...CLAXEDO_MCP_OAUTH_SCOPES]))
+    expect(registered.scope?.split(" ")).not.toContain("workspace:write")
 
     const device = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/device/code`, {
       method: "POST",
@@ -964,7 +996,9 @@ describe("Better Auth + D1 inside Workerd", () => {
         (select count(*) from "deviceCode" where status = 'approved') as approved,
         (select count(*) from "authenticationEvidence") as evidence`)
       .first<{ users: number; links: number; approved: number; evidence: number }>()
-    expect(counts).toMatchObject({ users: 1, links: 3, evidence: 0 })
+    // Three provisioned links (cli, desktop, introspection) plus the one the
+    // dynamic registration above made — and that one only to the MCP resource.
+    expect(counts).toMatchObject({ users: 1, links: 4, evidence: 0 })
   })
 
   test("runs machine enrollment → owner assignment → heartbeat v2 → relay-target routing end-to-end", async () => {

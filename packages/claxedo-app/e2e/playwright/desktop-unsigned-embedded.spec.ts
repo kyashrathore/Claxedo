@@ -1187,10 +1187,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     // Direct proof the terminal's own `CLAXEDO_PORT` mirrors the app's REAL
     // embedded-server port rather than a hardcoded fallback: `provider.tsx`'s
     // `claxedoPort` derives the port from the actual `claxedoServerUrl` instead
-    // of ever guessing a constant. `CLAXEDO_DESKTOP_URL` is NOT the ground truth
-    // to compare against — it is an unrelated local MCP-tool bridge
-    // (`packages/claxedo-desktop/src/main/browser/setup.ts`) on its own
-    // independent port. `serverBase` above is the SAME url
+    // of ever guessing a constant. `serverBase` above is the SAME url
     // `expectServerReachable` already proved live, and its `.port` is what the
     // terminal's own env has to match. Read via a real typed shell command and
     // the DOM-rendered buffer, not a mocked env snapshot.

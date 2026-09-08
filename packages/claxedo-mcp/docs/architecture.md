@@ -1,116 +1,94 @@
 # Architecture
 
-This package ships two things that share one tool implementation: a standalone
-stdio MCP server (`src/server.ts`, published as the `claxedo-mcp` bin) and a
-set of registration functions (`registerDocumentTools`)
-that a host process can import directly to register the same tools in-process.
-Everything downstream of tool registration — schemas, handlers, error mapping —
-is shared code; only how a call reaches Claxedo Server differs.
+`@claxedo/mcp` is a route, not a process. `createClaxedoMcpRoutes(options)` in
+`src/server.ts` returns a Hono app for `/api/claxedo/mcp`; a composition
+mounts it and supplies, through `FirstPartyMcpOptions`, the two things the
+route cannot know by itself — how to verify a credential and how to build the
+client the tools call.
 
-## stdio server vs. embedded registration
+## One request
 
-**Stdio server** (`src/server.ts`): a `node --import tsx` / compiled `dist/server.js`
-subprocess. It builds a `McpServer` from `@modelcontextprotocol/sdk`, calls
-`registerDocumentTools` with an HTTP-backed
-transport (`httpRequest`, built on `fetch`), registers the process/logs/session
-tools inline, calls `registerBrowserTools` for the desktop-bridge tools, and
-connects a `StdioServerTransport`. Every call this process makes crosses an
-HTTP boundary to `CLAXEDO_SERVER_URL` (default `http://127.0.0.1:2593`); there
-is no in-process access to Claxedo Server's services. `server.ts` also doubles
-as the `claxedo-mcp documents ...` CLI entry point: when `process.argv[2] ===
-"documents"`, it runs `runDocumentsCli` instead of connecting the MCP
-transport (see `src/documents-cli.ts`).
+1. **Loopback gate** (`mount: "loopback"` only). `endpoint/loopback.ts`
+   requires the request URL's host and, when present, the `Origin` header to
+   name loopback (`127.0.0.1`, `localhost`, `::1`). Anything else is 403
+   before a credential is read. The route sets no CORS header of its own,
+   and the desktop-local composition excludes the path from its CORS policy.
+2. **Credential.** The bearer is read from `Authorization` only. A loopback
+   mount hands it to `verifyRuntimeCredential`, the issuer of the runtime
+   that mounted the route; the claims become a `runtime` credential carrying
+   the runtime id, workspace id, the user the runtime serves, and
+   `?session=<id>` from the URL. A hosted or node mount asks
+   `resolveUserCredential` first and falls back to the runtime verifier when
+   it has one. No credential is 401 with a `WWW-Authenticate` challenge;
+   hosted and node add `resource_metadata` pointing at
+   `/.well-known/oauth-protected-resource`. `readOnly` applies to runtime
+   credentials; a user credential's read-only state is the resolver's.
+3. **In-flight cap.** `endpoint/in-flight.ts` counts open POSTs per
+   credential key (runtime id + workspace + session, or actor + client). The
+   count is released when the response body settles, so a tool that waits
+   holds its slot for the whole wait. Over the cap is 429.
+4. **Session.** `endpoint/sessions.ts` maps `Mcp-Session-Id` to a
+   `WebStandardStreamableHTTPServerTransport` plus its `McpServer`, ordered by
+   last use, bounded, idle-expiring, and bound to the credential key that
+   initialized it. A request naming a session the store does not hold — or
+   holds for another credential — is 404, which the streamable-HTTP transport
+   defines as "initialize again". A request without a session id builds a
+   fresh server; if it was not an `initialize`, the SDK answers 400 and the
+   server is closed.
+5. **Server.** A new `McpServer` is built for the credential: `createClient`
+   produces the `ClaxedoMcpClient`, `createToolRegistry` receives a
+   `McpToolContext` `{ credential, client, elicit, audit }`, and every group in
+   `registerTools` registers against it. Tools outside the credential's
+   audience, scope, or read-only state are never registered. With nothing
+   listed, `tools/list` still answers an empty list.
+6. **Transport.** `transport.handleRequest(request)` does the rest: SSE for
+   POST responses, the standalone GET stream, DELETE to end the session.
 
-`registerDocumentTools` is the only registration function in this package:
-the documents tools only run over the stdio server's HTTP transport
-today.
+## Elicitation
 
-## Desktop-bridge HTTP client and the `CLAXEDO_AUTH_TOKEN` trust boundary
+`ctx.elicit` is a getter that yields `server.elicitInput` only after the
+client's `initialize` declared the elicitation capability; before that, and
+for hosts without it, it is undefined and a destructive tool runs unconfirmed
+(the server-side check on the real operation is the boundary). The route
+tracks open `tools/call` ids on the transport; when exactly one is open the
+elicitation is sent with `relatedRequestId`, so it rides the SSE stream of
+that call — the one stream every host reads. With several calls open it
+falls back to the standalone GET stream.
 
-Two distinct HTTP clients live in this package, with two distinct trust
-boundaries:
+Stateless mode was rejected for this reason: the client's answer to an
+elicitation arrives as a new POST, and only a server that still exists can
+receive it.
 
-- **`httpRequest`** (`src/server.ts`) talks to Claxedo Server itself
-  (`CLAXEDO_SERVER_URL`, default `http://127.0.0.1:2593`). It attaches
-  `Authorization: Bearer ${CLAXEDO_AUTH_TOKEN}` when that env var is set, plus
-  scope headers from `claxedoRequestScope` (`src/request-scope.ts`): a
-  `directory`/`workspaceId` query string and `x-claxedo-directory` /
-  `x-workspace-id` headers for workspace-scoped calls, or no scope headers at
-  all for `scope: "owner"` calls (used by the `cloud_workspace_*` tools and the
-  workspace-resolve lookup). `CLAXEDO_AUTH_TOKEN` is optional for local
-  loopback use — the local Claxedo app trusts loopback origin instead — and
-  required in practice once this MCP points at a signed remote Claxedo server,
-  per the README's Trust Model section.
+## Audit
 
-- **`desktopRequest`** (`src/desktop-request.ts`) talks to a *different*
-  server: the Claxedo desktop app's local HTTP bridge, reached via
-  `CLAXEDO_DESKTOP_URL` with a per-launch shared secret in
-  `CLAXEDO_DESKTOP_TOKEN`. Both are pushed into this MCP subprocess's
-  environment by the Electron main process at spawn time; they are not
-  user-configured like `CLAXEDO_SERVER_URL`/`CLAXEDO_AUTH_TOKEN`. Every
-  request sets the `x-claxedo-desktop-token` header to the secret and a fixed
-  synthetic `Origin: claxedo-agent-tools://local`, which the bridge checks as
-  a CSRF defense — a request missing either is rejected. If
-  `CLAXEDO_DESKTOP_URL`/`CLAXEDO_DESKTOP_TOKEN` are absent (no desktop app, or
-  the browser capability was explicitly disabled), `desktopRequest` short-circuits to a
-  legible `DESKTOP_UNAVAILABLE_MESSAGE` rather than attempting a request. All
-  five `browser_*` tools registered by `registerBrowserTools`
-  (`src/browser-tools.ts`) go through `desktopRequest`.
+The registry calls `ctx.audit` before every write with the tool, the
+credential, the arguments, and the session the write addresses.
+`mcpAuditRecord` flattens that to `{ tool, actor, client, sessionId?,
+workspaceId?, callerSessionId? }`. The hosted worker and the node record it
+through `WorkspaceAuthority.auditAllow` as the signed caller (action
+`mcp.<tool>`); the desktop-local server and the cloud runtime write a log
+line (`mcp.audit`) from their own loggers.
 
-So a single MCP process holds two independent trust contexts at once: an
-optional bearer token for the Claxedo Server API, and a bridge secret for the
-desktop app's browser-control surface.
+## Mounts
 
-## Read-only vs. full-control tool-policy gating
+`McpClientInputs` is what a mount can offer the client factory:
 
-`src/tool-policy.ts` exports `claxedoMcpMode`/`claxedoMcpReadOnly`, which read
-`CLAXEDO_MCP_READ_ONLY` (truthy: `1`/`true`/`yes`) or `CLAXEDO_MCP_MODE=read-only`
-from the environment. `server.ts` computes `READ_ONLY` once at module load and
-threads it into every registration call:
+- `local` — the runtime in this process and the workspace it serves. The
+  desktop-local server and the node bind their app's own in-process fetch to
+  the credential's workspace with `x-workspace-id`, which their runtime proxy
+  reads; the node leaves the workspace unnamed for an account credential, so
+  the client names it per call. The cloud runtime's fetch re-enters its own
+  app; under relay exposure it carries a process-private bearer that
+  relay-host auth accepts as a direct token.
+- `controlPlane` — the composed app's in-process fetch with the caller's
+  `Authorization` forwarded. Hosted and node supply it for user credentials.
+  The desktop-local server has no account credential to act with and supplies
+  none; a cloud runtime's exchange of its credential for a user grant is not
+  built here.
 
-- `registerCloudWorkspaceTools(register, transport, readOnly)` registers the
-  read-only `cloud_workspace_status` tool unconditionally and returns early on
-  `readOnly` before registering the mutating cloud-workspace tools, so those
-  simply never get a `register(...)` call in read-only mode — the client never
-  sees them, rather than seeing them and getting a permission error.
-- `registerTool("process", ...)` in `server.ts` is wrapped in `if (!READ_ONLY)`
-  directly, so the whole `process` tool (and by extension
-  `.claxedo/processes.jsonc` mutation and process lifecycle control) is
-  omitted in read-only mode.
-- `summarize_logs`, `browser_evaluate_js`, and `browser_navigate` are gated the
-  same way at their `registerTool`/`registerBrowserTools` call sites — the
-  README's "Read-only mode omits" list enumerates the exact set.
-- `registerDocumentTools` is unconditional: `documents_list` and
-  `documents_open` are read-only by nature and register in both modes.
-
-## How `documents-tools`/`cloud-workspace-tools` plug into `server.ts`
-
-`server.ts` imports both registration functions and calls them once at module
-load, before `registerBrowserTools` and before connecting the stdio
-transport:
-
-```ts
-registerDocumentTools(registerTool, (path, init) => httpRequest(path, init, "json"), {
-  directory: DEFAULT_DIR,
-  sessionId: DEFAULT_SESSION_ID,
-})
-
-registerCloudWorkspaceTools(
-  registerTool,
-  (path, init) => httpRequest(path, init, "json", undefined, "owner"),
-  READ_ONLY,
-)
-```
-
-`registerTool` is a small adapter (`server.ts`) that calls
-`server.registerTool(name, config, handler)` on the `McpServer` instance,
-matching the `Register` type both `documents-tools.ts` and
-`cloud-workspace-tools.ts` expect — this is the seam that lets both modules
-stay agnostic about the concrete registration target.
-
-Cloud-workspace tools always call `httpRequest(..., "owner")` scope: every
-`cloud_workspace_*` request omits the workspace directory/id headers and hits
-the server's owner-scoped API regardless of the process's
-`directory`/`workspace_id` argument. Document tools instead use the default
-`"workspace"` scope and get `directory`/`sessionId` defaults merged in per-call
-by `registerDocumentTools`'s `defaults` argument.
+The hosted worker and the node share `packages/claxedo-server/src/mcp/first-party-mcp.ts`,
+which turns a signed control-plane identity into a user credential (actor id
+from the principal, `cli` as the client) and keeps the identity beside the
+credential for the audit sink. The node adds the unsigned loopback branch:
+`actorId: "loopback"`, `clientId: "loopback"`, every scope — the same trust
+every other route on an unsigned box extends a loopback caller.

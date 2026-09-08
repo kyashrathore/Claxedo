@@ -30,6 +30,8 @@ import { copyIcons as copyChannelIcons } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
+const HELPERS_DIR = path.resolve(PACKAGE_DIR, "../claxedo-helpers")
+const EVENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-event-runtime")
 const AGENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-sdk-runtime")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
 const RESOURCES_DIR = path.resolve(PACKAGE_DIR, "resources")
@@ -64,6 +66,12 @@ async function bundleServer() {
   // workspace-runtime imports agent-sdk-runtime through its published `dist`
   // exports. Build that authoritative input first: otherwise a package can
   // contain yesterday's adapter even though today's source and tests are green.
+  // The MCP endpoint consumes the helpers' published document and credential
+  // subpaths; build these before bundling so a clean checkout has every export.
+  log("Building claxedo-helpers...")
+  await $`bun run build`.cwd(HELPERS_DIR)
+  log("Building agent-event-runtime...")
+  await $`bun run build`.cwd(EVENT_RUNTIME_DIR)
   log("Building agent-sdk-runtime...")
   await $`bun run build`.cwd(AGENT_RUNTIME_DIR)
   log("Building workspace-runtime...")

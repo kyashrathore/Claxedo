@@ -1,8 +1,8 @@
 /**
- * BrowserHandle — main-process wrapper around a single agent-browser
- * `<webview>`'s `webContents`. Owns the CDP attach state machine, streams
- * console entries into a ring buffer, and exposes `screenshot`, `evaluate`,
- * and `getConsoleLogs` for the IPC layer to call through.
+ * BrowserHandle — main-process wrapper around a single in-app browser pane's
+ * `<webview>` `webContents`. Owns the CDP attach state machine, streams
+ * console entries into a ring buffer, and exposes `screenshot` and
+ * `getConsoleLogs` for the IPC layer to call through.
  *
  * CDP attach state machine:
  *
@@ -21,9 +21,7 @@
  *     `"canceled by user"`) → mark Detached; reattach on `devtools-closed`.
  *   - `destroyed` → `try { detach() } catch {}` and drop listeners.
  *
- * Screenshot and evaluate are plain CDP round-trips. Evaluate is gated on
- * `agentAllowed`, enforced *here* (main process) so UI-only toggles can't be
- * worked around by calling the IPC directly.
+ * Screenshot is a plain CDP round-trip.
  *
  * Tests live in `handle.test.ts` and use a `makeFakeWc()` factory — this file
  * must therefore talk to `webContents` only through the minimal surface the
@@ -32,12 +30,6 @@
 
 import type { Event, RenderProcessGoneDetails, WebContents } from "electron"
 
-import {
-  AgentAuditLog,
-  agentAuditLog as defaultAgentAuditLog,
-  type AgentAuditAction,
-  type AgentAuditResult,
-} from "./agent-audit-log"
 import {
   ConsoleBuffer,
   type ConsoleEntry,
@@ -65,13 +57,6 @@ export type ScreenshotOptions = { clip?: ScreenshotClip }
 export type ScreenshotSuccess = { ok: true; dataUrl: string; mimeType: "image/png" | "image/jpeg" }
 export type ScreenshotFailure = { ok: false; error: { code: "no-page" | "not-attached" | "cdp-error"; message?: string } }
 export type ScreenshotResult = ScreenshotSuccess | ScreenshotFailure
-
-export type EvaluateSuccess = { ok: true; result: unknown }
-export type EvaluateFailure = {
-  ok: false
-  error: { code: "eval-denied" | "not-attached" | "cdp-error" | "script-error"; message?: string; stack?: string }
-}
-export type EvaluateResult = EvaluateSuccess | EvaluateFailure
 
 export type ConsoleEntryListener = (entry: ConsoleEntry) => void
 
@@ -118,7 +103,6 @@ export type BrowserWc = Pick<
   | "isDestroyed"
   | "loadURL"
   | "getURL"
-  | "getTitle"
   | "canGoBack"
   | "canGoForward"
   | "goBack"
@@ -173,7 +157,6 @@ export type BrowserDebugger = {
 }
 
 export type BrowserHandleOptions = {
-  auditLog?: AgentAuditLog
   /** Override for tests — default is an in-process PNG→JPEG recompressor no-op. */
   recompress?: RecompressFn
 }
@@ -197,8 +180,6 @@ export class BrowserHandle {
   #state: BrowserHandleState = "detached"
   #console = new ConsoleBuffer()
   #listeners: Set<ConsoleEntryListener> = new Set()
-  #agentAllowed = false
-  #auditLog: AgentAuditLog
   #recompress: RecompressFn
 
   /** Child sessions discovered via Target.attachedToTarget (flat mode). */
@@ -215,7 +196,6 @@ export class BrowserHandle {
 
   constructor(wc: BrowserWc, opts: BrowserHandleOptions = {}) {
     this.#wc = wc
-    this.#auditLog = opts.auditLog ?? defaultAgentAuditLog
     this.#recompress = opts.recompress ?? passthroughRecompress
 
     this.#onDomReady = () => {
@@ -264,16 +244,9 @@ export class BrowserHandle {
   get state(): BrowserHandleState {
     return this.#state
   }
-  get agentAllowed(): boolean {
-    return this.#agentAllowed
-  }
   /** Exposed for tests and IPC diagnostics. */
   get consoleBuffer(): ConsoleBuffer {
     return this.#console
-  }
-
-  setAgentAllowed(allowed: boolean): void {
-    this.#agentAllowed = allowed
   }
 
   /**
@@ -364,21 +337,6 @@ export class BrowserHandle {
       // ignore — destroyed / race
     }
     return { url, canGoBack, canGoForward }
-  }
-
-  /**
-   * The guest's current document title, or `""` when the `webContents` has
-   * been destroyed. Paired with `getNavigationState().url` this is everything
-   * the HTTP bridge's tab listing needs, so callers never need the raw
-   * `WebContents`.
-   */
-  getTitle(): string {
-    try {
-      return this.#wc.getTitle() ?? ""
-    } catch {
-      // webContents may have been destroyed mid-call
-      return ""
-    }
   }
 
   goBack(): { ok: true } | { ok: false; error: string } {
@@ -523,45 +481,6 @@ export class BrowserHandle {
       dataUrl: `data:${downscaled.mimeType};base64,${downscaled.base64}`,
       mimeType: downscaled.mimeType,
     }
-  }
-
-  // ─── Evaluate ─────────────────────────────────────────────────────────────
-
-  async evaluate(expression: string): Promise<EvaluateResult> {
-    if (!this.#agentAllowed) {
-      this.#audit("evaluate", `eval (${expression.length} chars)`, "denied", "agent-not-allowed")
-      return { ok: false, error: { code: "eval-denied", message: "pane has not opted into agent JS execution" } }
-    }
-    if (this.#state !== "attached") {
-      this.#audit("evaluate", `eval (${expression.length} chars)`, "denied", "not-attached")
-      return { ok: false, error: { code: "not-attached" } }
-    }
-
-    let resp: unknown
-    try {
-      resp = await this.#wc.debugger.sendCommand("Runtime.evaluate", {
-        expression,
-        returnByValue: true,
-        awaitPromise: true,
-      })
-    } catch (err) {
-      const message = errMsg(err)
-      this.#audit("evaluate", `eval (${expression.length} chars)`, "denied", message)
-      return { ok: false, error: { code: "cdp-error", message } }
-    }
-
-    const exceptionDetails = readRecord(resp, "exceptionDetails")
-    if (exceptionDetails) {
-      const { message, stack } = parseExceptionDetails(exceptionDetails, "script error")
-      this.#audit("evaluate", `eval (${expression.length} chars)`, "allowed", message)
-      return {
-        ok: false,
-        error: { code: "script-error", message, stack: stack ? formatCallFrames(stack) : undefined },
-      }
-    }
-
-    this.#audit("evaluate", `eval (${expression.length} chars)`, "allowed")
-    return { ok: true, result: readUnknown(readRecord(resp, "result"), "value") }
   }
 
   // ─── Internal: state transitions ──────────────────────────────────────────
@@ -714,20 +633,6 @@ export class BrowserHandle {
       }
     }
   }
-
-  #audit(action: AgentAuditAction, summary: string, result: AgentAuditResult, reason?: string): void {
-    try {
-      this.#auditLog.append({
-        paneId: `wc:${this.#wc.id}`,
-        action,
-        summary,
-        result,
-        reason,
-      })
-    } catch {
-      // Audit log must never break a tool call.
-    }
-  }
 }
 
 // ─── CDP payload parsers ────────────────────────────────────────────────────
@@ -765,13 +670,6 @@ function parseExceptionDetails(
     readString(details, "text") ??
     (thrownValue === undefined || thrownValue === null ? fallbackMessage : stringifyRemoteValue(thrownValue))
   return { message, stack: parseStackTrace(readRecord(details, "stackTrace")) }
-}
-
-/** The `stack` string `evaluate()` reports back to its caller. */
-function formatCallFrames(frames: ConsoleStackFrame[]): string {
-  return frames
-    .map((f) => `${f.function ?? "(anonymous)"} (${f.url ?? "?"}:${f.line ?? 0}:${f.column ?? 0})`)
-    .join("\n")
 }
 
 function mapConsoleType(t: string | undefined): ConsoleLevel {

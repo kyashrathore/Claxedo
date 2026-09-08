@@ -69,7 +69,7 @@ function Probe(props: { kind: ComposerEngineKind }) {
     imageAttachments: () => prompt.current().flatMap((part) => (part.type === "image" ? [part] : [])),
     queueScroll: () => undefined,
     comments: { all: () => [], replace: () => undefined },
-    agents: () => [{ name: "reviewer" }, { name: "build", mode: "primary" }],
+    agents: () => [{ name: "reviewer", mode: "subagent" }, { name: "build", mode: "primary" }],
     recentFiles: () => ["src/recent.ts"],
     searchFilesAndDirectories: async (query) => [`src/${query}-hit.ts`],
     commandOptions: () => [

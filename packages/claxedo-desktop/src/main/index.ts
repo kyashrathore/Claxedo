@@ -88,6 +88,8 @@ import { createWindowsWslCollector, createWslSource } from "./diagnostics/wsl-so
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, wireFullscreenEvents } from "./ipc"
 import { installIpcCallerGuard, mainIpcCallerGuard } from "./ipc-caller-guard"
 import { setupLazyAccount } from "./account/lazy-account"
+import { readCliSignInMode } from "./account/cli-credential-file"
+import { store } from "./store"
 import { ACCOUNT_STATE_CHANGED_CHANNEL } from "./account/account-ipc"
 import { accountConfigEnvironment } from "./account/public-config"
 import { machineDisplayName, setupElectronHostConnector } from "./host-connector/electron-child"
@@ -132,7 +134,6 @@ const loadingComplete = defer<void>()
 
 const browserTabSetup = setupBrowserTab()
 const browserRegistry: BrowserRegistry | undefined = browserTabSetup?.registry
-const browserBridgePromise = browserTabSetup?.bridge
 
 const pendingDeepLinks: string[] = []
 
@@ -635,6 +636,7 @@ const account = setupLazyAccount({
   userDataDir: app.getPath("userData"),
   adapterReady: app.whenReady(),
   env: accountConfigEnvironment(process.env, bakedAccountConfig),
+  cliSignInMode: () => readCliSignInMode(store),
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
   // An activation made from this machine is applied here at once rather than
   // at the next timed pull; the pull itself stays the only path to the daemon.
@@ -882,14 +884,6 @@ async function shutdown() {
   await daemonExitLifecycle.release(lease)
   hostConnector?.dispose()
   diagnosticsSmokeFixtures.dispose()
-  if (browserBridgePromise) {
-    try {
-      const bridge = await browserBridgePromise
-      await bridge.close()
-    } catch (err) {
-      logger.warn("failed to close browser bridge on shutdown", { error: err })
-    }
-  }
   diagnosticsIpc.dispose()
   diagnosticsProfiler.dispose()
 }

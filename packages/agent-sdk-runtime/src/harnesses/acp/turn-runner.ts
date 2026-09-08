@@ -443,7 +443,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         id,
         oldAgentSessionId: agentSessionId,
       })
-      agentSessionId = await this.boot(proc, directory, session?.title ?? undefined)
+      agentSessionId = await this.boot(proc, directory, session?.title ?? undefined, id)
       this.store.bindSession({
         sessionId: id,
         directory,
@@ -460,7 +460,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
           agentSessionId,
         })
         try {
-          await bound("ACP resume", proc.resumeSession(agentSessionId, directory))
+          await bound("ACP resume", proc.resumeSession(agentSessionId, directory, id))
         } catch (err) {
           if (!unrestorable(err)) throw err
           await replace()

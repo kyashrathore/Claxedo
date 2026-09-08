@@ -1,11 +1,43 @@
 import {
+  isAutoLevel,
   normalizeHarnessIdentity,
+  type AutoLevel,
   type PromptModel,
   type SessionConfig,
   type SessionConfigRequestUpdate,
   type SessionHarness,
 } from "@claxedo/agent-sdk-runtime"
 import { rec as record, str } from "./json-value"
+
+/**
+ * The `POST /session` body beyond its config fields. `parentID` makes the
+ * session a host-owned child of that parent; `clientRequestId` lets a retried
+ * create resolve to the same session; `permissionCeiling` caps the session's
+ * permission mode at a level, and `permissionMode` names the mode to start in.
+ */
+export type SessionCreateBody = {
+  id?: string
+  title?: string
+  parentID?: string
+  role?: string
+  clientRequestId?: string
+  permissionCeiling?: AutoLevel
+  permissionMode?: string
+}
+
+export function normalizeSessionCreateBody(input: unknown): SessionCreateBody {
+  const row = record(input) ?? {}
+  const ceiling = row.permissionCeiling
+  return {
+    ...(str(row.id) ? { id: str(row.id) } : {}),
+    ...(str(row.title) !== undefined ? { title: str(row.title) } : {}),
+    ...(str(row.parentID) ? { parentID: str(row.parentID) } : {}),
+    ...(str(row.role) ? { role: str(row.role) } : {}),
+    ...(str(row.clientRequestId) ? { clientRequestId: str(row.clientRequestId) } : {}),
+    ...(isAutoLevel(ceiling) ? { permissionCeiling: ceiling } : {}),
+    ...(str(row.permissionMode) ? { permissionMode: str(row.permissionMode) } : {}),
+  }
+}
 
 export function normalizeSessionHarness(input: unknown): SessionHarness | undefined {
   const row = record(input)

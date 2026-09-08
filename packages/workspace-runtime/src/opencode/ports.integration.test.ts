@@ -16,6 +16,7 @@ import { createCatalogPort, type OpenCodeCatalogPort } from "./catalog-port"
 import { createInteractionPort, type OpenCodeInteractionPort } from "./interaction-port"
 import { createSessionPort, type OpenCodeSessionPort } from "./session-port"
 import { WorkspaceScope, WorkspaceScopeError } from "./scope"
+import { wakeMessageId } from "../routes/session-children"
 
 let root: string
 let host: OpenCodeHost
@@ -91,6 +92,23 @@ describe("session port against a real host", () => {
     // Admission is recorded on the inbox; the message list only fills once the
     // turn produces one. Either way the call answers rather than 500s.
     expect(Array.isArray(page.messages)).toBe(true)
+  })
+
+  test("a caller-supplied message id must be msg_-shaped, and the same one admits one turn", async () => {
+    const session = await sessions.create(alpha, { title: "wake target" })
+    const id = wakeMessageId("ses_child", "msg_child_reply_r")
+
+    await expect(sessions.prompt(alpha, session.id, { text: "raw", id: "wake:ses_child:msg_child_reply_r" }))
+      .rejects.toMatchObject({ message: expect.stringContaining('Expected a string starting with "msg_"') })
+
+    const first = await sessions.prompt(alpha, session.id, { text: "Subagent finished.", id })
+    expect(first.id).toBe(id)
+
+    // The engine reconciles a message id it has already admitted rather than
+    // opening a second turn, which is what makes a re-offered wake safe.
+    const second = await sessions.prompt(alpha, session.id, { text: "Subagent finished.", id })
+    expect(second.id).toBe(first.id)
+    expect(second.createdAt).toBe(first.createdAt)
   })
 
   test("interrupt answers, and revert is gated on a DURABLE message", async () => {

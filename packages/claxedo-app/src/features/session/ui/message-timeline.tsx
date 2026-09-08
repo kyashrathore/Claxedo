@@ -124,6 +124,7 @@ import { scheduleTimelineFirstFoldReveal } from "./timeline-first-fold-reveal"
 import { BP_MD } from "@/ui/controls/breakpoints"
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 import type { MessageTimelineProps } from "./message-timeline-props"
+import { isSubagentToolPart } from "../subagents/subagent-presentation"
 import "./message-nav-gutter.css"
 import "./markdown-surfaces.css"
 
@@ -171,7 +172,7 @@ type TimelineCache = { measurements: VirtualItem[]; toolOpen: Record<string, boo
 const timelineCache = new Map<string, TimelineCache>()
 
 const taskDescription = (part: PartType, sessionID: string) => {
-  if (part.type !== "tool" || part.tool !== "task") return undefined
+  if (part.type !== "tool" || !isSubagentToolPart(part)) return undefined
   const metadata = "metadata" in part.state ? part.state.metadata : undefined
   if (metadata?.sessionId !== sessionID) return undefined
   const value = part.state.input?.description

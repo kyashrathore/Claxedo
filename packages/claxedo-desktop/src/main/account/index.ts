@@ -21,6 +21,8 @@ import { registerAccountIpc, type AccountIpcTarget } from "./account-ipc"
 import { readAccountConfig, type AccountConfigEnv } from "./account-config"
 import { createIdentityResolver, userInfoUrlFromTokenUrl } from "./identity"
 import type { OAuthSeams } from "./oauth-flow"
+import { createCliCredentialFile, type CliSignInMode } from "./cli-credential-file"
+import { clearClaxedoCredentials, loadClaxedoCredentials, storeClaxedoCredentials } from "@claxedo/helpers/claxedo-credentials"
 
 /** How long to wait for the browser callback before failing the attempt. */
 const SIGN_IN_TIMEOUT_MS = 90_000
@@ -37,6 +39,13 @@ export type AccountAssemblyInput = {
   env?: AccountConfigEnv
   onError?: (stage: string, error: unknown) => void
   onStateChange?: (next: AccountState, previous: AccountState) => void
+  /**
+   * Whether this account may be mirrored into the `claxedo` CLI's credential
+   * file. Absent, or answering "off", leaves that file alone; the setting
+   * lives in the main process's settings store, which this module does not
+   * reach for.
+   */
+  cliSignInMode?: () => CliSignInMode
 }
 
 /**
@@ -143,6 +152,17 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
   const service = createAccountService({
     auth,
     store,
+    ...(input.cliSignInMode
+      ? {
+          cliCredentialFile: createCliCredentialFile({
+            mode: input.cliSignInMode,
+            read: () => loadClaxedoCredentials(),
+            write: (value) => storeClaxedoCredentials(value),
+            clear: () => clearClaxedoCredentials(),
+            ...(input.onError ? { onError: (error: unknown) => input.onError?.("cli-credential-file", error) } : {}),
+          }),
+        }
+      : {}),
     fetch: (url, init) => controlPlaneFetch(url, init),
     now: () => Math.floor(Date.now() / 1000),
     // Without this the service short-circuits and every signed account keeps

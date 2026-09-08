@@ -122,6 +122,13 @@ export type SdkRuntimeTurnInput = {
 
 export type SdkRuntimeDriver = {
   readonly type: SdkRuntimeRunnerType
+  /**
+   * Which interactive requests this driver actually raises through the host's
+   * `pendingPermissions` / `pendingQuestions` maps. The adapter advertises
+   * exactly these, so a harness whose SDK has no approval or question callback
+   * (Cursor) never offers the app a prompt surface that cannot fire.
+   */
+  readonly interactions: { permissions: boolean; questions: boolean }
   readonly goals?: AgentGoalResource
   readonly nativeGoal?: {
     capabilities(sessionId: string, directory: string): Promise<GoalCapabilities> | GoalCapabilities
@@ -143,7 +150,8 @@ export type SdkRuntimeDriver = {
   }
   setAuth(keys: SdkRuntimeAuth): void
   applyConfig(config: Record<string, unknown>): void | Promise<void>
-  createAgentSession(input: { directory: string; title?: string; model: string; system?: string }): Promise<{ id: string; model?: { providerID: string; modelID: string } }>
+  /** `sessionId` is the Claxedo session the thread will serve; a harness scopes its per-session launch state by it. */
+  createAgentSession(input: { directory: string; title?: string; model: string; system?: string; sessionId: string }): Promise<{ id: string; model?: { providerID: string; modelID: string } }>
   createRuntime(threadId: string): AgentEventRuntime
   runTurn(input: SdkRuntimeTurnInput): Promise<void>
   deleteAgentSession?(sessionId: string, agentSessionId: string, directory: string): void | Promise<void>

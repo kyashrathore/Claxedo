@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto"
 import fs from "fs"
 import { createRequire } from "module"
 import path from "path"
@@ -681,6 +682,13 @@ export class RuntimeStore {
         acquired_at INTEGER NOT NULL
       )
     `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS runtime_secret (
+        name TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        created_at INTEGER NOT NULL
+      )
+    `)
     if (!hasColumn(this.db, "session", "parent_id")) {
       try {
         this.db.exec("ALTER TABLE session ADD COLUMN parent_id TEXT")
@@ -721,6 +729,16 @@ export class RuntimeStore {
         PRIMARY KEY (parent_session_id, subagent_key)
       )
     `)
+    for (const [column, type] of [
+      ["attention", "INTEGER"],
+      ["attention_revision", "INTEGER NOT NULL DEFAULT 0"],
+      ["wake", "TEXT"],
+      ["wake_revision", "INTEGER NOT NULL DEFAULT 0"],
+    ] as const) {
+      if (!hasColumn(this.db, "session_subagent", column)) {
+        this.db.exec(`ALTER TABLE session_subagent ADD COLUMN ${column} ${type}`)
+      }
+    }
     this.db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS session_subagent_child_idx
       ON session_subagent (child_session_id)
@@ -1111,6 +1129,8 @@ export class RuntimeStore {
       ...(row.provider_kind ? { providerKind: String(row.provider_kind) } : {}),
       ...(row.provider_id ? { providerId: String(row.provider_id) } : {}),
       ...(row.child_session_id ? { childSessionId: String(row.child_session_id) } : {}),
+      ...(typeof row.attention === "number" ? { attention: row.attention } : {}),
+      ...(row.wake ? { wake: String(row.wake) } : {}),
       transcript: {
         kind: String(row.transcript_kind),
         ...(row.transcript_ref ? { ref: String(row.transcript_ref) } : {}),
@@ -1119,6 +1139,26 @@ export class RuntimeStore {
         .filter((edge) => edge.subagent_key === row.subagent_key)
         .map((edge) => ({ toolCallId: edge.tool_call_id, role: edge.role, revision: edge.revision })),
     }))
+  }
+
+  listPendingSubagentWakes() {
+    return this.db
+      .prepare<{ parent_session_id: string; subagent_key: string; child_session_id: string; directory: string }>(
+        `
+      SELECT subagent.parent_session_id, subagent.subagent_key, subagent.child_session_id, parent.directory
+      FROM session_subagent subagent
+      JOIN session parent ON parent.id = subagent.parent_session_id
+      WHERE subagent.wake = 'pending' AND subagent.child_session_id IS NOT NULL
+      ORDER BY subagent.updated_at, subagent.subagent_key
+    `,
+      )
+      .all()
+      .map((row) => ({
+        parentSessionId: row.parent_session_id,
+        subagentKey: row.subagent_key,
+        childSessionId: row.child_session_id,
+        directory: row.directory,
+      }))
   }
 
   private reconcileOrphanedSubagents() {
@@ -1180,6 +1220,8 @@ export class RuntimeStore {
       ["label", "label"],
       ["subagentType", "subagent_type"],
       ["description", "description"],
+      ["attention", "attention"],
+      ["wake", "wake"],
     ] as const) {
       const value = event[field]
       if (value === undefined) continue
@@ -3508,6 +3550,19 @@ export class RuntimeStore {
 
   releaseTurnLease(sessionId: string, leaseId: string) {
     this.db.prepare(`DELETE FROM session_turn_lease WHERE session_id = ? AND lease_id = ?`).run(sessionId, leaseId)
+  }
+
+  /**
+   * A per-store random secret, minted on first read and never rotated, so ids
+   * derived from it (idempotent child sessions) stay stable across restarts
+   * and differ between runtimes that never shared a store.
+   */
+  runtimeSecret(name: string) {
+    const existing = this.db.prepare<{ value: string }>("SELECT value FROM runtime_secret WHERE name = ?").get(name)
+    if (existing) return existing.value
+    const value = randomBytes(32).toString("hex")
+    this.db.prepare("INSERT INTO runtime_secret(name, value, created_at) VALUES (?, ?, ?)").run(name, value, Date.now())
+    return value
   }
 
   deleteSession(id: string) {

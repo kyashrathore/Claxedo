@@ -15,6 +15,7 @@ import {
 import type { FirstPartyServiceCatalog } from "@claxedo/service-contract"
 
 import { JwksRoutes } from "../../authority/routes/jwks"
+import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
 import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
@@ -64,6 +65,9 @@ import {
   type ControlPlaneRouteContribution,
 } from "@claxedo/server-core/platform/http/route-contribution"
 import { contentfulStatus } from "../../platform/http/status"
+import type { FirstPartyMcpOptions } from "@claxedo/mcp"
+import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
+import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { asRecord, stringField } from "../../platform/json/index"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
@@ -95,6 +99,12 @@ export type HostedCoreAppOptions = {
    * serves no integration routes at all.
    */
   integrationRoutes?: Hono
+  /**
+   * The first-party MCP endpoint (`/api/claxedo/mcp`). Admits the CLI JWT as
+   * the whole account; a runtime credential too when the entry supplies the
+   * verifier. Absent means no endpoint, as with every other contribution.
+   */
+  firstPartyMcp?: FirstPartyMcpOptions
 }
 
 /**
@@ -414,8 +424,37 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }),
   )
   if (options.integrationRoutes) app.route("/api/claxedo/integrations", options.integrationRoutes)
+  const introspectAccessToken = options.authentication.introspectAccessToken?.bind(options.authentication)
+  const firstPartyMcp = options.firstPartyMcp
+    ? firstPartyMcpContribution({
+        mount: "hosted",
+        app,
+        authority: services.authority,
+        options: options.firstPartyMcp,
+        signedAuth: async (request) => {
+          const result = await signedOrError(request, { authentication: options.authentication, requireSigned: true }, services)
+          return "error" in result ? undefined : result.auth
+        },
+        ...(introspectAccessToken
+          ? {
+              oauthCredential: (request) =>
+                resolveOAuthMcpCredential(request, {
+                  verifyAccessToken: async (token) => readIntrospectedAccessToken(await introspectAccessToken(token)),
+                  controlPlaneOrigin: () => options.authentication.descriptor.native.cli.controlPlaneOrigin,
+                }),
+            }
+          : {}),
+        auditFallback: (record) => console.warn("[claxedo-server] mcp.audit unattributed", record),
+      })
+    : undefined
+  if (firstPartyMcp) {
+    app.route("/", OAuthProtectedResourceRoutes({
+      controlPlaneOrigin: () => options.authentication.descriptor.native.cli.controlPlaneOrigin,
+      authorizationServer: () => options.authentication.descriptor.issuer,
+    }))
+  }
   mountControlPlaneRouteContributions({
-    contributions: options.routeContributions ?? [],
+    contributions: [...(options.routeContributions ?? []), ...(firstPartyMcp ? [firstPartyMcp] : [])],
     mount: (contribution) => mountOwnedRoute(app, ownership, `contribution:${contribution.id}`, contribution.path, contribution.routes),
   })
   // An API worker's unrouted paths must not render as a PAGE.

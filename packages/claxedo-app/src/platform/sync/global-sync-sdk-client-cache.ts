@@ -1,4 +1,4 @@
-import type { ClaxedoServerClient, ServerScope } from "@/platform/api/server-client-contract"
+import type { ClaxedoServerClient, ServerScope } from "@/app/connection/server-client"
 import { queryClient } from "@/platform/query/query-client"
 
 export const globalSyncServerClientQueryRoot = ["shell", "global-sync-server-client"] as const

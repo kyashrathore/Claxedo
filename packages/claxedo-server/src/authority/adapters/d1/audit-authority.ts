@@ -26,7 +26,10 @@ type WorkspaceRow = { workspace_id: string; org_id: string; project_id: string }
 
 const AUDIT_METADATA_KEYS = new Set([
   "activeLeases",
+  "actor",
+  "callerSessionId",
   "cap",
+  "client",
   "driverResourceId",
   "expiresAt",
   "homeRegion",
@@ -37,6 +40,9 @@ const AUDIT_METADATA_KEYS = new Set([
   "orgId",
   "retryAfterMs",
   "runtimeKind",
+  "sessionId",
+  "tool",
+  "workspaceId",
 ])
 const MAX_AUDIT_METADATA_BYTES = 4096
 
@@ -219,7 +225,8 @@ function workspaceReadAccessCte() {
   )`
 }
 
-function safeMetadata(input: Record<string, unknown> | undefined) {
+/** Exported for the pin that every key an MCP audit record carries is allowlisted here. */
+export function safeMetadata(input: Record<string, unknown> | undefined) {
   if (!input || typeof input !== "object" || Array.isArray(input)) return undefined
   const safe: Record<string, string | number | boolean | null> = {}
   for (const key of Object.keys(input).sort()) {

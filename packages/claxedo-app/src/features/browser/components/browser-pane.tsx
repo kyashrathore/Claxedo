@@ -413,14 +413,6 @@ function BrowserPaneToolbar(props: {
               >
                 <span class="flex-1">Show console</span>
               </DropdownMenu.CheckboxItem>
-              <DropdownMenu.CheckboxItem
-                checked={ctx.agentAllowed()}
-                onChange={(v) => void ctx.setAgentAllowed(v)}
-                closeOnSelect={false}
-                data-testid="browser-pane-menu-agent-allowed"
-              >
-                <span class="flex-1">Allow agent to run JS</span>
-              </DropdownMenu.CheckboxItem>
             </DropdownMenu.Content>
           </DropdownMenu.Portal>
         </DropdownMenu></Show>

@@ -428,7 +428,7 @@ describe("workspace runtime client git namespace", () => {
       const pushFailure = await client.git.push({ setUpstream: true }).catch((err: unknown) => err)
       expect(pushFailure).toBeInstanceOf(WorkspaceRuntimeClientError)
       expect((pushFailure as WorkspaceRuntimeClientError).status).toBe(502)
-      expect(JSON.parse((pushFailure as WorkspaceRuntimeClientError).body)).toMatchObject({ error: { code: "git_push_rejected" } })
+      expect((pushFailure as WorkspaceRuntimeClientError).body).toMatchObject({ error: { code: "git_push_rejected" } })
     })
   })
 })

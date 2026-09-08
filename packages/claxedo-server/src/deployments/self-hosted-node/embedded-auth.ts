@@ -3,11 +3,16 @@ import path from "node:path"
 import crypto from "node:crypto"
 import Database from "better-sqlite3"
 import { betterAuth, type BetterAuthOptions } from "better-auth"
+import { symmetricEncrypt } from "better-auth/crypto"
 import { bearer } from "better-auth/plugins"
+import { oauthDeviceAuthorization, oauthProvider } from "@better-auth/oauth-provider"
 import { getMigrations } from "better-auth/db/migration"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import type { BetterAuthVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
+import { BETTER_AUTH_INTROSPECTION_CLIENT_ID } from "../../platform/auth/better-auth-native-clients"
+import { CLAXEDO_MCP_RESOURCE_SCOPES, claxedoMcpResource } from "../../platform/auth/mcp-oauth-scopes"
+import { oauthConsentRevocation } from "../../platform/auth/oauth-consent-revocation"
 
 /**
  * Embedded Better Auth for self-host boxes (part of the self-host/hosted-parity
@@ -70,6 +75,8 @@ export type EmbeddedAuth = {
   handler: (request: Request) => Promise<Response>
   /** Bearer session-token verifier for `betterAuthAdapter(...)`. */
   verifier: BetterAuthVerifier
+  /** RFC 7662 introspection of one access token, as this box's own resource-server client. */
+  introspectAccessToken: (token: string) => Promise<unknown>
   /** Resolves once the auth schema migrations have run. */
   ready: Promise<void>
   /** Close the underlying SQLite handle (tests). */
@@ -87,6 +94,19 @@ function resolveSecret(env: NodeJS.ProcessEnv, dir: string): string {
   const secret = crypto.randomBytes(32).toString("hex")
   fs.writeFileSync(secretPath, secret + "\n", { mode: 0o600 })
   return secret
+}
+
+/**
+ * The secret the box authenticates to its own OAuth provider with, to read the
+ * claims of an access token it issued for the MCP resource.
+ *
+ * Derived from the signing secret rather than stored: it is spent only inside
+ * this process, and a second file on disk would be a second thing to keep in
+ * step with a rotated `BETTER_AUTH_SECRET` — the client row is rewritten from
+ * this value on every boot, so a rotation carries it.
+ */
+function introspectionClientSecret(betterAuthSecret: string): string {
+  return crypto.createHmac("sha256", betterAuthSecret).update(BETTER_AUTH_INTROSPECTION_CLIENT_ID).digest("hex")
 }
 
 function trustedOrigins(env: NodeJS.ProcessEnv): string[] {
@@ -114,6 +134,14 @@ export function createEmbeddedAuth(
   fs.mkdirSync(path.dirname(dbPath), { recursive: true })
   const db = new Database(dbPath)
 
+  const mcpResource = {
+    identifier: claxedoMcpResource(embeddedAuthPublicOrigin(env)),
+    name: "Claxedo MCP",
+    allowedScopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
+    accessTokenTtl: 300,
+    refreshTokenTtl: 30 * 24 * 60 * 60,
+  }
+
   const options = {
     database: db,
     secret: resolveSecret(env, path.dirname(dbPath)),
@@ -139,17 +167,112 @@ export function createEmbeddedAuth(
     // `set-auth-token` response header and accepts `Authorization: Bearer`
     // on any endpoint — this is what non-cookie clients (CLI, extension,
     // control-plane bearer auth) use.
-    plugins: [bearer()],
+    plugins: [
+      bearer(),
+      oauthConsentRevocation(),
+      oauthProvider({
+        loginPage: `${embeddedAuthPublicOrigin(env)}/login`,
+        consentPage: `${embeddedAuthPublicOrigin(env)}/oauth/consent`,
+        scopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
+        resources: [mcpResource],
+        clientRegistrationDefaultResources: [mcpResource.identifier],
+        // Without this Better Auth writes the provider's whole scope list onto
+        // every dynamically registered client; this box offers no other
+        // resource, and its clients should not claim otherwise.
+        clientRegistrationDefaultScopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
+        enforcePerClientResources: true,
+        allowPublicClientPrelogin: true,
+        // Same reasoning as the hosted foundation: MCP hosts arrive with no
+        // client id and a loopback redirect on an ephemeral port. A self-host
+        // box has no install tooling to pre-register them at all.
+        allowDynamicClientRegistration: true,
+        allowUnauthenticatedClientRegistration: true,
+        // This box has no `jwt()` plugin, so ID tokens are signed with the
+        // client secret and Better Auth must be able to recover it.
+        disableJwtPlugin: true,
+        storeClientSecret: "encrypted",
+        accessTokenExpiresIn: 300,
+        refreshTokenExpiresIn: 30 * 24 * 60 * 60,
+      }),
+      oauthDeviceAuthorization({
+        verificationUri: `${embeddedAuthPublicOrigin(env)}/device`,
+        expiresIn: "10m",
+        interval: "5s",
+      }),
+    ],
     // Self-host boxes must not phone home.
     telemetry: { enabled: false },
   } satisfies BetterAuthOptions
 
   const auth = betterAuth(options)
 
-  // better-auth normally migrates via its CLI; an embedded self-host issuer
-  // has no separate deploy step, so run the schema migrations in-process at
-  // construction. Both the handler and the verifier await this.
-  const ready = getMigrations(options).then(({ runMigrations }) => runMigrations())
+  /**
+   * The confidential client the box introspects with. Better Auth offers no
+   * server-side call that reads an access token's claims without one, and its
+   * dynamic registration mints ids for MCP hosts, so the resource server needs
+   * a client of its own — the same `claxedo-control-plane` row the hosted
+   * deployment provisions in `better-auth-native-clients.ts`.
+   *
+   * `storeClientSecret: "encrypted"` decides the stored shape, so the row
+   * carries the ciphertext, not the secret.
+   *
+   * It is also linked to the MCP resource in `oauthClientResource`. RFC 7662 §4
+   * lets an authorization server answer `active: false` rather than reveal a
+   * token to a caller with no claim on it, and Better Auth authorizes an
+   * introspection only from the client that issued the token or one linked to
+   * a resource in the token's audience. Every MCP token here is issued to a
+   * dynamically registered host, so without the link this box reports every
+   * token it has just minted as inactive — indistinguishable from garbage, and
+   * `/api/claxedo/mcp` refuses all of them.
+   */
+  const seedIntrospectionClient = async () => {
+    const { adapter } = await auth.$context
+    const row = {
+      clientId: BETTER_AUTH_INTROSPECTION_CLIENT_ID,
+      clientSecret: await symmetricEncrypt({ key: options.secret, data: introspectionClientSecret(options.secret) }),
+      disabled: false,
+      skipConsent: true,
+      subjectType: "public",
+      scopes: "[]",
+      redirectUris: "[]",
+      tokenEndpointAuthMethod: "client_secret_post",
+      applicationType: "web",
+      grantTypes: "[]",
+      responseTypes: "[]",
+      requirePKCE: false,
+    }
+    const where = [{ field: "clientId", value: BETTER_AUTH_INTROSPECTION_CLIENT_ID }]
+    if (await adapter.findOne({ model: "oauthClient", where })) {
+      await adapter.update({ model: "oauthClient", where, update: row })
+    } else {
+      await adapter.create({ model: "oauthClient", data: row })
+    }
+    // The join row references `oauthResource.identifier`, and a resource named
+    // only in the plugin options has no row to reference.
+    const resourceWhere = [{ field: "identifier", value: mcpResource.identifier }]
+    if (!(await adapter.findOne({ model: "oauthResource", where: resourceWhere }))) {
+      await adapter.create({ model: "oauthResource", data: { ...mcpResource, disabled: false, createdAt: new Date(), updatedAt: new Date() } })
+    }
+    const link = [{ field: "clientId", value: BETTER_AUTH_INTROSPECTION_CLIENT_ID }, { field: "resourceId", value: mcpResource.identifier }]
+    if (!(await adapter.findOne({ model: "oauthClientResource", where: link }))) {
+      await adapter.create({
+        model: "oauthClientResource",
+        data: { clientId: BETTER_AUTH_INTROSPECTION_CLIENT_ID, resourceId: mcpResource.identifier, createdAt: new Date() },
+      })
+    }
+  }
+
+  // better-auth normally migrates via its CLI; an embedded self-host issuer has
+  // no separate deploy step, so the schema migrations and the client row this
+  // box needs are written in-process at construction. Every consumer below
+  // awaits this.
+  const ready = getMigrations(options)
+    .then(({ runMigrations }) => runMigrations())
+    .then(seedIntrospectionClient)
+  // A boot failure still reaches whoever awaits `ready`; this only stops an
+  // instance nobody went on to use — one closed while the schema work was
+  // still in flight — from raising an unhandled rejection.
+  void ready.catch(() => undefined)
 
   const handler = async (request: Request) => {
     await ready
@@ -173,10 +296,22 @@ export function createEmbeddedAuth(
     issuer: EMBEDDED_AUTH_ISSUER,
     handler,
     verifier,
+    introspectAccessToken: async (token) => {
+      await ready
+      return auth.api.oauth2Introspect({
+        body: {
+          client_id: BETTER_AUTH_INTROSPECTION_CLIENT_ID,
+          client_secret: introspectionClientSecret(options.secret),
+          token,
+          token_type_hint: "access_token",
+        },
+      })
+    },
     ready,
     close: () => db.close(),
   }
 }
+
 
 let singleton: EmbeddedAuth | undefined
 

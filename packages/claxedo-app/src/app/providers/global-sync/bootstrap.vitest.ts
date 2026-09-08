@@ -410,6 +410,7 @@ describe("override bootstrapDirectory", () => {
     release()
     await warmup()
     expect(directoryProject("https://app.claxedo.test", "/tmp/ws")).toBe("proj_1")
+    expect(returned).toEqual({ project: 1, path: 1, workspace: 1 })
   })
 
   test("keeps query-backed directory state renderable while refreshing", async () => {

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "crypto"
 import type { McpServer } from "@agentclientprotocol/sdk"
 import { Log } from "../../log"
+import { acpFirstPartyMcpServer, type FirstPartyMcpProvider } from "../../first-party-mcp"
 import { ACP_RECOVER } from "./recovery"
 import { ACPProcess } from "./process"
 import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
@@ -73,6 +74,7 @@ export abstract class AcpProcessManager {
   protected currentModel = ""
   protected currentEnv: ACPTransportEnv = {}
   protected currentMcp: McpServer[] = []
+  protected firstPartyMcp: FirstPartyMcpProvider | undefined
   protected turnLifecycle = createSessionTurnLifecycle<ActiveAcpTurn>()
   protected processes = new Map<ACPProcessKey, ProcEntry>()
   protected sessionProcesses = new Map<string, ACPProcessKey>()
@@ -293,7 +295,13 @@ export abstract class AcpProcessManager {
       this.processCommand(),
       launch.args,
       this.currentModel,
-      () => this.currentMcp,
+      // Deliberately outside `processKey`'s fingerprint: the entry differs per
+      // session and its bearer is re-read at every launch, so folding it in
+      // would fork one process per session and restart them on a refresh.
+      (sessionId) => [
+        ...this.currentMcp,
+        ...(sessionId && this.firstPartyMcp ? [acpFirstPartyMcpServer(this.firstPartyMcp.server(sessionId))] : []),
+      ],
       dead,
       this.options.createTransport ?? createACPTransportFactory(this.connection()),
       () => launch.env,
@@ -468,17 +476,18 @@ export abstract class AcpProcessManager {
 
   protected async boot(
     proc: {
-      newSession: (directory: string, title?: string) => Promise<string>
+      newSession: (directory: string, title?: string, sessionId?: string) => Promise<string>
       dispose: () => void
     },
     directory: string,
     title?: string,
+    sessionId?: string,
     ms = newSessionTimeoutMs(),
   ) {
     let id: ReturnType<typeof setTimeout> | undefined
     try {
       return await Promise.race([
-        proc.newSession(directory, title),
+        proc.newSession(directory, title, sessionId),
         new Promise<string>((_, reject) => {
           id = setTimeout(() => reject(new Error(`ACP newSession timed out after ${ms}ms`)), ms)
         }),

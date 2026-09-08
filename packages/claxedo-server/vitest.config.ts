@@ -15,6 +15,7 @@ export default defineConfig({
       // its own dist would pull a second copy of the runtime into the module
       // graph.
       "@claxedo/workspace-runtime/http": path.resolve(import.meta.dirname, "../workspace-runtime/src/http.ts"),
+      "@claxedo/workspace-runtime/client": path.resolve(import.meta.dirname, "../workspace-runtime/src/client.ts"),
       "@claxedo/workspace-runtime/route-contribution": path.resolve(
         import.meta.dirname,
         "../workspace-runtime/src/route-contribution.ts",

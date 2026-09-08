@@ -6,10 +6,8 @@
 // onboarding writes a scoped credential so the user's "this machine only"
 // choice is honoured — so that is a prop, not a fork.
 
-import type {
-  ClaxedoProviderAuthorization as ProviderAuthAuthorization,
-  ClaxedoProviderAuthMethod as ProviderAuthMethod,
-} from "@/platform/api/claxedo-api-types"
+import type { ClaxedoProviderAuthorization as ProviderAuthAuthorization } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoProviderAuthMethod as ProviderAuthMethod } from "@/platform/api/claxedo-api-types"
 import { Button } from "@opencode-ai/ui/button"
 import { List } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"

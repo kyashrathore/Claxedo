@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto"
 import {
+  createRuntimeCredentialIssuer,
   createWorkspaceOpenCodeRuntime,
   isLoopbackHostname,
   workspaceRuntimeListenHostname,
@@ -16,6 +18,7 @@ import {
 } from "@claxedo/workspace-runtime/exposure"
 import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
+import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeDirectAuthEnv,
@@ -132,8 +135,13 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const opencodeRuntime = harness?.kind === "native" && harness.harnessId === "opencode"
     ? createWorkspaceOpenCodeRuntime(targetDirectory)
     : undefined
+  // One issuer per runtime process: it mints the bearer every session this
+  // runtime launches carries, and its `verify` is both the endpoint's admission
+  // check and the runtime's proof that the caller is a harness it started.
+  const firstPartyMcp = createRuntimeCredentialIssuer({ runtimeId: randomUUID(), workspaceId: workspaceId(env) })
   const options: WorkspaceRuntimeServerOptions = {
     target: { workspaceId: workspaceId(env), directory: targetDirectory },
+    firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, issuer: firstPartyMcp },
     ...relayOptions,
     // Relay-host gating must come from env so a runtime spawned as a
     // subprocess (sandbox image) rejects unauthenticated direct access
@@ -152,7 +160,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     // The host entry's route contributions (the Agent Plugins VM image mounts
     // its apply route this way). Accepting them without forwarding them left
     // the sandbox image answering 404 to the provisioner.
-    ...(input.routeContributions?.length ? { routeContributions: input.routeContributions } : {}),
+    routeContributions: [
+      ...(input.routeContributions ?? []),
+      firstPartyMcpRuntimeContribution(firstPartyMcp.verify),
+    ],
   }
   return { port, hostname, options }
 }

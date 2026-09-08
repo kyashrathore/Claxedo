@@ -1483,8 +1483,17 @@ test.describe("real harness journeys @core @tier-real", () => {
         const sessionUrl = page.url()
         await expect.poll(() => fs.readFile(pidFile, "utf8").catch(() => ""), { timeout: 30_000 }).toMatch(/^\d+$/)
         const pid = Number(await fs.readFile(pidFile, "utf8"))
-        const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
-        expect(alive()).toBe(true)
+        const alive = async () => {
+          try {
+            const { stdout } = await execFileAsync("ps", ["-o", "stat=", "-p", String(pid)])
+            // A zombie retains its PID but cannot execute or write the completion file.
+            return stdout.trim().length > 0 && !stdout.trim().startsWith("Z")
+          } catch (error) {
+            if ((error as { code?: number }).code === 1) return false
+            throw error
+          }
+        }
+        expect(await alive()).toBe(true)
         expect(await fs.stat(finishedFile).then(() => true, () => false)).toBe(false)
         await page.getByRole("button", { name: "Stop", exact: true }).click()
         await expect.poll(alive, { timeout: 15_000, message: `${harness} left the interrupted shell running` }).toBe(false)

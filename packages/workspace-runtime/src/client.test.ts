@@ -66,10 +66,35 @@ describe("WorkspaceRuntimeClient file routes", () => {
     for (const { init } of requests) {
       expect(init?.signal).toBe(controller.signal)
       expect(new Headers(init?.headers)).toEqual(new Headers({
+        accept: "application/json",
         authorization: "Bearer runtime",
         "x-request-id": "request-1",
       }))
     }
+  })
+
+  test("the scoped file members answer the same routes with the response attached", async () => {
+    const seen: string[] = []
+    const client = createWorkspaceRuntimeClient({
+      baseUrl: "http://runtime.local/",
+      directory: "/repo/main",
+      fetch: fetchDouble(async (input) => {
+        seen.push(fetchUrl(input))
+        return Response.json([])
+      }),
+    })
+
+    const listed = await client.file.list({ path: "src" })
+    await client.find.files({ directory: "/repo/other", query: "client", dirs: "false", type: "file", limit: 25 })
+    await client.file.all()
+
+    expect(listed.data).toEqual([])
+    expect(listed.response.status).toBe(200)
+    expect(seen).toEqual([
+      "http://runtime.local/api/wr/file?directory=%2Frepo%2Fmain&path=src",
+      "http://runtime.local/api/wr/find/file?directory=%2Frepo%2Fother&query=client&dirs=false&type=file&limit=25",
+      "http://runtime.local/api/wr/file/all?directory=%2Frepo%2Fmain",
+    ])
   })
 
   test("throws typed response errors without converting cancellations", async () => {
@@ -80,7 +105,7 @@ describe("WorkspaceRuntimeClient file routes", () => {
 
     const responseError = await failed.files.status().catch((error: unknown) => error)
     expect(responseError).toBeInstanceOf(WorkspaceRuntimeClientError)
-    expect(responseError).toMatchObject({ status: 403, body: "denied" })
+    expect(responseError).toMatchObject({ operation: "file.status", status: 403, code: "http_403", body: "denied", message: "denied" })
 
     const controller = new AbortController()
     controller.abort(new DOMException("cancelled", "AbortError"))

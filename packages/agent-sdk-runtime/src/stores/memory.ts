@@ -457,6 +457,8 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       providerId?: string
       providerKind?: string
       childSessionId?: string
+      attention?: number
+      wake?: string
       transcript: { kind: string; ref?: string }
       toolCallEdges: Array<{ toolCallId: string; role: string; revision: number }>
     }>()
@@ -470,9 +472,10 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
         toolCallEdges: [],
       }
       state.revision = Math.max(state.revision, event.revision)
-      for (const field of ["mode", "label", "subagentType", "description"] as const) {
+      for (const field of ["mode", "label", "subagentType", "description", "wake"] as const) {
         if (event[field] !== undefined) state[field] = event[field]
       }
+      if (event.attention !== undefined) state.attention = event.attention
       if (event.status !== undefined) {
         const currentRevision = statusRevisions.get(event.subagentKey) ?? 0
         if ((!terminalSubagentStatus(state.status) && terminalSubagentStatus(event.status)) ||

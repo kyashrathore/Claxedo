@@ -445,8 +445,17 @@ test.describe("live real-harness smoke @live", () => {
         const sessionUrl = page.url()
         await expect.poll(() => fs.readFile(pidFile, "utf8").catch(() => ""), { timeout: 60_000 }).toMatch(/^\d+$/)
         const pid = Number(await fs.readFile(pidFile, "utf8"))
-        const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
-        expect(alive()).toBe(true)
+        const alive = async () => {
+          try {
+            const { stdout } = await execFileAsync("ps", ["-o", "stat=", "-p", String(pid)])
+            // A zombie retains its PID but cannot execute or write the completion file.
+            return stdout.trim().length > 0 && !stdout.trim().startsWith("Z")
+          } catch (error) {
+            if ((error as { code?: number }).code === 1) return false
+            throw error
+          }
+        }
+        expect(await alive()).toBe(true)
         await page.screenshot({ path: test.info().outputPath("live-tool-running.png") })
         await page.getByRole("button", { name: "Stop", exact: true }).click()
         await expect.poll(alive, { timeout: 15_000, message: `${harness} left the interrupted tool process running` }).toBe(false)
@@ -465,7 +474,8 @@ test.describe("live real-harness smoke @live", () => {
       }
     })
 
-    test(`${harness} live subagent completes an openable child transcript and survives reload`, async ({ page }) => {
+    for (const delegation of ["native", "claxedo-mcp"] as const) {
+    test(`${harness} live ${delegation === "native" ? "subagent" : "Claxedo MCP cross-harness child"} completes an openable child transcript and survives reload`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       test.skip(!binary, `The live subagent flow requires the installed and authenticated ${harness} CLI.`)
       const dir = await makeWorkspace(`${harness}-live-subagent`)
@@ -480,10 +490,13 @@ test.describe("live real-harness smoke @live", () => {
       await expect(permissionMode).toHaveAttribute("data-mode", mode)
       const childMarker = `LIVE-CHILD-${Date.now()}`
       const parentMarker = `LIVE-PARENT-${Date.now()}`
+      const delegate = delegation === "claxedo-mcp"
+        ? `Use the Claxedo MCP create_subagent tool with harness "${harness === "claude" ? "codex" : "claude"}", mode "wait", timeoutMs 50000 to delegate exactly one child task: `
+        : `Use ${harness === "claude" ? "the Agent tool" : "spawn_agent"} to delegate exactly one child task: `
       await composePrompt(page, input,
-        `Use ${harness === "claude" ? "the Agent tool" : "spawn_agent"} to delegate exactly one child task: ` +
+        delegate +
         `"Reply with exactly ${childMarker}. Do not run tools or modify files." ` +
-        `Wait for the child to finish, then reply with exactly ${parentMarker}. Do not do the child's task yourself.`,
+        `Wait for the child to finish${delegation === "claxedo-mcp" ? " using subagent_wait if necessary" : ""}, then reply with exactly ${parentMarker}. Do not do the child's task yourself.`,
       )
       await page.locator(SELECTORS.submitControl).last().click()
       await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
@@ -514,6 +527,7 @@ test.describe("live real-harness smoke @live", () => {
       if (!(await card.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
       await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed")
     })
+    }
 
     test(`${harness} live permission approval gates a file write through reload`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)

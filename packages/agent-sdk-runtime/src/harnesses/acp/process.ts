@@ -119,7 +119,8 @@ export class ACPProcess {
     command: string | undefined,
     args: string[],
     model: string,
-    private readonly mcp: () => McpServer[],
+    /** The Claxedo session id, when known, selects that session's first-party server entry. */
+    private readonly mcp: (sessionId?: string) => McpServer[],
     private readonly onDead: () => void,
     createTransport: ACPTransportFactory,
     private readonly env: () => ACPTransportEnv,
@@ -492,20 +493,20 @@ export class ACPProcess {
     return []
   }
 
-  async newSession(workingDirectory: string, _title?: string): Promise<string> {
+  async newSession(workingDirectory: string, _title?: string, sessionId?: string): Promise<string> {
     this.resetIdleTimer()
     const t0 = Date.now()
     log.info("ACP newSession: calling session/new", { workingDirectory })
     const result = await this.agent.request(methods.agent.session.new, {
       cwd: workingDirectory,
-      mcpServers: this.mcp(),
+      mcpServers: this.mcp(sessionId),
     })
     this.remember(result.sessionId, result)
     log.info("ACP newSession: got sessionId", { agentSessionId: result.sessionId, ms: Date.now() - t0 })
     return result.sessionId
   }
 
-  async resumeSession(agentSessionId: string, workingDirectory: string) {
+  async resumeSession(agentSessionId: string, workingDirectory: string, sessionId?: string) {
     this.resetIdleTimer()
     const t0 = Date.now()
     const state = this.state(agentSessionId)
@@ -526,7 +527,7 @@ export class ACPProcess {
     })
     const stop = watch("resumeSession", { agentSessionId, workingDirectory, kind, pid })
     try {
-      const result = await resume(this.agent, state, agentSessionId, workingDirectory, this.mcp())
+      const result = await resume(this.agent, state, agentSessionId, workingDirectory, this.mcp(sessionId))
       this.states.set(agentSessionId, result.state)
       this.cacheDiscovery(result.state)
       log.info("ACP session restored", { agentSessionId, kind: result.kind, pid, ms: Date.now() - t0 })
@@ -714,12 +715,12 @@ export class ACPProcess {
     return !!(state?.caps ?? this.caps)?.sessionCapabilities?.fork
   }
 
-  async forkSession(agentSessionId: string, workingDirectory: string): Promise<string> {
+  async forkSession(agentSessionId: string, workingDirectory: string, sessionId?: string): Promise<string> {
     this.resetIdleTimer()
     const fork = await this.agent.request(methods.agent.session.fork, {
       sessionId: agentSessionId,
       cwd: workingDirectory,
-      mcpServers: this.mcp(),
+      mcpServers: this.mcp(sessionId),
     })
     this.remember(fork.sessionId, fork)
     return fork.sessionId

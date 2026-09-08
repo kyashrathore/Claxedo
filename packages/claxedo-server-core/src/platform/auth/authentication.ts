@@ -204,6 +204,20 @@ export type AuthAccountLifecycle = {
 export type RequestAuthenticationAdapter = {
   descriptor: AuthAdapterDescriptor
   authenticate(request: Request): Promise<ControlPlanePrincipal>
+  /**
+   * RFC 7662 introspection of one access token, as the deployment's own
+   * resource-server client, returning the raw response body.
+   *
+   * Separate from `authenticate` because that admits only the deployment's
+   * native clients on the native resource and maps the result onto an
+   * application principal. A token minted for a second resource — the MCP
+   * endpoint, held by a dynamically registered client — is a valid credential
+   * for that resource and not a control-plane principal at all, so its
+   * resource server reads the claims itself.
+   *
+   * Absent on an adapter whose provider exposes no introspection endpoint.
+   */
+  introspectAccessToken?(token: string): Promise<unknown>
 }
 
 /**

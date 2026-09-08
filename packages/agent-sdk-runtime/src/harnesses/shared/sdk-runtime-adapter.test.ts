@@ -18,6 +18,7 @@ import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-
 function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
   return {
     type: "codex",
+    interactions: { permissions: true, questions: true },
     setAuth() {},
     applyConfig() {},
     createAgentSession: async () => ({ id: "thread-1" }),

@@ -74,7 +74,20 @@ const ENTRIES = [
   // `hosts/workspace-runtime/workspace-session-admission.ts` each used to
   // define privately. Its `/guards` subpath has zero imports and no host APIs,
   // so it adds one package name and no transitive edges.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 155, packages: 38 },
+  //
+  // `@claxedo/mcp` is the first-party MCP endpoint (`/api/claxedo/mcp`); the
+  // node mounts it through `src/mcp/first-party-mcp.ts`, the one module the
+  // hosted worker shares with it. The package reaches only the MCP SDK, hono,
+  // zod, helpers and the runtime contract.
+  // +2 modules: `src/mcp/oauth-protected-resource.ts` answers the RFC 9728
+  // document that endpoint's own 401 names, and
+  // `src/platform/auth/mcp-oauth-scopes.ts` holds the scope and resource names
+  // it shares with the OAuth provider. The scope module stays dependency-free
+  // on purpose — it is in every auth composition's closure, the Worker's
+  // included.
+  // +1 module: `src/mcp/oauth-credential.ts`, which turns a consented access
+  // token into an MCP credential. Consent revocation adds platform/auth/oauth-consent-revocation.ts; 139/38.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 139, packages: 38 },
 ] as const
 
 /** The remaining cloud compositions. */
@@ -133,7 +146,10 @@ describe("server deployment entry closures", () => {
     // dependency-neutral gate modules are explicit fail-closed edges, as is
     // `settled-composition-cache.ts`: the per-isolate rule that a Better Auth
     // composition may be reused only after its lazy init settles.
-    expect(result.modules.length).toBeLessThanOrEqual(14)
+    // +1: `platform/auth/mcp-oauth-scopes.ts`, the MCP scope and resource
+    // names the OAuth provider registers. A dependency-free leaf over string
+    // literals, so it adds no edge of its own.
+    expect(result.modules.length).toBeLessThanOrEqual(15)
     // The release identity reads its empty-service manifest ID from the
     // dependency-neutral `@claxedo/service-contract` rather than owning a
     // second string. No service implementation enters the locked graph; the

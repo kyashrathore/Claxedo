@@ -22,7 +22,7 @@ mistake that has actually bitten this repo.
 |---|---|---|---|
 | helpers | `helpers` | — | **0.1.0** |
 | runtime | `agent-runtime-contract`, `agent-event-runtime`, `agent-sdk-runtime`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.7.0 | **0.8.0** |
-| apps | `channels`, `connections`, `mcp` | 0.4.0 | **0.5.0** |
+| apps | `channels`, `connections` | 0.4.0 | **0.5.0** |
 | wakes | `wakes` | 0.3.0 | **0.4.0** |
 
 `agent-runtime-contract` has never been published: the 0.7.0 release pinned it
@@ -30,7 +30,7 @@ from three siblings but did not publish it. 0.8.0 is its first release.
 
 `helpers` rides its own track because both other tracks depend on it —
 `agent-event-runtime`, `agent-sdk-runtime` and `workspace-runtime` on the
-runtime track, `connections` and `mcp` on apps. Folding it into either would
+runtime track, `connections` on apps. Folding it into either would
 make the other track's packages pin a number that moves for reasons unrelated
 to them. 0.1.0 is its first release.
 
@@ -62,7 +62,7 @@ API since the previous publish. For 0.1.0 / 0.8.0 / 0.5.0 / 0.4.0 (2026-09-06):
   and friends) off the root barrel to the `@claxedo/workspace-relay/bun`
   subpath, so the root entry typechecks under Node type roots;
   `workspace-relay-protocol` rides the track.
-- apps — `mcp` and `connections` changed with the control-plane migration;
+- apps — `connections` changed with the control-plane migration;
   `channels` rides the track.
 - wakes — 0.4.0 was bumped in the repo before this release and never
   published; it ships now.
@@ -81,7 +81,6 @@ Tier 1
   agent-event-runtime -> agent-runtime-contract, helpers
   channels           -> helpers
   connections        -> helpers
-  mcp                -> helpers
   workspace-relay    -> workspace-relay-protocol, helpers
 
 Tier 2
@@ -95,7 +94,7 @@ Tier 3
 
 `helpers` sits under everything but `wakes`: eleven of the other twelve import a
 canonical guard or string helper from it, which is what pulls `agent-runtime-contract`,
-`workspace-relay-protocol`, `sandbox-contract`, `channels`, `connections` and `mcp`
+`workspace-relay-protocol`, `sandbox-contract`, `channels` and `connections`
 out of tier 0 and pushes `sandbox-manager` and `workspace-runtime` down a tier. `sandbox-manager` still depends on
 `sandbox-contract` rather than `workspace-runtime` — that pin was replaced by a
 constant in `src/runtime-version.ts` — so the contract keeps publishing ahead of
@@ -172,7 +171,6 @@ for name in \
   @claxedo/workspace-relay \
   @claxedo/workspace-relay-protocol \
   @claxedo/workspace-runtime \
-  @claxedo/mcp \
   @claxedo/channels \
   @claxedo/connections \
   @claxedo/wakes \

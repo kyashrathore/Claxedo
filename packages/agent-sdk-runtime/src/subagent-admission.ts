@@ -5,6 +5,7 @@ import type {
   SubagentToolCallRole,
   SubagentTranscript,
   SubagentUpdatedEvent,
+  SubagentWake,
 } from "@claxedo/agent-event-runtime"
 
 export type SubagentObservation = {
@@ -23,6 +24,8 @@ export type SubagentObservation = {
   providerKind?: string
   childSessionId?: string
   transcript?: SubagentTranscript
+  attention?: number
+  wake?: SubagentWake
 }
 
 export type AdmittedSubagentObservation = {
@@ -249,6 +252,8 @@ function observationEventInput(observation: SubagentObservation) {
     ...(observation.providerKind ? { providerKind: observation.providerKind } : {}),
     ...(observation.childSessionId ? { childSessionId: observation.childSessionId } : {}),
     ...(observation.transcript ? { transcript: observation.transcript } : {}),
+    ...(observation.attention !== undefined ? { attention: observation.attention } : {}),
+    ...(observation.wake ? { wake: observation.wake } : {}),
   }
 }
 

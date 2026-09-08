@@ -112,9 +112,7 @@ async function assertRegistryIsSessionAuthority(
 ) {
   const opened = await requireAuthority(services).openWorkspace(auth, { workspaceId })
   if (workspaceRow(workspaceRow(opened)?.workspace)?.access !== "user-hosted") return
-  throw new SessionListAuthorityError(
-    "The workspace runtime is the authority for a user-hosted workspace's sessions; read them over the workspace relay",
-  )
+  throw new SessionListAuthorityError(workspaceId)
 }
 
 /**

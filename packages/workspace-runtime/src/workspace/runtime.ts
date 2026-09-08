@@ -57,6 +57,7 @@ import {
   mountWorkspacePty,
 } from "./core"
 import type { RuntimeConfigApplyStatus, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
+import { firstPartyMcpAdapterConfig, firstPartyMcpServerFor, type WorkspaceFirstPartyMcpLaunchOptions } from "../first-party-mcp/index"
 import type { RuntimeEventAuthorization } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
 import {
@@ -77,6 +78,7 @@ import {
   watchSessionEventLease,
 } from "../routes/session-event-privacy"
 import { SessionRollbackError } from "../session-rollback-error"
+import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 
 /**
  * The store surface the workspace-runtime engine actually consumes — derived
@@ -102,7 +104,10 @@ export type WorkspaceRuntimeStore =
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
     getSessionMaxSeq(sessionId: string): number
     getSessionFencingToken?: (sessionId: string) => number | undefined
-    listSubagents?: (parentSessionId: string) => unknown[]
+    listSubagents: (parentSessionId: string) => unknown[]
+    /** Per-store secret keyed material; child ids derived from `clientRequestId` need it. */
+    runtimeSecret?: (name: string) => string
+    listPendingSubagentWakes?: () => Array<{ parentSessionId: string; subagentKey: string; childSessionId: string; directory: string }>
     bindSession(input: {
       sessionId: string
       workspaceId?: string
@@ -187,6 +192,13 @@ export type WorkspaceHostOptions = {
    * serialization and active-turn drain regardless of the registry (R2).
    */
   harnesses?: WorkspaceHarnessRegistry
+  /**
+   * The first-party MCP entry every launched session receives: the loopback
+   * origin serving `/api/claxedo/mcp` and this runtime's credential issuer.
+   * Absent, no harness receives the entry — the host that mounts the route is
+   * the one that enables injection.
+   */
+  firstPartyMcpLaunch?: WorkspaceFirstPartyMcpLaunchOptions
 }
 
 const RUNNER_REPLACEMENT_DRAIN_TIMEOUT_MS = 1_000
@@ -268,21 +280,6 @@ function selectionForRunner(runner: RuntimeRunner): RuntimeHarnessSelection {
   if (harnessId) return { kind: "native", harnessId }
   if (runner.access === "connection") return { kind: "connection", connectionId: runner.id }
   throw new WorkspaceHarnessUnavailableError(runner)
-}
-
-/**
- * A harness identity that is not runnable here: an operator-configured ACP
- * connection this runtime has no applied descriptor for (unknown, disabled,
- * or removed). Thrown BEFORE any adapter creation or process spawn.
- */
-export class WorkspaceHarnessUnavailableError extends Error {
-  readonly code = "workspace_harness_not_configured"
-  constructor(readonly harness: { id: string; access: string }) {
-    super(harness.access === "connection"
-      ? `Connection "${harness.id}" is not configured on this runtime`
-      : "No default harness is configured on this runtime")
-    this.name = "WorkspaceHarnessUnavailableError"
-  }
 }
 
 function authSlotValue(auth: Record<string, string>, slot: AuthSlot) {
@@ -785,6 +782,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       auth: adapterAuth,
       harness: nextRunner,
       launch,
+      ...firstPartyMcpAdapterConfig(options.firstPartyMcpLaunch),
     })
     await (next as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
     adapterConfigStamps.set(next, stamp)
@@ -1339,6 +1337,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           auth: configuredConnection(nextRunner) ? {} : next.auth,
           harness: nextRunner,
           launch,
+          ...firstPartyMcpAdapterConfig(options.firstPartyMcpLaunch),
         })
         await (adapter as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
         adapterConfigStamps.set(
@@ -1545,7 +1544,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         sessionAccessPolicy,
         resolveRuntime: (input) => runtimeForSession(input),
         resolveExecutionBinding: ({ sessionId, directory }) => canonicalExecutionBinding(sessionId, directory),
-        createSession: async (c, directory, title, id) => {
+        createSession: async (c, directory, title, id, create) => {
           // Write through to the durable store on CREATE.
           //
           // Creation binds the canonical session immediately. Provider-native
@@ -1606,6 +1605,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             store().bindSession({
               ...binding,
               ...(title ? { title } : {}),
+              ...(create?.parentID ? { parentSessionId: create.parentID } : {}),
               agentSessionId: upstreamSessionId,
             })
             if (!store().getSessionConfig(session.id)) {
@@ -1635,7 +1635,16 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         afterCreateSession: hostOptions.afterCreateSession,
         listSessions: async (_c, directory) => listSessions(directory),
         getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory)),
-        listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
+        listSubagents: ({ parentSessionId }) => store().listSubagents(parentSessionId),
+        childSessions: {
+          admission: hostOptions.subagentAdmission,
+          secret: () => {
+            const secret = store().runtimeSecret
+            if (!secret) throw new Error("workspace runtime store cannot derive idempotent child session ids")
+            return secret.call(store(), "child-session")
+          },
+          pendingWakes: () => store().listPendingSubagentWakes?.() ?? [],
+        },
         listPermissions: (c, directory) => listPermissions(c.req.query("sessionId"), directory),
         listQuestions: (c, directory) => listQuestions(c.req.query("sessionId"), directory),
         createActiveTurnScope: (input) => createActiveTurnScope(input),
@@ -1715,6 +1724,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     parentSessionIdFor(sessionId: string) {
       const session = store().getSession(sessionId) as { parentID?: string | null } | null
       return session?.parentID ?? undefined
+    },
+    runtimeCredentialIssuer() {
+      return options.firstPartyMcpLaunch?.issuer
+    },
+    firstPartyMcpServer(sessionId) {
+      return options.firstPartyMcpLaunch ? firstPartyMcpServerFor(options.firstPartyMcpLaunch, sessionId) : undefined
     },
     apply,
     applyHarnessLaunch(harnessLaunch: Record<string, Record<string, unknown>>) {

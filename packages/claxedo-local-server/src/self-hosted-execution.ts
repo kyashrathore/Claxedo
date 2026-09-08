@@ -26,6 +26,7 @@ export {
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimes,
   connectEmbeddedWorkspacePty,
+  verifyEmbeddedRuntimeCredential,
 } from "./deployments/local/embedded-workspace-runtime"
 
 // ── Local route surface ─────────────────────────────────────────────────────

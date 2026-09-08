@@ -99,6 +99,7 @@ export function buildSessionListResponse(input: {
   cursorApplied?: boolean
 }): SessionListResponse {
   const rows = input.sessions
+    .filter((session) => !parentSessionId(session))
     .map(sessionNavigationRow)
     .filter((row): row is SessionNavigationRow => !!row)
     .filter((row) => rowInScope(row, input.query))
@@ -257,6 +258,22 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
     } } : {}),
     ...ownerFromSession(item),
   }
+}
+
+/**
+ * A child session's parent, under every spelling a producer answers with.
+ *
+ * `GET /session` makes root-only an opt-in `roots=true` because its full
+ * snapshot is what reconciles the session-meta projection. This list has no
+ * such reader — it is the rail's paginated navigation source and nothing else —
+ * so a parented session is never one of its rows and the caller cannot forget
+ * to ask.
+ */
+function parentSessionId(session: unknown) {
+  const item = record(session)
+  return stringValue(item.parentID) ??
+    stringValue(item.parent_session_id) ??
+    stringValue(item.parentSessionId)
 }
 
 function ownerFromSession(item: Record<string, unknown>): { owner?: SessionNavigationRow["owner"] } {

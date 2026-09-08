@@ -5,7 +5,6 @@ import type {
   BrowserBridge,
   BrowserConsoleEntry,
   BrowserConsoleQuery,
-  BrowserEvaluateResult,
   BrowserNavigationState,
   BrowserNodeSelectedPayload,
   BrowserRegisterResult,
@@ -63,10 +62,6 @@ const browserBridge: BrowserBridge = {
   },
   captureScreenshot: (paneId, opts?: { clip?: BrowserScreenshotClip }) =>
     invoke<BrowserScreenshotResult>("browser:captureScreenshot", paneId, opts ?? {}),
-  evaluate: (paneId, expression) =>
-    invoke<BrowserEvaluateResult>("browser:evaluate", paneId, expression),
-  setAgentAllowed: (paneId, allowed) =>
-    invoke<BrowserResult>("browser:setAgentAllowed", paneId, allowed),
   setInspectMode: (paneId, enabled) =>
     invoke<BrowserResult>("browser:setInspectMode", paneId, enabled),
   onNodeSelected: (paneId, cb) => {

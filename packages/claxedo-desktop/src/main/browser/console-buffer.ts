@@ -8,9 +8,9 @@
  * `snapshot()`.
  *
  * `getConsoleLogs` IPC is a *pull* over this buffer, not a live subscription
- * share, so multiple consumers (renderer drawer + MCP polling) never contend
- * on the same event stream. Live streaming is still provided via the
- * per-entry listener callbacks registered on `BrowserHandle`.
+ * share, so several renderer readers never contend on the same event stream.
+ * Live streaming is still provided via the per-entry listener callbacks
+ * registered on `BrowserHandle`.
  */
 
 export const MAX_CONSOLE_ENTRIES = 2000
@@ -64,8 +64,8 @@ export type ConsoleQuery = {
  * Strip ANSI escape sequences, zero-width code points, and unicode-tag
  * characters from a string. Console output from untrusted pages is an input
  * vector — e.g. a hostile site can dump prompt-injection text in a zero-width
- * envelope that an LLM reads but the user never sees. We normalize before we
- * persist or hand off to MCP.
+ * envelope that a model reads but the user never sees, and the user pastes
+ * console text into agent prompts. We normalize before the entry is stored.
  *
  * Exposed for direct test coverage of the sanitization itself.
  */

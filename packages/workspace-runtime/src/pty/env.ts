@@ -118,9 +118,9 @@ const DENY_LIST = new Set([
  * that happens. Deny-by-default inverts that — the failure mode of adding a new
  * `CLAXEDO_*` var is that a child does not see it, not that a secret escapes.
  *
- * Names here are derived from what child processes actually read (claxedo-mcp
- * and the claxedo CLI); `pty/env.secrets.test.ts` re-derives the secret set from
- * the repo and fails if any of it becomes reachable.
+ * Names here are derived from what child processes actually read (the claxedo
+ * CLI and the shell integration); `pty/env.secrets.test.ts` re-derives the
+ * secret set from the repo and fails if any of it becomes reachable.
  *
  * Deliberately absent: `CLAXEDO_ACCESS_TOKEN` / `CLAXEDO_DEV_TOKEN`. The CLI
  * reads them, but only as an override with a stored-credential fallback
@@ -138,8 +138,8 @@ const ALLOWED_CLAXEDO_VARS = new Set([
   "CLAXEDO_SERVER_HOST",
   "CLAXEDO_SERVER_PORT",
   "CLAXEDO_LOCAL_CONTROL_PLANE_URL",
-  // Identity of the surface the child is running inside (claxedo-mcp) and the
-  // terminal env the shell integration injects (agent-hooks/core/shell.ts).
+  // Identity of the surface the child is running inside and the terminal env
+  // the shell integration injects (agent-hooks/core/shell.ts).
   "CLAXEDO_WORKSPACE_ID",
   "CLAXEDO_WR_WORKSPACE_ID",
   "CLAXEDO_SESSION_ID",
@@ -147,7 +147,6 @@ const ALLOWED_CLAXEDO_VARS = new Set([
   "CLAXEDO_TERMINAL_ID",
   "CLAXEDO_PORT",
   "CLAXEDO_REPOSITORY_URL",
-  "CLAXEDO_DESKTOP_URL",
   "CLAXEDO_AGENT",
   "CLAXEDO_ACP_MODEL",
   // Shell integration: zsh rc redirection needs the original ZDOTDIR back.
@@ -155,10 +154,6 @@ const ALLOWED_CLAXEDO_VARS = new Set([
   // Harness hook wiring read by the codex driver inside the child.
   "CLAXEDO_CODEX_NATIVE_HOOKS",
   "CLAXEDO_CODEX_START_WATCHER_PID",
-  // Tool-policy posture (claxedo-mcp). Not secrets; read-only mode is a
-  // capability restriction the child must be able to observe.
-  "CLAXEDO_MCP_MODE",
-  "CLAXEDO_MCP_READ_ONLY",
   // Paths. Not secrets — the child already has filesystem access.
   "CLAXEDO_DATA_DIR",
   "CLAXEDO_HOME",

@@ -830,4 +830,33 @@ describe("codexAppServerAdapter", () => {
       },
     }])
   })
+
+  test("classifies a create_subagent MCP item as task work by its tool name", () => {
+    const agent = runtime()
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/started",
+      payload: {
+        item: {
+          id: "mcp-spawn-1",
+          type: "mcpToolCall",
+          server: "claxedo",
+          tool: "create_subagent",
+          status: "inProgress",
+          arguments: { harness: "claude", prompt: "Consult on the plan" },
+        },
+      },
+    }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "mcp-spawn-1", toolName: "create_subagent", kind: "mcp_tool_call", display: { intent: "task" } },
+    ])
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "item/started",
+      payload: {
+        item: { id: "mcp-other-1", type: "mcpToolCall", server: "claxedo", tool: "session_list", status: "inProgress", arguments: {} },
+      },
+    }).events).toMatchObject([
+      { type: "tool-start", toolCallId: "mcp-other-1", toolName: "session_list", display: { intent: "mcp" } },
+    ])
+  })
 })

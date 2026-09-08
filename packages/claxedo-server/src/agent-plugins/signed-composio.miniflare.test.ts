@@ -218,6 +218,7 @@ async function runtimeVm(workspaceId: string, env: NodeJS.ProcessEnv) {
       directory: "/workspace",
       stateDirectory: root,
       applyHarnessLaunch: async () => {},
+    fetch: async () => new Response(null, { status: 204 }),
       registerSessionTools: () => async () => {},
       unregisterSessionTools: () => async () => {},
     },

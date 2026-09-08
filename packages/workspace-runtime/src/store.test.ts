@@ -236,6 +236,50 @@ void describe("RuntimeStore", () => {
     reopened.close()
   })
 
+  void it("persists attention counts, wake state and a stable runtime secret across reopen", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    const secret = store.runtimeSecret("child-session")
+    assert.match(secret, /^[0-9a-f]{64}$/)
+    assert.equal(store.runtimeSecret("child-session"), secret)
+    assert.notEqual(store.runtimeSecret("other"), secret)
+    store.bindSession({ sessionId: "parent", directory: "/workspace", agentSessionId: "parent" })
+    store.bindSession({ sessionId: "child", directory: "/workspace", agentSessionId: "child", parentSessionId: "parent" })
+    const observations: Array<[string, Record<string, unknown>]> = [
+      ["create", { status: "pending", providerKind: "claxedo", providerId: "child", childSessionId: "child", transcript: { kind: "live" } }],
+      ["attention-2", { attention: 2 }],
+      ["attention-0", { attention: 0 }],
+      ["finished", { status: "completed", wake: "pending" }],
+    ]
+    for (const [observationId, observation] of observations) {
+      store.admit({
+        parentSessionId: "parent",
+        observation: { observationId, subagentKey: "subagent_host", ...observation },
+        allocateKey: () => "unused",
+      })
+      store.markPublished("parent", observationId)
+    }
+    assert.deepEqual(store.listPendingSubagentWakes(), [
+      { parentSessionId: "parent", subagentKey: "subagent_host", childSessionId: "child", directory: "/workspace" },
+    ])
+    store.close()
+
+    const reopened = new RuntimeStore(root)
+    assert.equal(reopened.runtimeSecret("child-session"), secret)
+    const row = reopened.listSubagents("parent")[0]
+    assert.equal(row?.status, "completed")
+    assert.equal(row?.attention, 0)
+    assert.equal(row?.wake, "pending")
+    reopened.admit({
+      parentSessionId: "parent",
+      observation: { observationId: "woken", subagentKey: "subagent_host", wake: "delivered" },
+      allocateKey: () => "unused",
+    })
+    assert.equal(reopened.listSubagents("parent")[0]?.wake, "delivered")
+    assert.deepEqual(reopened.listPendingSubagentWakes(), [])
+    reopened.close()
+  })
+
   void it("routes an observation carrying an already-owned child session to the owning row (claude dual-channel split)", () => {
     // Repro of the live crash "UNIQUE constraint failed:
     // session_subagent.child_session_id": the claude harness reports one Task

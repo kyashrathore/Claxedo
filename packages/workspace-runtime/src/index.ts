@@ -92,6 +92,21 @@ export type {
   WorkspaceRuntimeStoreFactory,
 } from "./workspace/runtime"
 export type { WorkspaceCapabilities } from "./capabilities"
+export {
+  FIRST_PARTY_MCP_PATH,
+  FIRST_PARTY_MCP_SERVER_NAME,
+  createRuntimeCredentialIssuer,
+  firstPartyMcpServerFor,
+  runtimeCredentialWorkspaceId,
+} from "./first-party-mcp/index"
+export type {
+  FirstPartyMcpServerEntry,
+  RuntimeCredentialClaims,
+  RuntimeCredentialIssuer,
+  RuntimeCredentialIssuerOptions,
+  RuntimeCredentialVerifier,
+  WorkspaceFirstPartyMcpLaunchOptions,
+} from "./first-party-mcp/index"
 export type { WorkspaceProfile } from "./profile"
 export { createProcessObserver } from "./managed-processes/process-observer"
 export {

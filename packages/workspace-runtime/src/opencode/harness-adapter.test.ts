@@ -176,6 +176,28 @@ describe("OpenCodeSdkHarnessAdapter", () => {
     expect(events).toEqual([expect.objectContaining({ type: "error", harness: "opencode" })])
   })
 
+  test("reports what an engine rejection said when the engine throws a plain object", async () => {
+    const fake = runtime()
+    const directory = workspace()
+    fake.sessions.prompt.mockImplementationOnce(async () => {
+      throw { name: "ValidationError", data: { message: `Expected a string starting with "msg_"` } }
+    })
+    const adapter = adapterFor(fake, directory)
+    const events = []
+    for await (const event of adapter.executeTurn(binding(directory, "ses_1"), {
+      parts: [{ type: "text", text: "hi" }],
+      assistantMessageId: "msg_a",
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+    })) events.push(event)
+
+    expect(events).toEqual([{
+      type: "error",
+      error: `Expected a string starting with "msg_"`,
+      harness: "opencode",
+    }])
+  })
+
   test("applies the runtime snapshot and Agent Plugins launch document through the launch policy", async () => {
     const fake = runtime()
     const directory = workspace()

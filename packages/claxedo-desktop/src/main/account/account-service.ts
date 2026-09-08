@@ -31,6 +31,7 @@ import {
 } from "./hosted-operations"
 import { fetchHosted } from "./hosted-transport"
 import { accountPerfMark, accountPerfNow } from "./account-perf"
+import type { CliCredentialFilePort } from "./cli-credential-file"
 import { readNumber, readRecord, readString } from "../../shared/json-read"
 
 export type { RefreshOutcome } from "./desktop-native-auth"
@@ -138,6 +139,11 @@ export type AccountServiceOptions = {
    * production uses `setTimeout`.
    */
   scheduleRevalidation?: (run: () => void, delayMs: number) => ReturnType<typeof setTimeout>
+  /**
+   * Mirrors this account into the `claxedo` CLI's credential file, when the
+   * user turned that on. Absent means the file is never touched.
+   */
+  cliCredentialFile?: CliCredentialFilePort
   onError?: (stage: string, error: unknown) => void
   onStateChange?: (next: AccountState, previous: AccountState) => void
 }
@@ -168,6 +174,7 @@ export function createAccountService(options: AccountServiceOptions) {
     credential = undefined
     renewFailure = undefined
     options.store.clear()
+    void options.cliCredentialFile?.revoke()
   }
 
   const rejectHeld = (held: StoredDesktopCredential, reason: string) => {
@@ -183,6 +190,7 @@ export function createAccountService(options: AccountServiceOptions) {
       const stored = options.store.save(next, expectedRevision)
       credential = stored
       renewFailure = undefined
+      void options.cliCredentialFile?.publish(stored)
       return { ok: true, credential: stored }
     } catch (error) {
       options.onError?.("persist", error)
@@ -323,6 +331,7 @@ export function createAccountService(options: AccountServiceOptions) {
     try {
       const stored = options.store.save(next, held.revision)
       credential = stored
+      void options.cliCredentialFile?.publish(stored)
       return { ok: true, token: stored.tokens.accessToken }
     } catch (error) {
       if (error instanceof CredentialStoreConflict) {
@@ -599,6 +608,10 @@ export function createAccountService(options: AccountServiceOptions) {
         const held = credential
         const logoutEra = ++era
         cancelActiveWork()
+        // Ahead of every branch below: the user asked to sign out, so the
+        // mirrored file goes whether or not this process still holds the
+        // credential and whether or not the remote revocation lands.
+        void options.cliCredentialFile?.revoke()
         if (!held) {
           const stored = options.store.load(options.now())
           if (stored?.persistenceState === "revocation-pending") {

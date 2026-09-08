@@ -14,6 +14,8 @@
     "./testing"
   ],
   "rootRuntimeExports": [
+    "FIRST_PARTY_MCP_PATH",
+    "FIRST_PARTY_MCP_SERVER_NAME",
     "Pty",
     "SESSION_CORE_ROUTE_ACCESS",
     "WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER",
@@ -24,6 +26,7 @@
     "createMemoryTranscriptHandleStore",
     "createPersistentTranscriptHandleStore",
     "createProcessObserver",
+    "createRuntimeCredentialIssuer",
     "createTranscriptResolver",
     "createWorkspaceHost",
     "createWorkspaceOpenCodeRuntime",
@@ -31,6 +34,7 @@
     "createWorkspaceRuntimeJwtManagementAuth",
     "defaultWorkspaceHarnessRegistry",
     "embeddedWorkspaceRuntimeExposure",
+    "firstPartyMcpServerFor",
     "flushRuntimeDocument",
     "forgetRuntimeDocuments",
     "isLoopbackHostname",
@@ -43,6 +47,7 @@
     "relayWorkspaceRuntimeExposure",
     "remoteWorkspaceSessionAccessPolicy",
     "remoteWorkspaceSessionAccessPolicyFromEnv",
+    "runtimeCredentialWorkspaceId",
     "runtimeEnvText",
     "sessionAccessRequiresWrite",
     "startServer",

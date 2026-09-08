@@ -1,3 +1,4 @@
+import type { AgentCommand } from "@claxedo/agent-runtime-contract"
 import type { ClaxedoCommand as Command } from "@/platform/api/claxedo-api-types"
 import { queryKeys, workspaceQueryKey } from "@/platform/query/keys"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
@@ -8,7 +9,7 @@ import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-rou
 
 type CommandClient = {
   command: {
-    list: () => Promise<{ data?: Command[] }>
+    list: () => Promise<{ data?: AgentCommand[] }>
   }
 }
 

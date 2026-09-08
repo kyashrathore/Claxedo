@@ -1,325 +1,70 @@
 # Claxedo MCP
 
-`@claxedo/mcp` is a bridge between an MCP client and a Claxedo runtime/server.
-It lets an agent running inside any MCP-compatible client call Claxedo runtime
-and control-plane APIs as tools: managed processes, logs, session messages,
-background session dispatch, documents, and — when hosted inside the
-Claxedo desktop app — browser panes.
+Claxedo serves one MCP endpoint, `/api/claxedo/mcp`, from every process that
+runs it. An agent in any MCP-capable host — Claude Code, Codex, Cursor,
+Claude Desktop, a phone — connects to it over streamable HTTP and drives
+Claxedo through tools. Nothing is installed from npm and nothing runs over
+stdio: the endpoint is whatever the running Claxedo ships, so there is no
+version to fall behind and no port to get wrong.
 
-It does not run the workspace, start the agent harness, or replace
-`workspace-runtime`. The workspace still lives behind a Claxedo runtime/server
-URL. `@claxedo/mcp` only translates MCP tool calls into HTTP requests to that
-URL (and, for browser tools, to the desktop app's local bridge).
+## Where the endpoint is
 
-It is a local operator tool. Run it on the same machine as the Claxedo
-desktop/server loopback endpoint, or against an intentionally configured signed
-remote Claxedo server. Do not expose it as a shared remote MCP endpoint.
+| You are connecting from | URL | Credential |
+| --- | --- | --- |
+| Any app you install Claxedo MCP in | `https://<your control plane>/api/claxedo/mcp` | the CLI sign-in (`~/.claxedo/credentials.json`) as a bearer, or the OAuth consent the client drives when it receives the endpoint's challenge |
+| A self-hosted node | `https://<node>/api/claxedo/mcp` | as above; on an unsigned node, a loopback caller needs none |
+| A session Claxedo launched, on your machine or in a cloud VM | the loopback URL of the runtime that launched it | injected by that runtime at launch, together with `?session=<id>`; nothing else is accepted there |
 
-## Install In An MCP Client
+The loopback URLs are never something you configure. The runtime places them
+in the harness config of each session it starts; every app a person installs
+Claxedo MCP in uses the hosted URL, even on the same machine as the desktop.
 
-> Developing from this repo? You can also run the server from source —
-> `bun run --cwd packages/claxedo-mcp start` with the same environment
-> variables — or point the MCP client's command at that script.
+## Installing by URL
 
-Paste config like this into an MCP client such as Claude Desktop, Codex, or any
-other MCP-compatible app. This is not a terminal command and it is not
-JavaScript. It goes in the MCP client's server configuration file or settings
-UI:
-
-```json
-{
-  "command": "npx",
-  "args": ["-y", "@claxedo/mcp"],
-  "env": {
-    "CLAXEDO_SERVER_URL": "http://127.0.0.1:2593"
-  }
-}
-```
-
-This mirrors the package's bundled `mcp.json`. Where it is used:
-
-| Place | What to do |
-| --- | --- |
-| MCP client config file | Add this JSON as one MCP server entry, using whatever wrapper shape that client expects. |
-| MCP client settings UI | Put `npx` in the command field, `-y` and `@claxedo/mcp` in the args field, and `CLAXEDO_SERVER_URL=http://127.0.0.1:2593` in env. |
-| Terminal | Do not paste the JSON. Use the debug command below instead. |
-
-Equivalent terminal command for debugging:
+Add the hosted URL the way the host adds any remote MCP server:
 
 ```sh
-CLAXEDO_SERVER_URL=http://127.0.0.1:2593 npx -y @claxedo/mcp
+claude mcp add --transport http claxedo https://<your control plane>/api/claxedo/mcp
+codex mcp add claxedo --url https://<your control plane>/api/claxedo/mcp
 ```
 
-In normal usage, you do not run that terminal command yourself. The MCP client
-runs it when it starts the configured MCP server.
+For a client that speaks MCP OAuth, the first request is answered `401` with
+`WWW-Authenticate: Bearer resource_metadata="https://<your control plane>/.well-known/oauth-protected-resource"`,
+and the client takes it from there. A client that already holds the CLI
+sign-in sends it as `Authorization: Bearer …`.
 
-That means:
+## What the agent sees
 
-| Field | Meaning |
-| --- | --- |
-| `command` | The executable the MCP client should run. |
-| `args` | Arguments for that executable. Here it runs the `@claxedo/mcp` package from npm through `npx`. |
-| `env.CLAXEDO_SERVER_URL` | The Claxedo runtime/server the bridge should call when a tool is used. |
+The credential decides which tools the endpoint lists:
 
-After the MCP client starts this subprocess, the flow is:
+- the **runtime credential** a launched session carries sees the tools for
+  the model inside a Claxedo session — its own workspace, subagents,
+  processes, the transcripts it may read;
+- a **user credential** sees the tools for a person on another host —
+  sessions across machines, what needs attention and how to answer it,
+  workspaces and machines, review.
 
-```text
-agent in MCP client
-  -> calls MCP tool, for example process(action: "list")
-  -> @claxedo/mcp receives the tool call over stdio
-  -> @claxedo/mcp calls http://127.0.0.1:2593/api/wr/process
-  -> Claxedo runtime/server performs the workspace action
-  -> result goes back to the MCP client
-```
+A read-only credential sees no write. A tool the credential was not shown is
+not registered at all, so calling it anyway is answered as an unknown tool.
+A destructive tool asks the host to confirm through MCP elicitation when the
+host declares that capability (Claude Code and Codex CLI do); the server's
+own check on the operation stands either way.
 
-MCP tool calls arrive as JSON-RPC `tools/call` requests. The invocation the MCP
-client sends for that example is:
+## Sessions and limits
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/call",
-  "params": {
-    "name": "process",
-    "arguments": { "action": "list" }
-  }
-}
-```
+The endpoint keeps a session per `Mcp-Session-Id`. A session idle for 30
+minutes, or evicted when a process holds more than 256, is answered `404`,
+which tells the client to initialize again. One credential may hold 8
+requests open at once; the ninth is `429` with `Retry-After: 1`.
 
-`@claxedo/mcp` turns that into an HTTP request to the configured Claxedo
-server/runtime and returns the process list as the MCP tool result.
+## Security
 
-## Request Scope
-
-Tools use one of two request scopes:
-
-- **Workspace scope** — process, logs, session, document, and `spawn_session`
-  tools resolve a project directory (from `directory`/`workspace_id` args, or the
-  `OPENCODE_API_DIR` / `CLAXEDO_WORKSPACE_ID` defaults) and pass it to the server
-  as an `x-opencode-directory` header plus query string.
-- **Owner scope** — `cloud_workspace_*` tools address a cloud workspace by
-  `workspace_id` and send no project directory. The server derives the
-  organization and user from trusted request context; the MCP never sends a
-  tenant selector, and these tools accept no `owner`/`org`/`user`-style
-  argument.
-
-## Environment Variables
-
-Local use needs none of these — the server URL defaults to loopback
-(`http://127.0.0.1:2593`). These knobs exist for non-default directories,
-workspaces, signed remote servers, and desktop-hosted browser tools.
-
-| Env var | Purpose |
-| --- | --- |
-| `CLAXEDO_SERVER_URL` | Base URL for the Claxedo server. Defaults to `http://127.0.0.1:2593`. |
-| `CLAXEDO_AUTH_TOKEN` | Optional bearer token sent as `Authorization: Bearer …` on every server request. Set only when pointing the MCP at a signed remote Claxedo server. |
-| `CLAXEDO_API_DIR` | Default local project directory for workspace-scoped requests. |
-| `CLAXEDO_WORKSPACE_ID` | Default workspace id for Docker/cloud workspace requests. |
-| `CLAXEDO_SESSION_ID` | Optional current session id used by `documents_open` and the documents CLI for the per-project local file grant. |
-| `CLAXEDO_TERMINAL_ID` | Default terminal id for `get_logs`, `session_messages`, and `summarize_logs` when no id is passed. Set automatically inside a Claxedo terminal. |
-| `CLAXEDO_TAB_ID` | Fallback tab id for `session_messages` when a terminal id is unavailable. |
-| `CLAXEDO_MCP_MODE` / `CLAXEDO_MCP_READ_ONLY` | Select read-only mode (see [Modes](#modes)). |
-| `CLAXEDO_DESKTOP_URL` | Loopback URL of the Claxedo desktop app's local bridge. **Injected by the desktop app** at subprocess spawn time — do not set it by hand. |
-| `CLAXEDO_DESKTOP_TOKEN` | Per-launch shared secret for the desktop bridge. **Injected by the desktop app** — do not set it by hand. |
-
-Local Claxedo usage relies on the app's loopback trust boundary. The curated
-marketplace install does not receive a Claxedo user token, JIT token, or broker
-token. Set `CLAXEDO_AUTH_TOKEN` only when intentionally pointing the MCP server
-at a signed remote Claxedo server, and treat remote `CLAXEDO_SERVER_URL` values
-as privileged: the MCP sends log, process, session, document, and
-browser-control requests to that origin, plus any configured bearer token.
-
-### Browser tools require the desktop app
-
-The `browser_*` tools do not go through `CLAXEDO_SERVER_URL`. They call the
-Claxedo desktop app's own local HTTP bridge, addressed by `CLAXEDO_DESKTOP_URL`
-and authenticated with `CLAXEDO_DESKTOP_TOKEN`.
-
-The Electron main process binds that bridge to `127.0.0.1` on an ephemeral
-port, mints the per-launch secret, and pushes both values into this MCP
-subprocess's environment **at spawn time**. A standalone MCP client (Claude
-Desktop, Codex, a terminal) cannot supply these values, so its browser tools
-have no bridge to reach. When the pair is absent, every browser tool returns a
-legible message:
-
-> Browser tabs require the Claxedo desktop app.
-
-In short: `browser_*` tools work only when the MCP subprocess is spawned by the
-Claxedo desktop app. Everywhere else they are present in the tool list but
-always report the desktop bridge as unavailable.
-
-## Modes
-
-Full-control mode is the default. It registers every tool, including process
-mutation, background session dispatch, log summarization through a temporary
-agent session, browser navigation, and browser JavaScript
-evaluation.
-
-Read-only mode is selected with either of:
-
-```sh
-CLAXEDO_MCP_MODE=read-only
-# or
-CLAXEDO_MCP_READ_ONLY=1
-```
-
-`CLAXEDO_MCP_READ_ONLY` accepts `1`, `true`, or `yes` (case-insensitive).
-Read-only mode omits every mutating tool:
-
-- `process`
-- `spawn_session`
-- `summarize_logs`
-- `browser_evaluate_js`
-- `browser_navigate`
-
-Read-only mode keeps the non-mutating surface:
-
-- `get_logs`
-- `session_messages`
-- `documents_list`
-- `documents_open`
-- `browser_list_tabs`
-- `browser_screenshot`
-- `browser_get_console_logs`
-
-Note that `documents_open` stays available in read-only mode even though it
-performs a single side effect on the server (granting a session-scoped file
-path); it is an observation tool, not a workspace mutation.
-
-## Tool Surface
-
-The server registers the following tools (mutating tools omitted in read-only
-mode, browser tools functional only under the desktop app).
-
-### Runtime and control-plane tools
-
-| MCP tool | What it does | Routes it calls |
-| --- | --- | --- |
-| `process` | Manage dev servers, watchers, and long-running processes. Actions: `list`, `start`, `stop`, `restart`, `add`, `update`, `remove`, `start_all`, `stop_all`. `add`/`update`/`remove` edit `.claxedo/processes.jsonc`. | Lifecycle via `GET /api/wr/process`, `POST /api/wr/process/{id}/{start,stop,restart}`, `POST /api/wr/process/{start-all,stop-all}`; config edits via `POST /process`, `PUT /process/{id}`, `DELETE /process/{id}` |
-| `get_logs` | Fetch terminal or process output by `process_id`, `name`, `pty_id`, or `terminal_id`; `lines` returns only the tail. With no id, lists managed processes and PTYs. | `GET /api/wr/process/logs`, `GET /api/wr/pty` |
-| `session_messages` | Fetch structured messages for a chat/agent session, or resolve the currently running terminal/tab agent's session first. Falls back to a recorded transcript file. | `GET /api/wr/hook/terminal-session`, `GET /session/{id}/message` |
-| `spawn_session` | Dispatch a background hybrid Claxedo session on the control plane and optionally fire an initial prompt (fire-and-forget). Returns the new session id and `/s/{id}` app URL. | `POST /api/control/sessions`, `POST /api/control/session/{id}/message` |
-| `summarize_logs` | Fetch logs (or accept raw `text`), create a temporary agent session, summarize with the configured harness, and delete the temporary session. | `GET /api/wr/process/logs`, `POST /session`, `POST /session/{id}/message`, `DELETE /session/{id}` |
-
-### Document tools
-
-| MCP tool | What it does | Routes it calls |
-| --- | --- | --- |
-| `documents_list` | List Claxedo document index metadata for a project. Returns metadata only, never document bodies. | `GET /documents?…&archived=active` |
-| `documents_open` | Resolve a `claxedo://document/<id>` reference, an exact id, or an unambiguous display name into an honest canonical absolute file path granted to the current session. | `GET /documents?…&archived=all`, `POST /documents/{id}/agent-open` |
-
-`documents_open` requires a session id — from the `session_id` argument or the
-`CLAXEDO_SESSION_ID` default — because it grants a session-owned path.
-
-### Browser tools (desktop-hosted only)
-
-All five route through the desktop bridge (see
-[Browser tools require the desktop app](#browser-tools-require-the-desktop-app)).
-Bridge paths are relative to `CLAXEDO_DESKTOP_URL`.
-
-| MCP tool | What it does | Bridge route |
-| --- | --- | --- |
-| `browser_list_tabs` | List open browser panes with `paneId`, title, URL, group, and the per-tab `agentAllowed` JS gate. | `GET /browser/tabs` |
-| `browser_screenshot` | Capture a PNG (JPEG if oversized) of a pane, returned as an inline image content part, capped at ~1 MB. | `POST /browser/{paneId}/screenshot` |
-| `browser_get_console_logs` | Pull console, exception, and log entries from a pane's ring buffer with `since`/`level`/`limit` filters. Read-only. | `GET /browser/{paneId}/console` |
-| `browser_evaluate_js` | Evaluate a JavaScript expression in a pane's top frame. Runs only when the user has opted the pane into agent JS; otherwise returns a legible denial. Omitted in read-only mode. | `POST /browser/{paneId}/evaluate` |
-| `browser_navigate` | Load an `http://`/`https://` URL in a pane. Agent-initiated; logged to the bound session's audit trail. Omitted in read-only mode. | `POST /browser/{paneId}/navigate` |
-
-## Full-Control Risks
-
-`process` can create, update, or remove `.claxedo/processes.jsonc` entries and
-start, stop, restart, or bulk-control long-running commands. `spawn_session`
-creates a background control-plane session and can dispatch an initial prompt.
-`summarize_logs` creates a temporary Claxedo session and sends log text to the
-configured runtime/model — logs can contain secrets or customer data.
-`browser_navigate` changes
-the page in a browser pane, and `browser_evaluate_js` runs arbitrary JS in a
-pane the user explicitly opted in. Treat all of these as active permissions:
-prefer an MCP client that shows tool calls before execution, and pair
-`CLAXEDO_AUTH_TOKEN` with server-side audit logging for hosted/remote use.
-
-## Documents CLI And Skill
-
-The same document contract is available without an MCP client. The published
-binary is `claxedo-mcp`:
-
-```sh
-claxedo-mcp documents list
-claxedo-mcp documents open 'claxedo://document/<id>' --session '<session-id>'
-```
-
-`CLAXEDO_API_DIR` and `CLAXEDO_SESSION_ID` (or `--directory`/`--project` and
-`--session`) provide the default project and session. The published package
-includes `skills/claxedo-documents/SKILL.md` so an Agent Plugins collection can
-teach supported harnesses to resolve compact document references instead of
-copying absolute paths.
-
-## Example Payloads
-
-These use the real MCP `tools/call` JSON-RPC shape — `params.name` and
-`params.arguments`.
-
-List configured processes:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/call",
-  "params": {
-    "name": "process",
-    "arguments": { "action": "list" }
-  }
-}
-```
-
-Add a dev-server process:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 2,
-  "method": "tools/call",
-  "params": {
-    "name": "process",
-    "arguments": {
-      "action": "add",
-      "name": "web",
-      "command": "bun",
-      "args": ["run", "dev"],
-      "port": { "name": "web", "inject": "PORT", "preferred": 3000 }
-    }
-  }
-}
-```
-
-Tail process logs:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 3,
-  "method": "tools/call",
-  "params": {
-    "name": "get_logs",
-    "arguments": { "name": "web", "lines": 200 }
-  }
-}
-```
-
-## Grounding
-
-Implemented in:
-
-- `packages/claxedo-mcp/src/server.ts`
-- `packages/claxedo-mcp/src/documents-tools.ts`
-- `packages/claxedo-mcp/src/documents-cli.ts`
-- `packages/claxedo-mcp/src/desktop-request.ts`
-- `packages/claxedo-mcp/src/browser-tools.ts`
-- `packages/claxedo-mcp/src/cloud-workspace-tools.ts`
-- `packages/claxedo-mcp/src/process-handler.ts`
-- `packages/claxedo-mcp/src/tool-policy.ts`
-- `packages/claxedo-mcp/src/request-scope.ts`
-- `packages/claxedo-mcp/src/http-error.ts`
-- `packages/claxedo-mcp/README.md`
+- The loopback endpoint accepts only the credential the runtime injected,
+  read from the `Authorization` header and never from the URL; it rejects a
+  request whose `Host` or `Origin` is not loopback and reflects no CORS
+  origin, so a page cannot drive it from a browser.
+- The hosted endpoint treats the CLI sign-in as the whole account: every
+  scope, nothing read-only.
+- Every write is recorded with the actor, the client (OAuth client id, `cli`,
+  or the runtime instance) and the session it addressed: on the control plane
+  through its authority audit, on a machine or VM in that process's log.

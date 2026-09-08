@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import {
+  type Agent,
   agentListQuery,
   pathQuery,
   projectCurrentQuery,
@@ -21,12 +22,7 @@ describe("directory query factories", () => {
   }
 
   function agent(name: string): Agent {
-    return {
-      name,
-      mode: "primary",
-      permission: [],
-      options: {},
-    }
+    return { name, mode: "primary" }
   }
 
   test("projectCurrentQuery returns the current project id", async () => {

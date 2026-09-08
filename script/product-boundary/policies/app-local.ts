@@ -287,7 +287,11 @@ export const appLocal: Policy = {
   // app-name allowlist moved to `claxedo-desktop/src/main/open-in-apps.ts`,
   // beside the `open-path` guard that is now its only reader. Re-measured, no
   // headroom.
-  ceilings: { modules: 1002, packages: 38 },
+  // +3 modules (2026-09-08): Settings reaches connected-apps-section,
+  // connected-apps-api and better-auth-api-error for OAuth consent revocation.
+  // server-routes replaces server-client-contract at the connection boundary.
+  // Full verify:closure measured 1005 modules / 38 packages; no headroom.
+  ceilings: { modules: 1005, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

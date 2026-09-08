@@ -3,6 +3,9 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { createSelfHostedApp } from "./app"
+import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { createClaxedoMcpClient } from "@claxedo/mcp/client"
+import { verifyEmbeddedRuntimeCredential } from "@claxedo/local-server/self-hosted-execution"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
@@ -52,6 +55,13 @@ function localApp() {
       },
       { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
+    {
+      firstPartyMcp: {
+        verifyRuntimeCredential: verifyEmbeddedRuntimeCredential,
+        createClient: (input) => createClaxedoMcpClient(input),
+        registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+      },
+    },
   ).app
 }
 
@@ -100,6 +110,7 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/agent-config/harness",
       "/api/claxedo/agent-config/harness/options",
       "/api/claxedo/agent-config/mcp",
+    "/api/claxedo/agent-config/mcp-install",
       "/api/claxedo/agent-config/mcp/:name",
       "/api/claxedo/agent-config/providers",
       "/api/claxedo/agent-config/providers/*",
@@ -205,6 +216,7 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/integrations/connections/:id/repositories",
       "/api/claxedo/integrations/connections/:id/reverify",
       "/api/claxedo/integrations/connections/:id/token",
+      "/api/claxedo/mcp",
       "/api/claxedo/project/remote",
       "/api/claxedo/remote-access",
       "/api/claxedo/remote-access/devices",
@@ -276,6 +288,27 @@ describe("desktop-local product contract", () => {
     const global = await app.request("/global/health")
     expect(global.status).toBe(200)
     expect(await global.json()).toMatchObject({ healthy: true })
+  })
+
+  test("answers the workspace list in one envelope, signed or not, so the MCP client can read it", async () => {
+    const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
+    const shared = await ensureWorkspace({ kind: "cloud", workspace_name: "shared box", directory: "/srv/repo", remote_directory: "/srv/repo" })
+    if (!shared) throw new Error("the store refused the fixture workspace")
+    const app = localApp()
+
+    for (const access of ["cloud", "user-hosted"] as const) {
+      const response = await app.request(`/api/workspace?access=${access}`)
+      expect(response.status, access).toBe(200)
+      expect(await response.json(), access).toMatchObject({ workspaces: expect.any(Array) })
+    }
+
+    const client = createClaxedoMcpClient({
+      deployment: "node",
+      local: { fetch: async (path, init) => await app.request(path, init), workspace: { workspaceId: shared.id } },
+      controlPlane: { fetch: async (path, init) => await app.request(path, init) },
+    })
+    expect((await client.workspaces()).map((row) => ({ id: row.id, kind: row.kind, name: row.name })))
+      .toEqual([{ id: shared.id, kind: "user-hosted", name: "shared box" }])
   })
 
   test("resolves the profile root from the product data directory, not the package location", async () => {

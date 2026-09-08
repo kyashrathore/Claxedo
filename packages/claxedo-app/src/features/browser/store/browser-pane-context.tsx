@@ -11,7 +11,6 @@ import { createSignal, onCleanup, type Accessor } from "solid-js"
  *   - `consoleEntries` — live-tailing ring of entries streamed from main
  *   - `isLoading` — best-effort reflection of dom-ready / navigation state
  *   - `currentUrl` — last known URL for the pane
- *   - `agentAllowed` — per-tab opt-in gate for agent-side `evaluate`
  *
  * Follows the pane-local-frontend-orchestration layer direction (code lives
  * under `packages/claxedo-app/src/browser/`, not inside `claxedo-ui`).
@@ -50,10 +49,6 @@ export type BrowserScreenshotClip = {
 export type BrowserScreenshotResult =
   | { ok: true; dataUrl: string; mimeType: "image/png" | "image/jpeg" }
   | { ok: false; error: { code: string; message?: string } }
-
-export type BrowserEvaluateResult =
-  | { ok: true; result: unknown }
-  | { ok: false; error: { code: string; message?: string; stack?: string } }
 
 /** Renderer-mirror of the main-process `NodeSelectedPayload`. */
 export type BrowserNodeSelectedPayload =
@@ -109,8 +104,6 @@ export type BrowserBridgeApi = {
   ) => Promise<BrowserConsoleEntry[]>
   onConsoleEntry: (paneId: string, cb: (e: BrowserConsoleEntry) => void) => () => void
   captureScreenshot: (paneId: string, opts?: { clip?: BrowserScreenshotClip }) => Promise<BrowserScreenshotResult>
-  evaluate: (paneId: string, expression: string) => Promise<BrowserEvaluateResult>
-  setAgentAllowed: (paneId: string, allowed: boolean) => Promise<{ ok: boolean; error?: string }>
   setInspectMode: (paneId: string, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
   onNodeSelected: (paneId: string, cb: (payload: BrowserNodeSelectedPayload) => void) => () => void
   /** Toolbar primitives — all optional so the renderer degrades gracefully if
@@ -141,8 +134,6 @@ function isBrowserBridgeApi(value: unknown): value is BrowserBridgeApi {
     typeof value.getConsoleLogs === "function" &&
     typeof value.onConsoleEntry === "function" &&
     typeof value.captureScreenshot === "function" &&
-    typeof value.evaluate === "function" &&
-    typeof value.setAgentAllowed === "function" &&
     typeof value.setInspectMode === "function" &&
     typeof value.onNodeSelected === "function"
   )
@@ -176,8 +167,6 @@ export type BrowserPaneState = {
   setLoading: (v: boolean) => void
   currentUrl: Accessor<string | undefined>
   setCurrentUrl: (url: string | undefined) => void
-  agentAllowed: Accessor<boolean>
-  setAgentAllowed: (allowed: boolean) => Promise<void>
   inspectMode: Accessor<boolean>
   setInspectMode: (enabled: boolean) => Promise<{ ok: boolean; error?: string }>
   lastSelectedNode: Accessor<BrowserNodeSelectedPayload | undefined>
@@ -186,7 +175,6 @@ export type BrowserPaneState = {
   clearLastSelectedNode: () => void
   clearConsole: () => void
   captureScreenshot: (opts?: { clip?: BrowserScreenshotClip }) => Promise<BrowserScreenshotResult>
-  evaluate: (expression: string) => Promise<BrowserEvaluateResult>
   /**
    * Attach / detach the live `<webview>` DOM ref so the context can forward
    * picker `set-mode` messages into the guest preload. Called by
@@ -215,7 +203,6 @@ const browserPaneContextInput = {
     const [consoleDrawerOpen, setConsoleDrawerOpen] = createSignal(false)
     const [isLoading, setLoading] = createSignal(false)
     const [currentUrl, setCurrentUrl] = createSignal(props.initialUrl)
-    const [agentAllowed, setAgentAllowedSig] = createSignal(false)
     const [inspectMode, setInspectModeSig] = createSignal(false)
     const [lastSelectedNode, setLastSelectedNode] = createSignal<BrowserNodeSelectedPayload>()
 
@@ -247,28 +234,11 @@ const browserPaneContextInput = {
 
     const clearConsole = () => setConsoleEntries([])
 
-    const setAgentAllowed = async (allowed: boolean) => {
-      setAgentAllowedSig(allowed)
-      if (bridge) {
-        try {
-          await bridge.setAgentAllowed(props.paneId, allowed)
-        } catch {
-          // Revert on failure so UI is never out of sync with main.
-          setAgentAllowedSig((v) => !v)
-        }
-      }
-    }
-
     const captureScreenshot = async (
       opts?: { clip?: BrowserScreenshotClip },
     ): Promise<BrowserScreenshotResult> => {
       if (!bridge) return { ok: false, error: { code: "no-bridge", message: "Browser bridge unavailable" } }
       return bridge.captureScreenshot(props.paneId, opts)
-    }
-
-    const evaluate = async (expression: string): Promise<BrowserEvaluateResult> => {
-      if (!bridge) return { ok: false, error: { code: "no-bridge", message: "Browser bridge unavailable" } }
-      return bridge.evaluate(props.paneId, expression)
     }
 
     let webviewRef: WebviewRef | undefined
@@ -358,8 +328,6 @@ const browserPaneContextInput = {
       setLoading: (v: boolean) => setLoading(v),
       currentUrl,
       setCurrentUrl,
-      agentAllowed,
-      setAgentAllowed,
       inspectMode,
       setInspectMode,
       lastSelectedNode,
@@ -367,7 +335,6 @@ const browserPaneContextInput = {
       clearLastSelectedNode,
       clearConsole,
       captureScreenshot,
-      evaluate,
       attachWebview,
       detachWebview,
       canGoBack,

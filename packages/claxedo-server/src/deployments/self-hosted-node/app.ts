@@ -37,7 +37,13 @@ import {
   mountControlPlaneRouteContributions,
   type ControlPlaneRouteContribution,
 } from "@claxedo/server-core/platform/http/route-contribution"
-import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
+import { isLoopbackLocalRequest, peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { CLAXEDO_MCP_TOOL_GROUPS, fullUserCredential, inProcessFetch, type FirstPartyMcpOptions } from "@claxedo/mcp"
+import { createClaxedoMcpClient } from "@claxedo/mcp/client"
+import { bearerToken } from "@claxedo/helpers/string"
+import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
+import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
 import type { ConnectionRateLimiter } from "../../platform/auth/rate-limit"
@@ -64,6 +70,7 @@ import {
   ensureEmbeddedWorkspaceRuntime,
   readEmbeddedWorkspaceSessionConfig,
   shutdownEmbeddedWorkspaceRuntimes,
+  verifyEmbeddedRuntimeCredential,
 } from "@claxedo/local-server/self-hosted-execution"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
@@ -89,7 +96,7 @@ import {
   unsignedLocalRequestGuard,
 } from "@claxedo/server-core/authority/deployment-mode"
 import { assertSelfHostedPosture, type SelfHostedPosture } from "./posture"
-import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
+import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, embeddedAuthPublicOrigin, getEmbeddedAuth } from "./embedded-auth"
 import { embeddedBrowserAuthDescriptor, embeddedBrowserAuthSecurity, embeddedBrowserSessionBearer } from "./embedded-browser-auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
@@ -97,6 +104,7 @@ import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createControlPlaneApp } from "../../control-plane-app"
 import { createMachineSessionDispatch } from "../../session/machine-dispatch"
 import { JwksRoutes } from "../../authority/routes/jwks"
+import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
 import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-node"
@@ -675,6 +683,12 @@ export function createSelfHostedApp(
     connectionRateLimiter?: ConnectionRateLimiter
     /** Explicit build/composition contributions; absent in the disabled product. */
     routeContributions?: readonly ControlPlaneRouteContribution[]
+    /**
+     * The first-party MCP endpoint (`/api/claxedo/mcp`). Signed: the CLI JWT
+     * as the whole account. Unsigned: a loopback caller with no identity,
+     * the same trust every other route on this box extends it.
+     */
+    firstPartyMcp?: FirstPartyMcpOptions
   } = {},
 ) {
   if (options.posture) assertSelfHostedPosture(options.posture)
@@ -1220,8 +1234,61 @@ export function createSelfHostedApp(
     channels: controlPlaneChannels,
   })
 
+  const firstPartyMcp = options.firstPartyMcp
+    ? firstPartyMcpContribution({
+        mount: "node",
+        app,
+        authority: services.authority,
+        options: options.firstPartyMcp,
+        signedAuth: async (request) => {
+          try {
+            const auth = await controlPlaneAuthContext(request, authRouteOptions(services))
+            return auth.mode === "signed" ? auth : undefined
+          } catch (error) {
+            if (error instanceof ControlPlaneAuthError) return undefined
+            throw error
+          }
+        },
+        anonymousCredential: (request) =>
+          !services.auth.config.enabled && isLoopbackLocalRequest(request) && !bearerToken(request.headers.get("authorization"))
+            ? fullUserCredential({ actorId: "loopback", clientId: "loopback" })
+            : undefined,
+        ...(embeddedAuthEnabled(process.env)
+          ? {
+              oauthCredential: (request: Request) =>
+                resolveOAuthMcpCredential(request, {
+                  verifyAccessToken: async (token) =>
+                    readIntrospectedAccessToken(await getEmbeddedAuth().introspectAccessToken(token)),
+                  controlPlaneOrigin: () => embeddedAuthPublicOrigin(),
+                }),
+            }
+          : {}),
+        // This box runs its own workspaces behind the runtime proxy, which
+        // picks the workspace from `x-workspace-id`: stamped for a runtime
+        // credential, named per call by the client for an account.
+        local: (credential) =>
+          credential.kind === "runtime"
+            ? {
+                fetch: inProcessFetch((call) => app.request(call), { "x-workspace-id": credential.workspaceId }),
+                workspace: { workspaceId: credential.workspaceId },
+              }
+            : { fetch: inProcessFetch((call) => app.request(call)), workspace: {} },
+        auditFallback: (record) => Log.create({ service: "claxedo-mcp" }).info("mcp.audit", record),
+      })
+    : undefined
+  if (firstPartyMcp && embeddedAuthEnabled(process.env)) {
+    // This box's OAuth server is its own embedded Better Auth, mounted at
+    // `/api/auth` under its public origin. That origin, not the request's, is
+    // what the provider registered the MCP resource and its own issuer under,
+    // so a box reached on a second hostname still tells a client the
+    // identifier its token will actually carry.
+    app.route("/", OAuthProtectedResourceRoutes({
+      controlPlaneOrigin: () => embeddedAuthPublicOrigin(),
+      authorizationServer: () => `${embeddedAuthPublicOrigin()}/api/auth`,
+    }))
+  }
   mountControlPlaneRouteContributions({
-    contributions: options.routeContributions ?? [],
+    contributions: [...(options.routeContributions ?? []), ...(firstPartyMcp ? [firstPartyMcp] : [])],
     mount: (contribution) => mountOwnedRoute(
       app,
       routeOwnership,
@@ -1476,6 +1543,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   configureEmbeddedWorkspaceRuntime({
     opencodeRuntime,
     connectionProviders,
+    // The origin this process serves `/api/claxedo/mcp` on; `port` is the one
+    // `startServer` binds and every caller reads back as this node's address.
+    firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}` },
     ...(services.auth.config.enabled && services.authority
       ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority) }
       : {}),
@@ -1542,6 +1612,14 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
+    // This box runs the workspaces it serves, so it serves their sessions'
+    // first-party MCP itself; the credential a runtime minted is verified by
+    // the runtime that minted it.
+    firstPartyMcp: {
+      verifyRuntimeCredential: verifyEmbeddedRuntimeCredential,
+      createClient: (input) => createClaxedoMcpClient(input),
+      registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+    },
     beforeLocalSessionList: async () => {
       if (localSessionProjectionReady) return
       localSessionProjectionReady = new Promise((resolve) => {

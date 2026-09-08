@@ -1,4 +1,4 @@
-/** Browser-facing Claxedo DTOs. These are owned by Claxedo, not generated from a harness SDK. */
+/** Browser-facing Claxedo DTOs the app reads off claxedo-server routes; the workspace runtime's own live in `@claxedo/workspace-runtime/client`. */
 
 import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
 
@@ -9,10 +9,8 @@ export type ClaxedoProject = {
   name?: string
   icon?: { url?: string; override?: string; color?: string }
   commands?: { start?: string }
-  // Optional because the embedded OpenCode engine's `project.updated` payload
-  // carries neither: it sends `{ id, worktree, vcs }`. Readers already wrote
-  // `project.sandboxes ?? []` and `project.time?.created` against that reality
-  // while the DTO claimed both were guaranteed.
+  // The embedded OpenCode engine's `project.updated` payload carries neither:
+  // it sends `{ id, worktree, vcs }`.
   time?: { created: number; updated: number; initialized?: number }
   sandboxes?: string[]
   git?: { remote?: string | null }
@@ -48,11 +46,6 @@ export type ClaxedoPath = {
   directory: string
 }
 
-export type ClaxedoVcsInfo = {
-  branch?: string
-  default_branch?: string
-}
-
 export type ClaxedoCommand = {
   name: string
   description?: string
@@ -64,29 +57,11 @@ export type ClaxedoCommand = {
   hints: string[]
 }
 
-export type ClaxedoAgentProfile = {
-  name: string
-  description?: string
-  mode: "subagent" | "primary" | "all"
-  native?: boolean
-  hidden?: boolean
-  topP?: number
-  temperature?: number
-  color?: string
-  permission: unknown
-  model?: { modelID: string; providerID: string }
-  variant?: string
-  prompt?: string
-  options: Record<string, unknown>
-  steps?: number
+export type ClaxedoProviderAuthorization = {
+  url: string
+  method: "auto" | "code"
+  instructions: string
 }
-
-export type ClaxedoMcpStatus =
-  | { status: "connected" }
-  | { status: "disabled" }
-  | { status: "failed"; error: string }
-  | { status: "needs_auth" }
-  | { status: "needs_client_registration"; error: string }
 
 export type ClaxedoProviderModel = {
   id: string
@@ -146,12 +121,6 @@ export type ClaxedoProviderAuthMethod = {
 }
 
 export type ClaxedoProviderAuth = Record<string, ClaxedoProviderAuthMethod[]>
-
-export type ClaxedoProviderAuthorization = {
-  url: string
-  method: "auto" | "code"
-  instructions: string
-}
 
 /** Workspace-operational events consumed by browser surfaces. */
 export type ClaxedoWorkspaceEvent =

@@ -99,7 +99,29 @@ export const serverSelfHosted: Policy = {
   // `hosts/workspace-runtime/workspace-session-admission.ts` each defined
   // privately. The `/guards` subpath has zero imports and no host APIs, so it
   // brings no transitive edge. Re-measured, no headroom: 134/37.
-  ceilings: { modules: 134, packages: 37 },
+  // +1 module / +1 package: `src/mcp/first-party-mcp.ts` mounts the
+  // first-party MCP endpoint (`/api/claxedo/mcp`) from `@claxedo/mcp`, the
+  // owner of the route, its credential model and its tool registry; the node
+  // admits the CLI JWT and its own unsigned loopback caller there. The package
+  // reaches only the MCP SDK, hono, zod, helpers and the runtime contract.
+  // Re-measured, no headroom: 135/38.
+  // +2 modules: `src/mcp/oauth-protected-resource.ts` and the scope/resource
+  // names it shares with the OAuth provider, `platform/auth/mcp-oauth-scopes.ts`.
+  // The MCP endpoint's own 401 challenge names the RFC 9728 document, so the
+  // deployment that mounts the endpoint is the one that must answer for it.
+  // The scope module is deliberately dependency-free — it is in every auth
+  // composition's closure, including the Worker's, and reading the names from
+  // `@claxedo/mcp` would drag the MCP SDK in behind them. No package edge.
+  // Re-measured, no headroom: 137/38.
+  // +1 module: `src/mcp/oauth-credential.ts` reads the claims of an access
+  // token this box's own OAuth provider issued, so a host that completed
+  // consent is admitted at the MCP endpoint instead of answered 401. It is
+  // owned here rather than in `@claxedo/mcp` because the scope-to-credential
+  // rule is a deployment's policy over its own authorization server, and it
+  // reaches only `@claxedo/helpers/string` and the scope module already in
+  // this closure. No package edge. Re-measured, no headroom: 139/38.
+  // Consent revocation shares platform/auth/oauth-consent-revocation.ts across both OAuth providers.
+  ceilings: { modules: 139, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

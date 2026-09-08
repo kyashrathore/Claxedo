@@ -19,6 +19,7 @@ import {
 import { stripRelayPrefix } from "../onboarding/provider-error-detail"
 import type { SessionTurnOutcome } from "../data/session-types"
 import { TimelineRow } from "./timeline-row-model"
+import { isSubagentToolPart } from "../subagents/subagent-presentation"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -50,7 +51,7 @@ export namespace Timeline {
     if (!finalAssistant) return undefined
     const visible = new Set([finalAssistant.id])
     for (const message of assistantMessages) {
-      if (getMessageParts(message.id).some((part) => part.type === "tool" && part.tool === "task")) {
+      if (getMessageParts(message.id).some((part) => isSubagentToolPart(part))) {
         visible.add(message.id)
       }
     }
@@ -595,7 +596,7 @@ function groupParts(parts: GroupablePart[]) {
   parts.forEach((item, index) => {
     const isContext = item.part.type === "tool" && contextGroupTools.has(item.part.tool)
     const isWork = item.part.type === "tool" && workGroupTools.has(item.part.tool)
-    const isTask = item.part.type === "tool" && item.part.tool === "task"
+    const isTask = isSubagentToolPart(item.part)
 
     if (isContext) {
       flushWork(index - 1)

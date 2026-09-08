@@ -39,7 +39,15 @@ import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-cor
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
-import { configureEmbeddedWorkspaceRuntime, ensureEmbeddedWorkspaceRuntime, readEmbeddedWorkspaceSessionConfig, shutdownEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
+import {
+  configureEmbeddedWorkspaceRuntime,
+  ensureEmbeddedWorkspaceRuntime,
+  readEmbeddedWorkspaceSessionConfig,
+  shutdownEmbeddedWorkspaceRuntimes,
+  verifyEmbeddedRuntimeCredential,
+} from "../deployments/local/embedded-workspace-runtime"
+import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { migrateCredentials } from "../credentials/operations/migrate"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
@@ -54,7 +62,7 @@ import { createLocalWorkspaceRelayProxy } from "../workspace/runtime-dispatch/sh
 
 const log = Log.create({ service: "local-server" })
 
-export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "services" | "usage"> & {
+export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "services" | "usage" | "firstPartyMcp"> & {
   services?: LocalAppOptions["services"]
   port?: number
   hostname?: string
@@ -120,9 +128,14 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       void projectLocalSessionMetaFromEvent(services.projectionStore, event)
     }
   }
+  // The origin this process serves the first-party MCP on. `port` is the bound
+  // port: `serve()` below is given it explicitly and every caller reads back
+  // the same number as this server's address.
+  const firstPartyMcpBaseUrl = `http://127.0.0.1:${port}`
   configureEmbeddedWorkspaceRuntime({
     connectionProviders,
     opencodeRuntime,
+    firstPartyMcpLaunch: { baseUrl: firstPartyMcpBaseUrl },
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // No route contributions: hosted capabilities contribute routes, and their
     // absence from an unsigned desktop is this line rather than a runtime flag.
@@ -269,6 +282,11 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     usage,
     workspaceRelayProxy,
     refreshSessionProjection,
+    firstPartyMcp: {
+      verifyRuntimeCredential: verifyEmbeddedRuntimeCredential,
+      createClient: (input) => createClaxedoMcpClient(input),
+      registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+    },
   })
 
   const hostname = options.hostname ?? (process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1")

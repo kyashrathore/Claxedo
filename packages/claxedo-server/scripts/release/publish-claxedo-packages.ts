@@ -47,7 +47,7 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 13 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 12 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; each later tier depends only on
  * earlier ones. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
@@ -63,7 +63,6 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/agent-event-runtime", dir: "packages/agent-event-runtime", track: "runtime" },
   { name: "@claxedo/channels", dir: "packages/claxedo-channels", track: "apps" },
   { name: "@claxedo/connections", dir: "packages/claxedo-connections", track: "apps" },
-  { name: "@claxedo/mcp", dir: "packages/claxedo-mcp", track: "apps" },
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime" },
   // Tier 2
   { name: "@claxedo/sandbox-manager", dir: "packages/sandbox-manager", track: "runtime" },
@@ -281,7 +280,7 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
   if (selected.length === 0) throw new Error("no packages selected")
 
   // Pins and drift are validated against every public package, not just the
-  // selected subset — publishing `mcp` alone must still prove the whole
+  // selected subset — publishing `connections` alone must still prove the whole
   // public set is releasable.
   const versions = repoVersions(root)
   const publicNames = new Set(versions.keys())

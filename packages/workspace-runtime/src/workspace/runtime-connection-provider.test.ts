@@ -8,7 +8,8 @@ import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { Hono } from "hono"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { withWorkspaceTarget } from "../target"
-import { createWorkspaceHost, WorkspaceHarnessUnavailableError } from "./runtime"
+import { createWorkspaceHost } from "./runtime"
+import { WorkspaceHarnessUnavailableError } from "../harness-unavailable-error"
 
 const roots: string[] = []
 afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))

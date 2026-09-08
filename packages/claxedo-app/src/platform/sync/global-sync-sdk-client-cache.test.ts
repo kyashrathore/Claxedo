@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createClaxedoServerClient } from "@/platform/api/server-client-contract"
+import { createServerClient } from "@/app/connection/server-client"
 import { queryClient } from "@/platform/query/query-client"
 import {
   cachedGlobalSyncServerClient,
@@ -14,8 +14,8 @@ afterEach(() => {
 })
 
 function client(id: string) {
-  return Object.assign(createClaxedoServerClient({
-    baseUrl: "https://server.example",
+  return Object.assign(createServerClient({
+    server: { url: "https://server.example" },
     request: async () => Response.json({}),
   }), {
     id,

@@ -38,7 +38,11 @@ describe("signedSessionList", () => {
       .then(() => undefined, (err: unknown) => err)
 
     expect(error).toBeInstanceOf(SessionListAuthorityError)
-    expect(error).toMatchObject({ status: 409, code: "workspace_runtime_session_authority" })
+    expect(error).toMatchObject({
+      status: 409,
+      code: "workspace_runtime_session_authority",
+      message: "Sessions of user-hosted workspace ws_1 are listed by its runtime",
+    })
     expect(listSessions).not.toHaveBeenCalled()
     expect(sessionListErrorResponse(error)?.status).toBe(409)
   })

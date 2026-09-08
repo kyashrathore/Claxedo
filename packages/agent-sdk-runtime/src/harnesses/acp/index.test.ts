@@ -385,6 +385,68 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(item.sessionProcesses.get("s1")).toBe(next)
   })
 
+  test("abort answers the cancelled turn's pending permissions with cancelled and commits the reject", async () => {
+    const responses: Array<{ id: string; response: unknown }> = []
+    const proc = {
+      alive: true,
+      pendingPermissions: new Map([
+        ["perm-mine", { aid: "agent-session-1", tool: "bash", paths: [], options: [], resolve() {} }],
+        ["perm-other", { aid: "agent-session-2", tool: "bash", paths: [], options: [], resolve() {} }],
+      ]),
+      async cancel() {},
+      respondPermission(id: string, response: unknown) {
+        responses.push({ id, response })
+        proc.pendingPermissions.delete(id)
+      },
+      dispose() {},
+    }
+    const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
+      store: {
+        getAgentSessionId: (id: string) => string | null
+        getSessionOwnerKey: (id: string) => string | null
+        appendEvent: (input: { payload: unknown }) => { payload: unknown }
+      }
+      processes: Map<string, { key: string; directory: string; proc: typeof proc | null; init: null; sessionIds: Set<string> }>
+      sessionProcesses: Map<string, string>
+      permissionOwners: Map<string, typeof proc>
+    }>
+    const appended: unknown[] = []
+    item.store = {
+      getAgentSessionId: () => "agent-session-1",
+      getSessionOwnerKey: () => "process-key",
+      appendEvent(input) {
+        appended.push(input)
+        return { payload: input.payload }
+      },
+    }
+    item.processes = new Map([[
+      "process-key",
+      { key: "process-key", directory: path.resolve("/work"), proc, init: null, sessionIds: new Set(["s1"]) },
+    ]])
+    item.sessionProcesses = new Map([["s1", "process-key"]])
+    item.permissionOwners = new Map([["perm-mine", proc], ["perm-other", proc]])
+
+    const result = await item.abort(executionBinding("s1", path.resolve("/work")))
+
+    expect(result).toEqual({ ok: true, status: "cancelled" })
+    expect(responses).toEqual([{ id: "perm-mine", response: { outcome: { outcome: "cancelled" } } }])
+    expect(proc.pendingPermissions.has("perm-mine")).toBe(false)
+    expect(proc.pendingPermissions.has("perm-other")).toBe(true)
+    expect(appended).toEqual([
+      expect.objectContaining({
+        sessionId: "s1",
+        agentSessionId: "agent-session-1",
+        payload: {
+          id: "permission.replied:perm-mine",
+          type: "permission.replied",
+          properties: { sessionID: "s1", requestID: "perm-mine", reply: "reject" },
+        },
+      }),
+    ])
+    expect(item.permissionOwners.has("perm-mine")).toBe(false)
+    expect(item.permissionOwners.has("perm-other")).toBe(true)
+  })
+
   test("abort failure invalidates the whole shared process", async () => {
     const calls: string[] = []
     const proc = {

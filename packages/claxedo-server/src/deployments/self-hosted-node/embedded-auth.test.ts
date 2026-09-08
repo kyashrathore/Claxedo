@@ -11,6 +11,7 @@ import {
   type EmbeddedAuth,
 } from "./embedded-auth"
 import { betterAuthAdapter, controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
+import { CLAXEDO_MCP_OAUTH_SCOPES } from "../../platform/auth/mcp-oauth-scopes"
 
 // Self-host/hosted parity: embedded Better Auth gives a self-host box
 // real signup/login (signed mode) with no hosted identity provider. These tests exercise
@@ -120,6 +121,53 @@ describe("embedded better-auth issuer", () => {
     expect(token).toBeTruthy()
     const session = await embedded.verifier(token!)
     expect(session?.subject).toBeTruthy()
+  })
+})
+
+describe("embedded MCP OAuth", () => {
+  test("advertises the claxedo scopes and dynamic registration", async () => {
+    const res = await app.request("/api/auth/.well-known/oauth-authorization-server")
+    expect(res.status).toBe(200)
+    const metadata = (await res.json()) as { scopes_supported?: string[]; registration_endpoint?: string }
+    expect(metadata.scopes_supported).toEqual(expect.arrayContaining([...CLAXEDO_MCP_OAUTH_SCOPES]))
+    expect(metadata.registration_endpoint).toMatch(/\/oauth2\/register$/)
+  })
+
+  test("registers an MCP host with no credential, on the MCP resource alone", async () => {
+    const res = await app.request("/api/auth/oauth2/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Cursor",
+        redirect_uris: ["http://127.0.0.1:51000/callback"],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+        application_type: "native",
+      }),
+    })
+    expect(res.status).toBe(201)
+    const client = (await res.json()) as { client_id?: string; scope?: string }
+    expect(client.client_id).toBeTruthy()
+    // The authorization server mints the id, so no MCP host can present
+    // itself as one of the client ids this deployment registers itself.
+    expect(client.client_id).not.toBe("claxedo-cli")
+    expect(client.scope?.split(" ")).toEqual(expect.arrayContaining([...CLAXEDO_MCP_OAUTH_SCOPES]))
+    expect(client.scope?.split(" ")).not.toContain("workspace:write")
+  })
+
+  test("introspects with a client of its own, so an unknown token is inactive rather than an auth failure", async () => {
+    await expect(embedded.introspectAccessToken("not-a-token")).resolves.toEqual({ active: false })
+  })
+
+  test("refuses introspection to anyone without the box's own client secret", async () => {
+    const res = await app.request("/api/auth/oauth2/introspect", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ client_id: "claxedo-control-plane", client_secret: "guessed", token: "t" }),
+    })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ error: "invalid_client" })
   })
 })
 

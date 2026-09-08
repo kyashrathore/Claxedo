@@ -202,9 +202,10 @@ function structuredInput(row: Record<string, unknown>) {
   return Object.keys(input).length ? input : undefined
 }
 
-function toolDisplay(itemType: string, input: Record<string, unknown> | undefined) {
+function toolDisplay(itemType: string, input: Record<string, unknown> | undefined, toolName?: string) {
   return toolDisplayFromInput({
     kind: itemType,
+    ...(toolName ? { toolName } : {}),
     ...(input ? { input } : {}),
   })
 }
@@ -437,7 +438,7 @@ function ensureTool(input: {
   const itemType = existing?.itemType ?? input.itemType
   const rawInput = existing?.input ?? input.rawInput
   const toolName = existing?.toolName ?? input.toolName ?? toolNameForItem(itemType, rawInput ?? {})
-  const display = toolDisplay(itemType, rawInput)
+  const display = toolDisplay(itemType, rawInput, toolName)
   if (existing) {
     return {
       state: input.state,
@@ -735,7 +736,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           if (!existing) {
             const toolName = toolNameForItem(itemType, completedItem)
             const input = structuredInput(completedItem)
-            const display = toolDisplay(itemType, input)
+            const display = toolDisplay(itemType, input, toolName)
             return {
               state: {
                 ...state,
@@ -748,7 +749,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
               ],
             }
           }
-          return [{ type: "tool-output", toolCallId: id, output, display: toolDisplay(itemType, existing.input), metadata: { codex: { itemType } } }]
+          return [{ type: "tool-output", toolCallId: id, output, display: toolDisplay(itemType, existing.input, existing.toolName), metadata: { codex: { itemType } } }]
         }
 
         case "item/started": {
@@ -762,7 +763,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           if (itemType === "user_message" || itemType === "assistant_message" || itemType === "reasoning" || itemType === "plan") return []
           const toolName = toolNameForItem(itemType, startedItem)
           const input = structuredInput(startedItem)
-          const display = toolDisplay(itemType, input)
+          const display = toolDisplay(itemType, input, toolName)
           return {
             state: {
               ...state,

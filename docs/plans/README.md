@@ -8,6 +8,31 @@ explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
 
+- [Claxedo mobile (Expo)](./2026-09-07-004-feat-claxedo-mobile-expo-app-plan.md) — proposed; not started.
+  - Thin Expo 57 / RN 0.86 app for the attention loop only: card list, last
+    turn + composer + plain diff, push notifications with Allow/Deny from the
+    lock screen. Reuses the control-plane client and the three server
+    additions from the MCP redesign; adds push registration and an attention
+    notifier. Includes a stack survey of t3code, orca, superset, paseo and
+    synara. No terminal, editor, relay or pairing — Claxedo already has the
+    relay and account auth those apps had to build.
+
+- [claxedo-mcp redesign](./2026-09-07-003-feat-claxedo-mcp-redesign-plan.md) — proposed; not started.
+  - One streamable-HTTP MCP endpoint served by the running Claxedo (Worker,
+    local server, self-hosted node) and installed by URL like any remote MCP;
+    no stdio binary, no npm package; one client over the control plane with a
+    per-workspace relay hop; tools
+    derived from `SESSION_CORE_ROUTE_ACCESS`; attention tools with elicitation
+    on terminal hosts (no MCP App; the phone UI is the Expo app, plan 004);
+    `create_subagent` as the single cross-harness channel; one login per user.
+    Supersedes the current `@claxedo/mcp` package and its defects.
+
+- [Permissions, questions, and todos as transcript records](./2026-09-07-001-feat-transcript-interaction-records-plan.md) — proposed; not started.
+  - Explains why the docks are transient today (pending tables deleted on
+    reply; the transcript is parts only) and turns the three interactions into
+    persisted parts materialized by the store's journal projection. Deletes the
+    client-side request and todo caches; docks become views over pending parts.
+
 - [Pi is a native harness; remove the central/VM split](./2026-09-05-004-pi-native-harness-remove-central-plan.md) — **implemented in worktree; acceptance pending**.
   - Standalone refactor. Pi uses the shared native adapter and its RPC process
     on local or cloud machines. Removes the central/hybrid/tools-only execution
@@ -84,20 +109,21 @@ explain a maintained package or cross-package delivery contract.
     packages, and the product default harness.
 
 - [Cross-harness subagents](./2026-08-07-002-feat-cross-harness-subagents-plan.md)
-  - Active plan (U1–U13) making a subagent a first-class object on every harness
+  - Plan (U1–U13) making a subagent a first-class object on every harness
     that has one: recognized at spawn, status-tracked, and openable beside its
-    parent session. Exists because the feature works on exactly one of eight
-    rails — and is broken at a different layer on each, which is why it has
-    never been fixed as one thing. Claude's tool was renamed `Task` → `Agent`
-    and detection never followed; Codex has the richest subagent protocol of the
-    three and every child-thread event is dropped by the driver before the
-    adapter runs; Cursor emits an agent *type* where a session id belongs; the
-    host `session` table has no `parent_id` column at all. Leads with the
-    finding that broke the first draft: the persisting turn projector is
-    server-side and parent-keyed, so forwarding nested events without routing
-    them corrupts the parent transcript rather than revealing subagents.
-    Replaces the degenerate one-field `subagent-spawned` event with one
-    idempotent `subagent-updated` upsert keyed on the subagent itself
+    parent session. The runtime half landed in `425358fab3`: Claude's `Agent`
+    tool is detected, Codex child-thread notifications are routed by
+    `parentThreadId`/`senderThreadId` instead of dropped, Cursor promotes the
+    real `agentId`/`transcriptPath`, the host `session` table has `parent_id`,
+    and every adapter declares the `subagents` capability. Its per-rail defect
+    table is therefore a record, not a backlog; the open items are the
+    unchecked Definition of Done entries (child-pane UX, transcript handles,
+    reload and crash semantics, fixture regeneration). Leads with the finding
+    that broke the first draft: the persisting turn projector is server-side
+    and parent-keyed, so forwarding nested events without routing them corrupts
+    the parent transcript rather than revealing subagents. Replaces the
+    degenerate one-field `subagent-spawned` event with one idempotent
+    `subagent-updated` upsert keyed on the subagent itself
     (`(parentSessionId, subagentKey)`), treating the spawning tool call as a
     many-to-many edge — because one Codex call can address several subagents,
     several calls can address one, and a backgrounded Claude task has no call

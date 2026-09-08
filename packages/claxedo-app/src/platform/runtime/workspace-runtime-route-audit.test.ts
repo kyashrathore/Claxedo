@@ -19,8 +19,6 @@ const allowed = new Set([
 ])
 
 const runtimeGatewayBoundary = new Set([
-  // Claxedo's explicit server HTTP client owns typed route construction.
-  "platform/api/server-client-contract.ts",
   "platform/runtime/agent/workspace-relay-connection.ts",
   "platform/runtime/agent/workspace-runtime-request.ts",
   "platform/runtime/agent/agent-runtime-urls.ts",

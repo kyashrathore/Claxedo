@@ -4,12 +4,15 @@ import fs from "fs/promises"
 import os from "node:os"
 import {
   createPersistentTranscriptHandleStore,
+  createRuntimeCredentialIssuer,
   createTranscriptResolver,
   createWorkspaceRuntimeApp,
   managedWorkspaceSessionAccessPolicy,
   Pty,
+  runtimeCredentialWorkspaceId,
   type ProcessObserver,
   type ProcessOwnerHandle,
+  type RuntimeCredentialClaims,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
@@ -97,6 +100,14 @@ let configuredOnSessionMetaEvent: ((event: CompatEnvelope) => void) | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
+let configuredFirstPartyMcpLaunch: EmbeddedFirstPartyMcpLaunch | undefined
+
+/**
+ * The loopback origin this process serves `/api/claxedo/mcp` on and the user
+ * it serves; an unsigned desktop passes no user. Each embedded runtime mints
+ * its own credential under this origin.
+ */
+export type EmbeddedFirstPartyMcpLaunch = { baseUrl: string; userId?: string }
 
 /**
  * How THIS process's embedded workspace runtimes composed their session
@@ -127,8 +138,11 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
+  /** Absent, no embedded runtime injects the first-party MCP entry into its sessions. */
+  firstPartyMcpLaunch?: EmbeddedFirstPartyMcpLaunch
 }) {
   configuredOpenCodeRuntime = input.opencodeRuntime
+  configuredFirstPartyMcpLaunch = input.firstPartyMcpLaunch
   configuredConnectionProviders = input.connectionProviders ?? configuredConnectionProviders
   configuredConnectionSecretResolver = input.resolveConnectionSecrets ?? configuredConnectionSecretResolver
   configuredRouteContributions = input.routeContributions ?? []
@@ -173,6 +187,18 @@ function options(
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredSessionAccessPolicy ? { sessionAccessPolicy: configuredSessionAccessPolicy } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
+    ...(configuredFirstPartyMcpLaunch
+      ? {
+          firstPartyMcpLaunch: {
+            baseUrl: configuredFirstPartyMcpLaunch.baseUrl,
+            issuer: createRuntimeCredentialIssuer({
+              runtimeId: crypto.randomUUID(),
+              workspaceId: ws.id,
+              ...(configuredFirstPartyMcpLaunch.userId ? { userId: configuredFirstPartyMcpLaunch.userId } : {}),
+            }),
+          },
+        }
+      : {}),
     // The observer persists control-plane session metadata. Conversation
     // delivery stays exclusively on WorkspaceRuntime's canonical runtime-event
     // stream and is never republished onto the control-plane bus.
@@ -402,6 +428,18 @@ export function embeddedWorkspaceRuntimeActivity() {
     if (activity.checkpointState !== "active") checkpointing++
   }
   return { hosts: hosts.size, activeTurns, activeWrites, checkpointing }
+}
+
+/**
+ * Verifies a first-party MCP bearer against the embedded runtime that minted
+ * it. Each runtime signs with its own secret, so the unverified workspace claim
+ * only selects the runtime to ask; a token for a workspace this process does
+ * not host, or that its runtime rejects, verifies to nothing.
+ */
+export function verifyEmbeddedRuntimeCredential(token: string): RuntimeCredentialClaims | undefined {
+  const workspaceId = runtimeCredentialWorkspaceId(token)
+  if (!workspaceId) return undefined
+  return hosts.get(workspaceId)?.host.runtimeCredentialIssuer()?.verify(token)
 }
 
 export function releaseEmbeddedWorkspaceRuntime(workspaceId: string): Promise<void> {

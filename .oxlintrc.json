@@ -116,31 +116,27 @@
       }
     },
     {
-      // The server client's single HTTP trust boundary, and nothing else.
-      // `call<T>` turns a parsed JSON body into the type its operation declares.
-      // `T` is not free: it is pinned by the `ClaxedoServerClient` contract in
-      // this same file, so no caller can name an arbitrary type. But nothing
-      // checks that the server actually sent that shape, and at an HTTP boundary
-      // nothing can without a validator.
+      // The workspace-runtime client's single HTTP trust boundary, and nothing
+      // else. `call<T>` hands back a parsed JSON body as the type its operation
+      // declares. `T` is pinned by the client contracts that name it, so no call
+      // site invents a shape, but nothing checks that the server sent one, and
+      // at an HTTP boundary nothing can without a validator.
       //
-      // This exception is WEAKER than the two above and is admitted on different
-      // grounds, which the next reader should not have to reverse-engineer. A
-      // brand has no runtime shadow and the relay's constructor is genuinely
-      // inexpressible; this claim, by contrast, IS checkable — it just needs a
-      // per-operation decoder for all 43 operations, the way
-      // `platform/account/hosted-operations.ts` already does it there. That is
-      // real work with real safety value, not a lint concern, and it is the
-      // recorded follow-up.
+      // This exception is WEAKER than the brand and constructor ones above and
+      // is admitted on different grounds. A brand has no runtime shadow and the
+      // relay's constructor is genuinely inexpressible; this claim IS checkable
+      // — it needs a per-operation decoder, the way
+      // `claxedo-app/src/platform/account/hosted-operations.ts` already writes
+      // them. That is real work with real safety value, not a lint concern, and
+      // it is the recorded follow-up.
       //
-      // What was rejected: widening `responseJson` to `unknown` and narrowing at
-      // each call site. It satisfies the rule while adding zero validation, and
-      // it cost 23 type errors across `workspace-panel.tsx`, `project-actions.tsx`
-      // and `usage-api.ts` where concrete types collapsed to `{}`. That moves the
-      // unsoundness outward and multiplies it; keeping it on one line, named, is
-      // honest about where untrusted data enters.
+      // What was rejected: widening the read to `unknown` and narrowing at each
+      // call site. It satisfies the rule while adding zero validation and
+      // collapses the concrete types every reader depends on. Keeping it on one
+      // named line is honest about where untrusted data enters.
       //
       // Scoped to the exact file so every other module stays fully enforced.
-      "files": ["packages/claxedo-app/src/platform/api/server-client-contract.ts"],
+      "files": ["packages/workspace-runtime/src/client/request.ts"],
       "rules": {
         "typescript/no-unsafe-type-assertion": "off"
       }
