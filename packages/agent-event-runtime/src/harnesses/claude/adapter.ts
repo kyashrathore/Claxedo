@@ -1043,12 +1043,9 @@ function translateSystemMessage(
       return []
 
     case "task_notification":
-      if (message.tool_use_id && message.status === "failed") {
-        return [{ type: "tool-error", toolCallId: message.tool_use_id, error: message.summary }]
-      }
-      if (message.tool_use_id) {
-        return [{ type: "tool-status", toolCallId: message.tool_use_id, status: "completed" }]
-      }
+      // Task lifecycle is projected by claudeSubagentObservations. This frame
+      // can precede the tool_result carrying stdout or the actual tool error;
+      // it must not terminalize that tool call with an empty result or summary.
       return []
 
     case "files_persisted":

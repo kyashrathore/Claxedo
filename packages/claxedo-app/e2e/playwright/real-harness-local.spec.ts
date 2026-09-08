@@ -1558,6 +1558,39 @@ test.describe("real harness journeys @core @tier-real", () => {
 
 
   for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} native long-running tool retains its result through reload`, async ({ page }) => {
+      const dir = await makeWorkspace(`${harness}-long-result`, harness)
+      await seedOneProject(page, dir)
+      await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness)
+      await waitForHarnessReady(page)
+      await page.locator('[data-action="prompt-permission-mode"]').last().click()
+      await page.locator(`[data-permission-mode-row][data-mode="${harness === "claude" ? "bypassPermissions" : "full-access"}"]`).click()
+      const marker = `LONG_RESULT_${Date.now()}`
+      const script = path.join(dir, "long-result.cjs")
+      await fs.writeFile(script, `setTimeout(() => console.log(${JSON.stringify(marker)}), 8000);`)
+      const command = `node '${script}'`
+      scripted!.scriptTool({ name: harness === "claude" ? "Bash" : "exec_command", input: harness === "claude" ? { command, timeout: 120000 } : { cmd: command, yield_time_ms: 30000 }, whenPromptIncludes: marker })
+      await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Run the requested command, then reply with exactly this one token: ${marker}`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expectAssistantReplyVisible(page, marker)
+      const sessionID = new URL(page.url()).pathname.split("/").at(-1)!
+      const read = async () => {
+        const response = await page.request.get(`${BACKEND_URL}/session/${sessionID}/message?directory=${encodeURIComponent(dir)}`)
+        expect(response.ok()).toBe(true)
+        const rows = await response.json() as Array<{ parts: Array<{ type: string; id: string; state?: { status: string; output?: string } }> }>
+        return rows.flatMap((row) => row.parts).filter((part) => part.type === "tool")
+      }
+      const tools = await read()
+      expect(tools).toHaveLength(1)
+      expect(tools[0]!.state).toMatchObject({ status: "completed", output: expect.stringContaining(marker) })
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expectAssistantReplyVisible(page, marker)
+      expect(await read()).toEqual(tools)
+    })
+  }
+
+  for (const harness of ["claude", "codex"] as const) {
     test(`${harness} native busy draft preserves multiline text through reload and submits once`, async ({ page }) => {
       const dir = await makeWorkspace(`${harness}-busy-draft`, harness)
       await seedOneProject(page, dir)

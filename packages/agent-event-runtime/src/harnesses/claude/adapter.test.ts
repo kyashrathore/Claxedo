@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "../../core/runtime"
 import type { RuntimeSnapshot } from "../../core/state"
+import { createClientPresentationProjection } from "../../projections/client-presentation/projection"
 import {
   claudeChildCorrelationKey,
   claudeSdkAdapter,
@@ -20,6 +21,23 @@ function runtime(initialSnapshot?: RuntimeSnapshot<ClaudeSdkAdapterState>) {
 }
 
 describe("claudeSdkAdapter", () => {
+  for (const failed of [false, true]) {
+  test(`task notification cannot consume the authoritative Bash ${failed ? "error" : "output"}`, () => {
+    const agent = runtime()
+    const projection = createClientPresentationProjection({ sessionId: "session-1", directory: "/repo", assistantMessageId: "reply-1" })
+    const ingest = (payload: unknown) => agent.ingest({ source: "claude.sdk.message", payload }).events.flatMap((event) => projection.ingest(event))
+    ingest({ type: "assistant", message: { content: [{ type: "tool_use", id: "bash-1", name: "Bash", input: { command: "node work.cjs" } }] } })
+    const notification = { type: "system", subtype: "task_notification", task_id: "task-1", tool_use_id: "bash-1", status: failed ? "failed" : "completed", summary: "Run work.cjs", uuid: "done-1" }
+    expect(claudeSubagentObservations(notification)[0]).toMatchObject({ status: failed ? "failed" : "completed" })
+    ingest(notification)
+    const result = ingest({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "bash-1", content: "actual tool result", is_error: failed }] }, tool_use_result: { stdout: failed ? "" : "actual tool result", stderr: failed ? "actual tool result" : "" } })
+    expect(result.at(-1)).toMatchObject({ payload: {
+      type: "message.part.updated", properties: { part: { state: failed ? { status: "error", error: "actual tool result" } : { status: "completed", output: "actual tool result" } } },
+    } })
+  })
+
+  }
+
   test("preserves provider error explanation and recovery guidance", () => {
     const explanation = "API Error: This request was blocked. Try a new session or change your model."
     const events = runtime().ingest({
