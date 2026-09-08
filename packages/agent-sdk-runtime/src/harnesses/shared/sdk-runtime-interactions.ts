@@ -65,10 +65,7 @@ export class SdkRuntimeInteractions {
   }
 
   replyQuestion(binding: AgentExecutionBinding, questionId: string, answers: AgentQuestionAnswer[]): AgentInteractionResult | void {
-    const pending = this.questions.get(questionId)
-    if (pending && pending.sessionId !== binding.sessionId) {
-      throw new Error(`Question ${questionId} does not belong to session ${binding.sessionId}`)
-    }
+    const pending = this.ownedQuestion(binding, questionId)
     if (!pending) return
     const committed = this.store.appendEvent({
       sessionId: pending.sessionId,
@@ -82,11 +79,22 @@ export class SdkRuntimeInteractions {
   }
 
   rejectQuestion(binding: AgentExecutionBinding, questionId: string): AgentInteractionResult | void {
+    this.ownedQuestion(binding, questionId)
+    return this.rejectPendingQuestion(questionId)
+  }
+
+  private ownedQuestion(binding: AgentExecutionBinding, questionId: string) {
+    const directory = requireWorkspaceDirectory(binding.directory)
     const pending = this.questions.get(questionId)
-    if (pending && pending.sessionId !== binding.sessionId) {
+    if (!pending) return
+    if (pending.sessionId !== binding.sessionId) {
       throw new Error(`Question ${questionId} does not belong to session ${binding.sessionId}`)
     }
-    return this.rejectPendingQuestion(questionId)
+    const row = this.store.listQuestions(directory).find(
+      (item) => item.id === questionId && item.sessionID === binding.sessionId,
+    )
+    if (!row) throw new Error(`Question ${questionId} is not pending in workspace ${directory}`)
+    return pending
   }
 
   rejectQuestions(sessionId: string) {

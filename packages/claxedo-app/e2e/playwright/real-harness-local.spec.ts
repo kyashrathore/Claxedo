@@ -1,4 +1,5 @@
 /** Real native-harness browser journeys against an isolated self-host server and scripted model HTTP endpoints. */
+import { expectConcurrentQuestionIsolation } from "../helpers/question-isolation"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { expectPermissionReplyIsolation } from "../helpers/permission-isolation"
 import { stopPendingPermission } from "../helpers/permission-stop"
@@ -1183,6 +1184,39 @@ test.describe("real harness journeys @core @tier-real", () => {
       scripted?.setReplyDelayMs(0)
     }
   })
+
+  for (const harness of ["claude", "codex"] as const) {
+    for (const presentation of ["navigation", "windows"] as const) {
+      test(`${harness} concurrent native questions (${presentation}) remain isolated across workspaces`, async ({ page }) => {
+        const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+        requireBinary(binary, harness, "install the CLI to exercise concurrent questions.")
+        scripted!.resetCounts()
+        await expectConcurrentQuestionIsolation(page, {
+          backendUrl: BACKEND_URL,
+          presentation,
+          startQuestion: async (target, index) => {
+            const directory = await makeWorkspace(`${harness}-question-isolation-${index}`, harness)
+            if (index === 0 || presentation === "windows") await seedOneProject(target, directory)
+            const input = await openDraftPrompt(target, directory)
+            await switchDraftHarness(target, harness)
+            await waitForHarnessReady(target)
+            const marker = `ISOLATED-${index}-${Date.now()}`
+            scripted!.scriptTool({
+              name: harness === "claude" ? "AskUserQuestion" : "request_user_input",
+              input: { questions: [{ id: "environment", header: "Environment", question: "Which environment?", options: [
+                { label: "Staging", description: "Isolated environment" },
+                { label: "Production", description: "Production environment" },
+              ], ...(harness === "claude" ? { multiSelect: false } : {}) }] },
+              whenPromptIncludes: marker,
+            })
+            await composePrompt(target, input, `Ask which environment to use, then reply with exactly this one token: ${marker}`)
+            await target.locator(SELECTORS.submitControl).last().click()
+            return { directory, answerMarker: marker, dismissMarker: marker }
+          },
+        })
+      })
+    }
+  }
 
   for (const action of ["answer", "dismiss"] as const) {
     test(`codex native structured question ${action} reaches the question dock`, async ({ page }) => {

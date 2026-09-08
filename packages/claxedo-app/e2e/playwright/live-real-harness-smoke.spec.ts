@@ -16,6 +16,7 @@
  * `GET /session/:id/message` payload still held exactly one text part — the strict
  * per-marker duplicate check therefore runs only after `page.reload()`.
  */
+import { expectConcurrentQuestionIsolation } from "../helpers/question-isolation"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { expectPermissionReplyIsolation } from "../helpers/permission-isolation"
 import { stopPendingPermission } from "../helpers/permission-stop"
@@ -371,6 +372,33 @@ test.describe("live real-harness smoke @live", () => {
     await seedOneProject(page, dir)
     await runLiveHarnessSmoke(page, dir, { id: "claude", option: /^Claude$/, optionIndex: 0 })
   })
+
+  for (const harness of ["claude", "codex"] as const) {
+    for (const presentation of ["navigation", "windows"] as const) {
+      test(`${harness} live concurrent questions (${presentation}) remain isolated across workspaces`, async ({ page }) => {
+        const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+        test.skip(!binary, `Requires the installed and authenticated ${harness} CLI.`)
+        await expectConcurrentQuestionIsolation(page, {
+          backendUrl: BACKEND_URL,
+          presentation,
+          startQuestion: async (target, index) => {
+            const directory = await makeWorkspace(`${harness}-question-isolation-${index}`)
+            if (index === 0 || presentation === "windows") await seedOneProject(target, directory)
+            const input = await openDraftPrompt(target, directory)
+            await switchDraftHarness(target, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+            await waitForHarnessReady(target)
+            const marker = `ISOLATED-${index}-${Date.now()}`
+            await composePrompt(target, input,
+              `Use ${harness === "claude" ? "AskUserQuestion" : "request_user_input"} now with one question, id "environment", header "Environment", question "Which environment?", and options Staging (isolated environment) and Production (production environment). ` +
+              `Wait for my answer. Then reply exactly ${marker}-Staging if I choose Staging or ${marker}-DISMISSED if dismissed. Do not ask again or run other tools.`,
+            )
+            await target.locator(SELECTORS.submitControl).last().click()
+            return { directory, answerMarker: `${marker}-Staging`, dismissMarker: `${marker}-DISMISSED` }
+          },
+        })
+      })
+    }
+  }
 
   for (const harness of ["claude", "codex"] as const) {
     for (const action of ["answer", "dismiss", "stop"] as const) {

@@ -1061,8 +1061,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     )).flat()
   }
 
-  async function listQuestions(sessionId: string | undefined, directory: string) {
-    if (sessionId) return await (await adapterForSession({ sessionId, directory })).listQuestions?.(directory) ?? []
+  async function listQuestions(directory: string) {
     const seen = new Set<AgentHarnessAdapter>()
     return (await Promise.all(
       [adapter, ...sessionAdapters.values()]
@@ -1646,7 +1645,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           pendingWakes: () => store().listPendingSubagentWakes?.() ?? [],
         },
         listPermissions: (c, directory) => listPermissions(c.req.query("sessionId"), directory),
-        listQuestions: (c, directory) => listQuestions(c.req.query("sessionId"), directory),
+        listQuestions: (_c, directory) => listQuestions(directory),
         createActiveTurnScope: (input) => createActiveTurnScope(input),
         transformPromptBody: ({ sessionId, body }) => {
           const registration = sessionToolPrompts.get(sessionId)

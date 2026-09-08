@@ -1936,3 +1936,30 @@ for (const operation of ["reply", "reject"] as const) {
     expect(resolved).toBe(0)
   })
 }
+
+test("question listing filters the authoritative workspace inventory without resolving the supplied session", async () => {
+  const rows = [
+    { id: "question_first", sessionID: "session_first", questions: [] },
+    { id: "question_second", sessionID: "session_second", questions: [] },
+  ]
+  const app = createSessionRoutes({
+    resolveAdapter: () => { throw new Error("must not select a harness from an unverified session query") },
+    resolveDirectory: () => "/repo",
+    listQuestions: async () => rows,
+    sessionBus: { publish: () => {}, subscribe: () => () => {} },
+    publishGlobal: () => {},
+  })
+  const selected = await app.request("http://localhost/question?sessionId=session_first")
+  expect(selected.status).toBe(200)
+  expect(await selected.json()).toEqual([rows[0]])
+  const unknown = await app.request("http://localhost/question?sessionId=another_workspace_session")
+  expect(unknown.status).toBe(200)
+  expect(await unknown.json()).toEqual([])
+  for (const operation of ["reply", "reject"]) {
+    const response = await app.request(`http://localhost/question/question_first/${operation}?sessionId=another_workspace_session`, {
+      method: "POST", body: JSON.stringify({ answers: [["Staging"]] }),
+    })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: "interaction_session_mismatch" } })
+  }
+})

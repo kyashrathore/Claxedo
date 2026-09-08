@@ -626,12 +626,12 @@ describe("CodexHarnessAdapter", () => {
 
     let question: Awaited<ReturnType<typeof adapter.listQuestions>>[number] | undefined
     for (let attempt = 0; attempt < 200; attempt++) {
-      question = (await adapter.listQuestions(fake.dir)).find((item) => item.id === "901")
+      question = (await adapter.listQuestions(fake.dir)).find((item) => item.sessionID === session.id)
       if (question) break
       await Bun.sleep(5)
     }
-    expect(question).toMatchObject({
-      id: "901",
+    expect(structuredClone(question)).toMatchObject({
+      id: expect.any(String),
       sessionID: session.id,
       questions: [{
         header: expect.stringContaining("Connect Gmail"),
@@ -640,7 +640,8 @@ describe("CodexHarnessAdapter", () => {
       }],
     })
 
-    await adapter.replyQuestion(executionBinding(session.id, fake.dir), "901", [["I've finished connecting"]])
+    expect(question!.id).not.toBe("901")
+    await adapter.replyQuestion(executionBinding(session.id, fake.dir), question!.id, [["I've finished connecting"]])
     await turn
     await adapter.dispose()
 

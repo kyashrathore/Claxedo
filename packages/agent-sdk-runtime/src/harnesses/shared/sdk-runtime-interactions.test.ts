@@ -110,3 +110,31 @@ test("question cancellation preserves a pending request when persistence fails",
   expect(rejected).toBe(false)
   expect(interactions.questions.has("question-1")).toBe(true)
 })
+
+for (const operation of ["reply", "reject"] as const) {
+  for (const [sessionId, directory] of [["other-session", "/work"], ["session-1", "/other-workspace"]]) {
+    test(`question ${operation} from ${sessionId} in ${directory} preserves another owner's request`, () => {
+      const decisions: string[] = []
+      const committed: unknown[] = []
+      const interactions = new SdkRuntimeInteractions({
+        listQuestions: (dir: string) => dir === "/work" ? [{ id: "question-1", sessionID: "session-1", questions: [] }] : [],
+        appendEvent: (event: { payload: unknown }) => { committed.push(event); return event },
+      } as unknown as SdkRuntimeStore)
+      interactions.questions.set("question-1", {
+        sessionId: "session-1", agentSessionId: "agent-1", questions: [],
+        resolve: () => { decisions.push("reply") }, reject: () => { decisions.push("reject") },
+      })
+      const respond = (binding: ReturnType<typeof executionBinding>) => operation === "reply"
+        ? interactions.replyQuestion(binding, "question-1", [["Staging"]])
+        : interactions.rejectQuestion(binding, "question-1")
+      expect(() => respond(executionBinding(sessionId!, directory!))).toThrow()
+      expect(decisions).toEqual([])
+      expect(committed).toEqual([])
+      expect(interactions.questions.has("question-1")).toBe(true)
+      respond(executionBinding("session-1", "/work"))
+      expect(decisions).toEqual([operation])
+      expect(committed).toHaveLength(1)
+      expect(interactions.questions.has("question-1")).toBe(false)
+    })
+  }
+}

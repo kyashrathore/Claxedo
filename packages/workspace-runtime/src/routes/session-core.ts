@@ -402,6 +402,7 @@ type Opts = {
   /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
   childSessions?: ChildSessionHost
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
+  /** Workspace inventory, unfiltered by caller-supplied session IDs; routes validate ownership. */
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
   /**
    * A status payload, or a `Response` the route forwards verbatim. Awaited by
@@ -2152,7 +2153,8 @@ export function createSessionRoutes(opts: Opts) {
       const rows = opts.listQuestions
         ? await opts.listQuestions(c, directory)
         : await (await opts.resolveAdapter(c)).listQuestions?.(directory) ?? []
-      return c.json(await filterSessionRows(opts, c, "question_list", rows))
+      const sessionId = c.req.query("sessionId")
+      return c.json(await filterSessionRows(opts, c, "question_list", sessionId ? rows.filter((row) => row.sessionID === sessionId) : rows))
     })
     .post("/session/:sessionId/permissions/:permId", async (c) => {
       const suppliedSessionId = c.req.param("sessionId")
