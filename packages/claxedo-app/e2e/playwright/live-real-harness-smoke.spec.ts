@@ -526,6 +526,8 @@ test.describe("live real-harness smoke @live", () => {
       test.skip(!binary, `The live todo flow requires the installed and authenticated ${harness} CLI.`)
       const dir = await makeWorkspace(`${harness}-live-todo`)
       const releaseFile = path.join(dir, ".todo-test-release")
+      const startedFile = path.join(dir, ".todo-test-started")
+      const finishedFile = path.join(dir, ".todo-test-finished")
       try {
         await seedOneProject(page, dir)
         const input = await openDraftPrompt(page, dir)
@@ -542,7 +544,7 @@ test.describe("live real-harness smoke @live", () => {
         await composePrompt(page, input,
           `Use ${harness === "claude" ? "TodoWrite" : harness === "codex" ? "update_plan" : "todowrite"} to set exactly three tasks with these verbatim names and statuses: ` +
           '"Inspect source": completed, "Verify behavior": in_progress, "Report result": pending. ' +
-          `Then run this shell command with a 120000ms timeout and wait for it to finish: while [ ! -f '${releaseFile}' ]; do sleep 0.1; done. ` +
+          `Then run this shell command with a 120000ms timeout and wait for it to finish: echo $$ > '${startedFile}'; while [ ! -f '${releaseFile}' ]; do sleep 0.1; done; echo finished > '${finishedFile}'. ` +
           `The test runner will create that file; do not create it yourself. After the command finishes, use the same task tool to mark all three completed, ` +
           `then reply exactly ${marker}. Do not run any other tools.`,
         )
@@ -556,15 +558,27 @@ test.describe("live real-harness smoke @live", () => {
         }
         await expect.poll(async () => (await readTodos()).map(({ content, status }) => ({ content, status })), { timeout: 60_000 })
           .toEqual(tasks.map((content, i) => ({ content, status: ["completed", "in_progress", "pending"][i] })))
+        await expect.poll(() => fs.readFile(startedFile, "utf8").catch((error) => {
+          if (error.code === "ENOENT") return ""
+          throw error
+        }), { timeout: 30_000, message: "The provider must start the waiting shell before reload" }).toMatch(/^\d+\s*$/)
+        const shellPid = Number((await fs.readFile(startedFile, "utf8")).trim())
+        process.kill(shellPid, 0)
+        await expect(fs.stat(finishedFile)).rejects.toMatchObject({ code: "ENOENT" })
+        const runningTodos = await readTodos()
         const dock = page.locator('[data-component="session-todo-dock"]')
         await expect(dock).toBeVisible()
         await page.reload({ waitUntil: "domcontentloaded" })
         await expect(dock).toBeVisible()
         await expect(dock).toContainText("Verify behavior")
+        expect(await readTodos()).toEqual(runningTodos)
+        process.kill(shellPid, 0)
+        await expect(fs.stat(finishedFile)).rejects.toMatchObject({ code: "ENOENT" })
         await page.screenshot({ path: test.info().outputPath("live-todo-progress.png") })
         await fs.writeFile(releaseFile, "release")
         await expectAssistantReplyVisible(page, marker, { spec: "live-real-harness-smoke", scenario: `${harness}-todo-complete`, timeout: 60_000 })
         await expect(dock).toHaveCount(0)
+        expect((await fs.readFile(finishedFile, "utf8")).trim()).toBe("finished")
         expect((await readTodos()).map(({ content, status }) => ({ content, status })))
           .toEqual(tasks.map((content) => ({ content, status: "completed" })))
         await page.reload({ waitUntil: "domcontentloaded" })

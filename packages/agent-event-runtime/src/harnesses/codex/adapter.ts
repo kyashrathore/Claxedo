@@ -251,7 +251,7 @@ function todosFromPlan(row: Record<string, unknown>) {
     return [{
       id: String(i),
       description,
-      status: text(item.status) ?? "pending",
+      status: item.status === "inProgress" ? "in_progress" : text(item.status) ?? "pending",
     }]
   })
 }

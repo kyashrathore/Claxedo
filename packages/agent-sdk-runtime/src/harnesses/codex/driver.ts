@@ -192,12 +192,13 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     if (proc?.alive) await this.syncProcessAuth(proc)
   }
 
-  /** The same native overrides enable questions and bind MCP credentials on start and resume. */
+  /** Keep native session tools and MCP credentials consistent on start and resume. */
   private threadConfig(sessionId: string): { config: JsonRecord } {
     const server = this.firstPartyMcp?.server(sessionId)
     return { config: {
       // Claxedo advertises structured questions in ordinary coding turns.
       features: { default_mode_request_user_input: true },
+      tools: { update_plan: { enabled: true } },
       ...(server ? { mcp_servers: { [server.name]: { url: server.url, http_headers: server.headers } } } : {}),
     } }
   }

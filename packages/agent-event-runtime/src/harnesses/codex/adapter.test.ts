@@ -22,6 +22,31 @@ function runtime(initialSnapshot?: RuntimeSnapshot<CodexAppServerAdapterState>) 
 }
 
 describe("codexAppServerAdapter", () => {
+  test("translates native plan progress into canonical task status", () => {
+    const agent = runtime()
+    const result = agent.ingest({
+      source: "codex.app-server",
+      method: "turn/plan/updated",
+      payload: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        plan: [
+          { step: "Inspect source", status: "completed" },
+          { step: "Verify behavior", status: "inProgress" },
+          { step: "Report result", status: "pending" },
+        ],
+      },
+    })
+    expect(result.events).toMatchObject([{
+      type: "todo-update",
+      todos: [
+        { id: "0", description: "Inspect source", status: "completed" },
+        { id: "1", description: "Verify behavior", status: "in_progress" },
+        { id: "2", description: "Report result", status: "pending" },
+      ],
+    }])
+  })
+
   test("keeps native subagent activity bound to the spawn call without rendering a second completion tool", () => {
     const agent = runtime()
     const started = { type: "subAgentActivity", id: "spawn-call", kind: "started", agentThreadId: "child-thread", agentPath: "/root/child" }
