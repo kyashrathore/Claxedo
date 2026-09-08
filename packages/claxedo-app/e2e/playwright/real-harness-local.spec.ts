@@ -1661,12 +1661,13 @@ test.describe("real harness journeys @core @tier-real", () => {
       }
     })
 
-    for (const [decision, canonicalDirectory, restartServer] of [
-      ["Allow once", false, false], ["Allow always", false, false], ["Deny", false, false], ["Stop", false, false],
-      ...(harness === "claude" ? [["Allow always", true, false] as const] : []),
-      ...(harness === "codex" ? [["Allow always", false, true] as const] : []),
+    for (const [decision, canonicalDirectory, restartServer, goalMode] of [
+      ["Allow once", false, false, false], ["Allow always", false, false, false], ["Deny", false, false, false], ["Stop", false, false, false],
+      ...(harness === "codex" ? [["Stop", false, false, true] as const] : []),
+      ...(harness === "claude" ? [["Allow always", true, false, false] as const] : []),
+      ...(harness === "codex" ? [["Allow always", false, true, false] as const] : []),
     ] as const) {
-      test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}${restartServer ? " and server restart" : ""}`, async ({ page }) => {
+      test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}${restartServer ? " and server restart" : ""}${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
         requireBinary(binary, harness, "install the native CLI to exercise its tool approval boundary.")
         const dir = await makeWorkspace(`${harness}-permission`, harness)
@@ -1693,7 +1694,7 @@ test.describe("real harness journeys @core @tier-real", () => {
             whenPromptIncludes: marker,
           }
           scripted!.scriptTool(tool)
-          await composePrompt(page, input, `Run the requested command, then reply with exactly this one token: ${marker}`)
+          await composePrompt(page, input, `${goalMode ? "/goal " : ""}Run the requested command, then reply with exactly this one token: ${marker}`)
           await page.locator(SELECTORS.submitControl).last().click()
           await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
           const sessionUrl = page.url()
@@ -1720,6 +1721,10 @@ test.describe("real harness journeys @core @tier-real", () => {
               sessionId: new URL(sessionUrl).pathname.split("/").at(-1)!,
             })
             expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            if (goalMode) {
+              const goalDock = page.locator('[data-component="session-goal-dock"]')
+              await expect(goalStatus(goalDock, "Paused")).toBeVisible({ timeout: 30_000 })
+            }
             const followup = `AFTER-STOP-${Date.now()}`
             await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
               `Reply with exactly this one token: ${followup}. Do not use tools or retry the cancelled action.`)

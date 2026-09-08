@@ -1,3 +1,4 @@
+import { stopSessionInteraction } from "../../composer/ui/submit-abort"
 import { Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLayout } from "@/features/session/app-ports"
@@ -243,7 +244,7 @@ export function SessionComposerRegion(props: {
               <SessionQuestionDock
                 request={request}
                 onSubmit={props.onResponseSubmit}
-                onStop={props.onAbort && props.canAbort?.() !== false ? () => props.onAbort!(request.sessionID) : undefined}
+                onStop={props.onAbort && props.canAbort?.() !== false ? () => stopSessionInteraction({ sessionId: request.sessionID, goal: props.goalController?.goal(), stopGoal: props.goalController?.stopGoal, abort: () => props.onAbort!(request.sessionID) }) : undefined}
               />
             </div>
           )}
@@ -255,7 +256,7 @@ export function SessionComposerRegion(props: {
               <SessionPermissionDock
                 request={request}
                 responding={props.state.permissionResponding()}
-                onStop={props.onAbort && props.canAbort?.() !== false ? () => props.onAbort!(request.sessionID) : undefined}
+                onStop={props.onAbort && props.canAbort?.() !== false ? () => stopSessionInteraction({ sessionId: request.sessionID, goal: props.goalController?.goal(), stopGoal: props.goalController?.stopGoal, abort: () => props.onAbort!(request.sessionID) }) : undefined}
                 onDecide={(response) => {
                   props.onResponseSubmit()
                   props.state.decide(response)

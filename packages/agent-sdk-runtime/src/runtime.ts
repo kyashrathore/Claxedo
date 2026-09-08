@@ -608,6 +608,25 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     )
   })
 
+  const completeCancellation = (sessionId: string, directory?: RuntimeDirectory) => {
+    store.finishTurn({
+      sessionId,
+      outcome: { status: "cancelled", completedAt: Date.now(), reason: "abort" },
+    })
+    // The runtime owns cancellation completion. Some adapters terminate
+    // their stream after acknowledging abort, while a stuck adapter may
+    // never yield again. Publish the canonical terminal frame before
+    // releasing admission so route-level subscribers always settle and
+    // any later adapter frames remain fenced as the old generation.
+    publish({ sessionId, directory, payload: { type: "finish", sessionId } })
+    activeTurnAdmissions.delete(sessionId)
+    const lease = activeTurnLeases.get(sessionId)
+    if (lease) {
+      activeTurnLeases.delete(sessionId)
+      store.releaseTurnLease(sessionId, lease)
+    }
+  }
+
   /**
    * The single Goal mutation path. `stop` is deliberately ungated: it is the
    * safety valve that must end a running Goal even on a harness that offers no
@@ -628,6 +647,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       }
     }
     const result = await context.resource[mutation](sessionId, context.directory) as AgentGoalMutationResult
+    if (result.ok && mutation !== "resume" && store.getSession(sessionId)?.status === "busy") {
+      completeCancellation(sessionId, context.directory)
+    }
     publishGoalResult(sessionId, context.directory, result)
     return result
   }
@@ -789,22 +811,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (!adapter.abort) throw new Error("This harness does not support abort")
         const result = await adapter.abort(executionBinding(sessionId, directory))
         if (result.ok && result.status === "cancelled") {
-          store.finishTurn({
-            sessionId,
-            outcome: { status: "cancelled", completedAt: Date.now(), reason: "abort" },
-          })
-          // The runtime owns cancellation completion. Some adapters terminate
-          // their stream after acknowledging abort, while a stuck adapter may
-          // never yield again. Publish the canonical terminal frame before
-          // releasing admission so route-level subscribers always settle and
-          // any later adapter frames remain fenced as the old generation.
-          publish({ sessionId, directory, payload: { type: "finish", sessionId } })
-          activeTurnAdmissions.delete(sessionId)
-          const lease = activeTurnLeases.get(sessionId)
-          if (lease) {
-            activeTurnLeases.delete(sessionId)
-            store.releaseTurnLease(sessionId, lease)
-          }
+          completeCancellation(sessionId, directory)
         }
         return result
       },

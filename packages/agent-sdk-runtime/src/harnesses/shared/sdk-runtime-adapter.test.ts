@@ -700,6 +700,35 @@ describe("SdkRuntimeAdapter", () => {
     await adapter.dispose()
   })
 
+  test("native lifecycle cancellation settles pending permissions and questions without the abort API", async () => {
+    const store = createMemoryRuntimeStore()
+    let host!: SdkRuntimeDriverHost
+    let ready!: () => void
+    const pending = new Promise<void>((resolve) => { ready = resolve })
+    const settlements: string[] = []
+    const adapter = new SdkRuntimeAdapter({ store, driver: (owner) => {
+      host = owner
+      return { ...minimalSdkRuntimeDriver(), runTurn: async (input) => {
+        await new Promise<void>((resolve) => {
+          host.pendingPermissions.set("permission", { sessionId: input.sessionId, agentSessionId: input.getAgentSessionId(), method: "approval", params: {}, resolve: (decision) => { settlements.push(decision) } })
+          host.pendingQuestions.set("question", { sessionId: input.sessionId, agentSessionId: input.getAgentSessionId(), questions: [], resolve() {}, reject: () => { settlements.push("question-rejected"); resolve() } })
+          ready()
+        })
+      } }
+    } })
+    const session = await adapter.createSession(path.resolve("/repo"))
+    const turn = (async () => {
+      for await (const _ of executeTestTurn(adapter, session.id, { parts: [{ type: "text", text: "work" }], userMessageId: "user", assistantMessageId: "assistant", agent: "build", model: { providerID: "codex-app-server", modelID: "gpt-test" } }, path.resolve("/repo"))) {}
+    })()
+    await pending
+    expect(host.lifecycle().abort(session.id)).toBe(true)
+    await turn
+    expect(settlements).toEqual(["deny", "question-rejected"])
+    expect(host.pendingPermissions.size).toBe(0)
+    expect(host.pendingQuestions.size).toBe(0)
+    await adapter.dispose()
+  })
+
   test("does not acknowledge an abort until the adapter busy lock is retired", async () => {
     let started: (() => void) | undefined
     let releaseFirst: (() => void) | undefined

@@ -51,6 +51,24 @@ export function createGoalAwareAbort(input: {
   }
 }
 
+/** Interaction docks must stop their own Goal before cancelling its pending turn. */
+export async function stopSessionInteraction(input: {
+  sessionId: string
+  goal?: { sessionId: string; status: string } | null
+  stopGoal?: () => Promise<unknown>
+  abort: () => Promise<unknown>
+}) {
+  let stopFailure: unknown
+  await createGoalAwareAbort({
+    hasActiveGoal: () => input.goal?.sessionId === input.sessionId && input.goal.status === "active",
+    stopGoal: input.stopGoal,
+    promptAbort: input.abort,
+    onStopGoalError: (error) => { stopFailure = error },
+  })()
+  // The dock owns a visible retryable error state rather than a toast.
+  if (stopFailure) throw stopFailure
+}
+
 export function createPromptAbort(input: {
   canAbort?: Accessor<boolean>
   sessionID?: Accessor<string | undefined>

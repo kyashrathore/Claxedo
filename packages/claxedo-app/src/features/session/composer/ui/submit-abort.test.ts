@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createGoalAwareAbort } from "./submit-abort"
+import { createGoalAwareAbort, stopSessionInteraction } from "./submit-abort"
 
 describe("goal-aware abort", () => {
   test("routes to the Goal Stop mutation while a Goal is active", async () => {
@@ -61,4 +61,20 @@ describe("goal-aware abort", () => {
     await abort()
     expect(aborts).toBe(1)
   })
+})
+
+test("interaction Stop pauses only its owning active Goal", async () => {
+  const calls: string[] = []
+  const handlers = { stopGoal: async () => { calls.push("goal") }, abort: async () => { calls.push("abort") } }
+  await stopSessionInteraction({ sessionId: "parent", goal: { sessionId: "parent", status: "active" }, ...handlers })
+  await stopSessionInteraction({ sessionId: "child", goal: { sessionId: "parent", status: "active" }, ...handlers })
+  expect(calls).toEqual(["goal", "abort"])
+})
+
+test("interaction Stop surfaces Goal failure after interrupting its turn", async () => {
+  let aborted = false
+  await expect(stopSessionInteraction({ sessionId: "owner", goal: { sessionId: "owner", status: "active" },
+    stopGoal: async () => { throw new Error("Goal unavailable") }, abort: async () => { aborted = true },
+  })).rejects.toThrow("Goal unavailable")
+  expect(aborted).toBe(true)
 })

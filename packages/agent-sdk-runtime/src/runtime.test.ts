@@ -363,8 +363,9 @@ describe("createAgentRuntime", () => {
         messagesSent += 1
       },
     })
+    const rows = createMemoryRuntimeStore()
     const runtime = createAgentRuntime({
-      store: createMemoryRuntimeStore(),
+      store: rows,
       harnesses: [factory],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
@@ -375,7 +376,9 @@ describe("createAgentRuntime", () => {
     })
     await expect(runtime.goals.pause(session.id, "/repo")).resolves.toMatchObject({ ok: true, goal: { status: "paused" } })
     await expect(runtime.goals.resume(session.id, "/repo")).resolves.toMatchObject({ ok: true, goal: { status: "active" } })
+    rows.startTurn({ sessionId: session.id, assistantMessageId: "goal-turn", agent: "build", model: { providerID: "test", modelID: "goal" }, parts: [] })
     await expect(runtime.goals.stop(session.id, "/repo")).resolves.toMatchObject({ ok: true, goal: { status: "paused" } })
+    expect(rows.getSession(session.id)?.status).not.toBe("busy")
     await expect(runtime.goals.delete(session.id, "/repo")).resolves.toEqual({ ok: true, goal: null })
     expect(calls).toEqual(["read", "start:Ship safely", "pause", "resume", "stop", "delete"])
     expect(messagesSent).toBe(0)

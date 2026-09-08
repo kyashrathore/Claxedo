@@ -658,8 +658,8 @@ test.describe("live real-harness smoke @live", () => {
     })
     }
 
-    for (const decision of ["Allow once", "Allow always", "Deny", "Stop"] as const) {
-      test(`${harness} live permission ${decision === "Deny" ? "denial" : decision === "Stop" ? "stop" : decision === "Allow always" ? "always" : "approval"} gates a file write through reload`, async ({ page }) => {
+    for (const [decision, goalMode] of [["Allow once", false], ["Allow always", false], ["Deny", false], ["Stop", false], ...(harness === "codex" ? [["Stop", true] as const] : [])] as const) {
+      test(`${harness} live permission ${decision === "Deny" ? "denial" : decision === "Stop" ? "stop" : decision === "Allow always" ? "always" : "approval"} gates a file write through reload${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
         test.skip(!binary, `The live approval flow requires the installed and authenticated ${harness} CLI.`)
         const dir = await makeWorkspace(`${harness}-live-permission`)
@@ -679,7 +679,7 @@ test.describe("live real-harness smoke @live", () => {
           const command = `printf '${marker}' | tee '${output}'`
           const expectedReply = decision === "Deny" ? `DENIED-${marker}` : marker
           await composePrompt(page, input,
-            `Run exactly this shell command once: printf '${marker}' | tee '${output}'. ` +
+            `${goalMode ? "/goal " : ""}Run exactly this shell command once: printf '${marker}' | tee '${output}'. ` +
             (harness === "codex" ? 'Use exec_command with sandbox_permissions="require_escalated" and justification="Write the isolated test file". ' : "Use the Bash tool. ") +
             `Wait for approval. After execution, reply with exactly the command output. If permission is denied, reply exactly DENIED-${marker}. Do not run any other tools or use any alternative way to write the file.`,
           )
@@ -709,6 +709,9 @@ test.describe("live real-harness smoke @live", () => {
               sessionId: new URL(sessionUrl).pathname.split("/").at(-1)!,
             })
             expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            if (goalMode) {
+              await expect(page.locator('[data-component="session-goal-dock"] [data-slot="session-goal-status"]')).toHaveText("Paused", { timeout: 30_000 })
+            }
             const followup = `AFTER-STOP-${Date.now()}`
             await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
               `Reply exactly ${followup}. Do not use tools or retry the cancelled action.`)

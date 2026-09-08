@@ -513,6 +513,13 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     let promptDone = false
     let promptError: string | null = null
     const abort = new AbortController()
+    // Every cancellation path (including native Goal Stop) owns the same
+    // pending interactions; cleanup must not depend on the HTTP abort entry.
+    const cancelInteractions = () => {
+      this.interactions.resolvePermissions(id, "deny")
+      this.interactions.rejectQuestions(id)
+    }
+    abort.signal.addEventListener("abort", cancelInteractions, { once: true })
 
     const push = (event: CompatEvent) => {
       queue.push(event)
@@ -694,6 +701,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         promptError = errorMessage(err)
       })
       .finally(() => {
+        abort.signal.removeEventListener("abort", cancelInteractions)
         promptDone = true
         this.lifecycle().delete(id)
         for (const resolve of resolvers.splice(0)) resolve()
@@ -786,8 +794,6 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     const id = binding.sessionId
     const lifecycle = this.lifecycle()
     if (!lifecycle.abort(id)) return { ok: true, status: "already_idle" }
-    this.interactions.resolvePermissions(id, "deny")
-    this.interactions.rejectQuestions(id)
     // `cancelled` is an admission acknowledgement: callers may start the next
     // turn as soon as it resolves. Wait until this adapter's own generation has
     // left its busy section so the replacement cannot be rejected by a stale
