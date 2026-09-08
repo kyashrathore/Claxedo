@@ -1,6 +1,7 @@
 /** Real native-harness browser journeys against an isolated self-host server and scripted model HTTP endpoints. */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { expectPermissionReplyIsolation } from "../helpers/permission-isolation"
+import { stopPendingPermission } from "../helpers/permission-stop"
 import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -1580,7 +1581,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     })
 
     for (const [decision, canonicalDirectory] of [
-      ["Allow once", false], ["Allow always", false], ["Deny", false],
+      ["Allow once", false], ["Allow always", false], ["Deny", false], ["Stop", false],
       ...(harness === "claude" ? [["Allow always", true] as const] : []),
     ] as const) {
       test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}`, async ({ page }) => {
@@ -1628,6 +1629,23 @@ test.describe("real harness journeys @core @tier-real", () => {
             })
             await expect(dock).toBeVisible()
             expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+          }
+          if (decision === "Stop") {
+            await stopPendingPermission(page, {
+              backendUrl: BACKEND_URL, directory: dir,
+              sessionId: new URL(sessionUrl).pathname.split("/").at(-1)!,
+            })
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            const followup = `AFTER-STOP-${Date.now()}`
+            await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+              `Reply with exactly this one token: ${followup}. Do not use tools or retry the cancelled action.`)
+            await page.locator(SELECTORS.submitControl).last().click()
+            await expectAssistantReplyVisible(page, followup)
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            await page.reload({ waitUntil: "domcontentloaded" })
+            await expectAssistantReplyVisible(page, followup)
+            await expect(dock).toHaveCount(0)
+            return
           }
           await dock.getByRole("button", { name: decision, exact: true }).click()
           await expect(dock).toHaveCount(0)

@@ -121,6 +121,7 @@ export function SessionComposerRegion(props: {
   system?: string
   agent?: string
   canAbort?: () => boolean
+  onAbort?: (sessionId: string) => Promise<unknown>
   canPrompt?: () => boolean
   /**
    * Session status/active-turn supplied by the session owner (`sessionController`).
@@ -250,6 +251,7 @@ export function SessionComposerRegion(props: {
               <SessionPermissionDock
                 request={request}
                 responding={props.state.permissionResponding()}
+                onStop={props.onAbort && props.canAbort?.() !== false ? () => props.onAbort!(request.sessionID) : undefined}
                 onDecide={(response) => {
                   props.onResponseSubmit()
                   props.state.decide(response)

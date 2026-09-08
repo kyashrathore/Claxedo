@@ -1,4 +1,4 @@
-import { For, Show } from "solid-js"
+import { For, Show, createSignal } from "solid-js"
 import type { AgentPermission as PermissionRequest } from "@claxedo/agent-runtime-contract"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@/ui/session-kit"
@@ -33,8 +33,23 @@ export function SessionPermissionDock(props: {
   request: PermissionRequest
   responding: boolean
   onDecide: (response: "once" | "always" | "reject") => void
+  onStop?: () => Promise<unknown>
 }) {
   const language = useLanguage()
+  const [stopping, setStopping] = createSignal(false)
+  const [stopError, setStopError] = createSignal<string>()
+  const stop = async () => {
+    if (!props.onStop || stopping()) return
+    setStopping(true)
+    setStopError(undefined)
+    try {
+      await props.onStop()
+    } catch (error) {
+      setStopError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setStopping(false)
+    }
+  }
   const patterns = () => Array.isArray(props.request.patterns) ? props.request.patterns : []
 
   const toolDescription = () => {
@@ -55,26 +70,33 @@ export function SessionPermissionDock(props: {
       }
       footer={
         <>
-          <div />
+          <div>
+            <Show when={props.onStop}>
+              <Button variant="ghost" size="normal" onClick={() => void stop()} disabled={props.responding || stopping()}>
+                {language.t("prompt.action.stop")}
+              </Button>
+            </Show>
+          </div>
           <div data-slot="permission-footer-actions">
-            <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
+            <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding || stopping()}>
               {language.t("ui.permission.deny")}
             </Button>
             <Button
               variant="secondary"
               size="normal"
               onClick={() => props.onDecide("always")}
-              disabled={props.responding}
+              disabled={props.responding || stopping()}
             >
               {language.t("ui.permission.allowAlways")}
             </Button>
-            <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
+            <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding || stopping()}>
               {language.t("ui.permission.allowOnce")}
             </Button>
           </div>
         </>
       }
     >
+      <Show when={stopError()}>{(message) => <div role="alert">{message()}</div>}</Show>
       <Show when={toolDescription()}>
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />

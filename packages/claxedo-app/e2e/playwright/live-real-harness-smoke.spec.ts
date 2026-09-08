@@ -18,6 +18,7 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { expectPermissionReplyIsolation } from "../helpers/permission-isolation"
+import { stopPendingPermission } from "../helpers/permission-stop"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -595,8 +596,8 @@ test.describe("live real-harness smoke @live", () => {
     })
     }
 
-    for (const decision of ["Allow once", "Allow always", "Deny"] as const) {
-      test(`${harness} live permission ${decision === "Deny" ? "denial" : decision === "Allow always" ? "always" : "approval"} gates a file write through reload`, async ({ page }) => {
+    for (const decision of ["Allow once", "Allow always", "Deny", "Stop"] as const) {
+      test(`${harness} live permission ${decision === "Deny" ? "denial" : decision === "Stop" ? "stop" : decision === "Allow always" ? "always" : "approval"} gates a file write through reload`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
         test.skip(!binary, `The live approval flow requires the installed and authenticated ${harness} CLI.`)
         const dir = await makeWorkspace(`${harness}-live-permission`)
@@ -637,6 +638,23 @@ test.describe("live real-harness smoke @live", () => {
             expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
           }
           await page.screenshot({ path: test.info().outputPath("live-permission-pending.png") })
+          if (decision === "Stop") {
+            await stopPendingPermission(page, {
+              backendUrl: BACKEND_URL, directory: dir,
+              sessionId: new URL(sessionUrl).pathname.split("/").at(-1)!,
+            })
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            const followup = `AFTER-STOP-${Date.now()}`
+            await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+              `Reply exactly ${followup}. Do not use tools or retry the cancelled action.`)
+            await page.locator(SELECTORS.submitControl).last().click()
+            await expectAssistantReplyVisible(page, followup)
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            await page.reload({ waitUntil: "domcontentloaded" })
+            await expectAssistantReplyVisible(page, followup)
+            await expect(dock).toHaveCount(0)
+            return
+          }
           await dock.getByRole("button", { name: decision, exact: true }).click()
           if (decision !== "Deny") {
             await expect.poll(() => fs.readFile(output, "utf8").catch(() => ""), { timeout: 30_000 }).toBe(marker)

@@ -1476,6 +1476,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
               system={contentIntentDefaults()?.system}
               agent={contentIntentDefaults()?.agent}
               canAbort={() => supports("abort")}
+              onAbort={(sessionID) => sdk.client.session.abort({ sessionID })}
               canPrompt={() => supports("permissions")}
               status={sessionController.status} activeTurn={sessionController.activeTurn}
               goalController={sessionController}
