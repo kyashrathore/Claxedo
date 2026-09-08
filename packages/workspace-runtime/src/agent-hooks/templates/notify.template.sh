@@ -45,8 +45,10 @@ if [ -z "$EVENT_TYPE" ]; then
 fi
 
 case "$EVENT_TYPE" in
+  # Child completion does not settle the terminal's parent turn.
+  "SubagentStop") exit 0 ;;
   "SessionStart"|"UserPromptSubmit"|"PostToolUse"|"BeforeAgent"|"AfterTool"|"beforeSubmitPrompt"|"sessionStart"|"userPromptSubmitted"|"postToolUse"|"Start") EVENT_TYPE="Busy" ;;
-  "SessionEnd"|"AfterAgent"|"SubagentStop"|"stop"|"sessionEnd"|"Stop"|"Idle") EVENT_TYPE="Idle" ;;
+  "SessionEnd"|"AfterAgent"|"stop"|"sessionEnd"|"Stop"|"Idle") EVENT_TYPE="Idle" ;;
   "PostToolUseFailure"|"StopFailure"|"session.error"|"sessionError"|"Error"|"Failed") EVENT_TYPE="Error" ;;
   "beforeShellExecution"|"beforeMCPExecution"|"PermissionRequest"|"QuestionRequest"|"question"|"question.asked"|"Notification") EVENT_TYPE="UserActionRequired" ;;
 esac

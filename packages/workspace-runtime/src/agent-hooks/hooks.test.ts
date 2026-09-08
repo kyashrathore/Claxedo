@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -47,6 +47,43 @@ describe("generateNotifyScript", () => {
       const deadline = Date.now() + 3000
       while (!delivered && Date.now() < deadline) await Bun.sleep(20)
       expect(delivered).toEqual({ workspace: "ws_notify_test", terminal: "pty_notify_test", event: "Idle" })
+    } finally {
+      server.stop(true)
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it("keeps the parent busy when a Claude subagent stops", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-child-hook-"))
+    const events: string[] = []
+    const server = Bun.serve({
+      hostname: "127.0.0.1", port: 0,
+      async fetch(request) {
+        events.push(new URLSearchParams(await request.text()).get("eventType")!)
+        return Response.json({ success: true })
+      },
+    })
+    try {
+      const script = path.join(root, "notify.sh")
+      await writeFile(script, generateNotifyScript(server.port!))
+      const invoke = async (hook_event_name: string) => {
+        const child = Bun.spawn(["/bin/bash", script, JSON.stringify({ hook_event_name, session_id: "parent", agent_id: "child" })], {
+          env: { ...process.env, CLAXEDO_SERVER_PORT: String(server.port), CLAXEDO_TAB_ID: "tab", CLAXEDO_TERMINAL_ID: "parent", WORKSPACE_RUNTIME_STATE_DIR: root },
+          stdout: "ignore", stderr: "ignore",
+        })
+        expect(await child.exited).toBe(0)
+      }
+      await invoke("UserPromptSubmit")
+      const deadline = Date.now() + 3000
+      while (!events.length && Date.now() < deadline) await Bun.sleep(20)
+      expect(events).toEqual(["Busy"])
+      await invoke("SubagentStop")
+      expect(await readFile(path.join(root, "parent.agent"), "utf8")).toBe("busy\n")
+      await invoke("Stop")
+      const settled = Date.now() + 3000
+      while (events.length < 2 && Date.now() < settled) await Bun.sleep(20)
+      expect(events).toEqual(["Busy", "Idle"])
+      expect(await readFile(path.join(root, "parent.agent"), "utf8")).toBe("idle\n")
     } finally {
       server.stop(true)
       await rm(root, { recursive: true, force: true })

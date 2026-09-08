@@ -149,16 +149,22 @@ async function upsertNestedHookSettings(input: {
   const existing = asRecordOrEmpty(await readJson(input.file))
   const hooks = recordAt(existing, "hooks")
 
+  // Remove this owner's previous registrations, including retired events.
+  // User commands in the same definitions remain intact.
+  for (const [event, current] of Object.entries(hooks)) {
+    if (!Array.isArray(current)) continue
+    const retained = current.flatMap((def) => {
+      const cleaned = removeManagedHooksFromDefinition(asRecordOrEmpty(def), input.isManaged)
+      return cleaned ? [cleaned] : []
+    })
+    if (retained.length === 0) delete hooks[event]
+    else hooks[event] = retained
+  }
+
   for (const item of input.events) {
     const current = hooks[item.event]
     if (Array.isArray(current)) {
-      hooks[item.event] = [
-        ...current.flatMap((def) => {
-          const cleaned = removeManagedHooksFromDefinition(asRecordOrEmpty(def), input.isManaged)
-          return cleaned ? [cleaned] : []
-        }),
-        item.definition,
-      ]
+      hooks[item.event] = [...current, item.definition]
       continue
     }
     hooks[item.event] = [item.definition]
@@ -174,7 +180,6 @@ async function materializeClaude(input: { file: string; notifyPath: string; forc
     events: [
       { event: "UserPromptSubmit", definition: { hooks: [{ type: "command", command }] } },
       { event: "Stop", definition: { hooks: [{ type: "command", command }] } },
-      { event: "SubagentStop", definition: { hooks: [{ type: "command", command }] } },
       { event: "PostToolUse", definition: { matcher: "*", hooks: [{ type: "command", command }] } },
       { event: "PostToolUseFailure", definition: { matcher: "*", hooks: [{ type: "command", command }] } },
       { event: "PermissionRequest", definition: { matcher: "*", hooks: [{ type: "command", command }] } },
@@ -359,4 +364,3 @@ export async function materializeAgentHooks(input: MaterializeAgentHooksOptions)
     }),
   ])
 }
-

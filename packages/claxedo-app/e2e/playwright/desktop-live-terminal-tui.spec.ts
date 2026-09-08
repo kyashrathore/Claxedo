@@ -9,8 +9,13 @@ import { expectTerminalRailStatus } from "../helpers/rail-oracle"
 
 const exec = promisify(execFile)
 
-for (const harness of ["codex", "claude"] as const) {
-  test(`packaged ${harness} terminal completes a real TUI turn and survives app restart @live @surface-desktop`, async () => {
+for (const { harness, child, pause } of [
+  { harness: "codex", child: false, pause: false },
+  { harness: "claude", child: false, pause: false },
+  { harness: "claude", child: true, pause: false },
+  { harness: "claude", child: true, pause: true },
+] as const) {
+  test(`packaged ${harness} terminal completes a real TUI turn${child ? pause ? " with a background subagent" : " with a subagent" : ""} and survives app restart @live @surface-desktop`, async () => {
     test.setTimeout(240_000)
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-tui-desktop-"))
     const home = path.join(root, "home")
@@ -47,6 +52,12 @@ for (const harness of ["codex", "claude"] as const) {
         expect(typeof token === "string" && token.length > 0, "A real Claude login is required for the live TUI test").toBe(true)
         await fs.mkdir(path.join(home, ".claude"), { recursive: true })
         await fs.writeFile(path.join(home, ".claude/.credentials.json"), credential, { mode: 0o600 })
+        if (child) {
+          const command = `input=$(cat); printf '%s\\n' "$input" >> '${path.join(root, "raw-hooks.jsonl")}'`
+          await fs.writeFile(path.join(home, ".claude/settings.json"), JSON.stringify({ hooks: Object.fromEntries(
+            ["UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PostToolUse"].map((event) => [event, [{ hooks: [{ type: "command", command }] }]]),
+          ) }))
+        }
       }
       await exec("git", ["init"], { cwd: directory })
       packaged = await launch()
@@ -150,8 +161,27 @@ for (const harness of ["codex", "claude"] as const) {
       await expect(packaged.page.locator(`${selector} .xterm-rows`)).toContainText("DESKTOP_TUI_OK", { timeout: 30_000 })
       const after = await (await fetch(ptyUrl)).json() as { pid: number; status: string }
       expect(after).toMatchObject({ pid: before.pid, status: "running" })
+      if (child) await packaged.page.evaluate(async ({ server, terminalId }) => {
+        const events: string[] = []
+        const stream = new EventSource(`${server}/api/claxedo/events`)
+        Object.assign(window, { __claxedoChildLifecycle: events, __claxedoChildStream: stream })
+        stream.onmessage = (message) => {
+          const frame = JSON.parse(message.data)
+          const event = frame.payload ?? frame
+          if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event.eventType)
+        }
+        await new Promise<void>((resolve, reject) => {
+          stream.onopen = () => resolve()
+          stream.onerror = () => reject(new Error("Real lifecycle observation stream failed"))
+        })
+      }, { server, terminalId: pty.id })
       await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
-      await packaged.page.keyboard.type("Run sleep 8 in the foreground with a timeout of at least 20000 ms and run_in_background=false. Wait for it to finish, then reply with the concatenation of RESTART and _TUI_OK, nothing else.", { delay: 20 })
+      const delegation = child
+        ? pause
+          ? "First use the Agent tool with run_in_background=true to launch one general-purpose subagent with this task: run sleep 8 in the foreground, then reply CHILD_FINISHED, nothing else. Yield while awaiting its completion notification. After it finishes, you, the parent, must do the following yourself. "
+          : "First use the Agent tool with run_in_background=false to launch one foreground general-purpose subagent with this task: reply CHILD_FINISHED, nothing else. Wait synchronously for its result, without ending your response. Then you, the parent, must do the following yourself. "
+        : ""
+      await packaged.page.keyboard.type(`${delegation}Run sleep 8 in the foreground with a timeout of at least 20000 ms and run_in_background=false. Wait for it to finish, then reply with the concatenation of RESTART and _TUI_OK, nothing else.`, { delay: 20 })
       await packaged.page.keyboard.press("Enter")
       await expect.poll(async () => {
         const response = await fetch(lifecycleUrl)
@@ -173,8 +203,24 @@ for (const harness of ["codex", "claude"] as const) {
       ), { timeout: 15_000, message: "Background completion must play the real notification audio through to its end" }).toBe(1)
       await packaged.page.locator(`[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${pty.id}"]`).click()
       await expect(packaged.page.locator(`${selector} .xterm-rows`)).toContainText("RESTART_TUI_OK", { timeout: 30_000 })
+      if (child) {
+        const files = await fs.readdir(path.join(home, ".claude", "projects"), { recursive: true })
+        const transcripts = files.filter((file) => file.includes("/subagents/") && file.endsWith(".jsonl"))
+        expect(transcripts.length, "The actual Claude CLI must have run a subagent").toBeGreaterThan(0)
+        const contents = await Promise.all(transcripts.map((file) => fs.readFile(path.join(home, ".claude", "projects", file), "utf8")))
+        expect(contents.some((content) => content.includes("CHILD_FINISHED"))).toBe(true)
+        const events = await packaged.page.evaluate(() => {
+          const state = window as unknown as { __claxedoChildLifecycle: string[]; __claxedoChildStream: EventSource }
+          state.__claxedoChildStream.close()
+          return state.__claxedoChildLifecycle
+        })
+        await test.info().attach("child-parent-lifecycle", { body: JSON.stringify(events), contentType: "application/json" })
+        expect(events.at(-1)).toBe("Idle")
+        expect(events.slice(0, -1), "Child completion must never settle the still-running parent").not.toContain("Idle")
+      }
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-restarted.png`) })
     } finally {
+      if (child) await test.info().attach("raw-provider-hooks", { body: await fs.readFile(path.join(root, "raw-hooks.jsonl"), "utf8").catch(() => ""), contentType: "application/jsonl" })
       if (ptyUrl) ptyStates.push({ phase: "cleanup", at: Date.now(), pty: await fetch(ptyUrl).then((response) => response.json()).catch(() => null) })
       await test.info().attach("pty-state", { body: JSON.stringify(ptyStates), contentType: "application/json" })
       await test.info().attach("pty-traffic", { body: JSON.stringify(traffic), contentType: "application/json" })

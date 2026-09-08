@@ -61,6 +61,25 @@ describe("materializeAgentHooks", () => {
     })
   })
 
+  test("retires Claude child completion hooks without removing user commands", async () => {
+    const file = path.join(root, ".claude", "settings.json")
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, JSON.stringify({ hooks: {
+      SubagentStop: [{ hooks: [
+        { type: "command", command: getClaudeManagedHookCommand() },
+        { type: "command", command: "/user/child-completed.sh" },
+      ] }],
+    } }))
+    const input = { homeDir: root, notifyPath, geminiHookPath, cursorHookPath, force: true }
+    await materializeAgentHooks(input)
+    await materializeAgentHooks(input)
+    const result = await readJson(file)
+    expect(result).toMatchObject({ hooks: {
+      SubagentStop: [{ hooks: [{ type: "command", command: "/user/child-completed.sh" }] }],
+      Stop: [{ hooks: [{ type: "command", command: getClaudeManagedHookCommand() }] }],
+    } })
+  })
+
   test("reports a corrupted settings file as failed instead of rewriting it", async () => {
     const claudePath = path.join(root, ".claude", "settings.json")
     await fs.mkdir(path.dirname(claudePath), { recursive: true })
@@ -111,4 +130,3 @@ describe("materializeAgentHooks", () => {
     })
   })
 })
-
