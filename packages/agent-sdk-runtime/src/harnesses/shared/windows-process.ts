@@ -23,10 +23,18 @@ export function isWindowsShimBinary(binary: string) {
  *     way, so the tree flag is the only part of the semantics we can choose,
  *     and dispose means the server AND its children are gone.
  *
- * On POSIX the ordinary signal is delivered and the caller's TERM-then-KILL
- * escalation keeps its meaning.
+ * On POSIX callers that spawned with `detached: true` can explicitly signal
+ * their owned process group. Other callers retain single-process signaling.
  */
-export function killHarnessProcess(proc: ChildProcess, signal: NodeJS.Signals) {
+export function killHarnessProcess(proc: ChildProcess, signal: NodeJS.Signals, ownedProcessGroup = false) {
+  if (process.platform !== "win32" && ownedProcessGroup && proc.pid) {
+    try {
+      process.kill(-proc.pid, signal)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+    }
+    return
+  }
   if (process.platform === "win32" && proc.pid && proc.exitCode === null && proc.signalCode === null) {
     try {
       spawn("taskkill", ["/pid", String(proc.pid), "/T", "/F"], { stdio: "ignore" })

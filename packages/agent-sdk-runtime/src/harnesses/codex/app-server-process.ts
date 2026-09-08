@@ -100,7 +100,7 @@ export class CodexAppServerProcess {
   private stderrListeners = new Set<(message: string) => void>()
   private observation: AgentProcessObserverHandle
   private observationExited = false
-  /** Resolves once the child has actually exited, so `dispose()` can mean "gone". */
+  /** Resolves after the child and its owned POSIX process group have exited. */
   private readonly exited: Promise<void>
   private resolveExited!: () => void
 
@@ -120,6 +120,9 @@ export class CodexAppServerProcess {
       cwd: directory,
       env,
       stdio: ["pipe", "pipe", "pipe"],
+      // Give this owner an isolated POSIX process group, including native
+      // plugin clones and tool children that can outlive the app-server.
+      detached: process.platform !== "win32",
       ...(windowsShim ? { shell: true } : {}),
     })
     this.observation = observeCodexAppServerProcess({
@@ -214,9 +217,9 @@ export class CodexAppServerProcess {
   }
 
   /**
-   * Terminates the child and resolves once it is gone — SIGTERM first, SIGKILL
-   * a second later for a child that ignores it. An owner that awaits this may
-   * then delete the directory the child was writing to.
+   * Terminates the child and its owned process group — SIGTERM first, SIGKILL
+   * for processes that ignore it. An owner that awaits this may then delete
+   * the directory those processes were writing to.
    */
   dispose(): Promise<void> {
     if (this.disposed) return this.exited
@@ -226,9 +229,9 @@ export class CodexAppServerProcess {
     for (const item of this.pending.values()) item.reject(error)
     this.pending.clear()
     if (this.proc.exitCode !== null || this.proc.signalCode !== null) return this.exited
-    killHarnessProcess(this.proc, "SIGTERM")
+    killHarnessProcess(this.proc, "SIGTERM", true)
     this.killTimer = setTimeout(() => {
-      if (this.proc.exitCode === null && this.proc.signalCode === null) killHarnessProcess(this.proc, "SIGKILL")
+      if (this.proc.exitCode === null && this.proc.signalCode === null) killHarnessProcess(this.proc, "SIGKILL", true)
     }, 1_000)
     this.killTimer.unref()
     return this.exited
@@ -236,11 +239,33 @@ export class CodexAppServerProcess {
 
   private handleExit(error: Error, reason: "error" | "exited", exitCode?: number) {
     if (this.killTimer) clearTimeout(this.killTimer)
-    this.resolveExited()
+    void this.drainProcessGroup().then(() => this.resolveExited())
     this.exitObservation({ reason, ...(exitCode !== undefined ? { exitCode } : {}) })
     for (const item of this.pending.values()) item.reject(error)
     this.pending.clear()
     if (!this.disposed) this.onClose(error)
+  }
+
+  /** The leader exiting does not prove its plugin/tool descendants are gone. */
+  private async drainProcessGroup() {
+    const pid = this.proc.pid
+    if (process.platform === "win32" || !pid) return
+    killHarnessProcess(this.proc, "SIGTERM", true)
+    const deadline = Date.now() + 1_000
+    let escalated = false
+    for (;;) {
+      try {
+        process.kill(-pid, 0)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") return
+        throw error
+      }
+      if (!escalated && Date.now() >= deadline) {
+        killHarnessProcess(this.proc, "SIGKILL", true)
+        escalated = true
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
   }
 
   private exitObservation(input: { reason: "error" | "exited" | "disposed"; exitCode?: number }) {
