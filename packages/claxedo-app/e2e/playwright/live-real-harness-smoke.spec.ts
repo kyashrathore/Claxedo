@@ -372,40 +372,72 @@ test.describe("live real-harness smoke @live", () => {
     await runLiveHarnessSmoke(page, dir, { id: "claude", option: /^Claude$/, optionIndex: 0 })
   })
 
-  test("claude native SDK question survives reload and returns the answer to the live model", async ({ page }) => {
-    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
-    test.skip(!binary, "The live question flow requires the installed and authenticated Claude CLI.")
-    const dir = await makeWorkspace("claude-live-question")
-    await seedOneProject(page, dir)
-    const input = await openDraftPrompt(page, dir)
-    await switchDraftHarness(page, /^Claude$/, 0)
-    await waitForHarnessReady(page)
-    const prefix = `LIVE-QUESTION-${Date.now()}`
-    await composePrompt(page, input,
-      'Use the AskUserQuestion tool now with exactly one question: "Which test environment?", ' +
-      'header "Environment", options [{"label":"Staging","description":"Isolated test environment"},' +
-      '{"label":"Production","description":"Production environment"}], multiSelect false. ' +
-      `Wait for my answer, then reply with exactly ${prefix}- followed by the selected option label. Do not run any other tools.`,
-    )
-    await page.locator(SELECTORS.submitControl).last().click()
-    await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
-    const sessionUrl = page.url()
-    const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
-    await expect(dock).toBeVisible({ timeout: 60_000 })
-    await expect(dock).toContainText("Which test environment?")
-    await page.screenshot({ path: test.info().outputPath("live-question-pending.png") })
-    await page.reload({ waitUntil: "domcontentloaded" })
-    await expect(dock).toBeVisible({ timeout: 30_000 })
-    await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
-    await dock.getByRole("button", { name: "Submit", exact: true }).click()
-    await expect(dock).toHaveCount(0)
-    await expectAssistantReplyVisible(page, `${prefix}-Staging`, {
-      spec: "live-real-harness-smoke",
-      scenario: "claude-question-answer",
+  for (const harness of ["claude", "codex"] as const) {
+    for (const action of ["answer", "dismiss"] as const) {
+    test(`${harness} native SDK question ${action} survives reload and returns the result to the live model`, async ({ page }) => {
+      const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+      test.skip(!binary, `The live question flow requires the installed and authenticated ${harness} CLI.`)
+      const dir = await makeWorkspace(`${harness}-live-question`)
+      await seedOneProject(page, dir)
+      const input = await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+      await waitForHarnessReady(page)
+      const prefix = `LIVE-QUESTION-${Date.now()}`
+      await composePrompt(page, input,
+        (harness === "claude"
+          ? 'Use the AskUserQuestion tool now with exactly one question: "Which test environment?", header "Environment", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}], multiSelect false. '
+          : 'Use request_user_input now with one question: id "environment", header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}]. ') +
+        `Wait for my answer, then reply with exactly ${prefix}- followed by the selected option label. If dismissed, reply exactly ${prefix}-DISMISSED and do not ask again. Do not run any other tools.`,
+      )
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+      const sessionUrl = page.url()
+      const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
+      await expect(dock).toBeVisible({ timeout: 60_000 })
+      await expect(dock).toContainText("Which test environment?")
+      await page.screenshot({ path: test.info().outputPath("live-question-pending.png") })
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expect(dock).toBeVisible({ timeout: 30_000 })
+      if (action === "dismiss") {
+        const pendingResponse = await page.request.get(`${BACKEND_URL}/question?directory=${encodeURIComponent(dir)}`)
+        expect(pendingResponse.ok()).toBe(true)
+        const pending = await pendingResponse.json() as Array<{ id: string; sessionID: string }>
+        const sessionId = new URL(sessionUrl).pathname.split("/").at(-1)!
+        const request = pending.find((row) => row.sessionID === sessionId)
+        expect(request).toBeDefined()
+        await dock.getByRole("button", { name: "Dismiss", exact: true }).click()
+        await expectAssistantReplyVisible(page, `${prefix}-DISMISSED`)
+        await expect(dock).toHaveCount(0)
+        const late = await page.request.post(`${BACKEND_URL}/question/${request!.id}/reply?directory=${encodeURIComponent(dir)}`, {
+          data: { answers: [["Staging"]] },
+        })
+        expect(late.status()).toBe(404)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expect(dock).toHaveCount(0)
+        const followup = `AFTER-DISMISS-${Date.now()}`
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply exactly ${followup}. Do not use tools.`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expectAssistantReplyVisible(page, followup)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expectAssistantReplyVisible(page, followup)
+        await expect(dock).toHaveCount(0)
+        return
+      }
+      await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+      await dock.getByRole("button", { name: "Submit", exact: true }).click()
+      await expect(dock).toHaveCount(0)
+      await expectAssistantReplyVisible(page, `${prefix}-Staging`, {
+        spec: "live-real-harness-smoke",
+        scenario: `${harness}-question-answer`,
+      })
+      await expect(page).toHaveURL(sessionUrl)
+      await expect(page.locator('[data-action="prompt-harness-model"]').filter({ visible: true })).toHaveAttribute("data-harness", harness)
     })
-    await expect(page).toHaveURL(sessionUrl)
-    await expect(page.locator('[data-action="prompt-harness-model"]').filter({ visible: true })).toHaveAttribute("data-harness", "claude")
-  })
+
+    }
+
+  }
+
 
   for (const harness of ["claude", "codex", "opencode"] as const) {
     test(`${harness} live todo list survives reload while work runs and settles when complete`, async ({ page }) => {

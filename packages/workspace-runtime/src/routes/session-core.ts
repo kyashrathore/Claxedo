@@ -1138,6 +1138,10 @@ async function admitQuestionOperation(
     return { id, directory, adapter, sessionId: known }
   }
 
+  // When supplied, the runtime-wide listing is authoritative across harnesses.
+  // An absent request cannot be revived by selecting the default adapter.
+  if (opts.listQuestions) return { rejected: interactionNotFound(c, "question", id) }
+
   const adapter = await opts.resolveAdapter(c, { directory })
   const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "questions", method, "question_response")
   if (unsupported) return { rejected: unsupported }

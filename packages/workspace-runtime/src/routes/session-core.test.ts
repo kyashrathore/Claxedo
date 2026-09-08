@@ -1916,3 +1916,23 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(disposed).toBe(true)
   })
 })
+
+for (const operation of ["reply", "reject"] as const) {
+  test(`a stale question ${operation} returns not-found without resolving a default harness`, async () => {
+    let resolved = 0
+    const app = createSessionRoutes({
+      resolveDirectory: () => "/work",
+      listQuestions: async () => [],
+      resolveAdapter: () => { resolved++; throw new Error("No default harness configured") },
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+    app.onError(() => new Response("unexpected harness resolution", { status: 500 }))
+    const response = await app.request(`http://localhost/question/finished-question/${operation}?directory=%2Fwork`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["Staging"]] }),
+    })
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ error: { code: "interaction_not_found" } })
+    expect(resolved).toBe(0)
+  })
+}
