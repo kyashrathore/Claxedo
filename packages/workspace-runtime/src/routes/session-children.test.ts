@@ -4,7 +4,7 @@ import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import type { RuntimeEventEnvelopeInput } from "../runtime-event-hub"
 import type { CompatEnvelope } from "../compat-events"
 import { permissionAsked, permissionReplied, questionAsked, questionRejected } from "../compat-events"
-import { childSummary, createChildSessionHost, type ChildSessionHostInput } from "./session-children"
+import { childSummary, createChildSessionHost, wakeMessageId, type ChildSessionHostInput } from "./session-children"
 
 const DIRECTORY = "/workspace"
 
@@ -108,7 +108,7 @@ describe("host-owned child sessions", () => {
 
     expect(item.turns).toEqual([{
       parentSessionId: "parent",
-      messageID: "wake:child:m1",
+      messageID: "msg_wake_child_m1",
       text: 'Subagent "Consult" (codex) completed.\n\nThe plan is sound; ship it.',
       author: "child",
     }])
@@ -116,6 +116,17 @@ describe("host-owned child sessions", () => {
 
     await item.host.onTurnSettled("child", DIRECTORY)
     expect(item.turns).toHaveLength(1)
+  })
+
+  test("the wake turn's message id is msg_-shaped and derived from the child and its reply", () => {
+    // The OpenCode engine refuses any other shape and reconciles a repeat of
+    // the same id instead of opening a second turn, so this id is both the
+    // admission ticket and the exactly-once key.
+    expect(wakeMessageId("ses_child", "msg_reply_r")).toBe("msg_wake_ses_child_msg_reply_r")
+    expect(wakeMessageId("ses_child", "msg_reply_r")).toBe(wakeMessageId("ses_child", "msg_reply_r"))
+    expect(wakeMessageId("ses_child", undefined)).toBe("msg_wake_ses_child_none")
+    expect(wakeMessageId("ses_child", "msg_a_r")).not.toBe(wakeMessageId("ses_child", "msg_b_r"))
+    expect(wakeMessageId("ses_other", "msg_reply_r")).not.toBe(wakeMessageId("ses_child", "msg_reply_r"))
   })
 
   test("a busy parent holds the wake until its own turn settles", async () => {
@@ -133,18 +144,18 @@ describe("host-owned child sessions", () => {
     item.sessions.set("parent", { ...item.sessions.get("parent")!, status: "idle" })
     await item.host.onTurnSettled("parent", DIRECTORY)
 
-    expect(item.turns).toMatchObject([{ parentSessionId: "parent", messageID: "wake:child:m1" }])
+    expect(item.turns).toMatchObject([{ parentSessionId: "parent", messageID: "msg_wake_child_m1" }])
     expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "delivered" }])
   })
 
-  test("a wake refused as busy stays pending and is re-offered by recovery", async () => {
-    let attempts = 0
+  test("a wake refused as busy stays pending and is re-offered by recovery under the same message id", async () => {
+    const offered: Array<string | undefined> = []
     const item = harness({
       sessions: { parent: { status: "idle" }, child: { parentID: "parent" } },
       messages: { child: [assistant("m1", "done")] },
-      startTurn: async () => {
-        attempts += 1
-        return attempts === 1 ? "busy" : "started"
+      startTurn: async (turn) => {
+        offered.push(turn.body.messageID)
+        return offered.length === 1 ? "busy" : "started"
       },
     })
     await item.host.admitCreated({ parentSessionId: "parent", childSessionId: "child", directory: DIRECTORY, harness: "claude" })
@@ -153,8 +164,13 @@ describe("host-owned child sessions", () => {
 
     await item.host.recover()
 
-    expect(attempts).toBe(2)
+    // Two offers, one message id: the retry is the same wake, so the engine
+    // reconciles it rather than admitting a second turn for the same child.
+    expect(offered).toEqual(["msg_wake_child_m1", "msg_wake_child_m1"])
     expect(item.store.listSubagents("parent")).toMatchObject([{ wake: "delivered" }])
+
+    await item.host.recover()
+    expect(offered).toHaveLength(2)
   })
 
   test("wakes queue behind each other: the next is offered when the wake turn settles", async () => {
@@ -167,13 +183,13 @@ describe("host-owned child sessions", () => {
     await item.host.onTurnSettled("a", DIRECTORY)
     item.sessions.set("parent", { ...item.sessions.get("parent")!, status: "busy" })
     await item.host.onTurnSettled("b", DIRECTORY)
-    expect(item.turns.map((turn) => turn.messageID)).toEqual(["wake:a:ma"])
+    expect(item.turns.map((turn) => turn.messageID)).toEqual(["msg_wake_a_ma"])
 
     item.sessions.set("parent", { ...item.sessions.get("parent")!, status: "idle" })
     item.settle.shift()?.()
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(item.turns.map((turn) => turn.messageID)).toEqual(["wake:a:ma", "wake:b:mb"])
+    expect(item.turns.map((turn) => turn.messageID)).toEqual(["msg_wake_a_ma", "msg_wake_b_mb"])
   })
 
   test("an archived parent gets an interrupted child and no wake", async () => {

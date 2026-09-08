@@ -284,7 +284,7 @@ describe("POST /session with parentID", () => {
       { sessionId: child.id, messageID: "child-turn", text: "Review the plan" },
       {
         sessionId: "parent",
-        messageID: "wake:" + child.id + ":child-reply",
+        messageID: "msg_wake_" + child.id + "_child-reply",
         text: 'Subagent "Consult" (codex) completed.\n\nShip it.',
       },
     ])

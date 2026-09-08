@@ -109,7 +109,7 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
         parentSessionId,
         directory,
         body: {
-          messageID: `wake:${next.childSessionId}:${summary.assistantMessageId ?? "none"}`,
+          messageID: wakeMessageId(next.childSessionId, summary.assistantMessageId),
           parts: [{ type: "text", text: wakeText(next, summary) }],
         },
         author: { id: next.childSessionId, name: next.label ?? "Subagent", kind: "agent" },
@@ -224,6 +224,21 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
       unsubscribe?.()
     },
   }
+}
+
+/**
+ * The user message id one finished child's wake turn carries.
+ *
+ * The `msg_` prefix is a hard constraint of the OpenCode engine:
+ * `Session.Message.ID` refuses every other shape, and the refusal arrives as a
+ * failed parent turn rather than a refused wake, so nothing upstream can see
+ * it. The rest is derived rather than minted because the id IS the exactly-once
+ * key: `Session.prompt` reconciles an id it has already admitted instead of
+ * opening a second turn, so a wake re-offered after a restart — or after a lost
+ * delivery observation — has to resolve to the same id from the same child.
+ */
+export function wakeMessageId(childSessionId: string, assistantMessageId: string | undefined): string {
+  return `msg_wake_${childSessionId}_${assistantMessageId ?? "none"}`
 }
 
 /** Host-owned children always belong to a workspace directory; a create without one has nowhere to run. */

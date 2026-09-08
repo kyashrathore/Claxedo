@@ -194,12 +194,14 @@ async function createChildSession(
 /**
  * The message id is derived from the child so a create retried under the same
  * `clientRequestId` — which resolves to the same child — is deduplicated by
- * the runtime rather than starting a second turn.
+ * the runtime rather than starting a second turn. The `msg_` prefix is a hard
+ * constraint of the OpenCode engine — `Session.Message.ID` refuses every other
+ * shape — and this is the id the child's own first turn is admitted under.
  */
 async function promptChild(ctx: McpToolContext, sessionId: string, prompt: string): Promise<void> {
   await (await ownRuntimeClient(ctx)).session.promptAsync({
     sessionID: sessionId,
-    messageID: `subagent:${sessionId}`,
+    messageID: `msg_subagent_${sessionId}`,
     parts: [{ type: "text", text: prompt }],
   })
 }

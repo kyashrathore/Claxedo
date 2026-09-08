@@ -30,8 +30,10 @@ import {
 
 type Binding = { kind: string; subagentKey: string; sessionId: string; status?: string; summary?: string }
 type ChildRow = { subagentKey: string; sessionId: string; status?: string; label?: string; role?: string; wake?: string }
-type RuntimeSession = { id: string; parentID?: string; title?: string | null }
-type RuntimeMessage = { info: { id: string; role: string }; parts: Array<{ type: string; text?: string }> }
+type TurnOutcome = { status: string; error?: string; assistantMessageId?: string }
+type RuntimeSession = { id: string; parentID?: string; title?: string | null; lastTurn?: TurnOutcome }
+type MessageError = { name: string; data?: { message?: string; firstTurnErrorClass?: string } }
+type RuntimeMessage = { info: { id: string; role: string; error?: MessageError }; parts: Array<{ type: string; text?: string }> }
 
 let live: LiveMcpFixture
 
@@ -115,9 +117,29 @@ describe("a subagent started over the injected first-party MCP", () => {
     )
     expect(settled?.status).toBe("failed")
 
-    const wakes = (await readMessages(sessionId)).filter((row) => row.info.id.startsWith(`wake:${binding.sessionId}`) && row.info.role === "user")
+    const wakes = (await readMessages(sessionId)).filter((row) => row.info.id.startsWith(`msg_wake_${binding.sessionId}`) && row.info.role === "user")
     expect(wakes).toHaveLength(1)
-    expect(wakes[0]?.parts.map((part) => part.text ?? "").join("")).toContain("opencode subagent")
+    const summary = wakes[0]?.parts.map((part) => part.text ?? "").join("") ?? ""
+    expect(summary).toContain("opencode subagent")
+    // The summary is the child's own outcome, so it also reports whether the
+    // child's first turn was admitted: `create_subagent` prompts it under a
+    // derived id the engine has to accept.
+    expect(summary).not.toContain('starting with "msg_"')
+
+    // The wake turn has to be ADMITTED, not merely offered, and the user
+    // message above cannot say which: the runtime store publishes it before the
+    // engine ever sees the id, so a wake the engine refuses looks identical
+    // here. The parent's own outcome is the only witness. This fixture
+    // configures no model, so the furthest an admitted turn gets is the
+    // provider route, and that is what its error class has to say.
+    const wakeTurn = await until(
+      async () => (await readSession(sessionId)).lastTurn,
+      (turn) => turn?.assistantMessageId?.startsWith("msg_wake_") === true,
+      "the parent's wake turn to settle",
+    )
+    expect(wakeTurn?.error ?? "").not.toContain('starting with "msg_"')
+    const reply = (await readMessages(sessionId)).find((row) => row.info.id === wakeTurn?.assistantMessageId)
+    expect(reply?.info.error?.data?.firstTurnErrorClass).toBe("model")
   })
 
   test("reads one child back by session id and by subagent key once it has settled", async () => {
