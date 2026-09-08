@@ -3,7 +3,7 @@ import path from "path"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { writeIfChanged as writeFileAtomically } from "./core/utils"
 import { arr, rec, str } from "../json-value"
-import { generateAmpPlugin } from "./core/hooks"
+import { generateAmpPlugin, generateAntigravityHook } from "./core/hooks"
 
 async function readFileIfExists(filePath: string): Promise<string | undefined> {
   try {
@@ -14,7 +14,7 @@ async function readFileIfExists(filePath: string): Promise<string | undefined> {
   }
 }
 
-export type AgentHookRunner = "claude" | "codex" | "cursor" | "droid" | "gemini" | "mastra" | "amp"
+export type AgentHookRunner = "claude" | "codex" | "cursor" | "droid" | "gemini" | "mastra" | "amp" | "antigravity"
 
 export type AgentHookMaterializationResult = {
   runner: AgentHookRunner
@@ -107,6 +107,7 @@ function reconcileManagedEntries<T>(input: {
 
 function targetPaths(homeDir: string) {
   return {
+    antigravity: path.join(homeDir, ".gemini", "config", "hooks.json"),
     amp: path.join(homeDir, ".config", "amp", "plugins", "claxedo-lifecycle.ts"),
     claude: path.join(homeDir, ".claude", "settings.json"),
     codex: path.join(homeDir, ".codex", "hooks.json"),
@@ -360,6 +361,25 @@ export async function materializeAgentHooks(input: MaterializeAgentHooksOptions)
   const force = input.force ?? false
   const codexNativeHooks = input.codexNativeHooks ?? false
   return Promise.all([
+    applyHook({
+      runner: "antigravity",
+      file: files.antigravity,
+      run: async () => {
+        const root = asRecordOrEmpty(await readJson(files.antigravity))
+        const hookPath = path.join(path.dirname(input.notifyPath), "antigravity-hook.sh")
+        const desired = Object.fromEntries(["PreInvocation", "Stop"].map((event) => [event, [
+          { type: "command", command: `bash ${shellQuote(hookPath)} ${event}`, timeout: 3 },
+        ]]))
+        const current = rec(root["claxedo-lifecycle"])
+        if (root["claxedo-lifecycle"] !== undefined && (!current || !Object.values(current).every((handlers) =>
+          arr(handlers)?.every((handler) => isManagedHookCommand(str(rec(handler)?.command), "antigravity-hook.sh"))))) {
+          throw new Error("Refusing to overwrite an unrecognized Antigravity hook named claxedo-lifecycle")
+        }
+        await writeIfChanged(hookPath, generateAntigravityHook(input.notifyPath), 0o755, force)
+        root["claxedo-lifecycle"] = desired
+        await writeIfChanged(files.antigravity, JSON.stringify(root, null, 2) + "\n", 0o644, force)
+      },
+    }),
     applyHook({
       runner: "amp",
       file: files.amp,

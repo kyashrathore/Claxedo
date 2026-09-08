@@ -5,6 +5,7 @@ import path from "node:path"
 import {
   generateNotifyScript,
   generateAmpPlugin,
+  generateAntigravityHook,
   generateGeminiHook,
   generateCursorHook,
   generateCopilotHook,
@@ -13,6 +14,48 @@ import {
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { NOTIFY_MARKER } from "./core/constants"
 import { workspaceRuntimeBus } from "../bus"
+
+it("Antigravity forwards native stop metadata through shell, HTTP and lifecycle bus", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "agy-native-hook-"))
+  const terminalId = path.basename(root)
+  const events: unknown[] = []
+  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
+  })
+  const app = AgentHookRoutes()
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+    const url = new URL(request.url)
+    url.pathname = "/agent-lifecycle"
+    return app.fetch(new Request(url, request))
+  } })
+  try {
+    const notify = path.join(root, "notify.sh")
+    const hook = path.join(root, "antigravity-hook.sh")
+    await writeFile(notify, generateNotifyScript(server.port!))
+    await writeFile(hook, generateAntigravityHook(notify))
+    for (const [name, fields] of [
+      ["PreInvocation", {}],
+      ["Stop", { fullyIdle: false, terminationReason: "model_stop" }],
+      ["Stop", { fullyIdle: true, terminationReason: "model_stop" }],
+    ] as const) {
+      const child = Bun.spawn(["bash", hook, name], {
+        env: { ...process.env, CLAXEDO_TAB_ID: terminalId, CLAXEDO_TERMINAL_ID: terminalId, CLAXEDO_SERVER_PORT: String(server.port) },
+        stdin: new Blob([JSON.stringify({ conversationId: "agy-native", transcriptPath: '/tmp/quoted "path"/π.jsonl', ...fields })]),
+        stdout: "pipe", stderr: "pipe",
+      })
+      expect(await child.exited).toBe(0)
+      expect(await new Response(child.stdout).text()).toBe("{}\n")
+      expect(await new Response(child.stderr).text()).toBe("")
+    }
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ provider: "antigravity", providerSessionId: "agy-native", eventType: "Busy" })
+    expect(events[1]).toMatchObject({ provider: "antigravity", eventType: "Idle", outcome: "done" })
+  } finally {
+    unsubscribe()
+    server.stop(true)
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 it("Amp plugin delivers awaited native events through the real notification transport", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "amp-native-hook-"))

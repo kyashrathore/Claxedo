@@ -19,6 +19,19 @@ export function providerLifecycle(input: Record<string, unknown>) {
   const first = (...keys: string[]) => keys.map((key) => str(input[key])).find((value) => !!value)
   const hook = first("hook_event_name")
   const type = hook ?? first("type")
+  if (input.provider === "antigravity") {
+    const event = rec(input.event)
+    const sessionId = str(event?.conversationId)
+    if (!event || !sessionId) return undefined
+    const identity = { provider: "antigravity", sessionId, transcriptPath: str(event.transcriptPath) }
+    if (hook === "PreInvocation") return { ...identity, eventType: "Busy" as const }
+    if (hook !== "Stop" || event.fullyIdle !== true) return undefined
+    if (event.terminationReason === "model_stop") return { ...identity, eventType: "Idle" as const, outcome: "done" as const }
+    if (event.terminationReason === "error" || event.terminationReason === "max_steps_exceeded") {
+      return { ...identity, eventType: "Error" as const, outcome: "error" as const }
+    }
+    return undefined
+  }
   if (input.provider === "amp" && (hook === "agent.start" || hook === "agent.end")) {
     const event = rec(input.event)
     const sessionId = str(rec(event?.thread)?.id)

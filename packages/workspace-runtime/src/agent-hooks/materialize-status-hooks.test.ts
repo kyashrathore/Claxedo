@@ -14,6 +14,27 @@ async function readJson(file: string) {
   return JSON.parse(await fs.readFile(file, "utf8")) as Record<string, unknown>
 }
 
+test("Antigravity preserves user hooks, installs idempotently, and refuses a named collision", async () => {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "agy-hooks-"))
+  const file = path.join(home, ".gemini/config/hooks.json")
+  const options = { homeDir: home, notifyPath, geminiHookPath, cursorHookPath }
+  try {
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    const user = { Stop: [{ command: "echo user-owned" }] }
+    await fs.writeFile(file, JSON.stringify({ user }))
+    expect((await materializeAgentHooks(options)).find((r) => r.runner === "antigravity")?.status).toBe("applied")
+    const first = await fs.readFile(file, "utf8")
+    expect(JSON.parse(first).user).toEqual(user)
+    await materializeAgentHooks(options)
+    expect(await fs.readFile(file, "utf8")).toBe(first)
+    await fs.writeFile(file, JSON.stringify({ "claxedo-lifecycle": user }))
+    expect((await materializeAgentHooks(options)).find((r) => r.runner === "antigravity")?.status).toBe("failed")
+    expect(await readJson(file)).toEqual({ "claxedo-lifecycle": user })
+  } finally {
+    await fs.rm(home, { recursive: true, force: true })
+  }
+})
+
 describe("materializeAgentHooks", () => {
   test("Amp installs only its own plugin and rejects collisions with user files", async () => {
     const dir = path.join(root, ".config", "amp", "plugins")

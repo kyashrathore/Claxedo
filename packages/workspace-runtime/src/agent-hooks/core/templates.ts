@@ -8,6 +8,7 @@ import codexWrapperExec from "../templates/codex-wrapper-exec.template.sh?raw"
 import copilotHook from "../templates/copilot-hook.template.sh?raw"
 import cursorHook from "../templates/cursor-hook.template.sh?raw"
 import geminiHook from "../templates/gemini-hook.template.sh?raw"
+import antigravityHook from "../templates/antigravity-hook.template.sh?raw"
 import notify from "../templates/notify.template.sh?raw"
 import wrapperCommon from "../templates/wrapper-common.template.sh?raw"
 import zshenv from "../templates/zshenv.template.sh?raw"
@@ -24,6 +25,7 @@ export const templates = {
   "copilot-hook.template.sh": copilotHook,
   "cursor-hook.template.sh": cursorHook,
   "gemini-hook.template.sh": geminiHook,
+  "antigravity-hook.template.sh": antigravityHook,
   "notify.template.sh": notify,
   "wrapper-common.template.sh": wrapperCommon,
   "zshenv.template.sh": zshenv,

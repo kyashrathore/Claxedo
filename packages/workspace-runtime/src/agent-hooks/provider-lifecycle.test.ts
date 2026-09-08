@@ -2,6 +2,17 @@ import { describe, expect, test } from "bun:test"
 import { providerLifecycle } from "./provider-lifecycle"
 
 describe("provider lifecycle normalization", () => {
+  test("Antigravity settles only an idle execution, never an individual model invocation", () => {
+    const input = { provider: "antigravity", event: { conversationId: "agy-main", transcriptPath: "/tmp/transcript.jsonl" } }
+    expect(providerLifecycle({ ...input, hook_event_name: "PreInvocation" })).toMatchObject({ eventType: "Busy", sessionId: "agy-main" })
+    expect(providerLifecycle({ ...input, hook_event_name: "PostInvocation" })).toBeUndefined()
+    const stop = { ...input, hook_event_name: "Stop" }
+    expect(providerLifecycle({ ...stop, event: { ...input.event, fullyIdle: false, terminationReason: "model_stop" } })).toBeUndefined()
+    expect(providerLifecycle({ ...stop, event: { ...input.event, terminationReason: "model_stop" } })).toBeUndefined()
+    expect(providerLifecycle({ ...stop, event: { ...input.event, fullyIdle: true, terminationReason: "model_stop" } })).toMatchObject({ eventType: "Idle", outcome: "done", sessionId: "agy-main" })
+    expect(providerLifecycle({ ...stop, event: { ...input.event, fullyIdle: true, terminationReason: "error" } })).toMatchObject({ eventType: "Error", outcome: "error" })
+    expect(providerLifecycle({ ...stop, event: { ...input.event, fullyIdle: true, terminationReason: "unknown" } })).toBeUndefined()
+  })
   test("Amp preserves thread identity and distinguishes completed, failed and cancelled turns", () => {
     const event = { thread: { id: "T-amp" }, id: "M-1", message: "hello" }
     expect(providerLifecycle({ provider: "amp", hook_event_name: "agent.start", event })).toMatchObject({ provider: "amp", sessionId: "T-amp", eventType: "Busy" })

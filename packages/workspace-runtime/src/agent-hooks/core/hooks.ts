@@ -58,6 +58,10 @@ export function generateGeminiHook(notifyPath: string): string {
   })
 }
 
+export function generateAntigravityHook(notifyPath: string): string {
+  return loadTemplate("antigravity-hook.template.sh", { MARKER: NOTIFY_MARKER, NOTIFY_PATH: notifyPath })
+}
+
 export function generateCursorHook(notifyPath: string): string {
   return loadTemplate("cursor-hook.template.sh", {
     MARKER: NOTIFY_MARKER,
