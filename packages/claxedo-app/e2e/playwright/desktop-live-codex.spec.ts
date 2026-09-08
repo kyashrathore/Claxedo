@@ -5,6 +5,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import { promisify } from "node:util"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
+import { shutdownPackagedTestDaemon } from "../helpers/desktop-daemon"
 
 const execFileAsync = promisify(execFile)
 
@@ -14,17 +15,23 @@ async function compose(input: Locator, text: string) {
   await expect(input).toContainText(text, { timeout: 10_000 })
 }
 
-test("packaged app completes a real Codex-authenticated session @live @surface-desktop", async () => {
+for (const flow of ["reply", "tasks across full restart"] as const) {
+test(`packaged app completes a real Codex-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-windows-live-codex-")))
+  const profile = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-codex-profile-"))
+  const releaseFile = path.join(directory, ".task-release")
+  const launch = () => launchPackagedApp({
+    timeoutMs: 60_000,
+    userDataDir: profile,
+    preserveUserDataDir: true,
+    env: { CODEX_HOME: path.join(os.homedir(), ".codex") },
+  })
   let packaged: PackagedApp | undefined
   try {
     await execFileAsync("git", ["init"], { cwd: directory })
     await fs.writeFile(path.join(directory, "README.md"), "Real Codex desktop proof.\n")
-    packaged = await launchPackagedApp({
-      timeoutMs: 60_000,
-      env: { CODEX_HOME: path.join(os.homedir(), ".codex") },
-    })
+    packaged = await launch()
     const serverBase = new URL(await expectServerReachable(packaged, 45_000)).origin
     const resolve = await fetch(
       `${serverBase}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`,
@@ -76,6 +83,67 @@ test("packaged app completes a real Codex-authenticated session @live @surface-d
     await packaged.page.keyboard.press("Escape")
     await expect(control).not.toContainText(/Loading models|Select model|^$/, { timeout: 45_000 })
 
+    if (flow === "tasks across full restart") {
+      await packaged.page.locator('[data-action="prompt-permission-mode"]').last().click()
+      await packaged.page.locator('[data-permission-mode-row][data-mode="full-access"]').click()
+      const pidFile = path.join(directory, ".task-pid")
+      const finishedFile = path.join(directory, ".task-finished")
+      const marker = `DESKTOP_TASKS_${Date.now()}`
+      await compose(input,
+        'Use update_plan with exactly three tasks: "Inspect source" completed, "Verify behavior" in_progress, "Report result" pending. ' +
+        `Then run this shell command and wait for it: echo $$ > '${pidFile}'; while [ ! -f '${releaseFile}' ]; do sleep 0.1; done; echo finished > '${finishedFile}'. ` +
+        `The test runner creates the release file; do not create it yourself. When the shell finishes, mark all tasks completed using update_plan and reply exactly ${marker}.`,
+      )
+      const creation = packaged.page.waitForResponse((response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname === "/session",
+      )
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      const created = await creation
+      expect(created.ok()).toBe(true)
+      const session = await created.json() as { id: string }
+      expect(session.id).toBeTruthy()
+      await expect.poll(() => fs.readFile(pidFile, "utf8").catch((error) => {
+        if (error.code === "ENOENT") return ""
+        throw error
+      }), { timeout: 90_000 }).toMatch(/^\d+\s*$/)
+      const pid = Number((await fs.readFile(pidFile, "utf8")).trim())
+      const activeTasks = [
+        { content: "Inspect source", status: "completed" },
+        { content: "Verify behavior", status: "in_progress" },
+        { content: "Report result", status: "pending" },
+      ]
+      const readTasks = async () => {
+        const response = await fetch(`${serverBase}/session/${session.id}/todo?directory=${encodeURIComponent(directory)}`)
+        expect(response.ok).toBe(true)
+        return (await response.json() as Array<{ content: string; status: string }>).map(({ content, status }) => ({ content, status }))
+      }
+      expect(await readTasks()).toEqual(activeTasks)
+      process.kill(pid, 0)
+      await expect(fs.stat(finishedFile)).rejects.toMatchObject({ code: "ENOENT" })
+      const appProcess = packaged.app.process()
+      await packaged.close()
+      await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
+      process.kill(pid, 0)
+      packaged = await launch()
+      expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+      const dock = packaged.page.locator('[data-component="session-todo-dock"]')
+      await expect(dock).toContainText("Verify behavior")
+      await expect(dock.locator('[data-in-progress]')).toHaveCount(1)
+      expect(await readTasks()).toEqual(activeTasks)
+      process.kill(pid, 0)
+      await expect(fs.stat(finishedFile)).rejects.toMatchObject({ code: "ENOENT" })
+      await packaged.page.screenshot({ path: test.info().outputPath("tasks-after-desktop-restart.png") })
+      await fs.writeFile(releaseFile, "release")
+      await expect(packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: marker })).toBeVisible({ timeout: 90_000 })
+      expect((await fs.readFile(finishedFile, "utf8")).trim()).toBe("finished")
+      expect(await readTasks()).toEqual(activeTasks.map((task) => ({ ...task, status: "completed" })))
+      await expect(dock).toHaveCount(0)
+      await packaged.page.reload()
+      await expect(packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: marker })).toBeVisible()
+      await expect(dock).toHaveCount(0)
+      return
+    }
+
     const marker = "WINDOWS_CODEX_APP_OK"
     await compose(input, `Reply with exactly this token and nothing else: ${marker}`)
     const submit = packaged.page.locator('[data-action="prompt-submit"]:visible').last()
@@ -97,7 +165,14 @@ test("packaged app completes a real Codex-authenticated session @live @surface-d
       "the real Codex session did not render its authenticated response",
     ).toBeVisible({ timeout: 180_000 })
   } finally {
+    if (packaged && !packaged.page.isClosed()) {
+      await packaged.page.screenshot({ path: test.info().outputPath("desktop-session-final.png") })
+    }
+    await fs.writeFile(releaseFile, "release")
     await packaged?.close()
+    await shutdownPackagedTestDaemon(profile)
+    await fs.rm(profile, { recursive: true, force: true })
     await fs.rm(directory, { recursive: true, force: true })
   }
 })
+}
