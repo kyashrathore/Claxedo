@@ -295,7 +295,14 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // its ready IPC from it, and Electron main health-checks immediately on
   // receipt). Nothing here awaits it — startOwned stays synchronous through
   // serve(), which the compile-cache boot ordering depends on.
-  const server = serve({ fetch: app.fetch, port, hostname })
+  let stopping = false
+  const server = serve({
+    fetch: (request, env) => stopping
+      ? new Response("Server is stopping", { status: 503, headers: { connection: "close" } })
+      : app.fetch(request, env),
+    port,
+    hostname,
+  })
   const ready = new Promise<void>((resolve) => {
     server.once("listening", () => resolve())
   })
@@ -304,17 +311,23 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   let stopOperation: Promise<void> | undefined
   const stop = () => {
     if (stopOperation) return stopOperation
+    stopping = true
     // Close ingress synchronously with the stop decision. Runtime and usage
     // teardown awaits below; leaving the listener open until those drains
     // finished allowed a new mutation to enter after lifecycle had already
     // committed to idle shutdown.
     const listenerClosed = new Promise<void>((resolve) => {
-      server.close(() => resolve())
-      // Idle shutdown has already proven there are no PTYs, harness turns,
-      // checkpoint writes, remote pins, or client leases. A stale HTTP/SSE
-      // keep-alive is transport residue, not work, and must not leave a
-      // listener-closed daemon resident forever.
-      ;(server as typeof server & { closeAllConnections?: () => void }).closeAllConnections?.()
+      // Drain responses, including the shutdown acknowledgment that initiated
+      // stop. Bound the drain so an SSE stream or stalled client cannot keep
+      // an otherwise idle daemon resident. Ingress is already rejected above.
+      const deadline = setTimeout(() => {
+        ;(server as typeof server & { closeAllConnections?: () => void }).closeAllConnections?.()
+      }, 5_000)
+      deadline.unref()
+      server.close(() => {
+        clearTimeout(deadline)
+        resolve()
+      })
     })
     stopOperation = (async () => {
       try {

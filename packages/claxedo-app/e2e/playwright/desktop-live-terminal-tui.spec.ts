@@ -5,6 +5,7 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
+import { shutdownPackagedTestDaemon } from "../helpers/desktop-daemon"
 import { expectTerminalRailStatus, expectTerminalRailStatusAbsent } from "../helpers/rail-oracle"
 
 const exec = promisify(execFile)
@@ -410,8 +411,13 @@ for (const { harness, child, pause } of [
       if (packaged && !packaged.page.isClosed()) await test.info().attach("audio-ended", { body: JSON.stringify(await packaged.page.evaluate(() => (window as unknown as { __claxedoAudioEnded?: unknown }).__claxedoAudioEnded ?? [])), contentType: "application/json" })
       if (packaged && !packaged.page.isClosed()) await packaged.page.screenshot({ path: test.info().outputPath("terminal-final-state.png") }).catch(() => undefined)
       if (packaged) await test.info().attach("desktop-log", { body: packaged.appLog.join(""), contentType: "text/plain" })
-      if (ptyUrl) await fetch(ptyUrl, { method: "DELETE" }).catch(() => undefined)
       await packaged?.close()
+      await shutdownPackagedTestDaemon(profile, async () => {
+        if (ptyUrl) {
+          const removed = await fetch(ptyUrl, { method: "DELETE" })
+          expect(removed.ok, "Final teardown must remove the test terminal").toBe(true)
+        }
+      })
       await fs.rm(root, { recursive: true, force: true })
     }
   })

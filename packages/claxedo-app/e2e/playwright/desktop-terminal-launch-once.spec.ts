@@ -4,6 +4,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
+import { shutdownPackagedTestDaemon } from "../helpers/desktop-daemon"
 
 test("custom terminal launches exactly once across reload and desktop restart @live @surface-desktop", async () => {
   test.setTimeout(150_000)
@@ -96,8 +97,13 @@ test("custom terminal launches exactly once across reload and desktop restart @l
   } finally {
     await test.info().attach("launch-count", { body: await launches(), contentType: "text/plain" })
     if (packaged && !packaged.page.isClosed()) await packaged.page.screenshot({ path: test.info().outputPath("final.png") }).catch(() => undefined)
-    if (ptyUrl) await fetch(ptyUrl, { method: "DELETE" }).catch(() => undefined)
     await packaged?.close()
+    await shutdownPackagedTestDaemon(profile, async () => {
+      if (ptyUrl) {
+        const removed = await fetch(ptyUrl, { method: "DELETE" })
+        expect(removed.ok, "Final teardown must remove the test terminal").toBe(true)
+      }
+    })
     await fs.rm(root, { recursive: true, force: true })
   }
 })

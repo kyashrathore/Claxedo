@@ -9,6 +9,7 @@ import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters
 import { startLocalServer, type LocalServer } from "./start-local-server"
 import type { LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
+import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 
 /**
  * Boots the real server on a real socket and talks to it over HTTP.
@@ -98,6 +99,40 @@ async function boot() {
 }
 
 describe("startLocalServer", () => {
+  test("delivers the shutdown acknowledgment before closing the real HTTP connection", async () => {
+    const lifecycle = createLocalDaemonLifecycle({
+      activity: () => ({
+        pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
+        runtime: { hosts: 0, activeTurns: 0, activeWrites: 0, checkpointing: 0 },
+        residencyPins: 0,
+        replacementBlockers: 0,
+      }),
+      onIdle: () => server!.stop(),
+    })
+    server = startLocalServer({
+      port: await freePort(),
+      services: services(),
+      daemon: {
+        identity: { token: "shutdown-test", protocol: 1, generation: "shutdown-test", pid: process.pid },
+        lifecycle,
+      },
+    })
+    await server.ready
+    lifecycle.start()
+    const base = `http://127.0.0.1:${server.port}/api/claxedo/daemon`
+    const headers = { authorization: "Bearer shutdown-test", "content-type": "application/json" }
+    const acquired = await fetch(`${base}/leases`, { method: "POST", headers })
+    expect(acquired.status).toBe(201)
+    const lease = await acquired.json() as { id: string }
+    const response = await fetch(`${base}/shutdown`, {
+      method: "POST", headers, body: JSON.stringify({ leaseId: lease.id }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ shutdownRequested: true, released: true })
+    await server.stop()
+    await expect(fetch(`${base}/state`, { headers })).rejects.toThrow()
+  }, 30_000)
+
   test("listens and answers health over a real socket", async () => {
     const local = await boot()
     const response = await fetch(`http://127.0.0.1:${local.port}/api/claxedo/health`)
@@ -143,6 +178,21 @@ describe("startLocalServer", () => {
       probe.listen(port, "127.0.0.1", () => probe.close(() => resolve()))
     })).resolves.toBeUndefined()
   }, 30_000)
+
+  test("stopping bounds the drain of an open event stream", async () => {
+    const local = await boot()
+    local.app.get("/api/claxedo/test-shutdown-stream", () => new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode("data: ready\n\n")) },
+    }), { headers: { "content-type": "text/event-stream" } }))
+    const response = await fetch(`http://127.0.0.1:${local.port}/api/claxedo/test-shutdown-stream`)
+    expect(response.status).toBe(200)
+    const reader = response.body!.getReader()
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe("data: ready\n\n")
+    const disconnected = reader.read().then(() => "ended", () => "disconnected")
+    await local.stop()
+    expect(await disconnected).toBe("disconnected")
+    await expect(fetch(`http://127.0.0.1:${local.port}/api/claxedo/health`)).rejects.toThrow()
+  }, 15_000)
 
   // NOT TESTED: that `stop()` is idempotent. The `stopped` guard in the
   // implementation is defensive — removing it does not fail anything here,
