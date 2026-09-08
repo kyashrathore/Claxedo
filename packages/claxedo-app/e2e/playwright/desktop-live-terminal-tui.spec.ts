@@ -13,6 +13,8 @@ for (const { harness, child, pause } of [
   { harness: "codex", child: false, pause: false },
   { harness: "cursor", child: false, pause: false },
   { harness: "gemini", child: false, pause: false },
+  { harness: "droid", child: false, pause: false },
+  { harness: "amp", child: false, pause: false },
   { harness: "claude", child: false, pause: false },
   { harness: "claude", child: true, pause: false },
   { harness: "claude", child: true, pause: true },
@@ -26,7 +28,9 @@ for (const { harness, child, pause } of [
     const providerEnv: Record<string, string> = { HOME: home, CODEX_HOME: path.join(home, ".codex") }
     const customLauncher = harness === "cursor"
       ? { name: "Cursor", command: "AGENT_CLI_CREDENTIAL_STORE=file cursor-agent --force" }
-      : harness === "gemini" ? { name: "Gemini", command: "gemini --yolo" } : undefined
+      : harness === "gemini" ? { name: "Gemini", command: "gemini --yolo" }
+      : harness === "droid" ? { name: "Droid", command: "droid --auto high" }
+      : harness === "amp" ? { name: "Amp", command: "amp --dangerously-allow-all --visibility private --no-ide" } : undefined
     let packaged: PackagedApp | undefined
     let ptyUrl: string | undefined
     const traffic: { at: number; launch: number; kind: string; data: string }[] = []
@@ -91,6 +95,19 @@ for (const { harness, child, pause } of [
         await fs.writeFile(path.join(home, ".gemini/settings.json"), JSON.stringify({
           security: { auth: { selectedType: "oauth-personal" } },
         }))
+      } else if (harness === "amp") {
+        const authDirectory = path.join(home, ".local/share/amp")
+        await fs.mkdir(authDirectory, { recursive: true })
+        await fs.copyFile(path.join(os.homedir(), ".local/share/amp/secrets.json"), path.join(authDirectory, "secrets.json"))
+        await fs.chmod(path.join(authDirectory, "secrets.json"), 0o600)
+        await fs.mkdir(path.join(home, ".config/amp"), { recursive: true })
+        await fs.writeFile(path.join(home, ".config/amp/settings.json"), JSON.stringify({ "amp.updates.mode": "disabled" }))
+      } else if (harness === "droid") {
+        await fs.mkdir(path.join(home, ".factory"), { recursive: true })
+        for (const file of ["auth.json", "auth.v2.file", "auth.v2.key"]) {
+          await fs.copyFile(path.join(os.homedir(), ".factory", file), path.join(home, ".factory", file))
+          await fs.chmod(path.join(home, ".factory", file), 0o600)
+        }
       } else {
         const config = JSON.parse(await fs.readFile(path.join(os.homedir(), ".claude.json"), "utf8")) as { oauthAccount?: unknown }
         await fs.writeFile(path.join(home, ".claude.json"), JSON.stringify({
@@ -174,7 +191,23 @@ for (const { harness, child, pause } of [
         await packaged.page.keyboard.press("a")
         await expect(rows).toContainText("Run Everything", { timeout: 30_000 })
       }
-      await expect(rows).toContainText(/Codex|Claude|Cursor|Gemini|trust the contents/i, { timeout: 45_000 })
+      if (harness === "droid") {
+        await expect(rows).toContainText(/Welcome to Factory CLI|ctrl\+L for autonomy/, { timeout: 45_000 })
+        expect(await rows.innerText(), "Droid must authenticate before a real turn can be tested").not.toContain("Please login with your Factory account")
+      } else if (harness === "amp") {
+        await expect(rows).toContainText(/Space to continue|ampcode\.com|ctrl|Ctrl/, { timeout: 45_000 })
+        if ((await rows.innerText()).includes("Space to continue")) {
+          await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
+          await packaged.page.keyboard.press("Space")
+          for (let slide = 1; slide <= 5; slide++) {
+            await expect(rows).toContainText(`${slide}/5`)
+            await packaged.page.keyboard.press("Space")
+          }
+          await expect(rows).toContainText("Enter to get started")
+          await packaged.page.keyboard.press("Enter")
+          await expect(rows).not.toContainText("Enter to get started")
+        }
+      } else await expect(rows).toContainText(/Codex|Claude|Cursor|Gemini|trust the contents/i, { timeout: 45_000 })
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-launched.png`) })
       if ((harness === "claude" || harness === "codex") && /trust|allow Codex to work/i.test(await rows.innerText())) {
         await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
@@ -192,11 +225,15 @@ for (const { harness, child, pause } of [
           await packaged.page.keyboard.press("Enter")
         }
       }
-      await expect(rows).toContainText(harness === "codex" ? /OpenAI Codex/ : harness === "cursor" ? /Cursor/ : harness === "gemini" ? /Type your message/ : /bypass permissions on/i, { timeout: 30_000 })
+      await expect(rows).toContainText(harness === "codex" ? /OpenAI Codex/ : harness === "cursor" ? /Cursor/ : harness === "gemini" ? /Type your message/ : harness === "droid" ? /ctrl\+L for autonomy/ : harness === "amp" ? /ctrl\+o for commands/i : /bypass permissions on/i, { timeout: 30_000 })
       await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
       await packaged.page.keyboard.type("Reply with the concatenation of DESKTOP and _TUI_OK, nothing else.", { delay: 20 })
       await expect(rows).not.toContainText(/model:\s+loading|Booting MCP server/, { timeout: 45_000 })
       await packaged.page.keyboard.press("Enter")
+      if (harness === "amp") {
+        await expect(rows).toContainText(/DESKTOP_TUI_OK|Out of Credits/, { timeout: 90_000 })
+        expect(await rows.innerText(), "Amp provider execution requires available account credits").not.toContain("Out of Credits")
+      }
       await expect(rows).toContainText("DESKTOP_TUI_OK", { timeout: 90_000 })
       const lifecycleUrl = `${server}/api/wr/hook/terminal-session?terminalId=${pty.id}&directory=${encodeURIComponent(directory)}`
       await expect.poll(async () => {
