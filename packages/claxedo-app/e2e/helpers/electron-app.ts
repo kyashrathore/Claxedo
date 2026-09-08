@@ -209,6 +209,9 @@ export async function launchPackagedApp(
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue
     if (key === "ELECTRON_RENDERER_URL" || key === "CLAXEDO_DEVTOOLS") continue
+    // Test-runner console formatting must not disable color in the app's PTYs.
+    // A test can still request these explicitly through input.env.
+    if (key === "NO_COLOR" || key === "FORCE_COLOR" || key === "CLICOLOR_FORCE") continue
     env[key] = value
   }
   env.CLAXEDO_DESKTOP_USER_DATA_DIR = userDataDir
