@@ -9,6 +9,7 @@ describe("first-turn error taxonomy", () => {
     ["You've reached your Codex rate limit. It will reset in about 5 hours.", "usage_limit"],
     ["You've reached your Codex usage limit.", "usage_limit"],
     ["rate_limit_reached", "usage_limit"],
+    ["Claude assistant message failed: rate_limit", "usage_limit"],
     ["workspace_owner_usage_limit_reached", "usage_limit"],
     ["ACP harness process failed to start", "harness"],
     ["unsupported adapter capability", "harness"],

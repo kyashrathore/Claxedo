@@ -2,8 +2,8 @@ export const FIRST_TURN_ERROR_CLASSES = ["credential", "harness", "model", "usag
 
 export type FirstTurnErrorClass = (typeof FIRST_TURN_ERROR_CLASSES)[number]
 
-const credential = /\b(401|403|unauthori[sz]ed|api[ _-]?key|oauth|token|credential|authentication|billing|payment|quota|rate[ _-]?limit)\b/i
-const usageLimit = /(?:reached|hit)\s+(?:your|the)\s+.+?\s+limit|usage\s+(?:limit|cap)\s+(?:reached|exceeded)|limit.*(?:reset|usage credits)|usage_limit_reached|rate_limit_reached|credits_depleted/i
+const credential = /\b(401|403|unauthori[sz]ed|api[ _-]?key|oauth|token|credential|authentication|billing|payment|quota)\b/i
+const usageLimit = /(?:reached|hit)\s+(?:your|the)\s+.+?\s+limit|usage\s+(?:limit|cap)\s+(?:reached|exceeded)|limit.*(?:reset|usage credits)|usage_limit_reached|rate_limit_reached|credits_depleted|\brate[ _-]?limit\b/i
 const session = /(thread not found|session not found|conversation not found|no such (thread|session))/i
 const harness = /(harness|adapter|acp|agent process|spawn|executable|binary|capabilit(?:y|ies)|unsupported operation)/i
 const model = /(model|provider\/model|model id|deployment)/i
