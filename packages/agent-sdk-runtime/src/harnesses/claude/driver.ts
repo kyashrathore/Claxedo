@@ -267,11 +267,13 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     this.goalStore.forget(sessionId)
   }
 
-  createRuntime(threadId: string): AgentEventRuntime {
+  createRuntime(threadId: string, todos: Array<{ id?: string; content: string; status: string }> = []): AgentEventRuntime {
     return createAgentEventRuntime({
       harness: this.type,
       threadId,
-      adapter: claudeSdkAdapter(),
+      adapter: claudeSdkAdapter(todos.flatMap((todo) => todo.id
+        ? [{ id: todo.id, description: todo.content, status: todo.status }]
+        : [])),
     })
   }
 
@@ -509,6 +511,8 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           ...process.env,
           ...claudeAuthEnv(this.auth.anthropic),
           CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
+          CLAUDE_CODE_ENABLE_TODO_TOOLS: "1",
+          CLAUDE_CODE_ENABLE_TASKS: "1",
         }),
         spawnClaudeCodeProcess: (options) => spawnObservedClaudeCodeProcess({
           options,

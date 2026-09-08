@@ -512,7 +512,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       ...(input.variant ? { variant: input.variant } : {}),
     })
 
-    const runtime = this.driver.createRuntime(agentSessionId)
+    const runtime = this.driver.createRuntime(agentSessionId, this.store.getTodos(id))
     const queue: CompatEvent[] = [...(committedStart?.events ?? start)]
     const resolvers: Array<() => void> = []
     let promptDone = false

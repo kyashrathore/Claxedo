@@ -252,6 +252,8 @@ export type AgentPromptResponse = {
 }
 
 export type AgentTodo = {
+  /** Provider-issued task identity, retained for incremental native updates. */
+  id?: string
   content: string
   status: string
   priority: string

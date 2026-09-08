@@ -546,7 +546,7 @@ test.describe("live real-harness smoke @live", () => {
         const marker = `LIVE-TODO-${Date.now()}`
         const tasks = ["Inspect source", "Verify behavior", "Report result"]
         await composePrompt(page, input,
-          `Use ${harness === "claude" ? "TodoWrite" : harness === "codex" ? "update_plan" : "todowrite"} to set exactly three tasks with these verbatim names and statuses: ` +
+          `Use ${harness === "claude" ? "TaskCreate and TaskUpdate with the returned task IDs" : harness === "codex" ? "update_plan" : "todowrite"} to set exactly three tasks with these verbatim names and statuses: ` +
           '"Inspect source": completed, "Verify behavior": in_progress, "Report result": pending. ' +
           `Then run this shell command with a 120000ms timeout and wait for it to finish: echo $$ > '${startedFile}'; while [ ! -f '${releaseFile}' ]; do sleep 0.1; done; echo finished > '${finishedFile}'. ` +
           `The test runner will create that file; do not create it yourself. After the command finishes, use the same task tool to mark all three completed, ` +

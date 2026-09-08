@@ -1631,7 +1631,64 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   }
 
-  for (const harness of ["claude", "codex"] as const) {
+  test("claude native todo progress uses provider IDs across turns and reload", async ({ page }) => {
+    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+    requireBinary(binary, "claude", "install the native CLI to exercise task tracking")
+    const dir = await makeWorkspace("claude-native-tasks", "claude")
+    await seedOneProject(page, dir)
+    await openDraftPrompt(page, dir)
+    await switchDraftHarness(page, "claude")
+    await waitForHarnessReady(page)
+    let turn = 0
+    let release: (() => void) | undefined
+    const invoke = async (name: string, input: Record<string, unknown>, hold = false) => {
+      const marker = `TASK-${Date.now()}-${turn++}`
+      if (hold) release = scripted!.holdTextReplies(marker)
+      scripted!.scriptTool({ name, input, whenPromptIncludes: marker })
+      await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+        `Perform the requested task operation, then reply with exactly this one token: ${marker}`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      if (!hold) await expectAssistantReplyVisible(page, marker)
+      return marker
+    }
+    const read = async () => {
+      const sessionID = new URL(page.url()).pathname.split("/").at(-1)!
+      const response = await page.request.get(`${BACKEND_URL}/session/${sessionID}/todo?directory=${encodeURIComponent(dir)}`)
+      expect(response.ok()).toBe(true)
+      return await response.json() as Array<{ id: string; content: string; status: string }>
+    }
+    try {
+      const names = ["Inspect source", "Verify behavior", "Report result"]
+      for (const subject of names) await invoke("TaskCreate", { subject, description: subject })
+      const created = await read()
+      expect(created.map((row) => row.content)).toEqual(names)
+      expect(created.every((row) => typeof row.id === "string" && row.id.length > 0)).toBe(true)
+      expect(new Set(created.map((row) => row.id)).size).toBe(3)
+      await invoke("TaskUpdate", { taskId: created[0]!.id, status: "completed" })
+      const progressMarker = await invoke("TaskUpdate", { taskId: created[1]!.id, status: "in_progress" }, true)
+      await expect.poll(async () => (await read()).map((row) => row.status)).toEqual(["completed", "in_progress", "pending"])
+      const progress = await read()
+      expect(progress.map((row) => row.status)).toEqual(["completed", "in_progress", "pending"])
+      const dock = page.locator('[data-component="session-todo-dock"]')
+      await expect(dock).toContainText("Verify behavior")
+      await page.reload({ waitUntil: "domcontentloaded" })
+      expect(await read()).toEqual(progress)
+      await expect(dock).toContainText("Verify behavior")
+      release!()
+      release = undefined
+      await expectAssistantReplyVisible(page, progressMarker)
+      for (const row of created.slice(1)) await invoke("TaskUpdate", { taskId: row.id, status: "completed" })
+      await expect(dock).toHaveCount(0)
+      await page.reload({ waitUntil: "domcontentloaded" })
+      expect((await read()).map(({ id, content, status }) => ({ id, content, status })))
+        .toEqual(created.map(({ id, content }) => ({ id, content, status: "completed" })))
+      // Native deletion must clear the last task too, rather than retain a stale dock/list.
+      for (const row of created) await invoke("TaskUpdate", { taskId: row.id, status: "deleted" })
+      expect(await read()).toEqual([])
+    } finally { release?.() }
+  })
+
+  for (const harness of ["codex"] as const) {
     test(`${harness} native todo progress survives reload and completes through its real tool`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       requireBinary(binary, harness, "install the native CLI to exercise its task tracking tool.")
@@ -1649,10 +1706,8 @@ test.describe("real harness journeys @core @tier-real", () => {
           const statuses = complete ? ["completed", "completed", "completed"] : ["completed", "in_progress", "pending"]
           release = scripted!.holdTextReplies(token)
           scripted!.scriptTool({
-            name: harness === "claude" ? "TodoWrite" : "update_plan",
-            input: harness === "claude"
-              ? { todos: tasks.map((content, i) => ({ content, activeForm: content, status: statuses[i] })) }
-              : { plan: tasks.map((step, i) => ({ step, status: statuses[i] })) },
+            name: "update_plan",
+            input: { plan: tasks.map((step, i) => ({ step, status: statuses[i] })) },
             whenPromptIncludes: token,
           })
           await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
@@ -1695,6 +1750,9 @@ test.describe("real harness journeys @core @tier-real", () => {
       }
     })
 
+  }
+
+  for (const harness of ["claude", "codex"] as const) {
     for (const [decision, canonicalDirectory, restartServer, goalMode] of [
       ["Allow once", false, false, false], ["Allow always", false, false, false], ["Deny", false, false, false], ["Stop", false, false, false],
       ...(harness === "codex" ? [["Stop", false, false, true] as const] : []),

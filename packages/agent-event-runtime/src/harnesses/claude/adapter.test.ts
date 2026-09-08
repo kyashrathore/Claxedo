@@ -169,40 +169,30 @@ describe("claudeSdkAdapter", () => {
     }])
   })
 
-  test("routes TodoWrite input to todo updates", () => {
-    const agent = runtime()
-    expect(agent.ingest({
-      source: "claude.sdk.message",
-      payload: {
-        type: "stream_event",
-        event: {
-          type: "content_block_start",
-          index: 1,
-          content_block: { type: "tool_use", id: "tool-todo-1", name: "TodoWrite", input: {} },
-        },
-      },
-    }).events).toEqual([])
-
-    expect(agent.ingest({
-      source: "claude.sdk.message",
-      payload: {
-        type: "stream_event",
-        event: {
-          type: "content_block_delta",
-          index: 1,
-          delta: {
-            type: "input_json_delta",
-            partial_json: "{\"todos\":[{\"content\":\"   \",\"status\":\"in_progress\"},{\"content\":\"Ship it\",\"status\":\"completed\"}]}",
-          },
-        },
-      },
-    }).events).toMatchObject([{
-      type: "todo-update",
-      todos: [
-        { description: "Task", status: "in_progress" },
-        { description: "Ship it", status: "completed" },
-      ],
-    }])
+  test("projects native task results and preserves IDs across runtime restoration", () => {
+    let agent = runtime()
+    const call = (id: string, name: string, input: unknown, result: unknown, isError = false) => {
+      agent.ingest({ source: "claude.sdk.message", payload: {
+        type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] },
+      } })
+      return agent.ingest({ source: "claude.sdk.message", payload: {
+        type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: "native result", is_error: isError }] },
+        tool_use_result: result,
+      } }).events.filter((event) => event.type === "todo-update")
+    }
+    expect(call("create", "TaskCreate", { subject: "Inspect" }, { task: { id: "42", subject: "Inspect" } }))
+      .toMatchObject([{ type: "todo-update", todos: [{ id: "42", description: "Inspect", status: "pending" }] }])
+    agent = runtime(agent.snapshot())
+    expect(call("denied", "TaskUpdate", { taskId: "42", status: "completed" }, { success: false, taskId: "42" }))
+      .toEqual([])
+    expect(call("error", "TaskUpdate", { taskId: "42", status: "completed" }, { success: true, taskId: "42", statusChange: { to: "completed" } }, true))
+      .toEqual([])
+    expect(call("update", "TaskUpdate", { taskId: "42", status: "completed" }, { success: true, taskId: "42", updatedFields: ["status"], statusChange: { from: "pending", to: "in_progress" } }))
+      .toMatchObject([{ type: "todo-update", todos: [{ id: "42", status: "in_progress" }] }])
+    expect(call("delete", "TaskUpdate", { taskId: "42", status: "deleted" }, { success: true, taskId: "42", updatedFields: ["status"], statusChange: { from: "in_progress", to: "deleted" } }))
+      .toMatchObject([{ type: "todo-update", todos: [] }])
+    expect(call("list", "TaskList", {}, { tasks: [{ id: "99", subject: "Ship", status: "completed" }] }))
+      .toMatchObject([{ type: "todo-update", todos: [{ id: "99", description: "Ship", status: "completed" }] }])
   })
 
   test("classifies Task tools as subagent work", () => {

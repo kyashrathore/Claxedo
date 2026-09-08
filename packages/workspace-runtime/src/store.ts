@@ -840,6 +840,7 @@ export class RuntimeStore {
       CREATE TABLE IF NOT EXISTS todo (
         session_id TEXT NOT NULL,
         position INTEGER NOT NULL,
+        task_id TEXT,
         content TEXT NOT NULL,
         status TEXT NOT NULL,
         priority TEXT NOT NULL,
@@ -847,6 +848,9 @@ export class RuntimeStore {
         PRIMARY KEY (session_id, position)
       )
     `)
+    if (!hasColumn(this.db, "todo", "task_id")) {
+      this.db.exec("ALTER TABLE todo ADD COLUMN task_id TEXT")
+    }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS pending_permission (
         id TEXT PRIMARY KEY,
@@ -2280,9 +2284,9 @@ export class RuntimeStore {
         event.properties.todos.forEach((todo, i) => {
           this.db
             .prepare(
-              "INSERT INTO todo (session_id, position, content, status, priority, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+              "INSERT INTO todo (session_id, position, task_id, content, status, priority, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
             )
-            .run(event.properties.sessionID, i, todo.content, todo.status, todo.priority, row.ts)
+            .run(event.properties.sessionID, i, todo.id ?? null, todo.content, todo.status, todo.priority, row.ts)
         })
         return
 
@@ -3243,8 +3247,9 @@ export class RuntimeStore {
 
   getTodos(sessionId: string) {
     return this.db
-      .prepare<{ content: string; status: string; priority: string }>("SELECT content, status, priority FROM todo WHERE session_id = ? ORDER BY position ASC")
+      .prepare<{ id: string | null; content: string; status: string; priority: string }>("SELECT task_id AS id, content, status, priority FROM todo WHERE session_id = ? ORDER BY position ASC")
       .all(sessionId)
+      .map(({ id, ...todo }) => ({ ...todo, ...(id === null ? {} : { id }) }))
   }
 
   private hydrateMessages(sessionId: string, msgs: MessageProjectionRow[]): AgentMessage[] {

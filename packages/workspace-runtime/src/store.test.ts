@@ -1320,7 +1320,7 @@ void describe("RuntimeStore", () => {
     first.appendEvent({
       sessionId: "s1",
       agentSessionId: "a1",
-      payload: todoUpdated("s1", [{ content: "Ship", status: "pending", priority: "high" }]),
+      payload: todoUpdated("s1", [{ id: "native-task-42", content: "Ship", status: "pending", priority: "high" }]),
     })
     first.appendEvent({
       sessionId: "s1",
@@ -1341,7 +1341,27 @@ void describe("RuntimeStore", () => {
     assert.equal(msgs[1]?.info.role, "assistant")
     assert.equal(msgs[1]?.parts[0]?.type, "text")
     assert.equal(msgs[1]?.parts[0]?.text, "world")
-    assert.deepEqual(next.getTodos("s1"), [{ content: "Ship", status: "pending", priority: "high" }])
+    assert.deepEqual(next.getTodos("s1"), [{ id: "native-task-42", content: "Ship", status: "pending", priority: "high" }])
+  })
+
+  void it("migrates task identity without discarding existing todo rows", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: todoUpdated("s1", [
+      { content: "Existing", status: "pending", priority: "medium" },
+    ]) })
+    db(first).exec("ALTER TABLE todo DROP COLUMN task_id")
+    first.close()
+    const next = new RuntimeStore(root)
+    assert.deepEqual(next.getTodos("s1"), [{ content: "Existing", status: "pending", priority: "medium" }])
+    next.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: todoUpdated("s1", [
+      { id: "provider-task-7", content: "Existing", status: "completed", priority: "medium" },
+    ]) })
+    next.close()
+    const reopened = new RuntimeStore(root)
+    assert.deepEqual(reopened.getTodos("s1"), [{ id: "provider-task-7", content: "Existing", status: "completed", priority: "medium" }])
+    reopened.close()
   })
 
   void it("retains only the latest full snapshot for each message part", () => {

@@ -11,6 +11,7 @@ import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapt
 import { toolDisplayFromInput } from "../tool-display"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
 import { optionLabels, pathFields, text } from "../../value"
+import { applyClaudeTaskResult, type ClaudeTrackedTask } from "./task-tracking"
 
 type ClaudeBlockState = {
   type: "text" | "thinking" | "tool"
@@ -31,6 +32,7 @@ export type ClaudeRequestUsage = {
 }
 
 export type ClaudeSdkAdapterState = {
+  tasks?: Record<string, ClaudeTrackedTask>
   blocksByIndex: Record<string, ClaudeBlockState>
   toolsById: Record<string, ClaudeBlockState>
   emittedAssistantText: string
@@ -134,30 +136,8 @@ function toolInput(value: unknown) {
   return asRecord(value) ?? {}
 }
 
-function isTodoTool(toolName: string) {
-  return toolName.toLowerCase().includes("todowrite")
-}
-
 function isTaskTool(toolName: string) {
   return ["agent", "task"].includes(toolName.toLowerCase()) || isHostSubagentTool(toolName)
-}
-
-function todoStatus(value: unknown) {
-  return value === "completed" ? "completed" : value === "in_progress" ? "in_progress" : "pending"
-}
-
-function todosFromInput(input: Record<string, unknown>) {
-  const todos = Array.isArray(input.todos) ? input.todos : []
-  return todos.flatMap((todo, i) => {
-    const row = asRecord(todo)
-    if (!row) return []
-    return [{
-      id: String(i),
-      description: text(row.content)?.trim() || text(row.description)?.trim() || "Task",
-      status: todoStatus(row.status),
-      priority: text(row.priority) ?? "medium",
-    }]
-  })
 }
 
 function parseJsonRecord(value: string) {
@@ -188,7 +168,7 @@ function toolDisplay(toolName: string, input: Record<string, unknown>) {
 function toolStartEvents(block: Record<string, unknown>): AgentRuntimeEvent[] {
   const toolCallId = text(block.id)
   const toolName = text(block.name)
-  if (!toolCallId || !toolName || isTodoTool(toolName)) return []
+  if (!toolCallId || !toolName) return []
   const input = toolInput(block.input)
   const metadata = { claude: { itemType: toolKind(toolName) } }
   const display = toolDisplay(toolName, input)
@@ -209,10 +189,6 @@ function toolStartEvents(block: Record<string, unknown>): AgentRuntimeEvent[] {
 
 function toolInputEvents(tool: ClaudeBlockState, parsedInput: Record<string, unknown>) {
   if (!tool.toolCallId || !tool.toolName) return []
-  if (isTodoTool(tool.toolName)) {
-    const todos = todosFromInput(parsedInput)
-    return todos.length ? [{ type: "todo-update", todos } satisfies AgentRuntimeEvent] : []
-  }
   return [{
     type: "tool-input",
     toolCallId: tool.toolCallId,
@@ -620,10 +596,10 @@ function permissionFromToolUse(message: Record<string, unknown>, context: Harnes
   }] satisfies AgentRuntimeEvent[]
 }
 
-export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
+export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): HarnessEventAdapter<ClaudeSdkAdapterState> {
   return {
     name: "claude-sdk",
-    createInitialState: () => ({ blocksByIndex: {}, toolsById: {}, emittedAssistantText: "" }),
+    createInitialState: () => ({ blocksByIndex: {}, toolsById: {}, emittedAssistantText: "", tasks: Object.fromEntries(initialTasks.map((task) => [task.id, task])) }),
     translate({ state, event, context }) {
       const rawMessage = sdkMessage(event)
 
@@ -688,14 +664,13 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
                     input,
                     partialInputJson: "",
                   }
-                  const todoEvents = isTodoTool(toolName) ? toolInputEvents(nextTool, input) : []
                   return {
                     state: {
                       ...state,
                       blocksByIndex: { ...state.blocksByIndex, [index]: nextTool },
                       toolsById: { ...state.toolsById, [toolCallId]: nextTool },
                     },
-                    events: [...toolStartEvents(blockRow), ...todoEvents],
+                    events: toolStartEvents(blockRow),
                   }
                 }
                 case "redacted_thinking":
@@ -836,7 +811,9 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
               block.type === "tool" && block.toolCallId ? [[block.toolCallId, block]] : [],
             ),
           )
-          return toolResultBlocks(rawMessage).flatMap((result): AgentRuntimeEvent[] => {
+          let tasks = state.tasks ?? {}
+          let changedTasks = false
+          const events = toolResultBlocks(rawMessage).flatMap((result): AgentRuntimeEvent[] => {
             const tool = byToolId[result.toolCallId]
             if (!tool?.toolName) return []
             const metadata = {
@@ -849,6 +826,11 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
             if (result.isError) {
               return [{ type: "tool-error", toolCallId: result.toolCallId, error: result.text, display, metadata }]
             }
+            const nextTasks = applyClaudeTaskResult(tasks, tool.toolName, tool.input ?? {}, result.structured)
+            if (nextTasks) {
+              tasks = nextTasks
+              changedTasks = true
+            }
             return [{
               type: "tool-output",
               toolCallId: result.toolCallId,
@@ -857,6 +839,8 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
               metadata,
             }]
           })
+          if (!changedTasks) return events
+          return { state: { ...state, tasks }, events: [...events, { type: "todo-update", todos: Object.values(tasks) } satisfies AgentRuntimeEvent] }
         }
 
         case "assistant": {
@@ -869,7 +853,7 @@ export function claudeSdkAdapter(): HarnessEventAdapter<ClaudeSdkAdapterState> {
           const completeTools = assistantToolBlocks(rawMessage)
           const completeToolEvents = completeTools.flatMap(({ block, tool }): AgentRuntimeEvent[] => {
             if (!state.toolsById[tool.toolCallId]) {
-              return isTodoTool(tool.toolName) ? toolInputEvents(tool, tool.input ?? {}) : toolStartEvents(block)
+              return toolStartEvents(block)
             }
             return Object.keys(tool.input ?? {}).length ? toolInputEvents(tool, tool.input ?? {}) : []
           })

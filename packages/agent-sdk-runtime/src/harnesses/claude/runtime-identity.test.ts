@@ -16,7 +16,7 @@ test("public Claude first turn replaces its provisional upstream binding and res
   const root = path.join(directory, "store")
   const sessionId = "local-claude-session"
   const upstreamSessionId = "claude-provider-session"
-  const calls: Array<{ options?: { resume?: string; cwd?: string } }> = []
+  const calls: Array<{ options?: { resume?: string; cwd?: string; env?: Record<string, string | undefined> } }> = []
   const query: ClaudeSdkDriverOptions["query"] = ((input) => {
     calls.push(input)
     const sequence = calls.length
@@ -81,6 +81,12 @@ test("public Claude first turn replaces its provisional upstream binding and res
     }
     expect(calls[0]?.options?.resume).toBeUndefined()
     expect(calls[1]?.options?.resume).toBe(upstreamSessionId)
+    for (const call of calls) {
+      expect(call.options?.env).toMatchObject({
+        CLAUDE_CODE_ENABLE_TODO_TOOLS: "1",
+        CLAUDE_CODE_ENABLE_TASKS: "1",
+      })
+    }
     expect(calls.every((call) => call.options?.cwd === directory)).toBe(true)
   } finally {
     removeTestTempDir(directory)

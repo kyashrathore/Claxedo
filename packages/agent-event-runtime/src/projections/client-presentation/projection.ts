@@ -935,6 +935,7 @@ function hydrateToolInput(
 
 function todos(chunk: Extract<AgentRuntimeEvent, { type: "todo-update" }>) {
   return chunk.todos.map((todo) => ({
+    id: todo.id,
     content: todo.description,
     status: todo.status,
     priority: todo.priority ?? "medium",
