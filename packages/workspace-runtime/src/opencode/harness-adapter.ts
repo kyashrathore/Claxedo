@@ -21,6 +21,7 @@ import type { OpenCodeRuntime } from "./runtime"
 import { WorkspaceScope } from "./scope"
 import type { ProjectedEvent } from "./event-pump"
 import { openCodePartId, type SessionMessage, type SessionSummary } from "./session-port"
+import { errorMessage } from "../error-message"
 import { rec, str } from "../json-value"
 
 type AdapterOptions = Readonly<{
@@ -426,7 +427,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
         if (terminal(event, id)) return
       }
     } catch (error) {
-      yield { type: "error", error: error instanceof Error ? error.message : String(error), harness: "opencode" }
+      yield { type: "error", error: errorMessage(error), harness: "opencode" }
     } finally {
       unsubscribe()
     }
