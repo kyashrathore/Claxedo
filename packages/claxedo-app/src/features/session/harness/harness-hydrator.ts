@@ -50,7 +50,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   setPollingHydration(scope: string, type?: HarnessType): void
   setReadyHydration(scope: string, type: HarnessType, hasConfigOptions?: boolean): void
   setCapabilityError?(scope: string, message: string): void
-  fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
+  fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): Promise<unknown> | void
   hasConfigOptions?(type: HarnessType): Promise<boolean>
   refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
   workspaceRuntime(params?: ScopeInput): boolean
@@ -172,7 +172,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
           input.setReadyHydration(scope, type)
           const configOptions = await hasConfigOptions(scope, type)
           if (configOptions === undefined) return
-          if (configOptions) input.fetchConfigOptions(scope, type, params)
+          if (configOptions) await input.fetchConfigOptions(scope, type, params)
           else input.setReadyHydration(scope, type, false)
           await input.refresh(params.directory, refreshHarnessTypeForScope({ directory: params.directory, harness: type }), { draft: true })
           if (active()) input.cache.setSeen(scope, key)
@@ -194,7 +194,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
           input.setReadyHydration(scope, type)
           const configOptions = await hasConfigOptions(scope, type)
           if (configOptions === undefined) return
-          if (configOptions) input.fetchConfigOptions(scope, type, params)
+          if (configOptions) await input.fetchConfigOptions(scope, type, params)
           else input.setReadyHydration(scope, type, false)
         }
         await input.refresh(params.directory, type ? refreshHarnessTypeForScope({ directory: params.directory, harness: type }) : undefined, { draft: true })

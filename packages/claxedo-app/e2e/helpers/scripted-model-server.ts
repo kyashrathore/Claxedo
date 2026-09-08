@@ -90,7 +90,7 @@ export type ScriptedModelServer = {
    */
   scriptTool(call: ScriptedToolCall): void
   /** Reject matching requests, including native retries, until released. */
-  scriptError(input: { marker: string; status: number; message: string }): () => void
+  scriptError(input: { marker: string; status: number; message: string; model?: string }): () => void
   /** Hold matching text replies until released; tool replies still execute. */
   holdTextReplies(marker: string): () => void
   /**
@@ -161,7 +161,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   const requests: ScriptedModelRequest[] = []
   let counts: Record<ScriptedDialect, number> = { chat: 0, messages: 0, responses: 0 }
   let pendingTool: ScriptedToolCall | undefined
-  let pendingError: { marker: string; status: number; message: string } | undefined
+  let pendingError: { marker: string; status: number; message: string; model?: string } | undefined
   let autoModeCommand: string | undefined
   let textGate: { marker: string; promise: Promise<void>; release: () => void } | undefined
   let goalEvaluationCount = 0
@@ -194,7 +194,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
         && message.content.some((block) => block.type === "text" && block.text.includes("Respond with <severity>N</severity> ONLY.")))
       && request.body.messages.some((message) => Array.isArray(message.content)
         && message.content.some((block) => block.type === "text" && block.text.trim() === JSON.stringify({ Bash: autoModeCommand })))
-    if (pendingError && prompt.includes(pendingError.marker) && !prompt.includes(TITLE_PROMPT)) {
+    if (pendingError && (!pendingError.model || body.model === pendingError.model) && prompt.includes(pendingError.marker) && !prompt.includes(TITLE_PROMPT)) {
       reply = { kind: "error", status: pendingError.status, message: pendingError.message }
     } else if (classifier) {
       reply = { kind: "text", text: "<severity>0</severity>" }

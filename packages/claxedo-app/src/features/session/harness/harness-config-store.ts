@@ -129,9 +129,7 @@ export function createHarnessConfigStore() {
   const statusActions = createHarnessStatusActions<ScopeInput>({
     applyPatch: harnessStore.applyPatch,
     state: harnessStore.state,
-    fetchConfigOptions: (scope, type, input) => {
-      void fetchConfigOptions(scope, type, input)
-    },
+    fetchConfigOptions,
     hasConfigOptions,
     bootstrap: async (params) => {
       await globalBootstrapActions.bootstrap(params)
@@ -160,9 +158,7 @@ export function createHarnessConfigStore() {
     setCapabilityError: (scope, message) => {
       harnessStore.applyPatch(scope, { configError: message, readiness: "error", optionsLoading: false })
     },
-    fetchConfigOptions: (scope, type, input) => {
-      void fetchConfigOptions(scope, type, input)
-    },
+    fetchConfigOptions,
     hasConfigOptions,
     refresh: statusActions.refresh,
     workspaceRuntime: (input) => !!harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? []),

@@ -6,7 +6,7 @@
 // (agent-sdk-runtime cannot be imported here: it is not browser-safe.)
 import { providerErrorDetail, providerUsageLimitDetail } from "./provider-error-detail"
 import type { HarnessSelectionSnapshot } from "@/features/session/harness/controller"
-import type { ModelKey } from "@/features/session/composer/model-strategy"
+import type { PickerItem } from "@/features/session/ui/model/select-model"
 import { harnessSelectionValue } from "@/platform/identity/harness-selection"
 import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
 import { asRecord } from "@/lib/record"
@@ -16,23 +16,24 @@ export type FirstTurnMessage =
   | { id: string; role: "user"; time: { created: number } }
   | { id: string; role: "assistant"; parentID: string; time: { created: number; completed?: number }; finish?: string; error?: unknown }
 
-export function nextHarnessRecoveryModel(
+export function harnessRecoveryModels(
   selection: Pick<HarnessSelectionSnapshot, "harness" | "models" | "selectedModelKey">,
-): ModelKey | undefined {
-  const current = selection.selectedModelKey
-  const next = selection.models.find((model) => {
-    if (model.id !== current?.modelID) return true
-    if (selection.harness?.kind === "connection") return !!model.providerID && model.providerID !== current.providerID
-    return selection.harness?.kind === "native" && isCatalogHarnessId(selection.harness.harnessId) && model.providerID !== current.providerID
+): PickerItem[] {
+  const harness = selection.harness
+  if (!harness) return []
+  return selection.models.flatMap((model) => {
+    const providerID = harness.kind === "connection"
+      ? model.providerID ?? harnessSelectionValue(harness)
+      : isCatalogHarnessId(harness.harnessId) ? model.providerID : harnessSelectionValue(harness)
+    if (!providerID || model.connected === false) return []
+    if (model.id === selection.selectedModelKey?.modelID && providerID === selection.selectedModelKey.providerID) return []
+    return [{
+      id: model.id,
+      name: model.name,
+      description: model.description,
+      provider: { id: providerID, name: providerID },
+    }]
   })
-  if (!next) return undefined
-  const providerID = selection.harness?.kind === "connection"
-    ? next.providerID ?? harnessSelectionValue(selection.harness)
-    : selection.harness?.kind === "native" && isCatalogHarnessId(selection.harness.harnessId)
-    ? next.providerID
-    : selection.harness ? harnessSelectionValue(selection.harness) : undefined
-  if (!providerID) return undefined
-  return { providerID, modelID: next.id }
 }
 
 // Copy is position-independent — descriptions must not reference "first turn".

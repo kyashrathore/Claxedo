@@ -25,7 +25,7 @@ type HarnessDirectory = NonNullable<HarnessScopeInput["directory"]>
 export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>(input: {
   applyPatch(scope: string, patch: HarnessStorePatch): void
   state(scope: string): HarnessStoreState | undefined
-  fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
+  fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): Promise<unknown> | void
   hasConfigOptions?(type: HarnessType): Promise<boolean>
   bootstrap(params: { harnessType?: string }): Promise<void>
   ensureDirectory(params: { directory: HarnessDirectory; harnessType?: string; quiet: boolean }): Promise<void>
@@ -70,7 +70,7 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
       return
     }
     if (hasConfigOptions && shouldFetchConfigOptionsForScope(want, hardFailedHarness(data), params)) {
-      input.fetchConfigOptions(scope, want, params)
+      await input.fetchConfigOptions(scope, want, params)
     } else if (hasConfigOptions && hardFailedHarness(data)) {
       // A HARD-FAILED harness that has config options is the one case where the
       // flag can strand: `shouldFetchConfigOptionsForScope` declines the fetch,

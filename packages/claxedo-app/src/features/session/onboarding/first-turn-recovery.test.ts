@@ -6,30 +6,30 @@ import {
   firstTurnOutcome,
   firstTurnFunnelEvents,
   isTurnAdmissionConflict,
-  nextHarnessRecoveryModel,
+  harnessRecoveryModels,
 } from "./first-turn-recovery"
 
 describe("first-turn recovery", () => {
-  test("chooses a genuinely different native harness model", () => {
-    expect(nextHarnessRecoveryModel({
+  test("offers alternative native harness models for an explicit choice", () => {
+    expect(harnessRecoveryModels({
       harness: { kind: "native", harnessId: "claude" },
       selectedModelKey: { providerID: "claude", modelID: "sonnet" },
       models: [
         { id: "sonnet", name: "Sonnet", providerID: "anthropic" },
         { id: "opus", name: "Opus", providerID: "anthropic" },
       ],
-    })).toEqual({ providerID: "claude", modelID: "opus" })
+    })).toMatchObject([{ id: "opus", provider: { id: "claude" } }])
   })
 
   test("uses provider identity when a connection exposes the same model id from multiple providers", () => {
-    expect(nextHarnessRecoveryModel({
+    expect(harnessRecoveryModels({
       harness: { kind: "connection", connectionId: "team-agent" },
       selectedModelKey: { providerID: "anthropic", modelID: "sonnet" },
       models: [
         { id: "sonnet", name: "Sonnet", providerID: "anthropic" },
         { id: "sonnet", name: "Sonnet", providerID: "openrouter" },
       ],
-    })).toEqual({ providerID: "openrouter", modelID: "sonnet" })
+    })).toMatchObject([{ id: "sonnet", provider: { id: "openrouter" } }])
   })
 
   test.each([

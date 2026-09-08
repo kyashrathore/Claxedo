@@ -1641,6 +1641,60 @@ test.describe("real harness journeys @core @tier-real", () => {
   }
 
   for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} native switch model and resend preserves the failed prompt`, async ({ page }) => {
+      const dir = await makeWorkspace(`${harness}-model-recovery`, harness)
+      await seedOneProject(page, dir)
+      await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness)
+      await waitForHarnessReady(page)
+      const warmup = `WARMUP_${Date.now()}`
+      await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${warmup}`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expectAssistantReplyVisible(page, warmup)
+      const dialect = harness === "claude" ? "messages" : "responses"
+      const originalModel = scripted!.requests.filter((request) => request.dialect === dialect && request.prompt.includes(warmup)).at(-1)!.model
+      const marker = `MODEL_RECOVERY_${Date.now()}`
+      const prompt = `Preserve this context: café — नमस्ते.\n\nReply with exactly this one token: ${marker}`
+      const explanation = `Model unavailable for ${marker}. Choose another model.`
+      const release = scripted!.scriptError({ marker, status: 400, message: explanation, model: originalModel })
+      try {
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), prompt)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expect(page.getByText(explanation, { exact: false }).first()).toBeVisible({ timeout: 30_000 })
+        const url = page.url()
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await page.getByRole("button", { name: "Switch model and resend", exact: true }).click()
+        const modelDialog = page.getByRole("dialog")
+        await expect(modelDialog).toBeVisible()
+        // Opening and dismissing recovery must not send or switch anything.
+        await page.keyboard.press("Escape")
+        await expect(modelDialog).not.toBeVisible()
+        expect(scripted!.requests.filter((request) => request.prompt.includes(marker) && request.reply.kind === "text")).toHaveLength(0)
+        await page.getByRole("button", { name: "Switch model and resend", exact: true }).click()
+        const choice = harness === "claude"
+          ? modelDialog.locator('[data-slot="list-item"]').filter({ hasText: /Haiku/i }).first()
+          : modelDialog.locator('[data-slot="list-item"]').first()
+        await expect(choice).toBeVisible({ timeout: 10_000 })
+        await choice.click()
+        await expectAssistantReplyVisible(page, marker)
+        const successes = scripted!.requests.filter((request) => request.dialect === dialect && request.prompt.includes(marker) && request.reply.kind === "text")
+        expect(successes.length).toBeGreaterThan(0)
+        expect(successes.every((request) => request.model !== originalModel)).toBe(true)
+        const sessionID = new URL(url).pathname.split("/").at(-1)!
+        const response = await page.request.get(`${BACKEND_URL}/session/${sessionID}/message?directory=${encodeURIComponent(dir)}`)
+        expect(response.ok()).toBe(true)
+        const rows = await response.json() as Array<{ info: { role: string }; parts: Array<{ type: string; text?: string }> }>
+        const users = rows.filter((row) => row.info.role === "user").map((row) => row.parts.filter((part) => part.type === "text").map((part) => part.text).join(""))
+        expect(users).toHaveLength(3)
+        expect(users.slice(1)).toEqual([prompt, prompt])
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expectAssistantReplyVisible(page, marker)
+        await expect(page).toHaveURL(url)
+      } finally { release() }
+    })
+  }
+
+  for (const harness of ["claude", "codex"] as const) {
     test(`${harness} native provider error preserves explanation through reload and recovery`, async ({ page }) => {
       const dir = await makeWorkspace(`${harness}-provider-error`, harness)
       await seedOneProject(page, dir)

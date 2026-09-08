@@ -1125,6 +1125,39 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await expectAssistantReplyVisible(packaged.page, "C4_CLAUDE_RECOVERED")
     await packaged.page.reload()
     await expectAssistantReplyVisible(packaged.page, "C4_CLAUDE_RECOVERED")
+
+    const originalModel = scripted.requests.filter((request) => request.dialect === "messages" && request.prompt.includes("C4_CLAUDE_RECOVERED")).at(-1)!.model
+    const recoveryMarker = "C4_CLAUDE_MODEL_CHANGED"
+    const recoveryPrompt = `Preserve this context: café — नमस्ते.\n\nReply with exactly this one token: ${recoveryMarker}`
+    const releaseModelError = scripted.scriptError({ marker: recoveryMarker, status: 400, model: originalModel, message: `Model unavailable for ${recoveryMarker}. Choose another model.` })
+    try {
+      await composeText(packaged.page, composerInput(packaged.page), recoveryPrompt)
+      await submitDraft(packaged.page)
+      const recovery = packaged.page.getByRole("status").filter({ hasText: `Model unavailable for ${recoveryMarker}` })
+      await expect(recovery).toBeVisible({ timeout: 30_000 })
+      await packaged.page.reload()
+      await recovery.getByRole("button", { name: "Switch model and resend", exact: true }).click()
+      const picker = packaged.page.getByRole("dialog")
+      await expect(picker).toBeVisible()
+      await packaged.page.keyboard.press("Escape")
+      await expect(picker).not.toBeVisible()
+      expect(scripted.requests.filter((request) => request.prompt.includes(recoveryMarker) && request.reply.kind === "text")).toHaveLength(0)
+      await recovery.getByRole("button", { name: "Switch model and resend", exact: true }).click()
+      const choice = picker.locator('[data-slot="list-item"]').filter({ hasText: /Haiku/i }).first()
+      await expect(choice).toBeVisible()
+      await choice.click()
+      await expectAssistantReplyVisible(packaged.page, recoveryMarker)
+      const successes = scripted.requests.filter((request) => request.dialect === "messages" && request.prompt.includes(recoveryMarker) && request.reply.kind === "text")
+      expect(successes.length).toBeGreaterThan(0)
+      expect(successes.every((request) => request.model !== originalModel)).toBe(true)
+      const history = await fetch(`${serverBase}/session/${sessionId}/message?${new URLSearchParams({ directory: dir, workspaceId })}`)
+      expect(history.ok).toBe(true)
+      const rows = await history.json() as Array<{ info: { role: string }; parts: Array<{ type: string; text?: string }> }>
+      const prompts = rows.filter((row) => row.info.role === "user").map((row) => row.parts.filter((part) => part.type === "text").map((part) => part.text).join(""))
+      expect(prompts.filter((prompt) => prompt === recoveryPrompt)).toEqual([recoveryPrompt, recoveryPrompt])
+      await packaged.page.reload()
+      await expectAssistantReplyVisible(packaged.page, recoveryMarker)
+    } finally { releaseModelError() }
   })
 
   test("D1/D3: a real terminal streams a live prompt and its row aligns with session rows", async () => {

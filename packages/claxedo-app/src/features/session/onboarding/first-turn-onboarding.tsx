@@ -5,11 +5,14 @@ import { useLocal } from "@/features/session/providers/session-selection"
 import type { Prompt } from "@/features/session/providers/prompt"
 import type { PromptRetryAction } from "@/features/session/composer/prompt-input-props"
 import type { RuntimeDirectory } from "@/platform/runtime/agent/placement-table"
-import { firstTurnFunnelEvents, nextHarnessRecoveryModel, type FirstTurnMessage, type SessionErrorClass } from "./first-turn-recovery"
+import { firstTurnFunnelEvents, harnessRecoveryModels, type FirstTurnMessage, type SessionErrorClass } from "./first-turn-recovery"
 import { turnOutcomeEvents } from "../telemetry/turn-outcome"
 import { capture, identityProps } from "@/platform/telemetry/analytics"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { ModelList, type PickerItem } from "@/features/session/ui/model/select-model"
+import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 
 export function firstTurnHarnessRecovery(
@@ -55,7 +58,7 @@ export function createFirstTurnOnboarding(input: {
     for (const event of events) funnel.emit(event)
   }, { defer: true }))
 
-  const recover = (kind: SessionErrorClass, failedPrompt?: Prompt) => {
+  const recover = async (kind: SessionErrorClass, failedPrompt?: Prompt) => {
     if (kind === "session") {
       // "Start a new session" — open a fresh sibling session in the same
       // workspace via the app's canonical new-session navigation. The lost
@@ -70,29 +73,41 @@ export function createFirstTurnOnboarding(input: {
     if (kind === "model" || kind === "usage_limit") {
       const harness = input.harnessRecovery?.()
       const controller = harness?.controller
+      if (harness && controller) {
+        await controller.hydrate(harness.scope, {
+          directory: input.directory(), sessionId: harness.sessionId, sessionRef: harness.sessionRef,
+        })
+      }
       const selection = harness && controller ? controller.read(harness.scope) : undefined
-      if (harness && controller && selection?.harness) {
-        const next = nextHarnessRecoveryModel(selection)
-        if (!next) return undefined
-        return Promise.resolve(controller.setModel(
-          harness.scope,
-          next,
-          { directory: input.directory(), sessionId: harness.sessionId, sessionRef: harness.sessionRef },
-        )).then(() => retry?.(failedPrompt))
-      }
       const current = local.model.current()
-      const candidates = local.model.list().filter((model) => {
-        const key = { providerID: model.provider.id, modelID: model.id }
-        return local.model.visible(key) && (model.id !== current?.id || model.provider.id !== current.provider.id)
-      })
-      const next = candidates.find((model) => model.provider.id === current?.provider.id) ?? candidates[0]
-      if (!next) {
-        void openSettingsProviders(dialog)
-        return undefined
+      const candidates: PickerItem[] = selection?.harness
+        ? harnessRecoveryModels(selection)
+        : local.model.list().filter((model) =>
+          local.model.visible({ providerID: model.provider.id, modelID: model.id }) &&
+          (model.id !== current?.id || model.provider.id !== current.provider.id)
+        )
+      if (!candidates.length) {
+        throw new Error(selection?.configError ?? "No other models are available. Configure another model in Settings → Providers.")
       }
-      local.model.set({ providerID: next.provider.id, modelID: next.id }, { recent: true })
-      return Promise.resolve().then(() => retry?.(failedPrompt))
+      const next = await new Promise<ModelKey | undefined>((resolve, reject) => {
+        void dialog.show(() => <Dialog title="Choose a model to resend"><ModelList model={{
+          list: () => candidates,
+          current: () => undefined,
+          visible: () => true,
+          set: (model) => resolve(model),
+        }} onSelect={() => dialog.close()} /></Dialog>, () => resolve(undefined)).catch(reject)
+      })
+      if (!next) return
+      if (harness && controller && selection?.harness) {
+        await controller.setModel(harness.scope, next, {
+          directory: input.directory(), sessionId: harness.sessionId, sessionRef: harness.sessionRef,
+        })
+      } else {
+        local.model.set(next, { recent: true })
+      }
+      return retry?.(failedPrompt)
     }
+
     return retry?.(failedPrompt)
   }
 

@@ -86,6 +86,25 @@ describe("harness status actions", () => {
     expect(refreshes).toEqual([])
   })
 
+  test("existing-session hydration waits for model options before resolving", async () => {
+    let release!: () => void
+    const loading = new Promise<void>((resolve) => { release = resolve })
+    const subject = actions({ fetchConfigOptions: () => loading })
+    let resolved = false
+    const pending = subject.applyStatus("session:ses_1", {
+      type: NATIVE_CODEX,
+      activeType: NATIVE_CODEX,
+      model: "gpt-5.6-sol",
+    }, { directory: "/repo", sessionId: "ses_1" }).then(() => { resolved = true })
+
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(resolved).toBe(false)
+    release()
+    await pending
+    expect(resolved).toBe(true)
+  })
+
   test("does not fetch options or refresh directory for failed existing-session status", async () => {
     await actions().applyStatus("session:ses_1", {
       type: CLAUDE_CONNECTION,
