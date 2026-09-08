@@ -528,14 +528,22 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       close: () => q.close(),
     })
     try {
+      let result: SDKMessage | undefined
       for await (const message of q as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
         if (message.type === "active_goal") {
           if (input.abort.signal.aborted) continue
           applyGoal(claudeGoalSnapshot(input.sessionId, message))
           continue
         }
+        // Ordinary query results precede subprocess cleanup. Keep their terminal
+        // projection out of both the store and event hub until iteration closes.
+        if (!onGoal && message.type === "result") {
+          result = message
+          continue
+        }
         await ingestClaudeSdkMessage(input, message)
       }
+      if (result) await ingestClaudeSdkMessage(input, result)
     } catch (cause) {
       // This query carried the Goal: if it died, no iteration is left to report
       // progress, so the Goal must not stay `active` — that state is what makes

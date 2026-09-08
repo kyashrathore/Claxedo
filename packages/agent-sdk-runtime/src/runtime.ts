@@ -31,6 +31,7 @@ import { deriveSessionTitle, extractPromptTitleText, hasConcreteSessionTitle } f
 import { resolveSessionModel } from "./session-model"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./runtime/turn-outcome"
+import { createTurnPublication } from "./runtime/turn-publication"
 import { turnStartRecord } from "./runtime/turn-record"
 import { assertSessionCreateBindingScope, normalizeDirectory as runtimeDirectory, requireExecutionBinding } from "./runtime/execution-binding"
 import { executeHandoffTransaction } from "./runtime/handoff-transaction"
@@ -213,11 +214,12 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     payload: AgentRuntimeStreamEvent,
     source: { dir: "in" | "out"; method: string },
     fence?: AgentRuntimeTurnStartInput["admission"],
+    emit: typeof publish = publish,
   ) => {
     if (fence && !fence.valid()) throw new Error("Durable session turn admission is no longer valid")
     const compat = toCompatEvent(payload)
     if (!compat) {
-      publish({ sessionId, directory, payload })
+      emit({ sessionId, directory, payload })
       return payload
     }
     const agentSessionId = store.getAgentSessionId(sessionId) ?? undefined
@@ -228,7 +230,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       source,
       ...(fence ? { fencingToken: fence.fencingToken() } : {}),
     }).payload
-    publish({ sessionId, directory, payload: committed })
+    emit({ sessionId, directory, payload: committed })
     return committed
   }
 
@@ -237,6 +239,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     prompt: PromptInput,
     adapter: AgentHarnessAdapter,
     admission: object,
+    releaseAdmission: () => void,
     clearsHandoff = false,
     openingUserPublished = false,
     fence?: AgentRuntimeTurnStartInput["admission"],
@@ -250,6 +253,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     // instance still owns the in-memory slot.
     const admitted = () => ownsAdmission() && (fence?.valid() ?? true)
     if (!admitted()) return
+    const { publish: publishTurn, finish: finishPublication } = createTurnPublication(sessionId, publish, admitted, releaseAdmission)
     // The store already published the opening user message with the turn
     // record; the adapter's own echo of it would fan a duplicate to every
     // subscriber, so exactly one echo is dropped.
@@ -344,7 +348,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       onEvent: () => {},
       onRuntimeEvent: (event) => {
         if (!admitted()) return
-        publish({
+        publishTurn({
           sessionId: event.sessionId,
           directory: event.directory,
           payload: event.payload,
@@ -367,7 +371,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         onEvent: () => {},
         onRuntimeEvent: (event) => {
           if (!admitted()) return
-          publish({
+          publishTurn({
             sessionId: event.sessionId,
             directory: event.directory,
             payload: event.payload,
@@ -375,7 +379,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         },
       }),
       onDiagnostic: (payload) => {
-        if (admitted()) publish({ sessionId, directory, payload })
+        if (admitted()) publishTurn({ sessionId, directory, payload })
       },
     })
     const maybeEmitTitle = async () => {
@@ -395,7 +399,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         title,
         created: session?.time?.created,
         updated: Date.now(),
-      })), { dir: "in", method: "auto-title" }, fence)
+      })), { dir: "in", method: "auto-title" }, fence, publishTurn)
     }
     try {
       if (!adapter.executeTurn) {
@@ -434,9 +438,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           }
           if (compat.type === "session.idle") await maybeEmitTitle()
           if (adapter.commitsStreamEvents) {
-            publish({ sessionId, directory, payload: normalizeCompatEvent(compat) })
+            publishTurn({ sessionId, directory, payload: normalizeCompatEvent(compat) })
           } else {
-            commitAndPublish(sessionId, directory, normalizeCompatEvent(compat), { dir: "in", method: "sendMessage" }, fence)
+            commitAndPublish(sessionId, directory, normalizeCompatEvent(compat), { dir: "in", method: "sendMessage" }, fence, publishTurn)
           }
           continue
         }
@@ -444,7 +448,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           router.project(payload, { dir: "in", method: "sendMessage" })
           continue
         }
-        publish({ sessionId, directory, payload })
+        publishTurn({ sessionId, directory, payload })
       }
       if (!admitted()) return
       await maybeEmitTitle()
@@ -452,7 +456,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       if (!terminal) {
         const payload = sessionIdle(sessionId)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
-        commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.finish" }, fence)
+        commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.finish" }, fence, publishTurn)
       }
       // Terminal compat events and the durable turn outcome are separate
       // contracts. A committing adapter may already have journaled
@@ -465,7 +469,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         outcome: outcome ?? { status: "completed", completedAt: Date.now() },
         ...(fence ? { fencingToken: fence.fencingToken() } : {}),
       })
-      for (const payload of finished.events) publish({ sessionId, directory, payload })
+      for (const payload of finished.events) publishTurn({ sessionId, directory, payload })
       if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
     } catch (err) {
       if (!admitted()) return
@@ -476,9 +480,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         outcome: { status: "failed", completedAt: Date.now(), error: message },
         ...(fence ? { fencingToken: fence.fencingToken() } : {}),
       })
-      for (const payload of finished.events) publish({ sessionId, directory, payload })
+      for (const payload of finished.events) publishTurn({ sessionId, directory, payload })
     } finally {
       router.dispose()
+      finishPublication()
     }
   }
 
@@ -798,7 +803,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             payload.type === "message.updated"
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId)
-          void track(() => runTurn(executionBinding(turn.sessionId, directory), prompt, adapter, admission, !!handoff, openingUserPublished, turn.admission)
+          void track(() => runTurn(executionBinding(turn.sessionId, directory), prompt, adapter, admission, releaseAdmission, !!handoff, openingUserPublished, turn.admission)
             .finally(releaseAdmission)).catch((error) => console.error("AgentRuntime turn finalization failed", error))
         } catch (error) {
           releaseAdmission()

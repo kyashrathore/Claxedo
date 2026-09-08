@@ -1765,6 +1765,33 @@ describe("createAgentRuntime", () => {
     } finally { await runtime.dispose() }
   })
 
+  test("publishes completion only after adapter cleanup releases next-turn admission", async () => {
+    let release!: () => void
+    const cleanup = new Promise<void>((resolve) => { release = resolve })
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({ sendMessage: async function* (id) {
+        yield sessionIdle(id)
+        await cleanup
+      } })],
+    })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
+    let completed = false
+    const completion = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id })).then(() => { completed = true })
+    try {
+      await runtime.turns.start({ sessionId: session.id, messageId: "msg_first", text: "first" })
+      await tick()
+      expect(completed, "completion must not advertise readiness while next-turn admission is held").toBe(false)
+      release()
+      await completion
+      await expect(runtime.turns.start({ sessionId: session.id, messageId: "msg_next", text: "next" })).resolves.toBeDefined()
+    } finally {
+      release()
+      await completion
+      await runtime.dispose()
+    }
+  })
+
   test("records compat idle as a completed turn outcome", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),

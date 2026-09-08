@@ -17,22 +17,23 @@ async function compose(input: Locator, text: string) {
   await expect(input).toContainText(text, { timeout: 10_000 })
 }
 
+for (const harness of ["Codex", "Claude"] as const) {
 for (const flow of ["reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
-test(`packaged app completes a real Codex-authenticated session: ${flow} @live @surface-desktop`, async () => {
+test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
-  const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-windows-live-codex-")))
-  const profile = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-codex-profile-"))
+  const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
+  const profile = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-live-${harness.toLowerCase()}-profile-`))
   const releaseFile = path.join(directory, ".task-release")
   const launch = () => launchPackagedApp({
     timeoutMs: 60_000,
     userDataDir: profile,
     preserveUserDataDir: true,
-    env: { CODEX_HOME: path.join(os.homedir(), ".codex") },
+    env: harness === "Codex" ? { CODEX_HOME: path.join(os.homedir(), ".codex") } : {},
   })
   let packaged: PackagedApp | undefined
   try {
     await execFileAsync("git", ["init"], { cwd: directory })
-    await fs.writeFile(path.join(directory, "README.md"), "Real Codex desktop proof.\n")
+    await fs.writeFile(path.join(directory, "README.md"), `Real ${harness} desktop proof.\n`)
     packaged = await launch()
     const serverBase = new URL(await expectServerReachable(packaged, 45_000)).origin
     const resolve = await fetch(
@@ -72,12 +73,11 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
     await control.click()
     const picker = packaged.page.locator('[data-component="harness-model-picker"]')
     await picker.locator('[data-slot="harness-picker-section"]').first().click()
-    // "Codex" is unique now: the first-party ACP rows left the picker when
-    // operator-configured ACP connections became the ACP group.
-    const nativeCodex = picker.getByRole("button", { name: /^Codex$/ }).first()
-    await nativeCodex.click()
+    // Native harnesses have unique rows; configured ACP connections use their own group.
+    const nativeHarness = picker.getByRole("button", { name: harness === "Codex" ? /^Codex$/ : /^Claude$/ }).first()
+    await nativeHarness.click()
     await picker.locator('[data-slot="harness-picker-section"]').first().click()
-    await expect(nativeCodex, "native Codex harness did not become selected").toHaveAttribute(
+    await expect(nativeHarness, `${harness} harness did not become selected`).toHaveAttribute(
       "aria-current",
       "true",
       { timeout: 45_000 },
@@ -85,13 +85,23 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
     await packaged.page.keyboard.press("Escape")
     await expect(control).not.toContainText(/Loading models|Select model|^$/, { timeout: 45_000 })
 
+    if (harness === "Claude") {
+      await control.click()
+      await picker.locator('[data-slot="list-item"]').filter({ has: packaged.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
+      await expect(control).toContainText("Opus")
+      await packaged.page.keyboard.press("Escape")
+    }
+
     if (flow === "question answer across full restart" || flow === "question dismiss across full restart" || flow === "question stop across full restart") {
       const action = flow === "question answer across full restart" ? "answer" : flow === "question dismiss across full restart" ? "dismiss" : "stop"
       const prefix = `DESKTOP_QUESTION_${Date.now()}`
       const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
       await compose(input,
-        'Use request_user_input now with one question: id "environment", header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}]. ' +
+        (harness === "Claude"
+          ? 'Use AskUserQuestion now with one question: header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}], multiSelect false. '
+          : 'Use request_user_input now with one question: id "environment", header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}]. ') +
         `Wait for my answer, then reply exactly ${prefix}- followed by the selected label. If dismissed, reply exactly ${prefix}-DISMISSED and do not ask again. Do not run other tools.`)
+      await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAccessibleName("Send")
       await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
       const created = await creation
       expect(created.ok()).toBe(true)
@@ -128,10 +138,26 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["Production"]] }),
       })
       expect(late.status).toBe(404)
+      const diagnostic: string[] = []
+      packaged.page.on("pageerror", (error) => diagnostic.push(error.message))
+      packaged.page.on("response", async (response) => {
+        if (response.status() >= 400) diagnostic.push(`${response.status()} ${new URL(response.url()).pathname} ${await response.text().catch(() => "unavailable")}`)
+      })
+      packaged.page.on("console", (message) => { if (message.type() === "error") diagnostic.push(message.text()) })
       const marker = `AFTER_DESKTOP_QUESTION_${Date.now()}`
-      await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${marker}. Do not use tools.`)
+      await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), `This is a new task. The previous question task is over; do not answer it or repeat its marker. Reply with exactly this one token: ${marker}. Do not use tools.`)
+      await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAccessibleName("Send")
       await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
-      await expectAssistantReplyVisible(packaged.page, marker)
+      try {
+        await expectAssistantReplyVisible(packaged.page, marker)
+      } catch (error) {
+        const sessionResponse = await fetch(`${serverBase}/session/${session.id}?directory=${encodeURIComponent(directory)}`)
+        const statusResponse = await fetch(`${serverBase}/session/status?directory=${encodeURIComponent(directory)}`)
+        await test.info().attach("question-followup-diagnostic", { contentType: "application/json", body: JSON.stringify({
+          errors: diagnostic, session: await sessionResponse.json(), statuses: await statusResponse.json(), pending: await readQuestions(),
+        }, null, 2) })
+        throw error
+      }
       await packaged.page.reload()
       await expectAssistantReplyVisible(packaged.page, marker)
       await expect(dock).toHaveCount(0)
@@ -141,7 +167,7 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
 
     if (flow === "tool error recovery across full restart") {
       await packaged.page.locator('[data-action="prompt-permission-mode"]').last().click()
-      await packaged.page.locator('[data-permission-mode-row][data-mode="full-access"]').click()
+      await packaged.page.locator(`[data-permission-mode-row][data-mode="${harness === "Claude" ? "bypassPermissions" : "full-access"}"]`).click()
       let sessionID = ""
       const result = await expectToolErrorRecovery({ page: packaged.page, directory, backend: serverBase,
         sessionID: () => sessionID,
@@ -150,7 +176,7 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
           const creation = !sessionID ? page.waitForResponse((response) =>
             response.request().method() === "POST" && new URL(response.url()).pathname === "/session") : undefined
           await compose(page.getByRole("textbox", { name: /Ask anything/i }).last(),
-            `Run exactly this shell command once: ${command}. Use exec_command. A nonzero exit is intentional; do not retry or repair it. After the tool returns, reply with exactly this one token: ${marker}`)
+            `Run exactly this shell command once: ${command}. Use ${harness === "Claude" ? "Bash" : "exec_command"}. A nonzero exit is intentional; do not retry or repair it. After the tool returns, reply with exactly this one token: ${marker}`)
           await page.locator('[data-action="prompt-submit"]:visible').last().click()
           if (creation) {
             const response = await creation
@@ -175,6 +201,7 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
       expect(await fs.readFile(path.join(directory, "recovered.txt"), "utf8")).toBe("recovered")
       const marker = `DESKTOP_AFTER_ERROR_RESTART_${Date.now()}`
       await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${marker}`)
+      await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAccessibleName("Send")
       await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
       await expectAssistantReplyVisible(packaged.page, marker)
       await packaged.page.screenshot({ path: test.info().outputPath("tool-error-after-restart.png") })
@@ -183,18 +210,21 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
 
     if (flow === "tasks across full restart") {
       await packaged.page.locator('[data-action="prompt-permission-mode"]').last().click()
-      await packaged.page.locator('[data-permission-mode-row][data-mode="full-access"]').click()
+      await packaged.page.locator(`[data-permission-mode-row][data-mode="${harness === "Claude" ? "bypassPermissions" : "full-access"}"]`).click()
       const pidFile = path.join(directory, ".task-pid")
       const finishedFile = path.join(directory, ".task-finished")
       const marker = `DESKTOP_TASKS_${Date.now()}`
       await compose(input,
-        'Use update_plan with exactly three tasks: "Inspect source" completed, "Verify behavior" in_progress, "Report result" pending. ' +
+        (harness === "Claude"
+          ? 'Use TaskCreate and TaskUpdate with returned task IDs to create exactly three tasks: "Inspect source" completed, "Verify behavior" in_progress, "Report result" pending. '
+          : 'Use update_plan with exactly three tasks: "Inspect source" completed, "Verify behavior" in_progress, "Report result" pending. ') +
         `Then run this shell command and wait for it: echo $$ > '${pidFile}'; while [ ! -f '${releaseFile}' ]; do sleep 0.1; done; echo finished > '${finishedFile}'. ` +
-        `The test runner creates the release file; do not create it yourself. When the shell finishes, mark all tasks completed using update_plan and reply exactly ${marker}.`,
+        `The test runner creates the release file; do not create it yourself. When the shell finishes, mark all tasks completed using ${harness === "Claude" ? "TaskUpdate with the original IDs" : "update_plan"} and reply exactly ${marker}.`,
       )
       const creation = packaged.page.waitForResponse((response) =>
         response.request().method() === "POST" && new URL(response.url()).pathname === "/session",
       )
+      await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAccessibleName("Send")
       await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
       const created = await creation
       expect(created.ok()).toBe(true)
@@ -254,13 +284,13 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
     const created = await createResponse
     if (!created.ok()) {
       throw new Error(
-        `real Codex session creation failed (${created.status()}): ${await created.text()}. ` +
+        `real ${harness} session creation failed (${created.status()}): ${await created.text()}. ` +
           `App log tail: ${packaged.appLog.join("").split("\n").slice(-30).join("\n")}`,
       )
     }
     await expect(
       packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: marker }),
-      "the real Codex session did not render its authenticated response",
+      `the real ${harness} session did not render its authenticated response`,
     ).toBeVisible({ timeout: 180_000 })
   } finally {
     if (packaged && !packaged.page.isClosed()) {
@@ -273,4 +303,5 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
     await fs.rm(directory, { recursive: true, force: true })
   }
 })
+}
 }

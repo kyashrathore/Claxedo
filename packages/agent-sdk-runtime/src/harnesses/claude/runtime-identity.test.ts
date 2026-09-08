@@ -17,6 +17,8 @@ test("public Claude first turn replaces its provisional upstream binding and res
   const sessionId = "local-claude-session"
   const upstreamSessionId = "claude-provider-session"
   const calls: Array<{ options?: { resume?: string; cwd?: string; env?: Record<string, string | undefined> } }> = []
+  let releaseTail = () => {}
+  let notifyTail = () => {}
   const query: ClaudeSdkDriverOptions["query"] = ((input) => {
     calls.push(input)
     const sequence = calls.length
@@ -29,6 +31,7 @@ test("public Claude first turn replaces its provisional upstream binding and res
         type: "result", subtype: "success", uuid: `result-${sequence}`, session_id: upstreamSessionId,
         is_error: false, usage: { input_tokens: 10, output_tokens: 5 }, modelUsage: {},
       }
+      await new Promise<void>((resolve) => { releaseTail = resolve; notifyTail() })
     })(), { close() {} }) as unknown as Query
   }) as ClaudeSdkDriverOptions["query"]
 
@@ -67,7 +70,11 @@ test("public Claude first turn replaces its provisional upstream binding and res
             }
           }
         })()
+        const tail = new Promise<void>((resolve) => { notifyTail = resolve })
         await runtime.turns.start({ sessionId, messageId: `user-${iteration}`, text: `Hello ${iteration}` })
+        await tail
+        expect(rows.getSession(sessionId)?.status, "provider result must not commit idle before query cleanup").toBe("busy")
+        releaseTail()
         await completed
         expect(rows.getExecutionBinding(sessionId)).toMatchObject({ sessionId, upstreamSessionId })
         const history = await runtime.events.list(sessionId, directory)
@@ -75,6 +82,7 @@ test("public Claude first turn replaces its provisional upstream binding and res
         expect(JSON.stringify(history)).toContain(`Claude reply ${iteration}`)
         expect(rows.getSession(upstreamSessionId)).toBeNull()
       } finally {
+        releaseTail()
         await runtime.dispose()
         rows.close?.()
       }
