@@ -44,8 +44,8 @@ function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
 
-async function startServer() {
-  dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-smoke-data-"))
+async function startServer(existingDataDir?: string) {
+  dataDir = existingDataDir ?? await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-smoke-data-"))
   server = spawn("bun", ["run", "start"], {
     cwd: SERVER_DIR,
     env: {
@@ -287,6 +287,38 @@ test.describe("live real-harness smoke @live", () => {
     if (testInfo.status === testInfo.expectedStatus) return
     await testInfo.attach("claxedo-server.log", { body: serverLog, contentType: "text/plain" })
   })
+
+  for (const [harness, selectedMode] of [["codex", "read-only"], ["claude", "default"]] as const) {
+    test(`restricted ${harness} parent and child permission modes survive a server restart`, async ({ page }) => {
+      const dir = await makeWorkspace(`${harness}-permission-restart`)
+      await seedOneProject(page, dir)
+      const query = `?directory=${encodeURIComponent(dir)}`
+      const create = async (parentID?: string) => {
+        const response = await page.request.post(`${BACKEND_URL}/session${query}&nativeHarness=${harness}`, {
+          data: {
+            harness: { id: harness, access: "native" },
+            permissionMode: selectedMode,
+            permissionCeiling: "ask",
+            ...(parentID ? { parentID } : {}),
+          },
+        })
+        expect(response.ok(), await response.text()).toBe(true)
+        return await response.json() as { id: string }
+      }
+      const parent = await create()
+      const child = await create(parent.id)
+      const mode = async (id: string) => {
+        const response = await page.request.get(`${BACKEND_URL}/session/${id}/permission-mode${query}`)
+        expect(response.ok(), await response.text()).toBe(true)
+        return (await response.json() as { currentModeId: string }).currentModeId
+      }
+      expect(await Promise.all([mode(parent.id), mode(child.id)])).toEqual([selectedMode, selectedMode])
+      await stopServer()
+      await startServer(dataDir)
+      expect(await Promise.all([mode(parent.id), mode(child.id)])).toEqual([selectedMode, selectedMode])
+    })
+
+  }
 
   test("opencode native harness (embedded engine) completes 3 real turns and survives reload", async ({
     page,

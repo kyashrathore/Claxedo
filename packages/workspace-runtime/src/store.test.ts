@@ -2231,6 +2231,18 @@ void describe("RuntimeStore", () => {
     assert.equal((next.getSession("s1") as any)?.time?.archived, 0)
   })
 
+  void it("persists permission selection across reopen and clears it on a harness change", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({ sessionId: "restricted", directory: "/work", agentSessionId: "a1" })
+    first.updateSessionConfig("restricted", { harness: { id: "codex", access: "native" }, permissionMode: "read-only" })
+    first.updateSessionConfig("restricted", { agent: "build" })
+    const reopened = new RuntimeStore(root)
+    assert.equal(reopened.getSessionConfig("restricted")?.permissionMode, "read-only")
+    reopened.updateSessionConfig("restricted", { harness: { id: "claude", access: "native" } })
+    assert.equal(reopened.getSessionConfig("restricted")?.permissionMode, undefined)
+  })
+
   void it("persists session config across replay", () => {
     const root = tmp()
     const first = new RuntimeStore(root)

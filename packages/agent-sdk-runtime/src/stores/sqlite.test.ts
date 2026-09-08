@@ -30,6 +30,20 @@ afterEach(() => {
 })
 
 describe("SqliteRuntimeStore", () => {
+  test("persists permission modes through reopen and clears them on a harness change", () => {
+    const root = tempRoot()
+    const first = new SqliteRuntimeStore({ root })
+    first.bindSession({ sessionId: "restricted", directory: "/repo", agentSessionId: "native-1" })
+    first.updateSessionConfig("restricted", { harness: { id: "codex", access: "native" }, permissionMode: "read-only" })
+    first.updateSessionConfig("restricted", { agent: "build" })
+    first.close()
+    const reopened = new SqliteRuntimeStore({ root })
+    expect(reopened.getSessionConfig("restricted")?.permissionMode).toBe("read-only")
+    reopened.updateSessionConfig("restricted", { harness: { id: "claude", access: "native" } })
+    expect(reopened.getSessionConfig("restricted")?.permissionMode).toBeUndefined()
+    reopened.close()
+  })
+
   test("persists normalized interactions, todos, recovery, and subagents across reopen", () => {
     const root = tempRoot()
     const first = new SqliteRuntimeStore({ root })

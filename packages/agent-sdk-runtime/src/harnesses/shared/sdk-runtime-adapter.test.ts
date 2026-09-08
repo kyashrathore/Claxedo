@@ -347,33 +347,33 @@ describe("SdkRuntimeAdapter", () => {
     await adapter.dispose()
   })
 
-  test("applies the requested permission mode before the provider turn", async () => {
+  test("restores the accepted permission mode before a provider turn in a new adapter", async () => {
     const order: string[] = []
-    const adapter = new SdkRuntimeAdapter({
-      store: createMemoryRuntimeStore(),
-      driver: () => ({
-        ...minimalSdkRuntimeDriver(),
-        setPermissionMode: async (_sessionId, modeId) => {
-          order.push(`mode:${modeId}`)
-          return { modes: [], appliesFrom: "next-turn" as const }
-        },
-        runTurn: async () => {
-          order.push("turn")
-        },
-      }),
+    const store = createMemoryRuntimeStore()
+    const driver = () => ({
+      ...minimalSdkRuntimeDriver(),
+      setPermissionMode: async (_sessionId: string, modeId: string) => {
+        order.push(`mode:${modeId}`)
+        return { modes: [], currentModeId: modeId, appliesFrom: "next-turn" as const }
+      },
+      runTurn: async () => { order.push("turn") },
     })
-    const session = await adapter.createSession(path.resolve("/repo"))
-
-    for await (const _event of executeTestTurn(adapter, session.id, {
-      parts: [{ type: "text", text: "go" }],
+    const adapter = new SdkRuntimeAdapter({ store, driver })
+    const directory = path.resolve("/repo")
+    const session = await adapter.createSession(directory)
+    const prompt = {
+      parts: [{ type: "text" as const, text: "go" }],
       assistantMessageId: "assistant",
       agent: "general",
       model: { providerID: "codex", modelID: "test" },
-      permissionMode: "full-access",
-    }, path.resolve("/repo"))) {}
-
-    expect(order).toEqual(["mode:full-access", "turn"])
+    }
+    for await (const _event of executeTestTurn(adapter, session.id, { ...prompt, permissionMode: "read-only" }, directory)) {}
+    expect(store.getSessionConfig(session.id)?.permissionMode).toBe("read-only")
     await adapter.dispose()
+    const restored = new SdkRuntimeAdapter({ store, driver })
+    for await (const _event of executeTestTurn(restored, session.id, { ...prompt, assistantMessageId: "next" }, directory)) {}
+    expect(order).toEqual(["mode:read-only", "turn", "mode:read-only", "turn"])
+    await restored.dispose()
   })
 
   test("admits revisioned subagent observations and reuses one opaque child target across interaction edges", async () => {

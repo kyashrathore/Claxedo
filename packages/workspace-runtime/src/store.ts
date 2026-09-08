@@ -668,6 +668,7 @@ export class RuntimeStore {
         variant TEXT,
         agent TEXT,
         handoff_json TEXT,
+        permission_mode TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         status TEXT,
@@ -914,6 +915,7 @@ export class RuntimeStore {
       "ALTER TABLE session ADD COLUMN variant TEXT",
       "ALTER TABLE session ADD COLUMN agent TEXT",
       "ALTER TABLE session ADD COLUMN handoff_json TEXT",
+      "ALTER TABLE session ADD COLUMN permission_mode TEXT",
     ]) {
       try {
         this.db.exec(sql)
@@ -1989,6 +1991,7 @@ export class RuntimeStore {
         title = excluded.title,
         agent_session_id = excluded.agent_session_id,
         process_key = excluded.process_key,
+        permission_mode = CASE WHEN session.harness_id = excluded.harness_id AND session.harness_access = excluded.harness_access THEN session.permission_mode ELSE NULL END,
         harness_id = excluded.harness_id,
         harness_access = excluded.harness_access,
         harness_binary = excluded.harness_binary,
@@ -3636,6 +3639,7 @@ export class RuntimeStore {
       variant: string | null
       agent: string | null
       handoff_json: string | null
+      permission_mode: string | null
     }>(
         `
 	        SELECT
@@ -3649,7 +3653,8 @@ export class RuntimeStore {
           model_id,
           variant,
           agent,
-          handoff_json
+          handoff_json,
+          permission_mode
         FROM session
         WHERE id = ?
       `,
@@ -3667,6 +3672,7 @@ export class RuntimeStore {
       variant: nullable(row.variant) ?? null,
       agent: nullable(row.agent) ?? null,
       ...(handoff ? { handoff } : {}),
+      ...(row.permission_mode ? { permissionMode: row.permission_mode } : {}),
     }
   }
 
@@ -3685,6 +3691,7 @@ export class RuntimeStore {
       variant: string | null
       agent: string | null
       handoff_json: string | null
+      permission_mode: string | null
       updated_at: number
     }>(
         `
@@ -3701,6 +3708,7 @@ export class RuntimeStore {
           variant,
           agent,
           handoff_json,
+          permission_mode,
           updated_at
         FROM session
         WHERE id = ?
@@ -3721,6 +3729,7 @@ export class RuntimeStore {
         createdAt: ts,
         updatedAt: ts,
       })
+      if (patch.permissionMode !== undefined) this.applyConfigUpdate(id, { permissionMode: patch.permissionMode }, ts, directory)
       return
     }
     const nextHarness = patch.harness ?? prevHarness
@@ -3730,7 +3739,7 @@ export class RuntimeStore {
       .prepare(
         `
 	      UPDATE session
-	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, handoff_json = ?, updated_at = ?
+	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, handoff_json = ?, permission_mode = ?, updated_at = ?
 	      WHERE id = ?
 	    `,
       )
@@ -3746,6 +3755,9 @@ export class RuntimeStore {
         patch.variant === undefined ? (prev?.variant ?? null) : patch.variant,
         patch.agent === undefined ? (prev?.agent ?? null) : patch.agent,
         patch.handoff === undefined ? (prev?.handoff_json ?? null) : sessionHandoffJson(patch.handoff),
+        patch.permissionMode === undefined
+          ? nextHarness?.id === prevHarness?.id && nextHarness?.access === prevHarness?.access ? prev.permission_mode : null
+          : patch.permissionMode,
         prev.updated_at,
         id,
       )

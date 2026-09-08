@@ -105,7 +105,7 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
           read(binding)
           if (update.agent === "rejected") throw new Error("agent rejected")
           const current = configs.get(binding.sessionId)!
-          const next = { ...current, ...update, model: update.model === null ? undefined : update.model ?? current.model }
+          const next = { ...current, ...update, permissionMode: update.permissionMode === null ? undefined : update.permissionMode ?? current.permissionMode, model: update.model === null ? undefined : update.model ?? current.model }
           configs.set(binding.sessionId, next)
           return next
         },

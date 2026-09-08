@@ -26,6 +26,9 @@ export function acceptedSessionConfig(
 ): SessionConfig {
   return {
     harness: update.harness ?? current.harness,
+    ...(update.permissionMode === undefined
+      ? current?.permissionMode && (!update.harness || (update.harness.id === current.harness.id && update.harness.access === current.harness.access)) ? { permissionMode: current.permissionMode } : {}
+      : update.permissionMode ? { permissionMode: update.permissionMode } : {}),
     ...(update.model === undefined
       ? current.model ? { model: current.model } : {}
       : update.model ? { model: update.model } : {}),

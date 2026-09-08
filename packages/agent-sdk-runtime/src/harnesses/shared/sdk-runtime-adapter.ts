@@ -459,10 +459,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     this.agentSessionIndex.remember({ sessionId: id, directory, agentSessionId: current })
     let agentSessionId = current
     const created = Date.now()
-    if (input.permissionMode) {
-      if (!this.driver.setPermissionMode) throw new Error(`${this.driver.type} does not support permission modes`)
-      await this.driver.setPermissionMode(id, input.permissionMode, directory)
-    }
+    const permissionMode = input.permissionMode ?? this.store.getSessionConfig(id)?.permissionMode
+    if (permissionMode) await this.applyPermissionMode(id, directory, permissionMode)
     const start = [
       sessionStatus(id, { type: "busy" }),
       ...(input.userMessageId
@@ -805,15 +803,28 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   async listPermissionModes(binding: AgentExecutionBinding): Promise<AgentPermissionModeState> {
     const { sessionId, directory } = assertAgentExecutionBinding(binding)
+    const selected = this.store.getSessionConfig(sessionId)?.permissionMode
+    if (selected) return this.setPermissionMode(binding, selected)
     return this.driver.permissionModes?.(sessionId, directory) ?? { modes: [], appliesFrom: "next-turn" }
   }
 
   async setPermissionMode(binding: AgentExecutionBinding, modeId: string): Promise<AgentPermissionModeState> {
     const { sessionId, directory } = assertAgentExecutionBinding(binding)
+    return this.applyPermissionMode(sessionId, directory, modeId)
+  }
+
+  private async applyPermissionMode(sessionId: string, directory: string, modeId: string): Promise<AgentPermissionModeState> {
     if (!this.driver.setPermissionMode) {
       throw new Error(`${this.driver.type} does not support permission modes`)
     }
-    return this.driver.setPermissionMode(sessionId, modeId, directory)
+    const state = await this.driver.setPermissionMode(sessionId, modeId, directory)
+    if (!state.currentModeId) throw new Error(`${this.driver.type} did not report its selected permission mode`)
+    if (this.store.getSessionConfig(sessionId)?.permissionMode !== state.currentModeId) {
+      if (!this.store.updateSessionConfig(sessionId, { permissionMode: state.currentModeId })) {
+        throw new Error(`Session ${sessionId} has no runtime config`)
+      }
+    }
+    return state
   }
 
   async listPermissions(directory: string): Promise<AgentPermission[]> { return this.interactions.listPermissions(directory) }

@@ -202,6 +202,8 @@ export type SessionHarness = {
 }
 
 export type SessionConfig = {
+  /** Accepted harness mode, persisted by the permission-mode operation. */
+  permissionMode?: string
   harness: SessionHarness
   model?: PromptModel
   variant?: string | null
@@ -219,6 +221,7 @@ export type SessionConfig = {
  * `harness` is a full replacement, not a deep merge.
  */
 export type SessionConfigUpdate = {
+  permissionMode?: string | null
   harness?: SessionHarness
   model?: PromptModel | null
   variant?: string | null
@@ -227,8 +230,9 @@ export type SessionConfigUpdate = {
 }
 
 /** Config fields accepted from public session create/update requests.
- * Pending handoff state is runtime-owned and must not be client-authored. */
-export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff">
+ * Handoff and accepted permission state are runtime-owned; permission changes
+ * must go through the adapter-validated permission-mode operation. */
+export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff" | "permissionMode">
 
 export type AgentRuntimeStreamEvent = RuntimeStreamEvent | CompatEvent
 export type RuntimeDirectory = string | undefined
