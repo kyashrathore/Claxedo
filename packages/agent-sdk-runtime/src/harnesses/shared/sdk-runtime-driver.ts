@@ -92,6 +92,7 @@ export type SdkRuntimeDriverHost = {
   getSessionForAgentSession(agentSessionId: string): AgentSessionBinding | null
   getGoal(sessionId: string): RuntimeGoalSnapshot | null
   getSessionConfig(sessionId: string): SessionConfig | null | undefined
+  updatePermissionState(sessionId: string, state: Record<string, unknown>, modeId?: string): void
   publishGoal(input: {
     sessionId: string
     directory: string

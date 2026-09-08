@@ -102,6 +102,7 @@ function goalControllerHarness() {
     getAgentSessionId: () => THREAD_ID,
     getSessionForAgentSession: (agentSessionId) => sessionByThread.get(agentSessionId) ?? null,
     getGoal: () => null,
+    updatePermissionState() {},
     getSessionConfig: () => null,
     publishGoal: (input) => published.push(input),
     runProviderTurn: (binding, execute) => {

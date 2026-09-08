@@ -23,6 +23,7 @@ function goalDriver(
     getAgentSessionId: () => "claude-session",
     getSessionForAgentSession: () => null,
     getGoal: () => null,
+    updatePermissionState() {},
     getSessionConfig: () => null,
     publishGoal(input) {
       onPublish(input.goal)

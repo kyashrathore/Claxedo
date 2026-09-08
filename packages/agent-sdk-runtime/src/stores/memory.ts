@@ -158,6 +158,9 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       ...(update.permissionMode === undefined
         ? prev?.permissionMode && (!update.harness || (update.harness.id === prev.harness.id && update.harness.access === prev.harness.access)) ? { permissionMode: prev.permissionMode } : {}
         : update.permissionMode ? { permissionMode: update.permissionMode } : {}),
+      ...(update.permissionState === undefined
+        ? prev?.permissionState && (!update.harness || (update.harness.id === prev.harness.id && update.harness.access === prev.harness.access)) ? { permissionState: prev.permissionState } : {}
+        : update.permissionState ? { permissionState: update.permissionState } : {}),
       ...(update.model === undefined
         ? prev?.model ? { model: prev.model } : {}
         : update.model ? { model: update.model } : {}),

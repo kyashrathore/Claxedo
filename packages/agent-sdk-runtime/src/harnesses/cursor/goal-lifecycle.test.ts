@@ -37,6 +37,7 @@ describe("Cursor native Goal lifecycle", () => {
       getAgentSessionId: () => "cursor-agent-1",
       getSessionForAgentSession: () => null,
       getGoal: () => null,
+    updatePermissionState() {},
     getSessionConfig: () => null,
       publishGoal(input) {
         published.push(input.goal)
@@ -117,6 +118,7 @@ describe("Cursor native Goal lifecycle", () => {
       getAgentSessionId: () => "cursor-agent-1",
       getSessionForAgentSession: () => null,
       getGoal: () => null,
+    updatePermissionState() {},
     getSessionConfig: () => null,
       publishGoal(input) {
         published.push(input.goal)
@@ -172,6 +174,7 @@ describe("Cursor native Goal lifecycle", () => {
       getAgentSessionId: () => "cursor-agent-1",
       getSessionForAgentSession: () => null,
       getGoal: () => null,
+    updatePermissionState() {},
     getSessionConfig: () => null,
       publishGoal() {},
       async runProviderTurn() { return true },

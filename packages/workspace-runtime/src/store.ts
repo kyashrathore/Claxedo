@@ -669,6 +669,7 @@ export class RuntimeStore {
         agent TEXT,
         handoff_json TEXT,
         permission_mode TEXT,
+        permission_state_json TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         status TEXT,
@@ -916,6 +917,7 @@ export class RuntimeStore {
       "ALTER TABLE session ADD COLUMN agent TEXT",
       "ALTER TABLE session ADD COLUMN handoff_json TEXT",
       "ALTER TABLE session ADD COLUMN permission_mode TEXT",
+      "ALTER TABLE session ADD COLUMN permission_state_json TEXT",
     ]) {
       try {
         this.db.exec(sql)
@@ -1992,6 +1994,7 @@ export class RuntimeStore {
         agent_session_id = excluded.agent_session_id,
         process_key = excluded.process_key,
         permission_mode = CASE WHEN session.harness_id = excluded.harness_id AND session.harness_access = excluded.harness_access THEN session.permission_mode ELSE NULL END,
+        permission_state_json = CASE WHEN session.harness_id = excluded.harness_id AND session.harness_access = excluded.harness_access THEN session.permission_state_json ELSE NULL END,
         harness_id = excluded.harness_id,
         harness_access = excluded.harness_access,
         harness_binary = excluded.harness_binary,
@@ -3639,6 +3642,7 @@ export class RuntimeStore {
       variant: string | null
       agent: string | null
       handoff_json: string | null
+      permission_state_json: string | null
       permission_mode: string | null
     }>(
         `
@@ -3654,7 +3658,8 @@ export class RuntimeStore {
           variant,
           agent,
           handoff_json,
-          permission_mode
+          permission_mode,
+          permission_state_json
         FROM session
         WHERE id = ?
       `,
@@ -3673,6 +3678,7 @@ export class RuntimeStore {
       agent: nullable(row.agent) ?? null,
       ...(handoff ? { handoff } : {}),
       ...(row.permission_mode ? { permissionMode: row.permission_mode } : {}),
+      ...(row.permission_state_json ? { permissionState: JSON.parse(row.permission_state_json) } : {}),
     }
   }
 
@@ -3691,6 +3697,7 @@ export class RuntimeStore {
       variant: string | null
       agent: string | null
       handoff_json: string | null
+      permission_state_json: string | null
       permission_mode: string | null
       updated_at: number
     }>(
@@ -3709,6 +3716,7 @@ export class RuntimeStore {
           agent,
           handoff_json,
           permission_mode,
+          permission_state_json,
           updated_at
         FROM session
         WHERE id = ?
@@ -3729,7 +3737,9 @@ export class RuntimeStore {
         createdAt: ts,
         updatedAt: ts,
       })
-      if (patch.permissionMode !== undefined) this.applyConfigUpdate(id, { permissionMode: patch.permissionMode }, ts, directory)
+      if (patch.permissionMode !== undefined || patch.permissionState !== undefined) {
+        this.applyConfigUpdate(id, { permissionMode: patch.permissionMode, permissionState: patch.permissionState }, ts, directory)
+      }
       return
     }
     const nextHarness = patch.harness ?? prevHarness
@@ -3739,7 +3749,7 @@ export class RuntimeStore {
       .prepare(
         `
 	      UPDATE session
-	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, handoff_json = ?, permission_mode = ?, updated_at = ?
+	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, handoff_json = ?, permission_mode = ?, permission_state_json = ?, updated_at = ?
 	      WHERE id = ?
 	    `,
       )
@@ -3758,6 +3768,9 @@ export class RuntimeStore {
         patch.permissionMode === undefined
           ? nextHarness?.id === prevHarness?.id && nextHarness?.access === prevHarness?.access ? prev.permission_mode : null
           : patch.permissionMode,
+        patch.permissionState === undefined
+          ? nextHarness?.id === prevHarness?.id && nextHarness?.access === prevHarness?.access ? prev.permission_state_json : null
+          : patch.permissionState ? JSON.stringify(patch.permissionState) : null,
         prev.updated_at,
         id,
       )

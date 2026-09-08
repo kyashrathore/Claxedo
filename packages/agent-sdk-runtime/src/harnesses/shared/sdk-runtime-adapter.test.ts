@@ -627,6 +627,7 @@ describe("SdkRuntimeAdapter", () => {
       pendingQuestions: new Map(),
       bindSession() {},
       getAgentSessionId: () => "thread-1",
+      updatePermissionState() {},
       getSessionConfig: () => null,
       publishGoal() {},
       runProviderTurn: async () => false,

@@ -46,7 +46,9 @@ function slug(value: string) {
 
 async function startServer(existingDataDir?: string) {
   dataDir = existingDataDir ?? await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-smoke-data-"))
-  server = spawn("bun", ["run", "start"], {
+  // Own the actual server process so restart waits for its data-directory
+  // lock to be released, rather than merely stopping the package-script parent.
+  server = spawn("node", ["--conditions=development", "--import", "../workspace-runtime/src/text-imports.mjs", "--import", "tsx", "src/deployments/self-hosted-node/index.ts"], {
     cwd: SERVER_DIR,
     env: {
       ...process.env,
@@ -67,13 +69,24 @@ async function startServer(existingDataDir?: string) {
 }
 
 async function stopServer() {
-  if (server && server.exitCode === null) {
-    server.kill("SIGTERM")
-    await new Promise<void>((resolve) => {
-      server?.once("exit", () => resolve())
-      setTimeout(resolve, 5_000)
-    })
-    if (server.exitCode === null) server.kill("SIGKILL")
+  const child = server
+  if (!child) return
+  if (child.exitCode === null && child.signalCode === null) {
+    const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()))
+    child.kill("SIGTERM")
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const graceful = await Promise.race([
+        exited.then(() => true),
+        new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), 10_000) }),
+      ])
+      if (!graceful) {
+        child.kill("SIGKILL")
+        await exited
+      }
+    } finally {
+      clearTimeout(timer)
+    }
   }
   server = undefined
 }
@@ -626,6 +639,10 @@ test.describe("live real-harness smoke @live", () => {
           await expectAssistantReplyVisible(page, expectedReply)
           await expect(dock).toHaveCount(0)
           if (decision === "Allow always") {
+            await stopServer()
+            await startServer(dataDir)
+            await page.reload({ waitUntil: "domcontentloaded" })
+            await expectAssistantReplyVisible(page, expectedReply)
             await fs.rm(output)
             const followup = `AFTER-ALWAYS-${Date.now()}`
             await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
@@ -637,6 +654,23 @@ test.describe("live real-harness smoke @live", () => {
               .toBe(marker)
             await expectAssistantReplyVisible(page, followup)
             await expect(dock).toHaveCount(0)
+            // A new conversation in the same workspace must ask independently.
+            await fs.rm(output)
+            await openDraftPrompt(page, dir)
+            await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+            await waitForHarnessReady(page)
+            await permissionMode.click()
+            await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
+            await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+              `Run this shell command: printf '${marker}' | tee '${output}'. ` +
+              (harness === "codex" ? 'Use exec_command with sandbox_permissions="require_escalated" and justification="Write the isolated test file". ' : "Use the Bash tool. ") +
+              "Do not use other tools or alternative write methods. If denied, reply exactly ISOLATED-DENIAL.")
+            await page.locator(SELECTORS.submitControl).last().click()
+            await expect(dock).toBeVisible({ timeout: 60_000 })
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            await dock.getByRole("button", { name: "Deny", exact: true }).click()
+            await expectAssistantReplyVisible(page, "ISOLATED-DENIAL")
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
           }
           if (decision === "Deny") {
             expect(await fs.stat(output).then(() => true, () => false)).toBe(false)

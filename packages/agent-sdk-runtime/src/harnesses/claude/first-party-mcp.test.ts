@@ -37,6 +37,7 @@ function fixture() {
     getAgentSessionId: () => "claude-session",
     getSessionForAgentSession: () => null,
     getGoal: () => null,
+    updatePermissionState() {},
     getSessionConfig: () => null,
     publishGoal() {},
     async runProviderTurn() { return true },

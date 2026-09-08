@@ -88,6 +88,7 @@ function driverFor(binary: string, codexHome: string) {
     getAgentSessionId: () => null,
     getSessionForAgentSession: () => null,
     getGoal: () => null,
+    updatePermissionState() {},
     getSessionConfig: () => null,
     publishGoal() {},
     async runProviderTurn() { return true },

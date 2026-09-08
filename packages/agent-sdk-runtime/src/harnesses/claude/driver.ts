@@ -385,10 +385,18 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           resolve,
         })
       })
+      const updates = decision === "allow_always" ? sessionPermissionSuggestions(options.suggestions) : undefined
+      if (updates?.length) {
+        const accepted = applyClaudePermissionUpdates(this.host.getSessionConfig(input.sessionId)?.permissionState, updates)
+        // Persist before allowing execution, so a failed write cannot silently
+        // turn a durable approval into a one-turn approval.
+        this.host.updatePermissionState(input.sessionId, accepted.permissions, accepted.mode)
+        if (accepted.mode) this.permissionSelection.set(input.sessionId, accepted.mode)
+      }
       const result: PermissionResult = decision === "allow_once" || decision === "allow_always"
         ? {
             behavior: "allow",
-            ...(decision === "allow_always" ? { updatedPermissions: sessionPermissionSuggestions(options.suggestions) } : {}),
+            ...(decision === "allow_always" ? { updatedPermissions: updates } : {}),
           }
         : {
             behavior: "deny",
@@ -405,6 +413,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     )
     const systemPrompt = claudeSystemPrompt(input.input.system)
     const permissionModeId = this.permissionSelection.currentId(input.sessionId)
+    const permissions = readClaudePermissionState(this.host.getSessionConfig(input.sessionId)?.permissionState)
     const q: Query = (this.driverOptions.query ?? query)({
       prompt,
       options: {
@@ -424,7 +433,12 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         // in the deny floor below.
         ...(isClaudeSdkPermissionMode(permissionModeId) ? { permissionMode: permissionModeId } : {}),
         ...(permissionModeId === "bypassPermissions" ? { allowDangerouslySkipPermissions: true as const } : {}),
-        settings: { permissions: { deny: [...CLAUDE_DENY_FLOOR] } },
+        additionalDirectories: permissions.additionalDirectories,
+        settings: { permissions: {
+          allow: permissions.allow,
+          ask: permissions.ask,
+          deny: [...permissions.deny, ...CLAUDE_DENY_FLOOR],
+        } },
         canUseTool: requestPermission,
         ...(input.input.agent ? { agent: input.input.agent } : {}),
         ...(turnModel(input.input.model.modelID, input.model) ? { model: turnModel(input.input.model.modelID, input.model) } : {}),
@@ -693,4 +707,47 @@ function turnModel(input: string | undefined, configuredModel: string) {
 function sessionPermissionSuggestions(suggestions?: PermissionUpdate[]) {
   if (!suggestions?.length) return undefined
   return suggestions.map((item) => ({ ...item, destination: "session" as const }))
+}
+
+type ClaudePermissionState = {
+  allow: string[]
+  deny: string[]
+  ask: string[]
+  additionalDirectories: string[]
+}
+
+function readClaudePermissionState(state?: Record<string, unknown>): ClaudePermissionState {
+  const result: ClaudePermissionState = { allow: [], deny: [], ask: [], additionalDirectories: [] }
+  for (const key of ["allow", "deny", "ask", "additionalDirectories"] as const) {
+    const value = state?.[key]
+    if (value === undefined) continue
+    if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+      throw new Error(`Invalid persisted Claude permission ${key}`)
+    }
+    result[key] = [...value]
+  }
+  return result
+}
+
+/** Replay the provider's accepted updates; rule matching remains Claude's job. */
+export function applyClaudePermissionUpdates(state: Record<string, unknown> | undefined, updates: PermissionUpdate[]) {
+  const permissions = readClaudePermissionState(state)
+  let mode: string | undefined
+  for (const update of updates) {
+    if (update.type === "setMode") {
+      if (!isClaudeSdkPermissionMode(update.mode)) throw new Error(`Unsupported Claude permission mode ${update.mode}`)
+      mode = update.mode
+    } else if (update.type === "addDirectories") {
+      permissions.additionalDirectories = [...new Set([...permissions.additionalDirectories, ...update.directories])]
+    } else if (update.type === "removeDirectories") {
+      permissions.additionalDirectories = permissions.additionalDirectories.filter((value) => !update.directories.includes(value))
+    } else {
+      const rules = update.rules.map((rule) => rule.ruleContent === undefined ? rule.toolName : `${rule.toolName}(${rule.ruleContent})`)
+      const current = permissions[update.behavior]
+      permissions[update.behavior] = update.type === "replaceRules" ? rules
+        : update.type === "removeRules" ? current.filter((value) => !rules.includes(value))
+        : [...new Set([...current, ...rules])]
+    }
+  }
+  return { permissions, mode }
 }

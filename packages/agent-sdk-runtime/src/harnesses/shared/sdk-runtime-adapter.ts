@@ -157,6 +157,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       getSessionForAgentSession: (agentSessionId) => this.agentSessionIndex.get(agentSessionId),
       getGoal: (sessionId) => this.store.getGoal?.(sessionId) ?? null,
       getSessionConfig: (sessionId) => this.store.getSessionConfig(sessionId),
+      updatePermissionState: (sessionId, state, modeId) => {
+        if (!this.store.updateSessionConfig(sessionId, {
+          permissionState: state,
+          ...(modeId ? { permissionMode: modeId } : {}),
+        })) throw new Error(`Cannot persist permissions for missing session ${sessionId}`)
+      },
       publishGoal: (input) => this.publishGoal(input.sessionId, input.directory, input.goal),
       runProviderTurn: (input, execute) => this.runProviderTurn(input.sessionId, input.directory, execute),
     })

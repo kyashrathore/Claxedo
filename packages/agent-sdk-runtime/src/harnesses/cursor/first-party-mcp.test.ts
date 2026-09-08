@@ -47,6 +47,7 @@ function fixture() {
     getAgentSessionId: () => "cursor-agent-1",
     getSessionForAgentSession: () => null,
     getGoal: () => null,
+    updatePermissionState() {},
     getSessionConfig: () => null,
     publishGoal() {},
     async runProviderTurn() { return true },

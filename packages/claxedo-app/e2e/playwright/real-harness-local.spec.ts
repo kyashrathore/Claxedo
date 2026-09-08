@@ -1578,12 +1578,16 @@ test.describe("real harness journeys @core @tier-real", () => {
       }
     })
 
-    for (const decision of ["Allow once", "Allow always", "Deny"] as const) {
-      test(`${harness} native permission ${decision} gates a real file write after reload`, async ({ page }) => {
+    for (const [decision, canonicalDirectory] of [
+      ["Allow once", false], ["Allow always", false], ["Deny", false],
+      ...(harness === "claude" ? [["Allow always", true] as const] : []),
+    ] as const) {
+      test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
         requireBinary(binary, harness, "install the native CLI to exercise its tool approval boundary.")
         const dir = await makeWorkspace(`${harness}-permission`, harness)
-        const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-permission-write-"))
+        const createdOutputDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-permission-write-"))
+        const outputDir = canonicalDirectory ? await fs.realpath(createdOutputDir) : createdOutputDir
         const output = path.join(outputDir, "result.txt")
         try {
           await seedOneProject(page, dir)

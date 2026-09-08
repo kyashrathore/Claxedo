@@ -204,6 +204,8 @@ export type SessionHarness = {
 export type SessionConfig = {
   /** Accepted harness mode, persisted by the permission-mode operation. */
   permissionMode?: string
+  /** Native permission state accepted by the driver; opaque to shared consumers. */
+  permissionState?: Record<string, unknown>
   harness: SessionHarness
   model?: PromptModel
   variant?: string | null
@@ -222,6 +224,7 @@ export type SessionConfig = {
  */
 export type SessionConfigUpdate = {
   permissionMode?: string | null
+  permissionState?: Record<string, unknown> | null
   harness?: SessionHarness
   model?: PromptModel | null
   variant?: string | null
@@ -231,8 +234,8 @@ export type SessionConfigUpdate = {
 
 /** Config fields accepted from public session create/update requests.
  * Handoff and accepted permission state are runtime-owned; permission changes
- * must go through the adapter-validated permission-mode operation. */
-export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff" | "permissionMode">
+ * must go through the adapter permission-mode or permission-reply operation. */
+export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff" | "permissionMode" | "permissionState">
 
 export type AgentRuntimeStreamEvent = RuntimeStreamEvent | CompatEvent
 export type RuntimeDirectory = string | undefined
