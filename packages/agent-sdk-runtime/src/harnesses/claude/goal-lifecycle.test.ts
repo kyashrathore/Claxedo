@@ -13,8 +13,8 @@ import {
 function goalDriver(
   options: ClaudeSdkDriverOptions,
   onPublish: (goal: unknown) => void = () => {},
+  lifecycle = createSessionTurnLifecycle(),
 ) {
-  const lifecycle = createSessionTurnLifecycle()
   return createClaudeSdkDriver({
     lifecycle: () => lifecycle as never,
     pendingPermissions: new Map(),
@@ -55,16 +55,79 @@ function goalTurnInput() {
 }
 
 describe("Claude native Goal lifecycle", () => {
+  test("drains cancellation before clearing the native hook and rejects late Goal updates", async () => {
+    const lifecycle = createSessionTurnLifecycle()
+    const input = goalTurnInput()
+    const release = lifecycle.enter(input.sessionId)!
+    const order: string[] = []
+    let ready!: () => void
+    const started = new Promise<void>((resolve) => { ready = resolve })
+    const driver = goalDriver({ query: ((request: any) => {
+      const stream = (async function* () {
+        if (request.prompt === "/goal clear") {
+          expect(lifecycle.busySessions.has(input.sessionId)).toBe(false)
+          order.push("clear")
+          yield { type: "result", subtype: "success", is_error: false, num_turns: 0 }
+          return
+        }
+        await request.options.sessionStore.append({}, [{ type: "attachment", attachment: {
+          type: "goal_status", met: false, condition: "Wait for my answer",
+        } }])
+        ready()
+        await new Promise<void>((resolve) => input.abort.signal.addEventListener("abort", () => resolve(), { once: true }))
+        order.push("aborted")
+        await request.options.sessionStore.append({}, [{ type: "attachment", attachment: { type: "goal_status", met: true } }])
+        yield { type: "active_goal", value: null }
+      })()
+      return Object.assign(stream, { close() {} }) as unknown as Query
+    }) as never }, () => {}, lifecycle)
+    const run = driver.nativeGoal!.run(input, "Wait for my answer", () => {}).finally(() => {
+      order.push("idle")
+      lifecycle.delete(input.sessionId)
+      release()
+    })
+    await started
+    expect(await driver.nativeGoal!.stop(input.sessionId, input.directory)).toMatchObject({ status: "paused", objective: "Wait for my answer" })
+    await run
+    expect(order).toEqual(["aborted", "idle", "clear"])
+    expect(await driver.nativeGoal!.read(input.sessionId, input.directory)).toMatchObject({ status: "paused" })
+  })
+
+  test("does not accept a model response as confirmation that the native hook was cleared", async () => {
+    const driver = goalDriver({ query: ((request: any) => {
+      const stream = (async function* () {
+        if (request.prompt === "/goal clear") {
+          yield { type: "result", subtype: "success", is_error: false, num_turns: 1 }
+          return
+        }
+        await request.options.sessionStore.append({}, [{ type: "attachment", attachment: {
+          type: "goal_status", met: false, condition: "Wait for my answer",
+        } }])
+      })()
+      return Object.assign(stream, { close() {} }) as unknown as Query
+    }) as never })
+    await driver.nativeGoal!.run(goalTurnInput(), "Wait for my answer", () => {})
+    await expect(driver.nativeGoal!.stop("session-1", "/repo")).rejects.toThrow("did not confirm")
+    expect(await driver.nativeGoal!.read("session-1", "/repo")).toMatchObject({
+      status: "blocked", lastReason: "Claude did not confirm clearing the native Goal",
+    })
+  })
+
   test("sends /goal through query and accepts the CLI transcript Goal authority", async () => {
     const calls: unknown[] = []
     const published: unknown[] = []
     const fakeQuery = ((input: {
+      prompt: string
       options: {
         sessionStore: { append(key: { projectKey: string; sessionId: string }, entries: unknown[]): Promise<void> }
       }
     }) => {
       calls.push(input)
       const stream = (async function* () {
+        if (input.prompt === "/goal clear") {
+          yield { type: "result", subtype: "success", is_error: false, num_turns: 0 }
+          return
+        }
         await input.options.sessionStore.append(
           { projectKey: "/repo", sessionId: "claude-session" },
           [{
@@ -104,8 +167,11 @@ describe("Claude native Goal lifecycle", () => {
       objective: "Ship when checks pass",
       status: "paused",
     })
-    // Delete must not be advertised: the Claude CLI session has no provider
-    // clear operation, so a resumed session would re-emit a "deleted" Goal.
+    expect(calls).toMatchObject([
+      { prompt: "/goal Ship when checks pass" },
+      { prompt: "/goal clear", options: { resume: "claude-session", cwd: "/repo", tools: [] } },
+    ])
+    // Delete is added by the resource, after stop has cleared the native hook.
     expect(await driver.nativeGoal!.capabilities("session-1", "/repo")).toMatchObject({
       actions: [],
     })

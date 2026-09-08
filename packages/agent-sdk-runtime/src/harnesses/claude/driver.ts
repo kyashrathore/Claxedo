@@ -44,6 +44,7 @@ import {
   stringRecord,
 } from "../shared/sdk-runtime-adapter"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
+import { interruptGoalTurn } from "../shared/goal-stop-order"
 import { claudeAuthEnv, claudeAuthValue } from "./auth"
 import { requireClaudeExecutable } from "./executable"
 import { harnessSpawnEnv } from "../shared/spawn-env"
@@ -178,10 +179,9 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     }),
     read: (sessionId) => this.goalStore.read(sessionId),
     run: (input, objective, onGoal) => this.runQuery(input, nativeGoalCommand(objective), onGoal),
-    stop: (sessionId) => this.goalStore.stop(sessionId),
-    // Deleting drops Claxedo's record of the Goal. The Claude CLI session keeps
-    // its transcript, but Goal state is only ever re-read during a Goal turn's
-    // own mirror, so nothing re-emits a forgotten Goal on interactive turns.
+    stop: (sessionId, directory) => this.stopGoal(sessionId, directory),
+    // The resource calls stop first, which clears the native Stop hook before
+    // this removes the retained, paused objective.
     delete: async (sessionId) => {
       const had = !!this.goalStore.peek(sessionId)
       this.goalStore.forget(sessionId)
@@ -279,6 +279,56 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     await this.runQuery(input, extractTextFromParts(input.input.parts))
   }
 
+  private async stopGoal(sessionId: string, directory: string) {
+    const goal = this.goalStore.peek(sessionId)
+    if (!goal) return null
+    const resume = this.host.getAgentSessionId(sessionId)
+    if (!resume || resume.startsWith(CLAUDE_PENDING_PREFIX)) throw new Error("Claude Goal has no native session to clear")
+    // Claude persists its Stop hook in the session transcript. Kill and drain
+    // its current query before reopening that same session to clear the hook.
+    await interruptGoalTurn(sessionId, this.host.lifecycle())
+    const abortController = new AbortController()
+    let cleared = false
+    const q = (this.driverOptions.query ?? query)({
+      prompt: nativeGoalCommand("clear"),
+      options: {
+        cwd: directory,
+        resume,
+        pathToClaudeCodeExecutable: (this.driverOptions.executable ?? requireClaudeExecutable)(),
+        abortController,
+        tools: [],
+        maxTurns: 1,
+        canUseTool: async () => ({ behavior: "deny", message: "Clearing the session Goal does not execute tools" }),
+        env: claudeSpawnEnv({ ...process.env, ...claudeAuthEnv(this.auth.anthropic) }),
+        spawnClaudeCodeProcess: (options) => spawnObservedClaudeCodeProcess({
+          options, observer: this.host.processObserver, role: "harness", sessionId,
+        }),
+      },
+    })
+    const timeout = setTimeout(() => abortController.abort(), 30_000)
+    try {
+      for await (const message of q) {
+        // Slash commands are handled locally. A model turn is not evidence
+        // that the native command cleared the persisted hook.
+        if (message.type === "result") {
+          cleared = message.subtype === "success" && !message.is_error && message.num_turns === 0
+        }
+      }
+      if (!cleared) throw new Error("Claude did not confirm clearing the native Goal")
+    } catch (cause) {
+      const blocked = { ...goal, status: "blocked" as const, updatedAt: Date.now(), lastReason: errorMessage(cause) }
+      this.goalStore.apply(sessionId, blocked)
+      this.host.publishGoal({ sessionId, directory, goal: blocked })
+      throw cause
+    } finally {
+      clearTimeout(timeout)
+      q.close()
+    }
+    const paused = { ...goal, status: "paused" as const, updatedAt: Date.now() }
+    this.goalStore.apply(sessionId, paused)
+    return paused
+  }
+
   private async runQuery(
     input: SdkRuntimeTurnInput,
     prompt: string,
@@ -308,6 +358,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
        */
       goalSessionStore = {
         append: async (_key, entries) => {
+          if (input.abort.signal.aborted) return
           for (const entry of entries) {
             const goal = claudeTranscriptGoalSnapshot(
               input.sessionId,
@@ -475,6 +526,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     try {
       for await (const message of q as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
         if (message.type === "active_goal") {
+          if (input.abort.signal.aborted) continue
           applyGoal(claudeGoalSnapshot(input.sessionId, message))
           continue
         }
