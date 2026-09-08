@@ -570,17 +570,20 @@ export function createRouteIntentAdapter(input: {
       matchesWorkspaceRoute(focused, intent.workspaceRouteId)
 
     const nextTitle = intent.sessionTitle || "Session"
-    const nextSessionRef = sessionRefForWorkspaceSession({
-      sessionId: intent.sessionId,
-      directory: workspaceId,
-      workspace: intent.workspaceBacking,
-    })
     const existingSession = findContent(
       (content) =>
         contentMatchesSessionRoute(content, intent.sessionId!) &&
         contentDirectory(content) === workspaceId &&
         matchesWorkspaceRoute(content, intent.workspaceRouteId),
     )
+    // Route navigation supplies workspace placement, not a new harness
+    // selection. Preserve the identity established when this session started.
+    const nextSessionRef = sessionRefForWorkspaceSession({
+      sessionId: intent.sessionId,
+      directory: workspaceId,
+      workspace: intent.workspaceBacking,
+      harness: existingSession?.content?.sessionRef?.harness,
+    })
     if (
       intent.workspaceBacking &&
       existingSession?.content?.type === "session" &&

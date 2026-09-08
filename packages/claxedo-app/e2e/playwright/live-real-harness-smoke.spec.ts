@@ -401,6 +401,40 @@ test.describe("live real-harness smoke @live", () => {
   }
 
   for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} live Goal completion reaches persisted state and the dock`, async ({ page }) => {
+      const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+      test.skip(!binary, `The live Goal flow requires the installed and authenticated ${harness} CLI.`)
+      const dir = await makeWorkspace(`${harness}-live-goal-completion`)
+      await seedOneProject(page, dir)
+      const input = await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+      await waitForHarnessReady(page)
+      const marker = `GOAL-COMPLETE-${Date.now()}`
+      await composePrompt(page, input, `/goal Reply with exactly this one token: ${marker}. The Goal is complete once that reply has been sent. Use the native Goal completion control when done. Do not run workspace tools or ask questions.`)
+      const accepted = page.waitForResponse((response) => response.request().method() === "POST" && /\/session\/[^/]+\/goal$/.test(new URL(response.url()).pathname))
+      await page.locator(SELECTORS.submitControl).last().click()
+      const started = await accepted
+      expect(started.ok()).toBe(true)
+      expect((await started.json()).goal?.objective).toContain(marker)
+      await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+      const sessionId = new URL(page.url()).pathname.split("/").at(-1)!
+      await expectAssistantReplyVisible(page, marker, { spec: "live-real-harness-smoke", scenario: `${harness}-goal-complete`, timeout: 90_000 })
+      await expect.poll(async () => {
+        const response = await page.request.get(`${BACKEND_URL}/session/${sessionId}/goal/state`, { params: { directory: dir } })
+        expect(response.ok()).toBe(true)
+        const goal = (await response.json()).goal
+        return harness === "claude" ? goal : goal?.status
+      }, { timeout: 90_000, message: `${harness} must persist native Goal completion` }).toBe(harness === "claude" ? null : "complete")
+      const dock = page.locator('[data-component="session-goal-dock"]')
+      if (harness === "claude") await expect(dock).toHaveCount(0)
+      else await expect(dock.getByText("Complete", { exact: true })).toBeVisible()
+      await page.screenshot({ path: test.info().outputPath("live-goal-completed.png") })
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expectAssistantReplyVisible(page, marker)
+      if (harness === "claude") await expect(dock).toHaveCount(0)
+      else await expect(dock.getByText("Complete", { exact: true })).toBeVisible()
+    })
+
     for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true]] as const) {
     test(`${harness} native SDK question ${action} survives reload and preserves session usability${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)

@@ -656,6 +656,21 @@ describe("state route intent", () => {
     expect(harness.focused()).toBe("session:ses-loading")
   })
 
+  test("workspace route handoff retains the session's established harness identity", () => {
+    const harness = createRealRouteHarness()
+    harness.receive({ workspaceId: "/repo", sessionId: "ses_goal" })
+    const existing = harness.meta.all().find((entry) => entry.sessionId === "ses_goal")!
+    const sessionRef: SessionRef = {
+      sessionId: "ses_goal", host: "workspace", cwd: "/repo",
+      toolSandbox: { kind: "local", cwd: "/repo" },
+      harness: { kind: "native", harnessId: "claude" },
+    }
+    harness.meta.patch(existing.id, { content: { ...existing.content, type: "session", sessionRef } })
+    harness.receive({ workspaceId: "/repo", sessionId: "ses_goal" })
+    expect(harness.meta.get(existing.id)?.content?.sessionRef).toEqual(sessionRef)
+    expect(harness.meta.all()).toHaveLength(1)
+  })
+
   test("session route cold boot opens one real workspace pane after inventory resolves", () => {
     const harness = createRealRouteHarness({
       sessionInventory: {

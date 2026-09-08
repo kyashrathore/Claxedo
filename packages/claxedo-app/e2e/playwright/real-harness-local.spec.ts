@@ -1157,9 +1157,8 @@ test.describe("real harness journeys @core @tier-real", () => {
         const dock = await startGoalFromComposer(page, input, entry, `Prove Claude ${entry} Goal Stop`)
 
         await expect(goalStatus(dock, "Active")).toBeVisible()
-        // A native Claude Goal runs inside the provider session, so Claxedo cannot pause or
-        // resume it — but it can drop its own record of one, which `createNativeGoalResource`
-        // advertises per session for an available driver. Delete is the only control here.
+        // Claude does not expose resume. Delete clears its native hook through
+        // the resource's stop-before-delete path, then removes the objective.
         await expect(dock.getByRole("button", { name: /Pause|Resume/ })).toHaveCount(0)
         await expect(dock.getByRole("button", { name: "Delete", exact: true })).toHaveCount(1)
         if (entry === "slash") {
@@ -1170,6 +1169,15 @@ test.describe("real harness journeys @core @tier-real", () => {
             timeout: 90_000,
             message: "native Claude Goal did not run its two-pass completion evaluation",
           }).toBe(2)
+          const sessionId = /(?:\/s\/|\/session\/)([^/]+)$/.exec(new URL(page.url()).pathname)?.[1]
+          expect(sessionId).toBeTruthy()
+          await expect.poll(async () => {
+            const response = await page.request.get(`${BACKEND_URL}/session/${sessionId}/goal/state`, {
+              params: { directory: dir },
+            })
+            expect(response.ok()).toBe(true)
+            return (await response.json()).goal
+          }, { timeout: 30_000, message: "completed Claude Goal must clear the authoritative session state" }).toBeNull()
           await expect(dock).toHaveCount(0, { timeout: 30_000 })
           expectScriptedTraffic("messages", 4)
           continue
