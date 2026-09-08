@@ -17,7 +17,6 @@ import {
   sessionStatusCacheQueryOptions,
   sessionTodoCacheQueryOptions,
 } from "@/features/session/data/sync/queries"
-import { dispatchSessionTodoEvent } from "@/features/session/store/session-status-dispatcher"
 import { sessionQuestionRequest, sessionVisiblePermissionRequest } from "./session-request-tree"
 import { permissionDecidedProperties } from "@/features/session/permission/modes"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
@@ -26,9 +25,9 @@ export const todoState = (input: {
   count: number
   done: boolean
   live: boolean
-}): "hide" | "clear" | "open" | "close" => {
+}): "hide" | "open" | "close" => {
   if (input.count === 0) return "hide"
-  if (!input.live) return "clear"
+  if (!input.live) return "hide"
   if (!input.done) return "open"
   return "close"
 }
@@ -167,12 +166,6 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     }, closeMs())
   }
 
-  const clear = () => {
-    const id = sessionParams.sessionId()
-    if (!id) return
-    dispatchSessionTodoEvent({ event: { type: "session.todo", source: "optimistic", sessionID: id, todos: [] } })
-  }
-
   createEffect(
     on(
       () => [todos().length, done(), live()] as const,
@@ -190,13 +183,6 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
           if (timer) window.clearTimeout(timer)
           timer = undefined
           setStore({ dock: false, closing: false, opening: false })
-          return
-        }
-
-        if (next === "clear") {
-          if (timer) window.clearTimeout(timer)
-          timer = undefined
-          clear()
           return
         }
 

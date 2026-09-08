@@ -1446,7 +1446,129 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
+  for (const harness of ["claude", "codex", "pi"] as const) {
+    test(`${harness} Stop kills a running shell and the same session accepts a follow-up`, async ({ page }) => {
+      const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+      requireBinary(binary, harness, "install the native CLI to exercise interruption of a real tool process.")
+      const dir = await makeWorkspace(`${harness}-stop-tool`, harness)
+      const pidFile = path.join(dir, "tool.pid")
+      const releaseFile = path.join(dir, "release-tool")
+      const finishedFile = path.join(dir, "tool-finished")
+      try {
+        await seedOneProject(page, dir)
+        const input = await openDraftPrompt(page, dir)
+        if (harness === "pi") {
+          await selectScriptedModel(page)
+        } else {
+          await switchDraftHarness(page, harness)
+          await waitForHarnessReady(page)
+          await page.locator('[data-action="prompt-permission-mode"]').last().click()
+          const mode = harness === "claude" ? "bypassPermissions" : "full-access"
+          await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
+        }
+        const marker = `STOP-TOOL-${Date.now()}`
+        const workload = path.join(dir, "interrupt-workload.cjs")
+        await fs.writeFile(workload, `const fs = require("node:fs"); fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); const timer = setInterval(() => { if (!fs.existsSync(${JSON.stringify(releaseFile)})) return; fs.writeFileSync(${JSON.stringify(finishedFile)}, "leaked"); clearInterval(timer); }, 50);`)
+        const command = `node '${workload}'`
+        scripted!.scriptTool({
+          name: harness === "claude" ? "Bash" : harness === "codex" ? "exec_command" : "bash",
+          input: harness === "claude" ? { command, timeout: 120000 }
+            : harness === "codex" ? { cmd: command, yield_time_ms: 30000 }
+            : { command, timeout: 120 },
+          whenPromptIncludes: marker,
+        })
+        await composePrompt(page, input, `Run the command, then reply with exactly this one token: ${marker}`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+        const sessionUrl = page.url()
+        await expect.poll(() => fs.readFile(pidFile, "utf8").catch(() => ""), { timeout: 30_000 }).toMatch(/^\d+$/)
+        const pid = Number(await fs.readFile(pidFile, "utf8"))
+        const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
+        expect(alive()).toBe(true)
+        expect(await fs.stat(finishedFile).then(() => true, () => false)).toBe(false)
+        await page.getByRole("button", { name: "Stop", exact: true }).click()
+        await expect.poll(alive, { timeout: 15_000, message: `${harness} left the interrupted shell running` }).toBe(false)
+        await fs.writeFile(releaseFile, "release")
+        const followup = page.getByRole("textbox", { name: /Ask anything/i }).last()
+        await expect(followup).toBeVisible()
+        const nextMarker = `AFTER-${marker}`
+        await composePrompt(page, followup, `Reply with exactly this one token: ${nextMarker}`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expectAssistantReplyVisible(page, nextMarker)
+        await expect(page).toHaveURL(sessionUrl)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expectAssistantReplyVisible(page, nextMarker)
+        expect(await fs.stat(finishedFile).then(() => true, () => false)).toBe(false)
+      } finally {
+        await fs.writeFile(releaseFile, "release")
+      }
+    })
+  }
+
   for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} native todo progress survives reload and completes through its real tool`, async ({ page }) => {
+      const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+      requireBinary(binary, harness, "install the native CLI to exercise its task tracking tool.")
+      const dir = await makeWorkspace(`${harness}-todo`, harness)
+      await seedOneProject(page, dir)
+      await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness)
+      await waitForHarnessReady(page)
+      const tasks = ["Inspect source", "Verify behavior", "Report result"]
+      const marker = `TODO-${Date.now()}`
+      let release = () => {}
+      try {
+        for (const complete of [false, true]) {
+          const token = `${marker}-${complete ? "DONE" : "PROGRESS"}`
+          const statuses = complete ? ["completed", "completed", "completed"] : ["completed", "in_progress", "pending"]
+          release = scripted!.holdTextReplies(token)
+          scripted!.scriptTool({
+            name: harness === "claude" ? "TodoWrite" : "update_plan",
+            input: harness === "claude"
+              ? { todos: tasks.map((content, i) => ({ content, activeForm: content, status: statuses[i] })) }
+              : { plan: tasks.map((step, i) => ({ step, status: statuses[i] })) },
+            whenPromptIncludes: token,
+          })
+          await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+            `Update the task list, then reply with exactly this one token: ${token}`)
+          await page.locator(SELECTORS.submitControl).last().click()
+          await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+          const sessionID = new URL(page.url()).pathname.split("/").at(-1)!
+          const readTodos = async () => {
+            const response = await page.request.get(`${BACKEND_URL}/session/${sessionID}/todo?directory=${encodeURIComponent(dir)}`)
+            expect(response.ok()).toBe(true)
+            return await response.json() as Array<{ content: string; status: string }>
+          }
+          await expect.poll(async () => (await readTodos()).map(({ content, status }) => ({ content, status })), { timeout: 30_000 })
+            .toEqual(tasks.map((content, i) => ({ content, status: statuses[i] })))
+          const dock = page.locator('[data-component="session-todo-dock"]')
+          if (!complete) {
+            await expect(dock).toBeVisible()
+            await expect(dock.locator('span[aria-label="1 of 3 todos completed"]')).toBeVisible()
+            await page.reload({ waitUntil: "domcontentloaded" })
+            await expect(dock).toBeVisible()
+            await expect(dock).toContainText("Verify behavior")
+            await page.locator('[data-action="session-todo-toggle-button"]').click()
+            await expect(page.locator('[data-slot="session-todo-preview"] [data-component="text-reveal"]'))
+              .toHaveAttribute("aria-label", "Verify behavior")
+            await page.screenshot({ path: test.info().outputPath("todo-progress-reloaded.png") })
+          } else {
+            await expect(dock).toHaveCount(0, { timeout: 10_000 })
+          }
+          release()
+          await expectAssistantReplyVisible(page, token)
+          if (complete) {
+            await page.reload({ waitUntil: "domcontentloaded" })
+            await expectAssistantReplyVisible(page, token)
+            expect((await readTodos()).map((todo) => todo.status)).toEqual(statuses)
+            await expect(dock).toHaveCount(0)
+          }
+        }
+      } finally {
+        release()
+      }
+    })
+
     for (const decision of ["Allow once", "Deny"] as const) {
       test(`${harness} native permission ${decision} gates a real file write after reload`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)

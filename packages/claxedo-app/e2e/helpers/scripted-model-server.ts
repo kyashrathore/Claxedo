@@ -89,6 +89,8 @@ export type ScriptedModelServer = {
    * not already carry the tool's result gets `tool_use` instead of text.
    */
   scriptTool(call: ScriptedToolCall): void
+  /** Hold matching text replies until released; tool replies still execute. */
+  holdTextReplies(marker: string): () => void
   /**
    * Hold every subsequent reply for `ms` before writing it — OFF (0) by
    * default so no existing spec slows down. The request is still counted and
@@ -157,6 +159,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   const requests: ScriptedModelRequest[] = []
   let counts: Record<ScriptedDialect, number> = { chat: 0, messages: 0, responses: 0 }
   let pendingTool: ScriptedToolCall | undefined
+  let textGate: { marker: string; promise: Promise<void>; release: () => void } | undefined
   let goalEvaluationCount = 0
   let sequence = 0
   let replyDelayMs = 0
@@ -176,7 +179,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     const request = modelRequestBody(dialect, await readJson(incoming))
     const body = request.body
     counts[request.dialect] += 1
-    sequence += 1
+    const requestSequence = ++sequence
 
     const prompt = promptText(request)
     const toolResultSeen = hasToolResult(request)
@@ -209,6 +212,9 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
       reply = { kind: "text", text: marker ?? "ok" }
     }
     requests.push({ dialect: request.dialect, path, body, model: body.model ?? "scripted", prompt, reply, tools: modelTools(body) })
+    if (reply.kind === "text" && textGate && prompt.includes(textGate.marker) && !prompt.includes(TITLE_PROMPT)) {
+      await textGate.promise
+    }
 
     // Counted and recorded ABOVE, before any delay — a caller polling
     // `counts()` sees the hit immediately, regardless of `replyDelayMs`.
@@ -216,9 +222,9 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     // `claude`/session turn) in a "busy" state for an assertable window.
     if (replyDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, replyDelayMs))
 
-    if (request.dialect === "chat") return await respondChat(outgoing, sequence, reply, textStreamPacing)
-    if (request.dialect === "responses") return respondResponses(outgoing, sequence, request.body, reply)
-    return respondMessages(outgoing, sequence, request.body, reply)
+    if (request.dialect === "chat") return await respondChat(outgoing, requestSequence, reply, textStreamPacing)
+    if (request.dialect === "responses") return respondResponses(outgoing, requestSequence, request.body, reply)
+    return respondMessages(outgoing, requestSequence, request.body, reply)
   })
 
   await new Promise<void>((resolve, reject) => {
@@ -254,6 +260,17 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     scriptTool: (call) => {
       pendingTool = call
     },
+    holdTextReplies: (marker) => {
+      if (textGate) throw new Error("A scripted text reply gate is already active")
+      let release: () => void = () => {}
+      const promise = new Promise<void>((resolve) => { release = resolve })
+      const gate = { marker, promise, release }
+      textGate = gate
+      return () => {
+        release()
+        if (textGate === gate) textGate = undefined
+      }
+    },
     setReplyDelayMs: (ms) => {
       replyDelayMs = ms
     },
@@ -261,6 +278,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
       textStreamPacing = pacing
     },
     close: async () => {
+      textGate?.release()
       await closeAll(server)
       await fs.rm(piAgentDir, { recursive: true, force: true })
     },

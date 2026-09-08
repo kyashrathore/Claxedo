@@ -360,7 +360,111 @@ test.describe("live real-harness smoke @live", () => {
     await expect(page.locator('[data-action="prompt-harness-model"]').filter({ visible: true })).toHaveAttribute("data-harness", "claude")
   })
 
+  for (const harness of ["claude", "codex", "opencode"] as const) {
+    test(`${harness} live todo list survives reload while work runs and settles when complete`, async ({ page }) => {
+      const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+      test.skip(!binary, `The live todo flow requires the installed and authenticated ${harness} CLI.`)
+      const dir = await makeWorkspace(`${harness}-live-todo`)
+      const releaseFile = path.join(dir, ".todo-test-release")
+      try {
+        await seedOneProject(page, dir)
+        const input = await openDraftPrompt(page, dir)
+        await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : harness === "codex" ? /^Codex$/ : /^OpenCode$/, 0)
+        await waitForHarnessReady(page)
+        if (harness !== "opencode") {
+          const permissionMode = page.locator('[data-action="prompt-permission-mode"]').last()
+          const mode = harness === "claude" ? "bypassPermissions" : "full-access"
+          await permissionMode.click()
+          await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
+        }
+        const marker = `LIVE-TODO-${Date.now()}`
+        const tasks = ["Inspect source", "Verify behavior", "Report result"]
+        await composePrompt(page, input,
+          `Use ${harness === "claude" ? "TodoWrite" : harness === "codex" ? "update_plan" : "todowrite"} to set exactly three tasks with these verbatim names and statuses: ` +
+          '"Inspect source": completed, "Verify behavior": in_progress, "Report result": pending. ' +
+          `Then run this shell command with a 120000ms timeout and wait for it to finish: while [ ! -f '${releaseFile}' ]; do sleep 0.1; done. ` +
+          `The test runner will create that file; do not create it yourself. After the command finishes, use the same task tool to mark all three completed, ` +
+          `then reply exactly ${marker}. Do not run any other tools.`,
+        )
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+        const sessionID = new URL(page.url()).pathname.split("/").at(-1)!
+        const readTodos = async () => {
+          const response = await page.request.get(`${BACKEND_URL}/session/${sessionID}/todo?directory=${encodeURIComponent(dir)}`)
+          expect(response.ok()).toBe(true)
+          return await response.json() as Array<{ content: string; status: string }>
+        }
+        await expect.poll(async () => (await readTodos()).map(({ content, status }) => ({ content, status })), { timeout: 60_000 })
+          .toEqual(tasks.map((content, i) => ({ content, status: ["completed", "in_progress", "pending"][i] })))
+        const dock = page.locator('[data-component="session-todo-dock"]')
+        await expect(dock).toBeVisible()
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expect(dock).toBeVisible()
+        await expect(dock).toContainText("Verify behavior")
+        await page.screenshot({ path: test.info().outputPath("live-todo-progress.png") })
+        await fs.writeFile(releaseFile, "release")
+        await expectAssistantReplyVisible(page, marker, { spec: "live-real-harness-smoke", scenario: `${harness}-todo-complete`, timeout: 60_000 })
+        await expect(dock).toHaveCount(0)
+        expect((await readTodos()).map(({ content, status }) => ({ content, status })))
+          .toEqual(tasks.map((content) => ({ content, status: "completed" })))
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expectAssistantReplyVisible(page, marker)
+        await expect(dock).toHaveCount(0)
+      } finally {
+        await fs.writeFile(releaseFile, "release")
+      }
+    })
+  }
+
   for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} live Stop ends the tool process and recovers the session`, async ({ page }) => {
+      const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+      test.skip(!binary, `The live Stop flow requires the installed and authenticated ${harness} CLI.`)
+      const dir = await makeWorkspace(`${harness}-live-stop`)
+      const pidFile = path.join(dir, "tool.pid")
+      const releaseFile = path.join(dir, "release-tool")
+      const finishedFile = path.join(dir, "tool-finished")
+      try {
+        await seedOneProject(page, dir)
+        const input = await openDraftPrompt(page, dir)
+        await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+        await waitForHarnessReady(page)
+        await page.locator('[data-action="prompt-permission-mode"]').last().click()
+        const mode = harness === "claude" ? "bypassPermissions" : "full-access"
+        await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
+        const workload = path.join(dir, "interrupt-workload.cjs")
+        await fs.writeFile(workload, `const fs = require("node:fs"); fs.writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); const timer = setInterval(() => { if (!fs.existsSync(${JSON.stringify(releaseFile)})) return; fs.writeFileSync(${JSON.stringify(finishedFile)}, "leaked"); clearInterval(timer); }, 50);`)
+        const command = `node '${workload}'`
+        await composePrompt(page, input,
+          `Run exactly this shell command: ${command}. ` +
+          (harness === "claude" ? "Use Bash with timeout 120000. " : "Use exec_command with yield_time_ms 30000. ") +
+          "Do not create the release file or run any other tools. The test runner controls this command's lifecycle.",
+        )
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+        const sessionUrl = page.url()
+        await expect.poll(() => fs.readFile(pidFile, "utf8").catch(() => ""), { timeout: 60_000 }).toMatch(/^\d+$/)
+        const pid = Number(await fs.readFile(pidFile, "utf8"))
+        const alive = () => { try { process.kill(pid, 0); return true } catch { return false } }
+        expect(alive()).toBe(true)
+        await page.screenshot({ path: test.info().outputPath("live-tool-running.png") })
+        await page.getByRole("button", { name: "Stop", exact: true }).click()
+        await expect.poll(alive, { timeout: 15_000, message: `${harness} left the interrupted tool process running` }).toBe(false)
+        await fs.writeFile(releaseFile, "release")
+        const marker = `LIVE-AFTER-STOP-${Date.now()}`
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+          `Reply with exactly ${marker}. Do not run any tools or resume the interrupted command.`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expectAssistantReplyVisible(page, marker, { spec: "live-real-harness-smoke", scenario: `${harness}-stop-recovered` })
+        await expect(page).toHaveURL(sessionUrl)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expectAssistantReplyVisible(page, marker)
+        expect(await fs.stat(finishedFile).then(() => true, () => false)).toBe(false)
+      } finally {
+        await fs.writeFile(releaseFile, "release")
+      }
+    })
+
     test(`${harness} live subagent completes an openable child transcript and survives reload`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       test.skip(!binary, `The live subagent flow requires the installed and authenticated ${harness} CLI.`)
