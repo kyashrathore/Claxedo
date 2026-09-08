@@ -1,3 +1,5 @@
+import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
+import { expectAssistantReplyVisible } from "../helpers/turn-oracle"
 import { expect, test, type Locator } from "@playwright/test"
 import { execFile } from "node:child_process"
 import * as fs from "node:fs/promises"
@@ -15,7 +17,7 @@ async function compose(input: Locator, text: string) {
   await expect(input).toContainText(text, { timeout: 10_000 })
 }
 
-for (const flow of ["reply", "tasks across full restart"] as const) {
+for (const flow of ["reply", "tasks across full restart", "tool error recovery across full restart"] as const) {
 test(`packaged app completes a real Codex-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-windows-live-codex-")))
@@ -82,6 +84,48 @@ test(`packaged app completes a real Codex-authenticated session: ${flow} @live @
     )
     await packaged.page.keyboard.press("Escape")
     await expect(control).not.toContainText(/Loading models|Select model|^$/, { timeout: 45_000 })
+
+    if (flow === "tool error recovery across full restart") {
+      await packaged.page.locator('[data-action="prompt-permission-mode"]').last().click()
+      await packaged.page.locator('[data-permission-mode-row][data-mode="full-access"]').click()
+      let sessionID = ""
+      const result = await expectToolErrorRecovery({ page: packaged.page, directory, backend: serverBase,
+        sessionID: () => sessionID,
+        run: async (command, marker) => {
+          const page = packaged!.page
+          const creation = !sessionID ? page.waitForResponse((response) =>
+            response.request().method() === "POST" && new URL(response.url()).pathname === "/session") : undefined
+          await compose(page.getByRole("textbox", { name: /Ask anything/i }).last(),
+            `Run exactly this shell command once: ${command}. Use exec_command. A nonzero exit is intentional; do not retry or repair it. After the tool returns, reply with exactly this one token: ${marker}`)
+          await page.locator('[data-action="prompt-submit"]:visible').last().click()
+          if (creation) {
+            const response = await creation
+            expect(response.ok()).toBe(true)
+            sessionID = (await response.json() as { id: string }).id
+          }
+          await expectAssistantReplyVisible(page, marker)
+        },
+      })
+      const appProcess = packaged.app.process()
+      await packaged.close()
+      await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
+      packaged = await launch()
+      expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+      await expect(packaged.page.locator(`[data-timeline-part-id="${result.failed.id}"] [data-kind="tool-error-card"]`)).toBeVisible()
+      const response = await fetch(`${serverBase}/session/${sessionID}/message?directory=${encodeURIComponent(directory)}`)
+      expect(response.ok).toBe(true)
+      const messages = await response.json() as Array<{ parts: Array<{ id: string }> }>
+      const parts = messages.flatMap((message) => message.parts)
+      expect(parts.find((part) => part.id === result.failed.id)).toEqual(result.failed)
+      expect(parts.find((part) => part.id === result.successful.id)).toEqual(result.successful)
+      expect(await fs.readFile(path.join(directory, "recovered.txt"), "utf8")).toBe("recovered")
+      const marker = `DESKTOP_AFTER_ERROR_RESTART_${Date.now()}`
+      await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${marker}`)
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      await expectAssistantReplyVisible(packaged.page, marker)
+      await packaged.page.screenshot({ path: test.info().outputPath("tool-error-after-restart.png") })
+      return
+    }
 
     if (flow === "tasks across full restart") {
       await packaged.page.locator('[data-action="prompt-permission-mode"]').last().click()

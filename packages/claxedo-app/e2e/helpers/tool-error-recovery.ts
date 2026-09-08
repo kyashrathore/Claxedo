@@ -7,6 +7,7 @@ export async function expectToolErrorRecovery(input: {
   page: Page
   directory: string
   backend: string
+  sessionID?: () => string
   run: (command: string, marker: string) => Promise<void>
 }) {
   const { page, directory, backend, run } = input
@@ -18,7 +19,7 @@ export async function expectToolErrorRecovery(input: {
   await fs.writeFile(successScript, `require('node:fs').writeFileSync(${JSON.stringify(output)}, 'recovered'); console.log('RECOVERY_TOOL_OK');`)
   await run(`node '${failedScript}'`, `FAILURE_OBSERVED_${Date.now()}`)
   const sessionUrl = page.url()
-  const sessionID = new URL(sessionUrl).pathname.split("/").at(-1)!
+  const sessionID = input.sessionID ? input.sessionID() : new URL(sessionUrl).pathname.split("/").at(-1)!
   const readTools = async () => {
     const response = await page.request.get(`${backend}/session/${sessionID}/message?directory=${encodeURIComponent(directory)}`)
     expect(response.ok()).toBe(true)
@@ -44,4 +45,5 @@ export async function expectToolErrorRecovery(input: {
   const persisted = await readTools()
   expect(persisted.find((part) => part.id === failed[0]!.id)).toEqual(failed[0])
   expect(persisted.find((part) => part.id === successful[0]!.id)).toEqual(successful[0])
+  return { sessionID, failed: failed[0]!, successful: successful[0]! }
 }
