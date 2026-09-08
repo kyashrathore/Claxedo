@@ -1,3 +1,4 @@
+import type { UpgradeWebSocket } from "./event-stream-response"
 import { Hono } from "hono"
 import { randomUUID } from "node:crypto"
 import { listCommands } from "@claxedo/server-core/agent-config/index"
@@ -20,6 +21,7 @@ import { sandboxFetchOptionsForRequest } from "../workspace/sandbox-fetch-option
 import { projectRoutes } from "./project-routes"
 
 export type ShellRouteOptions = {
+  upgradeWebSocket?: UpgradeWebSocket
   env?: NodeJS.ProcessEnv
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
@@ -37,6 +39,7 @@ export function ShellRoutes(options: ShellRouteOptions = {}) {
 
 function shellRoutes(options: ShellRouteOptions) {
   const stream = createGlobalEventsHandler(undefined, {
+    upgradeWebSocket: options.upgradeWebSocket,
     resolveSubscription: async (c) => {
       const auth = await controlPlaneAuthContext(c.req.raw, {
         ...(options.authConfig ? { config: options.authConfig } : {}),

@@ -135,6 +135,11 @@ export async function apiBearerToken(options?: { skipCache?: boolean }): Promise
   return (await cfg.bearerToken?.(options)) ?? null
 }
 
+/** Whether a transport must carry the API owner's bound authorization header. */
+export async function hasApiCredentials(): Promise<boolean> {
+  return Boolean(cfg.password || await apiBearerToken())
+}
+
 // Claxedo's own hosted app only — never opencode.ai or a subdomain of it,
 // which would treat upstream's hosted app as if it were ours.
 export function isHostedAppHostname(hostname: string | undefined) {

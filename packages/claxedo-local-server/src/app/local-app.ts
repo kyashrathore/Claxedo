@@ -300,6 +300,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.use(createWorkspaceRuntimeProxy(runtimeProxyOptions))
 
   app.route("/", ShellRoutes({
+    upgradeWebSocket,
     services,
     env,
     ...authRouteOptions(services),

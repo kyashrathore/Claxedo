@@ -1039,6 +1039,7 @@ export function createSelfHostedApp(
     app.route(
       "/",
       ShellRoutes({
+        upgradeWebSocket: nodeWebSocket.upgradeWebSocket,
         services,
         env: process.env,
         ...authRouteOptions(services),

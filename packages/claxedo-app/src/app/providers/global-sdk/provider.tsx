@@ -1,3 +1,4 @@
+import { useClaxedoEvents } from "@/app/integrations/claxedo-events"
 import { isAbortError } from "@/lib/abort-error"
 import { reportRuntimeContractMismatch, runtimeEnvelope, type RuntimeEventEnvelope } from "./runtime-envelope"
 import { createSimpleContext } from "@opencode-ai/ui/context"
@@ -142,9 +143,6 @@ const globalSDKContextInput = {
       if (centralTransportForServer(server.current.http.url) !== "loopback") return platform.fetch
       return undefined
     })()
-    const eventFetch = signedEventAccess() && centralTransportForServer(server.current?.http.url) !== "loopback"
-      ? authFetch
-      : rawEventFetch ?? platform.fetch ?? globalThis.fetch
 
     const currentServer = server.current
     if (!currentServer) throw new Error(language.t("error.globalSDK.noServerAvailable"))
@@ -196,17 +194,14 @@ const globalSDKContextInput = {
       error instanceof TypeError && error.message.toLowerCase() === "network error"
     const subagents = createSubagentRegistry()
 
-    let attempt: AbortController | undefined
     let runtimeAttempt: AbortController | undefined
     let runtimeRun: Promise<void> | undefined
     const projections: RuntimeProjectionCache = new Map()
-    let run: Promise<void> | undefined
     let started = false
     // Both halves are load-bearing for every stream loop below: `stop()`
     // clears `started` without aborting `abort` (a later `start()` reuses the
     // same scope), and scope teardown aborts without going through `stop()`.
     const streaming = () => started && !abort.signal.aborted
-    let lastGlobalEventId: string | undefined
     let lastRuntimeEventId: string | undefined
     let liveSessionRestartTimer: ReturnType<typeof setTimeout> | undefined
     // The stall budget is the producers' heartbeat contract, not a local guess:
@@ -215,7 +210,6 @@ const globalSDKContextInput = {
     const heartbeat = createHeartbeatWatchdog({
       timeoutMs: HEARTBEAT_TIMEOUT_MS,
       onTimeout: () => {
-        attempt?.abort()
         runtimeAttempt?.abort()
       },
     })
@@ -274,6 +268,7 @@ const globalSDKContextInput = {
             continue
           }
           runtimeAttempt = new AbortController()
+          heartbeat.touch()
           let becameReady = false
           const onAbort = () => {
             runtimeAttempt?.abort()
@@ -420,6 +415,7 @@ const globalSDKContextInput = {
           } finally {
             abort.signal.removeEventListener("abort", onAbort)
             runtimeAttempt = undefined
+            heartbeat.clear()
             reportSessionEventStreamClosed("runtime-events")
           }
 
@@ -435,83 +431,23 @@ const globalSDKContextInput = {
       return runtimeRun
     }
 
+    const controlEvents = useClaxedoEvents()
+    const releaseControlEvents = controlEvents.listenCentral((frame) => {
+      if (!streaming()) return
+      const event = compatEventEnvelope(frame)
+      if (!event) return
+      applySubagentCompatLifecycleEvent(event.payload, subagents)
+      enqueue(event.directory ?? "global", event.payload)
+    })
+    onCleanup(releaseControlEvents)
+
     const start = () => {
-      if (started) return run
       started = true
-      run = (async () => {
-        void startRuntimeEvents()
-        let failures = 0
-        while (streaming()) {
-          const quietDelay = fastSessionSwitchAnyQuietDelay()
-          if (quietDelay > 0) {
-            await wait(quietDelay)
-            continue
-          }
-          attempt = new AbortController()
-          heartbeat.touch()
-          let becameReady = false
-          const onAbort = () => {
-            attempt?.abort()
-          }
-          abort.signal.addEventListener("abort", onAbort)
-          try {
-            const headers = new Headers({ Accept: "text/event-stream" })
-            if (lastGlobalEventId) headers.set("Last-Event-ID", lastGlobalEventId)
-            const response = await eventFetch(new URL("/api/wr/events", currentServer.http.url), {
-              signal: attempt.signal,
-              headers,
-            })
-            let yielded = Date.now()
-            heartbeat.reset()
-            for await (const item of sseJsonStream(response, attempt.signal, (id) => {
-              lastGlobalEventId = id
-            })) {
-              heartbeat.reset()
-              becameReady = true
-              streamErrorLogged = false
-              const event = compatEventEnvelope(item)
-              if (!event) continue
-              const directory = event.directory ?? "global"
-              applySubagentCompatLifecycleEvent(event.payload, subagents)
-              enqueue(directory, event.payload)
-
-              if (Date.now() - yielded < STREAM_YIELD_MS) continue
-              yielded = Date.now()
-              await wait(0)
-            }
-          } catch (error) {
-            if (!aborted(error) && !transientStreamError(error) && !streamErrorLogged) {
-              streamErrorLogged = true
-              console.error("[global-sdk] event stream failed", JSON.stringify({
-                url: currentServer.http.url,
-                fetch: rawEventFetch ? "platform" : "webview",
-                error: error instanceof Error
-                  ? { name: error.name, message: error.message, stack: error.stack }
-                  : error,
-              }))
-            }
-          } finally {
-            abort.signal.removeEventListener("abort", onAbort)
-            attempt = undefined
-            heartbeat.clear()
-          }
-
-          if (!streaming()) return
-          // Reset backoff once the stream actually delivered data; otherwise grow
-          // it so a persistent 401/network failure stops hammering the server.
-          failures = becameReady ? 0 : failures + 1
-          await wait(reconnectBackoffMs(failures))
-        }
-      })().finally(() => {
-        run = undefined
-        flush()
-      })
-      return run
+      return startRuntimeEvents()
     }
 
     const stop = () => {
       started = false
-      attempt?.abort()
       runtimeAttempt?.abort()
       heartbeat.clear()
     }
@@ -548,7 +484,7 @@ const globalSDKContextInput = {
         if (document.visibilityState !== "visible") return
         if (!started) return
         if (heartbeat.sinceLastEvent() < HEARTBEAT_TIMEOUT_MS) return
-        attempt?.abort()
+        runtimeAttempt?.abort()
       }
       document.addEventListener("visibilitychange", handler)
       onCleanup(() => document.removeEventListener("visibilitychange", handler))

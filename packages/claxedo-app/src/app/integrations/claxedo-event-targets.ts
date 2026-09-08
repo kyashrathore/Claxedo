@@ -9,10 +9,11 @@
  * one, account bridge for the central control-plane stream).
  */
 
+import { openLocalEventWebSocket } from "@/platform/sync/local-event-websocket"
 import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { authFetch, getClaxedoServerUrl, hasApiCredentials } from "@/platform/api/api"
 import {
   accountStreamAvailable,
   openAccountStreamResponse,
@@ -209,6 +210,14 @@ export async function eventStreamFetch(
         params: lastEventId ? { lastEventId } : {},
         signal: init.signal ?? undefined,
       })
+    }
+    if (
+      !options?.request &&
+      centralTransportForServer(target.url.origin) === "loopback" &&
+      !new Headers(init.headers).has("Authorization") &&
+      !await hasApiCredentials()
+    ) {
+      return openLocalEventWebSocket(target.url, init)
     }
     return (options?.request ?? authFetch)(target.url, init)
   }

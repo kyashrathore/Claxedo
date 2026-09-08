@@ -106,7 +106,9 @@ export const localServer: Policy = {
   // routes are what a user clicks, and it reads node builtins only — no
   // package edge. Re-measured, not summed: 55 modules, 23 packages.
   // smol-toml validates the hosted MCP installer's Codex configuration before any file is written.
-  ceilings: { modules: 55, packages: 24 },
+  // +1 module: shell/event-stream-response carries the authorized event
+  // producer over HTTP or WebSocket. Measured 56 / 24; no new package edge.
+  ceilings: { modules: 56, packages: 24 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

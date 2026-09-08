@@ -11,6 +11,8 @@ vi.mock("@/platform/api/api", async (importOriginal) => ({
   authFetch: transport.request,
 }))
 
+vi.mock("@/platform/sync/local-event-websocket", () => ({ openLocalEventWebSocket: transport.request }))
+
 import { ClaxedoEventsProvider, useClaxedoEvents } from "./claxedo-events"
 
 function ConnectionState() {
@@ -34,7 +36,7 @@ function openStream(signal?: AbortSignal | null) {
   let controller!: ReadableStreamDefaultController<Uint8Array>
   const body = new ReadableStream<Uint8Array>({ start: (next) => { controller = next } })
   signal?.addEventListener("abort", () => controller.error(new DOMException("Aborted", "AbortError")), { once: true })
-  return { response: new Response(body), close: () => controller.close() }
+  return { response: new Response(body), close: () => controller.close(), send: (data: unknown) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(data)}\n\n`)) }
 }
 
 beforeEach(() => {
@@ -55,6 +57,34 @@ afterEach(() => {
 })
 
 describe("ClaxedoEventsProvider reconnects", () => {
+  test("central SDK consumers share one connection and can unsubscribe independently", async () => {
+    const stream = openStream()
+    const shared: unknown[] = []
+    const typed: unknown[] = []
+    let unsubscribe!: () => void
+    transport.request.mockResolvedValue(stream.response)
+    function Consumer() {
+      const events = useClaxedoEvents()
+      unsubscribe = events.listenCentral((event) => shared.push(event))
+      events.on("session.updated", (event) => typed.push(event))
+      return null
+    }
+    render(() => <ClaxedoEventsProvider pathname={() => "/"} serverUrl={() => "http://127.0.0.1:3001"} accountState={() => ({ status: "unsigned" })}><Consumer /></ClaxedoEventsProvider>)
+    await vi.advanceTimersByTimeAsync(0)
+    const payload = { id: "event-1", type: "session.updated", properties: { info: { id: "session-1" } } }
+    stream.send({ directory: "/repo", payload })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(shared).toEqual([{ ...payload, directory: "/repo" }])
+    expect(typed).toEqual(shared)
+    expect(transport.request).toHaveBeenCalledTimes(1)
+    unsubscribe()
+    stream.send({ directory: "/repo", payload: { ...payload, id: "event-2" } })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(shared).toHaveLength(1)
+    expect(typed).toHaveLength(2)
+    stream.close()
+  })
+
   test("resumes from the last cursor and stops reconnecting after unmount", async () => {
     transport.request.mockImplementation(async () => new Response('id: 7\ndata: {"type":"heartbeat"}\n\n'))
     const { unmount } = mount()

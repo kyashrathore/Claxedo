@@ -221,7 +221,11 @@ describe("@claxedo/local-server closure", () => {
     // (81 modules, 23 packages) and must be re-run, never summed from
     // increments.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(81)
+    // The merged dev tree also publishes agent-plugins/discovery/skills.ts,
+    // the restored machine-installed skill reader (82 modules at HEAD).
+    // shell/event-stream-response.ts adds the central event transport owner;
+    // the published closure now measures exactly 83 modules / 24 packages.
+    expect(modules.size).toBeLessThanOrEqual(83)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(24)
   })

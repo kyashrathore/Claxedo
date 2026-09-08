@@ -163,8 +163,13 @@ type Handler<T extends ClaxedoEventType> = (event: ClaxedoEventOf<T>) => void
 
 function createEventEmitter() {
   const handlers = new Map<ClaxedoEventType, Set<Handler<ClaxedoEventType>>>()
+  const listeners = new Set<(event: ClaxedoEvent) => void>()
 
   return {
+    listenCentral(listener: (event: ClaxedoEvent) => void) {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
     on<T extends ClaxedoEventType>(type: T, handler: Handler<T>) {
       if (!handlers.has(type)) handlers.set(type, new Set())
       // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- as-any: handlers are stored in one map and recovered by the discriminant key.
@@ -174,8 +179,11 @@ function createEventEmitter() {
         handlers.get(type)?.delete(handler as unknown as Handler<ClaxedoEventType>)
       }
     },
-    emit(event: ClaxedoEvent) {
+    emit(event: ClaxedoEvent, source: "central" | "workspace") {
       applyWorktreeLifecycleEvent(event)
+      if (source === "central") for (const listener of listeners) {
+        try { listener(event) } catch {}
+      }
       const set = handlers.get(event.type)
       if (!set) return
       for (const handler of set) {
@@ -237,6 +245,8 @@ function addressClaxedoEvent(event: ClaxedoEvent, address: StreamFrameAddress) {
 // ─── Context ──────────────────────────────────────────────────────────────
 
 type ClaxedoEventsContextValue = {
+  /** The central feed, shared with SDK event consumers without a second connection. */
+  listenCentral(listener: (event: ClaxedoEvent) => void): () => void
   on<T extends ClaxedoEventType>(type: T, handler: Handler<T>): () => void
   /**
    * ANY stream target is up (central OR any workspace relay stream). Correct for
@@ -333,11 +343,11 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   const connections = new Map<string, () => void>()
   let stopped = false
 
-  const emitEvent = (input: string, address: StreamFrameAddress) => {
+  const emitEvent = (input: string, address: StreamFrameAddress, source: "central" | "workspace") => {
     try {
       const event = normalizeClaxedoStreamEvent(JSON.parse(input) as unknown, address)
       if (!event || event.type === "heartbeat") return
-      emitter.emit(event)
+      emitter.emit(event, source)
     } catch {
       // ignore parse errors
     }
@@ -349,7 +359,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
     const emitTestEvent = (event: ClaxedoEvent | { type: "heartbeat" }) => {
       if (!isClaxedoEvent(event) || event.type === "heartbeat") return
-      emitter.emit(event)
+      emitter.emit(event, "central")
     }
     target.__claxedoEmitTestEvent = emitTestEvent
     onCleanup(() => {
@@ -524,7 +534,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
             if (!data) continue
             stepLifecycle("heartbeat")
             resetHeartbeat()
-            emitEvent(data, frameAddress)
+            emitEvent(data, frameAddress, target.kind)
           }
         }
         throw new Error("events stream closed")
@@ -651,6 +661,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
 
   const value: ClaxedoEventsContextValue = {
     on: emitter.on.bind(emitter),
+    listenCentral: emitter.listenCentral,
     connected: connectivity.connected,
     centralConnected: connectivity.centralConnected,
   }

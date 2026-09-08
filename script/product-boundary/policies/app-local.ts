@@ -291,7 +291,9 @@ export const appLocal: Policy = {
   // connected-apps-api and better-auth-api-error for OAuth consent revocation.
   // server-routes replaces server-client-contract at the connection boundary.
   // Full verify:closure measured 1005 modules / 38 packages; no headroom.
-  ceilings: { modules: 1005, packages: 38 },
+  // +1 module: local-event-websocket owns central stream transport across
+  // windows. Authoritative builds and identity checks passed; measured 1006 / 38.
+  ceilings: { modules: 1006, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

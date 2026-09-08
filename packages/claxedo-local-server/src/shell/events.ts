@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto"
 import { record } from "../platform/json"
 import type { Context } from "hono"
-import { streamSSE } from "hono/streaming"
+import { eventStreamResponse, type UpgradeWebSocket } from "./event-stream-response"
 import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { isTerminalClaxedoEvent } from "@claxedo/server-core/platform/http/event-retention"
@@ -108,6 +108,7 @@ export type GlobalEventSubscription = {
 }
 
 export type GlobalEventsHandlerOptions = {
+  upgradeWebSocket?: UpgradeWebSocket
   resolveSubscription?: (context: Context) => GlobalEventSubscription | Promise<GlobalEventSubscription>
 }
 
@@ -400,11 +401,12 @@ export function createGlobalEventsHandler(
       identity: { mode: "unmanaged-local" as const, connectionId: randomUUID() },
       visible: () => true,
     }
+    const lastEventId = c.req.header("last-event-id") ?? (c.req.header("upgrade")?.toLowerCase() === "websocket" ? c.req.query("lastEventId") : undefined)
+    return eventStreamResponse(c, async (stream) => {
     const retainedCursor = retained.lastId()
     const scope = scopeFor(subscription)
     scope.reservations += 1
     await scope.tail
-    return streamSSE(c, async (stream) => {
     // `attachSseFanout` recognises its heartbeat by object identity (that is how
     // it knows to shed heartbeats first when a pending queue overflows), so the
     // sentinel must be one stable object. The WIRE shape stays the legacy
@@ -412,8 +414,8 @@ export function createGlobalEventsHandler(
     // it as a "refresh the project catalog" nudge, so changing it would change
     // behaviour well beyond replay.
     const heartbeat = { type: "heartbeat" } as const
-    const cursor = c.req.header("last-event-id") ?? scope.replay.lastId() ?? "0"
-    const replay = scope.unknownSequence && Number(c.req.header("last-event-id") ?? "0") > 0
+    const cursor = lastEventId ?? scope.replay.lastId() ?? "0"
+    const replay = scope.unknownSequence && Number(lastEventId ?? "0") > 0
       ? { ...scope.replay, hasGap: () => true }
       : scope.replay
 
@@ -478,7 +480,7 @@ export function createGlobalEventsHandler(
         resolve()
       })
     })
-  })
+  }, options.upgradeWebSocket)
   }
 }
 

@@ -397,7 +397,10 @@ export const desktopRendererUnsigned: Policy = {
   // +3 modules (2026-09-08): the same connected-apps UI, consent API and
   // auth-error owner reviewed by app-local; server-routes replaces the old
   // client contract. Full verify:closure measured 1056 / 57, no headroom.
-  ceilings: { modules: 1056, packages: 57 },
+  // +1 module (2026-09-08): local-event-websocket owns the central event
+  // transport used by ClaxedoEventsProvider to avoid exhausting HTTP slots
+  // across windows. Full authoritative checks passed; measured 1057 / 57.
+  ceilings: { modules: 1057, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

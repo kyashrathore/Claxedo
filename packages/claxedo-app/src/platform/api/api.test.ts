@@ -31,6 +31,7 @@ const originalOpencode = window.__CLAXEDO__
 const {
   api,
   apiBearerToken,
+  hasApiCredentials,
   authFetch,
   configureApiRuntime,
   fixDir,
@@ -43,6 +44,15 @@ const {
 } = await import(`${import.meta.dir}/api.ts?test`)
 
 const originalClaxedoServerUrl = import.meta.env.VITE_CLAXEDO_SERVER_URL
+
+test("event transport detects API credentials independently of account display state", async () => {
+  expect(await hasApiCredentials()).toBe(false)
+  token = "bearer-token"
+  expect(await hasApiCredentials()).toBe(true)
+  token = null
+  configureApiRuntime({ password: "desk-secret" })
+  expect(await hasApiCredentials()).toBe(true)
+})
 
 function setServerEnv(input: { claxedo?: string }) {
   import.meta.env.VITE_CLAXEDO_SERVER_URL = input.claxedo
