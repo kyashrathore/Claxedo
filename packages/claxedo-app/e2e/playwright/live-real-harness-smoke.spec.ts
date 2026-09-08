@@ -140,11 +140,13 @@ async function registerWorkspace(dir: string) {
 
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript((d: string) => {
-    localStorage.clear()
     ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
+    // Init scripts run on every navigation. Seed only the fresh browser context;
+    // reload must retain the app's actual project, model and terminal state.
+    if (localStorage.getItem("claxedo.global.dat:server")) return
     localStorage.setItem(
       "claxedo.global.dat:server",
       JSON.stringify({
@@ -559,6 +561,67 @@ test.describe("live real-harness smoke @live", () => {
       }
     })
   }
+
+  test("live terminal executes in its workspace and reattaches the same shell after reload", async ({ page }) => {
+    const dir = await makeWorkspace("terminal-reattach")
+    await seedOneProject(page, dir)
+    await openDraftPrompt(page, dir)
+    const creates: string[] = []
+    page.on("request", (request) => {
+      if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/pty")) creates.push(request.url())
+    })
+    await page.locator('[data-testid="workspace-scope-new-terminal"]').click()
+    const created = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/pty"))
+    await page.locator('[data-component="terminal-new-launchers"] [data-launcher-id="shell"]').click()
+    const response = await created
+    expect(response.ok()).toBe(true)
+    const pty = await response.json() as { id: string }
+    const pane = page.locator(`[data-testid="terminal-pane"][data-terminal-id="${pty.id}"]`)
+    await expect(pane).toBeVisible()
+    const marker = `PTY-${Date.now()}`
+    const send = async (command: string) => {
+      await expect(pane).toHaveAttribute("data-terminal-connected", "true")
+      await pane.locator(".xterm-helper-textarea").focus()
+      await page.keyboard.type(command)
+      await page.keyboard.press("Enter")
+    }
+    await send(`export CLAXEDO_AUDIT_MARKER=${marker}; printf '%s' "$$" > shell-before; pwd > shell-cwd; echo "$CLAXEDO_AUDIT_MARKER"`)
+    const read = (file: string) => fs.readFile(path.join(dir, file), "utf8").catch(() => "")
+    await expect.poll(() => read("shell-before"), { timeout: 15_000 }).toMatch(/^\d+$/)
+    const pid = await read("shell-before")
+    expect((await read("shell-cwd")).trim()).toBe(await fs.realpath(dir))
+    await page.evaluate((value) => localStorage.setItem("terminal-audit-reload", value), marker)
+    await page.screenshot({ path: test.info().outputPath("terminal-before-reload.png") })
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(pane).toBeVisible({ timeout: 30_000 })
+    await expect(pane).toHaveAttribute("data-terminal-connected", "true")
+    expect(await page.evaluate(() => localStorage.getItem("terminal-audit-reload"))).toBe(marker)
+    await page.screenshot({ path: test.info().outputPath("terminal-after-reload.png") })
+    await send(`printf '%s' "$$" > shell-after; printf '%s' "$CLAXEDO_AUDIT_MARKER" > shell-marker`)
+    await expect.poll(() => read("shell-after"), { timeout: 15_000 }).toBe(pid)
+    await expect.poll(() => read("shell-marker")).toBe(marker)
+    expect(creates).toHaveLength(1)
+    await page.screenshot({ path: test.info().outputPath("terminal-reattached.png") })
+    await send("exit")
+    const statusUrl = new URL(response.url())
+    statusUrl.pathname += `/${pty.id}`
+    await expect.poll(async () => {
+      const status = await fetch(statusUrl)
+      expect(status.ok).toBe(true)
+      return (await status.json() as { status: string }).status
+    }, { timeout: 15_000 }).toBe("exited")
+    await expect.poll(async () => {
+      try {
+        const { stdout } = await execFileAsync("ps", ["-o", "stat=", "-p", pid])
+        return stdout.trim().length > 0 && !stdout.trim().startsWith("Z")
+      } catch (error) {
+        if ((error as { code?: number }).code === 1) return false
+        throw error
+      }
+    }).toBe(false)
+    await expect(pane).toBeVisible()
+    await page.screenshot({ path: test.info().outputPath("terminal-exited-scrollback.png") })
+  })
 
   test("machine credential detection reports native logins without connecting Pi", async ({ page }) => {
     const binary = await resolveBinary("pi", "CLAXEDO_E2E_PI_BIN")

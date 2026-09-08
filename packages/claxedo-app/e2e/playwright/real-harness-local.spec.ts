@@ -91,11 +91,13 @@ async function makeWorkspace(name: string, harnessKey = "pi") {
 
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript((d: string) => {
-    localStorage.clear()
     ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
+    // Init scripts run on every navigation. Seed only the fresh browser context;
+    // reload must retain the app's actual project, model and terminal state.
+    if (localStorage.getItem("claxedo.global.dat:server")) return
     localStorage.setItem(
       "claxedo.global.dat:server",
       JSON.stringify({
