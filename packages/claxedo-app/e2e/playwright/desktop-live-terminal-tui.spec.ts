@@ -19,6 +19,9 @@ for (const harness of ["codex", "claude"] as const) {
     const providerEnv: Record<string, string> = { HOME: home, CODEX_HOME: path.join(home, ".codex") }
     let packaged: PackagedApp | undefined
     let ptyUrl: string | undefined
+    const traffic: { at: number; kind: string; data: string }[] = []
+    const ptyStates: unknown[] = []
+    let trafficBytes = 0
     const launch = () => launchPackagedApp({
       userDataDir: profile,
       preserveUserDataDir: true,
@@ -47,6 +50,23 @@ for (const harness of ["codex", "claude"] as const) {
       }
       await exec("git", ["init"], { cwd: directory })
       packaged = await launch()
+      packaged.page.on("request", (request) => {
+        if (request.method() === "PUT" && new URL(request.url()).pathname.includes("/pty/")) {
+          ptyStates.push({ phase: "update", at: Date.now(), body: request.postData() })
+        }
+      })
+      packaged.page.on("websocket", (socket) => {
+        if (!socket.url().includes("/pty/")) return
+        const record = (kind: string, payload: string | Buffer) => {
+          if (trafficBytes > 512_000) return
+          const data = payload.toString()
+          trafficBytes += data.length
+          traffic.push({ at: Date.now(), kind, data })
+        }
+        socket.on("framesent", ({ payload }) => record("input", payload))
+        socket.on("framereceived", ({ payload }) => record("output", payload))
+        socket.on("close", () => record("close", ""))
+      })
       const server = new URL(await expectServerReachable(packaged)).origin
       const response = await fetch(`${server}/api/claxedo/workspace/resolve?directory=${encodeURIComponent(directory)}&create=true`)
       expect(response.ok).toBe(true)
@@ -72,6 +92,7 @@ for (const harness of ["codex", "claude"] as const) {
       const url = new URL(creation.url())
       url.pathname += `/${pty.id}`
       ptyUrl = url.toString()
+      ptyStates.push({ phase: "created", at: Date.now(), pty })
       const selector = `[data-testid="terminal-pane"][data-terminal-id="${pty.id}"]`
       const rows = packaged.page.locator(`${selector} .xterm-rows`)
       await expect(rows).toContainText(/Codex|Claude|trust the contents/i, { timeout: 45_000 })
@@ -154,6 +175,9 @@ for (const harness of ["codex", "claude"] as const) {
       await expect(packaged.page.locator(`${selector} .xterm-rows`)).toContainText("RESTART_TUI_OK", { timeout: 30_000 })
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-restarted.png`) })
     } finally {
+      if (ptyUrl) ptyStates.push({ phase: "cleanup", at: Date.now(), pty: await fetch(ptyUrl).then((response) => response.json()).catch(() => null) })
+      await test.info().attach("pty-state", { body: JSON.stringify(ptyStates), contentType: "application/json" })
+      await test.info().attach("pty-traffic", { body: JSON.stringify(traffic), contentType: "application/json" })
       if (packaged && !packaged.page.isClosed()) await test.info().attach("audio-ended", { body: JSON.stringify(await packaged.page.evaluate(() => (window as unknown as { __claxedoAudioEnded?: unknown }).__claxedoAudioEnded ?? [])), contentType: "application/json" })
       if (packaged && !packaged.page.isClosed()) await packaged.page.screenshot({ path: test.info().outputPath("terminal-final-state.png") }).catch(() => undefined)
       if (packaged) await test.info().attach("desktop-log", { body: packaged.appLog.join(""), contentType: "text/plain" })
