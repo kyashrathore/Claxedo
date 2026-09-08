@@ -18,6 +18,7 @@ function fixture(input: { parentMode?: string } = {}) {
   const store = new MemoryRuntimeStore()
   const calls = {
     created: [] as string[],
+    projected: [] as unknown[],
     modes: [] as Array<{ sessionId: string; modeId: string }>,
     aborted: [] as string[],
     archived: [] as string[],
@@ -100,6 +101,7 @@ function fixture(input: { parentMode?: string } = {}) {
   })
   const app = SessionRoutes(() => adapter, {
     eventHub,
+    afterCreateSession: ({ session }) => { calls.projected.push(session) },
     resolveExecutionBinding: ({ directory, sessionId }) => ({
       sessionId,
       workspaceId: "workspace-test",
@@ -145,6 +147,14 @@ function fixture(input: { parentMode?: string } = {}) {
 }
 
 describe("POST /session with parentID", () => {
+  test("publishes the persisted child relationship to the control-plane projection", async () => {
+    const item = fixture()
+    item.seedParent("parent")
+    const response = await item.create({ parentID: "parent", title: "Child" })
+    expect(response.status).toBe(201)
+    expect(item.calls.projected).toEqual([expect.objectContaining({ parentID: "parent", title: "Child", time: expect.any(Object) })])
+  })
+
   test("refuses a ceiling when the target cannot enforce permission modes", async () => {
     const item = fixture()
     item.seedParent("parent")

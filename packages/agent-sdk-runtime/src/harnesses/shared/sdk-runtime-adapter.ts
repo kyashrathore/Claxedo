@@ -587,6 +587,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
       const childSessionId = event.childSessionId
       if (!childSessionId) return { event }
+      // The host already owns this child's execution binding, configuration
+      // and transcript on its chosen harness. The parent only adds a tool edge.
+      if (observation.providerKind === "claxedo") return { event, childSessionId }
       const childKey = scopedSubagentKey(id, event.subagentKey)
       const child = this.subagentChildren.get(childKey)
         ?? [...this.subagentChildren.values()].find((candidate) => candidate.sessionId === childSessionId)

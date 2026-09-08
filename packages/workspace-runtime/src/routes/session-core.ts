@@ -1318,7 +1318,7 @@ export function createSessionRoutes(opts: Opts) {
           const ceiling = await effectivePermissionCeiling(opts, c, directory, parent, body.permissionCeiling)
           const childMode = await permissionModeUnderCeiling(c, adapter, directory, ceiling, body.permissionMode)
           if (childMode.refusal) return childMode.refusal
-          const session = existing ?? (opts.createSession
+          let session = existing ?? (opts.createSession
             ? await opts.createSession(c, directory, body.title, body.id, body.parentID ? { parentID: body.parentID } : undefined)
             : await adapter.createSession(directory, body.title, body.id))
           if (Object.keys(config).length > 0) {
@@ -1354,6 +1354,11 @@ export function createSessionRoutes(opts: Opts) {
           } catch (error) {
             await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             throw error
+          }
+          if (body.parentID && children) {
+            const persisted = await readSession(opts, c, directory, session.id, adapter)
+            if (!persisted) throw new Error(`Created child ${session.id} has no persisted session row`)
+            session = persisted
           }
           const created = {
             ...(body.parentID ? { parentID: body.parentID } : {}),
@@ -1402,6 +1407,9 @@ export function createSessionRoutes(opts: Opts) {
               await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             }
             throw error
+          }
+          if (body.parentID && children) {
+            opts.publishGlobal(withDir(compatScope(directory, session.id), sessionUpdated(session)))
           }
           opts.publishSessionLifecycle?.({
             type: "session.lifecycle",

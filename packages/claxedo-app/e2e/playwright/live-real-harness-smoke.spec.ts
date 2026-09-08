@@ -502,6 +502,24 @@ test.describe("live real-harness smoke @live", () => {
       await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
       const parentUrl = page.url()
       const card = page.locator('[data-component="task-tool-card"]').last()
+      if (delegation === "claxedo-mcp") {
+        await expectAssistantReplyVisible(page, parentMarker, { spec: "live-real-harness-smoke", scenario: `${harness}-mcp-parent`, timeout: 90_000 })
+        const inventory = await (await fetch(`${BACKEND_URL}/api/claxedo/session`)).json() as { sessions: Array<{ sessionID: string; directory: string; parentID?: string }> }
+        const children = inventory.sessions.filter((row) => row.directory === dir && row.parentID)
+        const readback = await Promise.all(children.map(async (row) => {
+          const base = `${BACKEND_URL}/session/${row.sessionID}`
+          const query = `?directory=${encodeURIComponent(dir)}`
+          return {
+            ...row,
+            config: await (await fetch(`${base}/config${query}`)).json(),
+            messages: await (await fetch(`${base}/message${query}`)).json(),
+          }
+        }))
+        await test.info().attach("mcp-child-readback.json", { body: JSON.stringify(readback, null, 2), contentType: "application/json" })
+        expect(children).toHaveLength(1)
+        expect(readback[0]?.config.harness.id).toBe(harness === "claude" ? "codex" : "claude")
+        if (!(await card.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
+      }
       await expect(card).toBeVisible({ timeout: 90_000 })
       await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed", { timeout: 90_000 })
       await expectAssistantReplyVisible(page, parentMarker)

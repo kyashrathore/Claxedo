@@ -64,6 +64,39 @@ function projectedGoal() {
 }
 
 describe("SdkRuntimeAdapter", () => {
+  test("a host-owned MCP child observation only binds the parent tool edge", async () => {
+    const directory = path.resolve("/repo")
+    const store = createMemoryRuntimeStore()
+    const childConfig = { harness: { id: "claude", access: "native" }, model: { providerID: "claude", modelID: "child-model" }, variant: null, agent: null } as const
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        runTurn: async (input) => {
+          await input.observeSubagent({ observation: {
+            observationId: "mcp-result", subagentKey: "host-child", toolCallId: "spawn-call", toolCallRole: "spawn",
+            providerKind: "claxedo", providerId: "child", childSessionId: "child", status: "completed", transcript: { kind: "live" },
+          } })
+        },
+      }),
+    })
+    try {
+      await adapter.createSession(directory, "parent", "parent")
+      store.bindSession({ sessionId: "child", parentSessionId: "parent", directory, agentSessionId: "claude-child-thread" })
+      store.updateSessionConfig("child", childConfig)
+      for await (const _event of executeTestTurn(adapter, "parent", {
+        parts: [], userMessageId: "parent-user", assistantMessageId: "parent-answer", agent: "build",
+        model: { providerID: "codex", modelID: "parent-model" },
+      }, directory)) {}
+      expect(store.getAgentSessionId("child")).toBe("claude-child-thread")
+      expect(store.getSessionConfig("child")).toEqual(childConfig)
+      expect(store.getMessages("child")).toEqual([])
+      expect(store.listSubagents!("parent")[0]).toMatchObject({ childSessionId: "child", toolCallEdges: [{ toolCallId: "spawn-call", role: "spawn" }] })
+    } finally {
+      await adapter.dispose()
+    }
+  })
+
   test.each(["prompt", "goal"] as const)("disposal awaits the full committing %s producer after its driver stops", async (kind) => {
     const root = mkdtempSync(path.join(tmpdir(), "sdk-shutdown-"))
     const store = createSqliteRuntimeStore({ root })
