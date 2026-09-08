@@ -11,6 +11,7 @@ const exec = promisify(execFile)
 
 for (const { harness, child, pause } of [
   { harness: "codex", child: false, pause: false },
+  { harness: "cursor", child: false, pause: false },
   { harness: "claude", child: false, pause: false },
   { harness: "claude", child: true, pause: false },
   { harness: "claude", child: true, pause: true },
@@ -40,6 +41,15 @@ for (const { harness, child, pause } of [
       if (harness === "codex") {
         await fs.copyFile(path.join(os.homedir(), ".codex/auth.json"), path.join(home, ".codex/auth.json"))
         await fs.chmod(path.join(home, ".codex/auth.json"), 0o600)
+      } else if (harness === "cursor") {
+        const authDirectory = path.join(home, process.platform === "darwin" ? ".cursor" : ".config/cursor")
+        await fs.mkdir(authDirectory, { recursive: true })
+        const credentials = process.platform === "darwin"
+          ? Object.fromEntries(await Promise.all([
+            ["accessToken", "cursor-access-token"], ["refreshToken", "cursor-refresh-token"],
+          ].map(async ([field, service]) => [field, (await exec("security", ["find-generic-password", "-s", service!, "-a", "cursor-user", "-w"])).stdout.trim()])))
+          : JSON.parse(await fs.readFile(path.join(os.homedir(), ".config/cursor/auth.json"), "utf8"))
+        await fs.writeFile(path.join(authDirectory, "auth.json"), JSON.stringify(credentials), { mode: 0o600 })
       } else {
         const config = JSON.parse(await fs.readFile(path.join(os.homedir(), ".claude.json"), "utf8")) as { oauthAccount?: unknown }
         await fs.writeFile(path.join(home, ".claude.json"), JSON.stringify({
@@ -94,10 +104,25 @@ for (const { harness, child, pause } of [
       await expect(project).toBeVisible({ timeout: 30_000 })
       await project.locator('[data-testid="project-header"]').hover()
       await project.locator('[aria-label="New session in main"]').click()
+      if (harness === "cursor") {
+        await packaged.page.locator('[data-component="workspace-more-menu"]').click()
+        await packaged.page.getByRole("menuitem", { name: "Configure..." }).click()
+        await packaged.page.getByRole("tab", { name: "Terminals" }).click()
+        await packaged.page.getByRole("button", { name: "Add", exact: true }).click()
+        await packaged.page.getByPlaceholder("Command name (e.g., Aider)").fill("Cursor")
+        await packaged.page.getByPlaceholder("Command to run (e.g., aider --model gpt-4)").fill("AGENT_CLI_CREDENTIAL_STORE=file cursor-agent --force")
+        await packaged.page.getByRole("button", { name: "Save Changes" }).click()
+        await expect(packaged.page.getByText("Terminal commands saved")).toBeVisible()
+        await packaged.page.keyboard.press("Escape")
+      }
       await packaged.page.locator('[data-testid="workspace-scope-new-terminal"]').click()
-      const created = packaged.page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname.endsWith("/pty"))
-      await packaged.page.locator(`[data-component="terminal-new-launchers"] [data-launcher-id="${harness}"]`).click()
-      const creation = await created
+      const launchers = packaged.page.locator('[data-component="terminal-new-launchers"]')
+      const launcher = harness === "cursor" ? launchers.getByRole("button", { name: /^Cursor / }) : launchers.locator(`[data-launcher-id="${harness}"]`)
+      await expect(launcher).toBeVisible()
+      const [creation] = await Promise.all([
+        packaged.page.waitForResponse((r) => r.request().method() === "POST" && new URL(r.url()).pathname.endsWith("/pty")),
+        launcher.click(),
+      ])
       expect(creation.ok()).toBe(true)
       const pty = await creation.json() as { id: string; pid: number }
       const url = new URL(creation.url())
@@ -106,9 +131,15 @@ for (const { harness, child, pause } of [
       ptyStates.push({ phase: "created", at: Date.now(), pty })
       const selector = `[data-testid="terminal-pane"][data-terminal-id="${pty.id}"]`
       const rows = packaged.page.locator(`${selector} .xterm-rows`)
-      await expect(rows).toContainText(/Codex|Claude|trust the contents/i, { timeout: 45_000 })
+      if (harness === "cursor") {
+        await expect(rows).toContainText("Workspace Trust Required", { timeout: 45_000 })
+        await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
+        await packaged.page.keyboard.press("a")
+        await expect(rows).toContainText("Run Everything", { timeout: 30_000 })
+      }
+      await expect(rows).toContainText(/Codex|Claude|Cursor|trust the contents/i, { timeout: 45_000 })
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-launched.png`) })
-      if (/trust|allow Codex to work/i.test(await rows.innerText())) {
+      if (harness !== "cursor" && /trust|allow Codex to work/i.test(await rows.innerText())) {
         await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
         if (harness === "claude") {
           await packaged.page.keyboard.press("ArrowDown")
@@ -124,7 +155,7 @@ for (const { harness, child, pause } of [
           await packaged.page.keyboard.press("Enter")
         }
       }
-      await expect(rows).toContainText(harness === "codex" ? /OpenAI Codex/ : /bypass permissions on/i, { timeout: 30_000 })
+      await expect(rows).toContainText(harness === "codex" ? /OpenAI Codex/ : harness === "cursor" ? /Cursor/ : /bypass permissions on/i, { timeout: 30_000 })
       await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
       await packaged.page.keyboard.type("Reply with the concatenation of DESKTOP and _TUI_OK, nothing else.", { delay: 20 })
       await expect(rows).not.toContainText(/model:\s+loading|Booting MCP server/, { timeout: 45_000 })
