@@ -1661,11 +1661,12 @@ test.describe("real harness journeys @core @tier-real", () => {
       }
     })
 
-    for (const [decision, canonicalDirectory] of [
-      ["Allow once", false], ["Allow always", false], ["Deny", false], ["Stop", false],
-      ...(harness === "claude" ? [["Allow always", true] as const] : []),
+    for (const [decision, canonicalDirectory, restartServer] of [
+      ["Allow once", false, false], ["Allow always", false, false], ["Deny", false, false], ["Stop", false, false],
+      ...(harness === "claude" ? [["Allow always", true, false] as const] : []),
+      ...(harness === "codex" ? [["Allow always", false, true] as const] : []),
     ] as const) {
-      test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}`, async ({ page }) => {
+      test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}${restartServer ? " and server restart" : ""}`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
         requireBinary(binary, harness, "install the native CLI to exercise its tool approval boundary.")
         const dir = await makeWorkspace(`${harness}-permission`, harness)
@@ -1741,6 +1742,12 @@ test.describe("real harness journeys @core @tier-real", () => {
           await expectAssistantReplyVisible(page, marker)
           await expect(dock).toHaveCount(0)
           if (decision === "Allow always") {
+            if (restartServer) {
+              await server!.restart()
+              await page.reload({ waitUntil: "domcontentloaded" })
+              await expectAssistantReplyVisible(page, marker)
+              await expect(dock).toHaveCount(0)
+            }
             await fs.rm(output)
             const followupMarker = `SECOND-${marker}`
             scripted!.scriptTool({ ...tool, whenPromptIncludes: followupMarker })

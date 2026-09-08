@@ -32,7 +32,7 @@ async function stopChild(child: ChildProcess) {
     exited,
     // Keep teardown bounded even if the process handle itself is unhealthy.
     // The child has already received SIGKILL at this point.
-    new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Real server did not exit after SIGKILL")), 5_000)),
   ])
 }
 
@@ -42,6 +42,7 @@ export type RealLocalServer = {
   scripted: ScriptedModelServer
   log: () => string
   makeWorkspace: (name: string) => Promise<{ id: string; directory: string }>
+  restart: () => Promise<void>
   close: () => Promise<void>
 }
 
@@ -78,7 +79,9 @@ export async function startRealLocalServer(label: string, options: { port?: numb
   await fs.writeFile(path.join(codexHome, "config.toml"), codexScriptedConfigToml(scripted.v1Url))
 
   let output = ""
-  const child = spawn("bun", ["run", "start"], {
+  // Own the server process itself: stopping a package-script launcher does not
+  // prove that the runtime released its lock or lost its in-memory grants.
+  const launch = () => spawn("node", ["--conditions=development", "--import", "../workspace-runtime/src/text-imports.mjs", "--import", "tsx", "src/deployments/self-hosted-node/index.ts"], {
     cwd: SERVER_DIR,
     env: {
       ...process.env,
@@ -99,8 +102,12 @@ export async function startRealLocalServer(label: string, options: { port?: numb
     },
     stdio: ["ignore", "pipe", "pipe"],
   })
-  child.stdout?.on("data", (chunk) => (output += chunk.toString()))
-  child.stderr?.on("data", (chunk) => (output += chunk.toString()))
+  const capture = (process: ChildProcess) => {
+    process.stdout?.on("data", (chunk) => (output += chunk.toString()))
+    process.stderr?.on("data", (chunk) => (output += chunk.toString()))
+  }
+  let child = launch()
+  capture(child)
   try {
     await waitForHealth(`${url}/api/claxedo/health`, { label: "real server", log: () => output, child, requestTimeoutMs: 2_000 })
     await configureScriptedPi(url)
@@ -130,6 +137,12 @@ export async function startRealLocalServer(label: string, options: { port?: numb
     scripted,
     log: () => output,
     makeWorkspace,
+    restart: async () => {
+      await stopChild(child)
+      child = launch()
+      capture(child)
+      await waitForHealth(`${url}/api/claxedo/health`, { label: "restarted real server", log: () => output, child, requestTimeoutMs: 2_000 })
+    },
     close: async () => {
       await stopChild(child)
       await scripted.close()
