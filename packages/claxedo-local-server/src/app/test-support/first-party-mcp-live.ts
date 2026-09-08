@@ -97,6 +97,17 @@ export async function startLiveFirstPartyMcp() {
     return ((await response.json()) as { sessions?: Array<{ sessionID: string }> }).sessions ?? []
   }
 
+  /** What the rail paginates: the navigation rows the sidebar renders per section. */
+  const navigationRows = async () => {
+    const url = new URL("/api/claxedo/session-list", `http://127.0.0.1:${port}`)
+    url.searchParams.set("scope", "workspace")
+    url.searchParams.set("directory", workspace.directory)
+    url.searchParams.set("limit", "50")
+    const response = await fetch(url, { headers: { Accept: "application/json" } })
+    if (!response.ok) throw new Error(`the navigation list answered ${response.status}`)
+    return ((await response.json()) as { items?: Array<{ sessionId: string }> }).items ?? []
+  }
+
   const entryFor = (sessionId: string) => {
     const entry = runtime.host.firstPartyMcpServer(sessionId)
     if (!entry) throw new Error("the embedded runtime injects no first-party MCP entry")
@@ -118,6 +129,7 @@ export async function startLiveFirstPartyMcp() {
     runtime,
     runtimeRequest,
     rootInventory,
+    navigationRows,
     createSession,
     entryFor,
     connect,

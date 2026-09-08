@@ -79,6 +79,13 @@ describe("a subagent started over the injected first-party MCP", () => {
     expect(inventory.map((row) => row.sessionID)).toContain(sessionId)
     expect(inventory.map((row) => row.sessionID)).not.toContain(binding.sessionId)
 
+    // Every root the flat inventory holds and no other row: a navigation list
+    // that merely omitted the child could equally have dropped a root, and the
+    // rail renders from this list alone.
+    const navigation = await live.navigationRows()
+    expect(navigation.map((row) => row.sessionId).sort())
+      .toEqual(inventory.map((row) => row.sessionID).sort())
+
     const board = (toolJson(await callTool(client, "sessions_list")) as { workspaces: Array<{ sessions?: RuntimeSession[] }> })
     const listed = board.workspaces.flatMap((row) => row.sessions ?? []).map((row) => row.id)
     expect(listed).toContain(sessionId)

@@ -219,6 +219,43 @@ describe("session metadata routes", () => {
     expect(secondBody.nextCursor).toBeUndefined()
   })
 
+  test("pages the rail past a parent's children without listing one or retiring the cursor early", async () => {
+    const directory = `/tmp/local-navigation-children-${randomUUID()}`
+    await putSessionMeta("child_parent_1", { directory, title: "First root" })
+    await putSessionMeta("child_parent_2", { directory, title: "Second root" })
+    for (const parent of ["child_parent_1", "child_parent_2"]) {
+      await putSessionMeta(`${parent}_child`, { directory, title: `Child of ${parent}`, parentID: parent })
+    }
+
+    const listed: string[] = []
+    let cursor: string | undefined
+    for (let page = 0; page < 4; page += 1) {
+      const url = `http://localhost/api/claxedo/session-list?scope=workspace&directory=${encodeURIComponent(directory)}&limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`
+      const res = await SessionMetaRoutes().request(url)
+      expect(res.status).toBe(200)
+      const body = await res.json() as { items: Array<{ sessionId: string }>; nextCursor?: string }
+      listed.push(...body.items.map((item) => item.sessionId))
+      cursor = body.nextCursor
+      if (!cursor) break
+    }
+
+    expect(listed).toEqual(["child_parent_2", "child_parent_1"])
+    expect(cursor).toBeUndefined()
+  })
+
+  test("keeps children out of the grouped rail read, which pages from the unbounded store", async () => {
+    const directory = `/tmp/local-navigation-grouped-${randomUUID()}`
+    await putSessionMeta("grouped_parent", { directory, title: "Grouped root" })
+    await putSessionMeta("grouped_child", { directory, title: "Grouped child", parentID: "grouped_parent" })
+
+    const res = await SessionMetaRoutes().request(
+      `http://localhost/api/claxedo/session-list?scope=workspace&directory=${encodeURIComponent(directory)}&groupBy=workspace&limit=10`,
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json() as { groups: Array<{ items: Array<{ sessionId: string }> }> }
+    expect(body.groups.flatMap((group) => group.items.map((item) => item.sessionId))).toEqual(["grouped_parent"])
+  })
+
   test("signed cloud mode rejects missing bearer tokens", async () => {
     const { app } = buildApp()
     const res = await app.request("http://localhost/api/claxedo/session/sess_1/meta")

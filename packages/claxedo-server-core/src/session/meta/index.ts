@@ -300,8 +300,17 @@ export async function listSessionMetas(input?: {
     .sort((a, b) => b.updatedAt - a.updatedAt)
 }
 
+/**
+ * One bounded page of a workspace's root sessions, ordered as the rail reads
+ * them.
+ *
+ * Children are excluded in SQL rather than by the caller: this query hands back
+ * `limit + 1` rows for the page window, so a child dropped afterwards would take
+ * a root's slot, shorten the page and — because the window would then be no
+ * longer than the limit — retire the cursor with roots still unread.
+ */
 export async function listSessionNavigationMetas(input: SessionMetaNavigationListInput) {
-  const where: string[] = []
+  const where: string[] = ["m.parent_session_id IS NULL"]
   const params: Array<string | number> = []
   if (input.workspaceID) {
     where.push("m.workspace_id = ?")
@@ -353,7 +362,7 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
       .prepare(`
         SELECT m.session_ref
         FROM claxedo_session_meta m
-        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+        WHERE ${where.join(" AND ")}
         ORDER BY m.${orderKey} DESC, m.session_ref DESC
         LIMIT ?
       `)
