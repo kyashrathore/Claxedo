@@ -459,16 +459,21 @@ test.describe("live real-harness smoke @live", () => {
       const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
       await expect(dock).toBeVisible({ timeout: 60_000 })
       await expect(dock).toContainText("Which test environment?")
+      const sessionId = new URL(sessionUrl).pathname.split("/").at(-1)!
+      const readQuestions = async () => {
+        const response = await page.request.get(`${BACKEND_URL}/question?directory=${encodeURIComponent(dir)}`)
+        expect(response.ok()).toBe(true)
+        const questions = await response.json() as Array<{ id: string; sessionID: string }>
+        return questions.filter((question) => question.sessionID === sessionId)
+      }
+      const pending = await readQuestions()
+      expect(pending).toHaveLength(1)
+      const request = pending[0]!
       await page.screenshot({ path: test.info().outputPath("live-question-pending.png") })
       await page.reload({ waitUntil: "domcontentloaded" })
       await expect(dock).toBeVisible({ timeout: 30_000 })
+      expect(await readQuestions()).toEqual(pending)
       if (action === "dismiss" || action === "stop") {
-        const pendingResponse = await page.request.get(`${BACKEND_URL}/question?directory=${encodeURIComponent(dir)}`)
-        expect(pendingResponse.ok()).toBe(true)
-        const pending = await pendingResponse.json() as Array<{ id: string; sessionID: string }>
-        const sessionId = new URL(sessionUrl).pathname.split("/").at(-1)!
-        const request = pending.find((row) => row.sessionID === sessionId)
-        expect(request).toBeDefined()
         const actionButton = dock.getByRole("button", { name: action === "stop" ? "Stop" : "Dismiss", exact: true })
         await expect(actionButton).toBeVisible({ timeout: 10_000 })
         await actionButton.click()
@@ -499,6 +504,15 @@ test.describe("live real-harness smoke @live", () => {
       })
       await expect(page).toHaveURL(sessionUrl)
       await expect(page.locator('[data-action="prompt-harness-model"]').filter({ visible: true })).toHaveAttribute("data-harness", harness)
+      expect(await readQuestions()).toEqual([])
+      const duplicate = await page.request.post(`${BACKEND_URL}/question/${request.id}/reply?directory=${encodeURIComponent(dir)}`, {
+        data: { answers: [["Production"]] },
+      })
+      expect(duplicate.status()).toBe(404)
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expectAssistantReplyVisible(page, `${prefix}-Staging`)
+      await expect(dock).toHaveCount(0)
+      expect(await readQuestions()).toEqual([])
     })
 
     }
