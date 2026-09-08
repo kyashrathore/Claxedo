@@ -1,5 +1,6 @@
 /** Real native-harness browser journeys against an isolated self-host server and scripted model HTTP endpoints. */
 import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expectPermissionReplyIsolation } from "../helpers/permission-isolation"
 import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -1620,6 +1621,14 @@ test.describe("real harness journeys @core @tier-real", () => {
           await expect(dock).toBeVisible({ timeout: 30_000 })
           expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
           await page.screenshot({ path: test.info().outputPath("permission-pending.png") })
+          if (decision === "Deny") {
+            await expectPermissionReplyIsolation(page, {
+              backendUrl: BACKEND_URL, directory: dir,
+              sessionId: new URL(sessionUrl).pathname.split("/").at(-1)!, harness, mode,
+            })
+            await expect(dock).toBeVisible()
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+          }
           await dock.getByRole("button", { name: decision, exact: true }).click()
           await expect(dock).toHaveCount(0)
           await expectAssistantReplyVisible(page, marker)

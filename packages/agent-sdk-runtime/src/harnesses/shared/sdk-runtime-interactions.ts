@@ -32,6 +32,12 @@ export class SdkRuntimeInteractions {
       (item) => item.id === permissionId && item.sessionID === binding.sessionId,
     )
     const pending = this.permissions.get(permissionId)
+    if (pending && pending.sessionId !== binding.sessionId) {
+      throw new Error(`Permission ${permissionId} does not belong to session ${binding.sessionId}`)
+    }
+    if (pending && !row) {
+      throw new Error(`Permission ${permissionId} is not pending in workspace ${directory}`)
+    }
     const events: CompatEvent[] = []
     if (row) {
       const committed = this.store.appendEvent({

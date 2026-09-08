@@ -17,6 +17,7 @@
  * per-marker duplicate check therefore runs only after `page.reload()`.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expectPermissionReplyIsolation } from "../helpers/permission-isolation"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -627,6 +628,14 @@ test.describe("live real-harness smoke @live", () => {
           await page.reload({ waitUntil: "domcontentloaded" })
           await expect(dock).toBeVisible({ timeout: 30_000 })
           expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+          if (decision === "Deny") {
+            await expectPermissionReplyIsolation(page, {
+              backendUrl: BACKEND_URL, directory: dir,
+              sessionId: new URL(sessionUrl).pathname.split("/").at(-1)!, harness, mode,
+            })
+            await expect(dock).toBeVisible()
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+          }
           await page.screenshot({ path: test.info().outputPath("live-permission-pending.png") })
           await dock.getByRole("button", { name: decision, exact: true }).click()
           if (decision !== "Deny") {

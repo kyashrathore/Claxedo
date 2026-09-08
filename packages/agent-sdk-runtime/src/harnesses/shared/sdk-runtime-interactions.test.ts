@@ -41,3 +41,41 @@ test("permission cancellation remains retryable when persistence fails", () => {
   expect(interactions.permissions.has("permission-1")).toBe(true)
   expect(interactions.listPermissions("/work")).toHaveLength(1)
 })
+
+for (const [sessionId, directory] of [["other-session", "/work"], ["session-1", "/other-workspace"]]) {
+  test(`permission replies from ${sessionId} in ${directory} cannot consume another pending request`, () => {
+    const decisions: string[] = []
+    const committed: unknown[] = []
+    const store = {
+      listPermissions: (dir: string) => dir === "/work" ? [{ id: "permission-1", sessionID: "session-1" }] : [],
+      appendEvent: (input: { payload: unknown }) => { committed.push(input); return input },
+    } as unknown as SdkRuntimeStore
+    const interactions = new SdkRuntimeInteractions(store)
+    interactions.permissions.set("permission-1", {
+      sessionId: "session-1", agentSessionId: "agent-1", method: "permission", params: {},
+      resolve: (decision) => decisions.push(decision),
+    })
+    expect(() => interactions.respondPermission(executionBinding(sessionId!, directory!), "permission-1", "allow_always"))
+      .toThrow()
+    expect(decisions).toEqual([])
+    expect(committed).toEqual([])
+    expect(interactions.permissions.has("permission-1")).toBe(true)
+    interactions.respondPermission(executionBinding("session-1", "/work"), "permission-1", "allow_once")
+    expect(decisions).toEqual(["allow_once"])
+    expect(committed).toHaveLength(1)
+    expect(interactions.permissions.has("permission-1")).toBe(false)
+  })
+}
+
+test("permission approval remains pending when the reply cannot be committed", () => {
+  let resolved = false
+  const interactions = new SdkRuntimeInteractions(rejectingStore())
+  interactions.permissions.set("permission-1", {
+    sessionId: "session-1", agentSessionId: "agent-1", method: "permission", params: {},
+    resolve() { resolved = true },
+  })
+  expect(() => interactions.respondPermission(executionBinding("session-1", "/work"), "permission-1", "allow_always"))
+    .toThrow("durable write failed")
+  expect(resolved).toBe(false)
+  expect(interactions.permissions.has("permission-1")).toBe(true)
+})
