@@ -164,6 +164,10 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
   await page.goto(`/${slug(dir)}/session`)
   await page.waitForLoadState("domcontentloaded")
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId("rail-account-trigger")).toHaveAttribute(
+    "aria-label",
+    process.env.CLAXEDO_E2E_AUTH_MODE === "local-unsigned" ? "Local workspace" : "Test User",
+  )
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   await expect(input).toBeVisible({ timeout: 20_000 })
   await expect(input).toHaveAttribute("contenteditable", "true")
