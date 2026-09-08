@@ -19,7 +19,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["running tool completes across full restart", "running tool stops across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of ["unavailable model recovery across full restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -92,6 +92,55 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await picker.locator('[data-slot="list-item"]').filter({ has: packaged.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
       await expect(control).toContainText("Opus")
       await packaged.page.keyboard.press("Escape")
+    }
+
+    if (flow === "unavailable model recovery across full restart") {
+      const warmup = `MODEL_WARMUP_${Date.now()}`
+      await compose(input, `Reply with exactly this token: ${warmup}`)
+      const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      const created = await creation
+      expect(created.ok()).toBe(true)
+      const session = await created.json() as { id: string }
+      await expectAssistantReplyVisible(packaged.page, warmup)
+      const marker = `MODEL_RECOVERED_${Date.now()}`
+      const prompt = `Context: café — नमस्ते.\n\nReply with exactly this token: ${marker}`
+      // Seed a stale/unavailable model through the actual prompt API. The real
+      // CLI/provider must produce the error; no intercepted response or event.
+      const failure = await fetch(`${serverBase}/session/${session.id}/prompt_async?directory=${encodeURIComponent(directory)}`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: prompt }], model: { providerID: harness.toLowerCase(), modelID: "claxedo-unavailable-model-for-recovery-test" } }),
+      })
+      expect(failure.status).toBe(204)
+      const recoveryButton = () => packaged!.page.getByRole("button", { name: "Switch model and resend", exact: true })
+      await expect(recoveryButton()).toBeVisible({ timeout: 60_000 })
+      const appProcess = packaged.app.process()
+      await packaged.close()
+      await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
+      packaged = await launch()
+      expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+      await recoveryButton().click()
+      const dialog = packaged.page.getByRole("dialog")
+      await expect(dialog).toBeVisible()
+      await packaged.page.keyboard.press("Escape")
+      await expect(dialog).not.toBeVisible()
+      const readUsers = async () => {
+        const response = await fetch(`${serverBase}/session/${session.id}/message?directory=${encodeURIComponent(directory)}`)
+        expect(response.ok).toBe(true)
+        const rows = await response.json() as Array<{ info: { role: string }; parts: Array<{ type: string; text?: string }> }>
+        return rows.filter((row) => row.info.role === "user").map((row) => row.parts.filter((part) => part.type === "text").map((part) => part.text).join(""))
+      }
+      expect(await readUsers()).toHaveLength(2)
+      await recoveryButton().click()
+      const name = harness === "Claude" ? /Opus/ : /GPT-5\.6-Sol/i
+      const choice = dialog.locator('[data-slot="list-item"]').filter({ hasText: name }).first()
+      await expect(choice).toBeVisible({ timeout: 10_000 })
+      await choice.click()
+      await expectAssistantReplyVisible(packaged.page, marker)
+      expect(await readUsers()).toEqual([`Reply with exactly this token: ${warmup}`, prompt, prompt])
+      await packaged.page.reload()
+      await expectAssistantReplyVisible(packaged.page, marker)
+      return
     }
 
     if (flow === "running tool completes across full restart" || flow === "running tool stops across full restart") {
