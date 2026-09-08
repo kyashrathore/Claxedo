@@ -480,8 +480,11 @@ export function composerInput(page: Page): Locator {
 export async function composeText(page: Page, input: Locator, text: string) {
   await input.click()
   await input.fill("")
-  await input.pressSequentially(text)
-  await expect(input).toContainText(text, { timeout: 10_000 })
+  for (const [index, line] of text.split("\n").entries()) {
+    if (index) await input.press("Shift+Enter")
+    await input.pressSequentially(line)
+  }
+  await expect(input).toContainText(text, { timeout: 10_000, useInnerText: true })
 }
 
 /**

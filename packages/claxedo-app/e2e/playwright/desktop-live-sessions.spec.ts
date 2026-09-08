@@ -8,6 +8,7 @@ import * as path from "node:path"
 import { promisify } from "node:util"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
 import { shutdownPackagedTestDaemon } from "../helpers/desktop-daemon"
+import { composeText } from "../helpers/web-signed-relay-harness"
 
 const execFileAsync = promisify(execFile)
 
@@ -129,6 +130,9 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       expect(tools).toHaveLength(1)
       expect(tools[0]!.state?.status).toBe("running")
       expect(await fs.readFile(journal, "utf8")).toBe("start\n")
+      const next = `AFTER_RUNNING_TOOL_${Date.now()}`
+      const draft = `New task: the previous command task is over.\n\nContext: café — नमस्ते; preserve <tags> and "quotes".\nReply exactly ${next}. Do not use tools or retry the previous command.`
+      if (!stop) await composeText(packaged.page, packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), draft)
       const appProcess = packaged.app.process()
       await packaged.close()
       await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
@@ -137,6 +141,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
       expect(await alive()).toBe(true)
       expect(await readTools()).toEqual(tools)
+      if (!stop) await expect(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last()).toHaveText(draft, { useInnerText: true })
       await expect(packaged.page.getByRole("button", { name: "Stop", exact: true })).toBeVisible()
       expect(await fs.readFile(journal, "utf8")).toBe("start\n")
       await packaged.page.screenshot({ path: test.info().outputPath("running-tool-after-restart.png") })
@@ -152,8 +157,8 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       expect(settled[0]!.id).toBe(tools[0]!.id)
       if (!stop) expect(settled[0]!.state?.output).toContain(marker)
       expect(await fs.readFile(journal, "utf8")).toBe(stop ? "start\n" : "start\nfinish\n")
-      const next = `AFTER_RUNNING_TOOL_${Date.now()}`
-      await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), `New task: the previous command task is over. Reply exactly ${next}. Do not use tools or retry it.`)
+      if (stop) await composeText(packaged.page, packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), draft)
+      else await expect(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last()).toHaveText(draft, { useInnerText: true })
       await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAccessibleName("Send")
       await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
       await expectAssistantReplyVisible(packaged.page, next)
@@ -161,6 +166,13 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await expectAssistantReplyVisible(packaged.page, next)
       expect(await readTools()).toEqual(settled)
       expect(await fs.readFile(journal, "utf8")).toBe(stop ? "start\n" : "start\nfinish\n")
+      const historyResponse = await fetch(`${serverBase}/session/${session.id}/message?directory=${encodeURIComponent(directory)}`)
+      expect(historyResponse.ok).toBe(true)
+      const history = await historyResponse.json() as Array<{ info: { role: string }; parts: Array<{ type: string; text?: string }> }>
+      const users = history.filter((row) => row.info.role === "user")
+      expect(users).toHaveLength(2)
+      expect(users[1]!.parts.filter((part) => part.type === "text").map((part) => part.text).join("")).toBe(draft)
+
       return
     }
 

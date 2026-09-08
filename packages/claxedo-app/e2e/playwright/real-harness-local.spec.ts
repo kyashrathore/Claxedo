@@ -1558,6 +1558,56 @@ test.describe("real harness journeys @core @tier-real", () => {
 
 
   for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} native busy draft preserves multiline text through reload and submits once`, async ({ page }) => {
+      const dir = await makeWorkspace(`${harness}-busy-draft`, harness)
+      await seedOneProject(page, dir)
+      await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness)
+      await waitForHarnessReady(page)
+      const first = `FIRST_DRAFT_${Date.now()}`
+      const next = `NEXT_DRAFT_${Date.now()}`
+      const firstPrompt = `Reply with exactly this one token: ${first}`
+      const draft = `First line: café — नमस्ते\n\nMiddle line: preserve <tags>, quotes "hello", and \`code\`.\nLast line: Reply with exactly this one token: ${next}`
+      const release = scripted!.holdTextReplies(first)
+      try {
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), firstPrompt)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+        await expect.poll(() => scripted!.requests.some((request) => request.prompt.includes(first))).toBe(true)
+        const sessionID = new URL(page.url()).pathname.split("/").at(-1)!
+        const readUsers = async () => {
+          const response = await page.request.get(`${BACKEND_URL}/session/${sessionID}/message?directory=${encodeURIComponent(dir)}`)
+          expect(response.ok()).toBe(true)
+          const rows = await response.json() as Array<{ info: { role: string }; parts: Array<{ type: string; text?: string }> }>
+          return rows.filter((row) => row.info.role === "user").map((row) => row.parts.filter((part) => part.type === "text").map((part) => part.text).join(""))
+        }
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), draft)
+        await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Stop")
+        expect(await readUsers()).toEqual([firstPrompt])
+        await page.reload({ waitUntil: "domcontentloaded" })
+        const editor = page.getByRole("textbox", { name: /Ask anything/i }).last()
+        await expect(editor).toHaveText(draft, { useInnerText: true })
+        await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Stop")
+        expect(await readUsers()).toEqual([firstPrompt])
+        release()
+        await expectAssistantReplyVisible(page, first)
+        await expect(editor).toHaveText(draft, { useInnerText: true })
+        await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Send")
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expectAssistantReplyVisible(page, next)
+        expect(await readUsers()).toEqual([firstPrompt, draft])
+        // The fixture's prompt index is JSON-encoded; inspect the actual wire body
+        // using the same encoding so quotes and newlines are compared exactly.
+        expect(scripted!.requests.some((request) => JSON.stringify(request.body).includes(JSON.stringify(draft).slice(1, -1)))).toBe(true)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expectAssistantReplyVisible(page, next)
+        expect(await readUsers()).toEqual([firstPrompt, draft])
+        await expect(editor).toBeEmpty()
+      } finally { release() }
+    })
+  }
+
+  for (const harness of ["claude", "codex"] as const) {
     test(`${harness} native provider error preserves explanation through reload and recovery`, async ({ page }) => {
       const dir = await makeWorkspace(`${harness}-provider-error`, harness)
       await seedOneProject(page, dir)
