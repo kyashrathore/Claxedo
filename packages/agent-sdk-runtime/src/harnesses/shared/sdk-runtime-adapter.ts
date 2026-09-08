@@ -787,6 +787,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     const lifecycle = this.lifecycle()
     if (!lifecycle.abort(id)) return { ok: true, status: "already_idle" }
     this.interactions.resolvePermissions(id, "deny")
+    this.interactions.rejectQuestions(id)
     // `cancelled` is an admission acknowledgement: callers may start the next
     // turn as soon as it resolves. Wait until this adapter's own generation has
     // left its busy section so the replacement cannot be rejected by a stale

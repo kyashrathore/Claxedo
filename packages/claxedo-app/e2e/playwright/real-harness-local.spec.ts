@@ -1282,9 +1282,9 @@ test.describe("real harness journeys @core @tier-real", () => {
           await dock.getByRole("button", { name: "Dismiss", exact: true }).click()
           await expectAssistantReplyVisible(page, marker)
         } else {
-          const sessionId = decodeURIComponent(new URL(sessionUrl).pathname.split("/").at(-1)!)
-          const response = await page.request.post(`${BACKEND_URL}/session/${sessionId}/abort?directory=${encodeURIComponent(dir)}`)
-          expect(response.ok(), await response.text()).toBe(true)
+          const stop = dock.getByRole("button", { name: "Stop", exact: true })
+          await expect(stop).toBeVisible({ timeout: 10_000 })
+          await stop.click()
         }
         await expect(dock).toHaveCount(0)
         const followup = page.getByRole("textbox", { name: /Ask anything/i }).last()

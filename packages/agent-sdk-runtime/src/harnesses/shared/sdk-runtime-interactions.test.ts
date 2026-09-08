@@ -79,3 +79,34 @@ test("permission approval remains pending when the reply cannot be committed", (
   expect(resolved).toBe(false)
   expect(interactions.permissions.has("permission-1")).toBe(true)
 })
+
+test("question cancellation commits rejection and only consumes the stopped session", () => {
+  const events: unknown[] = []
+  const rejected: string[] = []
+  const interactions = new SdkRuntimeInteractions({
+    appendEvent: (event: { payload: unknown }) => { events.push(event.payload); return event },
+  } as unknown as SdkRuntimeStore)
+  for (const id of ["owner", "sibling"]) {
+    interactions.questions.set(id, {
+      sessionId: id, agentSessionId: `agent-${id}`, questions: [],
+      resolve() {}, reject: () => { rejected.push(id) },
+    })
+  }
+  interactions.rejectQuestions("owner")
+  expect(rejected).toEqual(["owner"])
+  expect(interactions.questions.has("owner")).toBe(false)
+  expect(interactions.questions.has("sibling")).toBe(true)
+  expect(events).toEqual([expect.objectContaining({ type: "question.rejected", properties: { sessionID: "owner", requestID: "owner" } })])
+})
+
+test("question cancellation preserves a pending request when persistence fails", () => {
+  const interactions = new SdkRuntimeInteractions(rejectingStore())
+  let rejected = false
+  interactions.questions.set("question-1", {
+    sessionId: "session-1", agentSessionId: "agent-1", questions: [],
+    resolve() {}, reject: () => { rejected = true },
+  })
+  expect(() => interactions.rejectQuestions("session-1")).toThrow("durable write failed")
+  expect(rejected).toBe(false)
+  expect(interactions.questions.has("question-1")).toBe(true)
+})

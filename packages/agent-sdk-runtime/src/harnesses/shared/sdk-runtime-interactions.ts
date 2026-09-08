@@ -86,6 +86,17 @@ export class SdkRuntimeInteractions {
     if (pending && pending.sessionId !== binding.sessionId) {
       throw new Error(`Question ${questionId} does not belong to session ${binding.sessionId}`)
     }
+    return this.rejectPendingQuestion(questionId)
+  }
+
+  rejectQuestions(sessionId: string) {
+    for (const [id, pending] of Array.from(this.questions)) {
+      if (pending.sessionId === sessionId) this.rejectPendingQuestion(id)
+    }
+  }
+
+  private rejectPendingQuestion(questionId: string): AgentInteractionResult | void {
+    const pending = this.questions.get(questionId)
     if (!pending) return
     const committed = this.store.appendEvent({
       sessionId: pending.sessionId,

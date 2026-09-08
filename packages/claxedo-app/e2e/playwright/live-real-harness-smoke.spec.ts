@@ -373,8 +373,8 @@ test.describe("live real-harness smoke @live", () => {
   })
 
   for (const harness of ["claude", "codex"] as const) {
-    for (const action of ["answer", "dismiss"] as const) {
-    test(`${harness} native SDK question ${action} survives reload and returns the result to the live model`, async ({ page }) => {
+    for (const action of ["answer", "dismiss", "stop"] as const) {
+    test(`${harness} native SDK question ${action} survives reload and preserves session usability`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       test.skip(!binary, `The live question flow requires the installed and authenticated ${harness} CLI.`)
       const dir = await makeWorkspace(`${harness}-live-question`)
@@ -398,15 +398,17 @@ test.describe("live real-harness smoke @live", () => {
       await page.screenshot({ path: test.info().outputPath("live-question-pending.png") })
       await page.reload({ waitUntil: "domcontentloaded" })
       await expect(dock).toBeVisible({ timeout: 30_000 })
-      if (action === "dismiss") {
+      if (action === "dismiss" || action === "stop") {
         const pendingResponse = await page.request.get(`${BACKEND_URL}/question?directory=${encodeURIComponent(dir)}`)
         expect(pendingResponse.ok()).toBe(true)
         const pending = await pendingResponse.json() as Array<{ id: string; sessionID: string }>
         const sessionId = new URL(sessionUrl).pathname.split("/").at(-1)!
         const request = pending.find((row) => row.sessionID === sessionId)
         expect(request).toBeDefined()
-        await dock.getByRole("button", { name: "Dismiss", exact: true }).click()
-        await expectAssistantReplyVisible(page, `${prefix}-DISMISSED`)
+        const actionButton = dock.getByRole("button", { name: action === "stop" ? "Stop" : "Dismiss", exact: true })
+        await expect(actionButton).toBeVisible({ timeout: 10_000 })
+        await actionButton.click()
+        if (action === "dismiss") await expectAssistantReplyVisible(page, `${prefix}-DISMISSED`)
         await expect(dock).toHaveCount(0)
         const late = await page.request.post(`${BACKEND_URL}/question/${request!.id}/reply?directory=${encodeURIComponent(dir)}`, {
           data: { answers: [["Staging"]] },
@@ -414,7 +416,7 @@ test.describe("live real-harness smoke @live", () => {
         expect(late.status()).toBe(404)
         await page.reload({ waitUntil: "domcontentloaded" })
         await expect(dock).toHaveCount(0)
-        const followup = `AFTER-DISMISS-${Date.now()}`
+        const followup = `AFTER-${action.toUpperCase()}-${Date.now()}`
         await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply exactly ${followup}. Do not use tools.`)
         await page.locator(SELECTORS.submitControl).last().click()
         await expectAssistantReplyVisible(page, followup)

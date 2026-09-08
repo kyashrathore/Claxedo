@@ -240,7 +240,11 @@ export function SessionComposerRegion(props: {
         <Show when={props.state.questionRequest()} keyed>
           {(request) => (
             <div>
-              <SessionQuestionDock request={request} onSubmit={props.onResponseSubmit} />
+              <SessionQuestionDock
+                request={request}
+                onSubmit={props.onResponseSubmit}
+                onStop={props.onAbort && props.canAbort?.() !== false ? () => props.onAbort!(request.sessionID) : undefined}
+              />
             </div>
           )}
         </Show>

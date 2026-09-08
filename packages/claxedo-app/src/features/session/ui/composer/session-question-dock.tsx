@@ -78,7 +78,11 @@ function Option(props: {
   )
 }
 
-export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit: () => void }> = (props) => {
+export const SessionQuestionDock: Component<{
+  request: QuestionRequest
+  onSubmit: () => void
+  onStop?: () => Promise<unknown>
+}> = (props) => {
   const sdk = useSDK()
   const language = useLanguage()
   const questionTextId = createUniqueId()
@@ -258,7 +262,21 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     onError: fail,
   }))
 
-  const sending = createMemo(() => replyMutation.isPending || rejectMutation.isPending)
+  const stopMutation = useMutation(() => ({
+    mutationFn: () => props.onStop!(),
+    onSuccess: () => {
+      replied = true
+      clearSessionQuestionDockSnapshot(props.request.id)
+    },
+    onError: fail,
+  }))
+
+  const sending = createMemo(() => replyMutation.isPending || rejectMutation.isPending || stopMutation.isPending)
+
+  const stop = () => {
+    if (!props.onStop || sending()) return
+    stopMutation.mutate()
+  }
 
   const reply = async (answers: QuestionAnswer[]) => {
     if (sending()) return
@@ -460,9 +478,16 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       }
       footer={
         <>
-          <Button variant="ghost" size="large" disabled={sending()} onClick={reject} aria-keyshortcuts="Escape">
-            {language.t("ui.common.dismiss")}
-          </Button>
+          <div data-slot="question-footer-actions">
+            <Show when={props.onStop}>
+              <Button variant="ghost" size="large" disabled={sending()} onClick={stop}>
+                {language.t("prompt.action.stop")}
+              </Button>
+            </Show>
+            <Button variant="ghost" size="large" disabled={sending()} onClick={reject} aria-keyshortcuts="Escape">
+              {language.t("ui.common.dismiss")}
+            </Button>
+          </div>
           <div data-slot="question-footer-actions">
             <Show when={store.tab > 0}>
               <Button variant="secondary" size="large" disabled={sending()} onClick={back}>
