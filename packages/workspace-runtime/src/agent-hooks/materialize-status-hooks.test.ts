@@ -61,6 +61,48 @@ describe("materializeAgentHooks", () => {
     })
   })
 
+  test("Droid uses standalone hooks and retires only its owned settings entries", async () => {
+    const directory = path.join(root, ".factory")
+    await fs.mkdir(directory)
+    const settings = path.join(directory, "settings.json")
+    const file = path.join(directory, "hooks.json")
+    const user = { hooks: [{ type: "command", command: "/user/hook.sh" }] }
+    await fs.writeFile(settings, JSON.stringify({ model: "keep", hooks: {
+      Stop: [{ hooks: [{ type: "command", command: notifyPath }, ...user.hooks] }],
+    } }))
+    await fs.writeFile(file, JSON.stringify({ Stop: [user] }))
+    const input = { homeDir: root, notifyPath, geminiHookPath, cursorHookPath }
+    for (let i = 0; i < 2; i++) await materializeAgentHooks(input)
+    expect(await readJson(file)).toEqual({
+      UserPromptSubmit: [{ hooks: [{ type: "command", command: notifyPath }] }],
+      Notification: [{ hooks: [{ type: "command", command: notifyPath }] }],
+      Stop: [user, { hooks: [{ type: "command", command: notifyPath }] }],
+      PostToolUse: [{ matcher: "*", hooks: [{ type: "command", command: notifyPath }] }],
+    })
+    expect(await readJson(settings)).toEqual({ model: "keep", hooks: { Stop: [user] } })
+  })
+
+  test("Droid preserves effective settings hooks when creating the standalone file", async () => {
+    const directory = path.join(root, ".factory")
+    await fs.mkdir(directory)
+    const user = { hooks: [{ type: "command", command: "/user/start.sh" }] }
+    await fs.writeFile(path.join(directory, "settings.json"), JSON.stringify({ hooks: { SessionStart: [user] } }))
+    await materializeAgentHooks({ homeDir: root, notifyPath, geminiHookPath, cursorHookPath })
+    expect(await readJson(path.join(directory, "hooks.json"))).toMatchObject({ SessionStart: [user] })
+  })
+
+  test("Droid refuses a malformed standalone file without pruning working settings", async () => {
+    const directory = path.join(root, ".factory")
+    await fs.mkdir(directory)
+    const original = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: notifyPath }] }] } })
+    await fs.writeFile(path.join(directory, "settings.json"), original)
+    await fs.writeFile(path.join(directory, "hooks.json"), "{broken")
+    const results = await materializeAgentHooks({ homeDir: root, notifyPath, geminiHookPath, cursorHookPath })
+    expect(results.find((item) => item.runner === "droid")?.status).toBe("failed")
+    expect(await fs.readFile(path.join(directory, "settings.json"), "utf8")).toBe(original)
+    expect(await fs.readFile(path.join(directory, "hooks.json"), "utf8")).toBe("{broken")
+  })
+
   test("retires Claude child completion hooks without removing user commands", async () => {
     const file = path.join(root, ".claude", "settings.json")
     await fs.mkdir(path.dirname(file), { recursive: true })

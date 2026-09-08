@@ -109,7 +109,7 @@ function targetPaths(homeDir: string) {
     claude: path.join(homeDir, ".claude", "settings.json"),
     codex: path.join(homeDir, ".codex", "hooks.json"),
     cursor: path.join(homeDir, ".cursor", "hooks.json"),
-    droid: path.join(homeDir, ".factory", "settings.json"),
+    droid: path.join(homeDir, ".factory", "hooks.json"),
     gemini: path.join(homeDir, ".gemini", "settings.json"),
     mastra: path.join(homeDir, ".mastracode", "hooks.json"),
   }
@@ -139,16 +139,10 @@ function removeManagedHooksFromDefinition(
   return { ...definition, hooks: filtered }
 }
 
-async function upsertNestedHookSettings(input: {
-  file: string
-  notifyPath: string
-  force: boolean
+function reconcileNestedHooks(hooks: Record<string, unknown>, input: {
   events: { event: string; definition: Record<string, unknown> }[]
   isManaged: (command: string | undefined) => boolean
 }) {
-  const existing = asRecordOrEmpty(await readJson(input.file))
-  const hooks = recordAt(existing, "hooks")
-
   // Remove this owner's previous registrations, including retired events.
   // User commands in the same definitions remain intact.
   for (const [event, current] of Object.entries(hooks)) {
@@ -169,6 +163,19 @@ async function upsertNestedHookSettings(input: {
     }
     hooks[item.event] = [item.definition]
   }
+}
+
+async function upsertNestedHookSettings(input: {
+  file: string
+  notifyPath: string
+  force: boolean
+  events: { event: string; definition: Record<string, unknown> }[]
+  isManaged: (command: string | undefined) => boolean
+}) {
+  const existing = asRecordOrEmpty(await readJson(input.file))
+  const hooks = recordAt(existing, "hooks")
+
+  reconcileNestedHooks(hooks, input)
 
   await writeIfChanged(input.file, JSON.stringify(existing, null, 2) + "\n", 0o644, input.force)
 }
@@ -189,16 +196,35 @@ async function materializeClaude(input: { file: string; notifyPath: string; forc
 }
 
 async function materializeDroid(input: { file: string; notifyPath: string; force: boolean }) {
-  await upsertNestedHookSettings({
-    ...input,
+  const settingsFile = path.join(path.dirname(input.file), "settings.json")
+  const settings = asRecordOrEmpty(await readJson(settingsFile))
+  const originalSettings = JSON.stringify(settings)
+  const settingsHooks = asRecordOrEmpty(settings.hooks)
+  const standalone = await readFileIfExists(input.file)
+  // Creating hooks.json changes Droid's precedence. Carry forward user hooks
+  // only when settings.json was the effective source, not when it was dormant.
+  const hooks = standalone === undefined
+    ? structuredClone(settingsHooks)
+    : asRecordOrEmpty(await readJson(input.file))
+  const isManaged = (command: string | undefined) =>
+    !!command && (command.includes(input.notifyPath) || isManagedHookCommand(command, NOTIFY_SCRIPT))
+  reconcileNestedHooks(hooks, {
     events: [
       { event: "UserPromptSubmit", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
       { event: "Notification", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
       { event: "Stop", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
       { event: "PostToolUse", definition: { matcher: "*", hooks: [{ type: "command", command: input.notifyPath }] } },
     ],
-    isManaged: (command) => command?.includes(input.notifyPath) || isManagedHookCommand(command, NOTIFY_SCRIPT),
+    isManaged,
   })
+  // Publish the canonical file before retiring the old registrations. Retrying
+  // after a failed cleanup is safe because reconciliation is idempotent.
+  await writeIfChanged(input.file, JSON.stringify(hooks, null, 2) + "\n", 0o644, input.force)
+  reconcileNestedHooks(settingsHooks, { events: [], isManaged })
+  if (JSON.stringify(settings) !== originalSettings) {
+    if (Object.keys(settingsHooks).length === 0) delete settings.hooks
+    await writeIfChanged(settingsFile, JSON.stringify(settings, null, 2) + "\n", 0o644, input.force)
+  }
 }
 
 function pruneCodexHooks(hooks: Record<string, unknown>, notifyPath: string) {
