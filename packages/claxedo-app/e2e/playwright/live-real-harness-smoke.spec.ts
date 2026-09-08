@@ -623,6 +623,57 @@ test.describe("live real-harness smoke @live", () => {
     await page.screenshot({ path: test.info().outputPath("terminal-exited-scrollback.png") })
   })
 
+  test("live terminal restores the same screen in a fresh browser", async ({ page, browser }) => {
+    const observe = async (target: Page) => target.addInitScript(() => {
+      const host = window as typeof window & { terminalAudit?: () => { screen: string; cols: number; rows: number } }
+      Object.defineProperty(window, "__CLAXEDO_AGENT_APP_BENCHMARK__", { value: {
+        terminalWriteParsed(receipt: { serialize(): string; dimensions(): { cols: number; rows: number } }) {
+          host.terminalAudit = () => ({ screen: receipt.serialize(), ...receipt.dimensions() })
+        },
+      } })
+    })
+    const snapshot = (target: Page) => target.evaluate(() => (
+      window as typeof window & { terminalAudit?: () => { screen: string; cols: number; rows: number } }
+    ).terminalAudit?.())
+    const dir = await makeWorkspace("terminal-fresh-browser")
+    await observe(page)
+    await seedOneProject(page, dir)
+    await openDraftPrompt(page, dir)
+    await page.locator('[data-testid="workspace-scope-new-terminal"]').click()
+    const created = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/pty"))
+    await page.locator('[data-component="terminal-new-launchers"] [data-launcher-id="shell"]').click()
+    const response = await created
+    expect(response.ok()).toBe(true)
+    const { id } = await response.json() as { id: string }
+    const selector = `[data-testid="terminal-pane"][data-terminal-id="${id}"]`
+    await expect(page.locator(selector)).toHaveAttribute("data-terminal-connected", "true")
+    await page.locator(`${selector} .xterm-helper-textarea`).focus()
+    // Keep output still while the second browser attaches. The marker is only
+    // present literally in rendered output, not in the echoed command.
+    await page.keyboard.type("printf '\\x52EPLAY_READY\\n'; while [ ! -f release ]; do sleep 0.2; done")
+    await page.keyboard.press("Enter")
+    await expect.poll(async () => (await snapshot(page))?.screen).toContain("REPLAY_READY")
+    const before = await snapshot(page)
+    await page.screenshot({ path: test.info().outputPath("terminal-original-screen.png") })
+    const fresh = await browser.newContext({ viewport: page.viewportSize() })
+    try {
+      const restored = await fresh.newPage()
+      await observe(restored)
+      await seedOneProject(restored, dir)
+      await restored.goto(page.url())
+      await expect(restored.locator(selector)).toHaveAttribute("data-terminal-connected", "true", { timeout: 30_000 })
+      await expect.poll(async () => (await snapshot(restored))?.screen).toContain("REPLAY_READY")
+      await expect.poll(async () => (await snapshot(restored))?.cols).toBe(before?.cols)
+      const after = await snapshot(restored)
+      await test.info().attach("terminal-screen-comparison", { body: JSON.stringify({ before, after }), contentType: "application/json" })
+      await restored.screenshot({ path: test.info().outputPath("terminal-fresh-screen.png") })
+      expect(after).toEqual(before)
+    } finally {
+      await fs.writeFile(path.join(dir, "release"), "done")
+      await fresh.close()
+    }
+  })
+
   test("machine credential detection reports native logins without connecting Pi", async ({ page }) => {
     const binary = await resolveBinary("pi", "CLAXEDO_E2E_PI_BIN")
     test.skip(!binary, "Pi must be installed for native catalog discovery")
