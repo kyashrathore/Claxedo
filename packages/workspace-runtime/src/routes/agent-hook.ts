@@ -10,7 +10,8 @@ import z from "zod/v3"
 import { workspaceRuntimeBus } from "../bus"
 import { Log } from "../log"
 import { bearerToken, boundedJsonBody, boundedJsonRecord, boundedTextBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
-import { arr, bool, num, str } from "../json-value"
+import { arr, bool, num, str, parseRecord } from "../json-value"
+import { providerLifecycle } from "../agent-hooks/provider-lifecycle"
 import {
   setupAgentHooks,
   getTerminalEnvVars,
@@ -75,6 +76,10 @@ export type AgentLifecyclePayload = z.infer<typeof AgentLifecyclePayload>
 
 const AgentLifecycleInputPayload = AgentLifecyclePayload.extend({
   eventType: AgentEventInputType,
+})
+
+const ProviderLifecycleInputPayload = AgentLifecyclePayload.omit({ eventType: true }).extend({
+  providerEvent: z.string(),
 })
 
 const TerminalSessionPayload = z.object({
@@ -436,14 +441,22 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
       const body = c.req.header("content-type")?.includes("application/x-www-form-urlencoded")
         ? Object.fromEntries(new URLSearchParams(await boundedTextBody(c)))
         : await boundedJsonBody(c)
-      const parsed = AgentLifecycleInputPayload.safeParse(body)
+      const parsed = z.union([ProviderLifecycleInputPayload, AgentLifecycleInputPayload]).safeParse(body)
       if (!parsed.success) {
         return c.json({ success: false, error: "Invalid payload" }, 400)
       }
-      const payload = parsed.data
-      const eventType = normalizeAgentEventType(payload.eventType)
-      if (!eventType) {
-        return c.json({ success: false, error: `Invalid eventType: ${payload.eventType}` }, 400)
+      const raw = "providerEvent" in parsed.data ? parsed.data.providerEvent : undefined
+      const input = raw === undefined ? undefined : parseRecord(raw)
+      if (raw !== undefined && !input) return c.json({ success: false, error: "Invalid provider event JSON" }, 400)
+      const providerEvent = input ? providerLifecycle(input) : undefined
+      const payload = raw === undefined ? parsed.data : {
+        ...parsed.data,
+        ...providerEvent,
+        provider: parsed.data.provider || providerEvent?.provider,
+      }
+      const eventType = "eventType" in payload ? normalizeAgentEventType(payload.eventType) : undefined
+      if (eventType && !AgentLifecyclePayload.safeParse({ ...payload, eventType }).success) {
+        return c.json({ success: false, error: "Invalid provider lifecycle fields" }, 400)
       }
 
       const resolvedTerminalId = resolveTerminalId({
@@ -458,6 +471,13 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
         ...(lifecycleAccess.capability ? { capability: lifecycleAccess.capability } : {}),
       })
       if ("response" in access) return access.response
+      if (!eventType) return c.json({ success: true, ignored: true })
+      // Only the raw CLI producer uses settled-event deduplication. Perform it
+      // after authorization, against the accepted state rather than a shell file.
+      const previous = terminalSessions.get(resolvedTerminalId)
+      if (raw !== undefined && (eventType === "Idle" || eventType === "Error") && previous?.eventType === eventType) {
+        return c.json({ success: true, duplicate: true })
+      }
       const workspaceId = access.context.authority?.workspaceId ?? (clean(payload.workspaceId) || undefined)
       const providerSessionId = clean(payload.sessionId) || undefined
       const sessionId = access.context.authority ? Pty.get(resolvedTerminalId)?.sessionId : providerSessionId
@@ -494,9 +514,11 @@ export function AgentHookRoutes(options: AgentHookRoutesOptions = {}) {
         lastAssistantMessage: stored?.lastAssistantMessage || clean(payload.lastAssistantMessage) || undefined,
         eventType,
       }
+      // Raw provider input is an ingestion detail, never a UI event or stored field.
+      const published = { ...AgentLifecyclePayload.parse(normalized), providerSessionId }
 
-      log.info("agent lifecycle (POST)", lifecycleLogMetadata(normalized))
-      workspaceRuntimeBus.publish({ type: "agent.lifecycle", ...normalized })
+      log.info("agent lifecycle (POST)", lifecycleLogMetadata(published))
+      workspaceRuntimeBus.publish({ type: "agent.lifecycle", ...published })
 
       return c.json({
         success: true,

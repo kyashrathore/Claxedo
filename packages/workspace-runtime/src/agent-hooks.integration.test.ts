@@ -15,10 +15,20 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { spawnSync } from "child_process"
+import { execFile } from "child_process"
 import { createServer, Server } from "http"
 import { generateNotifyScript, generateGeminiHook } from "./agent-hooks/core/hooks"
 import { generateClaudeWrapper } from "./agent-hooks/core/wrappers"
+import { AgentHookRoutes } from "./routes/agent-hook"
+
+function runShell(command: string, args: string[], options: { input?: string; env: NodeJS.ProcessEnv; timeout?: number }) {
+  return new Promise<{ status: string | number; stdout: Buffer; stderr: Buffer }>((resolve) => {
+    const child = execFile(command, args, { env: options.env, timeout: options.timeout }, (error, stdout, stderr) => {
+      resolve({ status: error?.code ?? 0, stdout: Buffer.from(stdout), stderr: Buffer.from(stderr) })
+    })
+    child.stdin?.end(options.input ?? "")
+  })
+}
 
 describe("agent-hooks real-world execution", () => {
   let rootDir: string
@@ -37,7 +47,8 @@ describe("agent-hooks real-world execution", () => {
     await fs.mkdir(hooksDir, { recursive: true })
     await fs.mkdir(binDir, { recursive: true })
 
-    // 2. Start a mock lifecycle server to receive hook callbacks
+    // 2. Execute the real lifecycle route behind the shell's HTTP entrypoint.
+    const app = AgentHookRoutes()
     mockServer = createServer((req, res) => {
       const url = new URL(req.url || "", `http://127.0.0.1`)
       if (url.pathname === "/api/wr/hook/agent-lifecycle") {
@@ -45,10 +56,13 @@ describe("agent-hooks real-world execution", () => {
         req.on("data", (chunk) => {
           body += String(chunk)
         })
-        req.on("end", () => {
-          lastEvent = Object.fromEntries(new URLSearchParams(body).entries())
-          res.writeHead(200, { "Content-Type": "application/json" })
-          res.end(JSON.stringify({ success: true }))
+        req.on("end", async () => {
+          const response = await app.request("http://localhost/agent-lifecycle", {
+            method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body,
+          })
+          lastEvent = await response.json()
+          res.writeHead(response.status, { "Content-Type": "application/json" })
+          res.end(JSON.stringify(lastEvent))
         })
         return
       }
@@ -82,7 +96,7 @@ describe("agent-hooks real-world execution", () => {
     const startTime = Date.now()
 
     // Execute gemini-hook.sh with mock Gemini JSON
-    const result = spawnSync("bash", [geminiHook], {
+    const result = await runShell("bash", [geminiHook], {
       input: '{"hook_event_name":"BeforeAgent"}',
       env: {
         ...process.env,
@@ -113,7 +127,7 @@ describe("agent-hooks real-world execution", () => {
   it("notify hook prefers CLAXEDO_SERVER_PORT when workspace CLAXEDO_PORT differs", async () => {
     lastEvent = null
 
-    const result = spawnSync("bash", [notifyPath], {
+    const result = await runShell("bash", [notifyPath], {
       input: '{"hook_event_name":"BeforeAgent"}',
       env: {
         ...process.env,
@@ -146,7 +160,7 @@ describe("agent-hooks real-world execution", () => {
     lastEvent = null
 
     // Run the wrapper
-    spawnSync("bash", [claudeWrapper], {
+    await runShell("bash", [claudeWrapper], {
       env: {
         ...process.env,
         HOME: rootDir,
@@ -181,7 +195,7 @@ describe("agent-hooks real-world execution", () => {
 
     lastEvent = null
 
-    const result = spawnSync("bash", [claudeWrapper], {
+    const result = await runShell("bash", [claudeWrapper], {
       env: {
         ...process.env,
         HOME: rootDir,

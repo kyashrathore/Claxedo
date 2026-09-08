@@ -8,6 +8,42 @@ import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { Pty } from "../pty/index"
 import { workspaceRuntimeEventSessionId } from "./session-event-privacy"
 
+test("raw provider hooks keep background waits busy and deduplicate only accepted completion", async () => {
+  const app = AgentHookRoutes()
+  const terminalId = "pty_raw_background"
+  const events: unknown[] = []
+  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
+  })
+  const post = (providerEvent: unknown) => app.request("http://localhost/agent-lifecycle", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tabId: "tab_raw_background", terminalId, provider: "claude", providerEvent: JSON.stringify(providerEvent) }),
+  })
+  const status = async () => (await (await app.request(`http://localhost/terminal-session?terminalId=${terminalId}`)).json()).session.eventType
+  try {
+    expect((await post({ hook_event_name: "UserPromptSubmit", prompt: 'Use "quoted" paths\nπ' })).status).toBe(200)
+    expect(await status()).toBe("Busy")
+    expect((await post({ hook_event_name: "Stop", background_tasks: [{ id: "child", status: "running" }] })).status).toBe(200)
+    expect(await status()).toBe("Busy")
+    expect((await post({ hook_event_name: "SubagentStop" })).status).toBe(200)
+    expect(await status()).toBe("Busy")
+    expect(events).toHaveLength(1)
+    // A rejected completion must not suppress the next valid completion.
+    expect((await post({ hook_event_name: "Stop", session_id: "x".repeat(513) })).status).toBe(400)
+    expect(await status()).toBe("Busy")
+    expect((await post({ hook_event_name: "Stop", background_tasks: [] })).status).toBe(200)
+    expect(await status()).toBe("Idle")
+    expect((await post({ hook_event_name: "Stop", background_tasks: [] })).status).toBe(200)
+    expect(events).toHaveLength(2)
+    expect(events[0]).toMatchObject({ eventType: "Busy", prompt: 'Use "quoted" paths\nπ' })
+    expect(events[1]).toMatchObject({ eventType: "Idle" })
+    expect(events.every((event) => !Object.hasOwn(event as object, "providerEvent"))).toBe(true)
+    expect((await post(["not", "an", "object"])).status).toBe(400)
+  } finally {
+    unsubscribe()
+  }
+})
+
 function privateSessionPolicy(owners: Record<string, string>): SessionAccessPolicy {
   const allowed = (actorId: string | undefined, sessionId: string | undefined) =>
     !!sessionId && owners[sessionId] === actorId

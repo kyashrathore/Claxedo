@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test"
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
@@ -9,6 +9,7 @@ import {
   generateCopilotHook,
   generateCopilotProjectHooks,
 } from "./core/hooks"
+import { AgentHookRoutes } from "../routes/agent-hook"
 import { NOTIFY_MARKER } from "./core/constants"
 
 // ── Notify script ───────────────────────────────────────────────────────────
@@ -25,7 +26,7 @@ describe("generateNotifyScript", () => {
         const workspace = request.headers.get("x-workspace-id")
         if (!workspace) return new Response("Workspace not routed", { status: 404 })
         const form = new URLSearchParams(await request.text())
-        delivered = { workspace, terminal: form.get("terminalId"), event: form.get("eventType") }
+        delivered = { workspace, terminal: form.get("terminalId"), event: JSON.parse(form.get("providerEvent")!).type }
         return Response.json({ success: true })
       },
     })
@@ -46,7 +47,7 @@ describe("generateNotifyScript", () => {
       expect(await child.exited).toBe(0)
       const deadline = Date.now() + 3000
       while (!delivered && Date.now() < deadline) await Bun.sleep(20)
-      expect(delivered).toEqual({ workspace: "ws_notify_test", terminal: "pty_notify_test", event: "Idle" })
+      expect(delivered).toEqual({ workspace: "ws_notify_test", terminal: "pty_notify_test", event: "agent-turn-complete" })
     } finally {
       server.stop(true)
       await rm(root, { recursive: true, force: true })
@@ -55,12 +56,13 @@ describe("generateNotifyScript", () => {
 
   it("keeps the parent busy when a Claude subagent stops", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-child-hook-"))
-    const events: string[] = []
+    const app = AgentHookRoutes()
     const server = Bun.serve({
       hostname: "127.0.0.1", port: 0,
-      async fetch(request) {
-        events.push(new URLSearchParams(await request.text()).get("eventType")!)
-        return Response.json({ success: true })
+      fetch(request) {
+        const url = new URL(request.url)
+        url.pathname = "/agent-lifecycle"
+        return app.fetch(new Request(url, request))
       },
     })
     try {
@@ -74,16 +76,12 @@ describe("generateNotifyScript", () => {
         expect(await child.exited).toBe(0)
       }
       await invoke("UserPromptSubmit")
-      const deadline = Date.now() + 3000
-      while (!events.length && Date.now() < deadline) await Bun.sleep(20)
-      expect(events).toEqual(["Busy"])
+      const state = async () => (await (await app.request("http://localhost/terminal-session?terminalId=parent")).json()).session.eventType
+      expect(await state()).toBe("Busy")
       await invoke("SubagentStop")
-      expect(await readFile(path.join(root, "parent.agent"), "utf8")).toBe("busy\n")
+      expect(await state()).toBe("Busy")
       await invoke("Stop")
-      const settled = Date.now() + 3000
-      while (events.length < 2 && Date.now() < settled) await Bun.sleep(20)
-      expect(events).toEqual(["Busy", "Idle"])
-      expect(await readFile(path.join(root, "parent.agent"), "utf8")).toBe("idle\n")
+      expect(await state()).toBe("Idle")
     } finally {
       server.stop(true)
       await rm(root, { recursive: true, force: true })
@@ -96,15 +94,32 @@ describe("generateNotifyScript", () => {
     expect(script).toContain("7860")
   })
 
-  it("normalizes Codex SessionStart events", () => {
-    const script = generateNotifyScript(7860)
-    expect(script).toContain('"SessionStart"')
-    expect(script).toContain('"SessionEnd"')
+  it("reports failed delivery and sends a later completion again", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-hook-retry-"))
+    let requests = 0
+    const server = Bun.serve({
+      hostname: "127.0.0.1", port: 0,
+      fetch() { return new Response("", { status: ++requests === 1 ? 503 : 200 }) },
+    })
+    try {
+      const script = path.join(root, "notify.sh")
+      await writeFile(script, generateNotifyScript(server.port!))
+      const invoke = () => Bun.spawn(["/bin/bash", script, JSON.stringify({ hook_event_name: "Stop" })], {
+        env: { ...process.env, CLAXEDO_TAB_ID: "retry-tab", CLAXEDO_SERVER_PORT: String(server.port), WORKSPACE_RUNTIME_STATE_DIR: root },
+        stdout: "ignore", stderr: "ignore",
+      }).exited
+      expect(await invoke()).not.toBe(0)
+      expect(await invoke()).toBe(0)
+      expect(requests).toBe(2)
+    } finally {
+      server.stop(true)
+      await rm(root, { recursive: true, force: true })
+    }
   })
 
   it("posts lifecycle mutations with the terminal-scoped capability", () => {
     const script = generateNotifyScript(7860)
-    expect(script).toContain('curl -s "$HOOK_URL"')
+    expect(script).toContain('curl -fsS "$HOOK_URL"')
     expect(script).toContain('--request POST')
     expect(script).toContain('Authorization: Bearer $CLAXEDO_AGENT_HOOK_TOKEN')
   })
