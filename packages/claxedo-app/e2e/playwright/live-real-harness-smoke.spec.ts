@@ -903,8 +903,8 @@ test.describe("live real-harness smoke @live", () => {
     })
     }
 
-    for (const [decision, goalMode] of [["Allow once", false], ["Allow always", false], ["Deny", false], ["Stop", false], ...(harness === "codex" ? [["Stop", true] as const] : [])] as const) {
-      test(`${harness} live permission ${decision === "Deny" ? "denial" : decision === "Stop" ? "stop" : decision === "Allow always" ? "always" : "approval"} gates a file write through reload${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
+    for (const [decision, goalMode, idlePause] of [["Allow once", false], ["Allow always", false], ["Deny", false], ["Stop", false], ...(harness === "codex" ? [["Stop", true] as const, ["Allow always", false, true] as const] : [])] as const) {
+      test(`${harness} live permission ${decision === "Deny" ? "denial" : decision === "Stop" ? "stop" : decision === "Allow always" ? "always" : "approval"} gates a file write through reload${goalMode ? " in Goal mode" : ""}${idlePause ? " and native idle disposal" : ""}`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
         test.skip(!binary, `The live approval flow requires the installed and authenticated ${harness} CLI.`)
         const dir = await makeWorkspace(`${harness}-live-permission`)
@@ -979,8 +979,14 @@ test.describe("live real-harness smoke @live", () => {
           await expectAssistantReplyVisible(page, expectedReply)
           await expect(dock).toHaveCount(0)
           if (decision === "Allow always") {
-            await stopServer()
-            await startServer(dataDir)
+            if (idlePause) {
+              const logStart = serverLog.length
+              await expect.poll(() => serverLog.slice(logStart), { timeout: 45_000 })
+                .toContain("codex app-server idle timeout, disposing")
+            } else {
+              await stopServer()
+              await startServer(dataDir)
+            }
             await page.reload({ waitUntil: "domcontentloaded" })
             await expectAssistantReplyVisible(page, expectedReply)
             await fs.rm(output)

@@ -1700,8 +1700,9 @@ test.describe("real harness journeys @core @tier-real", () => {
       ...(harness === "codex" ? [["Stop", false, false, true] as const] : []),
       ...(harness === "claude" ? [["Allow always", true, false, false] as const] : []),
       ...(harness === "codex" ? [["Allow always", false, true, false] as const] : []),
+      ...(harness === "codex" ? [["Allow always", false, "idle", false] as const] : []),
     ] as const) {
-      test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}${restartServer ? " and server restart" : ""}${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
+      test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}${restartServer === "idle" ? " and native idle disposal" : restartServer ? " and server restart" : ""}${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
         requireBinary(binary, harness, "install the native CLI to exercise its tool approval boundary.")
         const dir = await makeWorkspace(`${harness}-permission`, harness)
@@ -1783,7 +1784,13 @@ test.describe("real harness journeys @core @tier-real", () => {
           await expectAssistantReplyVisible(page, marker)
           await expect(dock).toHaveCount(0)
           if (decision === "Allow always") {
-            if (restartServer) {
+            if (restartServer === "idle") {
+              // Wait for the production idle owner, not an arbitrary sleep or
+              // a simulated process exit. Immediate follow-ups miss this loss.
+              const logStart = server!.log().length
+              await expect.poll(() => server!.log().slice(logStart), { timeout: 45_000 })
+                .toContain("codex app-server idle timeout, disposing")
+            } else if (restartServer) {
               await server!.restart()
               await page.reload({ waitUntil: "domcontentloaded" })
               await expectAssistantReplyVisible(page, marker)
