@@ -733,6 +733,10 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
             completedItem.text ??
             state.toolOutputByCallId[id] ??
             ""
+          const exitCode = asFiniteNumber(completedItem.exitCode)
+          const completion = itemType === "command_execution" && exitCode !== undefined && exitCode !== 0
+            ? { type: "tool-error" as const, toolCallId: id, error: text(output) ?? `Process exited with code ${exitCode}` }
+            : { type: "tool-output" as const, toolCallId: id, output }
           if (!existing) {
             const toolName = toolNameForItem(itemType, completedItem)
             const input = structuredInput(completedItem)
@@ -745,11 +749,11 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
               events: [
                 { type: "tool-start", toolCallId: id, toolName, kind: itemType, display, metadata: { codex: { itemType } } },
                 ...(input ? [{ type: "tool-input", toolCallId: id, input, display, metadata: { codex: { itemType } } } satisfies AgentRuntimeEvent] : []),
-                { type: "tool-output", toolCallId: id, output, display, metadata: { codex: { itemType } } },
+                { ...completion, display, metadata: { codex: { itemType } } },
               ],
             }
           }
-          return [{ type: "tool-output", toolCallId: id, output, display: toolDisplay(itemType, existing.input, existing.toolName), metadata: { codex: { itemType } } }]
+          return [{ ...completion, display: toolDisplay(itemType, existing.input, existing.toolName), metadata: { codex: { itemType } } }]
         }
 
         case "item/started": {

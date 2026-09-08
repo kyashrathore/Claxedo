@@ -1,3 +1,4 @@
+import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
 /**
  * Real per-turn latency, measured against this repo's live `claxedo-server` with
  * `curl` and no browser overhead: `opencode`/`big-pickle` ~3s, `claude-sdk` ~6s,
@@ -760,6 +761,25 @@ test.describe("live real-harness smoke @live", () => {
       await expect(page.getByRole("dialog").getByText("Providers", { exact: true }).first()).toBeVisible()
       expect(submitted).toEqual([])
       await page.screenshot({ path: test.info().outputPath("pi-connect-provider.png") })
+    })
+  }
+
+
+  for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} live tool failure survives reload and a successful next tool`, async ({ page }) => {
+      const dir = await makeWorkspace(`${harness}-tool-error`)
+      await seedOneProject(page, dir)
+      await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+      await waitForHarnessReady(page)
+      await page.locator('[data-action="prompt-permission-mode"]').last().click()
+      await page.locator(`[data-permission-mode-row][data-mode="${harness === "claude" ? "bypassPermissions" : "full-access"}"]`).click()
+      await expectToolErrorRecovery({ page, directory: dir, backend: BACKEND_URL, run: async (command, marker) => {
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+          `Run exactly this shell command once: ${command}. Use ${harness === "claude" ? "Bash" : "exec_command"}. A nonzero exit is intentional; do not retry or repair it. After the tool returns, reply with exactly this one token: ${marker}`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expectAssistantReplyVisible(page, marker)
+      } })
     })
   }
 

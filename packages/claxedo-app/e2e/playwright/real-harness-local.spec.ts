@@ -1,3 +1,4 @@
+import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
 /** Real native-harness browser journeys against an isolated self-host server and scripted model HTTP endpoints. */
 import { expectConcurrentQuestionIsolation } from "../helpers/question-isolation"
 import { expect, test, type Locator, type Page } from "@playwright/test"
@@ -1553,6 +1554,27 @@ test.describe("real harness journeys @core @tier-real", () => {
       scripted?.setReplyDelayMs(0)
     }
   })
+
+
+  for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} native tool failure survives reload and a successful next tool`, async ({ page }) => {
+      const dir = await makeWorkspace(`${harness}-tool-error`, harness)
+      await seedOneProject(page, dir)
+      await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness)
+      await waitForHarnessReady(page)
+      await page.locator('[data-action="prompt-permission-mode"]').last().click()
+      await page.locator(`[data-permission-mode-row][data-mode="${harness === "claude" ? "bypassPermissions" : "full-access"}"]`).click()
+      await expectToolErrorRecovery({ page, directory: dir, backend: BACKEND_URL, run: async (command, marker) => {
+        scripted!.scriptTool({ name: harness === "claude" ? "Bash" : "exec_command",
+          input: harness === "claude" ? { command } : { cmd: command }, whenPromptIncludes: marker })
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+          `Run the requested command, then reply with exactly this one token: ${marker}`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expectAssistantReplyVisible(page, marker)
+      } })
+    })
+  }
 
   for (const harness of ["claude", "codex", "pi"] as const) {
     for (const goalMode of [false, true]) {

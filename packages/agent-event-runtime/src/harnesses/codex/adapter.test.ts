@@ -183,6 +183,19 @@ describe("codexAppServerAdapter", () => {
     ])
   })
 
+  for (const started of [false, true]) {
+    test(`nonzero command completion emits an error with native output (started=${started})`, () => {
+      const agent = runtime()
+      const item = { id: "failed-command", type: "commandExecution", command: "node fail.cjs", cwd: "/repo" }
+      if (started) agent.ingest({ source: "codex.app-server", method: "item/started", payload: { item } })
+      const events = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
+        item: { ...item, status: "failed", exitCode: 23, aggregatedOutput: "EXPECTED_TOOL_FAILURE" },
+      } }).events
+      expect(events).toContainEqual(expect.objectContaining({ type: "tool-error", toolCallId: "failed-command", error: "EXPECTED_TOOL_FAILURE" }))
+      expect(events.some((event) => event.type === "tool-output")).toBe(false)
+    })
+  }
+
   test("a command that produced no output yields empty output, not the raw envelope", () => {
     const agent = runtime()
 
