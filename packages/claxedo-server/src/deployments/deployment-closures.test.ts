@@ -86,8 +86,8 @@ const ENTRIES = [
   // on purpose — it is in every auth composition's closure, the Worker's
   // included.
   // +1 module: `src/mcp/oauth-credential.ts`, which turns a consented access
-  // token into an MCP credential. No package edge. Measured, not summed: 138/38.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 138, packages: 38 },
+  // token into an MCP credential. Consent revocation adds platform/auth/oauth-consent-revocation.ts; 139/38.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 139, packages: 38 },
 ] as const
 
 /** The remaining cloud compositions. */

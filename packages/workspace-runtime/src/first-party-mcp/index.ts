@@ -36,7 +36,7 @@ export function firstPartyMcpServerFor(options: WorkspaceFirstPartyMcpLaunchOpti
   return {
     name: FIRST_PARTY_MCP_SERVER_NAME,
     url: url.toString(),
-    headers: { Authorization: options.issuer.header() },
+    headers: { Authorization: options.issuer.header(sessionId) },
   }
 }
 

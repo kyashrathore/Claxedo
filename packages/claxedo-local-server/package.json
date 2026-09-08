@@ -55,6 +55,7 @@
     "@lydell/node-pty": "catalog:",
     "better-sqlite3": "13.0.1",
     "hono": "4.10.7",
+    "smol-toml": "1.7.1",
     "tokentracker-cli": "0.91.0",
     "zod": "4.4.3"
   },

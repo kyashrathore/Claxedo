@@ -242,8 +242,8 @@ async function mount(runtime: ReturnType<typeof fakeRuntime>, options: Partial<C
   const routes = createClaxedoMcpRoutes({
     mount: "loopback",
     verifyRuntimeCredential: (token) =>
-      token === "rt-token"
-        ? { runtimeId: "rt_1", workspaceId: WORKSPACE, userId: "user_1", permissionMode: "ask", expiresAt: Number.MAX_SAFE_INTEGER }
+      token.startsWith("rt-token:")
+        ? { runtimeId: "rt_1", workspaceId: WORKSPACE, sessionId: token.slice("rt-token:".length), userId: "user_1", permissionMode: "ask", expiresAt: Number.MAX_SAFE_INTEGER }
         : undefined,
     createClient: () => createClaxedoMcpClient({
       deployment: "loopback",
@@ -270,7 +270,7 @@ async function connect(url: string, headers: Record<string, string>) {
   return client
 }
 
-const asRuntime = (url: string, sessionId: string) => connect(`${url}?session=${sessionId}`, { authorization: "Bearer rt-token" })
+const asRuntime = (url: string, sessionId: string) => connect(`${url}?session=${sessionId}`, { authorization: `Bearer rt-token:${sessionId}` })
 
 const call = (client: Client, name: string, args: Record<string, unknown> = {}) =>
   client.callTool({ name, arguments: args }) as Promise<CallToolResult>
@@ -534,7 +534,7 @@ describe("subagent tools", () => {
   test("a runtime credential without a session id is told it has no parent", async () => {
     const runtime = fakeRuntime()
     const url = await mount(runtime)
-    const client = await connect(url, { authorization: "Bearer rt-token" })
+    const client = await connect(url, { authorization: "Bearer rt-token:" })
 
     const refused = await call(client, "create_subagent", { harness: "codex", prompt: "Consult", mode: "async" })
     expect(refused.isError).toBe(true)

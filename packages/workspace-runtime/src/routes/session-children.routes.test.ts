@@ -207,6 +207,28 @@ describe("POST /session with parentID", () => {
     expect(((await foreign.json()) as { id: string }).id).not.toBe(first.id)
   })
 
+  test("a retry still returns its child when all four child slots are occupied", async () => {
+    const item = fixture()
+    item.seedParent("parent")
+    const first = await (await item.create({ parentID: "parent", clientRequestId: "retry-at-cap" })).json() as { id: string }
+    for (let i = 0; i < 3; i++) expect((await item.create({ parentID: "parent" })).status).toBe(201)
+    const retry = await item.create({ parentID: "parent", clientRequestId: "retry-at-cap" })
+    expect(retry.status).toBe(200)
+    expect(await retry.json()).toMatchObject({ id: first.id })
+    expect(item.calls.created).toHaveLength(4)
+  })
+
+  test("concurrent creates respect the four-child cap and deduplicate retries", async () => {
+    const item = fixture()
+    item.seedParent("parent")
+    const retries = await Promise.all(Array.from({ length: 3 }, () => item.create({ parentID: "parent", clientRequestId: "same" })))
+    expect(retries.map((response) => response.status).sort()).toEqual([200, 200, 201])
+    expect(item.calls.created).toHaveLength(1)
+    const creates = await Promise.all(Array.from({ length: 5 }, () => item.create({ parentID: "parent" })))
+    expect(creates.map((response) => response.status).sort()).toEqual([201, 201, 201, 409, 409])
+    expect(item.calls.created).toHaveLength(4)
+  })
+
   test("a child may equal or narrow the parent's permission mode, never widen it", async () => {
     const item = fixture({ parentMode: "read-only" })
     item.seedParent("parent")

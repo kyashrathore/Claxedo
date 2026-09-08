@@ -18,7 +18,7 @@ export type McpCredential =
       workspaceId: string
       /** The user the runtime serves; absent on an unsigned local desktop. */
       userId?: string
-      /** From `?session=<id>`; the runtime credential does not vouch for it. */
+      /** Session named by the verified runtime credential. */
       sessionId?: string
       /** The caller's permission mode, the ceiling for anything it creates. */
       permissionMode?: string

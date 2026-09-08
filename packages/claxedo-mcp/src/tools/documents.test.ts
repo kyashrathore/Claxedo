@@ -65,9 +65,13 @@ async function listen(service?: ReturnType<typeof documentsService>) {
   const routes = createClaxedoMcpRoutes({
     mount: "node",
     verifyRuntimeCredential: (token) =>
-      token === "rt-token" ? { runtimeId: "rt_1", workspaceId: "ws_local", expiresAt: Number.MAX_SAFE_INTEGER } : undefined,
-    resolveUserCredential: async (request) =>
-      request.headers.get("authorization") === "Bearer cli-jwt" ? fullUserCredential({ actorId: "actor_1", clientId: "cli" }) : undefined,
+      token === "rt-token" ? { runtimeId: "rt_1", workspaceId: "ws_local", sessionId: "ses_caller", expiresAt: Number.MAX_SAFE_INTEGER } : undefined,
+    resolveUserCredential: async (request) => {
+      if (request.headers.get("authorization") === "Bearer read-token") {
+        return { kind: "user", actorId: "actor_1", clientId: "reader", readOnly: true, scopes: new Set(["read"]) }
+      }
+      return request.headers.get("authorization") === "Bearer cli-jwt" ? fullUserCredential({ actorId: "actor_1", clientId: "cli" }) : undefined
+    },
     createClient: () =>
       createClaxedoMcpClient({
         deployment: "node",
@@ -155,6 +159,16 @@ describe("documents_list", () => {
 })
 
 describe("documents_open", () => {
+  test("read-only access cannot grant a document path to a session", async () => {
+    const service = documentsService()
+    const { url } = await listen(service)
+    const client = await connect(url, "read-token")
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual(["documents_list"])
+    const result = await client.callTool({ name: "documents_open", arguments: { document: "doc_plan", project: "proj_1", session: "ses_1" } })
+    expect(result.isError).toBe(true)
+    expect(service.calls).toEqual([])
+  })
+
   test("resolves a reference, an id and a display name to the service's canonical path", async () => {
     const service = documentsService()
     const { url } = await listen(service)

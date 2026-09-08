@@ -48,6 +48,27 @@ function bridge(mode: CliSignInMode, existing?: ClaxedoCredentials) {
 }
 
 describe("CLI sign-in from the desktop", () => {
+  test("sign-out clears a credential even when its preceding write is still pending", async () => {
+    let current: ClaxedoCredentials | undefined
+    let release = () => {}
+    let started = () => {}
+    const writing = new Promise<void>((resolve) => { started = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const port = createCliCredentialFile({
+      mode: () => "with-refresh",
+      read: async () => current,
+      write: async (value) => { started(); await gate; current = value },
+      clear: async () => { current = undefined },
+    })
+    const publication = port.publish(CREDENTIAL)
+    await writing
+    const revocation = port.revoke()
+    await Promise.resolve()
+    release()
+    await Promise.all([publication, revocation])
+    expect(current).toBeUndefined()
+  })
+
   test("is off unless the settings store says otherwise", () => {
     expect(readCliSignInMode({ get: () => undefined })).toBe("off")
     expect(readCliSignInMode({ get: () => true })).toBe("off")

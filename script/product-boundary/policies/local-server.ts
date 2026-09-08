@@ -105,7 +105,8 @@ export const localServer: Policy = {
   // machine. It belongs to this product because the desktop's own agent-config
   // routes are what a user clicks, and it reads node builtins only — no
   // package edge. Re-measured, not summed: 55 modules, 23 packages.
-  ceilings: { modules: 55, packages: 23 },
+  // smol-toml validates the hosted MCP installer's Codex configuration before any file is written.
+  ceilings: { modules: 55, packages: 24 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

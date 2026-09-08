@@ -48,6 +48,7 @@ export type ClaxedoMcpMount = "loopback" | "hosted" | "node"
 export type RuntimeCredentialClaims = Readonly<{
   runtimeId: string
   workspaceId: string
+  sessionId?: string
   userId?: string
   permissionMode?: string
   expiresAt: number
@@ -136,11 +137,12 @@ export function mcpAuditRecord(event: McpAuditEvent) {
   }
 }
 
-/** One identity string per credential; sessions and the in-flight cap are keyed by it. */
+/** A session retains its original tool context, so every authorization field must match on reuse. */
 export function credentialKey(credential: McpCredential): string {
-  return credential.kind === "runtime"
-    ? `runtime:${credential.runtimeId}:${credential.workspaceId}:${credential.sessionId ?? ""}:${credential.readOnly}`
-    : `user:${credential.actorId}:${credential.clientId}:${credential.readOnly}`
+  return JSON.stringify(credential.kind === "runtime"
+    ? [credential.kind, credential.runtimeId, credential.workspaceId, credential.userId, credential.sessionId,
+      credential.permissionMode, credential.crossMachineWrites, credential.readOnly]
+    : [credential.kind, credential.actorId, credential.clientId, credential.readOnly, [...credential.scopes].sort()])
 }
 
 type McpSession = {
@@ -177,7 +179,9 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
   const runtimeCredential = async (token: string, request: Request): Promise<McpCredential | undefined> => {
     const claims = await options.verifyRuntimeCredential?.(token)
     if (!claims || claims.expiresAt <= now()) return undefined
-    const sessionId = new URL(request.url).searchParams.get("session")?.trim()
+    const requestedSession = new URL(request.url).searchParams.get("session")?.trim()
+    if (requestedSession && requestedSession !== claims.sessionId) return undefined
+    const sessionId = claims.sessionId
     const credential: McpCredential = {
       kind: "runtime",
       runtimeId: claims.runtimeId,
@@ -290,7 +294,10 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
       })
     }
     try {
-      return releaseWhenSettled(await dispatch(request, credential, key), release)
+      // The client captures the original bearer for downstream requests. A refreshed token must initialize a new client.
+      const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(request.headers.get("authorization") ?? ""))
+      const tokenKey = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
+      return releaseWhenSettled(await dispatch(request, credential, `${key}:${tokenKey}`), release)
     } catch (error) {
       release()
       throw error

@@ -69,6 +69,7 @@ export function createCliCredentialFile(input: {
   clear: () => Promise<void>
   onError?: (error: unknown) => void
 }): CliCredentialFilePort {
+  let pending = Promise.resolve()
   const clearOurs = async () => {
     const current = await input.read()
     // A file `claxedo login` wrote is the user's own separate sign-in, and
@@ -85,11 +86,17 @@ export function createCliCredentialFile(input: {
     }
   }
 
+  const enqueue = (run: () => Promise<void>) => {
+    const next = pending.then(() => guarded(run))
+    pending = next.catch(() => undefined)
+    return next
+  }
+
   return {
-    publish: async (credential) => {
+    publish: (credential) => enqueue(async () => {
       const mode = input.mode()
-      await guarded(() => (mode === "off" ? clearOurs() : input.write(cliCredentials(credential, mode))))
-    },
-    revoke: () => guarded(clearOurs),
+      await (mode === "off" ? clearOurs() : input.write(cliCredentials(credential, mode)))
+    }),
+    revoke: () => enqueue(clearOurs),
   }
 }

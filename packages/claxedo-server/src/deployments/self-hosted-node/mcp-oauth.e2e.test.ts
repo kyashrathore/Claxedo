@@ -222,6 +222,39 @@ const callTool = (client: Client, name: string, args: Record<string, unknown>) =
   client.callTool({ name, arguments: args }) as Promise<CallToolResult>
 
 describe("an MCP host that consents on this box's own OAuth server", () => {
+  test("disconnecting a consent revokes its access and refresh tokens", async () => {
+    const sessionToken = await signUp("disconnect@box.test")
+    const granted = await consentedToken({ sessionToken, scopes: ["claxedo:read", "claxedo:act"] })
+    const listed = await request("/api/auth/oauth2/get-consents", { headers: { authorization: `Bearer ${sessionToken}` } })
+    const rows = await listed.json() as Array<{ id: string; clientId: string }>
+    const consent = rows.find((row) => row.clientId === granted.clientId)
+    expect(consent).toBeDefined()
+    const otherUser = await signUp("other-disconnect@box.test")
+    const forbidden = await request("/api/auth/oauth2/delete-consent", {
+      method: "POST", headers: { authorization: `Bearer ${otherUser}`, "content-type": "application/json" },
+      body: JSON.stringify({ id: consent!.id }),
+    })
+    expect(forbidden.status).toBe(401)
+    const stillConnected = await connect(granted.access_token)
+    expect(await toolNames(stillConnected)).toContain("session_send")
+    await stillConnected.close()
+    const otherClient = await consentedToken({ sessionToken, scopes: ["claxedo:read"] })
+    const deleted = await request("/api/auth/oauth2/delete-consent", {
+      method: "POST", headers: { authorization: `Bearer ${sessionToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ id: consent!.id }),
+    })
+    expect(deleted.ok).toBe(true)
+    const accessed = await request("/api/claxedo/mcp", { headers: { authorization: `Bearer ${granted.access_token}` } })
+    expect(accessed.status).toBe(401)
+    const refreshed = await request("/api/auth/oauth2/token", form({
+      grant_type: "refresh_token", refresh_token: granted.refresh_token!, client_id: granted.clientId, resource: MCP_RESOURCE,
+    }))
+    expect(refreshed.ok).toBe(false)
+    const preserved = await connect(otherClient.access_token)
+    expect(await toolNames(preserved)).toContain("sessions_list")
+    await preserved.close()
+  })
+
   test("is pointed at the protected-resource metadata, which names this box's authorization server and scopes", async () => {
     const challenged = await initialize()
     expect(challenged.status).toBe(401)

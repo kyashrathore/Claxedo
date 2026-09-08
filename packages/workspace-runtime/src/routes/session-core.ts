@@ -1245,145 +1245,124 @@ export function createSessionRoutes(opts: Opts) {
       if ((body.parentID || body.clientRequestId) && !children) {
         return c.json(errorBody("child_sessions_unsupported", "This runtime cannot create child sessions"), 501)
       }
-      const parent = body.parentID && children ? await readSession(opts, c, directory, body.parentID) : undefined
-      if (body.parentID && children) {
-        if (!parent) return c.json(errorBody("parent_session_not_found", `Parent session ${body.parentID} not found`), 404)
-        if (parent.parentID) {
-          return c.json(errorBody("subagent_recursion_denied", "A child session cannot create children of its own"), 409)
+      const create = async () => {
+        const parent = body.parentID && children ? await readSession(opts, c, directory, body.parentID) : undefined
+        if (body.parentID && children) {
+          if (!parent) return c.json(errorBody("parent_session_not_found", `Parent session ${body.parentID} not found`), 404)
+          if (parent.parentID) {
+            return c.json(errorBody("subagent_recursion_denied", "A child session cannot create children of its own"), 409)
+          }
+          if (parent.time?.archived !== undefined) {
+            return c.json(errorBody("parent_session_archived", "An archived session cannot create children"), 409)
+          }
         }
-        if (parent.time?.archived !== undefined) {
-          return c.json(errorBody("parent_session_archived", "An archived session cannot create children"), 409)
+        if (!body.id && body.clientRequestId && children) {
+          const callerIdentity = body.parentID ?? sessionAccessContext(c).actor?.actorId
+          if (!callerIdentity) {
+            return c.json(errorBody("client_request_id_requires_identity", "clientRequestId needs a parent session or an authenticated caller"), 400)
+          }
+          body.id = children.deriveSessionId({ callerIdentity, clientRequestId: body.clientRequestId })
         }
-        const active = await children.activeChildren(body.parentID, directory)
-        if (active.length >= MAX_ACTIVE_CHILDREN_PER_PARENT) {
+        const operationId = registrationOperationId(c)
+        if (managedRegistration(opts) && (!body.id || !operationId)) {
           return c.json(errorBody(
-            "subagent_child_cap_reached",
-            `Session ${body.parentID} already has ${active.length} active children (limit ${MAX_ACTIVE_CHILDREN_PER_PARENT})`,
-          ), 409)
+            "session_reservation_required",
+            "Managed session creation requires a preassigned session id and reservation operation",
+          ), 400)
         }
-      }
-      if (!body.id && body.clientRequestId && children) {
-        const callerIdentity = body.parentID ?? sessionAccessContext(c).actor?.actorId
-        if (!callerIdentity) {
-          return c.json(errorBody("client_request_id_requires_identity", "clientRequestId needs a parent session or an authenticated caller"), 400)
-        }
-        body.id = children.deriveSessionId({ callerIdentity, clientRequestId: body.clientRequestId })
-      }
-      const operationId = registrationOperationId(c)
-      if (managedRegistration(opts) && (!body.id || !operationId)) {
-        return c.json(errorBody(
-          "session_reservation_required",
-          "Managed session creation requires a preassigned session id and reservation operation",
-        ), 400)
-      }
-      const config = normalizeSessionCreateConfig(wire)
-      const draftId = parseDraftId(c.req.header("x-claxedo-draft-id"))
-      const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
-      opts.publishSessionLifecycle?.({
-        type: "session.lifecycle",
-        phase: "creating",
-        directory,
-        ...(draftId ? { draftId } : {}),
-        ...(workspaceId ? { workspaceId } : {}),
-        ts: Date.now(),
-      })
-      try {
-        const adapter = await opts.resolveAdapter(c)
-        if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
-          adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
-        }
-        const existing = body.id ? await readSession(opts, c, directory, body.id, adapter) : undefined
-        const requestedHarness = opts.requestedSessionHarness?.(c)
-        if (existing && requestedHarness) {
-          const currentConfig = opts.getSessionConfig
-            ? await opts.getSessionConfig(c, directory, existing.id, adapter)
-            : await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, existing.id, adapter))
-          if (!sameSessionHarness(currentConfig.harness, requestedHarness)) {
-            throw new HTTPException(409, { message: "Session already belongs to another harness" })
+        const config = normalizeSessionCreateConfig(wire)
+        const draftId = parseDraftId(c.req.header("x-claxedo-draft-id"))
+        const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
+        opts.publishSessionLifecycle?.({
+          type: "session.lifecycle",
+          phase: "creating",
+          directory,
+          ...(draftId ? { draftId } : {}),
+          ...(workspaceId ? { workspaceId } : {}),
+          ts: Date.now(),
+        })
+        try {
+          const adapter = await opts.resolveAdapter(c)
+          if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
+            adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
           }
-        }
-        if (existing && body.parentID && children) {
-          if (existing.parentID !== body.parentID) {
-            return c.json(errorBody("session_parent_mismatch", `Session ${existing.id} does not belong to ${body.parentID}`), 409)
+          const existing = body.id ? await readSession(opts, c, directory, body.id, adapter) : undefined
+          const requestedHarness = opts.requestedSessionHarness?.(c)
+          if (existing && requestedHarness) {
+            const currentConfig = opts.getSessionConfig
+              ? await opts.getSessionConfig(c, directory, existing.id, adapter)
+              : await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, existing.id, adapter))
+            if (!sameSessionHarness(currentConfig.harness, requestedHarness)) {
+              throw new HTTPException(409, { message: "Session already belongs to another harness" })
+            }
           }
-          const row = await children.childOf(existing.id, directory)
-          if (!row) return c.json(errorBody("subagent_row_missing", `Session ${existing.id} has no subagent row`), 409)
-          return c.json(createdSessionBody(normalizeSession(existing, directory), { parentID: body.parentID, subagentKey: row.subagentKey }), 200)
-        }
-        const ceiling = await effectivePermissionCeiling(opts, c, directory, parent, body.permissionCeiling)
-        const childMode = await permissionModeUnderCeiling(c, adapter, directory, ceiling, body.permissionMode)
-        if (childMode.refusal) return childMode.refusal
-        const session = existing ?? (opts.createSession
-          ? await opts.createSession(c, directory, body.title, body.id, body.parentID ? { parentID: body.parentID } : undefined)
-          : await adapter.createSession(directory, body.title, body.id))
-        if (Object.keys(config).length > 0) {
+          if (existing && body.parentID && children) {
+            if (existing.parentID !== body.parentID) {
+              return c.json(errorBody("session_parent_mismatch", `Session ${existing.id} does not belong to ${body.parentID}`), 409)
+            }
+            const row = await children.childOf(existing.id, directory)
+            if (!row) return c.json(errorBody("subagent_row_missing", `Session ${existing.id} has no subagent row`), 409)
+            return c.json(createdSessionBody(normalizeSession(existing, directory), { parentID: body.parentID, subagentKey: row.subagentKey }), 200)
+          }
+          if (body.parentID && children) {
+            const active = await children.activeChildren(body.parentID, directory)
+            if (active.length >= MAX_ACTIVE_CHILDREN_PER_PARENT) {
+              return c.json(errorBody(
+                "subagent_child_cap_reached",
+                `Session ${body.parentID} already has ${active.length} active children (limit ${MAX_ACTIVE_CHILDREN_PER_PARENT})`,
+              ), 409)
+            }
+          }
+          const ceiling = await effectivePermissionCeiling(opts, c, directory, parent, body.permissionCeiling)
+          const childMode = await permissionModeUnderCeiling(c, adapter, directory, ceiling, body.permissionMode)
+          if (childMode.refusal) return childMode.refusal
+          const session = existing ?? (opts.createSession
+            ? await opts.createSession(c, directory, body.title, body.id, body.parentID ? { parentID: body.parentID } : undefined)
+            : await adapter.createSession(directory, body.title, body.id))
+          if (Object.keys(config).length > 0) {
+            try {
+              if (opts.updateSessionConfig) {
+                await opts.updateSessionConfig(c, directory, session.id, config, adapter)
+              } else {
+                await adapter.updateSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter), config)
+              }
+            } catch (error) {
+              await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+              throw error
+            }
+          }
+          let subagentKey: string | undefined
           try {
-            if (opts.updateSessionConfig) {
-              await opts.updateSessionConfig(c, directory, session.id, config, adapter)
-            } else {
-              await adapter.updateSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter), config)
+            if (childMode.mode) {
+              await adapter.setPermissionMode!(await requireExecutionBinding(opts, c, directory, session.id, adapter), childMode.mode.id)
+            }
+            if (body.parentID && children) {
+              const harness = requestedHarness ?? config.harness ?? (opts.getSessionConfig
+                ? (await opts.getSessionConfig(c, directory, session.id, adapter)).harness
+                : (await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter))).harness)
+              subagentKey = (await children.admitCreated({
+                parentSessionId: body.parentID,
+                childSessionId: session.id,
+                directory,
+                harness: harness.id,
+                ...(body.role ? { role: body.role } : {}),
+                ...(body.title ? { title: body.title } : {}),
+              })).subagentKey
             }
           } catch (error) {
             await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             throw error
           }
-        }
-        let subagentKey: string | undefined
-        try {
-          if (childMode.mode) {
-            await adapter.setPermissionMode!(await requireExecutionBinding(opts, c, directory, session.id, adapter), childMode.mode.id)
+          const created = {
+            ...(body.parentID ? { parentID: body.parentID } : {}),
+            ...(subagentKey ? { subagentKey } : {}),
+            ...(childMode.mode ? { permissionMode: childMode.mode.id } : {}),
           }
-          if (body.parentID && children) {
-            const harness = requestedHarness ?? config.harness ?? (opts.getSessionConfig
-              ? (await opts.getSessionConfig(c, directory, session.id, adapter)).harness
-              : (await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter))).harness)
-            subagentKey = (await children.admitCreated({
-              parentSessionId: body.parentID,
-              childSessionId: session.id,
-              directory,
-              harness: harness.id,
-              ...(body.role ? { role: body.role } : {}),
-              ...(body.title ? { title: body.title } : {}),
-            })).subagentKey
+          const registration = await registerCreatedSession(opts, c, session.id, operationId, body.title)
+          if (registration.kind === "ambiguous") {
+            return registration.response
           }
-        } catch (error) {
-          await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
-          throw error
-        }
-        const created = {
-          ...(body.parentID ? { parentID: body.parentID } : {}),
-          ...(subagentKey ? { subagentKey } : {}),
-          ...(childMode.mode ? { permissionMode: childMode.mode.id } : {}),
-        }
-        const registration = await registerCreatedSession(opts, c, session.id, operationId, body.title)
-        if (registration.kind === "ambiguous") {
-          return registration.response
-        }
-        if (registration.kind === "denied") {
-          await compensateRegistration({
-            opts,
-            c,
-            adapter,
-            directory,
-            sessionId: session.id,
-            operationId: operationId!,
-            reason: `registration_denied_${registration.response.status}`,
-          })
-          opts.publishSessionLifecycle?.({
-            type: "session.lifecycle",
-            phase: "failed",
-            directory,
-            ...(draftId ? { draftId } : {}),
-            ...(workspaceId ? { workspaceId } : {}),
-            message: "Session creator registration was denied",
-            ts: Date.now(),
-          })
-          return registration.response
-        }
-        try {
-          await after(opts.afterCreateSession?.(c, directory, session))
-        } catch (error) {
-          if (managedRegistration(opts)) {
+          if (registration.kind === "denied") {
             await compensateRegistration({
               opts,
               c,
@@ -1391,41 +1370,69 @@ export function createSessionRoutes(opts: Opts) {
               directory,
               sessionId: session.id,
               operationId: operationId!,
-              reason: `post_create_projection_failed: ${errorMessage(error)}`,
+              reason: `registration_denied_${registration.response.status}`,
             })
-          } else {
-            await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+            opts.publishSessionLifecycle?.({
+              type: "session.lifecycle",
+              phase: "failed",
+              directory,
+              ...(draftId ? { draftId } : {}),
+              ...(workspaceId ? { workspaceId } : {}),
+              message: "Session creator registration was denied",
+              ts: Date.now(),
+            })
+            return registration.response
           }
-          throw error
+          try {
+            await after(opts.afterCreateSession?.(c, directory, session))
+          } catch (error) {
+            if (managedRegistration(opts)) {
+              await compensateRegistration({
+                opts,
+                c,
+                adapter,
+                directory,
+                sessionId: session.id,
+                operationId: operationId!,
+                reason: `post_create_projection_failed: ${errorMessage(error)}`,
+              })
+            } else {
+              await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+            }
+            throw error
+          }
+          opts.publishSessionLifecycle?.({
+            type: "session.lifecycle",
+            phase: "created",
+            directory,
+            sessionID: session.id,
+            ...(draftId ? { draftId } : {}),
+            ...(workspaceId ? { workspaceId } : {}),
+            info: sessionLifecycleInfo({ session, directory, title: body.title, workspaceId }),
+            ts: Date.now(),
+          })
+          return c.json(createdSessionBody(normalizeSession(session, directory), created), 201)
+        } catch (error) {
+          opts.publishSessionLifecycle?.({
+            type: "session.lifecycle",
+            phase: "failed",
+            directory,
+            ...(draftId ? { draftId } : {}),
+            ...(workspaceId ? { workspaceId } : {}),
+            message: errorMessage(error),
+            ts: Date.now(),
+          })
+          // A create that was REFUSED carries its own status — an unknown harness
+          // is a 400, an id that belongs to another workspace is a 409. Flattening
+          // those into 500 tells the caller the runtime broke when in fact the
+          // runtime declined, and a 500 is the one class of failure clients retry.
+          if (error instanceof HTTPException) throw error
+          return c.json(errorBody("session_create_failed", errorMessage(error)), 500)
         }
-        opts.publishSessionLifecycle?.({
-          type: "session.lifecycle",
-          phase: "created",
-          directory,
-          sessionID: session.id,
-          ...(draftId ? { draftId } : {}),
-          ...(workspaceId ? { workspaceId } : {}),
-          info: sessionLifecycleInfo({ session, directory, title: body.title, workspaceId }),
-          ts: Date.now(),
-        })
-        return c.json(createdSessionBody(normalizeSession(session, directory), created), 201)
-      } catch (error) {
-        opts.publishSessionLifecycle?.({
-          type: "session.lifecycle",
-          phase: "failed",
-          directory,
-          ...(draftId ? { draftId } : {}),
-          ...(workspaceId ? { workspaceId } : {}),
-          message: errorMessage(error),
-          ts: Date.now(),
-        })
-        // A create that was REFUSED carries its own status — an unknown harness
-        // is a 400, an id that belongs to another workspace is a 409. Flattening
-        // those into 500 tells the caller the runtime broke when in fact the
-        // runtime declined, and a 500 is the one class of failure clients retry.
-        if (error instanceof HTTPException) throw error
-        return c.json(errorBody("session_create_failed", errorMessage(error)), 500)
       }
+      return body.parentID && children
+        ? children.withCreation(body.parentID, directory, create)
+        : create()
     })
     // Register the harness capability routes, both global
     // (`/session/capabilities`, no :id) and per-session

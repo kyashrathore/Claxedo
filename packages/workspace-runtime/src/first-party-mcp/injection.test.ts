@@ -92,10 +92,10 @@ describe("first-party MCP injection through the workspace runtime", () => {
       expect(entry).toEqual({
         name: "claxedo",
         url: "http://127.0.0.1:2593/api/claxedo/mcp?session=session-a",
-        headers: { Authorization: f.issuer.header() },
+        headers: { Authorization: f.issuer.header("session-a") },
       })
       expect(f.issuer.verify(entry.headers.Authorization.replace(/^Bearer /, ""))).toMatchObject({
-        runtimeId: "rt-1", workspaceId: "ws-1", userId: "user-1",
+        runtimeId: "rt-1", workspaceId: "ws-1", userId: "user-1", sessionId: "session-a",
       })
       expect(entry).toEqual(firstPartyMcpServerFor(f.launch, "session-a"))
     }

@@ -9,6 +9,20 @@ function clock(start = 1_700_000_000_000) {
 }
 
 describe("runtime credential issuer", () => {
+  test("binds each launched session to signed claims without invalidating sibling tokens", () => {
+    const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt-1", workspaceId: "ws-1" })
+    const parent = issuer.current("ses_parent")
+    const child = issuer.current("ses_child")
+    expect(parent).not.toBe(child)
+    expect(issuer.verify(parent)?.sessionId).toBe("ses_parent")
+    expect(issuer.verify(child)?.sessionId).toBe("ses_child")
+    const [header, payload, signature] = child.split(".")
+    const claims = JSON.parse(Buffer.from(payload!, "base64url").toString())
+    claims.session_id = "ses_parent"
+    const forged = `${header}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.${signature}`
+    expect(issuer.verify(forged)).toBeUndefined()
+  })
+
   test("verifies its own token and surfaces the runtime, workspace, user and lifetime claims", () => {
     const time = clock()
     const issuer = createRuntimeCredentialIssuer({

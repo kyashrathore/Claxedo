@@ -12,6 +12,7 @@ import type { BetterAuthVerifier } from "@claxedo/server-core/platform/auth/auth
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 import { BETTER_AUTH_INTROSPECTION_CLIENT_ID } from "../../platform/auth/better-auth-native-clients"
 import { CLAXEDO_MCP_RESOURCE_SCOPES, claxedoMcpResource } from "../../platform/auth/mcp-oauth-scopes"
+import { oauthConsentRevocation } from "../../platform/auth/oauth-consent-revocation"
 
 /**
  * Embedded Better Auth for self-host boxes (part of the self-host/hosted-parity
@@ -168,6 +169,7 @@ export function createEmbeddedAuth(
     // control-plane bearer auth) use.
     plugins: [
       bearer(),
+      oauthConsentRevocation(),
       oauthProvider({
         loginPage: `${embeddedAuthPublicOrigin(env)}/login`,
         consentPage: `${embeddedAuthPublicOrigin(env)}/oauth/consent`,

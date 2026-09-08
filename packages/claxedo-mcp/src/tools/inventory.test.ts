@@ -190,7 +190,6 @@ describe("the registered surface", () => {
     expect(listed.filter((name) => writes.includes(name))).toEqual([])
     expect(listed).toEqual([
       "documents_list",
-      "documents_open",
       "process_logs",
       "processes",
       "session_changes",

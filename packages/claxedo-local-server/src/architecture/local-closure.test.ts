@@ -222,6 +222,7 @@ describe("@claxedo/local-server closure", () => {
     // increments.
     const { modules, packages } = closure({ runtimeOnly: true })
     expect(modules.size).toBeLessThanOrEqual(81)
-    expect(packages.size).toBeLessThanOrEqual(23)
+    // smol-toml is the hosted MCP installer's configuration validator.
+    expect(packages.size).toBeLessThanOrEqual(24)
   })
 })

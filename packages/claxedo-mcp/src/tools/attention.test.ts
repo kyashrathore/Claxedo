@@ -171,7 +171,7 @@ async function listen(input: MountInput) {
   const control = input.workspaces ? controlPlaneFetch(input.workspaces) : undefined
   const routes = createClaxedoMcpRoutes({
     mount,
-    verifyRuntimeCredential: (token) => (token === "rt-token" ? runtimeClaims : undefined),
+    verifyRuntimeCredential: (token) => (token === "rt-token" ? { ...runtimeClaims, sessionId: input.callerSession } : undefined),
     resolveUserCredential: async (request) => {
       if (request.headers.get("authorization") !== "Bearer cli-jwt") return undefined
       if (!input.userScopes) return fullUserCredential({ actorId: "actor_1", clientId: "cli" })

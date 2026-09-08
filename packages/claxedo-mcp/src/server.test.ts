@@ -27,7 +27,7 @@ const stubClient: ClaxedoMcpClient = {
   workspaces: async () => [],
 }
 
-const runtimeClaims = { runtimeId: "rt_1", workspaceId: "ws_1", userId: "user_1", expiresAt: Number.MAX_SAFE_INTEGER }
+const runtimeClaims = { runtimeId: "rt_1", workspaceId: "ws_1", sessionId: "ses_parent", userId: "user_1", expiresAt: Number.MAX_SAFE_INTEGER }
 
 /** Two audiences, one write with a session, one destructive, one that waits. */
 function fixtureTools(gate: { release?: () => void }): McpToolGroup {
@@ -177,7 +177,7 @@ describe("the loopback mount", () => {
     expect(response.status).toBe(403)
   })
 
-  test("lists only the runtime audience and carries the session from the URL into the audit line", async () => {
+  test("lists only the runtime audience and carries the verified session into the audit line", async () => {
     const { url, audits } = await loopback()
     const { client } = await connect(`${url}?session=ses_parent`, { authorization: "Bearer rt-token" })
     expect(client.getServerVersion()).toEqual({ name: "claxedo", version: packageVersion })
@@ -199,6 +199,13 @@ describe("the loopback mount", () => {
     const { client } = await connect(url, { authorization: "Bearer rt-token" })
     expect(await client.callTool({ name: "user_ping", arguments: {} })).toEqual(unknownTool("user_ping"))
     expect(await client.callTool({ name: "workspace_destroy", arguments: { workspace: "ws_1" } })).toEqual(unknownTool("workspace_destroy"))
+  })
+
+  test("refuses another session in the URL and never upgrades an unbound token", async () => {
+    const { url } = await loopback()
+    expect((await initialize(`${url}?session=ses_other`, { headers: { authorization: "Bearer rt-token" } })).status).toBe(401)
+    const unbound = await loopback({ verifyRuntimeCredential: () => ({ ...runtimeClaims, sessionId: undefined }) })
+    expect((await initialize(`${unbound.url}?session=ses_parent`, { headers: { authorization: "Bearer rt-token" } })).status).toBe(401)
   })
 
   test("a read-only credential is shown no write and refuses one called anyway", async () => {
@@ -271,6 +278,52 @@ describe("the loopback mount", () => {
 })
 
 describe("the hosted mount", () => {
+  test("a refreshed bearer initializes a client instead of retaining the expired downstream bearer", async () => {
+    const { url } = await hosted({ resolveUserCredential: async () => fullUserCredential({ actorId: "actor_1", clientId: "cli" }) })
+    const { transport } = await connect(url, { authorization: "Bearer original" })
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer refreshed",
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        "mcp-session-id": transport.sessionId!,
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/list" }),
+    })
+    expect(response.status).toBe(404)
+    const refreshed = await connect(url, { authorization: "Bearer refreshed" })
+    expect(await toolNames(refreshed.client)).toContain("session_send")
+  })
+
+  test("does not reuse an admin session after the same client's scopes are narrowed", async () => {
+    let admin = true
+    const { url, audits } = await hosted({
+      resolveUserCredential: async () => ({
+        kind: "user", actorId: "actor_1", clientId: "same-client", readOnly: false,
+        scopes: new Set(admin ? ["read", "act", "admin"] as const : ["read", "act"] as const),
+      }),
+    })
+    const { client, transport } = await connect(url, { authorization: "Bearer token" })
+    expect(await toolNames(client)).toContain("workspace_destroy")
+    admin = false
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        authorization: "Bearer token",
+        "content-type": "application/json",
+        accept: "application/json, text/event-stream",
+        "mcp-session-id": transport.sessionId!,
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 9, method: "tools/call", params: { name: "workspace_destroy", arguments: { workspace: "ws_1" } } }),
+    })
+    expect(response.status).toBe(404)
+    expect(audits).toEqual([])
+    const narrowed = await connect(url, { authorization: "Bearer token" })
+    expect(await toolNames(narrowed.client)).not.toContain("workspace_destroy")
+    expect(await toolNames(narrowed.client)).toContain("session_send")
+  })
+
   test("points an unauthenticated client at the protected-resource metadata", async () => {
     const { url } = await hosted()
     const response = await initialize(url)

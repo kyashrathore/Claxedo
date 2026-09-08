@@ -72,13 +72,15 @@ export function registerDocumentTools(registry: ToolRegistry) {
         document: z.string().trim().min(1).describe("A claxedo://document/... reference, an exact document id, or a display name."),
         session: z.string().trim().min(1).optional().describe("Session the path is granted to. A session's own credential always grants to itself."),
       },
-      access: declaredToolAccess({ audiences: ["runtime", "user"], write: false, scope: "read" }),
+      access: declaredToolAccess({ audiences: ["runtime", "user"], write: true, scope: "act" }),
+      sessionIdFromHandler: true,
     },
-    async (args, ctx) => answering(async () => {
+    async (args, ctx, addressed) => answering(async () => {
       const sessionId = grantedSession(ctx, args.session)
       if (!sessionId) {
         return mcpToolRefusal("Opening a document grants a path to one session; name the session it is for.")
       }
+      addressed?.(sessionId)
       const scope = documentScope(ctx, args)
       if ("refusal" in scope) return scope.refusal
       const documents = await listDocuments(ctx, scope, "all")

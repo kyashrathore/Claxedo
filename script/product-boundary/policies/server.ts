@@ -119,8 +119,9 @@ export const serverSelfHosted: Policy = {
   // owned here rather than in `@claxedo/mcp` because the scope-to-credential
   // rule is a deployment's policy over its own authorization server, and it
   // reaches only `@claxedo/helpers/string` and the scope module already in
-  // this closure. No package edge. Re-measured, no headroom: 138/38.
-  ceilings: { modules: 138, packages: 38 },
+  // this closure. No package edge. Re-measured, no headroom: 139/38.
+  // Consent revocation shares platform/auth/oauth-consent-revocation.ts across both OAuth providers.
+  ceilings: { modules: 139, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

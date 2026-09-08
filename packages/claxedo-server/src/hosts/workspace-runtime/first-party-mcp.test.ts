@@ -40,7 +40,7 @@ describe("the cloud runtime's first-party MCP contribution", () => {
   test("is absent from a runtime the host contributes nothing to", async () => {
     const app = runtime({ contribute: false })
     try {
-      const response = await initialize(app.app, "http://127.0.0.1", { authorization: `Bearer ${app.issuer.current()}` })
+      const response = await initialize(app.app, "http://127.0.0.1", { authorization: `Bearer ${app.issuer.current("ses_1")}` })
       expect(response.status).toBe(404)
     } finally {
       await app.host.dispose()
@@ -50,7 +50,7 @@ describe("the cloud runtime's first-party MCP contribution", () => {
   test("admits this runtime's own credential and reports the MCP package's version", async () => {
     const app = runtime()
     try {
-      const response = await initialize(app.app, "http://127.0.0.1", { authorization: `Bearer ${app.issuer.current()}` })
+      const response = await initialize(app.app, "http://127.0.0.1", { authorization: `Bearer ${app.issuer.current("ses_1")}` })
       expect(response.status).toBe(200)
       expect(response.headers.get("mcp-session-id")).toMatch(/\S/)
       expect(response.headers.get("access-control-allow-origin")).toBeNull()
@@ -75,7 +75,7 @@ describe("the cloud runtime's first-party MCP contribution", () => {
     const app = runtime()
     try {
       const response = await initialize(app.app, "http://runtime.example.com", {
-        authorization: `Bearer ${app.issuer.current()}`,
+        authorization: `Bearer ${app.issuer.current("ses_1")}`,
       })
       expect(response.status).toBe(403)
     } finally {

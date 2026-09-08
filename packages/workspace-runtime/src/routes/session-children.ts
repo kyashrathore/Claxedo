@@ -55,6 +55,7 @@ export type ChildSessionHostInput = {
 }
 
 export type ChildSessionHost = {
+  withCreation<T>(parentSessionId: string, directory: RuntimeDirectory, create: () => Promise<T>): Promise<T>
   deriveSessionId(input: { callerIdentity: string; clientRequestId: string }): string
   children(parentSessionId: string, directory: RuntimeDirectory): Promise<HostChildRow[]>
   activeChildren(parentSessionId: string, directory: RuntimeDirectory): Promise<HostChildRow[]>
@@ -82,6 +83,7 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
   const admit = (parentSessionId: string, directory: string, observation: SubagentObservation) =>
     boundary(directory).admit(parentSessionId, observation)
   const offering = new Set<string>()
+  const creations = new Map<string, Promise<void>>()
   const pendingAttention = new Map<string, Set<string>>()
   let recovered: Promise<void> | undefined
 
@@ -155,6 +157,20 @@ export function createChildSessionHost(input: ChildSessionHostInput): ChildSessi
   })
 
   return {
+    async withCreation(parentSessionId, directory, create) {
+      const key = JSON.stringify([directory, parentSessionId])
+      const previous = creations.get(key) ?? Promise.resolve()
+      let release = () => {}
+      const current = new Promise<void>((resolve) => { release = resolve })
+      creations.set(key, current)
+      await previous
+      try {
+        return await create()
+      } finally {
+        release()
+        if (creations.get(key) === current) creations.delete(key)
+      }
+    },
     deriveSessionId({ callerIdentity, clientRequestId }) {
       const digest = createHmac("sha256", input.secret())
         .update(`${callerIdentity}\0${clientRequestId}`)

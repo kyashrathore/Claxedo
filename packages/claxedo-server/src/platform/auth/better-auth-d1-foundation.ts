@@ -1,3 +1,4 @@
+import { oauthConsentRevocation } from "./oauth-consent-revocation"
 import type { BetterAuthOptions } from "better-auth"
 import { queueAfterTransactionHook } from "@better-auth/core/context"
 import { betterAuth } from "better-auth/minimal"
@@ -154,6 +155,7 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
     telemetry: { enabled: false },
     databaseHooks: input.databaseHooks,
     plugins: [
+      oauthConsentRevocation(),
       jwt({
         disableSettingJwtHeader: true,
         jwt: {

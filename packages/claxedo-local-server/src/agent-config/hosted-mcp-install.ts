@@ -3,6 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { asRecord } from "@claxedo/helpers/guards"
+import { parse as parseToml } from "smol-toml"
 
 /** What the entry is called in every harness's config, and how a user recognises it. */
 export const HOSTED_MCP_SERVER_NAME = "claxedo"
@@ -81,11 +82,19 @@ async function readIfPresent(file: string) {
 async function replaceFileAtomically(file: string, contents: string) {
   await fs.mkdir(path.dirname(file), { recursive: true })
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.claxedo-${crypto.randomUUID()}`)
-  await fs.writeFile(temporary, contents)
-  await fs.rename(temporary, file)
+  const mode = await fs.stat(file).then((stat) => stat.mode & 0o777, (error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return 0o600
+    throw error
+  })
+  try {
+    await fs.writeFile(temporary, contents, { mode })
+    await fs.rename(temporary, file)
+  } finally {
+    await fs.rm(temporary, { force: true })
+  }
 }
 
-async function updateJsonConfig(file: string, url: string | undefined): Promise<HostedMcpInstallResult["state"]> {
+async function prepareJsonConfig(file: string, url: string | undefined): Promise<{ state: HostedMcpInstallResult["state"]; contents?: string }> {
   const current = await readIfPresent(file)
   // A config a harness cannot parse is a config the user is already fighting;
   // silently replacing it would take their servers with it.
@@ -94,11 +103,10 @@ async function updateJsonConfig(file: string, url: string | undefined): Promise<
   const servers = { ...asRecord(config.mcpServers) }
   const entry = url === undefined ? undefined : { type: "http", url }
   const existing = servers[HOSTED_MCP_SERVER_NAME]
-  if (JSON.stringify(existing) === JSON.stringify(entry)) return "unchanged"
+  if (JSON.stringify(existing) === JSON.stringify(entry)) return { state: "unchanged" }
   if (entry) servers[HOSTED_MCP_SERVER_NAME] = entry
   else delete servers[HOSTED_MCP_SERVER_NAME]
-  await replaceFileAtomically(file, `${JSON.stringify({ ...config, mcpServers: servers }, null, 2)}\n`)
-  return url === undefined ? "removed" : "written"
+  return { contents: `${JSON.stringify({ ...config, mcpServers: servers }, null, 2)}\n`, state: url === undefined ? "removed" : "written" }
 }
 
 /**
@@ -106,7 +114,7 @@ async function updateJsonConfig(file: string, url: string | undefined): Promise<
  * replaced whole. Everything outside the markers is the user's, including
  * their own `[mcp_servers.*]` tables.
  */
-async function updateCodexConfig(file: string, url: string | undefined): Promise<HostedMcpInstallResult["state"]> {
+async function prepareCodexConfig(file: string, url: string | undefined): Promise<{ state: HostedMcpInstallResult["state"]; contents?: string }> {
   const current = (await readIfPresent(file)) ?? ""
   const start = current.indexOf(CODEX_BLOCK_START)
   const end = current.indexOf(CODEX_BLOCK_END)
@@ -116,6 +124,10 @@ async function updateCodexConfig(file: string, url: string | undefined): Promise
   const before = start === -1 ? current : current.slice(0, start)
   const after = start === -1 ? "" : current.slice(end + CODEX_BLOCK_END.length)
   const unmanaged = `${before.trimEnd()}\n${after.trimStart()}`.trim()
+  const existing = asRecord(parseToml(unmanaged).mcp_servers)
+  if (url !== undefined && existing && HOSTED_MCP_SERVER_NAME in existing) {
+    throw new Error(`Codex config ${file} already defines claxedo outside the managed block; remove that entry before installing`)
+  }
   const managed = url === undefined ? "" : [
     CODEX_BLOCK_START,
     `[mcp_servers.${HOSTED_MCP_SERVER_NAME}]`,
@@ -124,22 +136,24 @@ async function updateCodexConfig(file: string, url: string | undefined): Promise
   ].join("\n")
   const next = [unmanaged, managed].filter(Boolean).join("\n\n")
   const contents = next ? `${next}\n` : ""
-  if (contents === current) return "unchanged"
-  await replaceFileAtomically(file, contents)
-  return url === undefined ? "removed" : "written"
+  if (contents === current) return { state: "unchanged" }
+  return { contents, state: url === undefined ? "removed" : "written" }
 }
 
 async function applyAll(url: string | undefined, paths: HostedMcpInstallPaths, env: NodeJS.ProcessEnv) {
   const target = harnessConfigFiles(paths, env)
-  const results: HostedMcpInstallResult[] = []
+  const changes: Array<HostedMcpInstallResult & { contents?: string }> = []
   for (const harness of ["claude", "cursor", "codex"] as const) {
     const file = target[harness]
-    const state = harness === "codex"
-      ? await updateCodexConfig(file, url)
-      : await updateJsonConfig(file, url)
-    results.push({ harness, file, state })
+    const change = harness === "codex"
+      ? await prepareCodexConfig(file, url)
+      : await prepareJsonConfig(file, url)
+    changes.push({ harness, file, ...change })
   }
-  return results
+  for (const change of changes) {
+    if (change.contents !== undefined) await replaceFileAtomically(change.file, change.contents)
+  }
+  return changes.map(({ harness, file, state }) => ({ harness, file, state }))
 }
 
 /** Writes the hosted `claxedo` entry into Claude Code, Cursor and Codex on this machine. */

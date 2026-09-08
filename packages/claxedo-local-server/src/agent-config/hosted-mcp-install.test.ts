@@ -49,6 +49,25 @@ describe("the URL a harness on this machine is told to reach", () => {
 })
 
 describe("installing the hosted entry", () => {
+  test("refuses an existing unmanaged Codex entry without corrupting its TOML", async () => {
+    const box = await machine()
+    const original = '[mcp_servers."claxedo"]\nurl = "https://previous.example/mcp"\n'
+    await box.write(".codex/config.toml", original)
+    await expect(installHostedMcpEntry({ controlPlaneUrl: "https://api.claxedo.com", ...box })).rejects.toThrow(/outside the managed block/)
+    expect(await box.read(".codex/config.toml")).toBe(original)
+    await expect(box.read(".claude.json")).rejects.toMatchObject({ code: "ENOENT" })
+    await expect(box.read(".cursor/mcp.json")).rejects.toMatchObject({ code: "ENOENT" })
+  })
+
+  test("preserves restrictive permissions when replacing harness configuration", async () => {
+    const box = await machine()
+    await box.write(".claude.json", '{}\n')
+    const file = path.join(box.paths.home, ".claude.json")
+    await fs.chmod(file, 0o600)
+    await installHostedMcpEntry({ controlPlaneUrl: "https://api.claxedo.com", ...box })
+    expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
+  })
+
   test("writes one http entry into Claude Code, Cursor and Codex", async () => {
     const box = await machine()
 

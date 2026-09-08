@@ -5,6 +5,7 @@ import { rec } from "../json-value"
 export type RuntimeCredentialClaims = {
   runtimeId: string
   workspaceId: string
+  sessionId?: string
   userId?: string
   issuedAt: number
   expiresAt: number
@@ -14,8 +15,8 @@ export type RuntimeCredentialVerifier = (token: string) => RuntimeCredentialClai
 
 export type RuntimeCredentialIssuer = {
   /** `Authorization` header value for the current token. */
-  header(): string
-  current(): string
+  header(sessionId?: string): string
+  current(sessionId?: string): string
   verify: RuntimeCredentialVerifier
   /** Replaces the signing secret; every token minted before this call stops verifying. */
   rotate(): void
@@ -64,31 +65,32 @@ export function createRuntimeCredentialIssuer(options: RuntimeCredentialIssuerOp
   if (!(ttlMs > 0)) throw new Error("Runtime credential ttlMs must be positive")
   const now = options.now ?? Date.now
   let secret = randomBytes(32)
-  let minted: { token: string; issuedAt: number } | undefined
+  let minted: { token: string; issuedAt: number; sessionId?: string } | undefined
 
   function sign(input: string) {
     return base64UrlEncode(createHmac("sha256", secret).update(input).digest())
   }
 
-  function mint() {
+  function mint(sessionId?: string) {
     const issuedAt = now()
     const payload = {
       iss: ISSUER,
       aud: AUDIENCE,
       sub: options.runtimeId,
       workspace_id: options.workspaceId,
+      ...(sessionId ? { session_id: sessionId } : {}),
       ...(options.userId ? { user_id: options.userId } : {}),
       iat: Math.floor(issuedAt / 1000),
       exp: Math.floor((issuedAt + ttlMs) / 1000),
       jti: randomUUID(),
     }
     const signingInput = `${HEADER}.${base64UrlEncode(new TextEncoder().encode(JSON.stringify(payload)))}`
-    minted = { token: `${signingInput}.${sign(signingInput)}`, issuedAt }
+    minted = { token: `${signingInput}.${sign(signingInput)}`, issuedAt, sessionId }
     return minted.token
   }
 
-  function current() {
-    if (!minted || now() - minted.issuedAt >= ttlMs / 2) return mint()
+  function current(sessionId?: string) {
+    if (!minted || minted.sessionId !== sessionId || now() - minted.issuedAt >= ttlMs / 2) return mint(sessionId)
     return minted.token
   }
 
@@ -107,9 +109,11 @@ export function createRuntimeCredentialIssuer(options: RuntimeCredentialIssuerOp
     if (typeof claims.iat !== "number" || typeof claims.exp !== "number") return undefined
     if (claims.exp * 1000 <= now()) return undefined
     if (claims.user_id !== undefined && typeof claims.user_id !== "string") return undefined
+    if (claims.session_id !== undefined && (typeof claims.session_id !== "string" || !claims.session_id)) return undefined
     return {
       runtimeId: options.runtimeId,
       workspaceId: options.workspaceId,
+      ...(typeof claims.session_id === "string" ? { sessionId: claims.session_id } : {}),
       ...(typeof claims.user_id === "string" ? { userId: claims.user_id } : {}),
       issuedAt: claims.iat * 1000,
       expiresAt: claims.exp * 1000,
@@ -117,7 +121,7 @@ export function createRuntimeCredentialIssuer(options: RuntimeCredentialIssuerOp
   }
 
   return {
-    header: () => `Bearer ${current()}`,
+    header: (sessionId) => `Bearer ${current(sessionId)}`,
     current,
     verify,
     rotate() {
