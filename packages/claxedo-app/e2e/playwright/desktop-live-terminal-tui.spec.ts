@@ -15,6 +15,7 @@ for (const { harness, child, pause } of [
   { harness: "cursor", child: false, pause: false },
   { harness: "droid", child: false, pause: false },
   { harness: "amp", child: false, pause: false },
+  { harness: "antigravity", child: false, pause: false },
   { harness: "claude", child: false, pause: false },
   { harness: "claude", child: true, pause: false },
   { harness: "claude", child: true, pause: true },
@@ -29,6 +30,7 @@ for (const { harness, child, pause } of [
     const customLauncher = harness === "cursor"
       ? { name: "Cursor", command: "AGENT_CLI_CREDENTIAL_STORE=file cursor-agent --force" }
       : harness === "droid" ? { name: "Droid", command: "droid --auto high" }
+      : harness === "antigravity" ? { name: "Antigravity", command: "agy --dangerously-skip-permissions" }
       : harness === "amp" ? { name: "Amp", command: "amp --dangerously-allow-all --visibility private --no-ide" } : undefined
     let packaged: PackagedApp | undefined
     let ptyUrl: string | undefined
@@ -98,7 +100,7 @@ for (const { harness, child, pause } of [
           await fs.copyFile(path.join(os.homedir(), ".factory", file), path.join(home, ".factory", file))
           await fs.chmod(path.join(home, ".factory", file), 0o600)
         }
-      } else {
+      } else if (harness === "claude") {
         const config = JSON.parse(await fs.readFile(path.join(os.homedir(), ".claude.json"), "utf8")) as { oauthAccount?: unknown }
         await fs.writeFile(path.join(home, ".claude.json"), JSON.stringify({
           hasCompletedOnboarding: true, theme: "light", oauthAccount: config.oauthAccount,
@@ -186,8 +188,11 @@ for (const { harness, child, pause } of [
           await packaged.page.keyboard.press("Enter")
           await expect(rows).not.toContainText("Enter to get started")
         }
-      } else await expect(rows).toContainText(/Codex|Claude|Cursor|trust the contents/i, { timeout: 45_000 })
+      } else await expect(rows).toContainText(/Codex|Claude|Cursor|Antigravity|trust the contents/i, { timeout: 45_000 })
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-launched.png`) })
+      if (harness === "antigravity") {
+        expect(await rows.innerText(), "Antigravity requires a completed Google OAuth login before a real turn can be qualified").not.toContain("You are currently not signed in")
+      }
       if ((harness === "claude" || harness === "codex") && /trust|allow Codex to work/i.test(await rows.innerText())) {
         await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
         if (harness === "claude") {
@@ -204,7 +209,7 @@ for (const { harness, child, pause } of [
           await packaged.page.keyboard.press("Enter")
         }
       }
-      await expect(rows).toContainText(harness === "codex" ? /OpenAI Codex/ : harness === "cursor" ? /Cursor/ : harness === "droid" ? /ctrl\+L for autonomy/ : harness === "amp" ? /ctrl\+o for commands/i : /bypass permissions on/i, { timeout: 30_000 })
+      await expect(rows).toContainText(harness === "codex" ? /OpenAI Codex/ : harness === "cursor" ? /Cursor/ : harness === "droid" ? /ctrl\+L for autonomy/ : harness === "amp" ? /ctrl\+o for commands/i : harness === "antigravity" ? /Type.*message|Ask.*anything|What would you like/i : /bypass permissions on/i, { timeout: 30_000 })
       await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
       if (harness === "amp") {
         // The welcome animation exposes command help before the input box is
