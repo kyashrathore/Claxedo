@@ -588,6 +588,8 @@ test.describe("live real-harness smoke @live", () => {
         await page.reload({ waitUntil: "domcontentloaded" })
         await expectAssistantReplyVisible(page, marker)
         await expect(dock).toHaveCount(0)
+        expect((await readTodos()).map(({ content, status }) => ({ content, status })))
+          .toEqual(tasks.map((content) => ({ content, status: "completed" })))
       } finally {
         await fs.writeFile(releaseFile, "release")
       }
