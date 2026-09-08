@@ -6,8 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/app/entry/index.tsx",
-    "./process-diagnostics-contract": "./src/features/processes/data/local-diagnostics.ts",
-    "./open-in-targets": "./src/features/session/ui/components/open-in-targets.ts"
+    "./process-diagnostics-contract": "./src/features/processes/data/local-diagnostics.ts"
   },
   "scripts": {
     "typecheck": "bun run lint:theme-tokens && bun run test:architecture && tsgo -b && bun run typecheck:e2e && bun run test:performance",

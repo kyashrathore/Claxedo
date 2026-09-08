@@ -462,26 +462,6 @@ export const dict = {
 
   "session.header.search.placeholder": "Поиск {{project}}",
   "session.header.searchFiles": "Поиск файлов",
-  "session.header.openIn": "Открыть в",
-  "session.header.open.ariaLabel": "Открыть в {{app}}",
-  "session.header.open.menu": "Варианты открытия",
-  "session.header.open.copyPath": "Копировать путь",
-  "session.header.open.finder": "Finder",
-  "session.header.open.fileExplorer": "Проводник",
-  "session.header.open.fileManager": "Файловый менеджер",
-  "session.header.open.app.vscode": "VS Code",
-  "session.header.open.app.cursor": "Cursor",
-  "session.header.open.app.zed": "Zed",
-  "session.header.open.app.textmate": "TextMate",
-  "session.header.open.app.antigravity": "Antigravity",
-  "session.header.open.app.terminal": "Терминал",
-  "session.header.open.app.iterm2": "iTerm2",
-  "session.header.open.app.ghostty": "Ghostty",
-  "session.header.open.app.warp": "Warp",
-  "session.header.open.app.xcode": "Xcode",
-  "session.header.open.app.androidStudio": "Android Studio",
-  "session.header.open.app.powershell": "PowerShell",
-  "session.header.open.app.sublimeText": "Sublime Text",
 
 
 

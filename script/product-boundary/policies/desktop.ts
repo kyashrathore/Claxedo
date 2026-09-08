@@ -91,13 +91,16 @@ export const desktopMainComposition: Policy = {
   // in main. `string.ts` imports only `./guards` and touches no host API, so
   // the edge adds nothing this Electron main composition can execute. Module
   // count is unchanged because helpers sits outside `roots`. 90/24.
-  // +1 module (2026-09-08): `main/open-in-guard.ts` — the launch policy the
-  // `open-path` handler asks before it reaches `execFile`. Reviewed owner: the
-  // session header's Open in… menu (`@claxedo/app/open-in-targets`), which the
-  // guard imports so the allowlist and the menu cannot drift apart. That app
-  // subpath sits outside `roots` and `@claxedo/app` is already a package edge
-  // here, so the package count is unchanged. 91/24.
-  ceilings: { modules: 91, packages: 24 },
+  // +2 modules (2026-09-08): `main/open-in-guard.ts`, the launch policy the
+  // `open-path` handler asks before it reaches `execFile`, and
+  // `main/open-in-apps.ts`, the app names that policy allows. Reviewed owner:
+  // Electron main — the renderer control that used to supply an app name was
+  // removed at the user's request, so the allowlist followed the guard into
+  // this package instead of staying an `@claxedo/app` subpath outside `roots`.
+  // That is why the second module counts here and did not before. The package
+  // count is unchanged: `@claxedo/app` remains a package edge through
+  // `process-diagnostics-contract`. 92/24.
+  ceilings: { modules: 92, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -371,12 +374,6 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module (2026-09-07): the floating card's transcript peek reducer
   // `features/session/ui/transcript-peek.ts` (see app-local.ts for the owner).
   // Re-measured, no headroom.
-  // +2 modules (2026-09-08): the session header's restored Open in… control
-  // and the target table it reads — `features/session/ui/components/
-  // session-header-open-in.tsx` and `open-in-targets.ts`. Reviewed owner: the
-  // session header (this product's own surface); the table is the same module
-  // Electron main's `open-in-guard.ts` imports, so the menu and the launch
-  // allowlist are one list. No new package edge. Re-measured, no headroom.
   // +3 modules (2026-09-08): the same three Settings → Providers owners
   // app-local reviews — the agents section, the harness catalog section, and
   // the detection reader over the onboarding scan. No new package edge.
@@ -387,7 +384,11 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module (2026-09-08): the same `/mcp` catalog split app-local reviews —
   // the feature-owned dialog body plus the app-owned rail picker. No new
   // package edge. Re-measured, no headroom.
-  ceilings: { modules: 1055, packages: 57 },
+  // -2 modules (2026-09-08): the same Open in… / Copy path removal app-local
+  // reviews — the control, and the app-name allowlist that moved into
+  // `main/open-in-apps.ts`, which no renderer reaches. Re-measured, no
+  // headroom.
+  ceilings: { modules: 1053, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -396,6 +397,9 @@ export const desktopRendererUnsigned: Policy = {
       `${DESKTOP}/renderer/local.tsx`,
       `${DESKTOP}/renderer/shell.tsx`,
       `${APP}/app/entry/app.tsx`,
+      // The base reads this registry and optional activation binds the same
+      // instance through a shared chunk; only the Electron adapter is optional.
+      `${APP}/platform/remote-access/machine-remote-access.ts`,
     ],
     forbiddenModules: [
       `${DESKTOP}/renderer/hosted-contributions.ts`,
@@ -479,7 +483,6 @@ export const desktopHostedContribution: Policy = {
     minChunks: 1,
     requiredModules: [
       `${DESKTOP}/renderer/hosted-contributions.ts`,
-      `${APP}/platform/remote-access/machine-remote-access.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],

@@ -35,6 +35,8 @@ export type SdkModelEntry = {
   name: string
   description?: string
   isDefault?: boolean
+  /** Whether this model's provider has working credentials on the machine. */
+  connected?: boolean
   /**
    * Harness-reported effort capability. It is per model, which is why the
    * thought-level option below is derived from the selected model rather than

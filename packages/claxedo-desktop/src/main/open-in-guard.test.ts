@@ -6,8 +6,8 @@ import { openInPathVerdict, openInVerdict } from "./open-in-guard"
 
 const noResolution = { resolveAppPath: async () => null }
 
-describe("open-in target allowlist", () => {
-  test("accepts an app the Open in… menu offers", async () => {
+describe("open-path app allowlist", () => {
+  test("accepts an app on the allowlist", async () => {
     const verdict = await openInVerdict(
       { path: "/Users/dev/projects/app", app: "Visual Studio Code" },
       { platform: "darwin", ...noResolution },
@@ -15,7 +15,7 @@ describe("open-in target allowlist", () => {
     expect(verdict).toEqual({ allowed: true })
   })
 
-  test("rejects an app that is not a target", async () => {
+  test("rejects an app that is not on the list", async () => {
     const verdict = await openInVerdict(
       { path: "/Users/dev/projects/app", app: "/bin/sh" },
       { platform: "darwin", ...noResolution },
@@ -31,7 +31,7 @@ describe("open-in target allowlist", () => {
     expect(verdict).toEqual({ allowed: true })
   })
 
-  test("on Windows an executable that resolves to a target is accepted", async () => {
+  test("on Windows an executable that resolves to a listed app is accepted", async () => {
     const verdict = await openInVerdict(
       { path: "C:\\Users\\dev\\app", app: "C:\\Program Files\\Cursor\\Cursor.exe" },
       {

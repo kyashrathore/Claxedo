@@ -16,7 +16,7 @@ export type HarnessHealth = { status?: HarnessHealthStatus; reason?: string }
 export type HarnessState = { type?: HarnessType; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth }
 /** A model choice offered by a harness. `description` carries the version and
  * context window (e.g. "Opus 4.8 with 1M context"), which `name` omits. */
-export type HarnessModelOption = { id: string; name: string; description?: string }
+export type HarnessModelOption = { id: string; name: string; description?: string; connected?: boolean }
 export type HarnessConfigOption = { id: string; name: string; category?: string | null; type: "select" | "boolean"; currentValue: unknown; options?: Array<{ value: string; name: string; description?: string }>; selectOptions?: Array<HarnessModelOption> }
 /**
  * A config-options answer, from either producer.
@@ -261,6 +261,7 @@ function decodeSelectOption(value: unknown): { id: string; name: string; descrip
     // Harness display names are short marketing labels ("Sonnet", "Opus"); the
     // version and context window only live in the description, so keep it.
     ...(typeof raw.description === "string" ? { description: raw.description } : {}),
+    ...(typeof raw.connected === "boolean" ? { connected: raw.connected } : {}),
   }
 }
 

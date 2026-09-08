@@ -76,6 +76,34 @@ describe("harness profile", () => {
     })
   })
 
+  test("preserves harness-reported provider connection on model options", () => {
+    expect(
+      extractModelsFromConfigOptions(
+        optionsResponse({
+          options: [
+            {
+              id: "model",
+              name: "Model",
+              category: "model",
+              type: "select",
+              currentValue: "anthropic/sonnet",
+              selectOptions: [
+                { id: "anthropic/sonnet", name: "Sonnet", connected: true },
+                { id: "amazon-bedrock/nova", name: "Nova", connected: false },
+              ],
+            },
+          ],
+        }).options,
+      ),
+    ).toEqual({
+      currentModel: "anthropic/sonnet",
+      models: [
+        { id: "anthropic/sonnet", name: "Sonnet", connected: true },
+        { id: "amazon-bedrock/nova", name: "Nova", connected: false },
+      ],
+    })
+  })
+
   test("preserves opaque model IDs, including bracketed default values", () => {
     expect(
       extractModelsFromConfigOptions([

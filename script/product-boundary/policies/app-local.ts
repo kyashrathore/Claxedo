@@ -260,13 +260,6 @@ export const appLocal: Policy = {
   // (a sent prompt opens the transcript, loading history does not) are unit
   // tested. Reviewed owner: features/session/ui; no new package edge.
   // Re-measured, no headroom.
-  // +2 modules / 0 packages (2026-09-08): the session header's restored Open
-  // in… control `features/session/ui/components/session-header-open-in.tsx`
-  // and its target table `open-in-targets.ts`. Reviewed owner:
-  // features/session/ui; the table is also what Electron main's
-  // `open-in-guard.ts` imports, so the menu and the launch allowlist stay one
-  // list. Both edges stay inside packages already in the closure. Re-measured,
-  // no headroom.
   // +3 modules / 0 packages (2026-09-08): Settings → Providers' restored
   // harness sections — `features/settings/ui/agents-section.tsx`,
   // `features/settings/ui/harness-providers-section.tsx` and the detection
@@ -288,7 +281,13 @@ export const appLocal: Policy = {
   // a session surface reaching into another feature and into app composition.
   // Both files import only modules already in this closure. Re-measured, no
   // headroom.
-  ceilings: { modules: 1004, packages: 38 },
+  // -2 modules / 0 packages (2026-09-08): the session header's Open in… / Copy
+  // path control is gone at the user's request, taking
+  // `features/session/ui/components/session-header-open-in.tsx` with it; its
+  // app-name allowlist moved to `claxedo-desktop/src/main/open-in-apps.ts`,
+  // beside the `open-path` guard that is now its only reader. Re-measured, no
+  // headroom.
+  ceilings: { modules: 1002, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

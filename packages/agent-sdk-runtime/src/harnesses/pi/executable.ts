@@ -51,6 +51,26 @@ export function requirePiExecutable() {
   return binary
 }
 
+/** Walk from the resolved binary to the pinned `@earendil-works/pi-coding-agent` package. */
+export function piPackageRoot(binary: string): string | undefined {
+  let current: string
+  try {
+    current = fs.realpathSync(binary)
+  } catch {
+    return undefined
+  }
+  if (!fs.statSync(current).isFile()) return undefined
+  current = path.dirname(current)
+  for (let depth = 0; depth < 8 && current !== path.dirname(current); depth++) {
+    try {
+      const manifest = JSON.parse(fs.readFileSync(path.join(current, "package.json"), "utf8")) as { name?: string }
+      if (manifest.name === "@earendil-works/pi-coding-agent") return current
+    } catch {}
+    current = path.dirname(current)
+  }
+  return undefined
+}
+
 export function piCommand(binary: string, args: string[]) {
   return /\.(?:cjs|mjs|js)$/.test(binary) ? { file: process.execPath, args: [binary, ...args] } : { file: binary, args }
 }

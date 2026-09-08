@@ -52,11 +52,11 @@ export const [reviewControlsSlot, setReviewControlsSlot] = createPortalSlot("rev
 
 export const [reviewTabHeaderSlot, setReviewTabHeaderSlot] = createPortalSlot("review-tab-header")
 
-// components/titlebar/titlebar.tsx (legacy titlebar) claims these three mount points
-// on render; components/session/session-header.tsx portals its search
-// button and open-in-app controls into the center/right slots. This
-// replaces a getElementById-based DOM-id string contract (left/center/right
-// mount points) with a typed, compiler-checked one.
+// `app/workbench/rail/workbench-shell-header.tsx` claims these three mount
+// points on render; `features/session/ui/components/session-header.tsx`
+// portals its search button into the center slot and the Share control into
+// the right one. A typed contract in place of the getElementById DOM-id
+// strings this replaced.
 export const [titlebarLeftSlot, setTitlebarLeftSlot] = createPortalSlot("titlebar-left")
 export const [titlebarCenterSlot, setTitlebarCenterSlot] = createPortalSlot("titlebar-center")
 export const [titlebarRightSlot, setTitlebarRightSlot] = createPortalSlot("titlebar-right")

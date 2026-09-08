@@ -633,7 +633,7 @@ async function runCursorHarnessBoundary(page: Page) {
   const input = await openDraftPrompt(page, dir)
   await switchDraftHarness(page, "cursor")
 
-  const notice = page.getByRole("alert").filter({ hasText: "Couldn't load Cursor models" })
+  const notice = page.getByRole("alert").filter({ hasText: /Couldn't load Cursor models|Cursor is not set up/ })
   const modelControl = page.locator('[data-action="prompt-harness-model"]')
   await expect
     .poll(
@@ -647,7 +647,7 @@ async function runCursorHarnessBoundary(page: Page) {
 
   if ((await notice.count()) > 0) {
     await expect(notice).toHaveCount(1)
-    await expect(notice).toHaveAttribute("data-tone", "critical")
+    await expect(notice).toHaveAttribute("data-tone", /critical|warning/)
     await expect(notice.locator("[data-action='composer-notice-action']")).toBeVisible()
     await composePrompt(page, input, "tier-real cursor unavailable attempt")
     await page.locator(SELECTORS.submitControl).last().click()
@@ -699,9 +699,9 @@ async function runCursorGoalUnavailableJourney(page: Page, entry: GoalEntry) {
     await composePrompt(page, goalInput, objective)
   }
 
-  const notice = page.getByRole("alert").filter({ hasText: "Couldn't load Cursor models" })
-  await expect(notice).toContainText("Couldn't load Cursor models", { timeout: 30_000 })
-  await expect(notice).toContainText(CURSOR_SDK_GOAL_UNAVAILABLE)
+  const notice = page.getByRole("alert").filter({ hasText: /Couldn't load Cursor models|Cursor is not set up/ })
+  await expect(notice).toBeVisible({ timeout: 30_000 })
+  await expect(notice.locator("[data-action='composer-notice-action']")).toBeVisible()
   const submit = page.locator('[data-action="prompt-submit"]').last()
   await expect(submit).toHaveAccessibleName("The agent isn't running")
   const draftUrl = page.url()

@@ -1,7 +1,9 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { PiHarnessAdapter } from "./index"
+import { resolvePiExecutable } from "./executable"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
@@ -157,6 +159,25 @@ describe("native Pi through the shared adapter", () => {
       expect(JSON.stringify(await f.adapter.probeConfigOptions(f.directory))).toContain("test/model")
     } finally {
       await f.cleanup()
+    }
+  })
+  test.skipIf(!resolvePiExecutable())("lists Pi's catalog when get_available_models is empty", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-catalog-probe-"))
+    const agentDir = path.join(root, "agent")
+    await fs.mkdir(agentDir)
+    const adapter = new PiHarnessAdapter({
+      binary: resolvePiExecutable(),
+      agentDir,
+      store: createMemoryRuntimeStore(),
+    })
+    try {
+      const payload = await adapter.probeConfigOptions(root)
+      const models = payload.options.find((option) => option.category === "model")?.selectOptions ?? []
+      expect(models.some((model) => model.id.startsWith("anthropic/"))).toBe(true)
+      expect(models.every((model) => model.connected === false)).toBe(true)
+    } finally {
+      await adapter.dispose()
+      await fs.rm(root, { recursive: true, force: true })
     }
   })
   test("process death after prompt admission ends the product turn with an error", async () => {

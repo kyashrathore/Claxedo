@@ -54,7 +54,7 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
       retry: true,
     }
   }
-  if (input.setupRequired && input.openProviders) {
+  if ((input.setupRequired || isProviderSetupError(input.configError)) && input.openProviders) {
     return {
       kind: "setup-required",
       tone: "warning",
@@ -95,4 +95,8 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
     }
   }
   return undefined
+}
+
+function isProviderSetupError(error?: string) {
+  return !!error && error.includes("cursor-sdk API key")
 }

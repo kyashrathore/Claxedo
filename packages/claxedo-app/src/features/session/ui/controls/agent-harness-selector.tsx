@@ -33,6 +33,23 @@ function label(input: string) {
   return HARNESS_DISPLAY_NAMES[input] ?? harnessDisplayLabel(input)
 }
 
+function nativePickerProvider(harness: HarnessType, item: { id: string; providerID?: string }) {
+  const harnessId = item.providerID ?? harnessSelectionId(harness)
+  if (!isNativeHarness(harness, "pi")) {
+    return { id: harnessId, name: label(harnessId) }
+  }
+  const slash = item.id.indexOf("/")
+  const provider = slash > 0 ? item.id.slice(0, slash) : harnessId
+  return {
+    id: harnessId,
+    name: provider
+      .split(/[-_]/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" "),
+  }
+}
+
 function harnessOptionGroup(input: HarnessType) {
   return input.kind === "native" ? "Native SDK" : "Connections"
 }
@@ -327,11 +344,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       id: item.id,
       name: item.name,
       ...(item.description ? { description: item.description } : {}),
-      provider: {
-        id: item.providerID ?? harnessSelectionId(currentHarness),
-        name: label(item.providerID ?? harnessSelectionId(currentHarness)),
-      },
-      connected: !selection().configError && !selection().optionsLoading && selection().models.length > 0,
+      provider: nativePickerProvider(currentHarness, item),
+      ...(typeof item.connected === "boolean" ? { connected: item.connected } : {}),
     }))
   })
   const picked = createMemo(() => {
@@ -468,7 +482,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const needsProviderSetup = createMemo(() => {
     if (modelOptionsFailed()) return false
     if (harness() && isCatalogHarness(harness())) {
-      return !catalogProviders.loading() && !catalogProviders.error() && catalogProviders.connected().length === 0
+      return !catalogProviders.loading() && !catalogProviders.error() && catalogRows().rows.length === 0
     }
     return !managedDefaultModel() && !modelLoading() && !hasModelOptions() && !isPolling() && !isError()
   })

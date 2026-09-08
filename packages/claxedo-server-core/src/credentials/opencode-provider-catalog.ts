@@ -186,6 +186,9 @@ function providerConnected(
   env: NodeJS.ProcessEnv,
   org: string,
 ): boolean {
+  // OpenCode Zen is the house catalog: its models must be pickable without a
+  // stored key. A provider that declares no env vars has the same bar.
+  if (id === "opencode" || !(provider.env ?? []).length) return true
   if (requireCredentialRegistryLookup(id, org)?.status === "available") return true
   // models.dev names the environment variables a provider authenticates with;
   // an operator-supplied key counts as connected exactly as it does for the

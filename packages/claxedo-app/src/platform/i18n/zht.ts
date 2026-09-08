@@ -458,26 +458,6 @@ export const dict = {
 
   "session.header.search.placeholder": "搜尋 {{project}}",
   "session.header.searchFiles": "搜尋檔案",
-  "session.header.openIn": "開啟於",
-  "session.header.open.ariaLabel": "在 {{app}} 中開啟",
-  "session.header.open.menu": "開啟選項",
-  "session.header.open.copyPath": "複製路徑",
-  "session.header.open.finder": "Finder",
-  "session.header.open.fileExplorer": "檔案總管",
-  "session.header.open.fileManager": "檔案管理員",
-  "session.header.open.app.vscode": "VS Code",
-  "session.header.open.app.cursor": "Cursor",
-  "session.header.open.app.zed": "Zed",
-  "session.header.open.app.textmate": "TextMate",
-  "session.header.open.app.antigravity": "Antigravity",
-  "session.header.open.app.terminal": "終端機",
-  "session.header.open.app.iterm2": "iTerm2",
-  "session.header.open.app.ghostty": "Ghostty",
-  "session.header.open.app.warp": "Warp",
-  "session.header.open.app.xcode": "Xcode",
-  "session.header.open.app.androidStudio": "Android Studio",
-  "session.header.open.app.powershell": "PowerShell",
-  "session.header.open.app.sublimeText": "Sublime Text",
 
 
 

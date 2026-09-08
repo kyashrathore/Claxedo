@@ -21,6 +21,7 @@ import {
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
 import { PiJsonLines, PiRpcProcess, type PiRpcMessage } from "./rpc-process"
+import { listPiCatalogModels } from "./catalog"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
 
 export type PiDriverOptions = { binary?: string; agentDir?: string; idleMs?: number }
@@ -484,13 +485,20 @@ class PiRpcDriver implements SdkRuntimeDriver {
     try {
       const result = record(await probe.request("get_available_models"))
       if (!Array.isArray(result?.models)) throw new Error("Pi returned an invalid model catalog")
-      this.models = result.models.map((value) => {
+      const available = result.models.map((value) => {
         const model = record(value)
         const provider = text(model?.provider)
         const modelId = text(model?.id)
         if (!provider || !modelId) throw new Error("Pi model lacks provider/id")
         return { id: `${provider}/${modelId}`, name: text(model?.name) ?? modelId }
       })
+      const binary = this.options.binary ?? requirePiExecutable()
+      const catalog = await listPiCatalogModels(binary, this.agentDir)
+      const availableIds = new Set(available.map((model) => model.id))
+      this.models = (catalog.length ? catalog : available).map((model) => ({
+        ...model,
+        connected: availableIds.has(model.id),
+      }))
       if (currentModel.includes("/")) {
         const slash = currentModel.indexOf("/")
         await probe.request("set_model", {

@@ -459,26 +459,6 @@ export const dict = {
 
   "session.header.search.placeholder": "ค้นหา {{project}}",
   "session.header.searchFiles": "ค้นหาไฟล์",
-  "session.header.openIn": "เปิดใน",
-  "session.header.open.ariaLabel": "เปิดใน {{app}}",
-  "session.header.open.menu": "ตัวเลือกการเปิด",
-  "session.header.open.copyPath": "คัดลอกเส้นทาง",
-  "session.header.open.finder": "Finder",
-  "session.header.open.fileExplorer": "File Explorer",
-  "session.header.open.fileManager": "File Manager",
-  "session.header.open.app.vscode": "VS Code",
-  "session.header.open.app.cursor": "Cursor",
-  "session.header.open.app.zed": "Zed",
-  "session.header.open.app.textmate": "TextMate",
-  "session.header.open.app.antigravity": "Antigravity",
-  "session.header.open.app.terminal": "Terminal",
-  "session.header.open.app.iterm2": "iTerm2",
-  "session.header.open.app.ghostty": "Ghostty",
-  "session.header.open.app.warp": "Warp",
-  "session.header.open.app.xcode": "Xcode",
-  "session.header.open.app.androidStudio": "Android Studio",
-  "session.header.open.app.powershell": "PowerShell",
-  "session.header.open.app.sublimeText": "Sublime Text",
 
 
 

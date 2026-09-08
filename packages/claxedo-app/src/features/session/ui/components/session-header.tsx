@@ -1,5 +1,3 @@
-// Session titlebar: project search, Open in… / Copy path, and Share (central
-// sessions only when signed in).
 import { Button } from "@opencode-ai/ui/button"
 import { Keybind } from "@opencode-ai/ui/keybind"
 import { getFilename } from "@opencode-ai/ui/utils/path"
@@ -10,7 +8,6 @@ import {
   useClaxedoState,
   useCommand,
   useLayout,
-  useServer,
   useShellQueryOptions as useQueryOptions,
 } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -19,22 +16,10 @@ import { useSettings } from "@/platform/settings/provider"
 import { useAccountPort } from "@/platform/account/account-provider"
 import { workspaceKey } from "@/platform/identity/session-ref"
 import { useSessionLayout } from "@/features/session/session-layout"
-import { SessionOpenInControl } from "@/features/session/ui/components/session-header-open-in"
-import type { OpenInOS } from "@/features/session/ui/components/open-in-targets"
 import { SessionPeopleControl } from "@/features/session/ui/components/session-people-control"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { createActivePaneProjection } from "@/features/session/store/active-pane-projection"
 import { titlebarCenterSlot, titlebarRightSlot } from "@/ui/controls/portal-slot"
-
-const detectOS = (platform: ReturnType<typeof usePlatform>): OpenInOS => {
-  if (platform.platform === "desktop" && platform.os) return platform.os
-  if (typeof navigator !== "object") return "unknown"
-  const value = navigator.platform || navigator.userAgent
-  if (/Mac/i.test(value)) return "macos"
-  if (/Win/i.test(value)) return "windows"
-  if (/Linux/i.test(value)) return "linux"
-  return "unknown"
-}
 
 export function SessionHeader() {
   const layout = useLayout()
@@ -42,7 +27,6 @@ export function SessionHeader() {
   const platform = usePlatform()
   const language = useLanguage()
   const settings = useSettings()
-  const server = useServer()
   const account = useAccountPort()
   const claxedoState = useClaxedoState()
   const sessionParams = useSessionParams()
@@ -109,12 +93,6 @@ export function SessionHeader() {
   const isDesktopBeta = platform.platform === "desktop" && import.meta.env.VITE_CLAXEDO_CHANNEL === "beta"
   const search = createMemo(() => !isDesktopBeta || settings.general.showSearch())
 
-  // A remote server's paths do not exist on this machine, so launching them in
-  // a local app would open the wrong directory or nothing at all.
-  const openPath = createMemo(() =>
-    platform.platform === "desktop" && server.isLocal() ? platform.openPath : undefined,
-  )
-
   const centerMount = titlebarCenterSlot
   const rightMount = titlebarRightSlot
 
@@ -154,18 +132,6 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount()}>
             <div class="flex items-center gap-1">
-              <Show when={!globalSession() ? projectDirectory() : undefined} keyed>
-                {(dir) => (
-                  <div class="hidden xl:flex items-center">
-                    <SessionOpenInControl
-                      path={dir}
-                      os={detectOS(platform)}
-                      openPath={openPath()}
-                      checkAppExists={platform.checkAppExists}
-                    />
-                  </div>
-                )}
-              </Show>
               <Show when={shareTarget()} keyed>
                 {(target) => (
                   <SessionPeopleControl

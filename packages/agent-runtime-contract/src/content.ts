@@ -302,7 +302,14 @@ export type AgentConfigOption = {
   category?: string
   currentValue?: unknown
   description?: string
-  selectOptions?: Array<{ id: string; name?: string; description?: string; value?: unknown; harnessPayload?: unknown }>
+  selectOptions?: Array<{
+    id: string
+    name?: string
+    description?: string
+    value?: unknown
+    connected?: boolean
+    harnessPayload?: unknown
+  }>
   harnessPayload?: unknown
 }
 

@@ -59,15 +59,35 @@ describe("resolveHarnessNotice", () => {
     const notice = resolveHarnessNotice({
       ...healthy,
       optionsFailed: true,
-      configError: "Cursor SDK requires an explicit cursor-sdk API key.",
+      configError: "ACP connection closed",
     })
 
     expect(notice).toMatchObject({
       kind: "models-failed",
       tone: "critical",
       message: "Couldn't load Cursor models",
-      detail: "Cursor SDK requires an explicit cursor-sdk API key.",
+      detail: "ACP connection closed",
       retry: true,
+    })
+  })
+
+  test("a missing Cursor SDK key opens Providers instead of a model-load failure", () => {
+    const openProviders = () => undefined
+    const notice = resolveHarnessNotice({
+      ...healthy,
+      optionsFailed: true,
+      noModels: true,
+      configError: "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
+      openProviders,
+    })
+
+    expect(notice).toMatchObject({
+      kind: "setup-required",
+      tone: "warning",
+      message: "Cursor is not set up",
+      detail: "Add credentials in Settings → Providers.",
+      retry: false,
+      action: { label: "Open Providers", run: openProviders },
     })
   })
 

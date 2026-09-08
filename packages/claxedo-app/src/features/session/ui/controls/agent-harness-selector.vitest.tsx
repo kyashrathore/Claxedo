@@ -38,7 +38,7 @@ vi.mock("@/platform/telemetry/analytics", () => ({
 }))
 let readiness = "ready"
 let harnessType: HarnessSelection = { kind: "native", harnessId: "claude" }
-let models: Array<{ id: string; name: string }> = []
+let models: Array<{ id: string; name: string; connected?: boolean }> = []
 let selectedModel = ""
 let selectedModelProvider: string | undefined
 let configError: string | undefined
@@ -120,6 +120,8 @@ vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
           {(props.model?.().list?.() ?? []).map((item: any) => (
             <button
               data-testid={`model-option-${item.id}`}
+              data-connected={item.connected === undefined ? undefined : String(item.connected)}
+              data-provider-name={item.provider?.name}
               onClick={() => props.model?.().set?.({ modelID: item.id, providerID: item.provider?.id })}
             >
               {item.name}
@@ -511,10 +513,11 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     const row = noticeRow(container)
 
     expect(row).not.toBeNull()
-    expect(row!.textContent).toContain("Couldn't load Cursor models")
-    expect(row!.textContent).toContain(
-      "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
-    )
+    expect(row!.getAttribute("data-notice")).toBe("setup-required")
+    expect(row!.getAttribute("data-tone")).toBe("warning")
+    expect(row!.textContent).toContain("Cursor is not set up")
+    expect(row!.textContent).toContain("Add credentials in Settings → Providers.")
+    expect(row!.textContent).toContain("Open Providers")
     expect(container.textContent).not.toContain("Default (recommended)")
     expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toContain("Select model")
   })
@@ -540,7 +543,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
     expect(container.textContent).not.toContain("Configured")
-    expect(noticeRow(container)?.textContent).toContain("Couldn't load Cursor models")
+    expect(noticeRow(container)?.textContent).toContain("Cursor is not set up")
   })
 
   test("a failed model list disables the control without restating the error on it", () => {
@@ -719,6 +722,22 @@ describe("AgentHarnessSelector — native Pi models", () => {
     expect(resolveDefaultCalls).toEqual([])
   })
 
+  test("does not mark Pi catalog models as configured just because the list loaded", () => {
+    harnessType = { kind: "native", harnessId: "pi" }
+    models = [
+      { id: "amazon-bedrock/nova", name: "Nova 2 Lite", connected: false },
+      { id: "anthropic/sonnet", name: "Sonnet", connected: true },
+    ]
+    selectedModel = "amazon-bedrock/nova"
+
+    const { container } = render(() => <TestAgentHarnessSelector />)
+
+    expect(container.querySelector("[data-testid='model-option-amazon-bedrock/nova']")?.getAttribute("data-connected")).toBe("false")
+    expect(container.querySelector("[data-testid='model-option-amazon-bedrock/nova']")?.getAttribute("data-provider-name")).toBe("Amazon Bedrock")
+    expect(container.querySelector("[data-testid='model-option-anthropic/sonnet']")?.getAttribute("data-connected")).toBe("true")
+    expect(container.querySelector("[data-testid='model-option-anthropic/sonnet']")?.getAttribute("data-provider-name")).toBe("Anthropic")
+  })
+
   test("keeps a missing saved model named while offering the machine's available models", () => {
     harnessType = { kind: "native", harnessId: "pi" }
     selectedModel = "openai/removed"
@@ -748,6 +767,7 @@ describe("AgentHarnessSelector — native Pi models", () => {
     expect(noticeRow(failed.container)?.textContent).toContain("Pi process unavailable")
     expect(failed.getByRole("button", { name: "Retry loading harness models" })).toBeTruthy()
   })
+
 })
 
 describe("AgentHarnessSelector — OpenCode provider catalog", () => {
@@ -857,6 +877,39 @@ describe("AgentHarnessSelector — OpenCode provider catalog", () => {
       connectedProviderIDs: ["openai-codex"],
       providerDefaults: { "openai-codex": "gpt-5.5" },
     }))
+  })
+
+  test("a loaded OpenCode catalog is usable without connected credentials", async () => {
+    harnessType = { kind: "native", harnessId: "opencode" }
+    catalogConnected = ["opencode"]
+    catalogProviders.set("opencode", {
+      id: "opencode",
+      name: "OpenCode Zen",
+      models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+    })
+
+    const { container } = render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
+
+    expect(noticeRow(container)).toBeNull()
+    await waitFor(() => expect(setModelCalls).toEqual([{
+      scope: "test-scope",
+      model: { providerID: "opencode", modelID: "big-pickle" },
+    }]))
+  })
+
+  test("a loaded OpenCode catalog does not demand setup when no providers are connected", () => {
+    harnessType = { kind: "native", harnessId: "opencode" }
+    catalogConnected = []
+    catalogProviders.set("opencode", {
+      id: "opencode",
+      name: "OpenCode Zen",
+      models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+    })
+
+    const { container } = render(() => <TestAgentHarnessSelector />)
+
+    expect(noticeRow(container)).toBeNull()
+    expect(container.querySelector("[data-testid='model-option-big-pickle']")).not.toBeNull()
   })
 
 })

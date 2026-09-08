@@ -95,6 +95,29 @@ describe("opencodeProviderCatalog", () => {
     expect(with_.connected).toContain("anthropic")
   })
 
+  test("OpenCode Zen and providers with no env requirement are connected without credentials", async () => {
+    const catalog = await opencodeProviderCatalog({
+      env: env(cacheFile()),
+      fetchImpl: fetchOk({
+        ...CATALOG,
+        opencode: {
+          id: "opencode",
+          name: "OpenCode Zen",
+          env: ["OPENCODE_API_KEY"],
+          models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } },
+        },
+        ollama: {
+          id: "ollama",
+          name: "Ollama",
+          env: [],
+          models: { llama: { id: "llama", name: "Llama" } },
+        },
+      }),
+    })
+    expect(catalog.connected).toEqual(["opencode", "ollama"])
+    expect(catalog.connected).not.toContain("anthropic")
+  })
+
   test("an unavailable catalog with nothing cached throws instead of returning empty", async () => {
     // "we cannot reach the catalog" is a different fact from "you have no
     // providers"; collapsing them would show an outage as an empty picker.
