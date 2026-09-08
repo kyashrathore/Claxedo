@@ -634,9 +634,10 @@ describe("CodexHarnessAdapter", () => {
       id: expect.any(String),
       sessionID: session.id,
       questions: [{
-        header: expect.stringContaining("Connect Gmail"),
-        question: expect.stringContaining("https://example.test/connect"),
-        options: [{ label: "I've finished connecting" }],
+        header: "Connect composio",
+        question: "Connect Gmail\n\nOpen this authorization URL in your browser, finish connecting, then continue:\nhttps://example.test/connect",
+        options: [{ label: "I've finished connecting", description: "Continue after the authorization page confirms the connection." }],
+        custom: false,
       }],
     })
 
