@@ -1,6 +1,7 @@
 export type TrackedTurn = {
   abort?: AbortController
-  close?: () => void
+  close?: () => void | Promise<void>
+  closed?: Promise<void>
   drain?: (message: string) => void
   turnId?: string
 }
@@ -14,6 +15,15 @@ export function createSessionTurnLifecycle<T extends TrackedTurn>() {
   const busyGenerations = new Map<string, object>()
   const activeTurns = new Map<string, T>()
   const idleWaiters = new Map<string, Set<() => void>>()
+
+  const close = (turn: T) => {
+    if (turn.closed) return
+    const result = turn.close?.()
+    if (!result) return
+    turn.closed = Promise.resolve(result)
+    // The caller observes cleanup failure through whenIdle().
+    void turn.closed.catch(() => {})
+  }
 
   const settleIdle = (sessionId: string) => {
     const waiters = idleWaiters.get(sessionId)
@@ -37,13 +47,14 @@ export function createSessionTurnLifecycle<T extends TrackedTurn>() {
         settleIdle(sessionId)
       }
     },
-    whenIdle(sessionId: string) {
-      if (!busyGenerations.has(sessionId)) return Promise.resolve()
-      return new Promise<void>((resolve) => {
+    async whenIdle(sessionId: string) {
+      const closed = activeTurns.get(sessionId)?.closed
+      if (busyGenerations.has(sessionId)) await new Promise<void>((resolve) => {
         const waiters = idleWaiters.get(sessionId) ?? new Set<() => void>()
         waiters.add(resolve)
         idleWaiters.set(sessionId, waiters)
       })
+      await closed
     },
     get(sessionId: string) {
       return activeTurns.get(sessionId)
@@ -65,13 +76,13 @@ export function createSessionTurnLifecycle<T extends TrackedTurn>() {
       const turn = activeTurns.get(sessionId)
       if (!turn) return false
       turn.abort?.abort(EXPLICIT_TURN_ABORT_REASON)
-      turn.close?.()
+      close(turn)
       return true
     },
     abortAll() {
       for (const turn of activeTurns.values()) {
         turn.abort?.abort()
-        turn.close?.()
+        close(turn)
       }
       activeTurns.clear()
     },

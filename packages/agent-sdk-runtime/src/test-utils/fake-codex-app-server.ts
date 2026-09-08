@@ -14,7 +14,7 @@ import path from "path"
  * - `hold-turn`: the Goal turn stays inProgress until interrupted, so callers
  *   can exercise pause/stop against an in-flight turn.
  */
-export async function installFakeCodexAppServer() {
+export async function installFakeCodexAppServer(options: { command?: boolean; terminateFails?: boolean } = {}) {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "codex-goal-"))
   const log = path.join(directory, "requests.jsonl")
   const goalFile = path.join(directory, "goal.json")
@@ -22,6 +22,8 @@ export async function installFakeCodexAppServer() {
 const fs = require("fs")
 const log = ${JSON.stringify(log)}
 const goalFile = ${JSON.stringify(goalFile)}
+const command = ${JSON.stringify(options.command ?? false)}
+const terminateFails = ${JSON.stringify(options.terminateFails ?? false)}
 let buffer = ""
 let goal = fs.existsSync(goalFile) ? JSON.parse(fs.readFileSync(goalFile, "utf8")) : null
 let threadKnown = false
@@ -31,7 +33,7 @@ function persistGoal() {
   else if (fs.existsSync(goalFile)) fs.unlinkSync(goalFile)
 }
 function record(message) {
-  fs.appendFileSync(log, JSON.stringify({ method: message.method, status: message.params?.status }) + "\\n")
+  fs.appendFileSync(log, JSON.stringify({ method: message.method, status: message.params?.status, ...(message.method.includes("backgroundTerminals") ? { processId: message.params?.processId } : {}) }) + "\\n")
 }
 process.stdin.setEncoding("utf8")
 process.stdin.on("data", (chunk) => {
@@ -59,8 +61,28 @@ process.stdin.on("data", (chunk) => {
       else write({ id: message.id, result: { goal } })
     }
     else if (message.method === "turn/start") {
-      write({ id: message.id, result: { turn: { id: "turn-1" } } })
+      if (command) setTimeout(() => write({ id: message.id, result: { turn: { id: "turn-1" } } }), 100)
+      else write({ id: message.id, result: { turn: { id: "turn-1" } } })
       write({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1", status: "inProgress" } } })
+      if (command) {
+        write({ method: "item/started", params: { threadId: "thread-1", turnId: "previous-turn", item: { id: "cmd-previous", type: "commandExecution", processId: "process-previous", command: "sleep 100", status: "inProgress" } } })
+        write({ method: "item/started", params: { threadId: "other-thread", turnId: "other-turn", item: { id: "cmd-other", type: "commandExecution", processId: "process-other", command: "sleep 100", status: "inProgress" } } })
+        write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item: { id: "cmd-current", type: "commandExecution", processId: "process-current", command: "sleep 100", status: "inProgress" } } })
+      }
+    }
+    else if (message.method === "thread/backgroundTerminals/list") {
+      write({ id: message.id, result: message.params.cursor === "second"
+        ? { data: [{ itemId: "cmd-current", processId: "process-current" }], nextCursor: null }
+        : { data: [{ itemId: "cmd-previous", processId: "process-previous" }], nextCursor: "second" } })
+    }
+    else if (message.method === "thread/backgroundTerminals/terminate") {
+      setTimeout(() => {
+        if (terminateFails) write({ id: message.id, error: { message: "terminal cleanup failed" } })
+        else {
+          fs.writeFileSync(goalFile + ".terminated", message.params.processId)
+          write({ id: message.id, result: {} })
+        }
+      }, 100)
     }
     else if (message.method === "turn/interrupt") {
       write({ id: message.id, result: {} })

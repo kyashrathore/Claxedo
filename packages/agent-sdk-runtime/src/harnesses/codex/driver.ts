@@ -299,6 +299,37 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const threadId = input.getAgentSessionId()
     const proc = await this.ensureProcess(input.directory)
     let turnId = ""
+    let startPending: Promise<JsonRecord> | undefined
+    let stopping: Promise<void> | undefined
+    // Codex interrupts generation but can retain exec_command terminals. Keep
+    // provider process IDs by turn so Stop preserves earlier background work.
+    const commandProcesses = new Map<string, Set<string>>()
+    const stop = () => stopping ??= (async () => {
+      if (startPending) {
+        const result = await startPending
+        turnId = text(asRecord(result.turn)?.id) ?? turnId
+      }
+      if (!turnId) return
+      await proc.request("turn/interrupt", { threadId, turnId })
+      const processes = commandProcesses.get(turnId)
+      if (!processes?.size) return
+      const remaining = new Set<string>()
+      let cursor: string | undefined
+      do {
+        const response = asRecord(await proc.request("thread/backgroundTerminals/list", { threadId, ...(cursor ? { cursor } : {}) }))
+        if (!Array.isArray(response?.data)) throw new Error("Codex returned an invalid background terminal list")
+        for (const terminal of response.data) {
+          const processId = text(asRecord(terminal)?.processId)
+          if (processId && processes.has(processId)) {
+            remaining.add(processId)
+          }
+        }
+        cursor = text(response?.nextCursor)
+      } while (cursor)
+      for (const processId of remaining) {
+        await proc.request("thread/backgroundTerminals/terminate", { threadId, processId })
+      }
+    })()
     let resolveCompleted: (() => void) | undefined
     let rejectCompleted: ((err: Error) => void) | undefined
     let rejectTurnStart: ((err: Error) => void) | undefined
@@ -315,7 +346,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       rejectCompleted?.(err)
       rejectTurnStart?.(err)
     }
-    const onAbort = () => failTurn(new Error("Codex turn aborted"))
+    const onAbort = () => {
+      void stop().catch(() => {})
+      failTurn(new Error("Codex turn aborted"))
+    }
     const onStderr = (message: string) => {
       if (message.includes("401 Unauthorized")) {
         failTurn(new Error("Codex authentication failed with 401 Unauthorized. Run `codex login` or sync a valid Codex credential, then retry."))
@@ -351,6 +385,16 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       const method = text(message.method)
       const params = asRecord(message.params) ?? {}
       if (!method) return
+      const item = asRecord(params.item)
+      if (params.threadId === threadId && item?.type === "commandExecution") {
+        const processId = text(item.processId)
+        const commandTurnId = text(params.turnId)
+        if (processId && commandTurnId) {
+          const processes = commandProcesses.get(commandTurnId) ?? new Set<string>()
+          processes.add(processId)
+          commandProcesses.set(commandTurnId, processes)
+        }
+      }
       if (method === "thread/goal/updated" || method === "thread/goal/cleared") return
       messageQueue = messageQueue.then(async () => {
         const { parentOwned } = await this.projectThreadNotification(input, threadId, method, params, message)
@@ -364,6 +408,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     })
     const unsubscribeStderr = proc.onStderr(onStderr)
     input.abort.signal.addEventListener("abort", onAbort, { once: true })
+    this.host.lifecycle().set(input.sessionId, { abort: input.abort, close: stop })
     const startTurn = async (): Promise<JsonRecord> => asRecord(await proc.request("turn/start", {
       threadId,
       input: codexUserInput(input.input.parts),
@@ -379,30 +424,28 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     })) ?? {}
 
     try {
-      const result = await Promise.race([
-        startTurnWithThreadRecovery({
-          startTurn,
-          resumeThread: async () => {
-            log.info("codex thread missing from app-server process; resuming from disk", { threadId })
-            await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.firstPartyThreadConfig(input.sessionId) })
-          },
-        }),
-        turnStartFailed,
-      ])
-      turnId = text(asRecord(result.turn)?.id) ?? turnId
-      this.host.lifecycle().set(input.sessionId, {
-        abort: input.abort,
-        turnId,
-        close: () => {
-          if (turnId) void proc.request("turn/interrupt", { threadId, turnId }).catch(() => {})
+      if (input.abort.signal.aborted) throw new Error("Codex turn aborted")
+      startPending = startTurnWithThreadRecovery({
+        startTurn,
+        resumeThread: async () => {
+          log.info("codex thread missing from app-server process; resuming from disk", { threadId })
+          await proc.request("thread/resume", { threadId, cwd: input.directory, ...this.firstPartyThreadConfig(input.sessionId) })
         },
       })
+      const result = await Promise.race([startPending, turnStartFailed])
+      turnId = text(asRecord(result.turn)?.id) ?? turnId
+      const active = this.host.lifecycle().get(input.sessionId)
+      if (active) active.turnId = turnId
       await completed
     } finally {
-      input.abort.signal.removeEventListener("abort", onAbort)
-      unsubscribeStderr()
-      unsubscribe()
-      this.activeThreads.delete(threadId)
+      try {
+        await stopping
+      } finally {
+        input.abort.signal.removeEventListener("abort", onAbort)
+        unsubscribeStderr()
+        unsubscribe()
+        this.activeThreads.delete(threadId)
+      }
     }
   }
 
