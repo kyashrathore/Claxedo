@@ -19,6 +19,20 @@ export function providerLifecycle(input: Record<string, unknown>) {
   const first = (...keys: string[]) => keys.map((key) => str(input[key])).find((value) => !!value)
   const hook = first("hook_event_name")
   const type = hook ?? first("type")
+  if (input.provider === "amp" && (hook === "agent.start" || hook === "agent.end")) {
+    const event = rec(input.event)
+    const sessionId = str(rec(event?.thread)?.id)
+    if (!event || !sessionId) return undefined
+    const outcome = event.status
+    if (hook === "agent.end" && outcome !== "done" && outcome !== "error" && outcome !== "cancelled") return undefined
+    return {
+      provider: "amp",
+      sessionId,
+      eventType: hook === "agent.start" ? "Busy" as const : outcome === "error" ? "Error" as const : "Idle" as const,
+      outcome: hook === "agent.end" ? outcome as "done" | "error" | "cancelled" : undefined,
+      prompt: str(event.message)?.slice(0, 800),
+    }
+  }
   if (!type || type === "SubagentStop") return undefined
   const eventType = Object.hasOwn(eventTypes, type) ? eventTypes[type] : undefined
   if (!eventType) return undefined

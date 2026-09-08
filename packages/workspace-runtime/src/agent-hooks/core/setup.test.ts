@@ -43,7 +43,7 @@ describe("writeStatusHooksArtifacts", () => {
     expect(existsSync(path.join(manifest.dirs.shell, ".zshrc"))).toBe(true)
     expect(existsSync(path.join(manifest.dirs.bash, "rcfile"))).toBe(true)
     expect(readFileSync(manifest.files.notify, "utf-8")).toContain("4312")
-    expect(readFileSync(path.join(manifest.dirs.bin, "amp"), "utf-8")).toContain('hook_event_name":"Busy"')
+    expect(readFileSync(path.join(manifest.dirs.bin, "amp"), "utf-8")).not.toContain('hook_event_name')
   })
 
   it("ignores ambient native Codex hook env unless the option is set", async () => {

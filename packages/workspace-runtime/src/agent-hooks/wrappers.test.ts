@@ -121,14 +121,6 @@ describe("generateGenericWrapper", () => {
     expect(script).toContain("CLAXEDO_TAB_ID")
   })
 
-  it("keeps amp on the generic lifecycle wrapper path", () => {
-    const script = generateGenericWrapper("amp", "/tmp/hooks/notify.sh")
-
-    expect(script).toContain('find_real_binary "amp"')
-    expect(script).toContain('hook_event_name":"Busy"')
-    expect(script).toContain('hook_event_name":"Idle"')
-    expect(script).toContain('hook_event_name":"Error"')
-  })
 })
 
 describe("generateCopilotWrapper", () => {

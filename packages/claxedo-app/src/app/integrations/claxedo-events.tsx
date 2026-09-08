@@ -100,6 +100,7 @@ export type ClaxedoEvent =
       prompt?: string
       lastAssistantMessage?: string
       eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
+      outcome?: "done" | "error" | "cancelled"
     }
   | { type: "process.started"; directory?: string; configId: string; ptyId: string }
   | { type: "process.stopped"; directory?: string; configId: string; exitCode: number }

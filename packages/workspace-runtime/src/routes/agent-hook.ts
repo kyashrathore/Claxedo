@@ -71,6 +71,7 @@ export const AgentLifecyclePayload = z.object({
   prompt: lifecyclePrompt.optional(),
   lastAssistantMessage: lifecycleAssistantMessage.optional(),
   eventType: AgentEventType,
+  outcome: z.enum(["done", "error", "cancelled"]).optional(),
 })
 export type AgentLifecyclePayload = z.infer<typeof AgentLifecyclePayload>
 

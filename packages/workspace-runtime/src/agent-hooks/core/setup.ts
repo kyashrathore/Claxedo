@@ -137,6 +137,7 @@ export async function writeStatusHooksArtifacts(
     force,
   )
   await writeIfChanged(path.join(manifest.dirs.bin, "droid"), generatePassthroughWrapper("droid"), 0o755, force)
+  await writeIfChanged(path.join(manifest.dirs.bin, "amp"), generatePassthroughWrapper("amp"), 0o755, force)
   await writeIfChanged(path.join(manifest.dirs.bin, "gemini"), generatePassthroughWrapper("gemini"), 0o755, force)
   await writeIfChanged(path.join(manifest.dirs.bin, "cursor"), generatePassthroughWrapper("cursor"), 0o755, force)
   await writeIfChanged(

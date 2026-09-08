@@ -1,9 +1,10 @@
 import { describe, expect, it } from "bun:test"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import {
   generateNotifyScript,
+  generateAmpPlugin,
   generateGeminiHook,
   generateCursorHook,
   generateCopilotHook,
@@ -11,6 +12,51 @@ import {
 } from "./core/hooks"
 import { AgentHookRoutes } from "../routes/agent-hook"
 import { NOTIFY_MARKER } from "./core/constants"
+import { workspaceRuntimeBus } from "../bus"
+
+it("Amp plugin delivers awaited native events through the real notification transport", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "amp-native-hook-"))
+  const terminalId = path.basename(root)
+  const events: unknown[] = []
+  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    if (event.type === "agent.lifecycle" && event.terminalId === terminalId) events.push(event)
+  })
+  const app = AgentHookRoutes()
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+    const url = new URL(request.url)
+    url.pathname = "/agent-lifecycle"
+    return app.fetch(new Request(url, request))
+  } })
+  try {
+    await mkdir(path.join(root, "hooks"))
+    await writeFile(path.join(root, "hooks", "notify.sh"), generateNotifyScript(server.port!))
+    await writeFile(path.join(root, "plugin.ts"), generateAmpPlugin())
+    await writeFile(path.join(root, "run.ts"), `
+      import plugin from "./plugin"
+      const handlers = new Map()
+      plugin({ on: (name, handler) => handlers.set(name, handler), logger: { log: console.error } })
+      const event = { thread: { id: "T-native" }, id: "M-1", message: 'quoted "prompt"\\nπ' }
+      for (const status of ["done", "cancelled", "error"]) {
+        await handlers.get("agent.start")(event)
+        await handlers.get("agent.end")({ ...event, status, messages: [] })
+      }
+    `)
+    const child = Bun.spawn([process.execPath, path.join(root, "run.ts")], {
+      env: { ...process.env, CLAXEDO_HOME_DIR: root, CLAXEDO_TAB_ID: terminalId, CLAXEDO_TERMINAL_ID: terminalId, CLAXEDO_SERVER_PORT: String(server.port) },
+      stdout: "ignore", stderr: "pipe",
+    })
+    expect(await child.exited).toBe(0)
+    expect(await new Response(child.stderr).text()).toBe("")
+    expect(events).toHaveLength(6)
+    expect(events[1]).toMatchObject({ provider: "amp", providerSessionId: "T-native", eventType: "Idle", outcome: "done" })
+    expect(events[3]).toMatchObject({ eventType: "Idle", outcome: "cancelled" })
+    expect(events[5]).toMatchObject({ eventType: "Error", outcome: "error" })
+  } finally {
+    unsubscribe()
+    server.stop(true)
+    await rm(root, { recursive: true, force: true })
+  }
+})
 
 // ── Notify script ───────────────────────────────────────────────────────────
 

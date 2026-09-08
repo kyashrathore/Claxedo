@@ -2,6 +2,17 @@ import { describe, expect, test } from "bun:test"
 import { providerLifecycle } from "./provider-lifecycle"
 
 describe("provider lifecycle normalization", () => {
+  test("Amp preserves thread identity and distinguishes completed, failed and cancelled turns", () => {
+    const event = { thread: { id: "T-amp" }, id: "M-1", message: "hello" }
+    expect(providerLifecycle({ provider: "amp", hook_event_name: "agent.start", event })).toMatchObject({ provider: "amp", sessionId: "T-amp", eventType: "Busy" })
+    for (const outcome of ["done", "error", "cancelled"] as const) {
+      expect(providerLifecycle({ provider: "amp", hook_event_name: "agent.end", event: { ...event, status: outcome } })).toMatchObject({
+        eventType: outcome === "error" ? "Error" : "Idle", outcome, sessionId: "T-amp",
+      })
+    }
+    expect(providerLifecycle({ provider: "amp", hook_event_name: "agent.end", event })).toBeUndefined()
+    expect(providerLifecycle({ provider: "amp", hook_event_name: "tool.result", event: { ...event, status: "done" } })).toBeUndefined()
+  })
   test("Claude waiting Stop and child completion do not settle the parent", () => {
     expect(providerLifecycle({ hook_event_name: "Stop", background_tasks: [{ id: "child", type: "subagent", status: "running" }] })).toBeUndefined()
     expect(providerLifecycle({ hook_event_name: "SubagentStop", agent_id: "child" })).toBeUndefined()

@@ -82,6 +82,7 @@ export type WorkspaceRuntimeEvent =
       prompt?: string
       lastAssistantMessage?: string
       eventType: "Busy" | "Idle" | "UserActionRequired" | "Error"
+      outcome?: "done" | "error" | "cancelled"
     }
   /**
    * A compat `session.updated` forwarded verbatim to the workspace stream.

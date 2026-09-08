@@ -26,8 +26,9 @@ export const COPILOT_HOOK = "copilot-hook.sh"
 export const COPILOT_PROJECT_HOOK = "claxedo-notify.json"
 export const WRAPPERS_JSON = "wrappers.json"
 
-export const DEFAULT_GENERIC_WRAPPERS = ["amp", "aider", "goose", "cline"]
+export const DEFAULT_GENERIC_WRAPPERS = ["aider", "goose", "cline"]
 export const SHIMMED_BINARIES = new Set([
+  "amp",
   "claude",
   "codex",
   "gemini",

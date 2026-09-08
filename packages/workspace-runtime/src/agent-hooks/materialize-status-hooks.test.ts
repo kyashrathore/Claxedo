@@ -15,6 +15,22 @@ async function readJson(file: string) {
 }
 
 describe("materializeAgentHooks", () => {
+  test("Amp installs only its own plugin and rejects collisions with user files", async () => {
+    const dir = path.join(root, ".config", "amp", "plugins")
+    await fs.mkdir(dir, { recursive: true })
+    const user = path.join(dir, "user.ts")
+    await fs.writeFile(user, "user plugin")
+    const options = { homeDir: root, notifyPath, geminiHookPath, cursorHookPath }
+    expect((await materializeAgentHooks(options)).find((result) => result.runner === "amp")?.status).toBe("applied")
+    const file = path.join(dir, "claxedo-lifecycle.ts")
+    const content = await fs.readFile(file, "utf8")
+    await materializeAgentHooks(options)
+    expect(await fs.readFile(file, "utf8")).toBe(content)
+    expect(await fs.readFile(user, "utf8")).toBe("user plugin")
+    await fs.writeFile(file, "user owned collision")
+    expect((await materializeAgentHooks(options)).find((result) => result.runner === "amp")?.status).toBe("failed")
+    expect(await fs.readFile(file, "utf8")).toBe("user owned collision")
+  })
   beforeEach(async () => {
     await fs.rm(root, { recursive: true, force: true })
     await fs.mkdir(root, { recursive: true })

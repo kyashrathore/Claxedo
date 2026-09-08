@@ -229,7 +229,7 @@ function useAgentLifecycleListener() {
         const isActiveTab =
           !!paneId && state.wb.state.focusedPaneId === paneId
 
-        if (eventType === "Idle" && !isActiveTab && settings.sounds.agentEnabled()) {
+        if (eventType === "Idle" && event.outcome !== "cancelled" && !isActiveTab && settings.sounds.agentEnabled()) {
           void playSoundById(settings.sounds.agent())
           return
         }

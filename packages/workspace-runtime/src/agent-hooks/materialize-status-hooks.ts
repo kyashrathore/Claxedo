@@ -3,6 +3,7 @@ import path from "path"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { writeIfChanged as writeFileAtomically } from "./core/utils"
 import { arr, rec, str } from "../json-value"
+import { generateAmpPlugin } from "./core/hooks"
 
 async function readFileIfExists(filePath: string): Promise<string | undefined> {
   try {
@@ -13,7 +14,7 @@ async function readFileIfExists(filePath: string): Promise<string | undefined> {
   }
 }
 
-export type AgentHookRunner = "claude" | "codex" | "cursor" | "droid" | "gemini" | "mastra"
+export type AgentHookRunner = "claude" | "codex" | "cursor" | "droid" | "gemini" | "mastra" | "amp"
 
 export type AgentHookMaterializationResult = {
   runner: AgentHookRunner
@@ -106,6 +107,7 @@ function reconcileManagedEntries<T>(input: {
 
 function targetPaths(homeDir: string) {
   return {
+    amp: path.join(homeDir, ".config", "amp", "plugins", "claxedo-lifecycle.ts"),
     claude: path.join(homeDir, ".claude", "settings.json"),
     codex: path.join(homeDir, ".codex", "hooks.json"),
     cursor: path.join(homeDir, ".cursor", "hooks.json"),
@@ -358,6 +360,17 @@ export async function materializeAgentHooks(input: MaterializeAgentHooksOptions)
   const force = input.force ?? false
   const codexNativeHooks = input.codexNativeHooks ?? false
   return Promise.all([
+    applyHook({
+      runner: "amp",
+      file: files.amp,
+      run: async () => {
+        const existing = await readFileIfExists(files.amp)
+        if (existing !== undefined && !existing.startsWith("// Claxedo Amp lifecycle plugin v1\n")) {
+          throw new Error("Refusing to overwrite an unrecognized Amp plugin at " + files.amp)
+        }
+        await writeIfChanged(files.amp, generateAmpPlugin(), 0o644, force)
+      },
+    }),
     applyHook({
       runner: "claude",
       file: files.claude,
