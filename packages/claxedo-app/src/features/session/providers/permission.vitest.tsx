@@ -1,22 +1,20 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
+import { onCleanup } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { AgentPermission } from "@claxedo/agent-runtime-contract"
 import { PermissionProvider, usePermission } from "./permission"
 import { acceptKey } from "./permission-auto-respond"
 import { Persist, removePersisted, setPersisted } from "@/platform/persistence/persist"
 import { queryClient } from "@/platform/query/query-client"
-import { base64Encode } from "@opencode-ai/ui/utils/encode"
 
 type AskedEvent = { name: string; details: { type: "permission.asked"; properties: AgentPermission } }
 const transport = vi.hoisted(() => ({
-  dir: "",
   listeners: new Set<(event: AskedEvent) => void>(),
   list: vi.fn(),
   respond: vi.fn(),
   createClient: vi.fn(),
 }))
 
-vi.mock("@solidjs/router", () => ({ useParams: () => ({ dir: transport.dir }) }))
 vi.mock("@/features/session/app-ports", () => ({
   useGlobalSDK: () => ({
     url: "https://control.test",
@@ -47,6 +45,7 @@ async function mount() {
   let api: ReturnType<typeof usePermission> | undefined
   function Probe() {
     api = usePermission()
+    onCleanup(api.observeDirectory(DIRECTORY))
     return <div />
   }
   const view = render(() => <PermissionProvider><Probe /></PermissionProvider>)
@@ -59,7 +58,6 @@ beforeEach(() => {
   queryClient.clear()
   removePersisted(TARGET)
   localStorage.removeItem("permission.v3")
-  transport.dir = base64Encode(DIRECTORY)
   transport.list.mockReset().mockResolvedValue({ data: [] })
   transport.respond.mockReset().mockResolvedValue(undefined)
   transport.createClient.mockReset().mockImplementation(() => ({
@@ -75,6 +73,35 @@ afterEach(() => {
 })
 
 describe("explicit permission policy", () => {
+  test("reconciles simultaneous pane directories without route params and releases each scope independently", async () => {
+    const otherDirectory = "/work/second-pane"
+    setPersisted(TARGET, { autoAccept: { [acceptKey(SESSION, otherDirectory)]: true } })
+    const { api } = await mount()
+    await waitFor(() => expect(api.requestPolicyReady(DIRECTORY)).toBe(true))
+    let finish: (value: { data: AgentPermission[] }) => void = () => {}
+    transport.list.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const release = api.observeDirectory(otherDirectory)
+    const releaseSecond = api.observeDirectory(otherDirectory)
+    await waitFor(() => expect(transport.list).toHaveBeenCalledTimes(2))
+    expect(api.requestPolicyReady(otherDirectory)).toBe(false)
+    expect(api.requestPolicyReady(DIRECTORY)).toBe(true)
+    release()
+    finish({ data: [] })
+    await waitFor(() => expect(api.requestPolicyReady(otherDirectory)).toBe(true))
+    releaseSecond()
+    expect(api.requestPolicyReady(otherDirectory)).toBe(false)
+    expect(api.requestPolicyReady(DIRECTORY)).toBe(true)
+
+    transport.list.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const disposePending = api.observeDirectory(otherDirectory)
+    await waitFor(() => expect(transport.list).toHaveBeenCalledTimes(3))
+    disposePending()
+    finish({ data: [request("disposed-pane")] })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(transport.respond).not.toHaveBeenCalled()
+  })
+
   test("cached engine allow rules cannot enable autoaccept or start an engine config read", async () => {
     queryClient.setQueryData(["directory", "https://control.test", "config", DIRECTORY, ""], {
       permission: "allow",
@@ -126,19 +153,19 @@ describe("explicit permission policy", () => {
   test("manual approval and rejection preserve the response and only successful always enables policy", async () => {
     const { api } = await mount()
     for (const response of ["once", "reject"] as const) {
-      await api.respond({ sessionID: SESSION, permissionID: response, response })
+      await api.respond({ sessionID: SESSION, permissionID: response, response, directory: DIRECTORY })
       expect(transport.respond).toHaveBeenLastCalledWith({
         directory: DIRECTORY, sessionID: SESSION, permissionID: response, response,
       })
       expect(api.isAutoAccepting(SESSION, DIRECTORY)).toBe(false)
     }
     transport.respond.mockRejectedValueOnce(new Error("approval unavailable"))
-    await expect(api.respond({ sessionID: SESSION, permissionID: "failed", response: "always" }))
+    await expect(api.respond({ sessionID: SESSION, permissionID: "failed", response: "always", directory: DIRECTORY }))
       .rejects.toThrow("approval unavailable")
     expect(api.isAutoAccepting(SESSION, DIRECTORY)).toBe(false)
     expect(transport.list).not.toHaveBeenCalled()
 
-    await api.respond({ sessionID: SESSION, permissionID: "approved", response: "always" })
+    await api.respond({ sessionID: SESSION, permissionID: "approved", response: "always", directory: DIRECTORY })
     expect(api.isAutoAccepting(SESSION, DIRECTORY)).toBe(true)
     expect(transport.respond).toHaveBeenLastCalledWith({
       directory: DIRECTORY, sessionID: SESSION, permissionID: "approved", response: "always",
@@ -157,7 +184,7 @@ describe("explicit permission policy", () => {
     expect(transport.respond).toHaveBeenLastCalledWith({
       directory: DIRECTORY, sessionID: SESSION, permissionID: permission.id, response: "once",
     })
-    await api.respond({ sessionID: SESSION, permissionID: permission.id, response: "reject" })
+    await api.respond({ sessionID: SESSION, permissionID: permission.id, response: "reject", directory: DIRECTORY })
     expect(transport.respond).toHaveBeenLastCalledWith({
       directory: DIRECTORY, sessionID: SESSION, permissionID: permission.id, response: "reject",
     })
@@ -170,7 +197,7 @@ describe("explicit permission policy", () => {
     await waitFor(() => expect(api.requestPolicyReady(DIRECTORY)).toBe(true))
     expect(api.autoResponds(request("pending"), DIRECTORY)).toBe(false)
     expect(transport.respond).not.toHaveBeenCalled()
-    await api.respond({ sessionID: SESSION, permissionID: "pending", response: "once" })
+    await api.respond({ sessionID: SESSION, permissionID: "pending", response: "once", directory: DIRECTORY })
     expect(transport.respond).toHaveBeenCalledTimes(1)
   })
 })

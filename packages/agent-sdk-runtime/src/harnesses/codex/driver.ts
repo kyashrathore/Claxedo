@@ -8,6 +8,7 @@ import {
 import {
   codexAppServerAdapter,
   codexCollabAgentCall,
+  codexSubagentActivity,
   codexStartedSubagent,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
 import type { AgentConfigOption } from "../../index"
@@ -393,6 +394,24 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     params: JsonRecord,
     frame: unknown,
   ) {
+    const activity = codexSubagentActivity(params.item)
+    if (activity && params.threadId === threadId) {
+      await input.observeSubagent({
+        observation: {
+          observationId: `codex:activity:${activity.id}:${activity.kind}`,
+          harnessExecutionId: threadId,
+          stableCorrelationId: activity.agentThreadId,
+          providerId: activity.agentThreadId,
+          providerKind: "codex",
+          status: activity.kind === "started" ? "running" : "completed",
+          transcript: { kind: "live" },
+          ...(activity.kind === "started" ? { toolCallId: activity.id, toolCallRole: "spawn" as const } : {}),
+          ...(activity.agentPath ? { label: activity.agentPath } : {}),
+        },
+        correlationKeys: [activity.agentThreadId],
+        source: { dir: "in", method, frame },
+      })
+    }
     const startedSubagent = method === "thread/started" ? codexStartedSubagent(params) : undefined
     if (startedSubagent?.parentThreadId === threadId) {
       await input.observeSubagent({

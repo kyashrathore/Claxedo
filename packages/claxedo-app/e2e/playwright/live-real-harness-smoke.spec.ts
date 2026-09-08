@@ -283,6 +283,11 @@ test.describe("live real-harness smoke @live", () => {
     testInfo.setTimeout(240_000)
   })
 
+  test.afterEach(async ({}, testInfo) => {
+    if (testInfo.status === testInfo.expectedStatus) return
+    await testInfo.attach("claxedo-server.log", { body: serverLog, contentType: "text/plain" })
+  })
+
   test("opencode native harness (embedded engine) completes 3 real turns and survives reload", async ({
     page,
   }) => {
@@ -354,6 +359,102 @@ test.describe("live real-harness smoke @live", () => {
     await expect(page).toHaveURL(sessionUrl)
     await expect(page.locator('[data-action="prompt-harness-model"]').filter({ visible: true })).toHaveAttribute("data-harness", "claude")
   })
+
+  for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} live subagent completes an openable child transcript and survives reload`, async ({ page }) => {
+      const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+      test.skip(!binary, `The live subagent flow requires the installed and authenticated ${harness} CLI.`)
+      const dir = await makeWorkspace(`${harness}-live-subagent`)
+      await seedOneProject(page, dir)
+      const input = await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+      await waitForHarnessReady(page)
+      const permissionMode = page.locator('[data-action="prompt-permission-mode"]').last()
+      const mode = harness === "claude" ? "bypassPermissions" : "full-access"
+      await permissionMode.click()
+      await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
+      await expect(permissionMode).toHaveAttribute("data-mode", mode)
+      const childMarker = `LIVE-CHILD-${Date.now()}`
+      const parentMarker = `LIVE-PARENT-${Date.now()}`
+      await composePrompt(page, input,
+        `Use ${harness === "claude" ? "the Agent tool" : "spawn_agent"} to delegate exactly one child task: ` +
+        `"Reply with exactly ${childMarker}. Do not run tools or modify files." ` +
+        `Wait for the child to finish, then reply with exactly ${parentMarker}. Do not do the child's task yourself.`,
+      )
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+      const parentUrl = page.url()
+      const card = page.locator('[data-component="task-tool-card"]').last()
+      await expect(card).toBeVisible({ timeout: 90_000 })
+      await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed", { timeout: 90_000 })
+      await expectAssistantReplyVisible(page, parentMarker)
+      if (!(await card.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
+      await expect(card).toBeVisible()
+      const childLink = card.locator("xpath=ancestor::a[1]")
+      await expect(childLink).toHaveCount(1)
+      const childHref = await childLink.getAttribute("href")
+      expect(childHref).toMatch(/^\/s\//)
+      await childLink.click()
+      await expect(page.locator("[data-subagent-child-heading]")).toBeVisible({ timeout: 30_000 })
+      await expectAssistantReplyVisible(page, childMarker, { spec: "live-real-harness-smoke", scenario: `${harness}-subagent-child` })
+      await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
+      // The card opens a split pane without changing the parent URL. Exercise
+      // the child's public permalink before reloading its transcript.
+      await page.goto(new URL(childHref!, parentUrl).toString())
+      await expectAssistantReplyVisible(page, childMarker, undefined, "read-only-child")
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expectAssistantReplyVisible(page, childMarker, undefined, "read-only-child")
+      await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
+      await page.goto(parentUrl)
+      await expectAssistantReplyVisible(page, parentMarker)
+      if (!(await card.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
+      await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed")
+    })
+
+    test(`${harness} live permission approval gates a file write through reload`, async ({ page }) => {
+      const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+      test.skip(!binary, `The live approval flow requires the installed and authenticated ${harness} CLI.`)
+      const dir = await makeWorkspace(`${harness}-live-permission`)
+      const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-approved-"))
+      const output = path.join(outputDir, "result.txt")
+      try {
+        await seedOneProject(page, dir)
+        const input = await openDraftPrompt(page, dir)
+        await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+        await waitForHarnessReady(page)
+        const permissionMode = page.locator('[data-action="prompt-permission-mode"]').last()
+        const mode = harness === "claude" ? "default" : "workspace-write"
+        await permissionMode.click()
+        await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
+        await expect(permissionMode).toHaveAttribute("data-mode", mode)
+        const marker = `LIVE-APPROVED-${Date.now()}`
+        await composePrompt(page, input,
+          `Run exactly this shell command once: printf '${marker}' | tee '${output}'. ` +
+          (harness === "codex" ? 'Use exec_command with sandbox_permissions="require_escalated" and justification="Write the isolated test file". ' : "Use the Bash tool. ") +
+          `Wait for approval. After execution, reply with exactly the command output. Do not run any other tools or use any alternative way to write the file.`,
+        )
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+        const sessionUrl = page.url()
+        const dock = page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
+        await expect(dock).toBeVisible({ timeout: 60_000 })
+        expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expect(dock).toBeVisible({ timeout: 30_000 })
+        expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+        await page.screenshot({ path: test.info().outputPath("live-permission-pending.png") })
+        await dock.getByRole("button", { name: "Allow once", exact: true }).click()
+        await expect.poll(() => fs.readFile(output, "utf8").catch(() => ""), { timeout: 30_000 }).toBe(marker)
+        await expectAssistantReplyVisible(page, marker, { spec: "live-real-harness-smoke", scenario: `${harness}-permission-approved` })
+        await expect(page).toHaveURL(sessionUrl)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expectAssistantReplyVisible(page, marker)
+        await expect(dock).toHaveCount(0)
+      } finally {
+        await fs.rm(outputDir, { recursive: true, force: true })
+      }
+    })
+  }
 
   test("codex ACP harness (real codex-acp subprocess) completes 3 real turns and survives reload", async ({
     page,

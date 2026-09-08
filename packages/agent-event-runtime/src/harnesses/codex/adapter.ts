@@ -84,6 +84,15 @@ export type CodexCollabAgentCall = {
   statuses: Record<string, SubagentStatus>
 }
 
+export function codexSubagentActivity(value: unknown) {
+  const row = asRecord(value)
+  if (row?.type !== "subAgentActivity") return undefined
+  const id = text(row.id)
+  const agentThreadId = text(row.agentThreadId)
+  if (!id || !agentThreadId || (row.kind !== "started" && row.kind !== "completed")) return undefined
+  return { id, agentThreadId, kind: row.kind, agentPath: text(row.agentPath) }
+}
+
 export function codexCollabAgentCall(value: unknown): CodexCollabAgentCall | undefined {
   const row = asRecord(value)
   if (row?.type !== "collabAgentToolCall") return undefined
@@ -170,6 +179,7 @@ function canonicalItemType(raw: unknown) {
 }
 
 function toolNameForItem(itemType: string, row: Record<string, unknown>) {
+  if (codexSubagentActivity(row)) return "subagent"
   return text(row.tool) ?? text(row.toolName) ?? text(row.name) ?? text(row.title) ?? (
     itemType === "command_execution"
       ? "command"
@@ -673,6 +683,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
         case "item/completed": {
           const completedItem = item(event)
           if (!completedItem) return []
+          if (codexSubagentActivity(completedItem)?.kind === "completed") return []
           if (completedItem.type === "contextCompaction") {
             return [{ type: "session-compaction", phase: "completed", metadata: { codex: row } }]
           }
@@ -742,6 +753,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
 
         case "item/started": {
           const startedItem = item(event) ?? row
+          if (codexSubagentActivity(startedItem)?.kind === "completed") return []
           if (startedItem.type === "contextCompaction") {
             return [{ type: "session-compaction", phase: "started", metadata: { codex: row } }]
           }

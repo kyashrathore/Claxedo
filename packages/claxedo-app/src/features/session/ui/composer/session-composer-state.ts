@@ -38,6 +38,7 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   const sdk = useSDK()
   const language = useLanguage()
   const permission = usePermission()
+  createEffect(() => onCleanup(permission.observeDirectory(sdk.directory)))
   const activeSessionId = () => {
     const id = sessionParams.sessionId()
     return !id || id === "new" ? "__claxedo_idle_session__" : id

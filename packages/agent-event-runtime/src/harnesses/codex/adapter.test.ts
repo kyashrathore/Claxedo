@@ -6,6 +6,7 @@ import {
   codexCollabAgentCall,
   codexCollabAgentStatus,
   codexStartedSubagent,
+  codexSubagentActivity,
   type CodexAppServerAdapterState,
 } from "./adapter"
 
@@ -21,6 +22,19 @@ function runtime(initialSnapshot?: RuntimeSnapshot<CodexAppServerAdapterState>) 
 }
 
 describe("codexAppServerAdapter", () => {
+  test("keeps native subagent activity bound to the spawn call without rendering a second completion tool", () => {
+    const agent = runtime()
+    const started = { type: "subAgentActivity", id: "spawn-call", kind: "started", agentThreadId: "child-thread", agentPath: "/root/child" }
+    expect(codexSubagentActivity(started)).toEqual({ id: "spawn-call", kind: "started", agentThreadId: "child-thread", agentPath: "/root/child" })
+    expect(agent.ingest({ source: "codex.app-server", method: "item/started", payload: { item: started } }).events)
+      .toContainEqual(expect.objectContaining({ type: "tool-start", toolCallId: "spawn-call", toolName: "subagent" }))
+    const completed = { ...started, id: "subagent-completed-event", kind: "completed" }
+    for (const method of ["item/started", "item/completed"]) {
+      expect(agent.ingest({ source: "codex.app-server", method, payload: { item: completed } }).events).toEqual([])
+    }
+    expect(codexSubagentActivity({ ...started, agentThreadId: undefined })).toBeUndefined()
+  })
+
   test("maps assistant deltas and completed message snapshots without duplicating text", () => {
     const agent = runtime()
 

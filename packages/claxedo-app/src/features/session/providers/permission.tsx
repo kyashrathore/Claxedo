@@ -1,12 +1,10 @@
 import { asRecord } from "@/lib/record"
-import { createMemo, createResource, onCleanup } from "solid-js"
+import { createMemo, createResource, createRoot, createSignal, getOwner, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import type { AgentPermission as PermissionRequest } from "@claxedo/agent-runtime-contract"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { useGlobalSDK } from "@/features/session/app-ports"
-import { useParams } from "@solidjs/router"
-import { decode64 } from "@/lib/base64"
 import { directorySessions } from "@/features/session/data/sync/directory-session-cache"
 import {
   acceptKey,
@@ -31,16 +29,14 @@ type PermissionRespondFn = (input: {
   sessionID: string
   permissionID: string
   response: "once" | "always" | "reject"
-  directory?: string
+  directory: PermissionDirectory
 }) => Promise<void>
 type PermissionDirectory = string
 
 const permissionContextInput = {
   name: "Permission", gate: true,
   init: () => {
-    const params = useParams()
     const globalSDK = useGlobalSDK()
-    const directory = createMemo(() => decode64(params.dir))
     const permissionClient = (target: string) => globalSDK.createClient({ directory: target }).permission
 
     const [store, setStore, _, ready] = persisted(
@@ -69,7 +65,7 @@ const permissionContextInput = {
 
     const respond: PermissionRespondFn = async (input) => {
       try {
-        const target = input.directory ?? directory()
+        const target = input.directory
         if (!target) throw new Error("Permission response requires an explicit workspace directory")
         await permissionClient(target).respond({ ...input, directory: target })
         if (input.response === "always") enable(input.sessionID, target)
@@ -79,7 +75,7 @@ const permissionContextInput = {
       }
     }
 
-    function respondOnce(permission: PermissionRequest, directory?: string) {
+    function respondOnce(permission: PermissionRequest, directory: PermissionDirectory) {
       const hit = markPermissionAutoResponded(permission.id)
       if (hit) return
       setFailedAutoResponses(
@@ -133,41 +129,58 @@ const permissionContextInput = {
     })
     onCleanup(unsubscribe)
 
-    // Events can arrive before persisted permission policy is ready. Model the
-    // authoritative pending-list reconciliation as a resource keyed by the
-    // active directory and hydrated policy. That keeps readiness derived from
-    // the request itself instead of mirroring query results through an effect.
-    const reconciliationSource = createMemo(() => {
-      if (!ready()) return undefined
-      const currentDirectory = directory()
-      if (!currentDirectory) return undefined
-      const policyKey = Object.entries(store.autoAccept)
+    const owner = getOwner()
+    const [scopeVersion, setScopeVersion] = createSignal(0)
+    const scopes = new Map<string, { count: number; state: () => PermissionAutoReconciliationState | undefined; dispose: () => void }>()
+    const policyKey = createMemo(() => ready() ? Object.entries(store.autoAccept)
         .filter(([, enabled]) => enabled)
         .map(([key]) => key)
         .sort()
-        .join("\n")
-      return { directory: currentDirectory, policyKey }
-    })
-    const [autoReconciliation] = createResource(reconciliationSource, async (source): Promise<{
-      directory: PermissionDirectory
-      state: PermissionAutoReconciliationState
-    }> => {
-      if (!source.policyKey) return { directory: source.directory, state: "ready" }
-      const state = await reconcileAutoPermissionRequests({
-        directory: source.directory,
-        active: () => ready() && directory() === source.directory,
-        autoAccept: () => store.autoAccept,
-        sessions: () => directorySessions(source.directory),
-        list: async () => (await permissionClient(source.directory).list({ directory: source.directory })).data ?? [],
-        respond: (permission) => respondOnce(permission, source.directory),
-      })
-      return { directory: source.directory, state }
+        .join("\n") : undefined)
+
+    // Mounted session panes own their workspace scope. URL parameters cannot
+    // identify every open pane, and canonical workspace routes contain no dir.
+    function observeDirectory(directory: PermissionDirectory) {
+      let scope = scopes.get(directory)
+      if (!scope) {
+        scope = createRoot((dispose) => {
+          let active = true
+          onCleanup(() => { active = false })
+          const [reconciliation] = createResource(policyKey, async (key) => {
+            if (!key) return "ready" as const
+            return reconcileAutoPermissionRequests({
+              directory,
+              active: () => active && ready() && policyKey() === key,
+              autoAccept: () => store.autoAccept,
+              sessions: () => directorySessions(directory),
+              list: async () => (await permissionClient(directory).list({ directory })).data ?? [],
+              respond: (permission) => respondOnce(permission, directory),
+            })
+          })
+          return { count: 0, dispose, state: () => reconciliation.loading ? "pending" as const : reconciliation() }
+        }, owner)
+        scopes.set(directory, scope)
+        setScopeVersion((value) => value + 1)
+      }
+      scope.count += 1
+      let released = false
+      return () => {
+        if (released) return
+        released = true
+        if (--scope.count) return
+        scope.dispose()
+        scopes.delete(directory)
+        setScopeVersion((value) => value + 1)
+      }
+    }
+    onCleanup(() => {
+      for (const scope of scopes.values()) scope.dispose()
+      scopes.clear()
     })
 
     function reconciliationFor(target: PermissionDirectory): PermissionAutoReconciliationState | undefined {
-      if (reconciliationSource()?.directory === target && autoReconciliation.loading) return "pending"
-      const current = autoReconciliation()
-      return current?.directory === target ? current.state : undefined
+      scopeVersion()
+      return scopes.get(target)?.state()
     }
 
     function enableDirectory(directory: string) {
@@ -238,6 +251,7 @@ const permissionContextInput = {
 
     return {
       ready,
+      observeDirectory,
       requestPolicyReady(directory: PermissionDirectory) {
         return permissionRequestPolicyReady(ready(), reconciliationFor(directory))
       },

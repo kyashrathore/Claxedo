@@ -498,7 +498,7 @@ export async function selectScriptedModel(page: Page) {
   const search = picker.getByRole("textbox", { name: /Search models/i })
   await expect(search).toBeVisible({ timeout: 20_000 })
   await search.fill("GPT-4")
-  await picker.locator('[data-slot="list-item-name"]').filter({ hasText: /^GPT-4$/ }).click()
+  await picker.locator('[data-slot="list-item"][data-key="pi:openai/gpt-4"]').click()
   await expect(control).toHaveAttribute("data-harness", "pi")
   await expect(control).toHaveAttribute("data-provider", "pi")
   await expect(control).toHaveAttribute("data-model", "openai/gpt-4")

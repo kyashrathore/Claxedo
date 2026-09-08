@@ -288,11 +288,18 @@ export async function expectAssistantReplyVisible(
   page: Page,
   text: string | RegExp,
   evidence?: Evidence,
+  composer: "prompt" | "read-only-child" = "prompt",
 ): Promise<Locator> {
   const resolved = resolveEvidence(evidence)
   const locator = await domTruth(page, text, resolved.timeout)
   await thinkingRowGone(page)
-  await submitControlReady(page)
+  if (composer === "read-only-child") {
+    await expect(page.locator("[data-subagent-child-heading]")).toBeVisible()
+    await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
+    await expect(page.locator(SELECTORS.submitControl)).toHaveCount(0)
+  } else {
+    await submitControlReady(page)
+  }
   await geometricTruth(page, locator)
   await captureEvidence(page, resolved)
   return locator

@@ -82,6 +82,7 @@ async function makeFakeCodex(options: {
   auth401?: boolean
   models?: unknown[]
   subagent?: boolean
+  subagentActivity?: boolean
   initializeDelayMs?: number
   loginDelayMs?: number
   ignoreSigterm?: boolean
@@ -96,6 +97,7 @@ const requestRefresh = ${JSON.stringify(options.requestRefresh === true)}
 const mcpElicitation = ${JSON.stringify(options.mcpElicitation === true)}
 const auth401 = ${JSON.stringify(options.auth401 === true)}
 const subagent = ${JSON.stringify(options.subagent === true)}
+const subagentActivity = ${JSON.stringify(options.subagentActivity === true)}
 const initializeDelayMs = ${JSON.stringify(options.initializeDelayMs ?? 0)}
 const loginDelayMs = ${JSON.stringify(options.loginDelayMs ?? 0)}
 const ignoreSigterm = ${JSON.stringify(options.ignoreSigterm === true)}
@@ -162,6 +164,13 @@ process.stdin.on("data", (chunk) => {
       }
       write({ id: message.id, result: { turn: { id: "turn-1", status: "inProgress" } } })
       write({ method: "turn/started", params: { threadId: "thread-1", turn: { id: "turn-1", status: "inProgress" } } })
+      if (subagentActivity) {
+        const item = { id: "activity-spawn", type: "subAgentActivity", kind: "started", agentThreadId: "activity-child", agentPath: "/root/child" }
+        write({ method: "item/started", params: { threadId: "thread-1", turnId: "turn-1", item } })
+        write({ method: "item/completed", params: { threadId: "thread-1", turnId: "turn-1", item } })
+        write({ method: "item/agentMessage/delta", params: { threadId: "activity-child", turnId: "child-turn", itemId: "child-message", delta: "ACTIVITY-CHILD-ONLY" } })
+        write({ method: "item/completed", params: { threadId: "thread-1", turnId: "turn-1", item: { ...item, id: "activity-completed", kind: "completed" } } })
+      }
       if (subagent) {
         write({ method: "thread/started", params: { thread: { id: "thread-child-1", parentThreadId: "thread-1", preview: "Research one", agentNickname: "Alpha", agentRole: "researcher", status: { type: "active", activeFlags: [] } } } })
         write({ method: "thread/started", params: { thread: { id: "thread-child-2", parentThreadId: "thread-1", preview: "Research two", agentNickname: "Beta", agentRole: "researcher", status: { type: "active", activeFlags: [] } } } })
@@ -657,6 +666,29 @@ describe("CodexHarnessAdapter", () => {
     await adapter.dispose()
 
     expect(events.some((event) => JSON.stringify(event).includes("Codex authentication failed with 401 Unauthorized"))).toBe(true)
+  })
+
+  test("admits native subAgentActivity once and routes its child transcript separately", async () => {
+    const fake = await makeFakeCodex({ subagentActivity: true })
+    const eventHub = createRuntimeEventHub()
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const store = createMemoryRuntimeStore()
+    const adapter = new CodexHarnessAdapter({ binary: fake.binary, eventHub, store, storeRoot: path.join(fake.dir, "store") })
+    try {
+      const session = await adapter.createSession(fake.dir)
+      for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {}
+      const children = store.listSessions(fake.dir).filter((item) => item.parentID === session.id)
+      expect(children).toHaveLength(1)
+      expect(JSON.stringify(store.getMessages(children[0]!.id))).toContain("ACTIVITY-CHILD-ONLY")
+      expect(JSON.stringify(store.getMessages(session.id))).not.toContain("ACTIVITY-CHILD-ONLY")
+      const lifecycle = runtimeEvents.flatMap((event) => event.payload.type === "subagent-updated" ? [event.payload] : [])
+      expect(lifecycle.map((event) => event.status)).toEqual(["running", "completed"])
+      expect(new Set(lifecycle.map((event) => event.subagentKey)).size).toBe(1)
+      expect(lifecycle[0]).toMatchObject({ providerId: "activity-child", toolCallId: "activity-spawn", toolCallRole: "spawn", label: "/root/child" })
+    } finally {
+      await adapter.dispose()
+    }
   })
 
   test("routes Codex child threads through revisioned lifecycle admission into isolated stores", async () => {

@@ -1334,26 +1334,31 @@ test.describe("real harness journeys @core @tier-real", () => {
     expectScriptedTraffic("responses", 2)
   })
 
-  test("Pi runs a provider-issued subagent call as an openable child session", async ({ page }) => {
+  test("Pi reports unsupported subagents and rejects an unadvertised delegation tool", async ({ page }) => {
     const dir = await makeWorkspace("pi-subagent", "pi")
     await seedOneProject(page, dir)
-    const session = await createPiSession(dir)
-    await runRealSubagentJourney(page, dir, {
-      id: "pi",
-      dialect: "responses",
-      sessionID: session.session.id,
-      workspaceID: session.workspaceId,
-      central: true,
-      tool: {
-        name: "subagent",
-        input: {
-          task: "Reply with exactly CHILD-PI",
-          title: "Verify Pi child delegation",
-          background: false,
-        },
-      },
-      openable: true,
+    const input = await openDraftPrompt(page, dir)
+    await selectScriptedModel(page)
+    scripted!.resetCounts()
+    const marker = `PI-UNSUPPORTED-${Date.now()}`
+    scripted!.scriptTool({
+      name: "subagent", input: { task: "Do not execute", title: "Unsupported delegation", background: false }, whenPromptIncludes: marker,
     })
+    await composePrompt(page, input, `Reply with exactly this one token: ${marker}`)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+    await expectAssistantReplyVisible(page, marker)
+    const sessionID = new URL(page.url()).pathname.split("/").at(-1)!
+    const capabilities = await page.request.get(`${BACKEND_URL}/session/${sessionID}/capabilities?directory=${encodeURIComponent(dir)}`)
+    expect(capabilities.ok()).toBe(true)
+    expect(await capabilities.json()).toMatchObject({ subagents: false })
+    expect(scripted!.requests.flatMap((request) => request.tools.map((tool) => tool.name))).not.toContain("subagent")
+    const response = await page.request.get(`${BACKEND_URL}/session/${sessionID}/message?directory=${encodeURIComponent(dir)}`)
+    expect(response.ok()).toBe(true)
+    const history = await response.json() as Array<{ parts: Array<{ type: string; tool?: string; state?: { status: string; error?: string } }> }>
+    const tool = history.flatMap((message) => message.parts).find((part) => part.type === "tool" && part.tool === "subagent")
+    expect(tool?.state).toMatchObject({ status: "error", error: expect.stringContaining("Tool subagent not found") })
+    await expect(page.locator('[data-component="task-tool-card"]')).toHaveCount(0)
   })
 
   test("Pi Goal runs through slash and + entry paths with continuation and lifecycle controls", async ({ page }) => {
@@ -1440,6 +1445,78 @@ test.describe("real harness journeys @core @tier-real", () => {
       scripted?.setReplyDelayMs(0)
     }
   })
+
+  for (const harness of ["claude", "codex"] as const) {
+    for (const decision of ["Allow once", "Deny"] as const) {
+      test(`${harness} native permission ${decision} gates a real file write after reload`, async ({ page }) => {
+        const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+        requireBinary(binary, harness, "install the native CLI to exercise its tool approval boundary.")
+        const dir = await makeWorkspace(`${harness}-permission`, harness)
+        const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-permission-write-"))
+        const output = path.join(outputDir, "result.txt")
+        try {
+          await seedOneProject(page, dir)
+          const input = await openDraftPrompt(page, dir)
+          await switchDraftHarness(page, harness)
+          await waitForHarnessReady(page)
+          const permissionMode = page.locator('[data-action="prompt-permission-mode"]').last()
+          const mode = harness === "claude" ? "default" : "workspace-write"
+          await permissionMode.click()
+          await page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
+          await expect(permissionMode).toHaveAttribute("data-mode", mode)
+          const marker = `PERMISSION-${Date.now()}`
+          const command = `printf approved-write > '${output}'`
+          const tool = {
+            name: harness === "claude" ? "Bash" : "exec_command",
+            input: harness === "claude"
+              ? { command, description: "Write the isolated approval test file" }
+              : { cmd: command, sandbox_permissions: "require_escalated", justification: "Write the isolated approval test file" },
+            whenPromptIncludes: marker,
+          }
+          scripted!.scriptTool(tool)
+          await composePrompt(page, input, `Run the requested command, then reply with exactly this one token: ${marker}`)
+          await page.locator(SELECTORS.submitControl).last().click()
+          await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+          const sessionUrl = page.url()
+          const dock = page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
+          await expect(dock).toBeVisible({ timeout: 60_000 })
+          expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+          await page.reload({ waitUntil: "domcontentloaded" })
+          await expect(dock).toBeVisible({ timeout: 30_000 })
+          expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+          await page.screenshot({ path: test.info().outputPath("permission-pending.png") })
+          await dock.getByRole("button", { name: decision, exact: true }).click()
+          await expect(dock).toHaveCount(0)
+          await expectAssistantReplyVisible(page, marker)
+          if (decision === "Allow once") {
+            await expect.poll(() => fs.readFile(output, "utf8").catch(() => "")).toBe("approved-write")
+          } else {
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+          }
+          await expect(page).toHaveURL(sessionUrl)
+          await page.reload({ waitUntil: "domcontentloaded" })
+          await expectAssistantReplyVisible(page, marker)
+          await expect(dock).toHaveCount(0)
+          if (decision === "Allow once") {
+            await fs.rm(output)
+            const followupMarker = `SECOND-${marker}`
+            scripted!.scriptTool({ ...tool, whenPromptIncludes: followupMarker })
+            await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
+              `Run the same command again, then reply with exactly this one token: ${followupMarker}`)
+            await page.locator(SELECTORS.submitControl).last().click()
+            await expect(dock).toBeVisible({ timeout: 60_000 })
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            await dock.getByRole("button", { name: "Deny", exact: true }).click()
+            await expectAssistantReplyVisible(page, followupMarker)
+            expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+            await expect(dock).toHaveCount(0)
+          }
+        } finally {
+          await fs.rm(outputDir, { recursive: true, force: true })
+        }
+      })
+    }
+  }
 
   test("codex pending approval survives session switches without duplicate prompt, rail, or hydration regressions", async ({
     page,
@@ -1632,26 +1709,6 @@ test.describe("real harness journeys @core @tier-real", () => {
       openable: true,
       permissionMode: "bypassPermissions",
     })
-    const piDir = await makeWorkspace("demo-pi", "pi")
-    await seedOneProject(page, piDir)
-    const pi = await createPiSession(piDir)
-    await runRealSubagentJourney(page, piDir, {
-      id: "pi",
-      dialect: "responses",
-      sessionID: pi.session.id,
-      workspaceID: pi.workspaceId,
-      central: true,
-      tool: {
-        name: "subagent",
-        input: {
-          task: "Reply with exactly CHILD-PI",
-          title: "Verify Pi child delegation",
-          background: false,
-        },
-      },
-      openable: true,
-    })
-
     await runWorkspaceSubagentJourney(page, "demo-codex-sdk", "codex", {
       id: "codex-sdk",
       dialect: "responses",
