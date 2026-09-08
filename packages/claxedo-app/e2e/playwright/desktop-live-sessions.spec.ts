@@ -19,7 +19,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["unavailable model recovery across full restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of ["unavailable model recovery across full restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -258,7 +258,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
       packaged = await launch()
       expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
-      const dock = packaged.page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
+      let dock = packaged.page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
       await expect(dock).toBeVisible({ timeout: 30_000 })
       await expect(dock.locator('[data-slot="permission-command"]')).toContainText(command)
       expect(await readPending()).toEqual(pending)
@@ -268,8 +268,25 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await expect(dock).toHaveCount(0)
       await expect.poll(readPending).toEqual([])
       if (decision !== "Stop") await expectAssistantReplyVisible(packaged.page, decision === "Deny" ? `DENIED-${marker}` : marker)
-      if (decision === "Allow once") await expect.poll(() => fs.readFile(output, "utf8").catch(() => "")).toBe(marker)
+      if (decision === "Allow once" || decision === "Allow always") await expect.poll(() => fs.readFile(output, "utf8").catch(() => "")).toBe(marker)
       else expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
+      if (decision === "Allow always") {
+        await packaged.close()
+        await shutdownPackagedTestDaemon(profile)
+        packaged = await launch()
+        dock = packaged.page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
+        expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+        await fs.rm(output)
+        const repeated = `REPEATED_${marker}`
+        await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(),
+          `Run exactly the same shell command once: ${command}. ` +
+          (harness === "Codex" ? 'Use exec_command with sandbox_permissions="require_escalated" and justification="Write the isolated test file". ' : "Use the Bash tool. ") +
+          `After execution reply exactly ${repeated}. Do not use other tools or alternative write methods.`)
+        await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+        await expect.poll(async () => (await readPending()).length ? "approval requested again" : fs.readFile(output, "utf8").catch(() => ""), { timeout: 60_000 }).toBe(marker)
+        await expectAssistantReplyVisible(packaged.page, repeated)
+        expect(await readPending()).toEqual([])
+      }
       const late = await fetch(`${serverBase}/session/${session.id}/permissions/${pending[0]!.id}${query}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ response: "always" }),
       })
@@ -284,7 +301,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await expectAssistantReplyVisible(packaged.page, followup)
       expect(await readPending()).toEqual([])
       await expect(dock).toHaveCount(0)
-      if (decision === "Allow once") expect(await fs.readFile(output, "utf8")).toBe(marker)
+      if (decision === "Allow once" || decision === "Allow always") expect(await fs.readFile(output, "utf8")).toBe(marker)
       else expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
       return
     }

@@ -6,6 +6,7 @@ import { text } from "../shared/sdk-runtime-values"
 import type { CodexActiveThread } from "./active-thread"
 import { spawnDynamicCodexAgent } from "./dynamic-agent"
 import { codexMcpElicitationQuestion, codexMcpElicitationResponse } from "./mcp-elicitation"
+import { codexCommandGrant, hasCodexCommandGrant, saveCodexCommandGrant } from "./permission-state"
 
 /** A refreshed ChatGPT credential, in the app-server's own field names below. */
 type RefreshedTokens = { access: string; accountId?: string; planType?: string }
@@ -88,6 +89,10 @@ export async function handleCodexServerRequest(input: {
   }
 
   if (APPROVAL_METHODS.has(method)) {
+    const grant = active && codexCommandGrant(method, params, active.directory, input.permissionModeId(active.sessionId))
+    if (active && grant && hasCodexCommandGrant(input.host, active.sessionId, grant)) {
+      return permissionResponse(method, "allow_always", params)
+    }
     active?.project(method, payload, input.message)
     const decision = await new Promise<"allow_once" | "allow_always" | "deny" | "reject_always">((resolve) => {
       if (!active) {
@@ -102,6 +107,7 @@ export async function handleCodexServerRequest(input: {
         resolve,
       })
     })
+    if (active && grant && decision === "allow_always") saveCodexCommandGrant(input.host, active.sessionId, grant)
     return permissionResponse(method, decision, params)
   }
 
