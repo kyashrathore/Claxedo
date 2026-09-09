@@ -1,3 +1,4 @@
+import { expectSessionRenamePersistence } from "../helpers/session-rename"
 import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
 import { expectAssistantReplyVisible } from "../helpers/turn-oracle"
 import { expect, test, type Locator } from "@playwright/test"
@@ -19,7 +20,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -769,6 +770,33 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: marker }),
       `the real ${harness} session did not render its authenticated response`,
     ).toBeVisible({ timeout: 180_000 })
+    if (flow === "rename across full restart") {
+      const session = await created.json() as { id: string }
+      await expectSessionRenamePersistence(packaged.page, {
+        backendUrl: serverBase, directory, sessionId: session.id,
+        restartServer: async () => {
+          const appProcess = packaged!.app.process()
+          await packaged!.close()
+          await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
+          packaged = await launch()
+          expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+          return packaged.page
+        },
+      })
+      await expectAssistantReplyVisible(packaged.page, marker)
+      const followup = `DESKTOP_RENAME_FOLLOWUP_${Date.now()}`
+      await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(),
+        `Reply with exactly this one token: ${followup}. Do not use tools.`)
+      const continued = packaged.page.waitForResponse((response) =>
+        response.request().method() === "POST" && new URL(response.url()).pathname === `/session/${session.id}/prompt_async`)
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      expect((await continued).ok()).toBe(true)
+      await expectAssistantReplyVisible(packaged.page, followup)
+      await packaged.page.reload()
+      await expectAssistantReplyVisible(packaged.page, marker)
+      await expectAssistantReplyVisible(packaged.page, followup)
+      await expect(packaged.page.locator('h1[data-slot="session-title-child"]')).toHaveText("Renamed café 日本語 🚀")
+    }
   } finally {
     if (packaged && !packaged.page.isClosed()) {
       await packaged.page.screenshot({ path: test.info().outputPath("desktop-session-final.png") })
