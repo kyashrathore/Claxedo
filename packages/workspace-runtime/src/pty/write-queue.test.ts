@@ -12,6 +12,7 @@ function createSession(): WriteQueueSession {
     lowWatermark: 4,
     ready: true,
     info: { status: "running" },
+    modeTracker: { resize() {} },
     process: {
       write(data) {
         writes.push(data)
@@ -58,5 +59,26 @@ describe("PTY write queue", () => {
     expect(resizes).toEqual([{ cols: 120, rows: 40 }])
     expect(session.writeQueue).toEqual([])
     expect(session.queuedBytes).toBe(0)
+  })
+
+  test("applies disconnected resizes to the emulator before the process and next input", () => {
+    const session = createSession()
+    const operations: string[] = []
+    session.modeTracker.resize = (cols, rows) => { operations.push(`emulator:${cols}x${rows}`) }
+    session.process.resize = (cols, rows) => { operations.push(`process:${cols}x${rows}`) }
+    session.process.write = (data) => { operations.push(`input:${data}`) }
+    session.ready = false
+    enqueueWrite(session, { type: "resize", cols: 120, rows: 42 })
+    enqueueWrite(session, { type: "write", data: "one" })
+    enqueueWrite(session, { type: "resize", cols: 126, rows: 42 })
+    enqueueWrite(session, { type: "write", data: "two" })
+    flushWriteQueue(session)
+    expect(operations).toEqual([])
+    session.ready = true
+    flushWriteQueue(session)
+    expect(operations).toEqual([
+      "emulator:120x42", "process:120x42", "input:one",
+      "emulator:126x42", "process:126x42", "input:two",
+    ])
   })
 })

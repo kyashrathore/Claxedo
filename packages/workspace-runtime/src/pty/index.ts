@@ -944,12 +944,7 @@ export namespace Pty {
       session.info.title = input.title
     }
     if (input.size) {
-      if (!session.ready) {
-        enqueueWrite(session, { type: "resize", cols: input.size.cols, rows: input.size.rows })
-      } else {
-        session.modeTracker.resize(input.size.cols, input.size.rows)
-        session.process.resize(input.size.cols, input.size.rows)
-      }
+      resize(id, input.size.cols, input.size.rows)
     }
     workspaceRuntimeBus.publish({ type: "pty.updated", info: session.info })
     return session.info
@@ -989,12 +984,8 @@ export namespace Pty {
   export function resize(id: string, cols: number, rows: number) {
     const session = sessions.get(id)
     if (session && session.info.status === "running") {
-      if (!session.ready) {
-        enqueueWrite(session, { type: "resize", cols, rows })
-        return
-      }
-      session.modeTracker.resize(cols, rows)
-      session.process.resize(cols, rows)
+      enqueueWrite(session, { type: "resize", cols, rows })
+      flushWriteQueue(session)
     }
   }
 

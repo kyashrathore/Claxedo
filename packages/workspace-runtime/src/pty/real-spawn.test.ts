@@ -87,6 +87,16 @@ void describe("real pty spawn (no mocks)", { skip: !posix }, () => {
     Pty.write(info.id, "stty size\n")
     await waitFor(() => client.text().includes("40 120"))
 
+    // Both public resize routes must preserve their ordering with input while
+    // detached. Reattach to the same real process and read its actual geometry.
+    handlers.onClose()
+    await Pty.update(info.id, { size: { cols: 93, rows: 31 } })
+    Pty.resize(info.id, 107, 37)
+    Pty.write(info.id, "printf 'QUEUED_SIZE:'; stty size\n")
+    const reattached = socket()
+    assert.ok(Pty.connect(info.id, reattached.ws))
+    await waitFor(() => reattached.text().includes("QUEUED_SIZE:37 107"))
+
     // Clean exit propagates from the native onExit into session state.
     Pty.write(info.id, "exit\n")
     await waitFor(() => Pty.get(info.id)?.status === "exited")
