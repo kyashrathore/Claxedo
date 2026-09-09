@@ -1,6 +1,6 @@
 import { expect, type Page } from "@playwright/test"
 
-export async function stopPendingPermission(page: Page, input: { backendUrl: string; directory: string; sessionId: string }) {
+export async function cancelPendingPermission(page: Page, input: { backendUrl: string; directory: string; sessionId: string; action: "Stop" | "Delete" }) {
   const query = `?directory=${encodeURIComponent(input.directory)}`
   const read = async () => {
     const response = await page.request.get(`${input.backendUrl}/permission${query}`)
@@ -9,9 +9,15 @@ export async function stopPendingPermission(page: Page, input: { backendUrl: str
   }
   const pending = await read()
   expect(pending).toHaveLength(1)
-  const stop = page.getByRole("button", { name: "Stop", exact: true })
-  await expect(stop).toBeVisible({ timeout: 10_000 })
-  await stop.click()
+  if (input.action === "Delete") {
+    await page.getByRole("button", { name: "More options", exact: true }).click()
+    await page.getByRole("menuitem", { name: "Delete", exact: true }).click()
+    await page.getByRole("button", { name: "Delete session", exact: true }).click()
+  } else {
+    const stop = page.getByRole("button", { name: "Stop", exact: true })
+    await expect(stop).toBeVisible({ timeout: 10_000 })
+    await stop.click()
+  }
   await expect.poll(read).toEqual([])
   await expect(page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })).toHaveCount(0)
   const late = await page.request.post(`${input.backendUrl}/session/${input.sessionId}/permissions/${pending[0]!.id}${query}`, {
@@ -20,5 +26,9 @@ export async function stopPendingPermission(page: Page, input: { backendUrl: str
   expect(late.status()).toBe(404)
   await page.reload({ waitUntil: "domcontentloaded" })
   expect(await read()).toEqual([])
+  if (input.action === "Delete") {
+    const removed = await page.request.get(`${input.backendUrl}/session/${input.sessionId}${query}`)
+    expect(removed.status()).toBe(404)
+  }
   await expect(page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })).toHaveCount(0)
 }

@@ -3,7 +3,7 @@ import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
 import { expectConcurrentQuestionIsolation } from "../helpers/question-isolation"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { expectPermissionReplyIsolation } from "../helpers/permission-isolation"
-import { stopPendingPermission } from "../helpers/permission-stop"
+import { cancelPendingPermission } from "../helpers/permission-cancellation"
 import { execFile } from "node:child_process"
 import fs from "node:fs/promises"
 import os from "node:os"
@@ -1765,8 +1765,8 @@ test.describe("real harness journeys @core @tier-real", () => {
   }
 
   for (const harness of ["claude", "codex", "pi"] as const) {
-    for (const goalMode of [false, true]) {
-    test(`${harness} Stop kills a running shell and the same session accepts a follow-up${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
+    for (const [action, goalMode] of [["stop", false], ["stop", true], ["delete", false]] as const) {
+    test(action === "delete" ? `${harness} Delete kills a running shell without resurrecting the session` : `${harness} Stop kills a running shell and the same session accepts a follow-up${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       requireBinary(binary, harness, "install the native CLI to exercise interruption of a real tool process.")
       const dir = await makeWorkspace(`${harness}-stop-tool`, harness)
@@ -1818,10 +1818,22 @@ test.describe("real harness journeys @core @tier-real", () => {
         }
         expect(await alive()).toBe(true)
         expect(await fs.stat(finishedFile).then(() => true, () => false)).toBe(false)
-        await page.getByRole("button", { name: "Stop", exact: true }).click()
+        if (action === "delete") {
+          await page.getByRole("button", { name: "More options", exact: true }).click()
+          await page.getByRole("menuitem", { name: "Delete", exact: true }).click()
+          await page.getByRole("button", { name: "Delete session", exact: true }).click()
+          await expect(page).not.toHaveURL(sessionUrl)
+        } else {
+          await page.getByRole("button", { name: "Stop", exact: true }).click()
+        }
         await expect.poll(alive, { timeout: 15_000, message: `${harness} left the interrupted shell running` }).toBe(false)
         if (goalMode) await expect(goalStatus(page.locator('[data-component="session-goal-dock"]'), "Paused")).toBeVisible()
         await fs.writeFile(releaseFile, "release")
+        if (action === "delete") {
+          await openDraftPrompt(page, dir)
+          if (harness === "pi") await selectScriptedModel(page)
+          else { await switchDraftHarness(page, harness); await waitForHarnessReady(page) }
+        }
         const followup = page.getByRole("textbox", { name: /Ask anything/i }).last()
         await expect(followup).toBeVisible()
         const nextMarker = `AFTER-${marker}`
@@ -1829,9 +1841,16 @@ test.describe("real harness journeys @core @tier-real", () => {
         await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Send")
         await page.locator(SELECTORS.submitControl).last().click()
         await expectAssistantReplyVisible(page, nextMarker)
-        await expect(page).toHaveURL(sessionUrl)
+        if (action === "stop") await expect(page).toHaveURL(sessionUrl)
+        else await expect(page).not.toHaveURL(sessionUrl)
         await page.reload({ waitUntil: "domcontentloaded" })
         await expectAssistantReplyVisible(page, nextMarker)
+        if (action === "delete") {
+          const removedId = new URL(sessionUrl).pathname.split("/").at(-1)!
+          const response = await page.request.get(`${BACKEND_URL}/session/${removedId}?directory=${encodeURIComponent(dir)}`)
+          expect(response.status()).toBe(404)
+          await expect(page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${removedId}"]`)).toHaveCount(0)
+        }
         if (goalMode) await expect(page.locator('[data-component="session-goal-dock"]').getByText("Paused", { exact: true })).toBeVisible()
         expect(await fs.stat(finishedFile).then(() => true, () => false)).toBe(false)
       } finally {
@@ -1964,7 +1983,7 @@ test.describe("real harness journeys @core @tier-real", () => {
 
   for (const harness of ["claude", "codex"] as const) {
     for (const [decision, canonicalDirectory, restartServer, goalMode] of [
-      ["Allow once", false, false, false], ["Allow always", false, false, false], ["Deny", false, false, false], ["Stop", false, false, false],
+      ["Allow once", false, false, false], ["Allow always", false, false, false], ["Deny", false, false, false], ["Stop", false, false, false], ["Delete", false, false, false],
       ...(harness === "codex" ? [["Stop", false, false, true] as const] : []),
       ...(harness === "claude" ? [["Allow always", true, false, false] as const] : []),
       ["Allow always", false, true, false],
@@ -2018,8 +2037,9 @@ test.describe("real harness journeys @core @tier-real", () => {
             await expect(dock).toBeVisible()
             expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
           }
-          if (decision === "Stop") {
-            await stopPendingPermission(page, {
+          if (decision === "Stop" || decision === "Delete") {
+            await cancelPendingPermission(page, {
+              action: decision,
               backendUrl: BACKEND_URL, directory: dir,
               sessionId: new URL(sessionUrl).pathname.split("/").at(-1)!,
             })
@@ -2028,7 +2048,12 @@ test.describe("real harness journeys @core @tier-real", () => {
               const goalDock = page.locator('[data-component="session-goal-dock"]')
               await expect(goalStatus(goalDock, "Paused")).toBeVisible({ timeout: 30_000 })
             }
-            const followup = `AFTER-STOP-${Date.now()}`
+            if (decision === "Delete") {
+              await openDraftPrompt(page, dir)
+              await switchDraftHarness(page, harness)
+              await waitForHarnessReady(page)
+            }
+            const followup = `AFTER-${decision.toUpperCase()}-${Date.now()}`
             await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
               `Reply with exactly this one token: ${followup}. Do not use tools or retry the cancelled action.`)
             await page.locator(SELECTORS.submitControl).last().click()
