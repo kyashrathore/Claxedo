@@ -39,8 +39,8 @@ const CROSS_PROJECT = "Cross-project defaults"
  * back; the install sheet is a composition concern reached through `onAdd`.
  *
  * The catalog is a query rather than a resource so that reopening the surface
- * paints the last read immediately. It stays fresh until "Refresh catalog" or
- * a mutation reread; the server GitHub archive is only re-fetched on Refresh.
+ * paints the last read immediately. Opening it revalidates activation against
+ * the server; the server GitHub archive is only re-fetched on Refresh.
  */
 export function AgentPluginDirectory(props: {
   mode: "signed" | "unsigned"
@@ -78,7 +78,8 @@ export function AgentPluginDirectory(props: {
       return props.api.catalog({ ...(refresh ? { refresh: true } : {}), ...(project ? { projectId: project } : {}) })
     },
     staleTime: Infinity,
-    refetchOnMount: false,
+    // Persisted snapshots can predate an installation or another window's edit.
+    refetchOnMount: "always",
     refetchOnReconnect: false,
     placeholderData: keepPreviousData,
   }))

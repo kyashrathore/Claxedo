@@ -414,7 +414,7 @@ describe("Agent Plugin Directory categories and Featured", () => {
 })
 
 describe("Agent Plugin Directory catalog cache", () => {
-  test("reopening Marketplace reuses the cached catalog until Refresh", async () => {
+  test("reopening Marketplace revalidates cached activation without refreshing sources", async () => {
     const context = harness()
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
     clients.add(client)
@@ -424,13 +424,18 @@ describe("Agent Plugin Directory catalog cache", () => {
     expect(catalogRefreshes(context.recorded)).toHaveLength(0)
 
     cleanup()
+    client.setQueryData(["controlPlane", "signed", "agentPlugins", null], catalogBody({
+      candidates: [candidate({ name: "composio", installed: false, source: CLAXEDO })],
+    }))
     await renderDirectory({ client, context })
-    expect(catalogReads(context.recorded)).toHaveLength(1)
+    const pane = await openPane("composio")
+    await waitFor(() => expect(within(pane).getByRole("button", { name: "Disable", exact: true })).toBeVisible())
+    expect(catalogReads(context.recorded)).toHaveLength(2)
     expect(catalogRefreshes(context.recorded)).toHaveLength(0)
 
     await fireEvent.click(screen.getByRole("button", { name: "Refresh catalog" }))
     await waitFor(() => expect(catalogRefreshes(context.recorded)).toHaveLength(1))
-    expect(catalogReads(context.recorded)).toHaveLength(1)
+    expect(catalogReads(context.recorded)).toHaveLength(2)
   })
 })
 

@@ -191,6 +191,59 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     claudeConfigDir = undefined
   })
 
+  test("Agent Plugins: Marketplace installs real Composio for Claude and Codex", async () => {
+    const dir = await makeScratchWorkspace("plugin-marketplace")
+    const codexHome = path.join(dir, ".codex-test")
+    packaged = await launchPackagedApp({ timeoutMs: BOOT_TIMEOUT, env: { CODEX_HOME: codexHome } })
+    const serverBase = new URL(await expectServerReachable(packaged, 45_000)).origin
+    const workspaceId = await registerWorkspace(serverBase, dir)
+    await openWorkspaceProject(packaged, dir, workspaceId)
+    await packaged.page.getByText("Marketplace", { exact: true }).click()
+    const search = packaged.page.getByRole("searchbox", { name: "Search plugins" })
+    await expect(search).toBeVisible({ timeout: 30_000 })
+    await search.fill("composio")
+    const card = packaged.page.locator("[data-agent-plugin-card]").filter({ hasText: /composio/i })
+    await expect(card).toHaveCount(1, { timeout: 45_000 })
+    await card.locator("[data-directory-card-open]").click()
+    const detail = packaged.page.locator('[data-component="agent-plugin-detail"]')
+    await expect(detail).toContainText(/composio/i)
+    await expect(detail).toContainText(/MCP/i)
+    const catalogResponse = await fetch(`${serverBase}/api/claxedo/plugins`)
+    expect(catalogResponse.ok).toBe(true)
+    type Candidate = { pluginInstanceId: string; manifest: { name: string } | null; mcpServers: unknown[]; retainedDigest: string | null; harnesses: Record<string, { effective: { effective: boolean } }> }
+    const catalog = await catalogResponse.json() as { candidates: Candidate[] }
+    const composio = catalog.candidates.find((candidate) => candidate.manifest?.name.toLowerCase() === "composio")
+    expect(composio?.mcpServers.length).toBeGreaterThan(0)
+    await packaged.page.screenshot({ path: test.info().outputPath("composio-marketplace.png") })
+    await expect(detail).toContainText("Authentication is handled by the selected harness")
+    await detail.getByRole("button", { name: "Add", exact: true }).click()
+    const install = packaged.page.getByRole("dialog")
+    for (const harness of ["opencode", "cursor"]) await install.getByRole("checkbox", { name: harness, exact: true }).uncheck()
+    for (const harness of ["claude", "codex"]) await expect(install.getByRole("checkbox", { name: harness, exact: true })).toBeChecked()
+    await install.getByRole("button", { name: "Add plugin", exact: true }).click()
+    await expect(install).not.toBeVisible()
+    const read = async () => {
+      const response = await fetch(`${serverBase}/api/claxedo/plugins`)
+      expect(response.ok).toBe(true)
+      return (await response.json() as { candidates: Candidate[] }).candidates.find((candidate) => candidate.pluginInstanceId === composio!.pluginInstanceId)!
+    }
+    await expect.poll(async () => {
+      const plugin = await read()
+      return [plugin.harnesses.claude!.effective.effective, plugin.harnesses.codex!.effective.effective,
+        plugin.harnesses.cursor!.effective.effective, plugin.harnesses.opencode!.effective.effective]
+    }).toEqual([true, true, false, false])
+    expect((await read()).retainedDigest).toBeTruthy()
+    await expect(fs.readFile(path.join(codexHome, "config.toml"), "utf8")).resolves.toContain("composio")
+    await packaged.page.reload()
+    // Marketplace is deliberately transient; reopen it to verify durable installation.
+    await packaged.page.getByText("Marketplace", { exact: true }).click()
+    await search.fill("composio")
+    await card.locator("[data-directory-card-open]").click()
+    await test.info().attach("composio-after-reload", { body: JSON.stringify(await read(), null, 2), contentType: "application/json" })
+    await expect(detail.getByRole("button", { name: "Disable", exact: true })).toBeVisible()
+    await packaged.page.screenshot({ path: test.info().outputPath("composio-installed-after-reload.png") })
+  })
+
   /**
    * A premise guard, not a feature test: a lane that has silently degraded to
    * an http renderer fails here instead of reporting green from every scenario
