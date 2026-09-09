@@ -66,6 +66,8 @@ export interface PromptInputProps {
   canPrompt?: () => boolean
   /** Session status supplied by the session owner. Defaults to idle for embedded contexts. */
   status?: () => SessionStatus
+  /** Whether the session owner has established the authoritative status. */
+  statusReady?: () => boolean
   /** Active turn state supplied by the session owner. Defaults to status-only for embedded contexts. */
   activeTurn?: () => boolean
   goal?: () => RuntimeGoalSnapshot | null | undefined

@@ -416,6 +416,7 @@ export function createSessionController(input: {
     return statusQuery.data ?? idleSessionStatus
   })
   const status = createActivePaneProjection({ active: paneActive, read: sourceStatus, initial: idleSessionStatus })
+  const statusReady = createMemo(() => !input.sessionID() || input.sessionID() === "new" || statusQuery.data !== undefined)
 
   const sourcePermissionRequest = createMemo(() => {
     const sessionID = input.sessionID()
@@ -1069,6 +1070,7 @@ export function createSessionController(input: {
     diffs,
     diffsReady,
     status,
+    statusReady,
     permissionRequest,
     questionRequest,
     blocked,

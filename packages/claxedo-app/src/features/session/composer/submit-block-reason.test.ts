@@ -21,6 +21,16 @@ const healthy: SubmitBlockInput = {
 const input = (over: Partial<SubmitBlockInput>): SubmitBlockInput => ({ ...healthy, ...over })
 
 describe("submitBlockReason", () => {
+  test("a typed restored session cannot send before its status is known", () => {
+    const block = submitBlockReason(input({ sessionStatusReady: false }))
+    expect(block).toEqual({ reason: "session-loading", copy: "Checking session…", actionable: false })
+    expect(submitHardBlocked({ stoppable: false, block })).toBe(true)
+    expect(submitBlockReason(input({ sessionStatusReady: true }))).toBeNull()
+  })
+
+  test("a known active turn remains stoppable while other state loads", () => {
+    expect(submitHardBlocked({ stoppable: true, block: submitBlockReason(input({ sessionStatusReady: false, stoppable: true })) })).toBe(false)
+  })
   test("a healthy, typed composer is not blocked", () => {
     expect(submitBlockReason(healthy)).toBeNull()
   })

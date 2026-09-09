@@ -134,6 +134,7 @@ export function SessionComposerRegion(props: {
    */
   status?: () => SessionStatus
   activeTurn?: () => boolean
+  statusReady?: () => boolean
   goalController?: {
     goal: () => RuntimeGoalSnapshot | null | undefined
     goalCapabilities: () => AgentRuntimeGoalCapabilities | undefined
@@ -417,6 +418,7 @@ export function SessionComposerRegion(props: {
                       canPrompt={props.canPrompt}
                       status={props.status}
                       activeTurn={props.activeTurn}
+                      statusReady={props.statusReady}
                       goal={props.goalController?.goal}
                       goalCapabilities={props.goalController?.goalCapabilities}
                       refreshGoal={props.goalController?.refreshGoal}

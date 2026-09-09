@@ -10,6 +10,7 @@ import type { HarnessReadiness } from "@/features/session/harness/selection"
  */
 export type SubmitBlockReason =
   | "viewer-role"
+  | "session-loading"
   | "harness-degraded"
   | "harness-error"
   | "harness-polling"
@@ -30,6 +31,7 @@ export type SubmitBlock = {
 }
 
 export type SubmitBlockInput = {
+  readonly sessionStatusReady?: boolean
   /** Read-only workspace / insufficient role. Always hard-blocks the handler. */
   readonly roleBlocked: boolean
   /** Whether harness-readiness gating applies to the selected runtime. */
@@ -53,6 +55,7 @@ export type SubmitBlockInput = {
 }
 
 const COPY = {
+  "session-loading": "Checking session…",
   "viewer-role": "Read-only workspace (viewer)",
   "harness-degraded": "The selected agent is unavailable",
   "harness-error": "The agent isn't running",
@@ -84,6 +87,7 @@ function block(reason: SubmitBlockReason): SubmitBlock {
  */
 export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
   if (input.roleBlocked) return block("viewer-role")
+  if (input.sessionStatusReady === false && !input.stoppable) return block("session-loading")
 
   if (input.harnessMode) {
     if (input.harnessReadiness === "degraded") return block("harness-degraded")

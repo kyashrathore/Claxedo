@@ -298,6 +298,19 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       const next = `AFTER_RUNNING_TOOL_${Date.now()}`
       const draft = `New task: the previous command task is over.\n\nContext: café — नमस्ते; preserve <tags> and "quotes".\nReply exactly ${next}. Do not use tools or retry the previous command.`
       if (!stop) await composeText(packaged.page, packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), draft)
+      await packaged.page.addInitScript(() => {
+        const state = window as typeof window & { __prematureSessionSend?: boolean }
+        state.__prematureSessionSend = false
+        new MutationObserver(() => {
+          const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-action="prompt-submit"]'))
+          if (buttons.some((button) => button.getAttribute("aria-label") === "Send" && !button.disabled && button.getClientRects().length > 0)) {
+            state.__prematureSessionSend = true
+          }
+        }).observe(document, { childList: true, subtree: true, attributes: true })
+      })
+      await packaged.page.reload()
+      await expect(packaged.page.getByRole("button", { name: "Stop", exact: true })).toBeVisible()
+      expect(await packaged.page.evaluate(() => (window as typeof window & { __prematureSessionSend?: boolean }).__prematureSessionSend), "a running session must not offer Send while reloading").toBe(false)
       const appProcess = packaged.app.process()
       await packaged.close()
       await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)

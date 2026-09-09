@@ -1441,6 +1441,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
                     agent={contentIntentDefaults()?.agent}
                     status={sessionController.status}
                     activeTurn={sessionController.activeTurn}
+                    statusReady={sessionController.statusReady}
                     diffFiles={diffFiles} sessionDirectory={dir()}
                     sessionRef={activeSessionRef}
                     signedControlPlane={signedControlPlane}
@@ -1479,6 +1480,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
               onAbort={(sessionID) => sdk.client.session.abort({ sessionID })}
               canPrompt={() => supports("permissions")}
               status={sessionController.status} activeTurn={sessionController.activeTurn}
+              statusReady={sessionController.statusReady}
               goalController={sessionController}
               beforeInput={
                 <DeferredSessionSecondaryStatus

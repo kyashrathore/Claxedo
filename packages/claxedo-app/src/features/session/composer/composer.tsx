@@ -524,6 +524,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const { roleSubmitBlocked, submitBlock, submitInertBlocked, openModelPicker } =
     createComposerSubmitBlockWiring({
+      statusReady: props.statusReady,
       workspaceId: props.workspaceId,
       scope,
       isHarnessMode,

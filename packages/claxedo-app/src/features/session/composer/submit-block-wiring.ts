@@ -15,6 +15,7 @@ import { submitBlockReason, type SubmitBlock } from "./submit-block-reason"
  */
 export function createComposerSubmitBlockWiring(deps: {
   workspaceId?: Accessor<string | undefined>
+  statusReady?: Accessor<boolean>
   scope: () => string
   isHarnessMode: (scope: string) => boolean
   harnessReadiness: (scope: string) => HarnessReadiness
@@ -35,6 +36,7 @@ export function createComposerSubmitBlockWiring(deps: {
     const draftDefaultState = harnessState?.draftDefaultState
     const modelReadiness = deps.toolbarState.readiness()
     return submitBlockReason({
+      sessionStatusReady: deps.statusReady?.(),
       roleBlocked: roleSubmitBlocked(),
       harnessMode,
       harnessReadiness: deps.harnessReadiness(nextScope),
