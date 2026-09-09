@@ -860,7 +860,7 @@ test.describe("live real-harness smoke @live", () => {
     await page.locator(`${selector} .xterm-helper-textarea`).focus()
     // Keep output still while the second browser attaches. The marker is only
     // present literally in rendered output, not in the echoed command.
-    await page.keyboard.type("printf '\\x52EPLAY_READY\\n'; while [ ! -f release ]; do sleep 0.2; done")
+    await page.keyboard.type("printf '\\x52EPLAY_READY\\n'; while [ ! -f release ]; do sleep 0.2; done; printf '\\x46OLLOWUP_READY\\n'")
     await page.keyboard.press("Enter")
     await expect.poll(async () => (await snapshot(page))?.screen).toContain("REPLAY_READY")
     const before = await snapshot(page)
@@ -881,7 +881,24 @@ test.describe("live real-harness smoke @live", () => {
       await test.info().attach("terminal-screen-comparison", { body: JSON.stringify({ before, after }), contentType: "application/json" })
       await test.info().attach("terminal-replay-streams", { body: JSON.stringify(streams), contentType: "application/json" })
       await restored.screenshot({ path: test.info().outputPath("terminal-fresh-screen.png") })
-      expect(after).toEqual(before)
+      // Keep checking subsequent output even when replay is already corrupt.
+      expect.soft(after, "fresh browser must restore the complete original screen").toEqual(before)
+      await fs.writeFile(path.join(dir, "release"), "done")
+      await expect.poll(async () => (await snapshot(page))?.screen).toContain("FOLLOWUP_READY")
+      await expect.poll(async () => (await snapshot(restored))?.screen).toContain("FOLLOWUP_READY")
+      try {
+        await expect(async () => {
+          expect(await snapshot(restored)).toEqual(await snapshot(page))
+        }).toPass({ timeout: 10_000 })
+      } finally {
+        await test.info().attach("terminal-screen-after-followup", {
+          body: JSON.stringify({ original: await snapshot(page), restored: await snapshot(restored) }),
+          contentType: "application/json",
+        })
+        await test.info().attach("terminal-streams-after-followup", {
+          body: JSON.stringify(streams), contentType: "application/json",
+        })
+      }
     } finally {
       await fs.writeFile(path.join(dir, "release"), "done")
       await fresh.close()
