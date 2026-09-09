@@ -65,6 +65,44 @@ afterEach(async () => {
 })
 
 void describe("real pty spawn (no mocks)", { skip: !posix }, () => {
+  void test("removing a terminal terminates its separate child process group without affecting a neighbor", { timeout: 30_000 }, async () => {
+    const { Pty } = await import("./index")
+    const launcher = path.join(tmpDir, "child-launcher.cjs")
+    await fs.writeFile(launcher, `const { spawn } = require('node:child_process');
+const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+console.log('CHILD_PID=' + child.pid);
+setInterval(() => {}, 1000);
+`)
+    const target = await Pty.create({ command: process.execPath, args: [launcher], cwd: tmpDir })
+    const neighbor = await Pty.create({ command: "/bin/sh", cwd: tmpDir })
+    const targetClient = socket()
+    const neighborClient = socket()
+    assert.ok(Pty.connect(target.id, targetClient.ws))
+    assert.ok(Pty.connect(neighbor.id, neighborClient.ws))
+    let childPid: number | undefined
+    const alive = (pid: number) => {
+      try { process.kill(pid, 0); return true }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") return false
+        throw error
+      }
+    }
+    try {
+      await waitFor(() => /CHILD_PID=(\d+)/.test(targetClient.text()))
+      childPid = Number(/CHILD_PID=(\d+)/.exec(targetClient.text())![1])
+      assert.ok(alive(childPid))
+      await Pty.remove(target.id)
+      await waitFor(() => !alive(childPid!), 2_000)
+      assert.equal(Pty.get(target.id), undefined)
+      assert.equal(Pty.get(neighbor.id)?.pid, neighbor.pid)
+      Pty.write(neighbor.id, "echo neighbor-$((40 + 2))\n")
+      await waitFor(() => neighborClient.text().includes("neighbor-42"))
+    } finally {
+      // The regression intentionally exposes an orphan on unfixed builds.
+      if (childPid && alive(childPid)) process.kill(-childPid, "SIGKILL")
+    }
+  })
+
   void test("spawns /bin/sh, echoes a command, resizes, and exits cleanly", { timeout: 30_000 }, async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ command: "/bin/sh", cwd: tmpDir, title: "real" })

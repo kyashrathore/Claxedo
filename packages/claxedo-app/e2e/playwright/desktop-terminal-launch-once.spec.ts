@@ -23,6 +23,15 @@ test("custom terminal launches exactly once across reload and desktop restart @l
   const customLauncher = { name: "Launch once", command: "bash ./launch.sh" }
   let packaged: PackagedApp | undefined
   let ptyUrl: string | undefined
+  let childTerminalUrl: string | undefined
+  let detachedChildPid: number | undefined
+  const isAlive = (pid: number) => {
+    try { process.kill(pid, 0); return true }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") return false
+      throw error
+    }
+  }
   const launch = () => launchPackagedApp({ userDataDir: profile, preserveUserDataDir: true, env: { HOME: home } })
   const launches = () => fs.readFile(count, "utf8").catch(() => "")
   try {
@@ -95,9 +104,9 @@ test("custom terminal launches exactly once across reload and desktop restart @l
     await packaged.page.keyboard.type(`touch '${armed}'; while [ ! -f '${release}' ]; do sleep 0.2; done; printf '\\x44URING_DESKTOP_CLOSED\\n'; touch '${produced}'`)
     await packaged.page.keyboard.press("Enter")
     await expect.poll(() => fs.access(armed).then(() => true, () => false)).toBe(true)
-    const process = packaged.app.process()
+    const appProcess = packaged.app.process()
     await packaged.close()
-    await expect.poll(() => process.exitCode !== null || process.signalCode !== null).toBe(true)
+    await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
     await fs.writeFile(release, "done")
     await expect.poll(() => fs.access(produced).then(() => true, () => false)).toBe(true)
     packaged = await launch()
@@ -105,12 +114,44 @@ test("custom terminal launches exactly once across reload and desktop restart @l
     await expect(restoredRows).toContainText("DURING_DESKTOP_CLOSED")
     expect((await restoredRows.innerText()).split("DURING_DESKTOP_CLOSED").length - 1).toBe(1)
     await check()
+    const childPidFile = path.join(root, "detached-child-pid")
+    const childLauncher = path.join(directory, "child-launcher.cjs")
+    await fs.writeFile(childLauncher, `const { spawn } = require('node:child_process');
+const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: true, stdio: 'ignore' });
+require('node:fs').writeFileSync(${JSON.stringify(childPidFile)}, String(child.pid));
+setInterval(() => {}, 1000);
+`)
+    const createUrl = new URL(ptyUrl!)
+    createUrl.pathname = createUrl.pathname.slice(0, createUrl.pathname.lastIndexOf("/"))
+    const childCreation = await fetch(createUrl, {
+      method: "POST", headers: {
+        "content-type": "application/json",
+        "x-claxedo-directory": creation.request().headers()["x-claxedo-directory"] ?? directory,
+        "x-workspace-id": workspaceId,
+      },
+      body: JSON.stringify({ command: process.execPath, args: ["./child-launcher.cjs"] }),
+    })
+    expect(childCreation.ok, await childCreation.clone().text()).toBe(true)
+    const childInfo = await childCreation.json() as { id: string }
+    createUrl.pathname += `/${childInfo.id}`
+    childTerminalUrl = createUrl.toString()
+    await expect.poll(() => fs.readFile(childPidFile, "utf8").then(Number, () => 0)).toBeGreaterThan(0)
+    detachedChildPid = Number(await fs.readFile(childPidFile, "utf8"))
+    expect(isAlive(detachedChildPid)).toBe(true)
+    expect((await fetch(childTerminalUrl, { method: "DELETE" })).ok).toBe(true)
+    childTerminalUrl = undefined
+    await expect.poll(() => isAlive(detachedChildPid!), {
+      timeout: 5_000, message: "Removing a terminal must terminate its separate descendant process group",
+    }).toBe(false)
+    await check()
     await packaged.page.screenshot({ path: test.info().outputPath("launch-once-restarted.png") })
   } finally {
+    if (detachedChildPid && isAlive(detachedChildPid)) process.kill(-detachedChildPid, "SIGKILL")
     await test.info().attach("launch-count", { body: await launches(), contentType: "text/plain" })
     if (packaged && !packaged.page.isClosed()) await packaged.page.screenshot({ path: test.info().outputPath("final.png") }).catch(() => undefined)
     await packaged?.close()
     await shutdownPackagedTestDaemon(profile, async () => {
+      if (childTerminalUrl) expect((await fetch(childTerminalUrl, { method: "DELETE" })).ok).toBe(true)
       if (ptyUrl) {
         const removed = await fetch(ptyUrl, { method: "DELETE" })
         expect(removed.ok, "Final teardown must remove the test terminal").toBe(true)

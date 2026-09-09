@@ -10,6 +10,7 @@ import { Log } from "../log"
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
+import { execFile } from "node:child_process"
 import { BIN_DIR, getTerminalEnvVars, isSetupComplete, setupAgentHooks } from "../agent-hooks"
 import { cleanupOrphanedHistory, createDiskHistory, renameHistory } from "./history-disk"
 import { CLEAR_SCROLLBACK, extractContentAfterClear } from "./escape-filter"
@@ -219,18 +220,45 @@ export namespace Pty {
     )
   }
 
-  async function killProcessTree(pid: number) {
-    if (!Number.isFinite(pid) || pid <= 0) return
+  async function killProcessTree(pid: number, closeNative?: () => void) {
+    if (!Number.isFinite(pid) || pid <= 0) {
+      closeNative?.()
+      return
+    }
+    const owned = new Set([pid])
+    if (process.platform !== "win32") {
+      // Capture ancestry while the parent still exists. Provider tools can
+      // create separate process groups, so signaling only -pid misses them.
+      const table = await new Promise<string>((resolve, reject) => {
+        execFile("ps", ["-A", "-o", "pid=,ppid="], { encoding: "utf8", timeout: 5_000 }, (error, stdout) => {
+          if (error) reject(error)
+          else resolve(stdout)
+        })
+      })
+      const rows = table.trim().split("\n").map((line) => line.trim().split(/\s+/).map(Number))
+      let changed = true
+      while (changed) {
+        changed = false
+        for (const [child, parent] of rows) {
+          if (!child || !parent || !owned.has(parent) || owned.has(child)) continue
+          owned.add(child)
+          changed = true
+        }
+      }
+    }
     for (const signal of ["SIGTERM", "SIGKILL"] as const) {
-      if (process.platform !== "win32") {
+      for (const target of [...owned].reverse()) {
+        if (process.platform !== "win32") {
+          try {
+            process.kill(-target, signal)
+          } catch {}
+        }
         try {
-          process.kill(-pid, signal)
+          process.kill(target, signal)
         } catch {}
       }
-      try {
-        process.kill(pid, signal)
-      } catch {}
       if (signal === "SIGTERM") {
+        closeNative?.()
         await new Promise((r) => setTimeout(r, 500))
       }
     }
@@ -432,12 +460,13 @@ export namespace Pty {
     // usable OS pid (the Windows ConPTY wrapper reports 0 in that case).
     // Always close it through its native handle; the PID-based tree sweep is
     // additional cleanup only when a real pid is available.
+    const closeNative = () => { try { session.process.kill() } catch {} }
     try {
-      session.process.kill()
-    } catch {}
-    try {
-      await killProcessTree(session.info.pid)
-    } catch {}
+      await killProcessTree(session.info.pid, closeNative)
+    } catch (error) {
+      closeNative()
+      log.error("PTY process-tree cleanup failed", { pid: session.info.pid, error })
+    }
     await session.history.close()
     sessions.delete(id)
   }
