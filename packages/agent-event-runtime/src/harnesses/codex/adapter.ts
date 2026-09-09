@@ -192,6 +192,11 @@ function toolNameForItem(itemType: string, row: Record<string, unknown>) {
 }
 
 function structuredInput(row: Record<string, unknown>) {
+  if (row.type === "mcpToolCall") {
+    return Object.fromEntries(
+      ["server", "tool", "arguments", "pluginId"].flatMap((key) => row[key] === undefined ? [] : [[key, row[key]]]),
+    )
+  }
   const direct = asRecord(row.input)
   if (direct) return direct
   const input = Object.fromEntries(

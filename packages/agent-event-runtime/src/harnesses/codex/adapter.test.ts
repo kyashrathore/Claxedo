@@ -871,6 +871,18 @@ describe("codexAppServerAdapter", () => {
     }])
   })
 
+  test("preserves MCP server, plugin identity and nested arguments when completion arrives without start", () => {
+    const input = { server: "plugin:composio:composio", tool: "COMPOSIO_SEARCH_TOOLS", pluginId: "composio@claxedo-agent-plugins", arguments: { queries: [{ use_case: "Read profile" }], session: { id: "search-session" } } }
+    const events = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+      id: "composio-search", type: "mcpToolCall", ...input, status: "completed", result: { content: [{ type: "text", text: "discovered" }] }, error: null,
+    } } }).events
+    expect(events).toMatchObject([
+      { type: "tool-start", toolName: "COMPOSIO_SEARCH_TOOLS" },
+      { type: "tool-input", input },
+      { type: "tool-output" },
+    ])
+  })
+
   test("classifies a create_subagent MCP item as task work by its tool name", () => {
     const agent = runtime()
     expect(agent.ingest({
@@ -888,6 +900,7 @@ describe("codexAppServerAdapter", () => {
       },
     }).events).toMatchObject([
       { type: "tool-start", toolCallId: "mcp-spawn-1", toolName: "create_subagent", kind: "mcp_tool_call", display: { intent: "task" } },
+      { type: "tool-input", toolCallId: "mcp-spawn-1", input: { server: "claxedo", tool: "create_subagent", arguments: { harness: "claude", prompt: "Consult on the plan" } } },
     ])
     expect(agent.ingest({
       source: "codex.app-server",
@@ -897,6 +910,7 @@ describe("codexAppServerAdapter", () => {
       },
     }).events).toMatchObject([
       { type: "tool-start", toolCallId: "mcp-other-1", toolName: "session_list", display: { intent: "mcp" } },
+      { type: "tool-input", toolCallId: "mcp-other-1", input: { server: "claxedo", tool: "session_list", arguments: {} } },
     ])
   })
 })

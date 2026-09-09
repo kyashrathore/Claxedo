@@ -19,7 +19,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of ["Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -29,7 +29,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
     timeoutMs: 60_000,
     userDataDir: profile,
     preserveUserDataDir: true,
-    env: flow === "Composio authenticated MCP"
+    env: flow.startsWith("Composio")
       ? { CODEX_HOME: path.join(directory, ".codex-test") }
       : harness === "Codex" ? { CODEX_HOME: path.join(os.homedir(), ".codex") } : {},
   })
@@ -38,7 +38,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
   try {
     await execFileAsync("git", ["init"], { cwd: directory })
     await fs.writeFile(path.join(directory, "README.md"), `Real ${harness} desktop proof.\n`)
-    if (flow === "Composio authenticated MCP" && harness === "Codex") {
+    if (flow.startsWith("Composio") && harness === "Codex") {
       const codexHome = path.join(directory, ".codex-test")
       await fs.mkdir(codexHome, { recursive: true })
       await fs.copyFile(path.join(os.homedir(), ".codex", "auth.json"), path.join(codexHome, "auth.json"))
@@ -68,7 +68,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
     await packaged.page.reload()
     await packaged.page.waitForLoadState("domcontentloaded")
 
-    if (flow === "Composio authenticated MCP") {
+    if (flow.startsWith("Composio")) {
       await packaged.page.getByText("Marketplace", { exact: true }).click()
       await packaged.page.getByRole("searchbox", { name: "Search plugins" }).fill("composio")
       const card = packaged.page.locator("[data-agent-plugin-card]").filter({ hasText: /composio/i })
@@ -118,14 +118,14 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await packaged.page.keyboard.press("Escape")
     }
 
-    if (flow === "Composio authenticated MCP") {
-      await compose(input, "Use the installed Composio MCP integration to discover tools for reading my connected account profile. After discovery, if Gmail is already connected, execute only GMAIL_GET_PROFILE through COMPOSIO_MULTI_EXECUTE_TOOL and report whether it succeeded, without printing the email address. If authorization is missing, report that instead. Do not read messages, list labels, modify accounts, send anything, use shell commands, or substitute another integration.")
+    if (flow.startsWith("Composio")) {
+      await compose(input, flow === "Composio MCP discovery" ? "Use only the installed Composio MCP integration to discover tools for reading my Gmail profile. Perform only tool discovery and summarize whether authorization is required. Do not read account data, send anything, or use other tools." : "Use the installed Composio MCP integration to discover tools for reading my connected account profile. After discovery, if Gmail is already connected, execute only GMAIL_GET_PROFILE through COMPOSIO_MULTI_EXECUTE_TOOL and report whether it succeeded, without printing the email address. If authorization is missing, report that instead. Do not read messages, list labels, modify accounts, send anything, use shell commands, or substitute another integration.")
       const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
       await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
       const created = await creation
       expect(created.ok()).toBe(true)
       const session = await created.json() as { id: string }
-      type Part = { type: string; tool?: string; text?: string; state?: { status: string; output?: string } }
+      type Part = { type: string; tool?: string; text?: string; state?: { status: string; output?: string; input?: { server?: string; arguments?: unknown; pluginId?: string | null } } }
       let parts: Part[] = []
       try {
         await expect.poll(async () => {
@@ -133,7 +133,17 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
           expect(response.ok).toBe(true)
           parts = (await response.json() as Array<{ parts: Part[] }>).flatMap((row) => row.parts)
           return parts.some((part) => {
-            if (part.type !== "tool" || !/COMPOSIO_MULTI_EXECUTE_TOOL/i.test(part.tool ?? "") || part.state?.status !== "completed") return false
+            if (part.type !== "tool" || part.state?.status !== "completed") return false
+            if (flow === "Composio MCP discovery") {
+              if (!/COMPOSIO_SEARCH_TOOLS/i.test(part.tool ?? "")) return false
+              if (harness === "Codex") {
+                expect(part.state.input?.server).toMatch(/composio/i)
+                expect(part.state.input?.pluginId).toBe("composio@claxedo-agent-plugins")
+                expect(part.state.input?.arguments).toBeTruthy()
+              }
+              return true
+            }
+            if (!/COMPOSIO_MULTI_EXECUTE_TOOL/i.test(part.tool ?? "")) return false
             const output = JSON.parse(part.state.output ?? "null") as { data?: { results?: Array<{ tool_slug?: string; response?: { successful?: boolean } }> } } | null
             return output?.data?.results?.some((result) => result.tool_slug === "GMAIL_GET_PROFILE" && result.response?.successful === true) === true
           })
