@@ -872,6 +872,17 @@ describe("codexAppServerAdapter", () => {
   })
 
   for (const started of [false, true]) {
+    test(`MCP application error uses failed status and result content (started=${started})`, () => {
+      const agent = runtime()
+      const item = { id: "mcp-missing-session", type: "mcpToolCall", server: "claxedo", tool: "session_get", arguments: { session: "missing" }, pluginId: null }
+      if (started) agent.ingest({ source: "codex.app-server", method: "item/started", payload: { item: { ...item, status: "inProgress" } } })
+      const events = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+        ...item, status: "failed", result: { content: [{ type: "text", text: "Session not found" }], structuredContent: null, _meta: null }, error: null,
+      } } }).events
+      expect(events).toContainEqual(expect.objectContaining({ type: "tool-error", toolCallId: item.id, error: "Session not found" }))
+      expect(events.some((event) => event.type === "tool-output")).toBe(false)
+    })
+
     test(`MCP rejection remains a tool error (started=${started})`, () => {
       const agent = runtime()
       const item = { id: "mcp-rejected", type: "mcpToolCall", server: "composio", tool: "COMPOSIO_SEARCH_TOOLS", arguments: { queries: [] }, pluginId: null }

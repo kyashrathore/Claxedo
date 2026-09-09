@@ -737,7 +737,13 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
             state.toolOutputByCallId[id] ??
             ""
           const exitCode = asFiniteNumber(completedItem.exitCode)
-          const mcpError = itemType === "mcp_tool_call" ? text(asRecord(completedItem.error)?.message) : undefined
+          const mcpFailed = itemType === "mcp_tool_call" && completedItem.status === "failed"
+          const mcpResult = asRecord(completedItem.result)
+          const mcpError = itemType === "mcp_tool_call"
+            ? text(asRecord(completedItem.error)?.message) ?? (mcpFailed
+              ? (Array.isArray(mcpResult?.content) ? mcpResult.content.flatMap((part) => text(asRecord(part)?.text) ?? []).join("\n") : "") || "MCP tool call failed"
+              : undefined)
+            : undefined
           const completion = mcpError !== undefined
             ? { type: "tool-error" as const, toolCallId: id, error: mcpError }
             : itemType === "command_execution" && exitCode !== undefined && exitCode !== 0

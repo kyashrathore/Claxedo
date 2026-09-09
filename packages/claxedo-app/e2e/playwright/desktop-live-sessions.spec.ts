@@ -19,7 +19,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of ["MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -116,6 +116,54 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await picker.locator('[data-slot="list-item"]').filter({ has: packaged.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
       await expect(control).toContainText("Opus")
       await packaged.page.keyboard.press("Escape")
+    }
+
+    if (flow === "MCP error recovery") {
+      const missing = `missing-session-${Date.now()}`
+      const failedPrompt = `Use only the Claxedo MCP server named claxedo. Call session_get once with session=${missing}. This deliberately nonexistent session checks error reporting. Do not retry or use shell tools. After the tool returns, briefly report its error.`
+      await compose(input, failedPrompt)
+      const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      const created = await creation
+      expect(created.ok()).toBe(true)
+      const session = await created.json() as { id: string }
+      type Tool = { id: string; type: string; tool?: string; state?: { status: string; error?: string; output?: string } }
+      const read = async () => {
+        const response = await fetch(`${serverBase}/session/${session.id}/message?directory=${encodeURIComponent(directory)}`)
+        expect(response.ok).toBe(true)
+        return (await response.json() as Array<{ parts: Tool[] }>).flatMap((row) => row.parts).filter((part) => part.type === "tool")
+      }
+      try {
+        await expect.poll(async () => (await read()).some((part) => /session_get/.test(part.tool ?? "") && part.state?.status === "error"), { timeout: 90_000 }).toBe(true)
+        const failed = (await read()).find((part) => /session_get/.test(part.tool ?? "") && part.state?.status === "error")!
+        expect(failed.state?.error).toBeTruthy()
+        const card = packaged.page.locator(`[data-timeline-part-id="${failed.id}"] [data-kind="tool-error-card"]`)
+        await expect(card).toBeVisible()
+        await packaged.page.reload()
+        await expect(card).toBeVisible()
+        expect((await read()).find((part) => part.id === failed.id)).toEqual(failed)
+        // Qualify recovery after completion; reload's transient Send state is not proof of idleness.
+        await expect.poll(async () => {
+          const response = await fetch(`${serverBase}/session/status?directory=${encodeURIComponent(directory)}`)
+          expect(response.ok).toBe(true)
+          const statuses = await response.json() as Record<string, { type: string }>
+          return statuses[session.id]?.type ?? "idle"
+        }, { timeout: 90_000 }).toBe("idle")
+        const prompt = `Use only the Claxedo MCP server named claxedo. Call session_get once with session=${session.id}. Report whether it succeeded. Do not use shell tools or any other integration.`
+        await compose(packaged.page.locator('[role="textbox"][aria-label*="Ask anything"]:visible').last(), prompt)
+        await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAccessibleName("Send", { timeout: 45_000 })
+        const admission = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith(`/session/${session.id}/prompt_async`))
+        await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+        const admitted = await admission
+        expect(admitted.ok(), `Recovery admission ${admitted.status()}`).toBe(true)
+        await expect.poll(async () => (await read()).some((part) => /session_get/.test(part.tool ?? "") && part.state?.status === "completed" && part.state.output?.includes(session.id)), { timeout: 90_000 }).toBe(true)
+        await packaged.page.reload()
+        await expect(card).toBeVisible()
+        expect((await read()).find((part) => part.id === failed.id)).toEqual(failed)
+      } finally {
+        await test.info().attach("mcp-error-recovery-tools", { body: JSON.stringify(await read(), null, 2), contentType: "application/json" })
+      }
+      return
     }
 
     if (flow.startsWith("Composio")) {
