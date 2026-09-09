@@ -19,7 +19,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -119,7 +119,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await packaged.page.keyboard.press("Escape")
     }
 
-    if (flow === "Documents MCP read") {
+    if (flow.startsWith("Documents MCP")) {
       const marker = `DOCUMENT_PROOF_${Date.now()}`
       const file = path.join(directory, "agent-document.md")
       const contents = `# Agent document\n\nProof phrase: ${marker}\n`
@@ -131,7 +131,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       })
       expect(registered.ok, await registered.clone().text()).toBe(true)
       const document = await registered.json() as { id: string }
-      const prompt = `Use the Claxedo MCP server named claxedo. First call documents_list for this workspace, then documents_open for document ${document.id}. Read the returned canonical path using your file-reading tool and report the proof phrase stored inside. Do not search for the file independently, modify files, or use another integration.`
+      const prompt = `Use the Claxedo MCP server named claxedo. First call documents_list for this workspace, then documents_open for document ${document.id}. Read the returned canonical path using your file-reading tool and report the proof phrase stored inside. If opening is declined, report that briefly and do not retry or read the file. Do not search for the file independently, modify files, or use another integration.`
       await compose(input, prompt)
       const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
       await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
@@ -170,6 +170,34 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
           await expect(dock).toContainText('run tool "documents_open"')
           expect(await readQuestions()).toEqual(pending)
           expect((await read()).some((part) => (part.tool ?? "").includes("documents_open") && part.state?.status === "completed")).toBe(false)
+          if (flow === "Documents MCP dismiss" || flow === "Documents MCP stop") {
+            await dock.getByRole("button", { name: flow === "Documents MCP dismiss" ? "Dismiss" : "Stop", exact: true }).click()
+            await expect(dock).toHaveCount(0)
+            await expect.poll(async () => {
+              const response = await fetch(`${serverBase}/session/status?directory=${encodeURIComponent(directory)}`)
+              expect(response.ok).toBe(true)
+              return (await response.json() as Record<string, { type: string }>)[session.id]?.type ?? "idle"
+            }, { timeout: 90_000 }).toBe("idle")
+            expect(await readQuestions()).toEqual([])
+            const late = await fetch(`${serverBase}/question/${pending[0]!.id}/reply?directory=${encodeURIComponent(directory)}`, {
+              method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["Allow once"]] }),
+            })
+            expect(late.status).toBe(404)
+            const denied = (await read()).filter((part) => (part.tool ?? "").includes("documents_open"))
+            expect(denied).toHaveLength(1)
+            expect(denied[0]!.state?.output ?? "").not.toContain(file)
+            expect(JSON.stringify(await read())).not.toContain(marker)
+            expect(await fs.readFile(file, "utf8")).toBe(contents)
+            await compose(packaged.page.locator('[role="textbox"][aria-label*="Ask anything"]:visible').last(), "New task: what is 7 plus 4? Answer briefly without tools.")
+            await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAccessibleName("Send")
+            await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+            await expect(packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: /\b11\b|eleven/i })).toBeVisible({ timeout: 90_000 })
+            await packaged.page.reload()
+            expect(await readQuestions()).toEqual([])
+            expect((await read()).find((part) => part.id === denied[0]!.id)).toEqual(denied[0])
+            expect(JSON.stringify(await read())).not.toContain(marker)
+            return
+          }
           await dock.getByText("Allow once", { exact: true }).click()
           await dock.getByRole("button", { name: "Submit", exact: true }).click()
           await expect(dock).toHaveCount(0)
