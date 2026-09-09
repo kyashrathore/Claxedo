@@ -607,6 +607,45 @@ test.describe("live real-harness smoke @live", () => {
     })
   }
 
+  test("live project rename persists across reload and leaves another project unchanged", async ({ page }, testInfo) => {
+    const dir = await makeWorkspace("project-rename")
+    const neighbor = await makeWorkspace("project-rename-neighbor")
+    const readProject = async (directory: string) => {
+      const response = await fetch(`${BACKEND_URL}/project/current?directory=${encodeURIComponent(directory)}`)
+      expect(response.ok).toBe(true)
+      return response.json()
+    }
+    const before = await readProject(dir)
+    const neighborBefore = await readProject(neighbor)
+    await seedOneProject(page, dir)
+    await openDraftPrompt(page, dir)
+    await page.locator('[data-testid="project-header"][data-active="true"]').hover()
+    await page.locator('[data-testid="project-header"][data-active="true"]').getByRole("button", { name: "More options for main" }).click()
+    await page.getByRole("menuitem", { name: "Edit", exact: true }).click()
+    const name = "Launch audit renamed project"
+    await page.getByLabel("Name", { exact: true }).fill(name)
+    await page.getByRole("button", { name: "Save", exact: true }).click()
+    await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid="project-header"][data-active="true"]')).toContainText(name)
+    await expect.poll(async () => (await readProject(dir)).name).toBe(name)
+    expect((await readProject(dir)).id).toBe(before.id)
+    // Opening the rail assigns initial icon colors and refreshes workspace timestamps.
+    // The rename must preserve the neighboring project's identity, name and Git target.
+    expect(await readProject(neighbor)).toMatchObject({
+      id: neighborBefore.id,
+      name: neighborBefore.name,
+      worktree: neighborBefore.worktree,
+      git: neighborBefore.git,
+    })
+    await page.reload()
+    await expect(page.locator('[data-testid="project-header"][data-active="true"]')).toContainText(name)
+    await page.locator('[data-testid="project-header"][data-active="true"]').hover()
+    await page.locator('[data-testid="project-header"][data-active="true"]').getByRole("button", { name: "More options for main" }).click()
+    await page.getByRole("menuitem", { name: "Edit", exact: true }).click()
+    await expect(page.getByLabel("Name", { exact: true })).toHaveValue(name)
+    await page.screenshot({ path: testInfo.outputPath("project-rename-reloaded.png") })
+  })
+
   test("live repository document edits persist exact bytes in the selected workspace", async ({ page }) => {
     const dir = await makeWorkspace("repository-document")
     const neighbor = await makeWorkspace("repository-document-neighbor")
