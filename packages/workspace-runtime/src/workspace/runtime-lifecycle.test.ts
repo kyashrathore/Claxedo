@@ -35,6 +35,15 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
   let started = () => {}
   const startedTurn = new Promise<void>((resolve) => { started = resolve })
   const heldTurn = new Promise<void>((resolve) => { release = resolve })
+  const releaseCreate = release
+  const turnReleases = new Map<string, () => void>()
+  let released = false
+  release = () => {
+    released = true
+    releaseCreate()
+    for (const done of turnReleases.values()) done()
+    turnReleases.clear()
+  }
   const controls: Array<{ instance: number; action: string }> = []
   const configurations: unknown[] = []
   const storeLifecycle = { opened: 0, recovered: 0, closed: 0 }
@@ -113,11 +122,11 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
           read(binding)
           executions.push(binding)
           started()
-          if (options.hold) await heldTurn
+          if (options.hold && !released) await new Promise<void>((resolve) => { turnReleases.set(`${instance}:${binding.sessionId}`, resolve) })
           yield { type: "text-delta", delta: "real routed answer" }
           yield { type: "finish", sessionId: binding.sessionId }
         },
-        async abort(binding) { controls.push({ instance, action: "abort" }); release(); return { ok: true as const, status: "cancelled" as const, sessionId: binding.sessionId } },
+        async abort(binding) { controls.push({ instance, action: "abort" }); const key = `${instance}:${binding.sessionId}`; turnReleases.get(key)?.(); turnReleases.delete(key); return { ok: true as const, status: "cancelled" as const, sessionId: binding.sessionId } },
         async listPermissions() { return options.hold && instance === 1 ? [{ id: "pending", sessionID: "local", permission: "tool", patterns: [], metadata: {}, always: [] }] : [] },
         async respondPermission() { controls.push({ instance, action: "permission" }) },
         readHarnessCapabilities() { return { ...capabilities, goals: false, harness: descriptor.connectionId } },
@@ -401,6 +410,27 @@ describe("workspace runtime public lifecycle", () => {
     expect((await f.request("/session", "POST", { id: "deleted" }, "&connectionId=primary")).status).toBe(201)
     expect((await f.request("/session/deleted", "DELETE")).status).toBe(200)
     expect((await f.request("/session/deleted")).status).toBe(404)
+  })
+
+  test("deleting an active session retires its host turn before removing its binding", async () => {
+    const f = await fixture({ runtimeConfig: true, hold: true })
+    await f.host.apply(f.snapshot())
+    await f.request("/session", "POST", { id: "local" })
+    await f.request("/session", "POST", { id: "neighbor" })
+    const prompt = f.request("/session/local/message", "POST", { parts: [{ type: "text", text: "wait" }] })
+    await f.startedTurn
+    try {
+      expect((await f.request("/session/neighbor/prompt_async", "POST", { parts: [{ type: "text", text: "keep waiting" }] })).status).toBe(204)
+      expect(f.host.activity().activeTurns).toBe(2)
+      expect((await f.request("/session/local", "DELETE")).status).toBe(200)
+      expect(f.host.activity().activeTurns).toBe(1)
+      expect((await f.request("/session/local")).status).toBe(404)
+      expect((await f.request("/session/neighbor")).status).toBe(200)
+      expect(f.controls).toHaveLength(1)
+    } finally {
+      f.release()
+      await prompt
+    }
   })
 
   test("create, config, prompt and history share the canonical execution binding", async () => {

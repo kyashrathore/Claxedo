@@ -1710,6 +1710,18 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           // sessions the user archived.
           store().updateSession(sessionId, updates)
         },
+        beforeDeleteSession: async ({ sessionId }) => {
+          // Stop only this session's host readers while their execution binding
+          // still exists. Deleting first can fence out the terminal frame that
+          // those readers need to release their residency pins.
+          const pending = [...activeTurns.entries()].flatMap(([adapter, turns]) =>
+            [...turns].filter((turn) => turn.sessionId === sessionId).map((turn) => ({ adapter, turn })))
+          for (const { turn } of pending) turn.controller.abort()
+          await Promise.all(pending.map(async ({ adapter, turn }) => {
+            await adapter.abort?.(canonicalExecutionBinding(sessionId, turn.directory))
+            await turn.done
+          }))
+        },
         afterDeleteSession: ({ sessionId }) => {
           // A store-owned inventory needs its own row removed here, or it
           // would resurrect every deleted session on the next list.

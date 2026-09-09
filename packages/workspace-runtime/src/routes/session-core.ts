@@ -250,6 +250,7 @@ async function cascadeToChildren(
     const childAdapter = await opts.resolveAdapter(c, { sessionId: childSessionId, directory })
     const binding = await requireExecutionBinding(opts, c, directory, childSessionId, childAdapter)
     if (action === "delete") {
+      await opts.beforeDeleteSession?.(c, directory, childSessionId)
       await disposeRuntimeSessionDocuments(childSessionId)
       await childAdapter.deleteSession(binding)
       await after(opts.afterDeleteSession?.(c, directory, childSessionId))
@@ -447,6 +448,7 @@ type Opts = {
     session: AgentSession,
     updates: { title?: string; time?: { archived?: number } },
   ) => Promise<void> | void
+  beforeDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
   afterDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
   afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessage[]) => Promise<void> | void
   flushSessionDocuments?: (sessionId: string) => Promise<void>
@@ -1598,6 +1600,7 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       await cascadeToChildren(opts, c, directory, sessionId, "delete")
+      await opts.beforeDeleteSession?.(c, directory, sessionId)
       await disposeRuntimeSessionDocuments(sessionId)
       await adapter.deleteSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
       await after(opts.afterDeleteSession?.(c, directory, sessionId))

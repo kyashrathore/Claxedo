@@ -192,6 +192,7 @@ export function SessionRoutes(
       sessionId: string
       update: SessionConfigRequestUpdate
     }) => Promise<SessionConfig>
+    beforeDeleteSession?: (input: { directory: string; sessionId: string }) => Promise<void> | void
     afterDeleteSession?: (input: { directory: string; sessionId: string }) => Promise<void> | void
     /**
      * Observe a session update (title, archive) after the adapter applies it,
@@ -419,6 +420,9 @@ export function SessionRoutes(
           sessionId: session.id,
           updates,
         })
+      : undefined,
+    beforeDeleteSession: options?.beforeDeleteSession
+      ? (_c, directory, sessionId) => options.beforeDeleteSession!({ directory: requiredDirectory(directory), sessionId })
       : undefined,
     afterDeleteSession: options?.afterDeleteSession
       ? (_c, directory, sessionId) => options.afterDeleteSession!({

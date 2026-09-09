@@ -182,16 +182,16 @@ function mkUserMessageId() {
   return `msg_${ts}${rand}u`
 }
 
-function replacementAbortError() {
-  return new Error("Active turn aborted because the harness was replaced")
+function activeTurnAbortError() {
+  return new Error("Active turn aborted")
 }
 
 function nextWithAbort<T>(iterator: AsyncIterator<T>, signal: AbortSignal | undefined) {
   if (!signal) return iterator.next()
-  if (signal.aborted) return Promise.reject(replacementAbortError())
+  if (signal.aborted) return Promise.reject(activeTurnAbortError())
   let cleanup = () => {}
   const aborted = new Promise<IteratorResult<T>>((_, reject) => {
-    const abort = () => reject(replacementAbortError())
+    const abort = () => reject(activeTurnAbortError())
     signal.addEventListener("abort", abort, { once: true })
     cleanup = () => signal.removeEventListener("abort", abort)
   })
