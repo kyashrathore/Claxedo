@@ -607,6 +607,55 @@ test.describe("live real-harness smoke @live", () => {
     })
   }
 
+  test("live repository document edits persist exact bytes in the selected workspace", async ({ page }) => {
+    const dir = await makeWorkspace("repository-document")
+    const neighbor = await makeWorkspace("repository-document-neighbor")
+    const original = "Heading\n=======\n\nrepository original\n"
+    const neighborContent = "Heading\n=======\n\nneighbor must remain unchanged\n"
+    await fs.writeFile(path.join(dir, "repository.md"), original)
+    await fs.writeFile(path.join(neighbor, "repository.md"), neighborContent)
+    await seedOneProject(page, dir)
+    await openDraftPrompt(page, dir)
+    await page.locator('[data-testid="workbench-shell-header"] [data-testid="workspace-panel-toggle"]').click()
+    const files = page.getByRole("button", { name: "Open Files", exact: true }).last()
+    if (await files.isVisible()) await files.click()
+    await page.locator('[data-file-tree-path="repository.md"]').click()
+    await page.getByRole("button", { name: "Add to Documents", exact: true }).click()
+    await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible()
+    const source = page.getByLabel("Document Markdown source")
+    await expect(source).toHaveValue(original)
+    expect(await fs.readFile(path.join(dir, "repository.md"), "utf8")).toBe(original)
+    const edited = "Heading\n=======\n\nEdited through the app: café 日本語 🚀\n\n- first\n- second\n"
+    await source.fill(edited)
+    await page.keyboard.press("ControlOrMeta+s")
+    await expect(page.getByRole("status").filter({ hasText: "Saved" })).toBeVisible()
+    await expect.poll(() => fs.readFile(path.join(dir, "repository.md"), "utf8")).toBe(edited)
+    expect(await fs.readFile(path.join(neighbor, "repository.md"), "utf8")).toBe(neighborContent)
+    await page.reload()
+    await expect(page.getByLabel("Document Markdown source")).toHaveValue(edited)
+    expect(await fs.readFile(path.join(dir, "repository.md"), "utf8")).toBe(edited)
+    const external = "Heading\n=======\n\nExternal competing edit\n"
+    await fs.writeFile(path.join(dir, "repository.md"), external)
+    const draft = "Heading\n=======\n\nHuman draft must survive the conflict\n"
+    await source.fill(draft)
+    await page.keyboard.press("ControlOrMeta+s")
+    await expect(page.getByRole("heading", { name: "Document changed on disk" })).toBeVisible()
+    await expect(source).toHaveValue(draft)
+    expect(await fs.readFile(path.join(dir, "repository.md"), "utf8")).toBe(external)
+    await page.getByText("Compare versions", { exact: true }).click()
+    await expect(page.getByLabel("Your draft")).toContainText("Human draft must survive the conflict")
+    await expect(page.getByLabel("Current disk version")).toContainText("External competing edit")
+    await page.getByRole("button", { name: "Reload disk", exact: true }).click()
+    await expect(source).toHaveValue(external)
+    await source.fill(edited)
+    await page.keyboard.press("ControlOrMeta+s")
+    await expect.poll(() => fs.readFile(path.join(dir, "repository.md"), "utf8")).toBe(edited)
+    expect(await fs.readFile(path.join(neighbor, "repository.md"), "utf8")).toBe(neighborContent)
+    await page.reload()
+    await expect(source).toHaveValue(edited)
+    await page.screenshot({ path: test.info().outputPath("repository-document-after-reload.png") })
+  })
+
   test("live source control stages, unstages and commits only the selected workspace file", async ({ page }) => {
     const dir = await makeWorkspace("source-control")
     const neighbor = await makeWorkspace("source-control-neighbor")
