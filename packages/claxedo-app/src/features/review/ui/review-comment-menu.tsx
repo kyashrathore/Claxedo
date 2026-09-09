@@ -18,7 +18,7 @@ export function ReviewCommentMenu(props: {
       <DropdownMenu gutter={4} placement="bottom-end">
         <DropdownMenu.Trigger
           as={IconButton}
-          icon="dot-grid"
+          icon="three-dots"
           variant="ghost"
           size="small"
           class="size-6 rounded-md"

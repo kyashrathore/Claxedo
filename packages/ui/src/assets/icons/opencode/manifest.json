@@ -1,0 +1,723 @@
+{
+  "source": "packages/ui/src/components/icon.tsx",
+  "extraction": "Source artwork; SHA-256 of viewBox + newline + SVG content",
+  "count": 119,
+  "uniqueGeometries": 118,
+  "icons": [
+    {
+      "id": "opencode-icon-codex-collapse-all",
+      "name": "codex-collapse-all",
+      "viewBox": "0 0 20 20",
+      "hash": "9aedd05b763e0b8952986b99c755f21ad8f77c81b62fb3471d6ade1cb82d4596"
+    },
+    {
+      "id": "opencode-icon-codex-expand-all",
+      "name": "codex-expand-all",
+      "viewBox": "0 0 20 20",
+      "hash": "aae7482cfa4aa16873e57a8baab7723066dac796ba8d905a17799b540e9513d8"
+    },
+    {
+      "id": "opencode-icon-codex-diff-unified",
+      "name": "codex-diff-unified",
+      "viewBox": "0 0 20 20",
+      "hash": "c8406ff0425826a5c401320c926ca0280d48cd7c26bb757707545befa0600bcb"
+    },
+    {
+      "id": "opencode-icon-codex-diff-split",
+      "name": "codex-diff-split",
+      "viewBox": "0 0 20 20",
+      "hash": "76da06ea7993eada9eec5650c723756b12a542c9c45f625ec0cb13a2986ec792"
+    },
+    {
+      "id": "opencode-icon-monitor",
+      "name": "monitor",
+      "viewBox": "0 0 16 16",
+      "hash": "561fddbf1d45a78ea0dac4433ee7fc6adcd3b27c7fa504a6611775d6f3da6cf1"
+    },
+    {
+      "id": "opencode-icon-unified",
+      "name": "unified",
+      "viewBox": "0 0 16 16",
+      "hash": "bff21f0262e0a77735a685a708a3161bf4c66ea099bb57b85ee772a4f9f42d97"
+    },
+    {
+      "id": "opencode-icon-split",
+      "name": "split",
+      "viewBox": "0 0 16 16",
+      "hash": "1cfa7866116a0095f6bccb25794e584f87820ab10a441cbbcaa338d8a0b83715"
+    },
+    {
+      "id": "opencode-icon-collapse-all",
+      "name": "collapse-all",
+      "viewBox": "0 0 16 16",
+      "hash": "2d4103eee82e580efa9657d9fafb335354b013c0021550f6e588b7129641756b"
+    },
+    {
+      "id": "opencode-icon-expand-all",
+      "name": "expand-all",
+      "viewBox": "0 0 16 16",
+      "hash": "eaff30b59db34c3dce11c6be46ea7d20f4bef49951117da48eb4cb3f32fbfdb6"
+    },
+    {
+      "id": "opencode-icon-document-text",
+      "name": "document-text",
+      "viewBox": "0 0 20 20",
+      "hash": "af882d0eec43ef9251342f8c825cbabad1a0c2f32f292347a46cb2e9aab7157b"
+    },
+    {
+      "id": "opencode-icon-claude",
+      "name": "claude",
+      "viewBox": "0 0 20 20",
+      "hash": "62dd9e5c6e8fd8b28bd05512bda6a874ffd52564e76c062619346111c3dc9745"
+    },
+    {
+      "id": "opencode-icon-cursor",
+      "name": "cursor",
+      "viewBox": "0 0 20 20",
+      "hash": "59a66a289c29d702883acb0486195d2dd9d6e41ecd62659ec915cfc1369e3197"
+    },
+    {
+      "id": "opencode-icon-openai",
+      "name": "openai",
+      "viewBox": "0 0 20 20",
+      "hash": "4a7582d5aeb2d3f3ea84f935727fb53fb8f5879a7e2931a795c77fce850979b7"
+    },
+    {
+      "id": "opencode-icon-opencode",
+      "name": "opencode",
+      "viewBox": "0 0 20 20",
+      "hash": "8eda9c7b42b0198fdde83d2130bae9c4579cd67437a2734598d7f50e5082c112"
+    },
+    {
+      "id": "opencode-icon-pi",
+      "name": "pi",
+      "viewBox": "0 0 20 20",
+      "hash": "fc834e97551ef73880a49f270f9a685c493085e73a8507ab54c1bee43e1cf216"
+    },
+    {
+      "id": "opencode-icon-panel-restore",
+      "name": "panel-restore",
+      "viewBox": "0 0 20 20",
+      "hash": "6ca1b07b30f58f634115dd569f0988e988731d0322eb85a47037ccb960c71736"
+    },
+    {
+      "id": "opencode-icon-codex-three-dots",
+      "name": "codex-three-dots",
+      "viewBox": "0 0 20 20",
+      "hash": "430fe8a4d44b35c9ba15a3467a5e264f8939ab0b552766d9c00cc7d92ddd9dc4"
+    },
+    {
+      "id": "opencode-icon-align-right",
+      "name": "align-right",
+      "viewBox": "0 0 20 20",
+      "hash": "f11e1ec8f20b706ffe3ea0fb8e7096965bd06399276dccfc8240865b10cab3f8"
+    },
+    {
+      "id": "opencode-icon-arrow-up",
+      "name": "arrow-up",
+      "viewBox": "0 0 20 20",
+      "hash": "2a2de498b5dbfb4882b595dc27b72765a3f20e55105be26568293c8a3e69b83d"
+    },
+    {
+      "id": "opencode-icon-arrow-left",
+      "name": "arrow-left",
+      "viewBox": "0 0 20 20",
+      "hash": "80363a1e9bd23ded71ec50f411af678338fc8b9f8c4d98e2e98909127d1057a0"
+    },
+    {
+      "id": "opencode-icon-arrow-right",
+      "name": "arrow-right",
+      "viewBox": "0 0 20 20",
+      "hash": "bda74edc73e33000bd74a77e0ec317f73f3ae3d48868a35e7d0cff0d2e88cb46"
+    },
+    {
+      "id": "opencode-icon-archive",
+      "name": "archive",
+      "viewBox": "0 0 20 20",
+      "hash": "d00519f6f5feba81a3060f58bd261728fac8e42b3d735b3257f746e0beddd381"
+    },
+    {
+      "id": "opencode-icon-bubble-5",
+      "name": "bubble-5",
+      "viewBox": "0 0 20 20",
+      "hash": "c87f56ccae86c9179d33adb5f25d995a5bb6bff5d6db39e46895a5d3fc94dcaf"
+    },
+    {
+      "id": "opencode-icon-prompt",
+      "name": "prompt",
+      "viewBox": "0 0 20 20",
+      "hash": "3e7e3c712e03cba03cf5b5008d52bb24434a2024429b0aab5598f39d08d3975a"
+    },
+    {
+      "id": "opencode-icon-brain",
+      "name": "brain",
+      "viewBox": "0 0 20 20",
+      "hash": "b28d0c3609fc349e3df036c33ed33d6a07226c28852faba569302181d2e101de"
+    },
+    {
+      "id": "opencode-icon-fork",
+      "name": "fork",
+      "viewBox": "0 0 20 20",
+      "hash": "40adce9788c57388d2504f89ab217b18c11e1e77f2f67933081c9e87d03d25d6"
+    },
+    {
+      "id": "opencode-icon-maximize",
+      "name": "maximize",
+      "viewBox": "0 0 20 20",
+      "hash": "3eddb20696aad3a0fb084ce28b42f15697cd20ab018d6cde59905edfc1078f96"
+    },
+    {
+      "id": "opencode-icon-marketplace",
+      "name": "marketplace",
+      "viewBox": "0 0 20 20",
+      "hash": "d98f57a42408c60fb673b8dfaa471107c0e1938e24156ddf87a8c62b97a5c501"
+    },
+    {
+      "id": "opencode-icon-bullet-list",
+      "name": "bullet-list",
+      "viewBox": "0 0 20 20",
+      "hash": "0ccbf4ac7cd7f439f08aeebd0877e2bd51849df82db0ce56100c4dc3c7563a4a"
+    },
+    {
+      "id": "opencode-icon-check-small",
+      "name": "check-small",
+      "viewBox": "0 0 20 20",
+      "hash": "fbe1288b5779cbb850372e76802345b9ac9f8b72b951de058cee6dc4e7bd116c"
+    },
+    {
+      "id": "opencode-icon-chevron-down",
+      "name": "chevron-down",
+      "viewBox": "0 0 20 20",
+      "hash": "fb021562034473aac05f60cb98a26be38d157eba0c4ed38a00efe991d2ae0f91"
+    },
+    {
+      "id": "opencode-icon-chevron-left",
+      "name": "chevron-left",
+      "viewBox": "0 0 20 20",
+      "hash": "fd7bb65f3942f128c003dd22b0da9ad2a03e1b4ed40c696063c9900c3355ce53"
+    },
+    {
+      "id": "opencode-icon-chevron-right",
+      "name": "chevron-right",
+      "viewBox": "0 0 20 20",
+      "hash": "affd755f6d08c297480e8adaabd374cd38e4d23c2e219c9c08c96f5f288286fe"
+    },
+    {
+      "id": "opencode-icon-chevron-grabber-vertical",
+      "name": "chevron-grabber-vertical",
+      "viewBox": "0 0 20 20",
+      "hash": "7f4063b35eb5847f0817c2686df9a1be8d1f91e44f1ff71e58435256d9aec2a4"
+    },
+    {
+      "id": "opencode-icon-chevron-double-right",
+      "name": "chevron-double-right",
+      "viewBox": "0 0 20 20",
+      "hash": "3941b9589499219096825ba2038e06c3076810860327a820998c7768e83c3ae1"
+    },
+    {
+      "id": "opencode-icon-circle-x",
+      "name": "circle-x",
+      "viewBox": "0 0 20 20",
+      "hash": "17154dfb4fedeca23d8b4c65ef15e15fd207555505ea031f91503a27bea91e5f"
+    },
+    {
+      "id": "opencode-icon-close",
+      "name": "close",
+      "viewBox": "0 0 20 20",
+      "hash": "4b4e623e47597191b93b96d135619a7d4e6bbc6e734f32dd2f8fc89c1dfec159"
+    },
+    {
+      "id": "opencode-icon-close-small",
+      "name": "close-small",
+      "viewBox": "0 0 20 20",
+      "hash": "e1bf28164e6dee6f3260d8a570edc20a7486547e77bdebaed5efae5fb5afba9c"
+    },
+    {
+      "id": "opencode-icon-checklist",
+      "name": "checklist",
+      "viewBox": "0 0 20 20",
+      "hash": "fc25a62e2fca02eddcf56ea43a2e74e4670c4316b43963b8ddf4f25ff3ca8382"
+    },
+    {
+      "id": "opencode-icon-terminal",
+      "name": "terminal",
+      "viewBox": "0 0 20 20",
+      "hash": "5d03150b647088131432e8389a0040d78c8c1ee931b04833a6f5a85b85878e97"
+    },
+    {
+      "id": "opencode-icon-terminal-active",
+      "name": "terminal-active",
+      "viewBox": "0 0 20 20",
+      "hash": "5d03150b647088131432e8389a0040d78c8c1ee931b04833a6f5a85b85878e97",
+      "duplicateOf": "opencode-icon-terminal"
+    },
+    {
+      "id": "opencode-icon-review",
+      "name": "review",
+      "viewBox": "0 0 20 20",
+      "hash": "25f1618c38ec972add7daeaa3c2c2e5e334dd32faf6bf1169705589fa4fa61c8"
+    },
+    {
+      "id": "opencode-icon-review-active",
+      "name": "review-active",
+      "viewBox": "0 0 20 20",
+      "hash": "b854ce29d75922e1d03cd82bd9cb9303bf15a6650c733e16fbe118ec5807b31c"
+    },
+    {
+      "id": "opencode-icon-expand",
+      "name": "expand",
+      "viewBox": "0 0 20 20",
+      "hash": "73b1895f65bb6e009a3afe4fa927f2df763b2eff926dee7bdbe93147f02fa53e"
+    },
+    {
+      "id": "opencode-icon-collapse",
+      "name": "collapse",
+      "viewBox": "0 0 20 20",
+      "hash": "c06510b12ff24fdad853edf9efb9c4fdfa451aeeaa3197b7646b412bc251ba44"
+    },
+    {
+      "id": "opencode-icon-code",
+      "name": "code",
+      "viewBox": "0 0 20 20",
+      "hash": "770a4e0d64b2eff5a6575ac55c86473d43e1408e976bc25d6d477af0cf19ebbc"
+    },
+    {
+      "id": "opencode-icon-code-lines",
+      "name": "code-lines",
+      "viewBox": "0 0 20 20",
+      "hash": "aa4bad1f2640baff41bee2018f37269d6e031186375ee77fa7b17f81406e300d"
+    },
+    {
+      "id": "opencode-icon-circle-ban-sign",
+      "name": "circle-ban-sign",
+      "viewBox": "0 0 20 20",
+      "hash": "1f4474de7b3691247b30aaecd14a173c05579b47d9c0155cb36b3d6a98075e46"
+    },
+    {
+      "id": "opencode-icon-edit-small-2",
+      "name": "edit-small-2",
+      "viewBox": "0 0 20 20",
+      "hash": "2cfa59f01068d3a7d53f13309a261fefb6e4baa9bdd8ee3bc4335702310ef923"
+    },
+    {
+      "id": "opencode-icon-eye",
+      "name": "eye",
+      "viewBox": "0 0 20 20",
+      "hash": "da07ef9ab93960b754f42589912efde37fc4e3cbb3ce092322d7970da8ed3959"
+    },
+    {
+      "id": "opencode-icon-enter",
+      "name": "enter",
+      "viewBox": "0 0 20 20",
+      "hash": "aa0bd6b09208d5be5cbba343013e1f00a93a0df63dbbf3e377900d566f5f40dd"
+    },
+    {
+      "id": "opencode-icon-folder",
+      "name": "folder",
+      "viewBox": "0 0 20 20",
+      "hash": "0c2be8100716aead24539f9fcb4736295d2ed20fe63c89b745a2a6a560fd225c"
+    },
+    {
+      "id": "opencode-icon-folders",
+      "name": "folders",
+      "viewBox": "0 0 20 20",
+      "hash": "f1da3b9710469ebf2f3c48eda1c398d4dff79e2dc59209b97b92389bab9031d3"
+    },
+    {
+      "id": "opencode-icon-magnifying-glass",
+      "name": "magnifying-glass",
+      "viewBox": "0 0 16 16",
+      "hash": "bcf6c39ed87ed0666c8f7c6c613a0de5431228bc9537ac1350de5c4b33d78c74"
+    },
+    {
+      "id": "opencode-icon-plus-small",
+      "name": "plus-small",
+      "viewBox": "0 0 20 20",
+      "hash": "410b49071945dfee21f6752dbd395003246b068cc09fe01a9eaf3caf90cef998"
+    },
+    {
+      "id": "opencode-icon-plus",
+      "name": "plus",
+      "viewBox": "0 0 20 20",
+      "hash": "abd4f8db4e9b55597b3cc18a14c73b490701fc16bb751ff4764c52af7743bd29"
+    },
+    {
+      "id": "opencode-icon-new-session",
+      "name": "new-session",
+      "viewBox": "0 0 20 20",
+      "hash": "12bb2c57c1e3d45b26ab19c33d2f86c3e63b855de9fb2502e9b5f7f36edb1700"
+    },
+    {
+      "id": "opencode-icon-new-session-active",
+      "name": "new-session-active",
+      "viewBox": "0 0 20 20",
+      "hash": "84e4a914d6543a12222270817a2d2046490b0130dbec901ba68d6420475d1d85"
+    },
+    {
+      "id": "opencode-icon-pencil-line",
+      "name": "pencil-line",
+      "viewBox": "0 0 20 20",
+      "hash": "b9ae32d2155f78f5783296bd231fe26364222c358c15c9c96e1c37b132f51ccc"
+    },
+    {
+      "id": "opencode-icon-mcp",
+      "name": "mcp",
+      "viewBox": "0 0 20 20",
+      "hash": "fc48bac346105b3b07265fd5d7f468f4927517c429ac73e946a2dd408a8c0d5c"
+    },
+    {
+      "id": "opencode-icon-glasses",
+      "name": "glasses",
+      "viewBox": "0 0 20 20",
+      "hash": "733531f6a3de6544e238d0aa2ef085084c3677ad07d6e36b180c98f61f826f02"
+    },
+    {
+      "id": "opencode-icon-magnifying-glass-menu",
+      "name": "magnifying-glass-menu",
+      "viewBox": "0 0 20 20",
+      "hash": "c7fa447fd36fa7376b81521dae04e8ca3ec157b89339515337e61b3ccecfe7ce"
+    },
+    {
+      "id": "opencode-icon-window-cursor",
+      "name": "window-cursor",
+      "viewBox": "0 0 20 20",
+      "hash": "cffd211329e08a81b38aa8f727fbf0570be7820b6b3bd62d8922552748e95c84"
+    },
+    {
+      "id": "opencode-icon-task",
+      "name": "task",
+      "viewBox": "0 0 20 20",
+      "hash": "b1c5ef689bd966f00461389fc9bed10342bf20a1da4275440bdad0925fb69cef"
+    },
+    {
+      "id": "opencode-icon-subagent",
+      "name": "subagent",
+      "viewBox": "0 0 16 16",
+      "hash": "d2716ddbed27662825151c789ff8e0109e04e8b4ae6a4ffd1425221299e20c9b"
+    },
+    {
+      "id": "opencode-icon-stop",
+      "name": "stop",
+      "viewBox": "0 0 20 20",
+      "hash": "201b2baf88d627cdd81264718abed910284ac62a45afc370c551577183953737"
+    },
+    {
+      "id": "opencode-icon-status",
+      "name": "status",
+      "viewBox": "0 0 20 20",
+      "hash": "c3f04b9678ca78139c0ff324441132a18b90fc7466855dbfa92c26fa93f97c74"
+    },
+    {
+      "id": "opencode-icon-status-active",
+      "name": "status-active",
+      "viewBox": "0 0 20 20",
+      "hash": "230de11f5e3d62e9cab033a215515ea9bd1be3a49100a7bb3c1f4d5b1ef72f1b"
+    },
+    {
+      "id": "opencode-icon-sidebar",
+      "name": "sidebar",
+      "viewBox": "0 0 20 20",
+      "hash": "1196a3919a800be40e0d5ef08acd0b6cc6d190ef84168eff42f9b42b86f73c59"
+    },
+    {
+      "id": "opencode-icon-sidebar-active",
+      "name": "sidebar-active",
+      "viewBox": "0 0 20 20",
+      "hash": "185289f705af84b0ddecb732a006fc27aa43c4a153312e7555392399d9e3bf2d"
+    },
+    {
+      "id": "opencode-icon-layout-left",
+      "name": "layout-left",
+      "viewBox": "0 0 20 20",
+      "hash": "36ffc43deae792a900c477506d27a0ebfe5438d84d294f8becfd33e0c37bb4b6"
+    },
+    {
+      "id": "opencode-icon-layout-left-partial",
+      "name": "layout-left-partial",
+      "viewBox": "0 0 20 20",
+      "hash": "acc1fd12f22beae98cea8efb4f5a654d918ce00c7d677bfcec1c1c674bce115c"
+    },
+    {
+      "id": "opencode-icon-layout-left-full",
+      "name": "layout-left-full",
+      "viewBox": "0 0 20 20",
+      "hash": "17671f86202c4260aa69aa3dabe98350339c8563650cafbe4f0fc0ef193bc718"
+    },
+    {
+      "id": "opencode-icon-layout-right",
+      "name": "layout-right",
+      "viewBox": "0 0 20 20",
+      "hash": "87a19c5ea93b4b76f7cebae9a97d8b15da20d94042eb13579534ccf2de50b406"
+    },
+    {
+      "id": "opencode-icon-layout-right-partial",
+      "name": "layout-right-partial",
+      "viewBox": "0 0 20 20",
+      "hash": "9c4cafc5c646cc785420b1cbb1e8148131cfd5b61d76f1dc63eba084a729f524"
+    },
+    {
+      "id": "opencode-icon-layout-right-full",
+      "name": "layout-right-full",
+      "viewBox": "0 0 20 20",
+      "hash": "0cdd8deea63563b27366bcc7da3c0a2664344cf9cadd036a9eca273f09cf02f4"
+    },
+    {
+      "id": "opencode-icon-open-external",
+      "name": "open-external",
+      "viewBox": "0 0 20 20",
+      "hash": "895b8574ef0f6c8987927dce505153f8d000fca0f4a79521a1e3c5b6dc0e49d9"
+    },
+    {
+      "id": "opencode-icon-open-file",
+      "name": "open-file",
+      "viewBox": "0 0 20 20",
+      "hash": "f62747800f3c7aca18526a6d5d8a208c244401cbfa47bceb84e0de2896dd97c2"
+    },
+    {
+      "id": "opencode-icon-speech-bubble",
+      "name": "speech-bubble",
+      "viewBox": "0 0 20 20",
+      "hash": "7e269ea635814db29222fd258370889916227180c02e0fc463e051177412322c"
+    },
+    {
+      "id": "opencode-icon-comment",
+      "name": "comment",
+      "viewBox": "0 0 20 20",
+      "hash": "a98b9979d71cadd73842885b890e96df3e1c99de9c8d53072f3aa18ca7944ee5"
+    },
+    {
+      "id": "opencode-icon-folder-add",
+      "name": "folder-add",
+      "viewBox": "0 0 20 20",
+      "hash": "4248a67fb9de88d14173a57fd623f085c0e75697b9098874fe3156a53676a1da"
+    },
+    {
+      "id": "opencode-icon-github",
+      "name": "github",
+      "viewBox": "0 0 20 20",
+      "hash": "eabfc60411bdff3723de2b1eabbbe76696129f5591eeee4937a429c8f75c93b1"
+    },
+    {
+      "id": "opencode-icon-discord",
+      "name": "discord",
+      "viewBox": "0 0 20 20",
+      "hash": "57aca3c96ff27159f9a26f6f2168239ea6b877a184c16a15cfcf0ec8fc8429b6"
+    },
+    {
+      "id": "opencode-icon-layout-bottom",
+      "name": "layout-bottom",
+      "viewBox": "0 0 20 20",
+      "hash": "b01690939f224ce4414419c264f1dab2be0beb9136654498cd00cfcb371abf6e"
+    },
+    {
+      "id": "opencode-icon-layout-bottom-partial",
+      "name": "layout-bottom-partial",
+      "viewBox": "0 0 20 20",
+      "hash": "292b9016a6e463d0aca98d6c95a94e43b55f5a969851b1ca03c2dc168dcfe40c"
+    },
+    {
+      "id": "opencode-icon-layout-bottom-full",
+      "name": "layout-bottom-full",
+      "viewBox": "0 0 20 20",
+      "hash": "6bc5606da5e54d1acb9aed7f4b24dda98906252268f9df98e134072eeb9aa463"
+    },
+    {
+      "id": "opencode-icon-three-dots",
+      "name": "three-dots",
+      "viewBox": "0 0 20 20",
+      "hash": "d604391e0ce3b360ce7ce670078a30712959e81609a993b4314cb4696321a8b0"
+    },
+    {
+      "id": "opencode-icon-circle-check",
+      "name": "circle-check",
+      "viewBox": "0 0 20 20",
+      "hash": "8f05268238db2c8de7a7a5064576e8e761331c7f5f4ecafa349a75186e524f87"
+    },
+    {
+      "id": "opencode-icon-circle-alert",
+      "name": "circle-alert",
+      "viewBox": "0 0 20 20",
+      "hash": "ecdc0403c96361f622b818bd27d9c54434f6f95ac6cbf3c3618378dfd82b2078"
+    },
+    {
+      "id": "opencode-icon-circle-dashed",
+      "name": "circle-dashed",
+      "viewBox": "0 0 20 20",
+      "hash": "5674f6f6f65e94619a26669a4d1f30186810d6029698b6b570ee13c261a1f951"
+    },
+    {
+      "id": "opencode-icon-circle-half",
+      "name": "circle-half",
+      "viewBox": "0 0 20 20",
+      "hash": "60ad3a4ea4d071930e65e4cd6d4b0f3ad8de522cf459e062db0bc0c6e7dcf574"
+    },
+    {
+      "id": "opencode-icon-chevron-double-left",
+      "name": "chevron-double-left",
+      "viewBox": "0 0 20 20",
+      "hash": "bff561228f0e921c99d9699732c19018440c78cf8e3360c59eb5772c5927a662"
+    },
+    {
+      "id": "opencode-icon-file",
+      "name": "file",
+      "viewBox": "0 0 20 20",
+      "hash": "d85b8536184fe1544b7a88892635a710bf3a2ccf5127ffdf14a1c0c323dd9daa"
+    },
+    {
+      "id": "opencode-icon-page-plus",
+      "name": "page-plus",
+      "viewBox": "0 0 20 20",
+      "hash": "43c095cc1344e4ea6aab5dadf9d1fcc998aed384f72a364c850c5f1f161a2380"
+    },
+    {
+      "id": "opencode-icon-copy",
+      "name": "copy",
+      "viewBox": "0 0 20 20",
+      "hash": "945e9b56fc4e46832b6e6577f8a75721dd76c1cc10fb6256c1a50ce419c54f56"
+    },
+    {
+      "id": "opencode-icon-check",
+      "name": "check",
+      "viewBox": "0 0 20 20",
+      "hash": "6f3aace53b153d4852869808b11b50c6f0b1b0dba575d9d1b10be981fba35d35"
+    },
+    {
+      "id": "opencode-icon-photo",
+      "name": "photo",
+      "viewBox": "0 0 20 20",
+      "hash": "1a932384cfbda8dbfca889e94d678c7e1177743bbb291d4fc139a9dc8cf310ba"
+    },
+    {
+      "id": "opencode-icon-share",
+      "name": "share",
+      "viewBox": "0 0 20 20",
+      "hash": "09a1f6108e28eadd17053dcca75316acc299084eff42fd026ea5aa06c1d1beab"
+    },
+    {
+      "id": "opencode-icon-shield",
+      "name": "shield",
+      "viewBox": "0 0 20 20",
+      "hash": "df15c9b044d78f6a2580eb2857c712d31a49cf0fbeac09c43ce7f76050099ea2"
+    },
+    {
+      "id": "opencode-icon-download",
+      "name": "download",
+      "viewBox": "0 0 20 20",
+      "hash": "9f9619bf6f40203a5d8749fbf96c75b365b35f9643f832c75acd53c5364b675d"
+    },
+    {
+      "id": "opencode-icon-menu",
+      "name": "menu",
+      "viewBox": "0 0 20 20",
+      "hash": "eab1617378a5d1b6ea4dcaab523b4400c5afc0a8138f19974a33082a4531ddae"
+    },
+    {
+      "id": "opencode-icon-server",
+      "name": "server",
+      "viewBox": "0 0 20 20",
+      "hash": "033a6aa8f2d2f97542b178e238c3109922457cd05878574bbc5aa79e4717c568"
+    },
+    {
+      "id": "opencode-icon-branch",
+      "name": "branch",
+      "viewBox": "0 0 20 20",
+      "hash": "b382aeb24c20c0c76facdcc4abebc2ecda2b6bd3bc48331e4ad002e5a811aadd"
+    },
+    {
+      "id": "opencode-icon-edit",
+      "name": "edit",
+      "viewBox": "0 0 20 20",
+      "hash": "d8ae60cf4adba9e1b0aa57fc31783a7e5f3a15005e568db54f6fb3b31d39303b"
+    },
+    {
+      "id": "opencode-icon-help",
+      "name": "help",
+      "viewBox": "0 0 20 20",
+      "hash": "6c12617c41bc8acc94514af005aad9b50ce61b7798efc48c3642620e5a3d18ec"
+    },
+    {
+      "id": "opencode-icon-settings-gear",
+      "name": "settings-gear",
+      "viewBox": "0 0 20 20",
+      "hash": "ac952979a879dde502f2f6385c0dbe695f71302cd7576f4de13093d06a7b2297"
+    },
+    {
+      "id": "opencode-icon-dash",
+      "name": "dash",
+      "viewBox": "0 0 20 20",
+      "hash": "5db0af58c92baef746b3daea3a94bee97d8456fba17d186d0e8cc68c09965782"
+    },
+    {
+      "id": "opencode-icon-cloud-upload",
+      "name": "cloud-upload",
+      "viewBox": "0 0 20 20",
+      "hash": "6992891ee71b56f4422ef7812c15163e6d5dccd442c62444aa95ff900d264e2c"
+    },
+    {
+      "id": "opencode-icon-trash",
+      "name": "trash",
+      "viewBox": "0 0 20 20",
+      "hash": "ebeee4f8061accc380cfff0cf8b869c3e4455e2a3dc49141f1540fb855d5e23c"
+    },
+    {
+      "id": "opencode-icon-sliders",
+      "name": "sliders",
+      "viewBox": "0 0 20 20",
+      "hash": "66f9caa06af61dab602b5e842eb0d19fe5c99003f69dce9f0460624fea1c0f74"
+    },
+    {
+      "id": "opencode-icon-keyboard",
+      "name": "keyboard",
+      "viewBox": "0 0 20 20",
+      "hash": "91f487b917afee3f535c93fb6946bdb8229a707abb98df70cd54f3167e1895e5"
+    },
+    {
+      "id": "opencode-icon-arrow-down-to-line",
+      "name": "arrow-down-to-line",
+      "viewBox": "0 0 20 20",
+      "hash": "55074c89496bce0af89523ce81f19ffc79950cd78522d30785fd970975e9b48e"
+    },
+    {
+      "id": "opencode-icon-warning",
+      "name": "warning",
+      "viewBox": "0 0 20 20",
+      "hash": "5813cec470eaa6a4a51808a100761f2d6d4c40c38ae0f026f27841b6a52ad739"
+    },
+    {
+      "id": "opencode-icon-reset",
+      "name": "reset",
+      "viewBox": "0 0 20 20",
+      "hash": "792375969a43dabe8bca8d5b1a16c2093794d4160267f2d439332600e18edd0c"
+    },
+    {
+      "id": "opencode-icon-link",
+      "name": "link",
+      "viewBox": "0 0 20 20",
+      "hash": "ddca5cc0fd573e62f057c7886d90356304bf66f44edc7eb78471cbe9ac45e607"
+    },
+    {
+      "id": "opencode-icon-providers",
+      "name": "providers",
+      "viewBox": "0 0 20 20",
+      "hash": "a52b35bd4ac6003147d91d4e0ac5033743c349704cebad8f7891834e5fa62796"
+    },
+    {
+      "id": "opencode-icon-models",
+      "name": "models",
+      "viewBox": "0 0 20 20",
+      "hash": "816e189df351af62e72d12a9f316d12cc3581bfc170c2b6f0945008435582959"
+    },
+    {
+      "id": "opencode-icon-arrow-undo-down",
+      "name": "arrow-undo-down",
+      "viewBox": "0 0 16 16",
+      "hash": "cee322fe89fbb85bdabea2e061bc498d0b492460302bafcd58d5156e4d87e38b"
+    },
+    {
+      "id": "opencode-icon-wrench",
+      "name": "wrench",
+      "viewBox": "0 0 20 20",
+      "hash": "0242f511010d05824e1ee8b2901befad30933e30cabf09c12d0e1937a83b7b85"
+    }
+  ]
+}

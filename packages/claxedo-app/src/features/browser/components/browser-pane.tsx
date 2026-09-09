@@ -360,7 +360,7 @@ function BrowserPaneToolbar(props: {
       <div class="flex items-center gap-0.5">
         <Tooltip value="Pick an element to annotate" placement="bottom">
           <IconButton
-            icon="window-cursor"
+            icon="inspect-element"
             size="normal"
             variant="ghost"
             aria-label="Inspect element"
@@ -378,7 +378,7 @@ function BrowserPaneToolbar(props: {
               aria-label="Browser options"
               data-testid="browser-pane-menu-trigger"
             >
-              <Icon name="kebab" size="small" />
+              <Icon name="three-dots" size="small" class="rotate-90" />
             </DropdownMenu.Trigger>
           </Tooltip>
           <DropdownMenu.Portal>
@@ -543,14 +543,14 @@ function BrowserPaneConsoleDrawer() {
     >
       <div class="flex h-8 shrink-0 items-center justify-between border-b border-border-weak-base px-2">
         <div class="flex items-center gap-2 text-12-medium text-text-base">
-          <Icon name="console" size="small" class="text-text-weak" />
+          <Icon name="terminal" size="small" class="text-text-weak" />
           <span>Console</span>
           <span class="text-text-weak tabular-nums">{ctx.consoleEntries().length}</span>
         </div>
         <div class="flex items-center gap-0.5">
           <Tooltip value="Open Chromium DevTools" placement="bottom">
             <IconButton
-              icon="square-arrow-top-right"
+              icon="open-external"
               variant="ghost"
               size="small"
               aria-label="Open DevTools"

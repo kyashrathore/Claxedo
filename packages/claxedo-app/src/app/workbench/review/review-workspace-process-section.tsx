@@ -46,7 +46,7 @@ export function ReviewWorkspaceProcessSection(props: {
             when={processPane.loaded()}
             fallback={<div class="size-6 rounded-full border-2 border-text-weak border-t-transparent animate-spin" />}
           >
-            <Icon name="console" size="medium" />
+            <Icon name="terminal" size="medium" />
             <span class="text-sm">Process not found</span>
           </Show>
         </div>

@@ -151,8 +151,8 @@ function SwitcherMetadataCard(props: { item: SwitcherItem }) {
         <MetadataRow icon="folder" label="Project" value={fallback(props.item.projectLabel, "Global")} />
         <MetadataRow icon="link" label="Git repo" value={props.item.gitRepo} />
         <MetadataRow icon="branch" label="Branch" value={props.item.gitBranch} />
-        <MetadataRow icon="file-tree" label="Worktree" value={props.item.workspaceDir ?? props.item.projectWorktree} />
-        <MetadataRow icon="laptop" label="Workspace" value={fallback(props.item.workspaceLabel, "Global")} />
+        <MetadataRow icon="worktree" label="Worktree" value={props.item.workspaceDir ?? props.item.projectWorktree} />
+        <MetadataRow icon="monitor" label="Workspace" value={fallback(props.item.workspaceLabel, "Global")} />
       </div>
     </div>
   )

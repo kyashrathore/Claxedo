@@ -685,7 +685,7 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                       class="absolute left-2 top-2 flex size-5 cursor-grab items-center justify-center rounded border border-border-weak-base/35 bg-background-base/55 text-icon-weak-base opacity-0 backdrop-blur-sm transition-opacity duration-100 hover:opacity-100 active:cursor-grabbing"
                       style={{ "pointer-events": "auto" }}
                     >
-                      <Icon name="dot-grid" size="small" />
+                      <Icon name="three-dots" size="small" />
                     </div>
                   </div>
                 )}

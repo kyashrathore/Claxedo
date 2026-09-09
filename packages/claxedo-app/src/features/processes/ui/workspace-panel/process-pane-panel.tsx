@@ -234,7 +234,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                         when={status() === "crashed"}
                         fallback={
                           <>
-                            <Icon name="console" size="medium" />
+                            <Icon name="terminal" size="medium" />
                             <div class="flex flex-col items-center gap-1.5">
                               <span class="text-compact text-text-base font-medium">{props.config.name}</span>
                               <span class="text-xs text-text-weaker">Process not running</span>
@@ -299,7 +299,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
                       </Show>
                     }
                   >
-                    <Icon name="console" size="medium" />
+                    <Icon name="terminal" size="medium" />
                     <span class="text-sm">Process hidden while tab is inactive</span>
                   </Show>
                 </div>

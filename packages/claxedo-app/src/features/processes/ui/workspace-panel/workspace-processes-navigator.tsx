@@ -118,7 +118,7 @@ export function WorkspaceProcessesNavigator(props: {
   return (
     <div class="flex size-full min-w-0 flex-col bg-background-base">
       <div class="flex h-9 shrink-0 items-center gap-1 border-b border-border-weak-base px-2">
-        <Icon name="console" size="small" />
+        <Icon name="terminal" size="small" />
         <div class="min-w-0 flex-1 truncate text-sm font-medium text-text-base">Processes</div>
         <Show when={canMutate() && configs().length > 0}>
           <Tooltip value={hasRunning() ? "Stop all processes" : "Start all processes"}>
@@ -158,7 +158,7 @@ export function WorkspaceProcessesNavigator(props: {
             when={configs().length > 0}
             fallback={
               <div class="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-sm text-text-weak">
-                <Icon name="console" size="medium" />
+                <Icon name="terminal" size="medium" />
                 <div>No processes configured.</div>
                 <Show when={canMutate()}>
                   <button

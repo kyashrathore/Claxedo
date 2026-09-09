@@ -70,7 +70,7 @@ export function VersionHistory(props: {
         class:
           "flex size-7 items-center justify-center rounded text-icon-weak-base hover:bg-surface-raised-base focus-visible:outline focus-visible:outline-2",
       }}
-      trigger={<Icon name="dot-grid" size="small" />}
+      trigger={<Icon name="three-dots" size="small" />}
       onOpenChange={(open) => {
         if (open && !snapshots().length) void load()
       }}

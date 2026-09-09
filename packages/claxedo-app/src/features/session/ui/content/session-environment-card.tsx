@@ -479,7 +479,7 @@ function ProcessesRow(props: {
                       aria-label={`Open ${process.name} terminal`}
                       onClick={() => props.onOpenProcessTerminal?.(process)}
                     >
-                      <Icon name="console" size="small" />
+                      <Icon name="terminal" size="small" />
                     </button>
                   </Show>
                 </div>

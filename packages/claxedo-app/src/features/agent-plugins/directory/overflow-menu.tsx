@@ -18,7 +18,7 @@ export function OverflowMenu(props: { label: string; children: JSX.Element }) {
         title={props.label}
         class={`${GHOST_ICON_BUTTON} size-6`}
       >
-        <Icon name="more-horizontal" size="small" />
+        <Icon name="three-dots" size="small" />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         {/* Bounded and end-aligned under its trigger: an unbounded menu grew to

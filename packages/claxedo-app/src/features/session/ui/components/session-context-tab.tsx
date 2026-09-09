@@ -103,7 +103,7 @@ function RawMessage(props: {
             </div>
             <div class="flex items-center gap-3">
               <div class="shrink-0 text-12-regular text-text-weak">{props.time(props.message.time?.created)}</div>
-              <Icon name="chevron-grabber-vertical" size="small" class="shrink-0 text-text-weak" />
+              <Icon name="chevron-down" size="small" data-slot="accordion-caret" class="shrink-0 text-text-weak" />
             </div>
           </div>
         </Accordion.Trigger>

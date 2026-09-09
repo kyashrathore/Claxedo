@@ -333,7 +333,7 @@ export function SessionReviewV2SidebarToggle(props: { opened: boolean; disabled?
         aria-expanded={props.opened}
         disabled={props.disabled}
         onClick={props.onToggle}
-        icon={<Icon name="filetree" />}
+        icon={<Icon name="file-tree" />}
       />
     </TooltipV2>
   )

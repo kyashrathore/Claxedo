@@ -338,7 +338,7 @@ function L2HeaderStrip(props: {
         <Match when={activeFileTab()}>
           {(tab) => (
             <div data-l2-context="file" class="flex min-w-0 flex-1 items-center gap-2 px-2">
-              <Icon name="file-text" size="small" class="shrink-0 text-icon-weak-base" />
+              <Icon name="document-text" size="small" class="shrink-0 text-icon-weak-base" />
               <span class="truncate font-mono text-xs text-text-weak" title={tab().path}>
                 {tab().path}
               </span>

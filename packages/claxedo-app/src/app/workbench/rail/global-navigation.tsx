@@ -30,7 +30,7 @@ export function GlobalNavigation(props: {
   )
 }
 
-function NavigationRow(props: { icon: "plus-small" | "page" | "dot-grid" | "marketplace"; label: string; onClick?: () => void; active?: boolean; testId?: string; ariaLabel?: string }) {
+function NavigationRow(props: { icon: "plus-small" | "page" | "three-dots" | "marketplace"; label: string; onClick?: () => void; active?: boolean; testId?: string; ariaLabel?: string }) {
   return (
     <button
       type="button"

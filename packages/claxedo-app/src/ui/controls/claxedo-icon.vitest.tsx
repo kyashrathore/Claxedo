@@ -1,10 +1,20 @@
 import { cleanup, render } from "@solidjs/testing-library"
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import spriteMarkup from "../../../../ui/src/assets/icons/codex/sprite.svg?raw"
 import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton } from "@/ui/controls/claxedo-icon-button"
 
 describe("ClaxedoIcon", () => {
-  afterEach(() => cleanup())
+  beforeEach(() => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(spriteMarkup)),
+    )
+  })
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
 
   test("refreshes a stale shared sprite before rendering worktree icons", () => {
     const sprite = document.createElementNS("http://www.w3.org/2000/svg", "svg")
@@ -22,19 +32,20 @@ describe("ClaxedoIcon", () => {
   test("renders mapped Codex glyphs from the extracted sprite", () => {
     const view = render(() => (
       <>
-        <ClaxedoIcon name="play" />
         <ClaxedoIcon name="archive" />
         <ClaxedoIcon name="changes" />
         <ClaxedoIcon name="folders" />
       </>
     ))
 
-    expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-068"]')).toBeTruthy()
     expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-144"]')).toBeTruthy()
     // `changes` shares the boxed ± with `review` — see the note on the entry in
     // `@/ui/icons/codex`. It was codex-20-120 until 5197e0704 re-pointed it.
     expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-071"]')).toBeTruthy()
-    expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-057"]')).toBeTruthy()
+    expect(view.container.querySelector('[data-icon="folders"] use')).toHaveAttribute(
+      "href",
+      expect.stringMatching(/#codex-icon-sprite-codex-native-folder-on-folder-light-16$/),
+    )
   })
 
   test("maps former upstream glyphs through the active Codex library", () => {
@@ -60,13 +71,11 @@ describe("ClaxedoIcon", () => {
   test("keeps exact Codex state glyphs in the local custom sprite", () => {
     const view = render(() => (
       <>
-        <ClaxedoIcon name="dot-grid" />
-        <ClaxedoIcon name="file-text" />
+        <ClaxedoIcon name="three-dots" />
+        <ClaxedoIcon name="document-text" />
         <ClaxedoIcon name="page-plus" />
         <ClaxedoIcon name="copy" />
         <ClaxedoIcon name="folder" />
-        <ClaxedoIcon name="pin" />
-        <ClaxedoIcon name="pin-filled" />
         <ClaxedoIcon name="folder-open" />
         <ClaxedoIcon name="expand" />
         <ClaxedoIcon name="collapse" />
@@ -81,18 +90,19 @@ describe("ClaxedoIcon", () => {
       </>
     ))
 
-    expect(view.container.querySelector('use[href="#claxedo-icon-more-horizontal"]')).toBeTruthy()
-    expect(view.container.querySelector('use[href="#claxedo-icon-file"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href="#claxedo-icon-three-dots"]')).toBeTruthy()
+    expect(view.container.querySelector('[data-icon="document-text"] use')).toHaveAttribute(
+      "href",
+      expect.stringMatching(/#codex-icon-sprite-codex-native-text-document-light-20$/),
+    )
     expect(view.container.querySelector('use[href="#claxedo-icon-page-plus"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-copy"]')).toHaveAttribute(
       "transform",
       "translate(-2 -2) scale(1.2)",
     )
     expect(view.container.querySelector('use[href="#claxedo-icon-folder"]')).toBeTruthy()
-    expect(view.container.querySelector('use[href="#claxedo-icon-pin"]')).toBeTruthy()
-    expect(view.container.querySelector('use[href="#claxedo-icon-pin-filled"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-folder-open"]')).toBeTruthy()
-    expect(view.container.querySelector('use[href="#claxedo-icon-panel-expand"]')).toBeTruthy()
+    expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-native-arrow-up-right-arrow-down-left-sm-light-20"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-panel-restore"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-expand-all"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-collapse-all"]')).toBeTruthy()
@@ -113,7 +123,6 @@ describe("ClaxedoIcon", () => {
         <ClaxedoIcon name="sidebar-active" />
         <ClaxedoIcon name="layout-right-partial" />
         <ClaxedoIcon name="layout-right-full" />
-        <ClaxedoIcon name="sidebar-right" />
       </>
     ))
 
@@ -137,12 +146,11 @@ describe("ClaxedoIcon", () => {
       "href",
       expect.stringMatching(/#codex-icon-sprite-codex-20-035$/),
     )
-    expect(view.container.querySelector('[data-icon="sidebar-right"] use')).toHaveAttribute(
-      "href",
-      expect.stringMatching(/#codex-icon-sprite-codex-20-034$/),
-    )
-    for (const name of ["layout-right-partial", "layout-right-full", "sidebar-right"]) {
-      expect(view.container.querySelector(`[data-icon="${name}"] use`)).toHaveAttribute("transform", "rotate(180 10 10)")
+    for (const name of ["layout-right-partial", "layout-right-full"]) {
+      expect(view.container.querySelector(`[data-icon="${name}"] use`)).toHaveAttribute(
+        "transform",
+        "rotate(180 10 10)",
+      )
     }
   })
 
@@ -159,7 +167,10 @@ describe("ClaxedoIcon", () => {
       "persistent",
     )
     expect(view.container.querySelector('use[href$="#codex-icon-sprite-codex-20-004"]')).toBeTruthy()
-    expect(view.container.querySelector('button[data-icon="sidebar"]')).toHaveAttribute("data-icon-interaction", "binary")
+    expect(view.container.querySelector('button[data-icon="sidebar"]')).toHaveAttribute(
+      "data-icon-interaction",
+      "binary",
+    )
   })
 
   // The send arrow sits inside a filled circle and has to stay legible against

@@ -406,7 +406,7 @@ function isMcpTool(tool: string, input?: Record<string, unknown>) {
 const INTENT_ICONS: Record<string, IconProps["name"]> = {
   edit: "pencil-line",
   read: "glasses",
-  shell: "terminal-square",
+  shell: "terminal",
   search: "magnifying-glass",
   fetch: "window-cursor",
   delete: "trash",
@@ -427,7 +427,7 @@ function genericToolIcon(tool: string, input?: Record<string, unknown>): IconPro
     case "command":
     case "shell":
     case "local_shell":
-      return "terminal-square"
+      return "terminal"
     case "webfetch":
     case "web_fetch":
       return "window-cursor"

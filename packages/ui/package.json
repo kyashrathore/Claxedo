@@ -62,9 +62,12 @@
     "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "dev": "vite",
     "generate:tailwind": "bun run script/tailwind.ts",
+    "extract:icons": "bun run script/extract-opencode-icons.ts",
     "generate:v2-oc2": "bun run script/build-oc2-v2-overrides.ts"
   },
   "devDependencies": {
+    "@babel/parser": "7.29.7",
+    "@babel/types": "7.29.7",
     "@solidjs/meta": "catalog:",
     "@tsconfig/node22": "catalog:",
     "@types/bun": "catalog:",

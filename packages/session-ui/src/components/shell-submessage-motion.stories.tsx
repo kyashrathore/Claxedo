@@ -204,7 +204,7 @@ export const Playground = {
         <style>{shellCss}</style>
 
         <BasicTool
-          icon="console"
+          icon="terminal"
           defaultOpen
           trigger={
             <div data-slot="basic-tool-tool-info-structured">

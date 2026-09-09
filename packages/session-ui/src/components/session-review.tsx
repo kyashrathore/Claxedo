@@ -110,7 +110,7 @@ function ReviewCommentMenu(props: {
       <DropdownMenu gutter={4} placement="bottom-end">
         <DropdownMenu.Trigger
           as={IconButton}
-          icon="dot-grid"
+          icon="three-dots"
           variant="ghost"
           size="small"
           class="size-6 rounded-md"
@@ -340,7 +340,7 @@ export const SessionReview = (props: SessionReviewProps) => {
           <Show when={hasDiffs()}>
             <Button
               size="small"
-              icon="chevron-grabber-vertical"
+              icon={open().length > 0 ? "collapse-all" : "expand-all"}
               class="w-[106px] justify-start"
               onClick={handleExpandOrCollapseAll}
             >

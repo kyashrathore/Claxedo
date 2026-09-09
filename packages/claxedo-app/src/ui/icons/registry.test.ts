@@ -1,3 +1,5 @@
+import { HARNESS_BRAND_ARTWORK } from "@opencode-ai/ui/harness-brand-artwork"
+import { CODEX_CUSTOM_ARTWORK } from "@opencode-ai/ui/codex-custom-artwork"
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { appIconNames } from "@/ui/icons/catalog"
@@ -33,13 +35,25 @@ const customGlyphTargets = new Map(
 )
 
 /** The artwork itself: `name: \`<path …>\`` entries in `claxedoIcons`. */
-const drawnGlyphs = new Map(
-  [...(componentSource.split("const claxedoIcons = {")[1]?.split(/^}/m)[0] ?? "").matchAll(
+const drawnGlyphs = new Map([
+  ...Object.entries(HARNESS_BRAND_ARTWORK),
+  ...Object.entries(CODEX_CUSTOM_ARTWORK),
+  ...[...(componentSource.split("const claxedoIcons = {")[1]?.split(/^}/m)[0] ?? "").matchAll(
     /^ {2}"?([a-zA-Z0-9-]+)"?:\s*`([^`]*)`/gm,
   )].map((m) => [m[1], m[2]] as const),
-)
+])
 
 describe("icon library registry", () => {
+  test("uses the approved checklist artwork for the task concept", () => {
+    expect(openCodeIconLibrary.resolve("task")).toBe("checklist")
+  })
+  test("process metadata uses the terminal concept, distinct from a subagent", () => {
+    for (const library of [codexIconLibrary, openCodeIconLibrary]) {
+      expect(library.resolve("process")).toBe(library.resolve("terminal"))
+      expect(library.resolve("subagent")).not.toBe(library.resolve("process"))
+    }
+  })
+
   test("uses the same name when the target library exposes it", () => {
     const library = defineIconLibrary<"add" | "remove", "add" | "trash">({
       name: "example",
@@ -73,10 +87,10 @@ describe("resolved glyphs exist as real assets", () => {
     expect(spriteSymbols.size).toBeGreaterThan(100)
   })
 
-  test("every numbered id resolves to a symbol in the sprite", () => {
+  test("every extracted id resolves to a symbol in the sprite", () => {
     const missing = appIconNames
       .map((icon) => [icon, codexIconLibrary.resolve(icon)] as const)
-      .filter(([, glyph]) => glyph.startsWith("codex-20-"))
+      .filter(([, glyph]) => !glyph.startsWith("codex-custom-"))
       .filter(([, glyph]) => !spriteSymbols.has(glyph))
       .map(([icon, glyph]) => `${icon} -> ${glyph} (not in sprite.svg)`)
 
@@ -93,11 +107,11 @@ describe("resolved glyphs exist as real assets", () => {
     expect(missing).toEqual([])
   })
 
-  test("every glyph id is either numbered or custom — no third shape", () => {
+  test("every glyph id resolves to an extracted asset or a custom glyph", () => {
     for (const icon of appIconNames) {
       const glyph = codexIconLibrary.resolve(icon)
       expect(
-        glyph.startsWith("codex-20-") || glyph.startsWith("codex-custom-"),
+        spriteSymbols.has(glyph) || customGlyphs.has(glyph),
         `${icon} -> ${glyph}`,
       ).toBe(true)
     }

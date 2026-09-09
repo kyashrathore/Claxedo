@@ -563,7 +563,7 @@ export function getToolInfo(
     }
     case "bash":
       return {
-        icon: "terminal-square",
+        icon: "terminal",
         title: i18n.t("ui.tool.shell"),
         subtitle: input.command,
       }
@@ -1295,7 +1295,7 @@ const WEB_TOOL_NAMES = new Set(["webfetch", "websearch", "web_search"])
 function workGroupIcon(parts: AgentToolPart[]): IconProps["name"] {
   if (parts.some((p) => EDIT_TOOL_NAMES.has(p.tool))) return "code-lines"
   if (parts.some((p) => WEB_TOOL_NAMES.has(p.tool))) return "window-cursor"
-  return "terminal-square"
+  return "terminal"
 }
 
 // Segmented summary: present-continuous while running, past tense when settled;
@@ -1824,7 +1824,7 @@ function ToolFileAccordion(props: { path: string; actions?: JSX.Element; childre
               </div>
               <div data-slot="apply-patch-trigger-actions">
                 {props.actions}
-                <Icon name="chevron-grabber-vertical" size="small" />
+                <Icon name="chevron-down" size="small" data-slot="accordion-caret" />
               </div>
             </div>
           </Accordion.Trigger>
@@ -2357,7 +2357,7 @@ ToolRegistry.register({
             </div>
             <Show when={!pending() && url()}>
               <div data-component="tool-action">
-                <Icon name="square-arrow-top-right" size="small" />
+                <Icon name="open-external" size="small" />
               </div>
             </Show>
           </div>
@@ -2507,7 +2507,7 @@ function SubagentTaskCard(props: {
       </div>
       <Show when={openable() || props.subagent.toolCallRole === "interaction"}>
         <div data-component="task-tool-action" class="ui-task-tool-action">
-          <Icon name={props.subagent.toolCallRole === "interaction" ? "arrow-up" : "square-arrow-top-right"} size="small" />
+          <Icon name={props.subagent.toolCallRole === "interaction" ? "arrow-up" : "open-external"} size="small" />
         </div>
       </Show>
     </div>
@@ -2596,7 +2596,7 @@ ToolRegistry.register({
       <>
       <BasicTool
         {...props}
-        icon="terminal-square"
+        icon="terminal"
         trigger={(open) => (
           <div data-slot="basic-tool-tool-info-structured">
             <div data-slot="basic-tool-tool-info-main">
@@ -2935,7 +2935,7 @@ ToolRegistry.register({
                                       <DiffChanges changes={{ additions: file.additions, deletions: file.deletions }} />
                                     </Match>
                                   </Switch>
-                                  <Icon name="chevron-grabber-vertical" size="small" />
+                                  <Icon name="chevron-down" size="small" data-slot="accordion-caret" />
                                 </div>
                               </div>
                             </Accordion.Trigger>

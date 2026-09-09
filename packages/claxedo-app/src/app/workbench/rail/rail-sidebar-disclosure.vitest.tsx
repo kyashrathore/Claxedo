@@ -248,7 +248,7 @@ describe("RailSidebar disclosure controls", () => {
       expect(section!.textContent).toContain("Cloud feature")
       expect(section!.querySelector('[data-testid="section-kind-icon"]')).toHaveAttribute("data-icon", "cloud")
       const local = document.querySelector('[data-testid="workspace-header"][data-workspace-id="/repo/main"]')
-      expect(local!.querySelector('[data-testid="section-kind-icon"]')).toHaveAttribute("data-icon", "laptop")
+      expect(local!.querySelector('[data-testid="section-kind-icon"]')).toHaveAttribute("data-icon", "monitor")
     })
   })
 

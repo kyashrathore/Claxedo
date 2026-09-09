@@ -1904,7 +1904,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                       >
                         <DropdownMenu.Trigger
                           as={IconButton}
-                          icon="dot-grid"
+                          icon="three-dots"
                           variant="ghost"
                           class="size-6 rounded-md data-[expanded]:bg-surface-base-active"
                           aria-label={language.t("common.moreOptions")}

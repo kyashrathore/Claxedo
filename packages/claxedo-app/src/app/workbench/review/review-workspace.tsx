@@ -686,7 +686,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
                     ))
                   }
                 >
-                  <Icon name="file-text" size="small" />
+                  <Icon name="document-text" size="small" />
                   File
                 </DropdownMenu.Item>
                 <DropdownMenu.Item onSelect={() => openContextTab(props.sessionId)}>

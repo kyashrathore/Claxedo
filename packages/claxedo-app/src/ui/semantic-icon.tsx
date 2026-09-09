@@ -22,7 +22,7 @@ export const SEMANTIC_ICON = {
   /** File browsing — Codex's overlapping-folder explorer glyph. */
   files: "folders",
   /** Running processes — the panel's Processes tab. */
-  processes: "console",
+  processes: "process",
   /** An interactive terminal. */
   terminal: "terminal",
   /** A project / repository directory. The folder glyph belongs to this concept only. */
@@ -41,7 +41,7 @@ export const SEMANTIC_ICON = {
   /** A source repository hosted on GitHub. */
   repository: "github",
   /** Opens a destination outside the app (external / web link). */
-  openExternal: "square-arrow-top-right",
+  openExternal: "open-external",
   /** The index — files already staged for the next commit. */
   staged: "check-small",
   /** Recording a commit. */

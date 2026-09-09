@@ -388,7 +388,7 @@ export function AddProcessDialog(props: AddProcessDialogProps) {
                 class="font-mono text-xs"
               />
               <div class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface-inset-base border border-border-weak-base">
-                <Icon name="console" size="small" class="text-text-weaker shrink-0" />
+                <Icon name="terminal" size="small" class="text-text-weaker shrink-0" />
                 <p class="text-xs font-mono text-text-weak">
                   <Show
                     when={store.portInject.trim().startsWith("-")}

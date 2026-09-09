@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createEffect, createSignal } from "solid-js"
+import { Icon } from "./icon"
 import * as mod from "./accordion"
 import { create } from "../storybook/scaffold"
 
@@ -64,23 +65,17 @@ export const Basic = {
       setValue(props.value)
     })
 
-    const current = () => {
-      if (props.multiple) {
-        if (Array.isArray(value())) return value()
-        if (value()) return [value()]
-        return []
-      }
-
-      if (Array.isArray(value())) return value()[0]
-      return value()
-    }
+    // Kobalte uses an array of selected item values even in single-open mode.
+    const current = () => (Array.isArray(value()) ? value() : value() ? [value()] : [])
 
     return (
       <div style={{ display: "grid", gap: "8px", width: "420px" }}>
         <mod.Accordion collapsible={props.collapsible} multiple={props.multiple} value={current()} onChange={setValue}>
           <mod.Accordion.Item value="first">
             <mod.Accordion.Header>
-              <mod.Accordion.Trigger>First</mod.Accordion.Trigger>
+              <mod.Accordion.Trigger>
+                First <Icon name="chevron-down" size="small" data-slot="accordion-caret" />
+              </mod.Accordion.Trigger>
             </mod.Accordion.Header>
             <mod.Accordion.Content>
               <div style={{ color: "var(--text-weak)", padding: "8px 0" }}>Accordion content.</div>
@@ -88,7 +83,9 @@ export const Basic = {
           </mod.Accordion.Item>
           <mod.Accordion.Item value="second">
             <mod.Accordion.Header>
-              <mod.Accordion.Trigger>Second</mod.Accordion.Trigger>
+              <mod.Accordion.Trigger>
+                Second <Icon name="chevron-down" size="small" data-slot="accordion-caret" />
+              </mod.Accordion.Trigger>
             </mod.Accordion.Header>
             <mod.Accordion.Content>
               <div style={{ color: "var(--text-weak)", padding: "8px 0" }}>More content.</div>

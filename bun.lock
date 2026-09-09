@@ -604,6 +604,8 @@
         "solid-list": "catalog:",
       },
       "devDependencies": {
+        "@babel/parser": "7.29.7",
+        "@babel/types": "7.29.7",
         "@solidjs/meta": "catalog:",
         "@tsconfig/node22": "catalog:",
         "@types/bun": "catalog:",

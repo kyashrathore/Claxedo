@@ -358,7 +358,7 @@ export function NewSessionDesignView(props: {
     if (environmentOptions().length > 0) {
       chips.push({
         slot: "context-chip-environment",
-        icon: <Icon name={props.workspaceKind === "cloud" ? "cloud" : "laptop"} size="small" />,
+        icon: <Icon name={props.workspaceKind === "cloud" ? "cloud" : "monitor"} size="small" />,
         label: environmentLabel(props.workspaceKind),
         ariaLabel: "Workspace environment",
         emptyMessage: "No environments",

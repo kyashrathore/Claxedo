@@ -138,7 +138,7 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                           {language.t("settings.tab.shortcuts")}
                         </Tabs.Trigger>
                         <Tabs.Trigger value="terminals">
-                          <Icon name="console" />
+                          <Icon name="terminal" />
                           Terminals
                         </Tabs.Trigger>
                         <Tabs.Trigger value="devices">

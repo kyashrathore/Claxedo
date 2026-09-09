@@ -193,7 +193,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
               when={signed()}
               fallback={
                 <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base" aria-hidden="true">
-                  <Icon name={local() ? "laptop" : "arrow-right"} size="small" />
+                  <Icon name={local() ? "monitor" : "arrow-right"} size="small" />
                 </span>
               }
             >
@@ -234,7 +234,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
                   when={signed()}
                   fallback={
                     <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base">
-                      <Icon name={local() ? "laptop" : "arrow-right"} size="small" />
+                      <Icon name={local() ? "monitor" : "arrow-right"} size="small" />
                     </span>
                   }
                 >

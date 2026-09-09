@@ -16,9 +16,9 @@ export function unhandledReviewWorkspaceTab(tab: never): never {
 const TAB_ICON: Record<ReviewWorkspaceTabKind, ClaxedoIconName> = {
   review: "review",
   context: "circle-half",
-  file: "file-text",
+  file: "document-text",
   browser: "globe",
-  process: "console",
+  process: "process",
 }
 
 // Optical sizing: every icon shares the same 16px slot, but a filled square

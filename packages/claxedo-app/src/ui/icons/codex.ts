@@ -1,3 +1,6 @@
+// Theme-independent choices are selected by resolveIconArtworkLibrary before these family mappings.
+import { PROCESS_ICON_GLYPHS } from "@opencode-ai/ui/process-icon-map"
+
 // ⚠️ Licence risk — see the note in
 // `packages/ui/src/components/codex-icons.tsx`. Every `codex-20-*` id below
 // addresses artwork extracted byte-identically from the proprietary ChatGPT
@@ -22,33 +25,31 @@ export type CodexCustomGlyph =
   | "codex-custom-diff-split"
   | "codex-custom-diff-unified"
   | "codex-custom-expand-all"
-  | "codex-custom-kebab"
   | "codex-custom-magnifying-glass"
   | "codex-custom-magnifying-glass-menu"
   | "codex-custom-marketplace"
   | "codex-custom-mcp"
   | "codex-custom-models"
-  | "codex-custom-more-horizontal"
+  | "codex-custom-three-dots"
   | "codex-custom-openai"
   | "codex-custom-opencode"
-  | "codex-custom-panel-expand"
   | "codex-custom-panel-restore"
   | "codex-custom-page-plus"
-  | "codex-custom-pin"
-  | "codex-custom-pin-filled"
   | "codex-custom-pi"
   | "codex-custom-providers"
   | "codex-custom-send"
   | "codex-custom-stop"
   | "codex-custom-worktree"
 
-export type CodexGlyphName = CodexSpriteGlyph | CodexCustomGlyph
+export type CodexGlyphName = CodexSpriteGlyph | CodexCustomGlyph | `codex-native-${string}`
 
 export const CODEX_ICON_ALIASES = {
-  "align-right": "codex-20-058",
+  ...PROCESS_ICON_GLYPHS.codex,
+  "align-right": "codex-native-arrow-forward-line-vertical-light-16",
+  // Accepted as-is for now (user review, 2026-09-09).
   "arrow-down-to-line": "codex-20-012",
   "arrow-left": "codex-20-033",
-  "arrow-right": "codex-20-058",
+  "arrow-right": "codex-native-arrow-left-lg-light-20",
   "arrow-undo-down": "codex-20-059",
   "arrow-up": "codex-20-002",
   archive: "codex-20-144",
@@ -61,17 +62,18 @@ export const CODEX_ICON_ALIASES = {
   check: "codex-custom-check",
   "check-small": "codex-custom-check",
   checklist: "codex-20-139",
+  // Accepted as-is for now (user review, 2026-09-09).
   "chevron-double-left": "codex-20-001",
+  // Accepted as-is for now (user review, 2026-09-09).
   "chevron-double-right": "codex-20-001",
   "chevron-down": "codex-20-001",
-  "chevron-grabber-vertical": "codex-20-053",
   "chevron-left": "codex-20-001",
   "chevron-right": "codex-20-001",
-  circle: "codex-20-122",
   "circle-alert": "codex-20-008",
+  // Accepted as-is for now (user review, 2026-09-09).
   "circle-ban-sign": "codex-20-121",
-  "circle-check": "codex-20-139",
-  "circle-dashed": "codex-20-122",
+  "circle-check": "codex-native-checkmark-circle-light-16",
+  "circle-dashed": "codex-native-circle-dashed",
   "circle-half": "codex-20-145",
   "circle-x": "codex-20-121",
   claude: "codex-custom-claude",
@@ -79,14 +81,14 @@ export const CODEX_ICON_ALIASES = {
   // the same entry in `packages/ui/src/components/codex-icon-map.tsx`.
   close: "codex-custom-close",
   "close-small": "codex-custom-close-small",
-  cloud: "codex-20-087",
-  "cloud-upload": "codex-20-087",
+  "cloud": "codex-native-cloud-light-16",
+  "cloud-upload": "codex-native-cloud-upload",
   code: "codex-20-022",
+  // Accepted as-is for now (user review, 2026-09-09).
   "code-lines": "codex-20-128",
   collapse: "codex-custom-panel-restore",
   "collapse-all": "codex-custom-collapse-all",
   comment: "codex-20-153",
-  console: "codex-20-050",
   copy: "codex-custom-copy",
   cursor: "codex-custom-cursor",
   // The boxed ±, the same glyph `review` uses — the Changes row opens the review
@@ -99,43 +101,35 @@ export const CODEX_ICON_ALIASES = {
   dash: "codex-20-053",
   discord: "codex-20-153",
   download: "codex-20-012",
-  "dot-grid": "codex-custom-more-horizontal",
   edit: "codex-20-019",
   "edit-small-2": "codex-20-019",
-  enter: "codex-20-002",
-  expand: "codex-custom-panel-expand",
+  "enter": "codex-native-arrow-curved-right-large-typographic-light-20",
+  expand: "codex-native-arrow-up-right-arrow-down-left-sm-light-20",
   "expand-all": "codex-custom-expand-all",
-  eye: "codex-20-106",
+  "eye": "codex-native-eye-light-20",
   file: "codex-custom-file",
-  "file-text": "codex-custom-file",
-  "file-tree": "codex-20-138",
-  "file-tree-active": "codex-20-138",
-  filetree: "codex-20-138",
+  "document-text": "codex-native-text-document-light-20",
   folder: "codex-custom-folder",
-  "folder-add-left": "codex-20-031",
+  "folder-add": "codex-20-031",
   "folder-open": "codex-custom-folder-open",
-  folders: "codex-20-057",
+  folders: "codex-native-folder-on-folder-light-16",
   fork: "codex-20-093",
   gauge: "codex-20-107",
   github: "codex-20-043",
   glasses: "codex-20-048",
   globe: "codex-20-011",
-  "grid-plus": "codex-20-031",
-  hand: "codex-20-115",
   help: "codex-20-007",
-  kebab: "codex-custom-kebab",
-  keyboard: "codex-20-025",
-  laptop: "codex-20-101",
-  "layout-bottom": "codex-20-138",
-  "layout-bottom-full": "codex-20-126",
-  "layout-bottom-partial": "codex-20-138",
+  "keyboard": "codex-native-keyboard-light-20",
+  "inspect-element": "codex-20-109",
+  "layout-bottom": "codex-native-dock-light-16",
   "layout-left": "codex-20-034",
   "layout-left-full": "codex-20-035",
   "layout-left-partial": "codex-20-034",
-  "layout-right": "codex-20-034",
+  // Accepted as-is for now (user review, 2026-09-09).
   "layout-right-full": "codex-20-035",
+  // Accepted as-is for now (user review, 2026-09-09).
   "layout-right-partial": "codex-20-034",
-  link: "codex-20-129",
+  "link": "codex-native-link-light-16",
   magnifying: "codex-custom-magnifying-glass",
   "magnifying-glass": "codex-custom-magnifying-glass",
   "magnifying-glass-menu": "codex-custom-magnifying-glass-menu",
@@ -144,53 +138,45 @@ export const CODEX_ICON_ALIASES = {
   // showed the same mark for Providers and for Models. The extracted sprite has
   // no distinct glyph for any of them; each is drawn locally instead.
   marketplace: "codex-custom-marketplace",
-  maximize: "codex-custom-panel-expand",
+  "maximize": "codex-native-arrow-up-right-arrow-down-left-sm-light-20",
   // The sprite has no MCP mark, so this pointed at codex-20-129 — the same
   // node-graph glyph as `link`, which is why MCP tool rows read as graph
   // nodes. Drawn locally instead, like the other vendor marks.
   mcp: "codex-custom-mcp",
-  menu: "codex-20-097",
   models: "codex-custom-models",
+  // Accepted as-is for now (user review, 2026-09-09).
   monitor: "codex-20-101",
-  "more-horizontal": "codex-custom-more-horizontal",
+  "three-dots": "codex-custom-three-dots",
   "new-session": "codex-20-019",
+  // Accepted as-is for now (user review, 2026-09-09).
   "new-session-active": "codex-20-019",
   openai: "codex-custom-openai",
   opencode: "codex-custom-opencode",
-  "open-file": "codex-20-098",
+  "open-file": "codex-native-open-link-light-16",
   "outline-chevron-down": "codex-20-001",
   "outline-copy": "codex-custom-copy",
-  "outline-dots": "codex-custom-more-horizontal",
-  "outline-reset": "codex-20-078",
   "outline-share": "codex-20-083",
   "outline-sliders": "codex-20-079",
-  "outline-square-arrow": "codex-20-055",
   "outline-xmark": "codex-custom-close",
-  page: "codex-20-098",
+  "page": "codex-native-document-light-20",
   "page-plus": "codex-custom-page-plus",
   pencil: "codex-20-019",
   "pencil-line": "codex-20-019",
-  photo: "codex-20-047",
-  pin: "codex-custom-pin",
-  "pin-filled": "codex-custom-pin-filled",
+  "photo": "codex-native-photo-light-20",
   pi: "codex-custom-pi",
-  play: "codex-20-068",
   plus: "codex-20-006",
   "plus-small": "codex-20-006",
-  process: "codex-20-069",
-  "process-command": "codex-20-050",
-  "process-cwd": "codex-20-152",
-  "process-name": "codex-20-069",
   prompt: "codex-20-153",
   providers: "codex-custom-providers",
   reload: "codex-20-004",
   reset: "codex-20-078",
   review: "codex-20-071",
+  // Accepted as-is for now (user review, 2026-09-09).
   "review-active": "codex-20-071",
   "scroll-to-latest": "codex-20-002",
+  // Accepted as-is for now (user review, 2026-09-09).
   server: "codex-20-127",
   send: "codex-custom-send",
-  selector: "codex-20-001",
   settings: "codex-20-051",
   "settings-gear": "codex-20-051",
   // Kept in step with packages/ui's table (codex-icon-map.test.ts enforces it):
@@ -200,48 +186,41 @@ export const CODEX_ICON_ALIASES = {
   shield: "codex-20-116",
   sidebar: "codex-20-034",
   "sidebar-active": "codex-20-035",
-  "sidebar-right": "codex-20-034",
   sliders: "codex-20-079",
   speech: "codex-20-153",
   "speech-bubble": "codex-20-153",
   split: "codex-custom-diff-split",
-  "square-arrow-top-right": "codex-20-055",
-  status: "codex-20-122",
-  "status-active": "codex-20-122",
+  "open-external": "codex-20-055",
   stop: "codex-custom-stop",
-  subagent: "codex-20-110",
   task: "codex-20-139",
   terminal: "codex-20-050",
+  // Raw Codex source mapping. The shared artwork policy selects OpenCode
+  // for both terminal states in every theme.
   "terminal-active": "codex-20-050",
-  "terminal-square": "codex-20-050",
   trash: "codex-20-080",
   unified: "codex-custom-diff-unified",
   warning: "codex-20-082",
-  "window-cursor": "codex-20-109",
-  workspace: "codex-20-032",
-  "workspace-isolated": "codex-20-140",
-  "workspace-new": "codex-20-032",
+  "window-cursor": "codex-native-web-browser-cursor-light-16",
+  "workspace-new": "codex-native-folder-add",
   worktree: "codex-custom-worktree",
   "xmark-small": "codex-custom-close-small",
 } as const satisfies Record<AppIconName, CodexGlyphName>
 
 export const CODEX_ICON_TRANSFORMS = {
+  "enter": "translate(20 0) scale(-1 1)",
+  "arrow-right": "translate(20 0) scale(-1 1)",
   "chevron-double-left": "rotate(180 10 10)",
   "chevron-down": "rotate(90 10 10)",
-  "chevron-grabber-vertical": "rotate(90 10 10)",
   "chevron-left": "rotate(180 10 10)",
   // The custom copy mark occupies an 11-unit box while neighboring toolbar
   // glyphs occupy roughly 14 units. Scale it around the 20-unit grid center so
   // it reads at the same optical size without changing any button geometry.
   copy: "translate(-2 -2) scale(1.2)",
-  "layout-right": "rotate(180 10 10)",
   "layout-right-full": "rotate(180 10 10)",
   "layout-right-partial": "rotate(180 10 10)",
   "outline-chevron-down": "rotate(90 10 10)",
   "outline-copy": "translate(-2 -2) scale(1.2)",
   "scroll-to-latest": "rotate(180 10 10)",
-  "sidebar-right": "rotate(180 10 10)",
-  selector: "rotate(90 10 10)",
 } as const satisfies Partial<Record<AppIconName, string>>
 
 export const codexIconLibrary = defineIconLibrary<AppIconName, CodexGlyphName>({

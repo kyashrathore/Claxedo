@@ -164,3 +164,10 @@ body:not([data-new-layout]) .ui-accordion {
     height: 0;
   }
 }
+/* The trigger's authoritative state controls its own caret, including default-open items. */
+.ui-accordion-trigger [data-slot="accordion-caret"] {
+  rotate: 0deg;
+}
+.ui-accordion-trigger[aria-expanded="true"] [data-slot="accordion-caret"] {
+  rotate: 180deg;
+}

@@ -334,10 +334,10 @@ function sessionRuntimeDisplayKind(session: Pick<Row, "environment" | "project">
   return "local"
 }
 
-function runtimeIcon(kind: RuntimeKind): "cloud" | "server" | "laptop" {
+function runtimeIcon(kind: RuntimeKind): "cloud" | "server" | "monitor" {
   if (kind === "cloud") return "cloud"
   if (kind === "user-hosted") return "server"
-  return "laptop"
+  return "monitor"
 }
 
 function runtimeLabel(kind: RuntimeKind) {
@@ -1570,7 +1570,7 @@ export function RailSidebar(props: RailSidebarProps) {
               aria-label={`More options for ${input.label}`}
               class="flex items-center justify-center size-6 rounded text-icon-base hover:text-text-base hover:bg-surface-base-active transition-colors cursor-pointer border-none bg-transparent"
             >
-              <Icon name="kebab" size="small" class="rotate-90" />
+              <Icon name="three-dots" size="small" />
             </DropdownMenu.Trigger>
             <DropdownMenu.Portal>
               <DropdownMenu.Content class="z-[200]">
