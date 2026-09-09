@@ -17,7 +17,8 @@ export function claudeCommandGrant(
   // An explicit ask policy or a new safety explanation must reach the user.
   if (options.matchedAskRule || options.decisionReason || options.signal.aborted) return
   return JSON.parse(JSON.stringify({
-    directory, mode: mode ?? null, input,
+    directory, mode: mode ?? null,
+    input: Object.fromEntries(Object.entries(input).filter(([key]) => key !== "description")),
     context: Object.fromEntries(Object.entries(options).filter(([key]) => !callbackFields.has(key))),
   })) as CommandGrant
 }

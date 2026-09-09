@@ -116,6 +116,8 @@ for (const decision of ["allow_always", "allow_once", "deny", "reject_always"] a
     expect(requests).toBe(1)
     await run("approved", decision)
     expect(requests).toBe(decision === "allow_always" ? 1 : 2)
+    await run("approved", decision, { input: { command: "printf approved > /tmp/approved/result", description: "A new display label" } })
+    expect(requests).toBe(decision === "allow_always" ? 1 : 3)
     for (const [sessionId, overrides] of [
       ["other", {}],
       ["approved", { directory: "/other" }],
