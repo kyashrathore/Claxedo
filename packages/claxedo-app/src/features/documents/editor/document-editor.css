@@ -1,3 +1,15 @@
+  .document-editor {
+    container-type: inline-size;
+  }
+  /* A desktop window can contain a narrow document pane. Size its gutters
+     from that pane, not the viewport used by the legacy page styles below. */
+  .document-editor .notion-page-shell {
+    padding-inline: clamp(12px, 5cqi, 60px);
+  }
+  .document-editor .document-source-header,
+  .document-editor .document-source textarea {
+    padding-inline: clamp(12px, 3cqi, 24px);
+  }
   .notion-page-shell {
     width: min(100%, 920px);
     margin: 0 auto;

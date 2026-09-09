@@ -624,6 +624,17 @@ test.describe("live real-harness smoke @live", () => {
     await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible()
     const source = page.getByLabel("Document Markdown source")
     await expect(source).toHaveValue(original)
+    const readableSource = async () => {
+      const metrics = await source.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return {
+          textWidth: element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
+          paneWidth: element.closest('main[aria-label="Document editor"]')!.clientWidth,
+        }
+      })
+      expect(metrics.textWidth, "source text must retain useful width beside the open workspace panel").toBeGreaterThanOrEqual(Math.min(200, metrics.paneWidth * 0.7))
+    }
+    await readableSource()
     expect(await fs.readFile(path.join(dir, "repository.md"), "utf8")).toBe(original)
     const edited = "Heading\n=======\n\nEdited through the app: café 日本語 🚀\n\n- first\n- second\n"
     await source.fill(edited)
@@ -653,7 +664,12 @@ test.describe("live real-harness smoke @live", () => {
     expect(await fs.readFile(path.join(neighbor, "repository.md"), "utf8")).toBe(neighborContent)
     await page.reload()
     await expect(source).toHaveValue(edited)
+    await readableSource()
     await page.screenshot({ path: test.info().outputPath("repository-document-after-reload.png") })
+    await page.getByRole("button", { name: "Close workspace panel", exact: true }).click()
+    await expect.poll(async () => (await source.boundingBox())?.width ?? 0).toBeGreaterThan(500)
+    await expect(source).toHaveValue(edited)
+    await page.screenshot({ path: test.info().outputPath("repository-document-expanded.png") })
   })
 
   test("live source control stages, unstages and commits only the selected workspace file", async ({ page }) => {

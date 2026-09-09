@@ -9,9 +9,9 @@ export function SourceMode(props: {
   onTryRich: () => void
 }) {
   return (
-    <section class="flex min-h-0 flex-1 flex-col" aria-labelledby="document-source-label">
-      <div class="flex items-start justify-between gap-4 border-b border-border-weak-base px-6 py-3">
-        <div>
+    <section class="document-source flex min-h-0 min-w-0 flex-1 flex-col" aria-labelledby="document-source-label">
+      <div class="document-source-header flex flex-wrap items-start justify-between gap-4 border-b border-border-weak-base px-6 py-3">
+        <div class="min-w-0 flex-[1_1_12rem]">
           <div id="document-source-label" class="text-sm font-medium text-text-strong">
             Source mode
           </div>

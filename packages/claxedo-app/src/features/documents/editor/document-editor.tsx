@@ -132,7 +132,7 @@ export default function DocumentEditor(props: DocumentEditorProps) {
 
   return (
     <main
-      class="flex size-full min-h-0 flex-col bg-background-base"
+      class="document-editor flex size-full min-h-0 min-w-0 flex-col bg-background-base"
       aria-label="Document editor"
       onKeyDown={(event) => {
         // Autosave already covers this; Cmd+S only exists so the reflex isn't a dead key.
