@@ -19,7 +19,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of ["unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -233,14 +233,16 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
     }
 
     if (flow.startsWith("permission ")) {
-      const decision = flow.slice("permission ".length).replace(" across full restart", "")
+      const decision = flow.slice("permission ".length).replace(" across full restart", "").replace(" redirection", "")
       permissionOutputDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-desktop-permission-"))
       const output = path.join(permissionOutputDir, "result.txt")
       const mode = harness === "Claude" ? "default" : "workspace-write"
       await packaged.page.locator('[data-action="prompt-permission-mode"]').last().click()
       await packaged.page.locator(`[data-permission-mode-row][data-mode="${mode}"]`).click()
       const marker = `DESKTOP_PERMISSION_${Date.now()}`
-      const command = `printf '${marker}' | tee '${output}'`
+      const command = flow.includes("redirection")
+        ? `printf '${marker}' > '${output}'`
+        : `printf '${marker}' | tee '${output}'`
       const creation = packaged.page.waitForResponse((response) =>
         response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
       await compose(input, `Run exactly this shell command once: ${command}. ` +
