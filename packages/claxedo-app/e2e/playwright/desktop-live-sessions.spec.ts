@@ -309,9 +309,18 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
         } catch (error) {
           const history = await fetch(`${serverBase}/session/${session.id}/message${query}`)
           const status = await fetch(`${serverBase}/session/status${query}`)
+          const rendered = await packaged.page.evaluate(() => ({
+            text: document.body.innerText,
+            scroll: Array.from(document.querySelectorAll<HTMLElement>('[data-scrollable]')).map((element) => ({
+              top: element.scrollTop, height: element.clientHeight, contentHeight: element.scrollHeight,
+            })),
+          }))
           await test.info().attach("permission-repeat-state", {
             contentType: "application/json",
-            body: JSON.stringify({ history: await history.json(), statuses: await status.json(), pending: await readPending() }, null, 2),
+            body: JSON.stringify({ history: await history.json(), statuses: await status.json(), pending: await readPending(), rendered }, null, 2),
+          })
+          await test.info().attach("permission-repeat-current-window", {
+            contentType: "image/png", body: await packaged.page.screenshot(),
           })
           throw error
         }
