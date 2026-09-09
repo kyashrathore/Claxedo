@@ -148,7 +148,7 @@ describe("terminal clone recovery on app restart", () => {
     restoreFetch()
   })
 
-  test("clone() preserves buffer and cursor from old entry", async () => {
+  test("clone() discards the old stream checkpoint so the host can restore history", async () => {
     const sdk = createMockSDK()
     const restoreFetch = installFetchMock(sdk)
     const { session, dispose } = createSession(sdk)
@@ -158,7 +158,8 @@ describe("terminal clone recovery on app restart", () => {
 
     const oldId = session.all()[0].id
     // Set buffer and cursor on the PTY entry
-    session.update({ id: oldId, buffer: "hello", cursor: 5 })
+    session.update({ id: oldId, buffer: "hello", cursor: 3_200_000, cols: 100, rows: 30,
+      modeSequences: "\x1b[?2004h", wasAltScreen: true, wasAtBottom: false, scrollY: 20 })
     await tick()
 
     const newId = await session.clone(oldId)
@@ -167,8 +168,12 @@ describe("terminal clone recovery on app restart", () => {
     expect(newId).toBeDefined()
     const entry = session.all()[0]
     expect(entry.id).toBe(newId)
-    expect(entry.buffer).toBe("hello")
-    expect(entry.cursor).toBe(5)
+    expect(entry.buffer).toBeUndefined()
+    expect(entry.cursor).toBeUndefined()
+    expect(entry.modeSequences).toBeUndefined()
+    expect(entry.wasAltScreen).toBeUndefined()
+    expect(entry.wasAtBottom).toBeUndefined()
+    expect(entry.scrollY).toBeUndefined()
 
     dispose()
     restoreFetch()

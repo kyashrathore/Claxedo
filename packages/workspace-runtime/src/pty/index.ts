@@ -291,14 +291,6 @@ export namespace Pty {
     bufferCursor: number
     cursor: number
     /**
-     * This session replaced a lost PTY and its buffer was seeded from disk
-     * history, so the first client to attach should be shown a separator
-     * between the restored content and the fresh shell. Consumed by the first
-     * SUCCESSFUL replay (see connect) — a send that fails leaves it set so the
-     * next attach still marks the seam.
-     */
-    restoredNoticePending: boolean
-    /**
      * Headless emulator mirroring this PTY's output, so a reattaching renderer
      * can be resynced to the modes the RUNNING program actually has set rather
      * than to a snapshot the renderer guessed earlier. See mode-tracker.ts.
@@ -747,7 +739,13 @@ export namespace Pty {
     // Read from disk (an async op) and capped at BUFFER_LIMIT — that is what
     // `session.buffer` can hold, so seeding more would only be trimmed
     // straight back off.
-    const restored = previousPtyId ? await history.snapshot(BUFFER_LIMIT) : ""
+    const restored = previousPtyId ? await history.snapshot(BUFFER_LIMIT - SESSION_RESTORED_NOTICE.length) : ""
+    const notice = shouldMarkRestored({ previousPtyId, restoredLength: restored.length }) ? SESSION_RESTORED_NOTICE : ""
+    // The seam belongs before fresh shell output and inside the stream cursor.
+    // Adding it on attach would place it after an already-drawn prompt, where
+    // the shell's next redraw can erase it or overwrite user input.
+    if (notice) history.append(notice)
+    const restoredBuffer = restored + notice
     const initialCommand = input.initialCommand?.trim() ? agentInitialCommand(input.initialCommand) : undefined
     let initialCommandSent = false
     let initialCommandTimer: ReturnType<typeof setTimeout> | undefined
@@ -773,15 +771,9 @@ export namespace Pty {
     const session: ActiveSession = {
       info,
       process: ptyProcess,
-      buffer: restored,
+      buffer: restoredBuffer,
       bufferCursor: 0,
-      cursor: restored.length,
-      // Deliberately NOT concatenated into `buffer`: the buffer is bounded by
-      // BUFFER_LIMIT and trimmed from the head, so a burst of output before any
-      // client attached would evict the notice first — exactly the seam we want
-      // to mark. Kept as session state and prepended at replay time instead,
-      // which makes it immune to trimming by construction.
-      restoredNoticePending: shouldMarkRestored({ previousPtyId, restoredLength: restored.length }),
+      cursor: restoredBuffer.length,
       // @lydell/node-pty's own default geometry; the client's first resize on attach
       // brings both the pty and this emulator to the real size. Geometry only
       // affects where the emulator wraps, not which modes it records, so a
@@ -1031,19 +1023,12 @@ export namespace Pty {
       return sanitizeReplay(session.buffer.slice(offset))
     })()
 
-    // Append the seam marker AFTER the restored content and before the fresh
-    // shell's first output, so it reads as a rule between the two. Only for a
-    // client that is actually receiving the restored buffer: a reconnect asking
-    // for the live tail (`cursor === -1`) has already seen it, or wants only
-    // what is new, and would get the rule stranded at the bottom.
     // Mode preamble FIRST, from live emulator state. Mode-setting escapes are
     // emitted once at program startup and broadcast away rather than buffered,
     // so a fresh xterm needs them re-asserted on every attach — even when the
     // replay itself is empty (a live-tail reconnect to a running TUI).
     const preamble = session.modeTracker.buildPreamble()
-    const showNotice = session.restoredNoticePending && data.length > 0
-    const body = showNotice ? data + SESSION_RESTORED_NOTICE : data
-    if (!safeReplay(ws, preamble + body)) {
+    if (!safeReplay(ws, preamble + data)) {
       session.subscribers.delete(ws)
       workspaceRuntimeBus.publish({
         type: "pty.stream",
@@ -1055,9 +1040,6 @@ export namespace Pty {
       ws.close()
       return undefined
     }
-    // Consumed only now — a failed send above returns early and leaves the flag
-    // set, so the next attach still marks the seam.
-    if (showNotice) session.restoredNoticePending = false
 
     if (!sendWebSocketWithBackpressure(ws, meta(end), { maxBufferedBytes: WEBSOCKET_BUFFERED_AMOUNT_MAX })) {
       session.subscribers.delete(ws)

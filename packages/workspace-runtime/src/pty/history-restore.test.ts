@@ -155,13 +155,16 @@ describe("cold restore: replacing a lost PTY", () => {
     Pty.connect(replacement.id, firstClient.ws)
     expect(firstClient.text()).toContain("Session contents restored")
 
-    // A second attach is not a new restore — the seam has already been marked.
+    // The same stream checkpoint must not replay the seam a second time.
     const secondClient = socket()
-    Pty.connect(replacement.id, secondClient.ws)
+    Pty.connect(replacement.id, secondClient.ws, Pty.snapshot(replacement.id).length)
     expect(secondClient.text()).not.toContain("Session contents restored")
+    const freshClient = socket()
+    Pty.connect(replacement.id, freshClient.ws, 0)
+    expect(freshClient.text().split("Session contents restored")).toHaveLength(2)
   })
 
-  test("the separator sits AFTER the restored content, not before it", async () => {
+  test("the separator sits between restored content and fresh shell output", async () => {
     const { Pty } = await import("./index")
 
     const first = await Pty.create({ cwd: tmpDir, title: "before" })
@@ -175,11 +178,13 @@ describe("cold restore: replacing a lost PTY", () => {
       title: "after",
       env: { previousPtyId: first.id },
     })
+    fakeProcesses.get(replacement.pid)!.dataHandlers.forEach((handler) => handler("NEW-PROMPT"))
     const client = socket()
     Pty.connect(replacement.id, client.ws)
 
     const text = client.text()
     expect(text.indexOf("OLD-CONTENT")).toBeLessThan(text.indexOf("Session contents restored"))
+    expect(text.indexOf("Session contents restored")).toBeLessThan(text.indexOf("NEW-PROMPT"))
   })
 
   test("a session that replaced nothing is NOT marked as restored", async () => {

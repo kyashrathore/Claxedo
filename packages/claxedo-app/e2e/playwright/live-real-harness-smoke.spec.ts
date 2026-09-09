@@ -668,6 +668,75 @@ test.describe("live real-harness smoke @live", () => {
     await page.screenshot({ path: test.info().outputPath("terminal-exited-scrollback.png") })
   })
 
+  test("live terminal recovers a replacement shell after long output and runtime restart", async ({ page }) => {
+    test.setTimeout(120_000)
+    const streams: { url: string; bytes: number; notice: boolean; tail: string }[] = []
+    page.on("websocket", (socket) => {
+      if (!socket.url().includes("/pty/")) return
+      socket.on("framereceived", ({ payload }) => {
+        const value = payload.toString()
+        streams.push({ url: socket.url(), bytes: value.length, notice: value.includes("Session contents restored"), tail: value.slice(-8192) })
+      })
+    })
+    await page.addInitScript(() => {
+      const host = window as typeof window & { terminalAudit?: () => string; noticeWrites?: unknown[] }
+      host.noticeWrites = []
+      let noticeSeen = false
+      Object.defineProperty(window, "__CLAXEDO_AGENT_APP_BENCHMARK__", { value: {
+        terminalWriteParsed(receipt: { data: string; dimensions(): { cols: number; rows: number }; serialize(): string }) {
+          host.terminalAudit = receipt.serialize
+          if (receipt.data.includes("Session contents restored")) noticeSeen = true
+          if (noticeSeen) host.noticeWrites!.push({ data: receipt.data.slice(-8192), ...receipt.dimensions(), noticeVisible: receipt.serialize().includes("Session contents restored") })
+        },
+      } })
+    })
+    const screen = () => page.evaluate(() => (window as typeof window & { terminalAudit?: () => string }).terminalAudit?.())
+    const dir = await makeWorkspace("terminal-replacement")
+    await seedOneProject(page, dir)
+    await openDraftPrompt(page, dir)
+    await page.locator('[data-testid="workspace-scope-new-terminal"]').click()
+    const created = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/pty"))
+    await page.locator('[data-component="terminal-new-launchers"] [data-launcher-id="shell"]').click()
+    const response = await created
+    expect(response.ok()).toBe(true)
+    const old = await response.json() as { id: string; pid: number }
+    const selector = `[data-testid="terminal-pane"][data-terminal-id="${old.id}"]`
+    const pane = page.locator(selector)
+    await expect(pane).toHaveAttribute("data-terminal-connected", "true")
+    await pane.locator(".xterm-helper-textarea").focus()
+    // Real paced output exceeds the host's bounded replay window. Its absolute
+    // cursor must not become the cursor of a newly created terminal stream.
+    await page.keyboard.type(`python3 -c 'import sys,time; [(sys.stdout.write(("x"*79+"\\n")*1000),sys.stdout.flush(),time.sleep(0.1)) for _ in range(40)]'; printf '\\x50REVIOUS_HISTORY\\n'`)
+    await page.keyboard.press("Enter")
+    await expect.poll(screen, { timeout: 30_000 }).toContain("PREVIOUS_HISTORY")
+    const url = page.url()
+    await page.goto("about:blank")
+    await stopServer()
+    await startServer(dataDir)
+    const replaced = page.waitForResponse((value) => value.request().method() === "POST" && new URL(value.url()).pathname.endsWith("/pty"))
+    await page.goto(url)
+    const replacementResponse = await replaced
+    expect(replacementResponse.ok()).toBe(true)
+    const replacement = await replacementResponse.json() as { id: string; pid: number }
+    expect(replacement.id).not.toBe(old.id)
+    expect(replacement.pid).not.toBe(old.pid)
+    const restored = page.locator(`[data-testid="terminal-pane"][data-terminal-id="${replacement.id}"]`)
+    await expect(restored).toHaveAttribute("data-terminal-connected", "true")
+    await expect.poll(screen).toContain("Session contents restored").finally(async () => {
+      await test.info().attach("replacement-streams", { body: JSON.stringify(streams), contentType: "application/json" })
+      await test.info().attach("replacement-notice-parsing", { body: JSON.stringify(await page.evaluate(() => (window as typeof window & { noticeWrites?: unknown[] }).noticeWrites)), contentType: "application/json" })
+    })
+    await expect.poll(screen).toContain("PREVIOUS_HISTORY")
+    await restored.locator(".xterm-helper-textarea").focus()
+    await page.keyboard.type("printf '\\x52EPLACEMENT_READY\\n'; pwd > replacement-cwd")
+    await page.keyboard.press("Enter")
+    await expect.poll(screen).toContain("REPLACEMENT_READY")
+    await expect.poll(() => fs.readFile(path.join(dir, "replacement-cwd"), "utf8").catch(() => "")).toBe(`${dir}\n`)
+    expect((await screen())?.split("Session contents restored")).toHaveLength(2)
+    expect(await screen()).toContain("PREVIOUS_HISTORY")
+    await page.screenshot({ path: test.info().outputPath("terminal-replacement.png") })
+  })
+
   test("live terminal retains output produced while the browser is away", async ({ page }) => {
     await page.addInitScript(() => {
       const host = window as typeof window & { terminalAudit?: () => string }

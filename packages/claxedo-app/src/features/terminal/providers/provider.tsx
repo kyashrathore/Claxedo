@@ -529,6 +529,14 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
           id: clone.id,
           title: clone.title ?? pty.title,
           cwd: clone.cwd ?? pty.cwd,
+          // The host owns restored history for this new stream. An old
+          // absolute cursor can exceed its bounded history and skip replay.
+          buffer: undefined,
+          cursor: undefined,
+          modeSequences: undefined,
+          wasAltScreen: undefined,
+          wasAtBottom: undefined,
+          scrollY: undefined,
           // The replacement shell is brand new — no TUI is running behind it.
           // The mount reads this to skip the live-TUI redraw paths that would
           // otherwise clear the screen we are about to restore into.
