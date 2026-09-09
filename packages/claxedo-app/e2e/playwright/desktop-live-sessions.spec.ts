@@ -25,7 +25,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "permission Delete across full restart", "reply", "deleted while closed", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question custom across full restart", "question multiple across full restart", "question dismiss across full restart", "question stop across full restart", "question delete across full restart", "question delete response lost across full restart"] as const) {
+for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "permission Delete across full restart", "permission Delete response lost across full restart", "reply", "deleted while closed", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question custom across full restart", "question multiple across full restart", "question dismiss across full restart", "question stop across full restart", "question delete across full restart", "question delete response lost across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -516,7 +516,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
     }
 
     if (flow.startsWith("permission ")) {
-      const decision = flow.slice("permission ".length).replace(" across full restart", "").replace(" redirection", "")
+      const decision = flow.slice("permission ".length).replace(" across full restart", "").replace(" redirection", "").replace(" response lost", "")
       permissionOutputDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-desktop-permission-"))
       const output = path.join(permissionOutputDir, "result.txt")
       const mode = harness === "Claude" ? "default" : "workspace-write"
@@ -557,7 +557,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       expect(await fs.stat(output).then(() => true, () => false)).toBe(false)
       await packaged.page.screenshot({ path: test.info().outputPath("permission-after-restart.png") })
       if (decision === "Delete") {
-        await cancelPendingPermission(packaged.page, { backendUrl: serverBase, directory, sessionId: session.id, action: "Delete" })
+        await cancelPendingPermission(packaged.page, { backendUrl: serverBase, directory, sessionId: session.id, action: "Delete", interruptResponse: flow.includes("response lost") })
         await verifyDeletedSessionRecovery(session.id)
         await expect(fs.stat(output)).rejects.toMatchObject({ code: "ENOENT" })
         return

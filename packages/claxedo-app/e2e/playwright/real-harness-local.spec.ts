@@ -2128,14 +2128,14 @@ test.describe("real harness journeys @core @tier-real", () => {
   }
 
   for (const harness of ["claude", "codex"] as const) {
-    for (const [decision, canonicalDirectory, restartServer, goalMode] of [
-      ["Allow once", false, false, false], ["Allow always", false, false, false], ["Deny", false, false, false], ["Stop", false, false, false], ["Delete", false, false, false],
+    for (const [decision, canonicalDirectory, restartServer, goalMode, interruptResponse] of [
+      ["Allow once", false, false, false], ["Allow always", false, false, false], ["Deny", false, false, false], ["Stop", false, false, false], ["Delete", false, false, false], ["Delete", false, false, false, true],
       ...(harness === "codex" ? [["Stop", false, false, true] as const] : []),
       ...(harness === "claude" ? [["Allow always", true, false, false] as const] : []),
       ["Allow always", false, true, false],
       ...(harness === "codex" ? [["Allow always", false, "idle", false] as const] : []),
     ] as const) {
-      test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}${restartServer === "idle" ? " and native idle disposal" : restartServer ? " and server restart" : ""}${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
+      test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}${restartServer === "idle" ? " and native idle disposal" : restartServer ? " and server restart" : ""}${goalMode ? " in Goal mode" : ""}${interruptResponse ? " with lost delete response" : ""}`, async ({ page }) => {
         const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
         requireBinary(binary, harness, "install the native CLI to exercise its tool approval boundary.")
         const dir = await makeWorkspace(`${harness}-permission`, harness)
@@ -2185,7 +2185,7 @@ test.describe("real harness journeys @core @tier-real", () => {
           }
           if (decision === "Stop" || decision === "Delete") {
             await cancelPendingPermission(page, {
-              action: decision,
+              action: decision, interruptResponse,
               backendUrl: BACKEND_URL, directory: dir,
               sessionId: new URL(sessionUrl).pathname.split("/").at(-1)!,
             })
