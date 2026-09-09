@@ -6,7 +6,6 @@ import { KeybindV2 } from "@opencode-ai/ui/v2/keybind-v2"
 import { Icon } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import type { SessionReviewDiffStyle } from "../../components/session-review"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -17,6 +16,8 @@ import { SessionFilePanelV2, SessionFilePanelV2Empty } from "./session-file-pane
 export const SESSION_REVIEW_V2_SIDEBAR_WIDTH_DEFAULT = 240
 export const SESSION_REVIEW_V2_SIDEBAR_WIDTH_MIN = 200
 export const SESSION_REVIEW_V2_SIDEBAR_WIDTH_MAX = 480
+
+export type SessionReviewDiffStyle = "unified" | "split"
 
 export type SessionReviewExpandMode = "expand" | "collapse"
 
