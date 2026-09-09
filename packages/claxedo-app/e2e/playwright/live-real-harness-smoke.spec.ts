@@ -511,7 +511,7 @@ test.describe("live real-harness smoke @live", () => {
       else await expect(dock.getByText("Complete", { exact: true })).toBeVisible()
     })
 
-    for (const [action, goalMode] of [["answer", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false]] as const) {
+    for (const [action, goalMode] of [["answer", false], ["multiple", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false]] as const) {
     test(`${harness} native SDK question ${action} survives reload and preserves session usability${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       test.skip(!binary, `The live question flow requires the installed and authenticated ${harness} CLI.`)
@@ -521,11 +521,17 @@ test.describe("live real-harness smoke @live", () => {
       await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
       await waitForHarnessReady(page)
       const prefix = `LIVE-QUESTION-${Date.now()}`
+      const multiple = action === "multiple"
+      const questionInstructions = multiple
+        ? (harness === "claude"
+          ? 'Use AskUserQuestion now with exactly two questions: [{"header":"Environment","question":"Which test environment?","options":[{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}],"multiSelect":false},{"header":"Checks","question":"Which checks should run?","options":[{"label":"Unit","description":"Fast checks"},{"label":"Browser","description":"Real UI checks"}],"multiSelect":true}]. '
+          : 'Use request_user_input now with exactly two questions: [{"id":"environment","header":"Environment","question":"Which test environment?","options":[{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}]},{"id":"checks","header":"Checks","question":"Which checks should run?","options":[{"label":"Unit","description":"Fast checks"},{"label":"Browser","description":"Real UI checks"}]}]. ')
+        : undefined
       await composePrompt(page, input,
-        (goalMode ? "/goal " : "") + (harness === "claude"
+        (goalMode ? "/goal " : "") + (questionInstructions ?? (harness === "claude"
           ? 'Use the AskUserQuestion tool now with exactly one question: "Which test environment?", header "Environment", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}], multiSelect false. '
-          : 'Use request_user_input now with one question: id "environment", header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}]. ') +
-        `Wait for my answer, then reply with exactly ${prefix}- followed by the selected answer text. If dismissed, reply exactly ${prefix}-DISMISSED and do not ask again. Do not run any other tools.`,
+          : 'Use request_user_input now with one question: id "environment", header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}]. ')) +
+        `Wait for my answer, then reply with exactly ${prefix}- followed by all selected answer texts in question order, joined with hyphens. If dismissed, reply exactly ${prefix}-DISMISSED and do not ask again. Do not run any other tools.`,
       )
       await page.locator(SELECTORS.submitControl).last().click()
       await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
@@ -599,9 +605,28 @@ test.describe("live real-harness smoke @live", () => {
       } else {
         await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
       }
+      let expectedAnswer = answer
+      if (multiple) {
+        await dock.getByRole("button", { name: "Next", exact: true }).click()
+        await expect(dock).toContainText("Which checks should run?")
+        await dock.locator('[data-slot="question-option"]', { hasText: "Unit" }).click()
+        if (harness === "claude") {
+          await expect(dock).toContainText("Select all answers that apply")
+          await dock.locator('[data-slot="question-option"]', { hasText: "Browser" }).click()
+        }
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expect(dock).toContainText("Which checks should run?")
+        await expect(dock.locator('[data-slot="question-option"]', { hasText: "Unit" })).toHaveAttribute("data-picked", "true")
+        await expect(dock.locator('[data-slot="question-option"]', { hasText: "Browser" })).toHaveAttribute("aria-checked", harness === "claude" ? "true" : "false")
+        await dock.getByRole("button", { name: "Back", exact: true }).click()
+        await expect(dock.locator('[data-slot="question-option"]', { hasText: "Staging" })).toHaveAttribute("data-picked", "true")
+        await dock.getByRole("button", { name: "Next", exact: true }).click()
+        expect(await readQuestions()).toEqual(pending)
+        expectedAnswer = harness === "claude" ? "Staging-Unit-Browser" : "Staging-Unit"
+      }
       await dock.getByRole("button", { name: "Submit", exact: true }).click()
       await expect(dock).toHaveCount(0)
-      await expectAssistantReplyVisible(page, `${prefix}-${answer}`, {
+      await expectAssistantReplyVisible(page, `${prefix}-${expectedAnswer}`, {
         spec: "live-real-harness-smoke",
         scenario: `${harness}-question-answer`,
       })
@@ -613,7 +638,7 @@ test.describe("live real-harness smoke @live", () => {
       })
       expect(duplicate.status()).toBe(404)
       await page.reload({ waitUntil: "domcontentloaded" })
-      await expectAssistantReplyVisible(page, `${prefix}-${answer}`)
+      await expectAssistantReplyVisible(page, `${prefix}-${expectedAnswer}`)
       await expect(dock).toHaveCount(0)
       expect(await readQuestions()).toEqual([])
     })

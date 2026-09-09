@@ -1312,7 +1312,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   }
 
-  for (const [action, goalMode] of [["answer", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false], ["delete-response-lost", false]] as const) {
+  for (const [action, goalMode] of [["answer", false], ["multiple", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false], ["delete-response-lost", false]] as const) {
     test(`codex native structured question ${action} reaches the question dock${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
       requireBinary(binary, "codex", "install the Codex CLI to exercise its structured question tool.")
@@ -1328,7 +1328,9 @@ test.describe("real harness journeys @core @tier-real", () => {
         input: { questions: [{ id: "environment", header: "Environment", question: "Which environment?", options: [
           { label: "Staging", description: "Isolated environment" },
           { label: "Production", description: "Production environment" },
-        ] }] },
+        ] }, ...(action === "multiple" ? [{ id: "checks", header: "Checks", question: "Which checks should run?", options: [
+          { label: "Unit", description: "Fast checks" }, { label: "Browser", description: "Real UI checks" },
+        ] }] : [])] },
         whenPromptIncludes: marker,
       })
       const toolResults = () => scripted!.requests.flatMap(({ body }) =>
@@ -1382,11 +1384,26 @@ test.describe("real harness journeys @core @tier-real", () => {
           } else {
             await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
           }
+          if (action === "multiple") {
+            await dock.getByRole("button", { name: "Next", exact: true }).click()
+            await dock.locator('[data-slot="question-option"]', { hasText: "Unit" }).click()
+            await page.reload({ waitUntil: "domcontentloaded" })
+            await expect(dock).toContainText("Which checks should run?")
+            await expect(dock.locator('[data-slot="question-option"]', { hasText: "Unit" })).toHaveAttribute("data-picked", "true")
+            await dock.getByRole("button", { name: "Back", exact: true }).click()
+            await expect(dock.locator('[data-slot="question-option"]', { hasText: "Staging" })).toHaveAttribute("data-picked", "true")
+            await dock.getByRole("button", { name: "Next", exact: true }).click()
+          }
           await dock.getByRole("button", { name: "Submit", exact: true }).click()
         }
         await expectAssistantReplyVisible(page, marker)
         expect(toolResults().length).toBeGreaterThan(0)
         if (action === "answer") expect(JSON.stringify(toolResults())).toContain("Staging")
+        else if (action === "multiple") {
+          expect(JSON.stringify(toolResults())).toContain("Staging")
+          expect(JSON.stringify(toolResults())).toContain("Unit")
+          expect(JSON.stringify(toolResults())).not.toContain("Browser")
+        }
         else if (action === "custom") expect(JSON.stringify(toolResults())).toContain("Preview café 日本語")
         else expect(JSON.stringify(toolResults())).not.toContain("Staging")
       } finally {
@@ -1501,6 +1518,8 @@ test.describe("real harness journeys @core @tier-real", () => {
       await expect(dock).toContainText("Select all answers that apply")
       await dock.locator('[data-slot="question-option"]', { hasText: "Unit" }).click()
       await dock.locator('[data-slot="question-option"]', { hasText: "Browser" }).click()
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expect(dock).toContainText("Which checks should run?")
       await dock.getByRole("button", { name: "Back", exact: true }).click()
       await expect(environmentOption).toHaveAttribute("data-picked", "true")
       await dock.getByRole("button", { name: "Next", exact: true }).click()
