@@ -3,7 +3,7 @@ import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { apiError, txt } from "./route-support"
-import { asRecord } from "../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 export async function runtimeTokenOrgId(
   authority: WorkspaceAuthority,

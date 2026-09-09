@@ -39,7 +39,7 @@ import {
   type CloudflareKvNamespaceBinding,
 } from "@claxedo/server-core/credentials/backends/cloudflare"
 import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "@claxedo/server-core/credentials/envelope"
-import { asRecord, isRecord } from "../../platform/json/index"
+import { asRecord, isRecord } from "@claxedo/server-core/platform/json/index"
 import { isFiniteNumber } from "@claxedo/helpers/guards"
 import { trimToUndefined } from "@claxedo/helpers/string"
 

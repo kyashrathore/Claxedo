@@ -9,16 +9,16 @@ import { promisify } from "node:util"
 import { Hono } from "hono"
 import { localOnlyAuthAdapter, type ControlPlaneTokenVerifier, type ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ProjectAction, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../backends/local/managed"
+import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "@claxedo/server-core/documents/backends/local/managed"
 import {
   createLocalRepositoryFileAuthority,
   createLocalRepositoryGitAuthority,
   createRepositoryDocumentWorkspace,
   type RepositoryDocumentHandle,
-} from "../repository/index"
-import type { LocalManagedDocumentHandle } from "../backends/local/managed"
-import type { DocumentEntry } from "../port"
-import { DocumentStorageError } from "../errors"
+} from "@claxedo/server-core/documents/repository/index"
+import type { LocalManagedDocumentHandle } from "@claxedo/server-core/documents/backends/local/managed"
+import type { DocumentEntry } from "@claxedo/server-core/documents/port"
+import { DocumentStorageError } from "@claxedo/server-core/documents/errors"
 import {
   archiveDocumentIndexEntry,
   createDocumentIndexEntry,
@@ -30,17 +30,17 @@ import {
   relocateRepositoryDocumentIndexEntry,
   restoreDocumentIndexEntry,
   updateDocumentIndexMetadata,
-} from "../index-store"
-import type { DocumentIndexEntry } from "../index-store"
-import { setDocumentChangedSink, subscribeDocumentEvents } from "../backend"
+} from "@claxedo/server-core/documents/index-store"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
+import { setDocumentChangedSink, subscribeDocumentEvents } from "@claxedo/server-core/documents/backend"
 import { ClaxedoDB } from "../../platform/db"
-import { DocumentsRoutes, type DocumentsRouteBackend } from "./index"
+import { DocumentsRoutes, type DocumentsRouteBackend } from "@claxedo/server-core/documents/routes/index"
 import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import {
   disposeHydratedSessionDocuments,
   hydrateSessionDocument,
   hydratedSessionDocumentPaths,
-} from "../session-hydration"
+} from "@claxedo/server-core/documents/session-hydration"
 
 const execFileAsync = promisify(execFile)
 

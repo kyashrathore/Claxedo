@@ -17,7 +17,7 @@ import {
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
-import { stringField } from "../../platform/json/index"
+import { stringField } from "@claxedo/server-core/platform/json/index"
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
 import { isRecord } from "@claxedo/helpers/guards"
 

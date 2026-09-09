@@ -10,9 +10,9 @@ import {
   type R2BucketBinding,
 } from "./managed"
 import { projectIndexKey } from "./project-index"
-import type { DocumentIndexEntry } from "../../index-contract"
-import type { DocumentEntry } from "../../port"
-import { createDocumentsService } from "../../service"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-contract"
+import type { DocumentEntry } from "@claxedo/server-core/documents/port"
+import { createDocumentsService } from "@claxedo/server-core/documents/service"
 
 /**
  * An in-memory `ConditionalObjectStore` that counts every operation, so cost claims are measured

@@ -4,7 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { afterAll, describe, expect, test } from "vitest"
-import type { DocumentIndexEntry } from "../../documents/index-store"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
 
 const exec = promisify(execFile)
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "server-documents-"))
@@ -12,7 +12,7 @@ const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const { localDocumentsBackend } = await import("../../deployments/self-hosted-node/app")
-const { managedDocumentRelativePath } = await import("../../documents/backends/local/managed")
+const { managedDocumentRelativePath } = await import("@claxedo/server-core/documents/backends/local/managed")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { ClaxedoDB } = await import("../../platform/db")
 

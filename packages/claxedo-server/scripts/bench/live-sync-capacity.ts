@@ -31,7 +31,7 @@
 
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
-import { numberField, readJsonRecord } from "../../src/platform/json/index"
+import { numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 const DEFAULT_STEPS = [256, 1_000, 2_000, 4_000]
 

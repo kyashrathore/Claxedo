@@ -4,8 +4,8 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { resolveDeploymentProfileFromEnv } from "../../src/deployments/hosted-shared/deployment-profile"
 import { betterAuthD1ReleaseInputs } from "./release-better-auth-d1"
-import { asRecord, parseJson, stringField } from "../../src/platform/json/index"
-import { errorMessage } from "../../src/platform/errors/index"
+import { asRecord, parseJson, stringField } from "@claxedo/server-core/platform/json/index"
+import { errorMessage } from "@claxedo/server-core/platform/errors/index"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")

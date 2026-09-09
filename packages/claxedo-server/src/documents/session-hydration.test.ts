@@ -11,7 +11,7 @@ import {
   reachableLocalSessionWorkspace,
   recoverHydratedSessionDocument,
   syncHydratedSessionDocuments,
-} from "./session-hydration"
+} from "@claxedo/server-core/documents/session-hydration"
 
 describe("managed document session hydration", () => {
   test("parks invalid UTF-8 agent bytes without altering canonical content", async () => {

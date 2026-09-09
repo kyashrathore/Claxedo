@@ -22,7 +22,7 @@ import type {
   SandboxLeaseRow,
   SandboxLeaseRowStatus,
 } from "@claxedo/sandbox-manager/lease-types"
-import { isRecord, parseJson } from "../../platform/json/index"
+import { isRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 const LEASE_STATUSES: readonly SandboxLeaseRowStatus[] = [
   "pending",

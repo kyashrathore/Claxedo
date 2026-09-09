@@ -22,7 +22,7 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
-import { asRecord } from "../../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type HostedDeviceAuthProvider = {

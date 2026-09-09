@@ -26,7 +26,7 @@ import {
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
-import { asRecord, readJsonRecord } from "../../platform/json/index"
+import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { contentfulStatus } from "../../platform/http/status"
 
 type Options = {

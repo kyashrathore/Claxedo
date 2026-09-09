@@ -14,7 +14,7 @@ import {
 import { betterAuthIssuer } from "../../src/platform/auth/better-auth-d1-foundation"
 import { greenfieldUserDeployedPreflight } from "./greenfield-user-deployed"
 import { d1Row } from "./d1-json"
-import { errorCode } from "../../src/platform/errors/index"
+import { errorCode } from "@claxedo/server-core/platform/errors/index"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const SHA256 = /^sha256:[0-9a-f]{64}$/

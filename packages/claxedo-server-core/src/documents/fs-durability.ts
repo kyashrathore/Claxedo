@@ -1,5 +1,5 @@
 import fs from "node:fs/promises"
-import { nodeErrorCode } from "./errors"
+import { nodeErrorCode } from "@claxedo/server-core/documents/errors"
 
 /**
  * Flush a directory's metadata after an atomic rename/link/unlink, where the

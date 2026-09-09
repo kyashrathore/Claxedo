@@ -1,6 +1,6 @@
 import type { DocumentChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { DocumentIndexEntry, DocumentIndexScope } from "./index-store"
+import type { DocumentIndexEntry, DocumentIndexScope } from "@claxedo/server-core/documents/index-store"
 import type {
   DocumentActor,
   DocumentEntry,
@@ -8,7 +8,7 @@ import type {
   DocumentVersion,
   DocumentWorkspace,
   WriteResult,
-} from "./port"
+} from "@claxedo/server-core/documents/port"
 
 type Awaitable<T> = T | Promise<T>
 

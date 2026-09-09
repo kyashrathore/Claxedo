@@ -108,7 +108,10 @@ export const localServer: Policy = {
   // smol-toml validates the hosted MCP installer's Codex configuration before any file is written.
   // +1 module: shell/event-stream-response carries the authorized event
   // producer over HTTP or WebSocket. Measured 56 / 24; no new package edge.
-  ceilings: { modules: 56, packages: 24 },
+  // +1 module: app/local-documents composes the shared repository/managed
+  // document backend for unsigned desktop editing. No hosted adapter edge.
+  // Full closure measured at 57 modules / 24 packages.
+  ceilings: { modules: 57, packages: 24 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

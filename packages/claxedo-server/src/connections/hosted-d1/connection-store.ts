@@ -12,7 +12,7 @@
  */
 import type { D1Database } from "@cloudflare/workers-types"
 import type { ConnectionRow, ConnectionStorePort } from "@claxedo/connections"
-import { errorMessage } from "../../platform/errors/index"
+import { errorMessage } from "@claxedo/server-core/platform/errors/index"
 import { storedCapabilities, storedFields } from "../stored-columns"
 import { ConnectionExistsError } from "@claxedo/connections"
 

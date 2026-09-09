@@ -4,7 +4,7 @@ import { createPrivateKey, generateKeyPairSync, randomUUID, sign as signData, ty
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { txt } from "./route-support"
-import { asRecord } from "../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 const log = Log.create({ service: "workspace-local-host" })
 
 export type LocalHostIdentity = {

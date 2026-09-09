@@ -2,11 +2,11 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { ControlPlaneServices } from "../../../authority/services"
 import { mintDocumentRelayJobToken, mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { defaultHomeRegion, normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import type { DocumentIndexEntry } from "../../index-store"
-import type { DocumentRead } from "../../port"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
+import type { DocumentRead } from "@claxedo/server-core/documents/port"
 import { fetchRelayResponse, parseRelayJson, type RelayHttpOptions } from "../../relay-http"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
-import { asRecord } from "../../../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 export function createHostedDocumentRuntimeBroker(

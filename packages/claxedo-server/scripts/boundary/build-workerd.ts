@@ -18,7 +18,7 @@ import {
   WORKERD_BOUNDARY_TARGETS,
   type WorkerdBoundaryTarget,
 } from "./certified-workerd-boundary"
-import { asRecord, isRecord, parseJson } from "../../src/platform/json/index"
+import { asRecord, isRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 /**
  * Placeholder Cloudflare resource identities.

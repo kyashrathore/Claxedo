@@ -5,27 +5,27 @@ import {
   DocumentVersionConflictError,
   documentErrorFromCause,
   nodeErrorCode,
-} from "../errors"
-import type { DocumentEntry, DocumentHandle, DocumentVersion, DocumentWorkspace, SnapshotRef } from "../port"
-import { createLocalRepositoryFileAuthority, normalizeRepositoryRelativePath } from "./file-authority"
+} from "@claxedo/server-core/documents/errors"
+import type { DocumentEntry, DocumentHandle, DocumentVersion, DocumentWorkspace, SnapshotRef } from "@claxedo/server-core/documents/port"
+import { createLocalRepositoryFileAuthority, normalizeRepositoryRelativePath } from "@claxedo/server-core/documents/repository/file-authority"
 import type {
   LocalRepositoryFileAuthorityOptions,
   RepositoryDocumentRead,
   RepositoryFileAuthority,
-} from "./file-authority"
+} from "@claxedo/server-core/documents/repository/file-authority"
 import {
   createLocalRepositoryGitAuthority,
   RepositoryGitConflictError,
   repositoryGitConflict,
-} from "./git-authority"
+} from "@claxedo/server-core/documents/repository/git-authority"
 import type {
   LocalRepositoryGitAuthorityOptions,
   RepositoryCommitRequest,
   RepositoryGitAuthority,
   RepositoryGitRun,
   RepositoryGitSnapshot,
-} from "./git-authority"
-import { documentVersionsMatch, localDocumentVersion } from "../version"
+} from "@claxedo/server-core/documents/repository/git-authority"
+import { documentVersionsMatch, localDocumentVersion } from "@claxedo/server-core/documents/version"
 
 export { createLocalRepositoryFileAuthority, createLocalRepositoryGitAuthority, RepositoryGitConflictError }
 export type {

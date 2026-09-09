@@ -30,7 +30,7 @@ import os from "node:os"
 import path from "node:path"
 import { readPackageJson, type CommandRunner, type PackageJson } from "./package-json"
 import { fileURLToPath } from "node:url"
-import { isRecordArray, parseJsonRecords, stringField } from "../../src/platform/json/index"
+import { isRecordArray, parseJsonRecords, stringField } from "@claxedo/server-core/platform/json/index"
 import { publishedVersionDrift } from "./check-published-versions"
 
 export type PackageTrack = "helpers" | "runtime" | "apps" | "wakes"

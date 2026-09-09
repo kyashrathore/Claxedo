@@ -16,10 +16,10 @@ import {
   DocumentVersionConflictError,
   documentErrorFromCause,
   nodeErrorCode,
-} from "../../errors"
-import { syncDirectory } from "../../fs-durability"
-import { createDocumentHistory } from "../../history"
-import { BoundedFileTooLargeError, readBoundedFile } from "../../bounded-file-read"
+} from "@claxedo/server-core/documents/errors"
+import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
+import { createDocumentHistory } from "@claxedo/server-core/documents/history"
+import { BoundedFileTooLargeError, readBoundedFile } from "@claxedo/server-core/documents/bounded-file-read"
 import type {
   DocumentActor,
   DocumentEntry,
@@ -30,8 +30,8 @@ import type {
   SnapshotID,
   SnapshotRef,
   WriteResult,
-} from "../../port"
-import { documentVersionsMatch, localDocumentVersion } from "../../version"
+} from "@claxedo/server-core/documents/port"
+import { documentVersionsMatch, localDocumentVersion } from "@claxedo/server-core/documents/version"
 
 const DEFAULT_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 const DEFAULT_MAX_SNAPSHOTS = 50

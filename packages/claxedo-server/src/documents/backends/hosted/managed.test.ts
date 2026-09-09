@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
-import { DocumentVersionConflictError } from "../../errors"
+import { DocumentVersionConflictError } from "@claxedo/server-core/documents/errors"
 import {
   createHostedManagedDocumentWorkspace,
   createR2ConditionalObjectStore,
@@ -13,14 +13,14 @@ import {
   type ConditionalObjectStore,
 } from "./managed"
 import { createHostedDocumentIndex } from "./index"
-import type { DocumentIndexEntry } from "../../index-store"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
 import { createHostedDocumentsBackend } from "./backend"
 import { mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { documentWorkspaceConformance } from "../../port-conformance"
-import type { DocumentEntry, SnapshotID } from "../../port"
-import { MAX_SNAPSHOT_METADATA_BYTES } from "../../snapshot-pins"
-import { forgetHydratedSessionRuntime, hydrateSessionDocument, syncHydratedSessionDocuments } from "../../session-hydration"
+import type { DocumentEntry, SnapshotID } from "@claxedo/server-core/documents/port"
+import { MAX_SNAPSHOT_METADATA_BYTES } from "@claxedo/server-core/documents/snapshot-pins"
+import { forgetHydratedSessionRuntime, hydrateSessionDocument, syncHydratedSessionDocuments } from "@claxedo/server-core/documents/session-hydration"
 
 function emulator() {
   let clock = 0

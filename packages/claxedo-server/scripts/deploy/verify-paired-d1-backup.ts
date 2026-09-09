@@ -12,7 +12,7 @@ import {
   renderBetterAuthD1WranglerConfig,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
-import { asRecord, isRecordArray, numberField, stringField } from "../../src/platform/json/index"
+import { asRecord, isRecordArray, numberField, stringField } from "@claxedo/server-core/platform/json/index"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const FORBIDDEN_EXPORT_SQL = /\b(?:attach|detach|load_extension)\b|\bvacuum\s+into\b|\bpragma\s+writable_schema\b/i

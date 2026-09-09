@@ -15,7 +15,7 @@
 import { execFileSync } from "node:child_process"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { parseJsonRecord, stringField } from "../../src/platform/json/index"
+import { parseJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 export type PublishedVersionPackage = { readonly name: string; readonly dir: string }
 export type CommandRunner = (cmd: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) => string

@@ -9,7 +9,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { ControlPlaneServices } from "../authority/services"
 import { mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createHostedDocumentsBackend } from "./backends/hosted/backend"
-import type { DocumentIndexEntry } from "./index-store"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
 import { createHostedDocumentRuntimeBroker } from "./backends/hosted/runtime-broker"
 import { fetchUrl, fetchBodyText } from "../test-support/fetch-calls"
 

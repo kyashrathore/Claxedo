@@ -7,7 +7,7 @@ import { ClaxedoError, errorBody, statusOf } from "@claxedo/server-core/platform
 import type { ControlPlaneServices } from "../authority/services"
 import type { MachineSessionCaller, MachineSessionDispatch } from "./machine-dispatch"
 import { contentfulStatus } from "../platform/http/status"
-import { asRecord, readJsonRecord, stringField } from "../platform/json/index"
+import { asRecord, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 /** A scheduler dispatches existing machine sessions; it never owns an agent loop. */
 export function createMachineWakes(input: {

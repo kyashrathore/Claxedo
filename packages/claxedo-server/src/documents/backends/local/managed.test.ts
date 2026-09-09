@@ -10,10 +10,10 @@ import {
   DocumentStorageError,
   DocumentTooLargeError,
   DocumentVersionConflictError,
-} from "../../errors"
-import { createDocumentHistory } from "../../history"
-import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "./managed"
-import type { DocumentActor, DocumentEntry, SnapshotRef } from "../../port"
+} from "@claxedo/server-core/documents/errors"
+import { createDocumentHistory } from "@claxedo/server-core/documents/history"
+import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "@claxedo/server-core/documents/backends/local/managed"
+import type { DocumentActor, DocumentEntry, SnapshotRef } from "@claxedo/server-core/documents/port"
 import { documentWorkspaceConformance } from "../../port-conformance"
 
 const actor: DocumentActor = { type: "user", id: "user_1" }

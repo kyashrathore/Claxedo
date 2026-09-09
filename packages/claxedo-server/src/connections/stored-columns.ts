@@ -10,7 +10,7 @@
  * must not reach `connection.sql`, whose Drizzle table is SQLite-only.
  */
 import type { IntegrationCapability } from "@claxedo/connections"
-import { asRecord, parseJson } from "../platform/json/index"
+import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 export function storedCapabilities(raw: string): IntegrationCapability[] {
   const parsed = parseJson(raw)

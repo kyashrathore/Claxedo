@@ -11,7 +11,7 @@ import {
   renderBetterAuthD1WranglerConfig,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
-import { asRecord, numberField, readJsonRecord, stringField } from "../../src/platform/json/index"
+import { asRecord, numberField, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { d1Rows } from "./d1-json"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")

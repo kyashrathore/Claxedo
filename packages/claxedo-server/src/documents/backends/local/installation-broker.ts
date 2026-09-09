@@ -1,11 +1,11 @@
 import { Hono, type Context } from "hono"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
-import { withDocumentOperation, type DocumentBrokerBackend } from "../../backend"
-import type { DocumentIndexEntry } from "../../index-store"
-import { toDocumentVersion } from "../../port"
-import { DocumentVersionConflictError } from "../../errors"
+import { withDocumentOperation, type DocumentBrokerBackend } from "@claxedo/server-core/documents/backend"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
+import { toDocumentVersion } from "@claxedo/server-core/documents/port"
+import { DocumentVersionConflictError } from "@claxedo/server-core/documents/errors"
 import { verifyDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
-import { asRecord, parseJson } from "../../../platform/json/index"
+import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 const MAX_BROKER_BODY_BYTES = 2 * 1024 * 1024 + 64 * 1024
 

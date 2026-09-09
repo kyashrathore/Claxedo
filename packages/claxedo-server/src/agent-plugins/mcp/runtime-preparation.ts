@@ -9,7 +9,7 @@ import { mcpOAuthIntegrationId } from "@claxedo/server-core/agent-plugins/mcp/in
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
 import type { AgentPluginRuntimeApplyRequest } from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
 import { isAgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
-import { asRecord, stringField } from "../../platform/json/index"
+import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import type { WorkspaceRuntimePreparation } from "../../workspace/route-support"
 import {
   desiredAgentPluginSelections,

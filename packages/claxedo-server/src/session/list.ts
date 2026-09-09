@@ -10,7 +10,7 @@ import {
 import { controlPlaneAuthErrorBody, ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../authority/services"
-import { asRecord } from "../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 /**
  * The refusal a session-list route gives when it is not the authority for the

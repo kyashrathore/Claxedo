@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { toDocumentVersion, type DocumentVersion } from "./port"
+import { toDocumentVersion, type DocumentVersion } from "@claxedo/server-core/documents/port"
 
 type VersionEvidence = Readonly<{
   size: number

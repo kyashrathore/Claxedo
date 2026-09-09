@@ -47,7 +47,7 @@ import { createD1ConnectionAttempts, HOSTED_ATTEMPT_SWEEP_RATE, type HostedConne
 import { createD1ConnectionStore } from "./connection-store"
 import type { HostedDynamicConnectionIntegrations } from "./types"
 import { contentfulStatus } from "../../platform/http/status"
-import { asRecord, stringField } from "../../platform/json/index"
+import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 /**
  * The request-authentication seam. Mirrors `signedOrError`: an absent `auth`

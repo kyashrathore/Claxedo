@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
-import { createMoveToRepository } from "./move-to"
+import { createMoveToRepository } from "@claxedo/server-core/documents/repository/move-to"
 
 type State = {
   source?: string

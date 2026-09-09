@@ -1,11 +1,10 @@
 import fs from "node:fs"
 import path from "node:path"
 import { createHash, randomUUID } from "node:crypto"
-import type { ErrorReportContext } from "../../../platform/telemetry/errors/report"
 import type { SessionMeta } from "@claxedo/server-core/session/meta/types"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { DocumentAgentOpenError, type DocumentsBackend } from "../../backend"
-import { DocumentNotFoundError, DocumentStorageError } from "../../errors"
+import { DocumentAgentOpenError, type DocumentsBackend } from "@claxedo/server-core/documents/backend"
+import { DocumentNotFoundError, DocumentStorageError } from "@claxedo/server-core/documents/errors"
 import {
   archiveDocumentIndexEntry,
   createDocumentIndexEntry,
@@ -21,24 +20,24 @@ import {
   restoreDocumentIndexEntry,
   updateDocumentIndexMetadata,
   type DocumentIndexEntry,
-} from "../../index-store"
+} from "@claxedo/server-core/documents/index-store"
 import {
   createLocalManagedDocumentWorkspace,
   managedDocumentRelativePath,
   type LocalManagedDocumentHandle,
   type LocalManagedOptions,
-} from "./managed"
-import { createMoveToRepository } from "../../repository/move-to"
-import { toDocumentVersion, type DocumentEntry } from "../../port"
+} from "@claxedo/server-core/documents/backends/local/managed"
+import { createMoveToRepository } from "@claxedo/server-core/documents/repository/move-to"
+import { toDocumentVersion, type DocumentEntry } from "@claxedo/server-core/documents/port"
 import {
   createLocalRepositoryFileAuthority,
   createLocalRepositoryGitAuthority,
   createRepositoryDocumentWorkspace,
   type RepositoryDocumentHandle,
-} from "../../repository/index"
-import { readRepositoryFile } from "../../repository/file-authority"
-import { sessionMatchesDocumentProject } from "../../session-grants"
-import { hydrateSessionDocument, reachableLocalSessionWorkspace } from "../../session-hydration"
+} from "@claxedo/server-core/documents/repository/index"
+import { readRepositoryFile } from "@claxedo/server-core/documents/repository/file-authority"
+import { sessionMatchesDocumentProject } from "@claxedo/server-core/documents/session-grants"
+import { hydrateSessionDocument, reachableLocalSessionWorkspace } from "@claxedo/server-core/documents/session-hydration"
 
 type Handle = LocalManagedDocumentHandle | RepositoryDocumentHandle
 
@@ -46,7 +45,7 @@ export type LocalDocumentsBackendDependencies = Readonly<{
   resolveWorkspace(input: Readonly<{ workspaceId?: string; directory?: string }>): Promise<Workspace | undefined>
   sessionMeta(sessionId: string): Promise<SessionMeta | undefined>
   dataDir(): string
-  reportError(error: unknown, context?: ErrorReportContext): void
+  reportError(error: unknown, context?: { tags?: Record<string, string>; extra?: Record<string, unknown> }): void
   runGit(
     args: readonly string[],
     directory: string,

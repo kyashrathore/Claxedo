@@ -9,7 +9,7 @@ import {
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { signedOrError } from "../../workspace/route-support"
-import { readJsonRecord } from "../../platform/json/index"
+import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import {
   notifySessionShareChanged,
   peopleErrorResponse,

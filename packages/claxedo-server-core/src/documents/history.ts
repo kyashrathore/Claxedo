@@ -8,13 +8,13 @@ import {
   DocumentSnapshotNotFoundError,
   documentErrorFromCause,
   nodeErrorCode,
-} from "./errors"
-import { syncDirectory } from "./fs-durability"
-import { mapBounded } from "./map-bounded"
-import { boundedSnapshotPins, expiredSnapshotLease, requireBoundedSnapshotMetadata } from "./snapshot-pins"
-import { toSnapshotID, type DocumentActor, type SnapshotID, type SnapshotRef } from "./port"
-import { contentHash } from "./version"
-import { BoundedFileTooLargeError, readBoundedFile } from "./bounded-file-read"
+} from "@claxedo/server-core/documents/errors"
+import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
+import { mapBounded } from "@claxedo/server-core/documents/map-bounded"
+import { boundedSnapshotPins, expiredSnapshotLease, requireBoundedSnapshotMetadata } from "@claxedo/server-core/documents/snapshot-pins"
+import { toSnapshotID, type DocumentActor, type SnapshotID, type SnapshotRef } from "@claxedo/server-core/documents/port"
+import { contentHash } from "@claxedo/server-core/documents/version"
+import { BoundedFileTooLargeError, readBoundedFile } from "@claxedo/server-core/documents/bounded-file-read"
 
 const CROCKFORD = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 

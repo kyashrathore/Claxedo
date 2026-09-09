@@ -10,7 +10,7 @@ import type {
   SessionShareFanoutTarget,
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
-import { asRecord } from "../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 /**
  * Injected sink for `session.share.changed` doorbells.

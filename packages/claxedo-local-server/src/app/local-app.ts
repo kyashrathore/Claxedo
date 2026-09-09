@@ -2,7 +2,7 @@
  * The desktop-local server composition.
  *
  * Exactly the route families the split assigns to `local-server`. What it does
- * not mount is the point: no Documents, no Connections, no Channels, no
+ * not mount is the point: no Connections, no Channels, no
  * hosted capability, no workspace authority, no cloud provisioning. Their absence from
  * an unsigned desktop is a composition fact here, not a runtime flag elsewhere.
  *
@@ -61,6 +61,7 @@ import {
 import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
 import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
 import { raw, record } from "../platform/json"
+import { localDocumentsRoutes } from "./local-documents"
 
 /**
  * Paths whose responses carry credential material.
@@ -305,6 +306,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     env,
     ...authRouteOptions(services),
   }))
+  app.route("/documents", localDocumentsRoutes(authRouteOptions(services)))
   app.route("/api/claxedo/agent-config", AgentConfigRoutes({
     services,
     ...authRouteOptions(services),

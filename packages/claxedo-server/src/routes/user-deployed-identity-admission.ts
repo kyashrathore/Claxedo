@@ -12,7 +12,7 @@ import type {
 } from "@claxedo/server-core/platform/auth/authentication"
 
 import { signedOrError } from "../workspace/route-support"
-import { readJsonRecord } from "../platform/json/index"
+import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 const BODY_LIMIT_BYTES = 16 * 1024
 const MAX_SUBJECT_LENGTH = 512

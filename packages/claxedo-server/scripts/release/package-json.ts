@@ -1,6 +1,6 @@
 import fs from "node:fs"
 
-import { asRecord, parseJson } from "../../src/platform/json/index"
+import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 /**
  * The `package.json` shape both publishers read, and the reader that produces it.

@@ -9,7 +9,7 @@ import { build as esbuildBuild, type Metafile } from "esbuild"
 import { stageOpenCodePatches } from "../../../workspace-runtime/scripts/stage-opencode-patches"
 import { isRecord } from "@claxedo/helpers/guards"
 import { defaultSandboxImage, defaultSnapshotName, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
-import { parseJson } from "../../src/platform/json/index"
+import { parseJson } from "@claxedo/server-core/platform/json/index"
 import {
   claxedoAgentPluginsWorkspaceRuntimeEntry,
   claxedoWorkspaceRuntimeEntry,

@@ -415,6 +415,7 @@
         "jose": "6.2.4",
         "tokentracker-cli": "0.91.0",
         "yaml": "2.9.0",
+        "zod": "4.4.3",
       },
       "devDependencies": {
         "@hono/node-server": "1.19.11",

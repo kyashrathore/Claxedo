@@ -1,11 +1,11 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { constants, watch, type FSWatcher } from "node:fs"
-import { BoundedFileTooLargeError, readBoundedFile } from "./bounded-file-read"
-import { syncDirectory } from "./fs-durability"
-import { contentHash } from "./version"
-import { asRecord, parseJson } from "../platform/json/index"
-import { errorCode } from "../platform/errors/index"
+import { BoundedFileTooLargeError, readBoundedFile } from "@claxedo/server-core/documents/bounded-file-read"
+import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
+import { contentHash } from "@claxedo/server-core/documents/version"
+import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
+import { errorCode } from "@claxedo/server-core/platform/errors/index"
 
 type ManifestEntry = {
   documentId: string

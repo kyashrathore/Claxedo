@@ -33,8 +33,8 @@ import {
   DocumentTooLargeError,
   DocumentVersionConflictError,
   type DocumentErrorCode,
-} from "./errors"
-import { DocumentNotTextError } from "./errors"
+} from "@claxedo/server-core/documents/errors"
+import { DocumentNotTextError } from "@claxedo/server-core/documents/errors"
 
 /** One instance per code, so the table is exercised through real construction. */
 const SAMPLES: ReadonlyArray<{ code: DocumentErrorCode; error: { status: number } }> = [
@@ -64,7 +64,7 @@ const INSTANCEOF_CODES: Record<string, string | undefined> = {
  * none of which this invariant depends on.
  */
 function routerLadder() {
-  const source = fs.readFileSync(path.resolve(import.meta.dirname, "routes/index.ts"), "utf8")
+  const source = fs.readFileSync(path.resolve(import.meta.dirname, "../../../claxedo-server-core/src/documents/routes/index.ts"), "utf8")
   const ladder = new Map<string, number>()
   for (const match of source.matchAll(
     /error\.code === "(document_[a-z_]+)"(?:\s*\|\|\s*error\.code === "(document_[a-z_]+)")?\s*\?\s*(\d{3})/g,
@@ -85,7 +85,7 @@ function routerLadder() {
 
 /** The ladder's terminal `: NNN`, which every unlisted code falls through to. */
 function routerFallback() {
-  const source = fs.readFileSync(path.resolve(import.meta.dirname, "routes/index.ts"), "utf8")
+  const source = fs.readFileSync(path.resolve(import.meta.dirname, "../../../claxedo-server-core/src/documents/routes/index.ts"), "utf8")
   return Number(/document_permission_denied"\s*\?\s*\d{3}\s*:\s*(\d{3})/.exec(source)?.[1])
 }
 

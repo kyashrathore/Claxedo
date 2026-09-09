@@ -11,11 +11,11 @@ import {
   DocumentVersionConflictError,
   documentErrorFromCause,
   nodeErrorCode,
-} from "../errors"
-import type { DocumentRead, DocumentVersion } from "../port"
-import { syncDirectory } from "../fs-durability"
-import { contentHash, documentVersionsMatch, localDocumentVersion } from "../version"
-import { BoundedFileTooLargeError, readBoundedFile } from "../bounded-file-read"
+} from "@claxedo/server-core/documents/errors"
+import type { DocumentRead, DocumentVersion } from "@claxedo/server-core/documents/port"
+import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
+import { contentHash, documentVersionsMatch, localDocumentVersion } from "@claxedo/server-core/documents/version"
+import { BoundedFileTooLargeError, readBoundedFile } from "@claxedo/server-core/documents/bounded-file-read"
 
 const DEFAULT_SCAN_CONCURRENCY = 8
 const MAX_RECOVERY_SCAN_CANDIDATES = 10_000

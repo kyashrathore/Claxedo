@@ -7,7 +7,7 @@ import {
 } from "./control-token"
 import { runtimeWorkspaceDir } from "./state"
 import type { WorkspaceRuntimeState } from "./store"
-import { numberField, readJsonRecord } from "../../platform/json/index"
+import { numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 export async function runtimeConfigSnapshot(state: WorkspaceRuntimeState) {
   return createClaxedoRuntimeConfig({

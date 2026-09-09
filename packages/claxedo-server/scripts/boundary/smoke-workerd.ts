@@ -10,7 +10,7 @@ import fs from "node:fs"
 import { Miniflare } from "miniflare"
 
 import { WORKERD_BOUNDARY_TARGETS, type WorkerdBoundaryTarget } from "./certified-workerd-boundary"
-import { asRecord, parseJson } from "../../src/platform/json/index"
+import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 /**
  * Read the compatibility contract out of the config Wrangler bundled with.

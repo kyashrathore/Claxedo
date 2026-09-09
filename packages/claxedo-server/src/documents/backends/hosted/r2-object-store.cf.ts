@@ -12,7 +12,7 @@
  * suffix records the runtime it targets, not a compile-time dependency.
  */
 
-import { DocumentInvalidEntryError, DocumentTooLargeError } from "../../errors"
+import { DocumentInvalidEntryError, DocumentTooLargeError } from "@claxedo/server-core/documents/errors"
 import {
   DEFAULT_MAX_DOCUMENT_BYTES,
   DEFAULT_MAX_LIST_OBJECTS,

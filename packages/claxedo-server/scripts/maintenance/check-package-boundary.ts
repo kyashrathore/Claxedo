@@ -1,6 +1,6 @@
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { isRecordArray, parseJsonRecords, stringField } from "../../src/platform/json/index"
+import { isRecordArray, parseJsonRecords, stringField } from "@claxedo/server-core/platform/json/index"
 
 export function forbiddenPackagePath(file: string) {
   const base = path.basename(file)

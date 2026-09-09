@@ -8,9 +8,9 @@ import {
 import { mintDocumentSessionToken, verifyDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { z } from "zod"
-import { asRecord, isRecord, parseJson } from "../../../platform/json"
-import type { DocumentIndexEntry } from "../../index-store"
-import { toDocumentVersion } from "../../port"
+import { asRecord, isRecord, parseJson } from "@claxedo/server-core/platform/json/index"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
+import { toDocumentVersion } from "@claxedo/server-core/documents/port"
 import {
   LocalDocumentIndexResponseSchema,
   LocalDocumentReadResponseSchema,

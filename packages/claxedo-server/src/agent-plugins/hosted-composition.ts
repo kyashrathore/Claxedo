@@ -43,7 +43,7 @@ import {
 import { hostedMcpCatalogAuthentication } from "./mcp/catalog-auth"
 import { hostedMcpClientMetadata } from "./mcp/client-metadata"
 import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
-import { asRecord, isRecord, parseJson, stringField } from "../platform/json/index"
+import { asRecord, isRecord, parseJson, stringField } from "@claxedo/server-core/platform/json/index"
 
 /**
  * The credential partition a deployment-wide secret belongs to. Not an org id:

@@ -10,7 +10,7 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
-import { readJsonRecord } from "../platform/json/index"
+import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 const BODY_LIMIT_BYTES = 16 * 1024
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/

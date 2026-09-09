@@ -14,16 +14,15 @@ import {
   type WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
-import type { ControlPlaneServices } from "../../authority/services"
-import { DocumentAgentOpenError, type DocumentChangedSink, type DocumentsBackend } from "../backend"
-import type { DocumentIndexEntry } from "../index-store"
-import { DocumentVersionConflictError, DocumentWorkspaceError } from "../errors"
-import { toDocumentVersion, toSnapshotID, type DocumentHandle } from "../port"
-import { createDocumentsService, DocumentsServiceError, type DocumentsServiceScope } from "../../documents/service"
+import { DocumentAgentOpenError, type DocumentChangedSink, type DocumentsBackend } from "@claxedo/server-core/documents/backend"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
+import { DocumentVersionConflictError, DocumentWorkspaceError } from "@claxedo/server-core/documents/errors"
+import { toDocumentVersion, toSnapshotID, type DocumentHandle } from "@claxedo/server-core/documents/port"
+import { createDocumentsService, DocumentsServiceError, type DocumentsServiceScope } from "@claxedo/server-core/documents/service"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
-export { DocumentAgentOpenError } from "../backend"
-export type { DocumentsBackend as DocumentsRouteBackend } from "../backend"
+export { DocumentAgentOpenError } from "@claxedo/server-core/documents/backend"
+export type { DocumentsBackend as DocumentsRouteBackend } from "@claxedo/server-core/documents/backend"
 
 const LOCAL_ORG = "__local__"
 const MAX_BODY_BYTES = 2 * 1024 * 1024
@@ -108,7 +107,7 @@ const WorkSourcePinBody = z
 
 export type DocumentsRouteOptions<H extends DocumentHandle = DocumentHandle> = Readonly<{
   backend?: DocumentsBackend<H>
-  services?: ControlPlaneServices
+  services?: { authority?: WorkspaceAuthority }
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
   authority?: WorkspaceAuthority

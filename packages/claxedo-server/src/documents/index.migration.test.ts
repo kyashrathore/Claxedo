@@ -6,7 +6,7 @@ import path from "node:path"
 import { getTableConfig } from "drizzle-orm/sqlite-core"
 import { describe, expect, test } from "vitest"
 import { ClaxedoDB } from "../platform/db"
-import { ClaxedoDocumentIndexTable } from "./index.sql"
+import { ClaxedoDocumentIndexTable } from "@claxedo/server-core/documents/index.sql"
 import { repair } from "@claxedo/server-core/platform/db/repair"
 
 const resetMigration = "20260716000100_documents_reset"

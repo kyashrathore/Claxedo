@@ -9,7 +9,7 @@ import { signedOrError } from "../route-support"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
-import { asRecord, readJsonRecord } from "../../platform/json/index"
+import { asRecord, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 type CheckpointRouteOptions = {
   loopbackRelayUrl?: string

@@ -19,19 +19,19 @@ import {
 } from "../../../workspace-runtime/src/index"
 import { localOnlyAuthAdapter, type ControlPlaneTokenVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { DocumentsRoutes, type DocumentsRouteBackend } from "./routes/index"
+import { DocumentsRoutes, type DocumentsRouteBackend } from "@claxedo/server-core/documents/routes/index"
 import { createHostedDocumentsBackend } from "./backends/hosted/backend"
 import { createHostedLocalDocumentRelay } from "./backends/hosted/local-relay"
 import { createHostedDocumentRuntimeBroker } from "./backends/hosted/runtime-broker"
-import type { DocumentIndexEntry } from "./index-store"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
 import { LocalInstallationDocumentBroker } from "./backends/local/installation-broker"
-import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "./backends/local/managed"
+import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "@claxedo/server-core/documents/backends/local/managed"
 import {
   createLocalRepositoryFileAuthority,
   createLocalRepositoryGitAuthority,
   createRepositoryDocumentWorkspace,
-} from "./repository/index"
-import type { DocumentEntry } from "./port"
+} from "@claxedo/server-core/documents/repository/index"
+import type { DocumentEntry } from "@claxedo/server-core/documents/port"
 
 const exec = promisify(execFile)
 const roots = new Set<string>()

@@ -4,7 +4,7 @@ import {
   hostedManagedRelativePath,
   type R2BucketBinding,
 } from "../../src/documents/backends/hosted/managed"
-import { DocumentVersionConflictError } from "../../src/documents/errors"
+import { DocumentVersionConflictError } from "@claxedo/server-core/documents/errors"
 
 type Env = Readonly<{
   CLAXEDO_DOCUMENTS: R2BucketBinding

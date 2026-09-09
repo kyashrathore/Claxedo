@@ -7,7 +7,7 @@ import {
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 
 import { signedOrError } from "../../workspace/route-support"
-import { asRecord } from "../../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 export type HostedAuthProfileRouteOptions = {
   authentication: RequestAuthenticationAdapter

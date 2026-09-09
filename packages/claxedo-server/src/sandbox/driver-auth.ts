@@ -2,7 +2,7 @@ import { getCredentialByProvider, resolveSecret } from "@claxedo/server-core/cre
 import {
   sandboxDriverAuth,
 } from "@claxedo/sandbox-manager/driver-catalog"
-import { parseJsonRecord } from "../platform/json/index"
+import { parseJsonRecord } from "@claxedo/server-core/platform/json/index"
 import {
   sandboxDriverCredentialFields,
   type SandboxDriverAuth,

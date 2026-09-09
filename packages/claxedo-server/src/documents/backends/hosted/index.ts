@@ -13,9 +13,9 @@ import {
   DocumentIndexEntrySchema,
   type DocumentIndexEntry,
   type DocumentIndexScope,
-} from "../../index-contract"
-import { mapBounded } from "../../map-bounded"
-import { asRecord, parseJson } from "../../../platform/json/index"
+} from "@claxedo/server-core/documents/index-contract"
+import { mapBounded } from "@claxedo/server-core/documents/map-bounded"
+import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 type Locator = Readonly<{
   version: 1

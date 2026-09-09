@@ -16,7 +16,7 @@ import {
   serialized,
 } from "../../authority/http/idempotency"
 import { signedOrError, txt } from "../../workspace/route-support"
-import { asRecord } from "../../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 type Options = {
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig

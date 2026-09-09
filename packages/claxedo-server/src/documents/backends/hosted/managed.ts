@@ -6,7 +6,7 @@ import {
   DocumentSnapshotNotFoundError,
   DocumentTooLargeError,
   DocumentVersionConflictError,
-} from "../../errors"
+} from "@claxedo/server-core/documents/errors"
 import type {
   DocumentActor,
   DocumentEntry,
@@ -16,16 +16,16 @@ import type {
   SnapshotID,
   SnapshotRef,
   WriteResult,
-} from "../../port"
-import { toDocumentVersion, toSnapshotID } from "../../port"
+} from "@claxedo/server-core/documents/port"
+import { toDocumentVersion, toSnapshotID } from "@claxedo/server-core/documents/port"
 import {
   boundedSnapshotPins,
   expiredSnapshotLease,
   MAX_SNAPSHOT_METADATA_BYTES,
   requireBoundedSnapshotMetadata,
-} from "../../snapshot-pins"
-import { mapBounded } from "../../map-bounded"
-import { asRecord, parseJsonRecord } from "../../../platform/json"
+} from "@claxedo/server-core/documents/snapshot-pins"
+import { mapBounded } from "@claxedo/server-core/documents/map-bounded"
+import { asRecord, parseJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 export const DEFAULT_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 const DEFAULT_MAX_SNAPSHOTS = 50

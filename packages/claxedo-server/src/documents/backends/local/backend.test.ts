@@ -5,7 +5,7 @@ import path from "node:path"
 import { promisify } from "node:util"
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { ClaxedoDB } from "../../../platform/db"
-import { createLocalDocumentsBackend } from "./backend"
+import { createLocalDocumentsBackend } from "@claxedo/server-core/documents/backends/local/backend"
 
 const roots: string[] = []
 const execFileAsync = promisify(execFile)

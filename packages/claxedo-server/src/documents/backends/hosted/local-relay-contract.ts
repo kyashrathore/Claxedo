@@ -1,6 +1,6 @@
 import { z } from "zod"
-import { DocumentIndexEntrySchema } from "../../index-contract"
-import { toDocumentVersion, toSnapshotID } from "../../port"
+import { DocumentIndexEntrySchema } from "@claxedo/server-core/documents/index-contract"
+import { toDocumentVersion, toSnapshotID } from "@claxedo/server-core/documents/port"
 
 /**
  * What the local installation broker answers with, as the hosted side must read it.

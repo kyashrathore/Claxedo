@@ -41,7 +41,7 @@ export type {
   TurnUsageSettlement,
   TurnUsageStatus,
 } from "@claxedo/server-core/usage/contracts"
-import { asRecord } from "../../json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 export const SANDBOX_LEASE_OPENED = "sandbox.lease_opened"
 export const SANDBOX_LEASE_CLOSED = "sandbox.lease_closed"

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest"
-import { DocumentVersionConflictError } from "./errors"
-import type { DocumentActor, DocumentEntry, DocumentWorkspace } from "./port"
+import { DocumentVersionConflictError } from "@claxedo/server-core/documents/errors"
+import type { DocumentActor, DocumentEntry, DocumentWorkspace } from "@claxedo/server-core/documents/port"
 
 const actor: DocumentActor = { type: "user", id: "conformance-user" }
 

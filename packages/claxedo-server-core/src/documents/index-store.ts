@@ -3,21 +3,21 @@ import { realpathSync } from "node:fs"
 import path from "node:path"
 import { z } from "zod"
 import { and, desc, eq, isNotNull, isNull } from "drizzle-orm"
-import { ClaxedoDB } from "../platform/db"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import {
   ClaxedoDocumentIndexTable,
   ClaxedoDocumentStatusTable,
   ClaxedoLocalProjectTable,
-} from "./index.sql"
+} from "@claxedo/server-core/documents/index.sql"
 import {
   defaultDocumentStatuses,
   DocumentIndexEntrySchema,
   type DocumentIndexEntry,
   type DocumentIndexScope,
-} from "./index-contract"
+} from "@claxedo/server-core/documents/index-contract"
 
-export { DocumentIndexEntrySchema } from "./index-contract"
-export type { DocumentIndexEntry, DocumentIndexScope } from "./index-contract"
+export { DocumentIndexEntrySchema } from "@claxedo/server-core/documents/index-contract"
+export type { DocumentIndexEntry, DocumentIndexScope } from "@claxedo/server-core/documents/index-contract"
 
 export class DocumentIndexNotFoundError extends Error {
   readonly code = "document_index_not_found"

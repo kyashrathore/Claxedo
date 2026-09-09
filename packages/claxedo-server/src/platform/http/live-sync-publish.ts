@@ -1,5 +1,5 @@
 import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import { numberField, readJsonRecord } from "../json/index"
+import { numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 /**
  * The PUBLISHER half of live-sync: naming a room and nudging it.

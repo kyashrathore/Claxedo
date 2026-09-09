@@ -13,7 +13,7 @@ import {
 } from "@claxedo/server-core/agent-plugins/mcp/integration"
 import type { AgentPluginHttpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { HostedDynamicConnectionIntegrations } from "../../connections/hosted-d1/types"
-import { readJsonRecord } from "../../platform/json/index"
+import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { hostedMcpCatalogAuthentication } from "./catalog-auth"
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>

@@ -22,7 +22,7 @@ import {
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { isTransientWranglerFailure } from "./prepare-better-auth-d1"
 import { fetchUrl } from "../../src/test-support/fetch-calls"
-import { asRecord, isRecordArray, numberField, parseJson, parseJsonRecords, readJsonRecord, stringField } from "../../src/platform/json/index"
+import { asRecord, isRecordArray, numberField, parseJson, parseJsonRecords, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const VERSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i

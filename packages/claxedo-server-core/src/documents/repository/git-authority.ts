@@ -8,27 +8,27 @@ import {
   DocumentSnapshotNotFoundError,
   DocumentVersionConflictError,
   nodeErrorCode,
-} from "../errors"
-import { toSnapshotID, type DocumentActor, type SnapshotID, type SnapshotRef, type SnapshotRequest } from "../port"
+} from "@claxedo/server-core/documents/errors"
+import { toSnapshotID, type DocumentActor, type SnapshotID, type SnapshotRef, type SnapshotRequest } from "@claxedo/server-core/documents/port"
 import {
   atomicRepositoryReplace,
   insideRepository,
   normalizeRepositoryRelativePath,
   readRepositoryFile,
   serializeRepositoryOperation,
-} from "./file-authority"
-import { syncDirectory } from "../fs-durability"
-import { mapBounded } from "../map-bounded"
+} from "@claxedo/server-core/documents/repository/file-authority"
+import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
+import { mapBounded } from "@claxedo/server-core/documents/map-bounded"
 import {
   boundedSnapshotPins,
   expiredSnapshotLease,
   MAX_SNAPSHOT_METADATA_BYTES,
   requireBoundedSnapshotMetadata,
-} from "../snapshot-pins"
-import { contentHash } from "../version"
-import { BoundedFileTooLargeError, readBoundedFile } from "../bounded-file-read"
-import { errorCode } from "../../platform/errors/index"
-import { asRecord } from "../../platform/json/index"
+} from "@claxedo/server-core/documents/snapshot-pins"
+import { contentHash } from "@claxedo/server-core/documents/version"
+import { BoundedFileTooLargeError, readBoundedFile } from "@claxedo/server-core/documents/bounded-file-read"
+import { errorCode } from "@claxedo/server-core/platform/errors/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 const DEFAULT_MAX_DOCUMENT_BYTES = 2 * 1024 * 1024
 const DEFAULT_MAX_SNAPSHOTS = 50

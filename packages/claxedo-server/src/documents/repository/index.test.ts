@@ -4,11 +4,11 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { afterEach, describe, expect, test } from "vitest"
-import { DocumentPathError, DocumentVersionConflictError } from "../errors"
+import { DocumentPathError, DocumentVersionConflictError } from "@claxedo/server-core/documents/errors"
 import { documentWorkspaceConformance } from "../port-conformance"
-import type { DocumentActor, DocumentEntry, SnapshotID, SnapshotRef } from "../port"
-import { MAX_SNAPSHOT_METADATA_BYTES } from "../snapshot-pins"
-import { contentHash } from "../version"
+import type { DocumentActor, DocumentEntry, SnapshotID, SnapshotRef } from "@claxedo/server-core/documents/port"
+import { MAX_SNAPSHOT_METADATA_BYTES } from "@claxedo/server-core/documents/snapshot-pins"
+import { contentHash } from "@claxedo/server-core/documents/version"
 import {
   createLocalRepositoryFileAuthority,
   createLocalRepositoryGitAuthority,
@@ -17,7 +17,7 @@ import {
   type LocalRepositoryGitAuthorityOptions,
   type RepositoryGitRun,
   RepositoryGitConflictError,
-} from "./index"
+} from "@claxedo/server-core/documents/repository/index"
 
 const execFileAsync = promisify(execFile)
 const actor: DocumentActor = { type: "user", id: "repository-test" }

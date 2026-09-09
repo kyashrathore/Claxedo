@@ -2,9 +2,9 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import { mintDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ControlPlaneServices } from "../../../authority/services"
 import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { DocumentVersionConflictError } from "../../errors"
-import { toDocumentVersion } from "../../port"
-import { asRecord } from "../../../platform/json/index"
+import { DocumentVersionConflictError } from "@claxedo/server-core/documents/errors"
+import { toDocumentVersion } from "@claxedo/server-core/documents/port"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { fetchRelayResponse, parseRelayJson, relayResponseText, type RelayHttpOptions } from "../../relay-http"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 

@@ -10,7 +10,7 @@ import {
 } from "@claxedo/server-core/agent-plugins/sources/routes"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { isRecord, stringField } from "../../platform/json/index"
+import { isRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 /**
  * The authority capabilities this store consumes.

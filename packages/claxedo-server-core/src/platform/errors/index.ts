@@ -1,4 +1,4 @@
-import { isRecord } from "../json/index"
+import { isRecord } from "@claxedo/server-core/platform/json/index"
 
 /**
  * The `errno` code of a Node system error (`ENOENT`, `EPERM`, `EEXIST`, …).

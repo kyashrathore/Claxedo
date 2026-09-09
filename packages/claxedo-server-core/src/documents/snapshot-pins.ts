@@ -1,4 +1,4 @@
-import { DocumentInvalidEntryError } from "./errors"
+import { DocumentInvalidEntryError } from "@claxedo/server-core/documents/errors"
 
 export const MAX_SNAPSHOT_PINS = 128
 export const MAX_SNAPSHOT_METADATA_BYTES = 64 * 1024

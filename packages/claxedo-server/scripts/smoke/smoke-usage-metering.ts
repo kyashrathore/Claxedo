@@ -16,7 +16,7 @@ import {
 } from "@claxedo/server-core/usage/projection"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
-import { asRecord, numberField, readJsonRecord } from "../../src/platform/json/index"
+import { asRecord, numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 const DAY = 86_400_000
 const NOW = Date.UTC(2026, 7, 9, 12)

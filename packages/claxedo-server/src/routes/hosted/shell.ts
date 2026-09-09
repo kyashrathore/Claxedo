@@ -52,7 +52,7 @@ import { resolveWorkspaceRuntimeTarget } from "../../authority/runtime-target"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
-import { readJsonRecord, stringField } from "../../platform/json/index"
+import { readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { asFiniteNumber, asRecord, asString } from "@claxedo/helpers/guards"
 
 export type HostedShellRouteOptions = {

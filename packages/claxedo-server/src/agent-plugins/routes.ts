@@ -29,7 +29,7 @@ import {
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { controlPlaneAuthErrorBody, ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { asRecord, readJsonRecord, stringField } from "../platform/json/index"
+import { asRecord, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { signedOrError } from "../workspace/route-support"
 import type { AgentPluginMcpCatalogAuthenticationResolver } from "./mcp/catalog-auth"
 import { createRequestTiming } from "./request-timing"

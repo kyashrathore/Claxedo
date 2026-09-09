@@ -9,7 +9,7 @@ import {
   type RequestIdentityVerificationAdapter,
   type VerifiedAuthSession,
 } from "@claxedo/server-core/platform/auth/authentication"
-import { asRecord } from "../json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 type BetterAuthApiSurface = {
   getSession(input: {

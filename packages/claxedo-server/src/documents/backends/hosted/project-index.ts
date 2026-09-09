@@ -1,6 +1,6 @@
 import type { ConditionalObjectStore } from "./managed"
-import { DocumentIndexEntrySchema, type DocumentIndexEntry, type DocumentIndexScope } from "../../index-contract"
-import { asRecord, parseJson } from "../../../platform/json/index"
+import { DocumentIndexEntrySchema, type DocumentIndexEntry, type DocumentIndexScope } from "@claxedo/server-core/documents/index-contract"
+import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 /**
  * A per-project roll-up of every document entry in one R2 object, so listing a project costs one

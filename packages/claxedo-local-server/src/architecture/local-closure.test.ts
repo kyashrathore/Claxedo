@@ -225,7 +225,9 @@ describe("@claxedo/local-server closure", () => {
     // the restored machine-installed skill reader (82 modules at HEAD).
     // shell/event-stream-response.ts adds the central event transport owner;
     // the published closure now measures exactly 83 modules / 24 packages.
-    expect(modules.size).toBeLessThanOrEqual(83)
+    // app/local-documents adds the desktop composition of shared Documents;
+    // the published closure measures 84 modules / 24 packages.
+    expect(modules.size).toBeLessThanOrEqual(84)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(24)
   })

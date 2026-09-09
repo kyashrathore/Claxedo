@@ -12,7 +12,7 @@ import {
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../../authority/services"
 import { createHostedDocumentRuntimeBroker } from "./runtime-broker"
-import type { DocumentIndexEntry } from "../../index-store"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
 import { verifyDocumentRelayJobToken, verifyDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { fetchUrl, fetchBodyText } from "../../../test-support/fetch-calls"
 

@@ -20,7 +20,7 @@ import {
   restoreDocumentIndexEntry,
   relocateRepositoryDocumentIndexEntry,
   updateDocumentIndexMetadata,
-} from "./index-store"
+} from "@claxedo/server-core/documents/index-store"
 
 const root = path.join(realpathSync(os.tmpdir()), `document-index-${randomUUID()}`)
 const previousDataDir = process.env.CLAXEDO_DATA_DIR

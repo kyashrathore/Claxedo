@@ -23,7 +23,7 @@ import {
   type SessionTurnAuthority,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
-import { readJsonRecord } from "../platform/json/index"
+import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const bodyLimitBytes = 16 * 1024

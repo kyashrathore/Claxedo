@@ -1,5 +1,5 @@
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
-import type { DocumentVersion } from "./port"
+import type { DocumentVersion } from "@claxedo/server-core/documents/port"
 
 export type DocumentErrorCode =
   | "document_already_exists"

@@ -23,7 +23,7 @@
 
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
-import { asRecord, parseJson, stringField } from "../../src/platform/json/index"
+import { asRecord, parseJson, stringField } from "@claxedo/server-core/platform/json/index"
 
 /** Long enough for miniflare to evict an idle Durable Object. */
 const HIBERNATE_MS = 12_000

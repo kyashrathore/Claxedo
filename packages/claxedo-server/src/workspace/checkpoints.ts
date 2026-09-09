@@ -4,7 +4,7 @@ import type {
   SandboxCheckpointRuntime,
   SandboxManager,
 } from "@claxedo/sandbox-manager"
-import { readJsonRecord } from "../platform/json/index"
+import { readJsonRecord } from "@claxedo/server-core/platform/json/index"
 
 export type WorkspaceCheckpointService = ReturnType<typeof createWorkspaceCheckpointService>
 

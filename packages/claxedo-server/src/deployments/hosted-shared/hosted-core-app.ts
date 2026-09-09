@@ -68,7 +68,7 @@ import { contentfulStatus } from "../../platform/http/status"
 import type { FirstPartyMcpOptions } from "@claxedo/mcp"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
 import { readIntrospectedAccessToken, resolveOAuthMcpCredential } from "../../mcp/oauth-credential"
-import { asRecord, stringField } from "../../platform/json/index"
+import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
   HostedWorkspaceRouteOptions,

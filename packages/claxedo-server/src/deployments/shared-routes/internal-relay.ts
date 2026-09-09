@@ -6,7 +6,7 @@ import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { ControlPlaneRequestTimeoutError } from "../../platform/runtime/timeout"
 import type { WorkspaceAuthority } from "../../authority/services"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
-import { asRecord } from "../../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 

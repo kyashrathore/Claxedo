@@ -1,4 +1,4 @@
-export { ClaxedoDocumentIndexTable, ClaxedoDocumentStatusTable, ClaxedoLocalProjectTable } from "../../documents/index.sql"
+export { ClaxedoDocumentIndexTable, ClaxedoDocumentStatusTable, ClaxedoLocalProjectTable } from "@claxedo/server-core/documents/index.sql"
 export { ClaxedoTerminalSessionTable } from "../../session/terminal.sql"
 export { ClaxedoCloudSessionTable, ClaxedoCloudMessageTable, ClaxedoCloudMessageEventTable } from "@claxedo/server-core/session/cloud.sql"
 export {

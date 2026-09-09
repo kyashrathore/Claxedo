@@ -4,8 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import { PiRpcProcess } from "../../../agent-sdk-runtime/src/harnesses/pi/rpc-process"
 import { requirePiExecutable, verifyPiExecutable } from "../../../agent-sdk-runtime/src/harnesses/pi/executable"
-import { disposeHydratedSessionDocuments, syncHydratedSessionDocuments, hydrateSessionDocument, hydratedSessionDocumentPaths } from "../../src/documents/session-hydration"
-import { asRecord, numberField } from "../../src/platform/json/index"
+import { disposeHydratedSessionDocuments, syncHydratedSessionDocuments, hydrateSessionDocument, hydratedSessionDocumentPaths } from "@claxedo/server-core/documents/session-hydration"
+import { asRecord, numberField } from "@claxedo/server-core/platform/json/index"
 
 /** Real native Pi shell execution against the document hydration owner. No model credential is needed. */
 export async function runDocumentsSessionRoundtripSmoke() {

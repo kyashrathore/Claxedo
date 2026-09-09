@@ -43,7 +43,7 @@ import { reportPaymentError } from "../platform/telemetry/errors/report"
 import type { BillingStore, CheckoutContext } from "./store-contract"
 import { webhookEventToApplyArgs, isBillingRelevantEventType, type PolarProductConfig } from "./apply-polar-state"
 import { verifyStandardWebhook, WebhookSignatureError } from "./standard-webhooks"
-import { asRecord, isStringArray } from "../platform/json/index"
+import { asRecord, isStringArray } from "@claxedo/server-core/platform/json/index"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type BillingEnv = Record<string, string | undefined>

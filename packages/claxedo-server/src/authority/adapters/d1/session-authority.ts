@@ -20,7 +20,7 @@ import {
   type SessionTurnLease,
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
-import { asRecord, numberField, parseJson } from "../../../platform/json/index"
+import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",

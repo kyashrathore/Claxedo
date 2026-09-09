@@ -954,4 +954,4 @@ export {
   type LiveSyncRoomNamespace,
   type LiveSyncRoomStub,
 } from "../../platform/http/live-sync-publish"
-import { asRecord } from "../../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"

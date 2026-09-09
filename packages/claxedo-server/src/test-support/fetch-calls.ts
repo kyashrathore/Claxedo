@@ -9,7 +9,7 @@
  * and passes no matter what the caller sent. These read the value instead.
  */
 
-import { asRecord, parseJson } from "../platform/json/index"
+import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 /** The URL a fetch call targets, whether it was passed as a string, a `URL`, or a `Request`. */
 export function fetchUrl(input: unknown): string {

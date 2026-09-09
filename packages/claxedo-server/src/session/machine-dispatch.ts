@@ -17,7 +17,7 @@ import {
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneServices } from "../authority/services"
-import { asRecord, readJsonRecord, stringField } from "../platform/json/index"
+import { asRecord, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { isComposedAuthorityPort } from "../authority/composed-authority"
 
 export type MachineSessionCaller =

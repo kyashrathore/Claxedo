@@ -7,11 +7,11 @@ import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import { createWorkspaceRelayBun } from "@claxedo/workspace-relay/bun"
 import { createWorkspaceRuntimeApp, relayWorkspaceRuntimeExposure } from "../../../workspace-runtime/src/index"
 import { LocalInstallationDocumentBroker } from "../../src/documents/backends/local/installation-broker"
-import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../../src/documents/backends/local/managed"
+import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "@claxedo/server-core/documents/backends/local/managed"
 import { mintDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { captureWorkspaceRuntimeInternalSecrets } from "../../../workspace-runtime/src/internal-secrets"
-import type { DocumentBrokerBackend } from "../../src/documents/backend"
-import type { DocumentIndexEntry } from "../../src/documents/index-store"
+import type { DocumentBrokerBackend } from "@claxedo/server-core/documents/backend"
+import type { DocumentIndexEntry } from "@claxedo/server-core/documents/index-store"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "documents-relay-live-"))
 const runtimeKey = await generateKeyPair("EdDSA", { extractable: true })

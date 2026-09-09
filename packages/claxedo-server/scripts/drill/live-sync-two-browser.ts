@@ -78,7 +78,7 @@ import { mkdir, rm, writeFile, readFile, readdir } from "node:fs/promises"
 import { createServer } from "node:http"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
-import { asRecord, numberField, stringField } from "../../src/platform/json/index"
+import { asRecord, numberField, stringField } from "@claxedo/server-core/platform/json/index"
 
 // playwright-core is installed for `claxedo-app`, not this package, and adding a
 // dependency here would put a browser driver in the server package's tree for

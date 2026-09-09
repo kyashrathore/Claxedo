@@ -7,7 +7,7 @@ import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
 import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
 import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
-import { asRecord } from "../../platform/json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 export function runtimePath(path: string, query?: Record<string, string | undefined>) {
   const url = new URL(path, "http://workspace-runtime.local")

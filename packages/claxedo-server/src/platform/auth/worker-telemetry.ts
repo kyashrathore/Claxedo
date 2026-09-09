@@ -11,7 +11,7 @@
 
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
 import { resolveTelemetryHost, resolveTelemetryKey, type ObservabilityEnv } from "../telemetry/errors/config"
-import { asRecord } from "../json/index"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 
 type TelemetryEnv = ObservabilityEnv
 

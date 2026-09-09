@@ -5,10 +5,10 @@ import {
   withDocumentOperation,
   type DocumentChangedSink,
   type DocumentsBackend,
-} from "./backend"
-import type { DocumentIndexEntry, DocumentIndexScope } from "./index-store"
-import { DocumentVersionConflictError } from "./errors"
-import { toDocumentVersion, type DocumentActor, type DocumentEntry, type DocumentHandle, type DocumentVersion, type SnapshotID } from "./port"
+} from "@claxedo/server-core/documents/backend"
+import type { DocumentIndexEntry, DocumentIndexScope } from "@claxedo/server-core/documents/index-store"
+import { DocumentVersionConflictError } from "@claxedo/server-core/documents/errors"
+import { toDocumentVersion, type DocumentActor, type DocumentEntry, type DocumentHandle, type DocumentVersion, type SnapshotID } from "@claxedo/server-core/documents/port"
 
 export type DocumentsServiceScope = DocumentIndexScope & Readonly<{ actor: DocumentActor }>
 type Awaitable<T> = T | Promise<T>

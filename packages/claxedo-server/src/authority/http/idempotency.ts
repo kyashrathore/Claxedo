@@ -38,7 +38,7 @@
  * bounded one.
  */
 
-import { parseJson } from "../../platform/json/index"
+import { parseJson } from "@claxedo/server-core/platform/json/index"
 
 /** Guard against a hung `run` holding a serialization slot or cache entry forever. */
 const IDEMPOTENCY_INFLIGHT_TTL_MS = 60_000

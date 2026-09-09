@@ -1,8 +1,8 @@
 import { describe, expect, test, vi } from "vitest"
-import type { DocumentsBackend } from "./backend"
-import { createDocumentsService } from "./service"
-import type { DocumentHandle, DocumentVersion, SnapshotID, SnapshotRef } from "./port"
-import type { DocumentIndexEntry, DocumentIndexScope } from "./index-store"
+import type { DocumentsBackend } from "@claxedo/server-core/documents/backend"
+import { createDocumentsService } from "@claxedo/server-core/documents/service"
+import type { DocumentHandle, DocumentVersion, SnapshotID, SnapshotRef } from "@claxedo/server-core/documents/port"
+import type { DocumentIndexEntry, DocumentIndexScope } from "@claxedo/server-core/documents/index-store"
 
 const handle = {
   origin: "managed",

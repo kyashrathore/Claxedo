@@ -1,8 +1,8 @@
 import fs from "node:fs/promises"
 import path from "node:path"
 import { z } from "zod"
-import { syncDirectory } from "../fs-durability"
-import { contentHash } from "../version"
+import { syncDirectory } from "@claxedo/server-core/documents/fs-durability"
+import { contentHash } from "@claxedo/server-core/documents/version"
 
 const MoveRequestSchema = z
   .object({

@@ -9,7 +9,7 @@ import type {
   WorkspaceAuthority,
   WorkspaceShareTarget,
 } from "@claxedo/server-core/platform/auth/authority"
-import { asRecord, parseJson } from "../../../platform/json/index"
+import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "createHostEnrollmentRequest",

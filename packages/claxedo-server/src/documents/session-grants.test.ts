@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { sessionMatchesDocumentProject } from "./session-grants"
+import { sessionMatchesDocumentProject } from "@claxedo/server-core/documents/session-grants"
 
 describe("document session project grants", () => {
   test("accepts the canonical directory project when legacy session project identity differs", () => {

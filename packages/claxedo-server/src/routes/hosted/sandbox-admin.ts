@@ -4,7 +4,7 @@ import type { ControlPlaneTelemetry } from "../../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { internalAdminAuthorized } from "../../platform/http/internal-admin-auth"
 import { emitSandboxLeaseClosed } from "../../platform/telemetry/product/metering"
-import { readJsonRecord, stringField } from "../../platform/json/index"
+import { readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 export type HostedSandboxAdminOptions = {

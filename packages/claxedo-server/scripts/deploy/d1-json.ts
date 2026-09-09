@@ -1,4 +1,4 @@
-import { asRecord, isRecordArray, parseJson } from "../../src/platform/json/index"
+import { asRecord, isRecordArray, parseJson } from "@claxedo/server-core/platform/json/index"
 
 /**
  * The ONE reader for `wrangler d1 execute --json` output.
