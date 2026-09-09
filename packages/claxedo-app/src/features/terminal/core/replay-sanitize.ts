@@ -42,7 +42,9 @@
  *     goes near the server.
  * The app cannot import from the runtime package's internals, and a shared
  * package for ~200 lines is not worth the coupling. The behavioural test suite
- * is duplicated alongside it so the two cannot drift silently.
+ * is duplicated alongside it so the shared transcript policy cannot drift
+ * silently. The renderer additionally preserves structural buffer switches
+ * when its caller supplies a serialized snapshot rather than a raw transcript.
  */
 
 const ESC = 0x1b
@@ -81,7 +83,7 @@ type Scanned = {
  * Parse the CSI starting at `start` (the ESC). Shape:
  *   ESC [ <private 0x3C–0x3F> <params 0x30–0x3B> <intermediates 0x20–0x2F> <final 0x40–0x7E>
  */
-function scanCsi(data: string, start: number): Scanned {
+function scanCsi(data: string, start: number, preserveAlternateBuffer: boolean): Scanned {
   let i = start + 2
   const len = data.length
 
@@ -148,6 +150,12 @@ function scanCsi(data: string, start: number): Scanned {
       first = first * 10 + (code - 0x30)
       sawDigit = true
     }
+    // A serialized snapshot contains normal content followed by an alternate
+    // buffer switch and alternate content. That switch is structural: stripping
+    // it merges the two screens. Preserve only a standalone buffer parameter,
+    // never a combined sequence that could also enable stale input reporting.
+    if (preserveAlternateBuffer && (first === 47 || first === 1047 || first === 1049)
+      && !data.slice(paramStart, paramEnd).includes(";")) return { end, drop: false }
     if (sawDigit && isPreambleOwnedMode(first)) return { end, drop: true }
   }
 
@@ -208,7 +216,7 @@ function scanStringSequence(data: string, start: number, introducer: number): Sc
  *
  * Single pass; returns the input by reference when nothing needed stripping.
  */
-export function sanitizeReplay(data: string): string {
+export function sanitizeReplay(data: string, options: { preserveAlternateBuffer?: boolean } = {}): string {
   if (!data) return data
 
   let search = data.indexOf("\x1b")
@@ -227,7 +235,7 @@ export function sanitizeReplay(data: string): string {
     const next = i + 1 < data.length ? data.charCodeAt(i + 1) : -1
     let scanned: Scanned
     if (next === 0x5b /* [ */) {
-      scanned = scanCsi(data, i)
+      scanned = scanCsi(data, i, options.preserveAlternateBuffer === true)
     } else if (
       next === 0x5d /* ] */ ||
       next === 0x50 /* P */ ||

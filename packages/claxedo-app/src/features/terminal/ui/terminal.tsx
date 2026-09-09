@@ -282,9 +282,8 @@ export const Terminal = (props: TerminalProps) => {
       // to its container. `b.cols` straight after creation is xterm's 80-column
       // default (fonts have not settled, no fit has run) — reading it early
       // would compare a real snapshot width against 80 and register a spurious
-      // change, driving four destructive branches: the clear-screen on socket
-      // open, the live-tail cursor, the forced SIGWINCH toggle, and
-      // restoreSize. `undefined` when the container has no usable size yet, so
+      // change, altering the replay cursor and restoreSize decisions.
+      // `undefined` when the container has no usable size yet, so
       // an unmeasurable width reads as unchanged, never as changed.
       const mountCols = (() => {
         try {
@@ -638,14 +637,13 @@ export const Terminal = (props: TerminalProps) => {
         const restoreBuffer = shouldTrimTrailingLine ? trimTrailingLines(bufferToRestore, 2) : bufferToRestore
 
         // Restore ordering:
-        // - For fullscreen TUIs: enter alt screen first, then write snapshot.
-        //   This avoids a blank screen on reload when the app doesn't emit
-        //   output until the next input event.
+        // - For fullscreen TUIs: restore normal history, then let the serialized
+        //   snapshot switch to its alternate content. Both buffers must survive.
         // - For normal shells: restore modes + scrollback snapshot.
         // If a TUI leaves custom SGR attributes active (e.g. composer bg),
         // subsequent resizes can fill new rows with that background. Reset SGR
         // after snapshot restore so fit/resize uses theme defaults for new cells.
-        const restoreData = buildRestoreWrite({ wasAltScreen, modeSequences, restoreBuffer, likelyTui })
+        const restoreData = buildRestoreWrite({ modeSequences, restoreBuffer, likelyTui })
         b.write(restoreData, () => {
           // Restore scroll position. Alt-screen TUIs have no scrollback
           // so the viewport starts at 0 after \x1b[?1049h — no scroll needed.
@@ -838,11 +836,8 @@ export const Terminal = (props: TerminalProps) => {
               clearTimeout(openResizeSettleTimer)
               openResizeSettleTimer = undefined
             }
-            if (splitWidthChanged || wasReconnect) {
-              try {
-                b.write("\x1b[0m\x1b[H\x1b[2J")
-              } catch {}
-            }
+            // Retain the restored screen until the process redraws. Clearing
+            // it here loses quiet TUIs that do not produce output on SIGWINCH.
             // Force SIGWINCH via resize toggle so TUI apps re-render after reconnect.
             const targetCols = b.cols
             const targetRows = b.rows

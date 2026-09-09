@@ -6,7 +6,6 @@ export interface ResizeCoordinatorDeps {
   getCols: () => number
   getRows: () => number
   refresh: () => void
-  clear?: () => void
   notify: (cols: number, rows: number) => void
   clock: {
     setTimeout: (fn: () => void, ms: number) => number
@@ -75,9 +74,6 @@ export function createResizeCoordinator(deps: ResizeCoordinatorDeps): ResizeCoor
     _dimsChanged = newCols !== lastCols || newRows !== lastRows
 
     if (_dimsChanged) {
-      try {
-        deps.clear?.()
-      } catch {}
       lastCols = newCols
       lastRows = newRows
       deps.notify(newCols, newRows)

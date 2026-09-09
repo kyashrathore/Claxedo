@@ -71,24 +71,24 @@ describe("shouldTrimRestoredTail", () => {
 })
 
 describe("buildRestoreWrite", () => {
-  test("alt-screen restore enters the alternate buffer before the snapshot", () => {
+  test("the serialized snapshot owns its buffer switches", () => {
     expect(
-      buildRestoreWrite({ wasAltScreen: true, modeSequences: "MODE", restoreBuffer: "BUF", likelyTui: true }),
-    ).toBe("\x1b[?1049hMODEBUF\x1b[0m")
+      buildRestoreWrite({ modeSequences: "MODE", restoreBuffer: "NORMAL\x1b[?1049hALT", likelyTui: true }),
+    ).toBe("MODENORMAL\x1b[?1049hALT\x1b[0m")
   })
 
   test("normal-screen restore writes modes then scrollback with no alt-buffer switch", () => {
     expect(
-      buildRestoreWrite({ wasAltScreen: false, modeSequences: "MODE", restoreBuffer: "BUF", likelyTui: false }),
+      buildRestoreWrite({ modeSequences: "MODE", restoreBuffer: "BUF", likelyTui: false }),
     ).toBe("MODEBUF")
   })
 
   test("a TUI gets a trailing SGR reset; a plain shell does not", () => {
     expect(
-      buildRestoreWrite({ wasAltScreen: false, modeSequences: "", restoreBuffer: "x", likelyTui: true }),
+      buildRestoreWrite({ modeSequences: "", restoreBuffer: "x", likelyTui: true }),
     ).toBe("x\x1b[0m")
     expect(
-      buildRestoreWrite({ wasAltScreen: false, modeSequences: "", restoreBuffer: "x", likelyTui: false }),
+      buildRestoreWrite({ modeSequences: "", restoreBuffer: "x", likelyTui: false }),
     ).toBe("x")
   })
 })

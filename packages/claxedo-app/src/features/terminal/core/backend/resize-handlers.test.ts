@@ -160,6 +160,23 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("setupResizeHandlers — ResizeObserver + fontSize nudge", () => {
+  test("resizing a quiet alternate-screen program does not erase its frame", () => {
+    const container = makeContainer(600, 400)
+    const xterm = makeXterm(true)
+    Object.defineProperty(xterm.buffer, "active", { value: { type: "alternate" } })
+    const fit = makeFitAddon(() => ({ cols: 100, rows: 24 }))
+    fit.fit.mockImplementation(() => { Object.defineProperty(xterm, "cols", { value: 100, configurable: true }) })
+    const notify = vi.fn()
+    const handlers = setupResizeHandlers(container, xterm, fit, notify, makeRenderer())
+    try {
+      handlers.coordinator.flush()
+      expect(notify).toHaveBeenCalledWith(100, 24)
+      expect(xterm.write).not.toHaveBeenCalled()
+    } finally {
+      handlers.cleanup()
+    }
+  })
+
   test("observes the container", () => {
     const container = makeContainer()
     const xterm = makeXterm(true)

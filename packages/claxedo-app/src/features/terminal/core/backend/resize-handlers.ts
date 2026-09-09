@@ -101,26 +101,6 @@ export function setupResizeHandlers(
     getCols: () => xterm.cols,
     getRows: () => xterm.rows,
     refresh,
-    clear: () => {
-      // Fix Ink-style TUI duplication after resize/rewrap by clearing the
-      // visible screen before the app re-renders on SIGWINCH.
-      //
-      // Only do this in the alternate buffer. Clearing the normal buffer would
-      // destroy scrollback / shell history.
-      try {
-        const active = xterm.buffer.active
-        if (!("type" in active) || active.type !== "alternate") return
-      } catch {
-        return
-      }
-      try {
-        // Clear uses current SGR attributes. If a TUI leaves the "composer"
-        // background active, ESC[2J will paint the cleared region with that
-        // background, leaving a wide blank bar after resize. Reset attributes
-        // first so cleared cells use the terminal default theme.
-        xterm.write("\x1b[0m\x1b[H\x1b[2J")
-      } catch {}
-    },
     notify: (cols, rows) => onResize(cols, rows),
     clock: {
       setTimeout: (fn: () => void, ms: number) => window.setTimeout(fn, ms),

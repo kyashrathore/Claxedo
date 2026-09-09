@@ -30,7 +30,9 @@ for (const { harness, child, pause } of [
     // Cursor's native input handler treats 3+ events less than 35 ms apart as
     // a paste burst and inserts a newline on Enter. Exercise ordinary typing.
     const typingDelay = harness === "cursor" ? 50 : 20
-    const customLauncher = harness === "cursor"
+    const customLauncher = harness === "claude"
+      ? { name: "Claude Opus", command: "claude --model opus" }
+      : harness === "cursor"
       ? { name: "Cursor", command: "AGENT_CLI_CREDENTIAL_STORE=file cursor-agent --force" }
       : harness === "droid" ? { name: "Droid", command: "droid --auto high" }
       : harness === "antigravity" ? { name: "Antigravity", command: "agy --dangerously-skip-permissions" }

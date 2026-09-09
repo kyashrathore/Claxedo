@@ -9,6 +9,14 @@ import {
 } from "./terminal-buffer"
 
 describe("terminal buffer guards", () => {
+  test("retains snapshot buffer structure while dropping queries and stale input modes", () => {
+    const structural = "normal history\x1b[?1049h\x1b[Halternate frame"
+    const unsafe = "\x1b[?1003h\x1b[>7u\x1b[6n\x1b[?1049;1003h"
+    const persisted = preparePersistBuffer(structural + unsafe)
+    expect(persisted).toBe(structural)
+    expect(prepareRestoreBuffer(structural + unsafe).value).toBe(structural)
+    expect(prepareRestoreBuffer(persisted).value).toBe(structural)
+  })
   test("prepareRestoreBuffer trims oversized buffers to recent bytes", () => {
     const head = "a".repeat(MAX_RESTORE_BUFFER_BYTES)
     const tail = "b".repeat(128)

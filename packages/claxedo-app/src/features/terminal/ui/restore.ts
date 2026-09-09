@@ -66,20 +66,17 @@ export function shouldTrimRestoredTail(input: {
 
 /**
  * Assembles the exact byte sequence written to xterm to restore a buffer:
- * - alt-screen sessions enter the alternate buffer (`\x1b[?1049h`) first so a
- *   reload shows the last full-screen frame immediately;
- * - normal-screen sessions restore mode sequences then scrollback;
+ * - the serialized buffer owns the switch from normal history to alternate
+ *   content; entering the alternate screen before it would lose normal history;
+ * - restore mode sequences then the complete serialized snapshot;
  * - TUIs get a trailing SGR reset so later resizes use theme defaults, not
  *   whatever attributes the app last set.
  */
 export function buildRestoreWrite(input: {
-  readonly wasAltScreen: boolean
   readonly modeSequences: string
   readonly restoreBuffer: string
   readonly likelyTui: boolean
 }): string {
   const restoreTail = input.likelyTui ? "\x1b[0m" : ""
-  return input.wasAltScreen
-    ? `\x1b[?1049h${input.modeSequences}${input.restoreBuffer}${restoreTail}`
-    : `${input.modeSequences}${input.restoreBuffer}${restoreTail}`
+  return `${input.modeSequences}${input.restoreBuffer}${restoreTail}`
 }

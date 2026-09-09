@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/headless"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import { buildRestoreWrite } from "../../ui/restore"
 import { createModeScanner } from "../mode-scan"
+import { preparePersistBuffer, prepareRestoreBuffer } from "../terminal-buffer"
 
 const terminals: Terminal[] = []
 function terminal() {
@@ -20,7 +21,6 @@ describe("canonical restore bytes through the xterm parser", () => {
   test("restores a normal screen with input modes and accepts subsequent output", async () => {
     const target = terminal()
     await write(target, buildRestoreWrite({
-      wasAltScreen: false,
       modeSequences: "\x1b[?2004h\x1b[?1h",
       restoreBuffer: "shell$ command\r\nresult\r\nshell$ ",
       likelyTui: false,
@@ -37,9 +37,8 @@ describe("canonical restore bytes through the xterm parser", () => {
     const target = terminal()
     await write(target, "normal-shell-history\r\n")
     await write(target, buildRestoreWrite({
-      wasAltScreen: true,
       modeSequences: "\x1b[?2004h\x1b[?1h",
-      restoreBuffer: "\x1b[H\x1b[2JLast TUI frame\x1b[24;1HStatus bar",
+      restoreBuffer: "\x1b[?1049h\x1b[H\x1b[2JLast TUI frame\x1b[24;1HStatus bar",
       likelyTui: true,
     }))
     expect(target.buffer.active.type).toBe("alternate")
@@ -63,7 +62,6 @@ describe("canonical restore bytes through the xterm parser", () => {
     await write(source, data)
     const target = terminal()
     await write(target, buildRestoreWrite({
-      wasAltScreen: true,
       modeSequences: mode.rehydrateSequences(),
       restoreBuffer: serialize.serialize({ excludeAltBuffer: false, excludeModes: true }),
       likelyTui: true,
@@ -72,5 +70,26 @@ describe("canonical restore bytes through the xterm parser", () => {
     expect(target.buffer.active.getLine(0)?.translateToString(true)).toBe("TUI snapshot")
     expect(target.buffer.active.getLine(23)?.translateToString(true)).toBe("Footer")
     expect(target.modes.bracketedPasteMode).toBe(true)
+  })
+
+  test("leaving a restored TUI returns to the original shell history and cursor", async () => {
+    const source = terminal()
+    const serializer = new SerializeAddon()
+    source.loadAddon(serializer)
+    await write(source, "shell-history-before-tui\r\nshell$ ")
+    await write(source, "\x1b[?1049h\x1b[H\x1b[2JTUI frame\x1b[24;1HFooter")
+    const buffer = prepareRestoreBuffer(preparePersistBuffer(serializer.serialize({ excludeModes: true })))
+    const target = terminal()
+    await write(target, buildRestoreWrite({
+      modeSequences: "",
+      restoreBuffer: buffer.value!,
+      likelyTui: true,
+    }))
+    expect(target.buffer.active.getLine(0)?.translateToString(true)).toBe("TUI frame")
+    await write(source, "\x1b[?1049lreturned")
+    await write(target, "\x1b[?1049lreturned")
+    expect(lines(target)).toEqual(lines(source))
+    expect(target.buffer.active.cursorX).toBe(source.buffer.active.cursorX)
+    expect(target.buffer.active.cursorY).toBe(source.buffer.active.cursorY)
   })
 })

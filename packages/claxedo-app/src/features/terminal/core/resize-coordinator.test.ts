@@ -193,30 +193,6 @@ describe("createResizeCoordinator", () => {
 
 
 
-  test("6b: calls clear() when provided and dims change", () => {
-    const { deps, calls, clock, raf, setCols, setRows } = makeDeps({
-      clear: () => {
-        calls.push({ name: "clear" })
-      },
-    })
-    const coord = createResizeCoordinator(deps)
-
-    deps.fit = () => {
-      calls.push({ name: "fit" })
-      setCols(100)
-      setRows(20)
-    }
-
-    coord.request()
-    clock.advance(SETTLE_MS)
-    raf.flush()
-
-    const callNames = calls.map((c) => c.name)
-    expect(callNames).toEqual(["fit", "refresh", "clear", "notify"])
-
-    coord.dispose()
-  })
-
   test("7: dimsChanged() reflects dimension changes", () => {
     const { deps, calls, clock, setCols, setRows } = makeDeps()
     const coord = createResizeCoordinator(deps)

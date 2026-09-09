@@ -668,6 +668,46 @@ test.describe("live real-harness smoke @live", () => {
     await page.screenshot({ path: test.info().outputPath("terminal-exited-scrollback.png") })
   })
 
+  test("live terminal preserves shell history when a TUI exits after reload", async ({ page }) => {
+    await page.addInitScript(() => {
+      const host = window as typeof window & { terminalAudit?: () => string }
+      Object.defineProperty(window, "__CLAXEDO_AGENT_APP_BENCHMARK__", { value: {
+        terminalWriteParsed(receipt: { serialize(): string }) { host.terminalAudit = receipt.serialize },
+      } })
+    })
+    const screen = () => page.evaluate(() => (window as typeof window & { terminalAudit?: () => string }).terminalAudit?.())
+    const dir = await makeWorkspace("terminal-alt-history")
+    await seedOneProject(page, dir)
+    await openDraftPrompt(page, dir)
+    await page.locator('[data-testid="workspace-scope-new-terminal"]').click()
+    const created = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/pty"))
+    await page.locator('[data-component="terminal-new-launchers"] [data-launcher-id="shell"]').click()
+    const response = await created
+    expect(response.ok()).toBe(true)
+    const { id } = await response.json() as { id: string }
+    const selector = `[data-testid="terminal-pane"][data-terminal-id="${id}"]`
+    await expect(page.locator(selector)).toHaveAttribute("data-terminal-connected", "true")
+    await page.locator(`${selector} .xterm-helper-textarea`).focus()
+    // Actual shell-driven alternate screen, held still across renderer reload.
+    // Escaped first letters keep all expected markers out of echoed input.
+    await page.keyboard.type("printf '\\x4eORMAL_HISTORY\\n\\033[?1049h\\033[H\\033[2J\\x41LT_FRAME'; while [ ! -f release ]; do sleep 0.2; done; printf '\\033[?1049l\\x45XITED_ALT\\n'")
+    await page.keyboard.press("Enter")
+    try {
+      await expect.poll(screen).toContain("ALT_FRAME")
+      await expect.poll(screen).toContain("NORMAL_HISTORY")
+      await page.reload()
+      await expect(page.locator(selector)).toHaveAttribute("data-terminal-connected", "true")
+      await expect.poll(screen).toContain("ALT_FRAME")
+      await fs.writeFile(path.join(dir, "release"), "done")
+      await expect.poll(screen).toContain("EXITED_ALT")
+      await test.info().attach("terminal-after-alt-exit", { body: (await screen()) ?? "", contentType: "text/plain" })
+      await page.screenshot({ path: test.info().outputPath("terminal-after-alt-exit.png") })
+      await expect.poll(screen).toContain("NORMAL_HISTORY")
+    } finally {
+      await fs.writeFile(path.join(dir, "release"), "done")
+    }
+  })
+
   test("live terminal restores the same screen in a fresh browser", async ({ page, browser }) => {
     const streams: Record<string, Array<{ url: string; data: string; binary: boolean }>> = { original: [], restored: [] }
     const recordStream = (target: Page, side: "original" | "restored") => target.on("websocket", (socket) => {

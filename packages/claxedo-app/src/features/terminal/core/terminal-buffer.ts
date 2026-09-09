@@ -75,16 +75,17 @@ export function prepareRestoreBuffer(value?: string) {
   // build (which still contain the program's queries and mode sets) cannot
   // re-arm mouse tracking or provoke an answer-back into a shell that never
   // asked. Cheap: a no-op for any buffer without an ESC.
-  const clean = sanitizeReplay(value)
+  const clean = sanitizeReplay(value, { preserveAlternateBuffer: true })
   if (clean.length <= MAX_RESTORE_BUFFER_BYTES) return { value: clean, trimmed: false }
   return { value: keepTail(clean, MAX_RESTORE_BUFFER_BYTES), trimmed: true }
 }
 
 export function preparePersistBuffer(value: string) {
   if (!value) return value
-  // A persisted snapshot is a RECORDING. Strip the sequences that only make
+  // A persisted snapshot is a RECORDING. Keep the serializer's structural
+  // normal/alternate buffer switch. Strip the sequences that only make
   // sense live — terminal queries (which the next mount would answer into a
   // pty whose program has moved on) and mode sets (which belong to the live
   // preamble from the PTY host, not to a transcript).
-  return keepTail(sanitizeReplay(value), MAX_PERSIST_BUFFER_BYTES)
+  return keepTail(sanitizeReplay(value, { preserveAlternateBuffer: true }), MAX_PERSIST_BUFFER_BYTES)
 }

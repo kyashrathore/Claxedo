@@ -47,7 +47,7 @@ describe("terminal runtime queue with the xterm parser", () => {
     h.queue.push("pending two\r\n")
     expect(h.writes).toEqual([])
     await new Promise<void>((resolve) => h.terminal.write(buildRestoreWrite({
-      wasAltScreen: false, modeSequences: "", restoreBuffer: "history\r\n", likelyTui: false,
+      modeSequences: "", restoreBuffer: "history\r\n", likelyTui: false,
     }), resolve))
     h.queue.flushPending()
     h.queue.push("live 🙃")
