@@ -1,3 +1,4 @@
+import { deletePendingQuestion } from "../helpers/question-deletion"
 import { cancelPendingPermission } from "../helpers/permission-cancellation"
 import { expectSessionRenamePersistence } from "../helpers/session-rename"
 import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
@@ -21,7 +22,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "permission Delete across full restart", "reply", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "permission Delete across full restart", "reply", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart", "question delete across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -119,6 +120,62 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await picker.locator('[data-slot="list-item"]').filter({ has: packaged.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
       await expect(control).toContainText("Opus")
       await packaged.page.keyboard.press("Escape")
+    }
+
+    const verifyDeletedSessionRecovery = async (sessionId: string) => {
+      const query = `?directory=${encodeURIComponent(directory)}`
+      const expectNoPendingRequests = async () => {
+        for (const kind of ["permission", "question"]) {
+          const response = await fetch(`${serverBase}/${kind}${query}`)
+          expect(response.ok).toBe(true)
+          const requests = await response.json() as Array<{ sessionID: string }>
+          expect(requests.filter((request) => request.sessionID === sessionId)).toEqual([])
+        }
+      }
+      const quitting = packaged!.app.process()
+      await packaged!.close()
+      await expect.poll(() => quitting.exitCode !== null || quitting.signalCode !== null).toBe(true)
+      packaged = await launch()
+      expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+      await expectNoPendingRequests()
+      expect((await fetch(`${serverBase}/session/${sessionId}${query}`)).status).toBe(404)
+      await test.info().attach("deleted-session-restored-layout", {
+        contentType: "application/json",
+        body: await packaged!.page.evaluate(() => localStorage.getItem("claxedo.state.v5") ?? "null"),
+      })
+      await expect(packaged!.page.locator(`[data-session-id="${sessionId}"]`)).toHaveCount(0)
+      await expect(packaged!.page.locator('[data-component="dock-prompt"]')).toHaveCount(0)
+      const freshProject = packaged!.page.locator(`[data-testid="project-group"][data-project-id="${workspaceId}"]`)
+      await freshProject.locator('[data-testid="project-header"]').hover()
+      await freshProject.locator('[aria-label="New session in main"]').click()
+      const freshControl = packaged!.page.locator('[data-action="prompt-harness-model"]:visible').last()
+      await freshControl.click()
+      const freshPicker = packaged!.page.locator('[data-component="harness-model-picker"]')
+      await freshPicker.locator('[data-slot="harness-picker-section"]').first().click()
+      await freshPicker.getByRole("button", { name: harness, exact: true }).first().click()
+      await packaged!.page.keyboard.press("Escape")
+      await expect(freshControl).not.toContainText(/Loading models|Select model|^$/, { timeout: 45_000 })
+      if (harness === "Claude") {
+        await freshControl.click()
+        await freshPicker.locator('[data-slot="list-item"]').filter({ has: packaged!.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
+        await packaged!.page.keyboard.press("Escape")
+      }
+      const fresh = `AFTER_DELETE_${Date.now()}`
+      await compose(packaged!.page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply exactly ${fresh}. Do not use tools.`)
+      const creation = packaged!.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
+      await packaged!.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      const created = await creation
+      expect(created.ok()).toBe(true)
+      const replacement = await created.json() as { id: string }
+      expect(replacement.id).not.toBe(sessionId)
+      const config = await fetch(`${serverBase}/session/${replacement.id}/config${query}`)
+      expect(config.ok).toBe(true)
+      expect(await config.json()).toMatchObject({ harness: { id: harness.toLowerCase() } })
+      await expectAssistantReplyVisible(packaged!.page, fresh)
+      await packaged!.page.reload()
+      await expectAssistantReplyVisible(packaged!.page, fresh)
+      await expectNoPendingRequests()
+      expect((await fetch(`${serverBase}/session/${sessionId}${query}`)).status).toBe(404)
     }
 
     if (flow.startsWith("Documents MCP")) {
@@ -498,50 +555,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await packaged.page.screenshot({ path: test.info().outputPath("permission-after-restart.png") })
       if (decision === "Delete") {
         await cancelPendingPermission(packaged.page, { backendUrl: serverBase, directory, sessionId: session.id, action: "Delete" })
-        const quitting = packaged.app.process()
-        await packaged.close()
-        await expect.poll(() => quitting.exitCode !== null || quitting.signalCode !== null).toBe(true)
-        packaged = await launch()
-        expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
-        expect(await readPending()).toEqual([])
-        expect((await fetch(`${serverBase}/session/${session.id}${query}`)).status).toBe(404)
-        await test.info().attach("deleted-session-restored-layout", {
-          contentType: "application/json",
-          body: await packaged.page.evaluate(() => localStorage.getItem("claxedo.state.v5") ?? "null"),
-        })
-        await expect(packaged.page.locator(`[data-session-id="${session.id}"]`)).toHaveCount(0)
-        await expect(packaged.page.locator('[data-component="dock-prompt"][data-kind="permission"]')).toHaveCount(0)
-        const freshProject = packaged.page.locator(`[data-testid="project-group"][data-project-id="${workspaceId}"]`)
-        await freshProject.locator('[data-testid="project-header"]').hover()
-        await freshProject.locator('[aria-label="New session in main"]').click()
-        const freshControl = packaged.page.locator('[data-action="prompt-harness-model"]:visible').last()
-        await freshControl.click()
-        const freshPicker = packaged.page.locator('[data-component="harness-model-picker"]')
-        await freshPicker.locator('[data-slot="harness-picker-section"]').first().click()
-        await freshPicker.getByRole("button", { name: harness, exact: true }).first().click()
-        await packaged.page.keyboard.press("Escape")
-        await expect(freshControl).not.toContainText(/Loading models|Select model|^$/, { timeout: 45_000 })
-        if (harness === "Claude") {
-          await freshControl.click()
-          await freshPicker.locator('[data-slot="list-item"]').filter({ has: packaged.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
-          await packaged.page.keyboard.press("Escape")
-        }
-        const fresh = `AFTER_DELETE_${Date.now()}`
-        await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply exactly ${fresh}. Do not use tools.`)
-        const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
-        await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
-        const created = await creation
-        expect(created.ok()).toBe(true)
-        const replacement = await created.json() as { id: string }
-        expect(replacement.id).not.toBe(session.id)
-        const config = await fetch(`${serverBase}/session/${replacement.id}/config${query}`)
-        expect(config.ok).toBe(true)
-        expect(await config.json()).toMatchObject({ harness: { id: harness.toLowerCase() } })
-        await expectAssistantReplyVisible(packaged.page, fresh)
-        await packaged.page.reload()
-        await expectAssistantReplyVisible(packaged.page, fresh)
-        expect(await readPending()).toEqual([])
-        expect((await fetch(`${serverBase}/session/${session.id}${query}`)).status).toBe(404)
+        await verifyDeletedSessionRecovery(session.id)
         await expect(fs.stat(output)).rejects.toMatchObject({ code: "ENOENT" })
         return
       }
@@ -620,7 +634,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       return
     }
 
-    if (flow === "question answer across full restart" || flow === "question dismiss across full restart" || flow === "question stop across full restart") {
+    if (flow === "question answer across full restart" || flow === "question dismiss across full restart" || flow === "question stop across full restart" || flow === "question delete across full restart") {
       const action = flow === "question answer across full restart" ? "answer" : flow === "question dismiss across full restart" ? "dismiss" : "stop"
       const prefix = `DESKTOP_QUESTION_${Date.now()}`
       const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
@@ -652,6 +666,11 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await expect(dock.locator('[data-slot="question-option"]', { hasText: "Staging" })).toContainText("Isolated test environment")
       expect(await readQuestions()).toEqual(pending)
       await packaged.page.screenshot({ path: test.info().outputPath("question-after-restart.png") })
+      if (flow === "question delete across full restart") {
+        await deletePendingQuestion(packaged.page, { backendUrl: serverBase, directory, sessionId: session.id })
+        await verifyDeletedSessionRecovery(session.id)
+        return
+      }
       if (action === "answer") {
         await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
         await dock.getByRole("button", { name: "Submit", exact: true }).click()

@@ -12,7 +12,12 @@ export async function cancelPendingPermission(page: Page, input: { backendUrl: s
   if (input.action === "Delete") {
     await page.getByRole("button", { name: "More options", exact: true }).click()
     await page.getByRole("menuitem", { name: "Delete", exact: true }).click()
+    const deletion = page.waitForResponse((response) => response.request().method() === "DELETE" &&
+      new URL(response.url()).pathname === `/session/${input.sessionId}`)
     await page.getByRole("button", { name: "Delete session", exact: true }).click()
+    const deleted = await deletion
+    expect(deleted.ok(), await deleted.text()).toBe(true)
+    await expect(page.locator(`[data-session-id="${input.sessionId}"]`)).toHaveCount(0)
   } else {
     const stop = page.getByRole("button", { name: "Stop", exact: true })
     await expect(stop).toBeVisible({ timeout: 10_000 })
