@@ -31,7 +31,7 @@ for (const { harness, child, pause } of [
     // a paste burst and inserts a newline on Enter. Exercise ordinary typing.
     const typingDelay = harness === "cursor" ? 50 : 20
     const customLauncher = harness === "claude"
-      ? { name: "Claude Opus", command: "claude --model opus" }
+      ? { name: "Claude Opus", command: "claude --model opus --dangerously-skip-permissions" }
       : harness === "cursor"
       ? { name: "Cursor", command: "AGENT_CLI_CREDENTIAL_STORE=file cursor-agent --force" }
       : harness === "droid" ? { name: "Droid", command: "droid --auto high" }
