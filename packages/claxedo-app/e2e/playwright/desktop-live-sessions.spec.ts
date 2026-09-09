@@ -1,6 +1,7 @@
 import { deletePendingQuestion } from "../helpers/question-deletion"
 import { cancelPendingPermission } from "../helpers/permission-cancellation"
 import { expectSessionRenamePersistence } from "../helpers/session-rename"
+import { expectSessionReadRecovery } from "../helpers/session-read-recovery"
 import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
 import { expectAssistantReplyVisible } from "../helpers/turn-oracle"
 import { expect, test, type Locator } from "@playwright/test"
@@ -907,6 +908,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       })
       await expectAssistantReplyVisible(packaged.page, marker)
       const followup = `DESKTOP_RENAME_FOLLOWUP_${Date.now()}`
+      await expectSessionReadRecovery(packaged.page, { backendUrl: serverBase, directory, sessionId: session.id })
       await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(),
         `Reply with exactly this one token: ${followup}. Do not use tools.`)
       const continued = packaged.page.waitForResponse((response) =>

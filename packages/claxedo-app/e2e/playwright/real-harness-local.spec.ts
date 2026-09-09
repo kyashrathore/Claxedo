@@ -1,4 +1,5 @@
 import { expectSessionRenamePersistence } from "../helpers/session-rename"
+import { expectSessionReadRecovery } from "../helpers/session-read-recovery"
 import { expectUnsupportedFork } from "../helpers/unsupported-fork"
 import { expectRunningChildCleanup } from "../helpers/running-child-cleanup"
 import { deletePendingQuestion } from "../helpers/question-deletion"
@@ -1272,6 +1273,7 @@ test.describe("real harness journeys @core @tier-real", () => {
         backendUrl: BACKEND_URL, directory: dir, sessionId,
         restartServer: async () => { await server!.restart() },
       })
+      await expectSessionReadRecovery(page, { backendUrl: BACKEND_URL, directory: dir, sessionId })
       await expectAssistantReplyVisible(page, marker)
       const followup = `RENAME-FOLLOWUP-${Date.now()}`
       await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${followup}. Do not use tools.`)
