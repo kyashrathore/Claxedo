@@ -36,7 +36,6 @@ export type RailWorkbenchShellProps = {
   onWorkspacePanelWorkbenchColumnRef: (element: HTMLElement | undefined) => void
   onWorkspacePanelWidthChange: (width: number) => void
   onSelectSurface: (contentId: string) => void
-  onSettings?: () => void
   onShowSidebar: () => void
   onSidebarHotZoneEnter: () => void
   onToggleWorkspacePanel: (button: HTMLButtonElement) => void
@@ -121,7 +120,6 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
             onNewPage={props.onNewPage}
             onNewSession={props.onNewSession}
             onNewTerminalDraft={props.onNewTerminalDraft}
-            onSettings={props.onSettings}
             onSelectSurface={props.onSelectSurface}
             onShowSidebar={props.onShowSidebar}
             onSidebarHotZoneEnter={props.onSidebarHotZoneEnter}

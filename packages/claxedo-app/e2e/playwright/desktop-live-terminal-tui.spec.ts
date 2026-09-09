@@ -140,22 +140,23 @@ for (const { harness, child, pause } of [
         }))
         localStorage.setItem("claxedo.terminal.renderer", "dom")
       }, directory)
+      if (customLauncher) {
+        // Seeded rather than typed into Settings -> Terminals: the pane's save
+        // path is covered by `features/settings/ui/terminals.vitest.tsx`, and
+        // reaching it here means opening the rail account menu, whose org/team
+        // reads suspend the shell and take this header with them.
+        await packaged.page.evaluate((launcher) => {
+          localStorage.setItem(
+            "claxedo.terminalCommands",
+            JSON.stringify({ custom: [{ id: "custom-launcher", ...launcher }] }),
+          )
+        }, customLauncher)
+      }
       await packaged.page.reload()
       const project = packaged.page.locator(`[data-testid="project-group"][data-project-id="${workspaceId}"]`)
       await expect(project).toBeVisible({ timeout: 30_000 })
       await project.locator('[data-testid="project-header"]').hover()
       await project.locator('[aria-label="New session in main"]').click()
-      if (customLauncher) {
-        await packaged.page.locator('[data-component="workspace-more-menu"]').click()
-        await packaged.page.getByRole("menuitem", { name: "Configure..." }).click()
-        await packaged.page.getByRole("tab", { name: "Terminals" }).click()
-        await packaged.page.getByRole("button", { name: "Add", exact: true }).click()
-        await packaged.page.getByPlaceholder("Command name (e.g., Aider)").fill(customLauncher.name)
-        await packaged.page.getByPlaceholder("Command to run (e.g., aider --model gpt-4)").fill(customLauncher.command)
-        await packaged.page.getByRole("button", { name: "Save Changes" }).click()
-        await expect(packaged.page.getByText("Terminal commands saved")).toBeVisible()
-        await packaged.page.keyboard.press("Escape")
-      }
       await packaged.page.locator('[data-testid="workspace-scope-new-terminal"]').click()
       const launchers = packaged.page.locator('[data-component="terminal-new-launchers"]')
       const launcher = customLauncher ? launchers.getByRole("button", { name: new RegExp(`^${customLauncher.name} `) }) : launchers.locator(`[data-launcher-id="${harness}"]`)

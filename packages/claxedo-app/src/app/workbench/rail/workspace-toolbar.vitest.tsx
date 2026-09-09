@@ -62,8 +62,7 @@ describe("WorkspaceScopeButtons", () => {
       />
     ))
 
-    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "ArrowDown" })
-    expect(screen.queryByRole("menuitem", { name: "New Document" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull()
 
     cleanup()
     render(() => (
@@ -76,6 +75,22 @@ describe("WorkspaceScopeButtons", () => {
 
     fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "ArrowDown" })
     expect(await screen.findByRole("menuitem", { name: "New Document" })).toBeInTheDocument()
+  })
+
+  /**
+   * Settings is the account menu's, and terminal commands are reached through
+   * it — so with documents off there is no entry left and no trigger to open.
+   */
+  test("drops the more menu when the document action is withheld", () => {
+    render(() => (
+      <WorkspaceScopeButtons
+        canCreateTerminal
+        onNewSession={() => undefined}
+        onNewTerminalDraft={() => undefined}
+      />
+    ))
+
+    expect(screen.queryByRole("button", { name: "More actions" })).toBeNull()
   })
 
   /**

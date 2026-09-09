@@ -293,7 +293,13 @@ export const appLocal: Policy = {
   // Full verify:closure measured 1005 modules / 38 packages; no headroom.
   // +1 module: local-event-websocket owns central stream transport across
   // windows. Authoritative builds and identity checks passed; measured 1006 / 38.
-  ceilings: { modules: 1006, packages: 38 },
+  // +1 module (2026-09-09): the terminal agent catalog and the commands saved
+  // for it move out of the Settings UI into their owner,
+  // `features/terminal/core/{terminal-agents,terminal-commands}.ts` — the rail's
+  // quick-launch buttons and the creator read the pair instead of reaching into
+  // a settings pane, and `settings/ui/terminals.tsx` leaves this closure with
+  // the lazy Settings dialog. Net +1; no new package edge. Measured 1007 / 38.
+  ceilings: { modules: 1007, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -85,8 +85,8 @@ vi.mock("../../../features/workspaces/data/workspace-connection", () => ({
   isWorkspaceReady: () => true,
 }))
 
-vi.mock("../../../features/settings/ui/terminals", () => ({
-  getTerminalCommands: () => ({ claude: "claude", codex: "codex", custom: [] }),
+vi.mock("@/features/terminal/core/terminal-commands", () => ({
+  getTerminalCommands: () => ({ agents: { claude: "claude", codex: "codex", cursor: "cursor-agent", gemini: "gemini" }, custom: [] }),
 }))
 
 vi.mock("../../../features/session/data/sync/session-inventory", () => ({

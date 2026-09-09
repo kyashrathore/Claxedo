@@ -32,7 +32,6 @@ type WorkspaceScopeButtonsProps = {
   onNewTerminalDraft?: () => void
   onNewPage?: () => void
   canUseDocuments?: boolean
-  onSettings?: () => void
   class?: string
 }
 
@@ -72,30 +71,25 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
         </Show>
       </Tooltip>
 
-      <DropdownMenu>
-        <DropdownMenu.Trigger aria-label="More actions" data-component="workspace-more-menu" class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base aria-expanded:bg-surface-base-active aria-expanded:text-text-base">
-          <Icon name="chevron-down" size="small" />
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content class="z-[200]">
-            {/* No terminal entries here any more. "New Terminal" is the button
-                beside this trigger, and the custom commands it used to list are
-                tiles in the creator — where they run somewhere the user picked
-                rather than somewhere the header inferred. */}
-            <Show when={props.canUseDocuments === true && props.onNewPage}>
+      {/* New Document is the only entry, so the trigger goes with it. Terminal
+          entries live in the creator (which asks for a workspace first) and
+          Settings in the account menu; a chevron that opened a one-item menu
+          was a second route to both. */}
+      <Show when={props.canUseDocuments === true && props.onNewPage}>
+        <DropdownMenu>
+          <DropdownMenu.Trigger aria-label="More actions" data-component="workspace-more-menu" class="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base aria-expanded:bg-surface-base-active aria-expanded:text-text-base">
+            <Icon name="chevron-down" size="small" />
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content class="z-[200]">
               <DropdownMenu.Item onSelect={() => props.onNewPage?.()}>
                 <Icon name="page" size="small" style={{ width: "14px", height: "14px", margin: "1px" }} />
                 New Document
               </DropdownMenu.Item>
-              <DropdownMenu.Separator />
-            </Show>
-            <DropdownMenu.Item onSelect={() => props.onSettings?.()}>
-              <Icon name="settings-gear" size="small" style={{ width: "14px", height: "14px", margin: "1px" }} />
-              Configure...
-            </DropdownMenu.Item>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu>
+      </Show>
     </div>
   )
 }

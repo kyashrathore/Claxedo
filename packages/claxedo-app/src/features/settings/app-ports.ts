@@ -7,6 +7,8 @@ import type * as SelectProvider from "@/app/dialogs/select-provider"
 import type * as CustomProvider from "@/app/dialogs/custom-provider"
 import type * as AIConnectApi from "@/features/onboarding/ai-connect-api"
 import type * as AIConnectState from "@/features/onboarding/ai-connect-state"
+import type * as TerminalAgents from "@/features/terminal/core/terminal-agents"
+import type * as TerminalCommands from "@/features/terminal/core/terminal-commands"
 import type * as Models from "@/features/session/providers/models"
 import type * as Command from "@/app/providers/command"
 import type * as ConnectIntegration from "@/app/dialogs/connect-integration"
@@ -17,6 +19,8 @@ import type { HarnessSelection } from "@/platform/identity/harness-selection"
 
 export type LocalHarnessStatus = AIConnectState.LocalHarnessStatus
 export type LocalHarnessCheck = (typeof AIConnectState.localHarnessChecks)[number]
+export type TerminalAgentId = TerminalAgents.TerminalAgentId
+export type TerminalCustomCommand = TerminalCommands.CustomCommand
 
 export type SettingsAppPorts = {
   useProviders: typeof Providers.useProviders
@@ -31,6 +35,11 @@ export type SettingsAppPorts = {
   localHarnessStatuses: typeof AIConnectState.localHarnessStatuses
   /** The harness rows the Agents section lists, in the order onboarding declares them. */
   localHarnessChecks: typeof AIConnectState.localHarnessChecks
+  /** The CLI agents the Terminals pane edits a command for, in catalog order. */
+  terminalAgents: typeof TerminalAgents.TERMINAL_AGENTS
+  getTerminalCommands: typeof TerminalCommands.getTerminalCommands
+  saveTerminalCommands: typeof TerminalCommands.saveTerminalCommands
+  defaultTerminalCommands: typeof TerminalCommands.defaultTerminalCommands
   useModels: typeof Models.useModels
   formatKeybind: typeof Command.formatKeybind
   parseKeybind: typeof Command.parseKeybind
@@ -84,6 +93,14 @@ export const localHarnessStatuses = bind((ports) => ports.localHarnessStatuses)
 export function localHarnessChecks() {
   return required().localHarnessChecks
 }
+
+/** A value port too — the catalog is a list, not a call. */
+export function terminalAgents() {
+  return required().terminalAgents
+}
+export const getTerminalCommands = bind((ports) => ports.getTerminalCommands)
+export const saveTerminalCommands = bind((ports) => ports.saveTerminalCommands)
+export const defaultTerminalCommands = bind((ports) => ports.defaultTerminalCommands)
 export const useModels = bind((ports) => ports.useModels)
 export const formatKeybind = bind((ports) => ports.formatKeybind)
 export const parseKeybind = bind((ports) => ports.parseKeybind)

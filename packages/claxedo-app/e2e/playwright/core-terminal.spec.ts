@@ -407,8 +407,11 @@ type PtyApi = {
   createdIds: string[]
 }
 
+/** What `GET /pty/agents` reports when a test does not name its own set. */
+const INSTALLED_AGENTS = ["claude", "codex", "cursor-agent", "gemini"]
+
 /** Hand-rolled PTY REST mock — mock-runtime.ts does not cover `/api/wr/pty`. */
-async function installPtyApi(page: Page, dir: string): Promise<PtyApi> {
+async function installPtyApi(page: Page, dir: string, installedAgents = INSTALLED_AGENTS): Promise<PtyApi> {
   const api: PtyApi = { creates: [], createdIds: [] }
   const all: Array<{ id: string; title: string; cwd: string }> = []
   let nextId = 1
@@ -439,6 +442,14 @@ async function installPtyApi(page: Page, dir: string): Promise<PtyApi> {
         return route.fulfill({ status: 200, contentType: "application/json", headers, body: JSON.stringify(all) })
       }
       return route.fallback()
+    }
+    if (url.pathname === "/api/wr/pty/agents") {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers,
+        body: JSON.stringify({ installed: installedAgents }),
+      })
     }
     if (/^\/api\/wr\/pty\/[^/]+$/.test(url.pathname)) {
       if (req.method() === "PUT" || req.method() === "DELETE") {
@@ -480,14 +491,6 @@ async function openWorkspaceRoute(page: Page, dir: string) {
   await page.goto(`/${slug(dir)}/session`)
   await page.waitForLoadState("domcontentloaded")
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-}
-
-function toolbarDropdownTrigger(page: Page) {
-  return page.locator('[data-component="workspace-more-menu"]')
-}
-
-async function openToolbarDropdown(page: Page) {
-  await toolbarDropdownTrigger(page).click()
 }
 
 function sidebarTerminalRow(page: Page, ptyId: string) {
@@ -631,6 +634,29 @@ test.describe("core terminal panel @core", () => {
     await expect(sidebarTerminalRow(page, id)).toContainText(/Codex/)
   })
 
+  /**
+   * The tile set is the machine's answer, not the profile's: the commands are
+   * configured per browser profile, but a workspace whose machine has no
+   * `gemini` cannot start one, and offering the tile there only fails at spawn.
+   */
+  test("the creator offers only the agents the machine reports as installed", async ({ page }) => {
+    const DIR = "/tmp/e2e-core-terminal-installed"
+    await installAppBootMock(page, DIR)
+    await installFakeTerminalSocket(page)
+    await installPtyApi(page, DIR, ["codex"])
+    await seedProject(page, DIR)
+    await openWorkspaceRoute(page, DIR)
+
+    await page.locator('[data-testid="workspace-scope-new-terminal"]').click()
+    const launchers = page.locator('[data-component="terminal-new-launchers"]')
+    await expect(launchers).toBeVisible({ timeout: 15_000 })
+    await expect(launchers.locator('[data-launcher-id="codex"]')).toBeVisible()
+    await expect(launchers.locator('[data-launcher-id="shell"]')).toBeVisible()
+    await expect(launchers.locator('[data-launcher-id="claude"]')).toHaveCount(0)
+    await expect(launchers.locator('[data-launcher-id="gemini"]')).toHaveCount(0)
+    await expect(launchers.locator('[data-launcher-id="cursor"]')).toHaveCount(0)
+  })
+
   test("a custom command configured in Settings -> Terminals launches with that exact command", async ({ page }) => {
     const DIR = "/tmp/e2e-core-terminal-custom"
     await installAppBootMock(page, DIR)
@@ -641,14 +667,12 @@ test.describe("core terminal panel @core", () => {
 
     // Configured through the real Settings UI rather than seeded into localStorage, so the
     // save path is part of what this proves.
-    await openToolbarDropdown(page)
-    await page.getByRole("menuitem", { name: "Configure..." }).click()
+    await page.locator('[data-testid="rail-account-trigger"]').click()
+    await page.getByRole("menuitem", { name: "Settings" }).click()
     await page.getByRole("tab", { name: "Terminals" }).click()
-    await page.getByRole("button", { name: "Add" }).click()
-    const nameInput = page.getByPlaceholder("Command name (e.g., Aider)")
-    const commandInput = page.getByPlaceholder("Command to run (e.g., aider --model gpt-4)")
-    await nameInput.fill("Aider")
-    await commandInput.fill("aider --model gpt-4")
+    await page.getByRole("button", { name: "Add", exact: true }).click()
+    await page.getByPlaceholder("Command name (e.g., Aider)").fill("Aider")
+    await page.getByPlaceholder("Command to run (e.g., aider --model gpt-4)").fill("aider --model gpt-4")
     await page.getByRole("button", { name: "Save Changes" }).click()
     await expect(page.getByText("Terminal commands saved")).toBeVisible({ timeout: 10_000 })
     await page.keyboard.press("Escape")
@@ -657,6 +681,8 @@ test.describe("core terminal panel @core", () => {
     const id = await createCustomTerminal(page, api, "Aider")
 
     const body = api.creates[0]
+    // `aider` is not a catalog agent, so it stays an initialCommand for the
+    // shell rather than being split into command + args.
     expect(body?.command).toBeUndefined()
     expect(body?.initialCommand).toBe("aider --model gpt-4")
     expect(body?.title).toMatch(/^Aider( \d+)?$/)

@@ -69,7 +69,6 @@ export function WorkbenchShellHeader(props: {
   onNewSession: () => void
   onNewTerminalDraft: () => void
   onNewTask?: () => void
-  onSettings?: () => void
   onShowSidebar: () => void
   onSidebarHotZoneEnter: () => void
   onSelectSurface: (contentId: string) => void
@@ -167,7 +166,6 @@ export function WorkbenchShellHeader(props: {
           onNewTerminalDraft={props.onNewTerminalDraft}
           canUseDocuments={props.canUseDocuments === true}
           onNewPage={props.onNewPage}
-          onSettings={props.onSettings}
         />
         <Show when={props.topBarRight}>
           <div class="flex items-center gap-2 pr-1">{props.topBarRight?.()}</div>

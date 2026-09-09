@@ -536,7 +536,6 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onWorkspacePanelWorkbenchColumnRef={workbenchController.registerWorkspacePanelWorkbenchColumn}
           onWorkspacePanelWidthChange={shellLayout.setWorkspacePanelWidth}
           onSelectSurface={workbenchController.selectSurface}
-          onSettings={props.onSettings}
           onShowSidebar={showSidebar}
           onSidebarHotZoneEnter={handleSidebarHotZoneEnter}
           onToggleWorkspacePanel={toggleWorkspacePanel}

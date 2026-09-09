@@ -153,6 +153,15 @@ export function createTerminalPtyClient(input: {
         method: "PUT",
         body: JSON.stringify(body),
       }),
+    /** Binary names the workspace's machine can start; see `/pty/agents`. */
+    agents: async (init?: RequestInit) => {
+      const res = await ptyFetch("/agents", { method: "GET", ...init })
+      if (!res.ok) throw new Error(`Agent lookup failed (${res.status})`)
+      const body = await res.json() as { installed?: unknown }
+      return Array.isArray(body.installed)
+        ? body.installed.filter((name): name is string => typeof name === "string")
+        : []
+    },
   }
 }
 

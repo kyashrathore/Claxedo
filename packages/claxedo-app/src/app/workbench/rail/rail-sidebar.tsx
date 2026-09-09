@@ -60,7 +60,7 @@ import { RailOrgTeamSwitcher } from "./rail-org-team-switcher"
 import { getFilename } from "@opencode-ai/ui/utils/path"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
 import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
-import { getTerminalCommands } from "../../../features/settings/ui/terminals"
+import { getTerminalCommands } from "@/features/terminal/core/terminal-commands"
 import {
   activateDisclosureFromKeyboard,
   isRootWorktreeRef,
@@ -1540,7 +1540,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 aria-label={`New Claude terminal in ${input.label}`}
                 onClick={(e) => {
                   e.stopPropagation()
-                  createTerminal(getTerminalCommands().claude, "Claude")
+                  createTerminal(getTerminalCommands().agents.claude, "Claude")
                 }}
               >
                 <Icon name="claude" size="small" />
@@ -1553,7 +1553,7 @@ export function RailSidebar(props: RailSidebarProps) {
                 aria-label={`New Codex terminal in ${input.label}`}
                 onClick={(e) => {
                   e.stopPropagation()
-                  createTerminal(getTerminalCommands().codex, "Codex")
+                  createTerminal(getTerminalCommands().agents.codex, "Codex")
                 }}
               >
                 <Icon name="openai" size="small" />

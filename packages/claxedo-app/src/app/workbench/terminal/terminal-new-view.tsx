@@ -23,7 +23,11 @@ import {
 import { CREATE_WORKTREE, MAIN_WORKTREE } from "@/features/session/ui/components/session-new-workspace-options"
 import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
-import { getTerminalCommands } from "@/features/settings/ui/terminals"
+import { getTerminalCommands } from "@/features/terminal/core/terminal-commands"
+import { createTerminalPtyClient } from "@/features/terminal/core/terminal-connection"
+import { signedWorkspaceFromProjects, type WorkspaceInventoryProject } from "@/platform/runtime/agent/signed-workspace"
+import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { useServer } from "@/app/connection/server"
 import { terminalLaunchers, type TerminalLauncher } from "./terminal-launchers"
 import { useTerminalWorkspaceProvisioning } from "./terminal-workspace-provisioning"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
@@ -57,6 +61,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
   const queryOptions = useShellQueryOptions()
   const provisioning = useTerminalWorkspaceProvisioning()
   const projectsQuery = useQuery(() => queryOptions.projects())
+  const server = useServer()
 
   const [worktree, setWorktree] = createSignal(MAIN_WORKTREE)
   const [workspaceKind, setWorkspaceKind] = createSignal<WorkspaceKind>("local")
@@ -82,7 +87,38 @@ export function TerminalNewView(props: TerminalNewViewProps) {
 
   const creatingWorkspace = () => worktree() === CREATE_WORKTREE
 
-  const launchers = createMemo(() => terminalLaunchers(getTerminalCommands()))
+  /**
+   * The relay carries the probe only for a workspace the signed inventory
+   * confirms is relay-backed. `props.workspaceId` is not that answer — a local
+   * workspace has one too, and routing its probe at the relay asks a control
+   * plane that has no record of it.
+   */
+  const relayWorkspaceId = createMemo(() => {
+    const projects = (projectsQuery.data ?? []) as WorkspaceInventoryProject[]
+    const signed = signedWorkspaceFromProjects(projects, props.directory)
+    return signed && isRelayBackedWorkspaceKind(signed.kind) ? signed.workspaceId : undefined
+  })
+
+  /**
+   * Which agent CLIs the machine behind the selected workspace actually has.
+   * The tiles are per-machine, not per-profile: a cloud sandbox and this laptop
+   * answer differently, so the probe re-runs when the creator re-targets.
+   */
+  const agentsQuery = useQuery(() => ({
+    queryKey: ["claxedo", "terminal-agents", server.url, relayWorkspaceId() ?? props.directory] as const,
+    queryFn: () => createTerminalPtyClient({
+      serverUrl: server.url,
+      workspaceId: relayWorkspaceId(),
+      directory: relayWorkspaceId() ? undefined : props.directory,
+    }).agents(),
+    staleTime: 60_000,
+    retry: false,
+  }))
+
+  // `data` is undefined while the probe is in flight and after it fails, and
+  // `terminalLaunchers` reads that as "offer everything" — a machine that
+  // cannot answer must not silently lose the launcher the user came for.
+  const launchers = createMemo(() => terminalLaunchers(getTerminalCommands(), agentsQuery.data))
 
   const changeWorktree = (value: string) => {
     setError(undefined)

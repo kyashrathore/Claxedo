@@ -22,6 +22,8 @@ import * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-reco
 import * as TerminalNew from "@/app/workbench/terminal/terminal-new-view"
 import * as AIConnectApi from "@/features/onboarding/ai-connect-api"
 import * as AIConnectState from "@/features/onboarding/ai-connect-state"
+import * as TerminalAgents from "@/features/terminal/core/terminal-agents"
+import * as TerminalCommands from "@/features/terminal/core/terminal-commands"
 import * as SessionModels from "@/features/session/providers/models"
 import * as LinkModule from "@/app/controls/link"
 import * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
@@ -81,6 +83,10 @@ configureSettingsAppPorts({
   groupDiscoveryItems: AIConnectState.groupDiscoveryItems,
   localHarnessStatuses: AIConnectState.localHarnessStatuses,
   localHarnessChecks: AIConnectState.localHarnessChecks,
+  terminalAgents: TerminalAgents.TERMINAL_AGENTS,
+  getTerminalCommands: TerminalCommands.getTerminalCommands,
+  saveTerminalCommands: TerminalCommands.saveTerminalCommands,
+  defaultTerminalCommands: TerminalCommands.defaultTerminalCommands,
   useModels: SessionModels.useModels,
   formatKeybind: Command.formatKeybind,
   parseKeybind: Command.parseKeybind,

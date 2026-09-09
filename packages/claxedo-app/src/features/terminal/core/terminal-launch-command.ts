@@ -1,4 +1,5 @@
 import { parse as parseShellCommand } from "shell-quote"
+import { isTerminalAgentBinary } from "./terminal-agents"
 
 export function terminalLaunchCommand(input?: string) {
   if (!input?.trim()) return undefined
@@ -9,7 +10,7 @@ export function terminalLaunchCommand(input?: string) {
   if (!command) return undefined
 
   const name = command.split(/[\\/]/).pop()
-  if (name !== "claude" && name !== "codex" && name !== "gemini" && name !== "cursor" && name !== "cursor-agent") return undefined
+  if (!name || !isTerminalAgentBinary(name)) return undefined
 
   return {
     command,

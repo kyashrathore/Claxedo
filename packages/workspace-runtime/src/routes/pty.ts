@@ -8,6 +8,7 @@ import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import type { ProcessObserver } from "../managed-processes/process-observer"
 import { denyWorkspaceViewers } from "./workspace-role"
 import { readHistorySessionId } from "../pty/history-disk"
+import { installedWrapperAgents } from "../pty/agent-availability"
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
@@ -212,6 +213,10 @@ export function PtyRoutes(
       // renderer/WebSocket connection that happens to observe it.
       Pty.commit(info.id)
       return c.json(info)
+    })
+    // Registered before "/:ptyID" so the literal wins the match.
+    .get("/agents", async (c) => {
+      return c.json({ installed: await installedWrapperAgents() })
     })
     .get("/:ptyID", async (c) => {
       const id = c.req.param("ptyID")

@@ -202,6 +202,7 @@ describe("PtyRoutes", () => {
     const app = appForRole("viewer")
 
     const list = await app.request("http://localhost/")
+    const agents = await app.request("http://localhost/agents")
     const connect = await app.request("http://localhost/pty_1/connect", {
       headers: {
         connection: "Upgrade",
@@ -210,6 +211,7 @@ describe("PtyRoutes", () => {
     })
 
     expect(list.status).toBe(403)
+    expect(agents.status).toBe(403)
     expect(connect.status).toBe(403)
     await expect(connect.json()).resolves.toEqual({
       error: {
@@ -223,6 +225,19 @@ describe("PtyRoutes", () => {
     const res = await appForRole("editor").request("http://localhost/")
 
     expect(res.status).toBe(200)
+  })
+
+  /**
+   * The literal is registered ahead of "/:ptyID"; if that order ever flips this
+   * answers 404 for a PTY named "agents" instead of listing what can be run.
+   */
+  test("reports the agents this machine can launch, not a PTY named agents", async () => {
+    const res = await appForRole("editor").request("http://localhost/agents")
+
+    expect(res.status).toBe(200)
+    const body = await res.json() as { installed: string[] }
+    expect(Array.isArray(body.installed)).toBe(true)
+    expect(body.installed.every((name) => typeof name === "string")).toBe(true)
   })
 
   test("isolates PTY list, detail, scrollback connect, and delete between editors", async () => {

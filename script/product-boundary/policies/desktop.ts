@@ -400,7 +400,10 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module (2026-09-08): local-event-websocket owns the central event
   // transport used by ClaxedoEventsProvider to avoid exhausting HTTP slots
   // across windows. Full authoritative checks passed; measured 1057 / 57.
-  ceilings: { modules: 1057, packages: 57 },
+  // +1 module (2026-09-09): the same terminal agent catalog / saved-commands
+  // owner app-local reviews, reached from the rail and the terminal creator.
+  // No new package edge. Measured 1058 / 57.
+  ceilings: { modules: 1058, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
