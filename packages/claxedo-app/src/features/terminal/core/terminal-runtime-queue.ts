@@ -19,7 +19,6 @@ export function createTerminalRuntimeQueue(input: {
   let restored = false
   let frame = 0
   let writing = false
-  let writeTimeout: ReturnType<typeof setTimeout> | undefined
   let reported = false
   let overloaded = false
 
@@ -56,14 +55,9 @@ export function createTerminalRuntimeQueue(input: {
     const complete = () => {
       if (done) return
       done = true
-      if (writeTimeout) {
-        clearTimeout(writeTimeout)
-        writeTimeout = undefined
-      }
       writing = false
       if (stream.items.length > 0) schedule()
     }
-    writeTimeout = setTimeout(complete, 500)
     input.write(chunk, complete)
   }
 
@@ -94,9 +88,7 @@ export function createTerminalRuntimeQueue(input: {
     },
     dispose() {
       if (frame) input.cancelFrame(frame)
-      if (writeTimeout) clearTimeout(writeTimeout)
       frame = 0
-      writeTimeout = undefined
       pending.items = []
       pending.bytes = 0
       overloaded = true

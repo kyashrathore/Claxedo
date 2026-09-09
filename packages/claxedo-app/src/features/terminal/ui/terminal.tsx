@@ -565,12 +565,8 @@ export const Terminal = (props: TerminalProps) => {
         maxDroppedChunks: MAX_DROPPED_CHUNKS,
         requestFrame: (cb) => window.setTimeout(cb, 0),
         cancelFrame: (id) => window.clearTimeout(id),
-        // xterm write callbacks can be dropped during rapid remount/resize churn.
-        // Complete synchronously so queue drain cannot deadlock on missing callbacks.
-        write: (chunk, done) => {
-          b.write(chunk)
-          done()
-        },
+        // Keep output in this bounded queue until xterm has parsed the batch.
+        write: (chunk, done) => b.write(chunk, done),
         onOverload: handleOverload,
         onThrottled: () => {},
       })

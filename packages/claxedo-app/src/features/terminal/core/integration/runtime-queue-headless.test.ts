@@ -37,10 +37,39 @@ function harness() {
   }
   const text = () => Array.from({ length: terminal.buffer.active.length }, (_, row) =>
     terminal.buffer.active.getLine(row)?.translateToString(true) ?? "").filter(Boolean)
-  return { terminal, queue, drain, text, writes }
+  return { terminal, queue, drain, text, writes, scheduledFrames: () => frames.size }
 }
 
 describe("terminal runtime queue with the xterm parser", () => {
+  test("an async parser pause does not admit another batch until parsing actually completes", async () => {
+    const h = harness()
+    let resume!: (handled: boolean) => void
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    const paused = new Promise<boolean>((resolve) => { resume = resolve })
+    const handler = h.terminal.parser.registerCsiHandler({ final: "z" }, () => {
+      entered()
+      return paused
+    })
+    h.queue.flushPending()
+    h.queue.push("A\x1b[z")
+    const draining = h.drain()
+    try {
+      await started
+      h.queue.push("B")
+      // Exceed the old queue timeout while the actual parser remains paused.
+      await Bun.sleep(600)
+      expect(h.writes).toEqual(["A\x1b[z"])
+      expect(h.scheduledFrames()).toBe(0)
+    } finally {
+      resume(true)
+      await draining
+      handler.dispose()
+    }
+    expect(h.text()).toEqual(["AB"])
+    expect(h.writes).toEqual(["A\x1b[z", "B"])
+  })
+
   test("pending output follows the real restore write, then live output continues in order", async () => {
     const h = harness()
     h.queue.push("pending 🙂\r\n")
