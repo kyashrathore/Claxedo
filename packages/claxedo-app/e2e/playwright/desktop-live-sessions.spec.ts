@@ -19,7 +19,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of ["Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -29,13 +29,20 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
     timeoutMs: 60_000,
     userDataDir: profile,
     preserveUserDataDir: true,
-    env: harness === "Codex" ? { CODEX_HOME: path.join(os.homedir(), ".codex") } : {},
+    env: flow === "Composio authenticated MCP"
+      ? { CODEX_HOME: path.join(directory, ".codex-test") }
+      : harness === "Codex" ? { CODEX_HOME: path.join(os.homedir(), ".codex") } : {},
   })
   let permissionOutputDir: string | undefined
   let packaged: PackagedApp | undefined
   try {
     await execFileAsync("git", ["init"], { cwd: directory })
     await fs.writeFile(path.join(directory, "README.md"), `Real ${harness} desktop proof.\n`)
+    if (flow === "Composio authenticated MCP" && harness === "Codex") {
+      const codexHome = path.join(directory, ".codex-test")
+      await fs.mkdir(codexHome, { recursive: true })
+      await fs.copyFile(path.join(os.homedir(), ".codex", "auth.json"), path.join(codexHome, "auth.json"))
+    }
     packaged = await launch()
     const serverBase = new URL(await expectServerReachable(packaged, 45_000)).origin
     const resolve = await fetch(
@@ -60,6 +67,23 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
     }, directory)
     await packaged.page.reload()
     await packaged.page.waitForLoadState("domcontentloaded")
+
+    if (flow === "Composio authenticated MCP") {
+      await packaged.page.getByText("Marketplace", { exact: true }).click()
+      await packaged.page.getByRole("searchbox", { name: "Search plugins" }).fill("composio")
+      const card = packaged.page.locator("[data-agent-plugin-card]").filter({ hasText: /composio/i })
+      await expect(card).toHaveCount(1, { timeout: 45_000 })
+      await card.locator("[data-directory-card-open]").click()
+      const detail = packaged.page.locator('[data-component="agent-plugin-detail"]')
+      await detail.getByRole("button", { name: "Add", exact: true }).click()
+      const install = packaged.page.getByRole("dialog")
+      for (const id of ["opencode", "claude", "codex", "cursor"]) {
+        await install.getByRole("checkbox", { name: id, exact: true }).setChecked(id === harness.toLowerCase())
+      }
+      await install.getByRole("button", { name: "Add plugin", exact: true }).click()
+      await expect(install).not.toBeVisible()
+      await expect(detail.getByRole("button", { name: "Disable", exact: true })).toBeVisible()
+    }
 
     const project = packaged.page.locator(`[data-testid="project-group"][data-project-id="${workspaceId}"]`)
     await expect(project).toBeVisible({ timeout: 30_000 })
@@ -92,6 +116,33 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await picker.locator('[data-slot="list-item"]').filter({ has: packaged.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
       await expect(control).toContainText("Opus")
       await packaged.page.keyboard.press("Escape")
+    }
+
+    if (flow === "Composio authenticated MCP") {
+      await compose(input, "Use the installed Composio MCP integration to discover tools for reading my connected account profile. After discovery, if Gmail is already connected, execute only GMAIL_GET_PROFILE through COMPOSIO_MULTI_EXECUTE_TOOL and report whether it succeeded, without printing the email address. If authorization is missing, report that instead. Do not read messages, list labels, modify accounts, send anything, use shell commands, or substitute another integration.")
+      const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      const created = await creation
+      expect(created.ok()).toBe(true)
+      const session = await created.json() as { id: string }
+      type Part = { type: string; tool?: string; text?: string; state?: { status: string; output?: string } }
+      let parts: Part[] = []
+      try {
+        await expect.poll(async () => {
+          const response = await fetch(`${serverBase}/session/${session.id}/message?directory=${encodeURIComponent(directory)}`)
+          expect(response.ok).toBe(true)
+          parts = (await response.json() as Array<{ parts: Part[] }>).flatMap((row) => row.parts)
+          return parts.some((part) => {
+            if (part.type !== "tool" || !/COMPOSIO_MULTI_EXECUTE_TOOL/i.test(part.tool ?? "") || part.state?.status !== "completed") return false
+            const output = JSON.parse(part.state.output ?? "null") as { data?: { results?: Array<{ tool_slug?: string; response?: { successful?: boolean } }> } } | null
+            return output?.data?.results?.some((result) => result.tool_slug === "GMAIL_GET_PROFILE" && result.response?.successful === true) === true
+          })
+        }, { timeout: 90_000, message: `${harness} must actually invoke Composio; prose about unavailable tools is not a pass` }).toBe(true)
+      } finally {
+        await test.info().attach("composio-session-parts", { body: JSON.stringify(parts, null, 2), contentType: "application/json" })
+      }
+      await expect(packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').last()).toBeVisible()
+      return
     }
 
     if (flow.startsWith("unavailable model recovery")) {
