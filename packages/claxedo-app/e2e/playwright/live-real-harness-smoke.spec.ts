@@ -662,6 +662,68 @@ test.describe("live real-harness smoke @live", () => {
   }
 
   for (const harness of ["claude", "codex"] as const) {
+    for (const action of ["archive", "delete"] as const) {
+      test(`live ${harness} session ${action} persists after restart and preserves another session`, async ({ page }, testInfo) => {
+        const dir = await makeWorkspace(`session-${action}-${harness}`)
+        const query = `?directory=${encodeURIComponent(dir)}`
+        const create = async (title: string) => {
+          const response = await page.request.post(`${BACKEND_URL}/session${query}&nativeHarness=${harness}`, {
+            data: { harness: { id: harness, access: "native" }, title },
+          })
+          expect(response.ok(), await response.text()).toBe(true)
+          const session = await response.json() as { id: string; title: string }
+          expect(session.title).toBe(title)
+          return session
+        }
+        const target = await create(`${harness} ${action} target`)
+        const neighbor = await create(`${harness} keep neighbor`)
+        const original = await fs.readFile(path.join(dir, "README.md"), "utf8")
+        await seedOneProject(page, dir)
+        await page.goto(`/${slug(dir)}/session/${target.id}`)
+        await page.getByRole("button", { name: "More options", exact: true }).click()
+        await page.getByRole("menuitem", { name: action === "archive" ? "Archive" : "Delete", exact: true }).click()
+        if (action === "delete") {
+          await expect(page.getByText(`Delete session "${target.title}"?`, { exact: true })).toBeVisible()
+          await page.getByRole("button", { name: "Cancel", exact: true }).click()
+          expect((await page.request.get(`${BACKEND_URL}/session/${target.id}${query}`)).ok()).toBe(true)
+          await page.getByRole("button", { name: "More options", exact: true }).click()
+          await page.getByRole("menuitem", { name: "Delete", exact: true }).click()
+          await page.getByRole("button", { name: "Delete session", exact: true }).click()
+        }
+        await expect.poll(() => new URL(page.url()).pathname).not.toContain(target.id)
+        const readBack = async () => {
+          const response = await page.request.get(`${BACKEND_URL}/session/${target.id}${query}`)
+          if (action === "delete") expect(response.status()).toBe(404)
+          else {
+            expect(response.ok(), await response.text()).toBe(true)
+            const archived = await response.json() as { id: string; time: { archived?: number } }
+            expect(archived.id).toBe(target.id)
+            expect(archived.time.archived).toBeGreaterThan(0)
+          }
+          const other = await page.request.get(`${BACKEND_URL}/session/${neighbor.id}${query}`)
+          expect(other.ok(), await other.text()).toBe(true)
+          const preserved = await other.json() as { id: string; title: string; time: { archived?: number } }
+          expect(preserved).toMatchObject({ id: neighbor.id, title: neighbor.title })
+          expect(preserved.time.archived).toBeFalsy()
+          expect(await fs.readFile(path.join(dir, "README.md"), "utf8")).toBe(original)
+        }
+        await readBack()
+        await stopServer()
+        await startServer(dataDir)
+        await readBack()
+        await page.reload()
+        await expect.poll(() => new URL(page.url()).pathname).not.toContain(target.id)
+        await page.goto(`/${slug(dir)}/session/${neighbor.id}`)
+        await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible()
+        await expect(page.getByRole("button", { name: "More options", exact: true })).toBeVisible()
+        await expect(page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${neighbor.id}"]`)).toBeVisible()
+        await expect(page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${target.id}"]`)).toHaveCount(0)
+        await page.screenshot({ path: testInfo.outputPath("neighbor-after-session-removal.png") })
+      })
+    }
+  }
+
+  for (const harness of ["claude", "codex"] as const) {
     test(`live project removal preserves its ${harness} session and repository when reopened`, async ({ page }, testInfo) => {
       const dir = await makeWorkspace(`project-remove-${harness}`)
       const original = await fs.readFile(path.join(dir, "README.md"), "utf8")

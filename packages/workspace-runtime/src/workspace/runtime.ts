@@ -1616,7 +1616,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
                 harness: selectedHarness,
               }, { directory })
             }
-            return session
+            const persisted = store().getSession(session.id)
+            if (!persisted) throw new Error(`Session ${session.id} was not persisted`)
+            return persisted
           } catch (cause) {
             // The route-level rollback only begins after this hook returns. If
             // binding or initial config persistence fails after the provider

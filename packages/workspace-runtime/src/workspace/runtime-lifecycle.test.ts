@@ -161,6 +161,22 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
 }
 
 describe("workspace runtime public lifecycle", () => {
+  for (const harness of ["claude", "codex", "connection"] as const) {
+    test(`${harness} create returns the persisted title and workspace identity`, async () => {
+      const f = await fixture({ native: true })
+      await f.host.apply(f.snapshot())
+      const title = "Named session café 日本語"
+      const response = await f.request("/session", "POST", { id: "named", title }, harness === "connection" ? "" : `&nativeHarness=${harness}`)
+      expect(response.status).toBe(201)
+      const created = await response.json()
+      expect(created).toMatchObject({ id: "named", title, directory: f.target.directory, workspaceId: f.target.workspaceId })
+      expect(await (await f.request("/session/named")).json()).toMatchObject({ id: "named", title })
+      await f.host.dispose()
+      const reopened = f.open()
+      expect(await (await reopened.request("/session/named")).json()).toMatchObject({ id: "named", title })
+    })
+  }
+
   test("lazy native admission applies an empty configuration once before creating the session", async () => {
     const f = await fixture({ native: true, configurable: true })
     const snapshot = f.snapshot()
