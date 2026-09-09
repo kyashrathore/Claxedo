@@ -336,6 +336,11 @@ for (const { harness, child, pause } of [
         }
         const prompt = "What is the capital of France? Answer with only the city name."
         await packaged.page.keyboard.type(prompt, { delay: typingDelay })
+        await expect(restoredRows).toContainText(prompt)
+        // Codex 0.153.4 deliberately treats Enter within 120 ms of a
+        // paste-like burst as a newline. Separate ordinary submission from
+        // the explicit burst case below instead of depending on event timing.
+        if (harness === "codex") await packaged.page.waitForTimeout(200)
         await packaged.page.keyboard.press("Enter")
         await expect.poll(async () => {
           const response = await fetch(lifecycleUrl)
@@ -345,6 +350,24 @@ for (const { harness, child, pause } of [
         }, { timeout: 90_000, message: "Another native turn must receive the full prompt and complete after restart" }).toMatchObject({ prompt, eventType: "Idle" })
         await expect(restoredRows).toContainText("Paris")
         await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-third-turn.png`) })
+        if (harness === "codex") {
+          const burstPrompt = "What is the capital of Italy? Answer with only the city name."
+          await packaged.page.keyboard.type(burstPrompt, { delay: 0 })
+          await packaged.page.keyboard.press("Enter")
+          await expect(restoredRows).toContainText(burstPrompt)
+          await packaged.page.waitForTimeout(200)
+          const held = await (await fetch(lifecycleUrl)).json() as { session: { prompt?: string; eventType?: string } }
+          expect(held.session, "Burst Enter must preserve the draft without submitting a partial turn").toMatchObject({ prompt, eventType: "Idle" })
+          await packaged.page.screenshot({ path: test.info().outputPath("codex-tui-held-burst.png") })
+          await packaged.page.keyboard.press("Enter")
+          await expect.poll(async () => {
+            const response = await fetch(lifecycleUrl)
+            expect(response.ok).toBe(true)
+            return (await response.json() as { session: { prompt?: string; eventType?: string } }).session
+          }, { timeout: 90_000 }).toMatchObject({ prompt: burstPrompt, eventType: "Idle" })
+          await expect(restoredRows).toContainText("Rome")
+          await packaged.page.screenshot({ path: test.info().outputPath("codex-tui-burst-submitted.png") })
+        }
       }
       if (harness === "amp") {
         await packaged.page.evaluate(async ({ server, terminalId }) => {
