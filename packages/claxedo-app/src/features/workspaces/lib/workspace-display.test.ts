@@ -1,8 +1,8 @@
+import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 import { describe, expect, test } from "bun:test"
 import {
   projectDisplayName,
   projectWorkspaceDirectories,
-  projectWorkspaceForRef,
   workspaceRouteIdentity,
   workspaceDisplayName,
   workspaceIsCloud,

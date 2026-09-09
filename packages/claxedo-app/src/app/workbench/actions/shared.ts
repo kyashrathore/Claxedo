@@ -14,6 +14,8 @@ import type { useProjectInventoryActions } from "../../integrations/sync/project
 import { sessionRefForWorkspaceSession } from "@/platform/identity/session-ref"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { projectForDirectory } from "@/platform/runtime/agent/project-owner"
+import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 
 export type LayoutApi = ReturnType<typeof useLayout>
 export type GlobalSDKApi = ReturnType<typeof useGlobalSDK>
@@ -93,7 +95,7 @@ export function findProjectForWorkspace(
   projects: Accessor<ProjectItem[]>,
   workspaceDir: string,
 ): ProjectItem | undefined {
-  return projects().find((p) => p.worktree === workspaceDir || p.sandboxes?.includes(workspaceDir) || workspaceDir in (p.workspaces ?? {}))
+  return projectForDirectory(projects(), workspaceDir)
 }
 
 export function findWorkspaceForDirectory(
@@ -102,7 +104,7 @@ export function findWorkspaceForDirectory(
 ): WorkspaceBarItem | undefined {
   const project = findProjectForWorkspace(projects, workspaceDir)
   if (!project) return undefined
-  const ws = project.workspaces?.[workspaceDir]
+  const ws = projectWorkspaceForRef(project.workspaces, workspaceDir)
   const main = project.worktree === workspaceDir
   const cloud = ws?.kind === "cloud"
   return {

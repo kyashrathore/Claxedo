@@ -1,3 +1,4 @@
+import { applyWorktreeLifecycleEvent } from "@/platform/sync/worktree"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -24,8 +25,7 @@ afterAll(async () => {
 
 let createProjectActions: typeof import("./project-actions").createProjectActions
 let deleteDialogProps: undefined | { onDelete: (dir: string) => Promise<void> | void }
-const worktreeStates = new Map<string, { status: "pending" | "ready" } | { status: "failed"; message: string }>()
-const worktreeWaiters = new Map<string, Array<(state: { status: "pending" | "ready" } | { status: "failed"; message: string }) => void>>()
+
 
 const toasts: Array<{ title?: string; description?: string }> = []
 /**
@@ -75,35 +75,6 @@ beforeAll(async () => {
       toasts.push(input)
       return 0
     },
-  }))
-
-  await mock.module("@/platform/sync/worktree", () => ({
-    Worktree: {
-      get: (directory: string) => worktreeStates.get(directory),
-      pending: (directory: string) => {
-        if (!worktreeStates.has(directory)) worktreeStates.set(directory, { status: "pending" })
-      },
-      ready: (directory: string) => {
-        const state = { status: "ready" as const }
-        worktreeStates.set(directory, state)
-        worktreeWaiters.get(directory)?.splice(0).forEach((resolve) => resolve(state))
-      },
-      failed: (directory: string, message: string) => {
-        const state = { status: "failed" as const, message }
-        worktreeStates.set(directory, state)
-        worktreeWaiters.get(directory)?.splice(0).forEach((resolve) => resolve(state))
-      },
-      wait: (directory: string) => {
-        const state = worktreeStates.get(directory)
-        if (state && state.status !== "pending") return Promise.resolve(state)
-        return new Promise((resolve) => {
-          const waiters = worktreeWaiters.get(directory) ?? []
-          waiters.push(resolve)
-          worktreeWaiters.set(directory, waiters)
-        })
-      },
-    },
-    validWorktree: () => true,
   }))
 
   await mock.module("@/app/dialogs/select-directory", () => ({
@@ -262,7 +233,10 @@ function make(dir: string) {
     globalSDK: {
       client: {
         worktree: {
-          create: async () => ({ data: { directory: dir, name: "feature" } }),
+          create: async () => {
+            applyWorktreeLifecycleEvent({ type: "worktree.ready", directory: dir })
+            return { data: { directory: dir, name: "feature" } }
+          },
           remove: async (input: unknown) => {
             worktreeRemoves.push(input)
             return true
@@ -464,6 +438,24 @@ describe("createProjectActions", () => {
         },
       },
     ])
+  })
+
+  test("worktree failure before the create response preserves the current pane and opens no session", async () => {
+    const dir = "/workspace/failed-creation"
+    const { props, nav, adds, navs, cacheEnsures, paneWorktrees } = make(dir)
+    props.globalSDK.client.worktree.create = async () => {
+      applyWorktreeLifecycleEvent({ type: "worktree.failed", directory: dir, message: "Checkout refused" })
+      return { data: { directory: dir, name: "failed" } }
+    }
+    const progress: string[] = []
+    const result = await createProjectActions(props, nav).handleNewLocalWorkspace(project({ worktree: "/workspace/main" }), (step) => progress.push(step))
+    expect(result).toBeUndefined()
+    expect(progress).toEqual(["creating", "error"])
+    expect(cacheEnsures).toEqual([])
+    expect(adds).toEqual([])
+    expect(navs).toEqual([])
+    expect(paneWorktrees.g1).toEqual({ default: null, pinned: null })
+    expect(toasts).toContainEqual({ title: "Failed to create worktree", description: "Checkout refused", variant: "error" })
   })
 
   test("removing the active project closes it without deleting workspace identity", async () => {

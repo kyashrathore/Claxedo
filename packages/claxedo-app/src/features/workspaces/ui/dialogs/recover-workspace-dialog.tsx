@@ -5,7 +5,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 
 export interface DialogRecoverWorkspaceProps {
   name: string
-  onRecover: () => Promise<void>
+  onRecover: () => Promise<boolean>
   onClose: () => void
 }
 
@@ -16,8 +16,7 @@ export function DialogRecoverWorkspace(props: DialogRecoverWorkspaceProps) {
   const handleRecover = async () => {
     setLoading(true)
     try {
-      await props.onRecover()
-      props.onClose()
+      if (await props.onRecover()) props.onClose()
     } finally {
       setLoading(false)
     }

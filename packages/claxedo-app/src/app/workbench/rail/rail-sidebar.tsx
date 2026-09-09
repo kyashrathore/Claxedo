@@ -59,7 +59,7 @@ import { RailAccountMenu, RailAccountSubmenu } from "./rail-account-menu"
 import { RailOrgTeamSwitcher } from "./rail-org-team-switcher"
 import { getFilename } from "@opencode-ai/ui/utils/path"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
-import { workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
+import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
 import { getTerminalCommands } from "../../../features/settings/ui/terminals"
 import {
   activateDisclosureFromKeyboard,
@@ -124,7 +124,7 @@ import {
 import { TerminalSurfaceNavigation } from "../../../features/terminal/ui/navigation/terminal-surface-navigation"
 export { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
-import { projectWorkspaceInfo, railProjectDirectoryRefs } from "./rail-project-session-info"
+import { projectWorkspaceInfo } from "./rail-project-session-info"
 import { writeBrowserRoute } from "@/lib/browser-history"
 import { nextSiblingAfterRemoval } from "@/features/session/ui/session-archive"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
@@ -696,7 +696,7 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const dirs = (project: ProjectItem) => {
-    const all = railProjectDirectoryRefs(project)
+    const all = new Set(projectWorkspaceDirectories(project))
     if (projectMatches(project) && props.activeDirectory) {
       all.add(projectWorkspaceInfo(project, props.activeDirectory)?.directory ?? props.activeDirectory)
     }

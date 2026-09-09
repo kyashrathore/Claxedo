@@ -29,7 +29,6 @@ import { cloneLocalSelectionState, getLocalSelectionHandoff, localDraftSelection
 import { sessionConfigSelectionQueryKey } from "../store/session-config-selection"
 import { writeBrowserRoute } from "@/lib/browser-history"
 import { sameWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
-import { workspaceRouteId as resolveWorkspaceRouteId } from "@/platform/identity/workspace-route"
 import { cancelArchiveProjectionReads } from "../data/sync/archive-projection-boundary"
 import { flushQueryPersistence } from "@/platform/query/persister"
 import { focusComposerWhenReady } from "../composer/ui/composer-focus"
@@ -247,9 +246,9 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       return
     }
 
-    if (recoverMissingWorkspace(props, workspaceDir, (created, project) => {
-      const routeId = resolveWorkspaceRouteId([project], created)
-      if (!routeId) return
+    if (recoverMissingWorkspace(props, workspaceDir, (created, project, item) => {
+      const routeId = item.workspaceId
+      if (!routeId) throw new Error("The new workspace is unavailable")
       ensureDirectorySessionCache(created)
       props.state.workspace.recordAccess(project.id, created)
       setFocusedWorkspace(created)

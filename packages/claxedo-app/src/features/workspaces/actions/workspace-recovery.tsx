@@ -1,3 +1,6 @@
+import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
+import { refreshProjectInventory } from "../data/query/project-ensure"
+import { Worktree } from "@/platform/sync/worktree"
 import { getFilename } from "@opencode-ai/ui/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
 import { DialogRecoverWorkspace, ensureDirectorySessionCache, findProjectForWorkspace, message, missingLocalWorkspace } from "@/features/workspaces/app-ports"
@@ -7,7 +10,8 @@ import type { ActionProps } from "../../../app/workbench/actions/shared"
 
 type WorkspaceDirectoryRef = string
 
-export type LocalWorkspaceProps = Pick<ActionProps, "directorySessionCacheActions" | "dialog" | "events" | "flowLog" | "projects"> & {
+export type LocalWorkspaceProps = Pick<ActionProps, "directorySessionCacheActions" | "dialog" | "flowLog" | "projects" | "projectInventoryActions"> & {
+  platform: Pick<ActionProps["platform"], "fetch">
   state: {
     wb: {
       state: Pick<ActionProps["state"]["wb"]["state"], "focusedPaneId">
@@ -18,6 +22,7 @@ export type LocalWorkspaceProps = Pick<ActionProps, "directorySessionCacheAction
     >
   }
   globalSDK: {
+    url?: string
     client: {
       worktree: {
         create: (input: { directory: WorkspaceDirectoryRef; worktreeCreateInput: { name?: string } }) => Promise<{
@@ -65,34 +70,18 @@ export async function createLocalWorkspace(
       available: true,
     } satisfies WorkspaceBarItem
 
+    const wait = await Worktree.wait(created)
+    if (wait.status === "failed") {
+      input.onProgress?.("error", wait.message)
+      showToast({ title: "Failed to create worktree", description: wait.message, variant: "error" })
+      return undefined
+    }
+
     props.state.workspace.recordAccess(project.id, created)
     const paneId = props.state.wb.state.focusedPaneId
     if (paneId) {
       props.state.workspace.setPaneWorktreePinned(paneId, null)
       props.state.workspace.setPaneWorktreeDefault(paneId, created)
-    }
-
-    if (props.events) {
-      const wait = await new Promise<{ status: "ready" | "failed"; message?: string }>((resolve) => {
-        const ok = props.events!.on("worktree.ready", (event) => {
-          if (event.directory !== created) return
-          ok()
-          fail()
-          resolve({ status: "ready" })
-        })
-        const fail = props.events!.on("worktree.failed", (event) => {
-          if (event.directory !== created) return
-          ok()
-          fail()
-          resolve({ status: "failed", message: event.message })
-        })
-        setTimeout(() => { ok(); fail(); resolve({ status: "ready" }) }, 60_000)
-      })
-      if (wait.status === "failed") {
-        input.onProgress?.("error", wait.message)
-        showToast({ title: "Failed to create worktree", description: wait.message ?? "Unknown error", variant: "error" })
-        return undefined
-      }
     }
 
     await ensureDirectorySessionCache(props.directorySessionCacheActions, created)
@@ -121,9 +110,15 @@ export function recoverMissingWorkspace(
     <DialogRecoverWorkspace
       name={ws.name ?? getFilename(workspaceDir)}
       onRecover={async () => {
-        await createLocalWorkspace(props, project, {
-          onReady: async (created, item) => onReady(created, project, item),
+        const recovered = await createLocalWorkspace(props, project, {
+          onReady: async (created, item) => {
+            const workspace = await resolveWorkspaceRuntime({ baseUrl: props.globalSDK.url, request: props.platform.fetch, directory: created })
+            if (!workspace) throw new Error("The new workspace is unavailable")
+            await refreshProjectInventory(props.projectInventoryActions.query())
+            await onReady(created, project, { ...item, workspaceId: workspace.workspaceId })
+          },
         })
+        return !!recovered
       }}
       onClose={() => props.dialog.close()}
     />

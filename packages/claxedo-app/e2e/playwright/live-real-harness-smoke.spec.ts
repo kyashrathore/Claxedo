@@ -389,6 +389,60 @@ test.describe("live real-harness smoke @live", () => {
     await runLiveHarnessSmoke(page, dir, { id: "claude", option: /^Claude$/, optionIndex: 0 })
   })
 
+  test("live missing worktree recovery creates a usable checkout without changing the main repository", async ({ page }, testInfo) => {
+    const dir = await makeWorkspace("worktree-recovery")
+    const original = await fs.readFile(path.join(dir, "README.md"), "utf8")
+    const head = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: dir })).stdout
+    const query = `?directory=${encodeURIComponent(dir)}`
+    const response = await page.request.post(`${BACKEND_URL}/experimental/worktree${query}`, { data: { name: "missing" } })
+    expect(response.ok(), await response.text()).toBe(true)
+    const missing = await response.json() as { directory: string }
+    await expect.poll(() => fs.readFile(path.join(missing.directory, "README.md"), "utf8").catch(() => "")).toBe(original)
+    const missingPath = await fs.realpath(missing.directory)
+    expect(missingPath.startsWith((await fs.realpath(dataDir)) + path.sep + "worktree" + path.sep)).toBe(true)
+    await fs.rm(missingPath, { recursive: true })
+    const resolved = await page.request.get(`${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(missing.directory)}`)
+    expect(resolved.ok()).toBe(true)
+    const { workspaceId } = await resolved.json() as { workspaceId: string }
+    await seedOneProject(page, dir)
+    await openDraftPrompt(page, dir)
+    await page.getByTestId("rail-account-trigger").click()
+    await page.getByRole("menuitem", { name: "View options" }).hover()
+    await page.getByRole("menuitemradio", { name: "Workspace" }).click()
+    await expect.poll(async () => {
+      await page.keyboard.press("Escape")
+      return page.getByRole("menu").count()
+    }).toBe(0)
+    const project = page.getByTestId("workspace-project-header").filter({ hasText: path.basename(dir) })
+    const toggle = project.locator('[role="button"]').first()
+    if (await toggle.getAttribute("aria-label") === "Expand project") await toggle.click()
+    const row = page.locator(`[data-testid="workspace-header"][data-workspace-id="${missing.directory}"]`)
+    await row.hover()
+    await row.getByRole("button", { name: /^New session in / }).click()
+    await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("Worktree not found")
+    const creation = page.waitForResponse((item) => item.request().method() === "POST" && new URL(item.url()).pathname === "/experimental/worktree")
+    await page.getByRole("button", { name: "Continue in new worktree", exact: true }).click()
+    const created = await creation
+    expect(created.ok(), await created.text()).toBe(true)
+    const recovered = await created.json() as { directory: string; branch: string }
+    await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0, { timeout: 15_000 })
+    const target = await page.request.get(`${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(recovered.directory)}`)
+    expect(target.ok()).toBe(true)
+    const recoveredWorkspace = await target.json() as { workspaceId: string }
+    await expect(page).toHaveURL(new RegExp(`/w/${recoveredWorkspace.workspaceId}(?:/session)?$`))
+    expect(recovered.directory).not.toBe(missing.directory)
+    expect(await fs.readFile(path.join(recovered.directory, "README.md"), "utf8")).toBe(original)
+    expect((await execFileAsync("git", ["branch", "--show-current"], { cwd: recovered.directory })).stdout.trim()).toBe(recovered.branch)
+    expect((await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: dir })).stdout).toBe(head)
+    expect(await fs.readFile(path.join(dir, "README.md"), "utf8")).toBe(original)
+    await page.reload()
+    await expect(page).toHaveURL(new RegExp(`/w/${recoveredWorkspace.workspaceId}(?:/session)?$`))
+    await expect(page.locator(`[data-testid="workspace-header"][data-workspace-id="${recovered.directory}"]`)).toHaveCount(1)
+    await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible()
+    await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0)
+    await page.screenshot({ path: testInfo.outputPath("worktree-recovered.png") })
+  })
+
   for (const harness of ["claude", "codex"] as const) {
     for (const presentation of ["navigation", "windows"] as const) {
       test(`${harness} live concurrent questions (${presentation}) remain isolated across workspaces`, async ({ page }) => {

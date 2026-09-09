@@ -16,6 +16,23 @@ const workspaces = {
 } as const
 
 describe("createNewSessionWorkspaceState", () => {
+  test("keeps the selected checkout when inventory uses workspace IDs as keys", () => {
+    const state = createNewSessionWorkspaceState({
+      projectRoot: "/repo/main",
+      selectedWorktree: "/repo/feature",
+      workspaceKind: "local",
+      sandboxes: ["ws_feature", "/repo/feature"],
+      workspaces: {
+        ws_main: { id: "ws_main", directory: "/repo/main", kind: "local" },
+        ws_feature: { id: "ws_feature", directory: "/repo/feature", kind: "local" },
+        ws_missing: { id: "ws_missing", directory: "/repo/missing", kind: "local", available: false },
+      },
+    })
+    expect(state.options).toEqual([MAIN_WORKTREE, "/repo/feature"])
+    expect(state.currentWorktree).toBe("/repo/feature")
+    expect(state.creatingWorkspace).toBe(false)
+  })
+
   test("filters local and cloud workspace choices separately", () => {
     const sandboxes = ["/repo/local-feature", "workspace:cloud-main", "workspace:cloud-feature"]
 

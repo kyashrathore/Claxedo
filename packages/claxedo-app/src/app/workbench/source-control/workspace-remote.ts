@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { emptySessionInventory, sessionInventoryQueryOptions } from "../../../features/session/data/sync/queries"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
-import { projectWorkspaceForRef } from "../../../features/workspaces/lib/workspace-display"
+import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 import { projectForDirectory } from "@/platform/runtime/agent/project-owner"
 import { parseOwnerRepo } from "../rail/rail-git-remote"
 

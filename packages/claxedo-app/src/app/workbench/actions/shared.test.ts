@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { sessionRefForActionWorkspace } from "./shared"
+import { findProjectForWorkspace, missingLocalWorkspace, sessionRefForActionWorkspace } from "./shared"
 
 describe("sessionRefForActionWorkspace", () => {
   test("resolves signed workspace authority through id and directory aliases", () => {
@@ -47,5 +47,17 @@ describe("sessionRefForActionWorkspace", () => {
         hosting: "cloud",
       },
     })
+  })
+})
+
+describe("local worktree lookup", () => {
+  test("recognizes a missing checkout whether the caller has its directory or workspace ID", () => {
+    const owner = { id: "project", worktree: "/repo/main", sandboxes: ["ws_feature"], workspaces: {
+      ws_feature: { id: "ws_feature", directory: "/repo/feature", kind: "local" as const, available: false },
+    } }
+    for (const ref of ["ws_feature", "/repo/feature"]) {
+      expect(findProjectForWorkspace(() => [owner], ref)).toBe(owner)
+      expect(missingLocalWorkspace(() => [owner], ref)).toMatchObject({ available: false, projectWorktree: "/repo/main" })
+    }
   })
 })

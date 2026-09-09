@@ -1,3 +1,4 @@
+import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
@@ -118,7 +119,7 @@ export function createNewSessionWorkspaceState(input: {
     // fall into the "New cloud sandbox" create path (creatingWorkspace below only
     // auto-fires for kind === "cloud"). A self-hosted workspace already exists and
     // connects through the relay; it is never provisioned.
-    const wsKind = workspaces[directoryFor(value)]?.kind
+    const wsKind = projectWorkspaceForRef(workspaces, directoryFor(value))?.kind
     if (wsKind === "user-hosted") return "user-hosted"
     if (wsKind === "cloud" || !!sessionWorkspaceRuntimeRef({ directory: directoryFor(value) })) return "cloud"
     return "local"
@@ -127,15 +128,12 @@ export function createNewSessionWorkspaceState(input: {
   // inventories list that root among `sandboxes` (both groupings push every
   // workspace's directory, the root's included). Without this filter the root
   // appears twice and the hosted picker offers two identical "main" rows.
-  const candidates = [
-    MAIN_WORKTREE,
-    ...(input.sandboxes ?? []).filter((value) => value !== input.projectRoot && value !== MAIN_WORKTREE),
-    ...Object.keys(workspaces).filter(
-      (value) => value !== input.projectRoot && !(input.sandboxes ?? []).includes(value),
-    ),
-  ]
+  const directories = [...new Set([
+    ...(input.sandboxes ?? []), ...Object.keys(workspaces),
+  ].map((ref) => projectWorkspaceForRef(workspaces, ref)?.directory ?? ref))]
+  const candidates = [MAIN_WORKTREE, ...directories.filter((value) => value !== input.projectRoot && value !== MAIN_WORKTREE)]
   const options = candidates.filter((value) => {
-    const workspace = workspaces[directoryFor(value)]
+    const workspace = projectWorkspaceForRef(workspaces, directoryFor(value))
     if (workspace?.available === false) return false
     return kindFor(value) === input.workspaceKind
   })

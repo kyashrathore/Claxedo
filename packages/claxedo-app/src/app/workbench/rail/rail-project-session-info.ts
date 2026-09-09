@@ -1,9 +1,9 @@
+import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { getFilename } from "@opencode-ai/ui/utils/path"
 import {
   projectWorkspaceDirectories,
-  projectWorkspaceForRef,
   workspaceDisplayName,
   workspaceIsCloud,
 } from "../../../features/workspaces/lib/workspace-display"
@@ -56,19 +56,6 @@ export function railProjectDisplayName(project: ProjectItem, repoName?: string):
 
 export function projectWorkspaceInfo(project: ProjectItem, directory: string): WorkspaceInfo | undefined {
   return projectWorkspaceForRef(project.workspaces, directory)
-}
-
-/** Every filesystem and opaque route identity that can place a surface under this project. */
-export function railProjectDirectoryRefs(project: ProjectItem) {
-  const refs = new Set<string>(projectWorkspaceDirectories(project))
-  for (const sandbox of project.sandboxes ?? []) refs.add(sandbox)
-  for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
-    refs.add(key)
-    if (workspace.id) refs.add(workspace.id)
-    if (workspace.workspaceId) refs.add(workspace.workspaceId)
-    if (workspace.directory) refs.add(workspace.directory)
-  }
-  return refs
 }
 
 export function useRailProjectSessionInfo(input: {

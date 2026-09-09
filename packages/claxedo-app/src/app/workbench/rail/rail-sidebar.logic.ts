@@ -5,7 +5,7 @@ import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver"
 import { isRelayBackedWorkspaceKind, isUserHostedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
-import { projectWorkspaceForRef } from "@/features/workspaces/lib/workspace-display"
+import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 
 export function sessionRowTitle(title?: string, projectedTitle?: string, updatedAt?: number) {
   return resolveSessionTitle({

@@ -57,7 +57,7 @@ export type WorkspaceItem = {
  * `ClaxedoWorkspaceInventoryEntry` declares them optional and this type is
  * populated straight from it. They used to be required, and `route-bridge`'s
  * `projectToProjectItem` bridged the gap with `as any` — so a row with no `id`
- * reached `railProjectDirectoryRefs`, which added `undefined` to a
+ * reached workspace enumeration, which added `undefined` to a
  * `Set<string>` of directory refs. Every other reader already guarded.
  */
 export type WorkspaceInfo = {

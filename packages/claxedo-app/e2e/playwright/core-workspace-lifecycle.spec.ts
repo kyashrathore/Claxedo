@@ -205,9 +205,21 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   await page.route("**/api/claxedo/workspace/resolve**", resolveHandler)
   await page.route("**/api/claxedo/agent-config/**", (r) => (api(r.request()) ? json(r, { source: "runner", stale: false, options: [] }) : r.continue()))
 
+  const eventFrames: string[] = []
+  const eventSockets = new Set<import("@playwright/test").WebSocketRoute>()
+  await page.routeWebSocket(/\/(?:api\/claxedo\/events|api\/wr\/events|global\/event)(?:\?|$)/, (socket) => {
+    eventSockets.add(socket)
+    socket.onClose(() => eventSockets.delete(socket))
+    socket.send(Buffer.from(": heartbeat\n\n" + eventFrames.join("")))
+  })
+  const emitEvent = (event: { type: string; directory: string; name?: string; branch?: string; message?: string }) => {
+    const frame = `data: ${JSON.stringify(event)}\n\n`
+    eventFrames.push(frame)
+    for (const socket of eventSockets) socket.send(Buffer.from(frame))
+  }
   const eventStreamHandler = async (route: import("@playwright/test").Route) => {
     if (!api(route.request())) return route.continue()
-    await route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
+    await route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" + eventFrames.join("") }).catch(() => {})
   }
   // One stream, three spellings. Both real servers mount a single handler on
   // `/global/event`, `/api/wr/events` and `/api/claxedo/events`, so every spelling the app
@@ -256,7 +268,7 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   )
   await page.route("**/api/control/sessions**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
 
-  return { project: proj }
+  return { project: proj, emitEvent }
 }
 
 async function openApp(page: Page, dir: string = DIR) {
@@ -602,70 +614,58 @@ test.describe("core workspace lifecycle @core", () => {
     expect(deleteCalls).toBe(0)
   })
 
-  test("New session on a missing local workspace opens the recovery dialog and recreates it", async ({ page }) => {
-    const MISSING_DIR = "/tmp/e2e-core-lifecycle-missing"
-    await installLifecycleMock(page, {
-      sandboxes: [MISSING_DIR],
-      workspaces: { [MISSING_DIR]: { kind: "local", available: false, directory: MISSING_DIR } },
+  for (const outcome of ["opens the new checkout", "fails without dismissing the dialog"] as const) {
+    test(`Missing local workspace recovery ${outcome}`, async ({ page }) => {
+      const MISSING_DIR = "/tmp/e2e-core-lifecycle-missing"
+      const RECOVERED_DIR = "/tmp/e2e-core-lifecycle-recovered"
+      const RECOVERED_ID = "ws_recovered"
+      const lifecycle = await installLifecycleMock(page, {
+        sandboxes: [MISSING_DIR],
+        workspaces: { [MISSING_DIR]: { kind: "local", available: false, directory: MISSING_DIR } },
+      })
+      await seedProject(page)
+
+      let createBody: unknown
+      await page.route("**/experimental/worktree**", async (r) => {
+        if (!api(r.request())) return r.continue()
+        if (r.request().method() !== "POST") return r.fallback()
+        createBody = r.request().postDataJSON()
+        lifecycle.project.workspaces[RECOVERED_ID] = { kind: "local", available: true, directory: RECOVERED_DIR, workspaceId: RECOVERED_ID }
+        return json(r, { directory: RECOVERED_DIR, name: "recovered" })
+      })
+
+      await openApp(page)
+      await groupByWorkspace(page)
+
+      const row = page.locator('[data-testid="workspace-header"][data-workspace-id="' + MISSING_DIR + '"]')
+      await expect(row).toBeVisible({ timeout: 15_000 })
+      // "New session in" is part of the engagement-mounted action cluster, so hover the
+      // header to mount it.
+      await row.hover()
+      await row.getByRole("button", { name: /^New session in /, exact: false }).click()
+
+      await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("Worktree not found")
+      await expect(page.getByText(/The backing worktree for/)).toBeVisible()
+      await page.screenshot({ path: "test-results/evidence/core-workspace-lifecycle/recover-workspace-dialog.png" })
+
+      await page.getByRole("button", { name: "Continue in new worktree", exact: true }).click()
+
+      await expect.poll(() => createBody, { timeout: 10_000 }).toBeTruthy()
+
+      if (outcome === "fails without dismissing the dialog") {
+        lifecycle.emitEvent({ type: "worktree.failed", directory: RECOVERED_DIR, message: "Checkout refused" })
+        await expect(toastTitle(page).filter({ hasText: "Failed to create worktree" })).toBeVisible()
+        await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("Worktree not found")
+        await expect(page.getByRole("button", { name: "Continue in new worktree", exact: true })).toBeEnabled()
+        return
+      }
+      lifecycle.emitEvent({ type: "worktree.ready", directory: RECOVERED_DIR, name: "recovered", branch: "main" })
+
+      await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0, { timeout: 20_000 })
+      // Recovery creates a new local workspace identity for the project. The
+      // authoritative resolve response above carries that opaque route ID;
+      // filesystem directories never leak into browser URLs.
+      await expect(page).toHaveURL(new RegExp(`/w/${RECOVERED_ID}(/session)?$`), { timeout: 10_000 })
     })
-    await seedProject(page)
-
-    let createBody: unknown
-    await page.route("**/experimental/worktree**", async (r) => {
-      if (!api(r.request())) return r.continue()
-      if (r.request().method() !== "POST") return r.fallback()
-      createBody = r.request().postDataJSON()
-      return json(r, { directory: MISSING_DIR, name: "recovered" })
-    })
-
-    // `createLocalWorkspace` (workspace-recovery.tsx) waits for a `worktree.ready` event on
-    // the central Claxedo event stream. The `window.__claxedoEmitTestEvent` injection point
-    // is gated behind `import.meta.env.DEV`, which is false in this build, so the hook does
-    // not exist on `window` to call.
-    //
-    // The event is delivered over the real path instead. The central stream is a
-    // `GET /api/claxedo/events` SSE connection that reconnects on a steady ~2s cadence —
-    // `state.failures` resets on every 200 OK, so the backoff never grows while connects
-    // succeed. Flipping `deliverWorktreeReady` makes the next reconnect's body carry a real
-    // `data: {…}` frame instead of the heartbeat comment, which the provider parses into
-    // the same emitter `props.events.on("worktree.ready", …)` subscribes to.
-    let deliverWorktreeReady = false
-    const eventStreamOverride = async (route: import("@playwright/test").Route) => {
-      if (!api(route.request())) return route.continue()
-      const body = deliverWorktreeReady
-        ? `data: ${JSON.stringify({ type: "worktree.ready", directory: MISSING_DIR, name: "recovered", branch: "main" })}\n\n`
-        : ": heartbeat\n\n"
-      await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
-    }
-    await page.route("**/global/event?**", eventStreamOverride)
-    await page.route("**/event?**", eventStreamOverride)
-    await page.route("**/api/wr/events**", eventStreamOverride)
-    await page.route("**/api/claxedo/events**", eventStreamOverride)
-
-    await openApp(page)
-    await groupByWorkspace(page)
-
-    const row = page.locator('[data-testid="workspace-header"][data-workspace-id="' + MISSING_DIR + '"]')
-    await expect(row).toBeVisible({ timeout: 15_000 })
-    // "New session in" is part of the engagement-mounted action cluster, so hover the
-    // header to mount it.
-    await row.hover()
-    await row.getByRole("button", { name: /^New session in /, exact: false }).click()
-
-    await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("Worktree not found")
-    await expect(page.getByText(/The backing worktree for/)).toBeVisible()
-    await page.screenshot({ path: "test-results/evidence/core-workspace-lifecycle/recover-workspace-dialog.png" })
-
-    await page.getByRole("button", { name: "Continue in new worktree", exact: true }).click()
-
-    await expect.poll(() => createBody, { timeout: 10_000 }).toBeTruthy()
-
-    deliverWorktreeReady = true
-
-    await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0, { timeout: 20_000 })
-    // Recovery creates a new local workspace identity for the project. The
-    // authoritative resolve response above carries that opaque route ID;
-    // filesystem directories never leak into browser URLs.
-    await expect(page).toHaveURL(`/w/local-${PROJECT_ID}`, { timeout: 10_000 })
-  })
+  }
 })
