@@ -349,6 +349,16 @@ describe("Agent Plugin Directory sections", () => {
     await fireEvent.click(screen.getByRole("button", { name: "+ Add source" }))
     expect(screen.getByRole("form", { name: "Add source" })).toBeVisible()
   })
+
+  test("the example repository in the add-source hint opens on GitHub", async () => {
+    await renderDirectory()
+    await fireEvent.click(screen.getByRole("button", { name: "+ Add source" }))
+
+    const example = screen.getByRole("link", { name: "kyashrathore/plugins" })
+    expect(example).toHaveAttribute("href", "https://github.com/kyashrathore/plugins")
+    expect(example).toHaveAttribute("target", "_blank")
+    expect(example.closest("p")?.textContent).toContain("optional .mcp.json")
+  })
 })
 
 const CATEGORIZED = {

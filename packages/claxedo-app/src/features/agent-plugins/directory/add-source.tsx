@@ -61,9 +61,18 @@ export function AddSourceForm(props: {
       onSubmit={submit}
     >
       <p class="text-12-regular text-text-weak">
-        A public GitHub repository whose top-level folders are plugins: each holds a <code class="text-12-mono">plugin.json</code>
-        (Agent Plugins schema 1.0.0), optional <code class="text-12-mono">skills/&lt;name&gt;/SKILL.md</code> files, and an optional
-        <code class="text-12-mono">.mcp.json</code> — shaped like <code class="text-12-mono">kyashrathore/plugins</code>.
+        A public GitHub repository whose top-level folders are plugins: each holds a <code class="text-12-mono">plugin.json</code>{" "}
+        (Agent Plugins schema 1.0.0), optional <code class="text-12-mono">skills/&lt;name&gt;/SKILL.md</code> files, and an optional{" "}
+        <code class="text-12-mono">.mcp.json</code> — shaped like{" "}
+        <a
+          class="text-text-interactive-base hover:underline"
+          href="https://github.com/kyashrathore/plugins"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          <code class="text-12-mono">kyashrathore/plugins</code>
+        </a>
+        .
       </p>
       <div class="flex flex-wrap items-end gap-2">
         <label class="grid min-w-56 flex-1 gap-1">
