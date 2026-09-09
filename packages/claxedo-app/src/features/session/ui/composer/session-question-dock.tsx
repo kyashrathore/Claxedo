@@ -14,11 +14,7 @@ import { useSDK } from "@/features/session/app-ports"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { dispatchSessionRequestsEvent } from "@/features/session/store/session-status-dispatcher"
-import {
-  clearSessionQuestionDockSnapshot,
-  sessionQuestionDockSnapshot,
-  setSessionQuestionDockSnapshot,
-} from "./session-question-cache"
+import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import {
   clampFocus,
   classifyQuestionKey,
@@ -90,20 +86,18 @@ export const SessionQuestionDock: Component<{
   const questions = createMemo(() => props.request.questions)
   const total = createMemo(() => questions().length)
 
-  const cached = sessionQuestionDockSnapshot(props.request.id)
-  const [store, setStore] = createStore({
-    tab: cached?.tab ?? 0,
-    answers: cached?.answers ?? ([] as QuestionAnswer[]),
-    custom: cached?.custom ?? ([] as string[]),
-    customOn: cached?.customOn ?? ([] as boolean[]),
-    editing: false,
-    focus: 0,
-  })
+  const draftTarget = Persist.serverSession(sdk.url, sdk.directory, props.request.sessionID, `question:${props.request.id}`)
+  const [store, setStore, , draftReady] = persisted(draftTarget, createStore({
+    tab: 0,
+    answers: [] as QuestionAnswer[],
+    custom: [] as string[],
+    customOn: [] as boolean[],
+  }))
+  const [ui, setUI] = createStore({ editing: false, focus: 0 })
 
   let root: HTMLDivElement | undefined
   let customRef: HTMLButtonElement | undefined
   let optsRef: HTMLButtonElement[] = []
-  let replied = false
   let focusFrame: number | undefined
 
   const question = createMemo(() => questions()[store.tab])
@@ -171,8 +165,8 @@ export const SessionQuestionDock: Component<{
 
   const focus = (i: number) => {
     const next = clamp(i)
-    setStore("focus", next)
-    if (store.editing) return
+    setUI("focus", next)
+    if (ui.editing) return
     if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
     focusFrame = requestAnimationFrame(() => {
       focusFrame = undefined
@@ -208,13 +202,6 @@ export const SessionQuestionDock: Component<{
 
   onCleanup(() => {
     if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
-    if (replied) return
-    setSessionQuestionDockSnapshot(props.request.id, {
-      tab: store.tab,
-      answers: store.answers.map((a) => (a ? [...a] : [])),
-      custom: store.custom.map((s) => s ?? ""),
-      customOn: store.customOn.map((b) => b ?? false),
-    })
   })
 
   const fail = (err: unknown) => {
@@ -242,8 +229,7 @@ export const SessionQuestionDock: Component<{
       props.onSubmit()
     },
     onSuccess: () => {
-      replied = true
-      clearSessionQuestionDockSnapshot(props.request.id)
+      void removePersisted(draftTarget)
       clearQuestionRequest()
     },
     onError: fail,
@@ -255,8 +241,7 @@ export const SessionQuestionDock: Component<{
       props.onSubmit()
     },
     onSuccess: () => {
-      replied = true
-      clearSessionQuestionDockSnapshot(props.request.id)
+      void removePersisted(draftTarget)
       clearQuestionRequest()
     },
     onError: fail,
@@ -265,8 +250,7 @@ export const SessionQuestionDock: Component<{
   const stopMutation = useMutation(() => ({
     mutationFn: () => props.onStop!(),
     onSuccess: () => {
-      replied = true
-      clearSessionQuestionDockSnapshot(props.request.id)
+      void removePersisted(draftTarget)
     },
     onError: fail,
   }))
@@ -299,7 +283,7 @@ export const SessionQuestionDock: Component<{
     setStore("answers", store.tab, [answer])
     if (custom) setStore("custom", store.tab, answer)
     if (!custom) setStore("customOn", store.tab, false)
-    setStore("editing", false)
+    setUI("editing", false)
   }
 
   const toggle = (answer: string) => {
@@ -311,11 +295,11 @@ export const SessionQuestionDock: Component<{
 
   const customToggle = () => {
     if (sending()) return
-    setStore("focus", options().length)
+    setUI("focus", options().length)
 
     if (!multi()) {
       setStore("customOn", store.tab, true)
-      setStore("editing", true)
+      setUI("editing", true)
       customUpdate(input(), true)
       return
     }
@@ -323,35 +307,35 @@ export const SessionQuestionDock: Component<{
     const next = !on()
     setStore("customOn", store.tab, next)
     if (next) {
-      setStore("editing", true)
+      setUI("editing", true)
       customUpdate(input(), true)
       return
     }
 
     const value = input().trim()
     if (value) setStore("answers", store.tab, (current = []) => current.filter((item) => item.trim() !== value))
-    setStore("editing", false)
+    setUI("editing", false)
     focus(options().length)
   }
 
   const customOpen = () => {
     if (sending()) return
-    setStore("focus", options().length)
+    setUI("focus", options().length)
     if (!on()) setStore("customOn", store.tab, true)
-    setStore("editing", true)
+    setUI("editing", true)
     customUpdate(input(), true)
   }
 
   const move = (step: number) => {
-    if (store.editing || sending()) return
-    focus(store.focus + step)
+    if (ui.editing || sending()) return
+    focus(ui.focus + step)
   }
 
   const nav = (event: KeyboardEvent) => {
     const target =
       event.target instanceof HTMLElement ? event.target.closest('[data-slot="question-options"]') : undefined
     const action = classifyQuestionKey(event, {
-      editing: store.editing,
+      editing: ui.editing,
       inOptions: target instanceof HTMLElement,
       count: count(),
     })
@@ -389,7 +373,7 @@ export const SessionQuestionDock: Component<{
     const opt = options()[optIndex]
     if (!opt) return
     if (multi()) {
-      setStore("editing", false)
+      setUI("editing", false)
       toggle(opt.label)
       return
     }
@@ -397,7 +381,7 @@ export const SessionQuestionDock: Component<{
   }
 
   const commitCustom = () => {
-    setStore("editing", false)
+    setUI("editing", false)
     customUpdate(input())
     focus(options().length)
   }
@@ -422,7 +406,7 @@ export const SessionQuestionDock: Component<{
 
   const next = () => {
     if (sending()) return
-    if (store.editing) commitCustom()
+    if (ui.editing) commitCustom()
 
     if (store.tab >= total() - 1) {
       submit()
@@ -431,7 +415,7 @@ export const SessionQuestionDock: Component<{
 
     const tab = store.tab + 1
     setStore("tab", tab)
-    setStore("editing", false)
+    setUI("editing", false)
     focus(pickFocus(tab))
   }
 
@@ -440,18 +424,19 @@ export const SessionQuestionDock: Component<{
     if (store.tab <= 0) return
     const tab = store.tab - 1
     setStore("tab", tab)
-    setStore("editing", false)
+    setUI("editing", false)
     focus(pickFocus(tab))
   }
 
   const jump = (tab: number) => {
     if (sending()) return
     setStore("tab", tab)
-    setStore("editing", false)
+    setUI("editing", false)
     focus(pickFocus(tab))
   }
 
   return (
+    <Show when={draftReady()}>
     <DockPrompt
       kind="question"
       ref={(el) => (root = el)}
@@ -529,16 +514,16 @@ export const SessionQuestionDock: Component<{
               label={opt.label}
               description={opt.description}
               disabled={sending()}
-              focused={store.focus === i()}
+              focused={ui.focus === i()}
               ref={(el) => (optsRef[i()] = el)}
-              onFocus={() => setStore("focus", i())}
+              onFocus={() => setUI("focus", i())}
               onClick={() => selectOption(i())}
             />
           )}
         </For>
 
         <Show
-          when={store.editing}
+          when={ui.editing}
           fallback={
             <button
               type="button"
@@ -548,9 +533,9 @@ export const SessionQuestionDock: Component<{
               data-picked={on()}
               role={multi() ? "checkbox" : "radio"}
               aria-checked={on()}
-              tabindex={store.focus === options().length ? 0 : -1}
+              tabindex={ui.focus === options().length ? 0 : -1}
               disabled={sending()}
-              onFocus={() => setStore("focus", options().length)}
+              onFocus={() => setUI("focus", options().length)}
               onClick={customOpen}
             >
               <Mark multi={multi()} picked={on()} onClick={toggleCustomMark} />
@@ -594,7 +579,7 @@ export const SessionQuestionDock: Component<{
                 onKeyDown={(e) => {
                   if (e.key === "Escape") {
                     e.preventDefault()
-                    setStore("editing", false)
+                    setUI("editing", false)
                     focus(options().length)
                     return
                   }
@@ -613,5 +598,6 @@ export const SessionQuestionDock: Component<{
         </Show>
       </div>
     </DockPrompt>
+    </Show>
   )
 }

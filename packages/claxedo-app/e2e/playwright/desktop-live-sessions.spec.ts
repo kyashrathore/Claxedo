@@ -25,7 +25,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "permission Delete across full restart", "reply", "deleted while closed", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart", "question delete across full restart", "question delete response lost across full restart"] as const) {
+for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "permission Delete across full restart", "reply", "deleted while closed", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question custom across full restart", "question dismiss across full restart", "question stop across full restart", "question delete across full restart", "question delete response lost across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -637,15 +637,15 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       return
     }
 
-    if (flow === "question answer across full restart" || flow === "question dismiss across full restart" || flow === "question stop across full restart" || flow === "question delete across full restart" || flow === "question delete response lost across full restart") {
-      const action = flow === "question answer across full restart" ? "answer" : flow === "question dismiss across full restart" ? "dismiss" : "stop"
+    if (flow === "question custom across full restart" || flow === "question answer across full restart" || flow === "question dismiss across full restart" || flow === "question stop across full restart" || flow === "question delete across full restart" || flow === "question delete response lost across full restart") {
+      const action = flow === "question custom across full restart" ? "custom" : flow === "question answer across full restart" ? "answer" : flow === "question dismiss across full restart" ? "dismiss" : "stop"
       const prefix = `DESKTOP_QUESTION_${Date.now()}`
       const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
       await compose(input,
         (harness === "Claude"
           ? 'Use AskUserQuestion now with one question: header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}], multiSelect false. '
           : 'Use request_user_input now with one question: id "environment", header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}]. ') +
-        `Wait for my answer, then reply exactly ${prefix}- followed by the selected label. If dismissed, reply exactly ${prefix}-DISMISSED and do not ask again. Do not run other tools.`)
+        `Wait for my answer, then reply exactly ${prefix}- followed by the selected answer text. If dismissed, reply exactly ${prefix}-DISMISSED and do not ask again. Do not run other tools.`)
       await expect(packaged.page.locator('[data-action="prompt-submit"]:visible').last()).toHaveAccessibleName("Send")
       await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
       const created = await creation
@@ -659,6 +659,13 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await expect(packaged.page.locator('[data-component="dock-prompt"][data-kind="question"]')).toBeVisible({ timeout: 60_000 })
       const pending = await readQuestions()
       expect(pending).toHaveLength(1)
+      const answer = action === "custom" ? "Preview café 日本語" : "Staging"
+      if (action === "custom") {
+        const pendingDock = packaged.page.locator('[data-component="dock-prompt"][data-kind="question"]')
+        await pendingDock.locator('[data-slot="question-option"][data-custom="true"]').click()
+        await pendingDock.locator('[data-slot="question-custom-input"]').fill(answer)
+        await pendingDock.locator('[data-slot="question-custom-input"]').press("Enter")
+      }
       const appProcess = packaged.app.process()
       await packaged.close()
       await expect.poll(() => appProcess.exitCode !== null || appProcess.signalCode !== null).toBe(true)
@@ -674,10 +681,16 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
         await verifyDeletedSessionRecovery(session.id)
         return
       }
-      if (action === "answer") {
-        await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+      if (action === "answer" || action === "custom") {
+        if (action === "custom") {
+          const option = dock.locator('[data-slot="question-option"][data-custom="true"]')
+          await expect(option).toHaveAttribute("data-picked", "true")
+          await expect(option).toContainText(answer)
+        } else {
+          await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+        }
         await dock.getByRole("button", { name: "Submit", exact: true }).click()
-        await expectAssistantReplyVisible(packaged.page, `${prefix}-Staging`)
+        await expectAssistantReplyVisible(packaged.page, `${prefix}-${answer}`)
       } else {
         await dock.getByRole("button", { name: action === "dismiss" ? "Dismiss" : "Stop", exact: true }).click()
         if (action === "dismiss") await expectAssistantReplyVisible(packaged.page, `${prefix}-DISMISSED`)

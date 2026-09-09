@@ -511,7 +511,7 @@ test.describe("live real-harness smoke @live", () => {
       else await expect(dock.getByText("Complete", { exact: true })).toBeVisible()
     })
 
-    for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false]] as const) {
+    for (const [action, goalMode] of [["answer", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false]] as const) {
     test(`${harness} native SDK question ${action} survives reload and preserves session usability${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       test.skip(!binary, `The live question flow requires the installed and authenticated ${harness} CLI.`)
@@ -525,7 +525,7 @@ test.describe("live real-harness smoke @live", () => {
         (goalMode ? "/goal " : "") + (harness === "claude"
           ? 'Use the AskUserQuestion tool now with exactly one question: "Which test environment?", header "Environment", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}], multiSelect false. '
           : 'Use request_user_input now with one question: id "environment", header "Environment", question "Which test environment?", options [{"label":"Staging","description":"Isolated test environment"},{"label":"Production","description":"Production environment"}]. ') +
-        `Wait for my answer, then reply with exactly ${prefix}- followed by the selected option label. If dismissed, reply exactly ${prefix}-DISMISSED and do not ask again. Do not run any other tools.`,
+        `Wait for my answer, then reply with exactly ${prefix}- followed by the selected answer text. If dismissed, reply exactly ${prefix}-DISMISSED and do not ask again. Do not run any other tools.`,
       )
       await page.locator(SELECTORS.submitControl).last().click()
       await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
@@ -586,10 +586,22 @@ test.describe("live real-harness smoke @live", () => {
         await expect(dock).toHaveCount(0)
         return
       }
-      await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+      const answer = action === "custom" ? "Preview café 日本語" : "Staging"
+      if (action === "custom") {
+        const option = dock.locator('[data-slot="question-option"][data-custom="true"]')
+        await option.click()
+        await dock.locator('[data-slot="question-custom-input"]').fill(answer)
+        await dock.locator('[data-slot="question-custom-input"]').press("Enter")
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expect(option).toHaveAttribute("data-picked", "true")
+        await expect(option).toContainText(answer)
+        expect(await readQuestions()).toEqual(pending)
+      } else {
+        await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+      }
       await dock.getByRole("button", { name: "Submit", exact: true }).click()
       await expect(dock).toHaveCount(0)
-      await expectAssistantReplyVisible(page, `${prefix}-Staging`, {
+      await expectAssistantReplyVisible(page, `${prefix}-${answer}`, {
         spec: "live-real-harness-smoke",
         scenario: `${harness}-question-answer`,
       })
@@ -601,7 +613,7 @@ test.describe("live real-harness smoke @live", () => {
       })
       expect(duplicate.status()).toBe(404)
       await page.reload({ waitUntil: "domcontentloaded" })
-      await expectAssistantReplyVisible(page, `${prefix}-Staging`)
+      await expectAssistantReplyVisible(page, `${prefix}-${answer}`)
       await expect(dock).toHaveCount(0)
       expect(await readQuestions()).toEqual([])
     })

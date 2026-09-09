@@ -75,7 +75,6 @@
     "platform/sync/global-sync/queue.ts",
     "features/session/providers/permission-auto-response-cache.ts",
     "app/providers/sdk/runtime-request.ts",
-    "features/session/ui/composer/session-question-cache.ts",
     "features/session/ui/prompt-preview-handoff.ts",
     "features/session/store/session-status-telemetry.ts",
     "features/session/submit/rolled-back-drafts.ts",

@@ -1312,7 +1312,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   }
 
-  for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false], ["delete-response-lost", false]] as const) {
+  for (const [action, goalMode] of [["answer", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false], ["delete-response-lost", false]] as const) {
     test(`codex native structured question ${action} reaches the question dock${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
       requireBinary(binary, "codex", "install the Codex CLI to exercise its structured question tool.")
@@ -1371,12 +1371,23 @@ test.describe("real harness journeys @core @tier-real", () => {
         if (action === "dismiss") {
           await dock.getByRole("button", { name: "Dismiss", exact: true }).click()
         } else {
-          await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+          if (action === "custom") {
+            const option = dock.locator('[data-slot="question-option"][data-custom="true"]')
+            await option.click()
+            await dock.locator('[data-slot="question-custom-input"]').fill("Preview café 日本語")
+            await dock.locator('[data-slot="question-custom-input"]').press("Enter")
+            await page.reload({ waitUntil: "domcontentloaded" })
+            await expect(option).toHaveAttribute("data-picked", "true")
+            await expect(option).toContainText("Preview café 日本語")
+          } else {
+            await dock.locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+          }
           await dock.getByRole("button", { name: "Submit", exact: true }).click()
         }
         await expectAssistantReplyVisible(page, marker)
         expect(toolResults().length).toBeGreaterThan(0)
         if (action === "answer") expect(JSON.stringify(toolResults())).toContain("Staging")
+        else if (action === "custom") expect(JSON.stringify(toolResults())).toContain("Preview café 日本語")
         else expect(JSON.stringify(toolResults())).not.toContain("Staging")
       } finally {
         await test.info().attach("codex-question-tool-contract.json", {
@@ -1472,7 +1483,7 @@ test.describe("real harness journeys @core @tier-real", () => {
         await expectAssistantReplyVisible(page, nextMarker)
         return
       }
-      const environment = action === "custom" ? "Preview environment" : "Staging"
+      const environment = action === "custom" ? "Preview café 日本語" : "Staging"
       const environmentOption = action === "custom"
         ? dock.locator('[data-slot="question-option"][data-custom="true"]')
         : dock.locator('[data-slot="question-option"]', { hasText: "Staging" })
@@ -1481,6 +1492,9 @@ test.describe("real harness journeys @core @tier-real", () => {
         const customInput = dock.locator('[data-slot="question-custom-input"]')
         await customInput.fill(environment)
         await customInput.press("Enter")
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expect(environmentOption).toHaveAttribute("data-picked", "true")
+        await expect(environmentOption).toContainText(environment)
       }
       await dock.getByRole("button", { name: "Next", exact: true }).click()
       await expect(dock).toContainText("Which checks should run?")
