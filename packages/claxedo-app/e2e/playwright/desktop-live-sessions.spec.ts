@@ -151,11 +151,29 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       try {
         await expect.poll(async () => (await read()).some((part) => (part.tool ?? "").includes("documents_list") && part.state?.status === "completed"), { timeout: 90_000 }).toBe(true)
         if (harness === "Codex") {
-          const dock = packaged.page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
+          let dock = packaged.page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
           await expect(dock).toContainText('run tool "documents_open"', { timeout: 90_000 })
+          expect((await read()).some((part) => (part.tool ?? "").includes("documents_open") && part.state?.status === "completed")).toBe(false)
+          const readQuestions = async () => {
+            const response = await fetch(`${serverBase}/question?directory=${encodeURIComponent(directory)}`)
+            expect(response.ok).toBe(true)
+            return await response.json() as Array<{ id: string; sessionID: string }>
+          }
+          const pending = await readQuestions()
+          expect(pending).toHaveLength(1)
+          const originalProcess = packaged.app.process()
+          await packaged.close()
+          await expect.poll(() => originalProcess.exitCode !== null || originalProcess.signalCode !== null).toBe(true)
+          packaged = await launch()
+          expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+          dock = packaged.page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
+          await expect(dock).toContainText('run tool "documents_open"')
+          expect(await readQuestions()).toEqual(pending)
           expect((await read()).some((part) => (part.tool ?? "").includes("documents_open") && part.state?.status === "completed")).toBe(false)
           await dock.getByText("Allow once", { exact: true }).click()
           await dock.getByRole("button", { name: "Submit", exact: true }).click()
+          await expect(dock).toHaveCount(0)
+          expect(await readQuestions()).toEqual([])
         }
         await expect.poll(async () => (await read()).some((part) => (part.tool ?? "").includes("documents_open") && part.state?.status === "completed"), { timeout: 90_000 }).toBe(true)
         await expect(packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: marker })).toBeVisible({ timeout: 90_000 })
