@@ -63,6 +63,25 @@ export async function expectConcurrentQuestionIsolation(page: Page, input: {
     await page.goto(firstUrl, { waitUntil: "domcontentloaded" })
     await expect(dock(page)).toBeVisible({ timeout: 30_000 })
     await dock(page).locator('[data-slot="question-option"]', { hasText: "Staging" }).click()
+    const replyUrl = (url: URL) => url.pathname === `/question/${owner.id}/reply`
+    await page.route(replyUrl, (route) => route.fulfill({
+      status: 500, contentType: "application/json",
+      body: JSON.stringify({ error: { code: "internal_error", message: "Temporary question reply failure" } }),
+    }))
+    try {
+      const rejected = page.waitForResponse((response) => replyUrl(new URL(response.url())) && response.status() === 500)
+      await dock(page).getByRole("button", { name: "Submit", exact: true }).click()
+      await rejected
+      await expect(page.getByText("Request failed", { exact: true })).toBeVisible()
+      await expect(page.getByText("Temporary question reply failure", { exact: true })).toBeVisible()
+      expect(await pending(first.directory)).toEqual(firstPending)
+      expect(await pending(second.directory)).toEqual(secondPending)
+      await expect(dock(page)).toBeVisible()
+      await expect(dock(page).getByRole("button", { name: "Submit", exact: true })).toBeEnabled()
+      await expect(page.locator('[data-slot="session-turn-assistant-content"]').filter({ hasText: first.answerMarker })).toHaveCount(0)
+    } finally {
+      await page.unroute(replyUrl)
+    }
     await dock(page).getByRole("button", { name: "Submit", exact: true }).click()
     await expectAssistantReplyVisible(page, first.answerMarker)
     await expect.poll(() => pending(first.directory)).toEqual([])

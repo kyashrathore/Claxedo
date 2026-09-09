@@ -207,13 +207,15 @@ async function waitForHarnessReady(page: Page) {
     { timeout: 30_000 },
   )
   await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
-  const claudeModel = process.env.CLAXEDO_E2E_CLAUDE_MODEL
   const control = page.locator('[data-action="prompt-harness-model"]').last()
-  if (claudeModel && await control.getAttribute("data-harness") === "claude") {
+  const harness = await control.getAttribute("data-harness")
+  const preferredModel = harness === "claude" ? process.env.CLAXEDO_E2E_CLAUDE_MODEL
+    : harness === "codex" ? process.env.CLAXEDO_E2E_CODEX_MODEL : undefined
+  if (preferredModel) {
     await control.click()
     const picker = page.locator('[data-component="harness-model-picker"]')
-    await picker.locator('[data-slot="list-item"]').filter({ has: page.locator('[data-slot="list-item-name"]').filter({ hasText: claudeModel }) }).first().click()
-    await expect(control).toContainText(claudeModel)
+    await picker.locator('[data-slot="list-item"]').filter({ has: page.locator('[data-slot="list-item-name"]').filter({ hasText: preferredModel }) }).first().click()
+    await expect(control).toContainText(preferredModel)
     await page.keyboard.press("Escape")
   }
 }
