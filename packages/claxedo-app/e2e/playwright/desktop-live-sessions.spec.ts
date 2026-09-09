@@ -24,7 +24,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "permission Delete across full restart", "reply", "deleted while closed", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart", "question delete across full restart"] as const) {
+for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "permission Delete across full restart", "reply", "deleted while closed", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart", "question delete across full restart", "question delete response lost across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -636,7 +636,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       return
     }
 
-    if (flow === "question answer across full restart" || flow === "question dismiss across full restart" || flow === "question stop across full restart" || flow === "question delete across full restart") {
+    if (flow === "question answer across full restart" || flow === "question dismiss across full restart" || flow === "question stop across full restart" || flow === "question delete across full restart" || flow === "question delete response lost across full restart") {
       const action = flow === "question answer across full restart" ? "answer" : flow === "question dismiss across full restart" ? "dismiss" : "stop"
       const prefix = `DESKTOP_QUESTION_${Date.now()}`
       const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
@@ -668,8 +668,8 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await expect(dock.locator('[data-slot="question-option"]', { hasText: "Staging" })).toContainText("Isolated test environment")
       expect(await readQuestions()).toEqual(pending)
       await packaged.page.screenshot({ path: test.info().outputPath("question-after-restart.png") })
-      if (flow === "question delete across full restart") {
-        await deletePendingQuestion(packaged.page, { backendUrl: serverBase, directory, sessionId: session.id })
+      if (flow === "question delete across full restart" || flow === "question delete response lost across full restart") {
+        await deletePendingQuestion(packaged.page, { backendUrl: serverBase, directory, sessionId: session.id, interruptResponse: flow === "question delete response lost across full restart" })
         await verifyDeletedSessionRecovery(session.id)
         return
       }

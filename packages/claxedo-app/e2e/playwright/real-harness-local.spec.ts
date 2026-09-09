@@ -1310,7 +1310,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   }
 
-  for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false]] as const) {
+  for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false], ["delete-response-lost", false]] as const) {
     test(`codex native structured question ${action} reaches the question dock${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
       requireBinary(binary, "codex", "install the Codex CLI to exercise its structured question tool.")
@@ -1337,9 +1337,9 @@ test.describe("real harness journeys @core @tier-real", () => {
         const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
         await expect(dock).toBeVisible({ timeout: 20_000 })
         await expect(dock.locator('[data-slot="question-option"]', { hasText: "Staging" })).toContainText("Isolated environment")
-        if (action === "delete") {
+        if (action === "delete" || action === "delete-response-lost") {
           const removedId = new URL(page.url()).pathname.split("/").at(-1)!
-          await deletePendingQuestion(page, { backendUrl: BACKEND_URL, directory: dir, sessionId: removedId })
+          await deletePendingQuestion(page, { backendUrl: BACKEND_URL, directory: dir, sessionId: removedId, interruptResponse: action === "delete-response-lost" })
           await openDraftPrompt(page, dir)
           await switchDraftHarness(page, "codex")
           await waitForHarnessReady(page)
@@ -1387,7 +1387,7 @@ test.describe("real harness journeys @core @tier-real", () => {
   }
 
 
-  for (const [action, goalMode] of [["answer", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false]] as const) {
+  for (const [action, goalMode] of [["answer", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false], ["delete-response-lost", false]] as const) {
     test(`claude native SDK provider-issued question: ${action} after reload${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
       requireBinary(binary, "claude", "install the Claude CLI to exercise its AskUserQuestion tool.")
@@ -1433,9 +1433,9 @@ test.describe("real harness journeys @core @tier-real", () => {
       await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
       await page.reload({ waitUntil: "domcontentloaded" })
       await expect(dock).toBeVisible({ timeout: 30_000 })
-      if (action === "delete") {
+      if (action === "delete" || action === "delete-response-lost") {
         const removedId = new URL(page.url()).pathname.split("/").at(-1)!
-        await deletePendingQuestion(page, { backendUrl: BACKEND_URL, directory: dir, sessionId: removedId })
+        await deletePendingQuestion(page, { backendUrl: BACKEND_URL, directory: dir, sessionId: removedId, interruptResponse: action === "delete-response-lost" })
         await openDraftPrompt(page, dir)
         await switchDraftHarness(page, "claude")
         await waitForHarnessReady(page)
