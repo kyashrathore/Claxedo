@@ -444,6 +444,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
     workspaceId: replayWorkspaceId,
     workspaceKind: resolvedWorkspaceKind,
     sessionRef: activeSessionRef,
+    onMissingSession: (sessionId, directory) => claxedoState.layout.closeDeletedSession({ sessionId, directory }),
   })
   const [ui, setUi] = createStore({
     pendingMessage: undefined as string | undefined,

@@ -316,6 +316,7 @@ export function createSessionController(input: {
   // has no session store for them).
   workspaceKind?: Accessor<"cloud" | "user-hosted" | undefined>
   sessionRef?: Accessor<SessionRef | undefined>
+  onMissingSession?: (sessionID: string, cwd: string) => void
 }) {
   const sdk = useSDK()
   const globalSDK = useGlobalSDK()
@@ -684,6 +685,7 @@ export function createSessionController(input: {
       workspaceId: input.workspaceId?.(),
     })
     setMissingSession(directory, sessionID, true)
+    if (cause === "missing" && !input.signedControlPlane?.()) input.onMissingSession?.(sessionID, directory)
     if (cause !== "missing" || !input.signedControlPlane?.()) return
     const workspaceId = input.workspaceId?.()
     void scheduleSessionProjectionPull({
@@ -702,6 +704,20 @@ export function createSessionController(input: {
       [key]: missing,
     }))
   }
+
+  // The row query can discover deletion even when persisted history needs no
+  // fetch. Reconcile its authoritative rejection through the same owner as a
+  // failed history read; missing rows in a directory listing are not evidence.
+  createEffect(on(
+    () => [paneActive(), input.directory(), input.sessionID(), sessionRowQuery.error] as const,
+    ([active, directory, sessionID, error]) => {
+      if (!active || !sessionID || sessionID === "new" || !error) return
+      const failure = classifySessionHistoryReadFailure({ error })
+      if (failure.kind === "missing" || failure.kind === "denied") {
+        forgetUnavailableSession(directory, sessionID, failure.kind)
+      }
+    },
+  ))
 
   const acceptedPromptRefreshOwner = {}
   createEffect(

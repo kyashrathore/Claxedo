@@ -11,6 +11,8 @@ import * as path from "node:path"
 import { promisify } from "node:util"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
 import { shutdownPackagedTestDaemon } from "../helpers/desktop-daemon"
+import { claxedoDaemonDiscoveryPath, readClaxedoDaemonDiscovery, verifyClaxedoDaemonDiscovery } from "../../../claxedo-desktop/src/main/server-daemon-discovery"
+import { holdClaxedoDaemonLease } from "../../../claxedo-desktop/src/main/server-daemon-lease"
 import { composeText } from "../helpers/web-signed-relay-harness"
 
 const execFileAsync = promisify(execFile)
@@ -22,7 +24,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "permission Delete across full restart", "reply", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart", "question delete across full restart"] as const) {
+for (const flow of [...(harness === "Codex" ? ["Documents MCP dismiss", "Documents MCP stop"] as const : []), "Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "permission Delete across full restart", "reply", "deleted while closed", "rename across full restart", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart", "question delete across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -839,6 +841,42 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: marker }),
       `the real ${harness} session did not render its authenticated response`,
     ).toBeVisible({ timeout: 180_000 })
+    if (flow === "deleted while closed") {
+      const session = await created.json() as { id: string }
+      const discovery = readClaxedoDaemonDiscovery(claxedoDaemonDiscoveryPath(path.join(profile, "server-data")))
+      expect(discovery).toBeDefined()
+      expect(await verifyClaxedoDaemonDiscovery(discovery!)).toBe(serverBase)
+      const lease = await holdClaxedoDaemonLease(discovery!)
+      try {
+        const exiting = packaged.app.process()
+        await packaged.close()
+        await expect.poll(() => exiting.exitCode !== null || exiting.signalCode !== null).toBe(true)
+        const deleted = await fetch(`${serverBase}/session/${session.id}?directory=${encodeURIComponent(directory)}`, { method: "DELETE" })
+        expect(deleted.ok, await deleted.text()).toBe(true)
+        expect((await fetch(`${serverBase}/session/${session.id}?directory=${encodeURIComponent(directory)}`)).status).toBe(404)
+        packaged = await launch()
+        expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
+        expect((await fetch(`${serverBase}/session/${session.id}?directory=${encodeURIComponent(directory)}`)).status).toBe(404)
+      } finally {
+        await lease.stop()
+      }
+      try {
+        await expect(packaged.page.locator(`[data-session-id="${session.id}"]`)).toHaveCount(0)
+      } finally {
+        const reads = await packaged.page.evaluate((id) => {
+          const client = (window as unknown as { __claxedoQueryClient?: {
+            getQueryCache(): { getAll(): Array<{ queryKey: unknown; state: { status: string; fetchStatus: string; error: unknown } }> }
+          } }).__claxedoQueryClient
+          return client?.getQueryCache().getAll().filter((query) => JSON.stringify(query.queryKey).includes(id)).map((query) => ({
+            key: query.queryKey, status: query.state.status, fetchStatus: query.state.fetchStatus,
+            error: query.state.error instanceof Error ? query.state.error.message : query.state.error,
+          }))
+        }, session.id)
+        await test.info().attach("restored-session-reads", { body: JSON.stringify(reads, null, 2), contentType: "application/json" })
+      }
+      await expect(packaged.page.locator('[data-slot="session-turn-assistant-content"]').filter({ hasText: marker })).toHaveCount(0)
+      await verifyDeletedSessionRecovery(session.id)
+    }
     if (flow === "rename across full restart") {
       const session = await created.json() as { id: string }
       await expectSessionRenamePersistence(packaged.page, {
