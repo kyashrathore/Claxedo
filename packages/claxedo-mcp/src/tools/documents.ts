@@ -125,6 +125,14 @@ function grantedSession(ctx: McpToolContext, requested: string | undefined): str
 }
 
 function documentScope(ctx: McpToolContext, args: Readonly<{ project?: string; directory?: string }>): DocumentScope | Refusal {
+  if (ctx.credential.kind === "runtime") {
+    const directory = ctx.client.ownWorkspace?.directory
+    if (!directory) return { refusal: mcpToolRefusal("The runtime's document workspace is unavailable.") }
+    if (args.project || (args.directory && path.resolve(args.directory) !== path.resolve(directory))) {
+      return { refusal: mcpToolRefusal("A runtime credential can access documents only in its own workspace directory.") }
+    }
+    return { directory }
+  }
   if (args.project && args.directory) {
     return { refusal: mcpToolRefusal("Name a project or a directory, not both.") }
   }
@@ -192,7 +200,7 @@ async function documentsJson(ctx: McpToolContext, requestPath: string, input: Re
 }
 
 function documentsService(ctx: McpToolContext): ClaxedoFetch {
-  const { controlPlane } = ctx.client
-  if (!controlPlane) throw new DocumentsUnavailable("This Claxedo deployment does not serve the documents service.")
-  return controlPlane
+  const { documents } = ctx.client
+  if (!documents) throw new DocumentsUnavailable("This Claxedo deployment does not serve the documents service.")
+  return documents
 }

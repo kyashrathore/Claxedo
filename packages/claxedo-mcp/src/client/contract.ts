@@ -41,6 +41,8 @@ export interface ClaxedoMcpClient {
   readonly ownWorkspace?: WorkspaceTarget
   /** Control-plane routes (`/api/control/*`, `/api/workspace/*`); undefined when no account credential is reachable. */
   readonly controlPlane?: ClaxedoFetch
+  /** Document routes authorized for this caller; independent of account control-plane access. */
+  readonly documents?: ClaxedoFetch
   /** Runtime routes (`/session*`, `/permission`, `/api/wr/*`) on the workspace that owns the target. */
   runtime(target: WorkspaceTarget): Promise<ClaxedoFetch>
   resolveTarget(target: WorkspaceTarget): Promise<ResolvedTarget>

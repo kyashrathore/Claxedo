@@ -70,6 +70,11 @@ describe("the first-party MCP a local session is launched with", () => {
     expect(path.isAbsolute(grant.path)).toBe(true)
     expect(await fs.readFile(grant.path, "utf8")).toBe(markdown)
     expect(await fs.realpath(grant.path)).toBe(await fs.realpath(file))
+    for (const scope of [{ directory: path.dirname(live.workspace.directory) }, { project: "another-project" }]) {
+      const denied = await callTool(client, "documents_list", scope)
+      expect(denied.isError).toBe(true)
+      expect(toolText(denied)).toContain("only in its own workspace directory")
+    }
   })
 
   test("names the session in the URL the runtime injects, and serves the runtime audience over it", async () => {

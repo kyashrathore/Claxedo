@@ -19,6 +19,7 @@ export type ClaxedoMcpClientOptions = Readonly<{
   local?: Readonly<{ fetch: ClaxedoFetch; workspace: WorkspaceTarget }>
   /** Control-plane routes, already authenticated as the calling user. */
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
+  documents?: Readonly<{ fetch: ClaxedoFetch }>
   /** Dials the relay; defaults to the global fetch. */
   fetch?: (input: string, init?: RequestInit) => Promise<Response>
 }> &
@@ -152,6 +153,7 @@ export function createClaxedoMcpClient(options: ClaxedoMcpClientOptions): Claxed
 
   return {
     deployment,
+    ...(options.documents ? { documents: options.documents.fetch } : {}),
     ...(local ? { ownWorkspace: local.workspace } : {}),
     ...(controlPlane ? { controlPlane: controlPlane.fetch } : {}),
     runtime,

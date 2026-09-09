@@ -31,7 +31,7 @@ import { unsignedLocalRequestGuard, deploymentMode } from "@claxedo/server-core/
 import { controlPlaneAuthContext, ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { getHarnessMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
-import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import {
   mountControlPlaneRouteContributions,
   type ControlPlaneRouteContribution,
@@ -344,19 +344,22 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     app.route(CLAXEDO_MCP_PATH, createClaxedoMcpRoutes({
       mount: "loopback",
       verifyRuntimeCredential: firstPartyMcp.verifyRuntimeCredential,
-      createClient: (credential, request) => firstPartyMcp.createClient({
-        deployment: "loopback",
-        credential,
-        request,
-        ...(credential.kind === "runtime"
-          ? {
-              local: {
-                fetch: inProcessFetch((runtimeRequest) => app.fetch(runtimeRequest), { "x-workspace-id": credential.workspaceId }),
-                workspace: { workspaceId: credential.workspaceId },
-              },
-            }
-          : {}),
-      }),
+      createClient: async (credential, request) => {
+        if (credential.kind !== "runtime") throw new Error("A local MCP client requires a runtime credential")
+        const workspace = await resolveWorkspace({ workspaceId: credential.workspaceId })
+        if (!workspace || workspace.kind !== "local") throw new Error("The runtime workspace is unavailable")
+        const localFetch = inProcessFetch((runtimeRequest) => app.fetch(runtimeRequest), { "x-workspace-id": credential.workspaceId })
+        return firstPartyMcp.createClient({
+          deployment: "loopback",
+          credential,
+          request,
+          documents: { fetch: localFetch },
+          local: {
+            fetch: localFetch,
+            workspace: { workspaceId: credential.workspaceId, directory: workspace.directory },
+          },
+        })
+      },
       registerTools: firstPartyMcp.registerTools ?? [],
       audit: (event) => console.info("[claxedo-local-server] mcp.audit", mcpAuditRecord(event)),
       ...(firstPartyMcp.crossMachineWrites ? { crossMachineWrites: firstPartyMcp.crossMachineWrites } : {}),

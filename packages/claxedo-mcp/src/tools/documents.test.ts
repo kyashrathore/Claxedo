@@ -79,7 +79,7 @@ async function listen(service?: ReturnType<typeof documentsService>) {
           fetch: async () => new Response(null, { status: 204 }),
           workspace: { workspaceId: "ws_local", directory: "/w" },
         },
-        ...(service ? { controlPlane: { fetch: service.fetch } } : {}),
+        ...(service ? { documents: { fetch: service.fetch } } : {}),
       }),
     registerTools: [registerDocumentTools],
     audit: () => undefined,
@@ -227,7 +227,7 @@ describe("documents_open", () => {
     const service = documentsService()
     const { url } = await listen(service)
     const client = await connect(url, "rt-token", "ses_caller")
-    expect(await json(client, "documents_open", { document: "doc_plan", project: "proj_1", session: "ses_someone_else" })).toMatchObject({
+    expect(await json(client, "documents_open", { document: "doc_plan", directory: "/w", session: "ses_someone_else" })).toMatchObject({
       session: "ses_caller",
     })
     expect(service.calls.find((row) => row.method === "POST")?.body).toEqual({ session_id: "ses_caller" })

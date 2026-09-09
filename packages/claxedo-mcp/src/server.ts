@@ -65,6 +65,7 @@ export type McpClientInputs = Readonly<{
   request: Request
   local?: Readonly<{ fetch: ClaxedoFetch; workspace: WorkspaceTarget }>
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
+  documents?: Readonly<{ fetch: ClaxedoFetch }>
 }>
 
 /** The option every mount takes from its composition root. */

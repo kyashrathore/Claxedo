@@ -61,7 +61,10 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
         credential,
         request,
         ...(credential.kind === "user"
-          ? { controlPlane: { fetch: inProcessFetch((call) => input.app.request(call), authorization ? { authorization } : {}) } }
+          ? {
+              controlPlane: { fetch: inProcessFetch((call) => input.app.request(call), authorization ? { authorization } : {}) },
+              documents: { fetch: inProcessFetch((call) => input.app.request(call), authorization ? { authorization } : {}) },
+            }
           : {}),
         ...(input.local ? { local: input.local(credential) } : {}),
       })

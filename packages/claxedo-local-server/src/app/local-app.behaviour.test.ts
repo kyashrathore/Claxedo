@@ -6,6 +6,7 @@ import path from "node:path"
 import { Hono } from "hono"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { claxedoBus } from "@claxedo/server-core/platform/runtime/lib/bus"
+import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { McpClientInputs } from "@claxedo/mcp"
@@ -418,7 +419,16 @@ describe("local composition — session metadata recording", () => {
 })
 
 describe("local composition — first-party MCP", () => {
-  const claims = { runtimeId: "rt_1", workspaceId: "ws_1", expiresAt: Number.MAX_SAFE_INTEGER }
+  const claims = { runtimeId: "rt_1", workspaceId: "ws_1", sessionId: "ses_1", expiresAt: Number.MAX_SAFE_INTEGER }
+  let directory: string
+  beforeEach(async () => {
+    directory = realpathSync(dataDir)
+    execFileSync("git", ["init"], { cwd: directory, stdio: "pipe" })
+    const workspace = await ensureWorkspace({ directory })
+    if (!workspace) throw new Error("The fixture workspace was not created")
+    claims.workspaceId = workspace.id
+  })
+
   const stubClient: ClaxedoMcpClient = {
     deployment: "loopback",
     runtime: async () => async () => new Response(null, { status: 204 }),
@@ -463,13 +473,14 @@ describe("local composition — first-party MCP", () => {
     expect(inputs).toHaveLength(1)
     expect(inputs[0]).toMatchObject({
       deployment: "loopback",
-      credential: { kind: "runtime", runtimeId: "rt_1", workspaceId: "ws_1", sessionId: "ses_1" },
-      local: { workspace: { workspaceId: "ws_1" } },
+      credential: { kind: "runtime", runtimeId: "rt_1", workspaceId: claims.workspaceId, sessionId: "ses_1" },
+      local: { workspace: { workspaceId: claims.workspaceId, directory } },
     })
     expect(inputs[0]?.controlPlane).toBeUndefined()
+    expect(inputs[0]?.documents).toBeDefined()
     const local = inputs[0]?.local
     if (!local) throw new Error("the loopback mount composed no runtime client")
-    expect(await (await local.fetch("/api/claxedo/echo")).json()).toEqual({ workspace: "ws_1" })
+    expect(await (await local.fetch("/api/claxedo/echo")).json()).toEqual({ workspace: claims.workspaceId })
   })
 
   test("reflects no CORS origin on the MCP route even for an origin the shell admits", async () => {
