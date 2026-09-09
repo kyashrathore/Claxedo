@@ -326,36 +326,77 @@ test.describe("live real-harness smoke @live", () => {
     await testInfo.attach("claxedo-server.log", { body: serverLog, contentType: "text/plain" })
   })
 
-  for (const [harness, selectedMode] of [["codex", "read-only"], ["claude", "default"]] as const) {
-    test(`restricted ${harness} parent and child permission modes survive a server restart`, async ({ page }) => {
-      const dir = await makeWorkspace(`${harness}-permission-restart`)
+  for (const parentHarness of ["codex", "claude"] as const) {
+    for (const childHarness of ["codex", "claude"] as const) {
+    test(`${parentHarness} parent restricts ${childHarness} child permissions across server restart`, async ({ page }) => {
+      const dir = await makeWorkspace(`${parentHarness}-${childHarness}-permission-restart`)
       await seedOneProject(page, dir)
       const query = `?directory=${encodeURIComponent(dir)}`
-      const create = async (parentID?: string) => {
-        const response = await page.request.post(`${BACKEND_URL}/session${query}&nativeHarness=${harness}`, {
-          data: {
-            harness: { id: harness, access: "native" },
-            permissionMode: selectedMode,
-            permissionCeiling: "ask",
-            ...(parentID ? { parentID } : {}),
-          },
+      const restricted = (harness: "codex" | "claude") => harness === "codex" ? "read-only" : "default"
+      const broad = childHarness === "codex" ? "full-access" : "bypassPermissions"
+      const create = (harness: "codex" | "claude", body: Record<string, unknown>) =>
+        page.request.post(`${BACKEND_URL}/session${query}&nativeHarness=${harness}`, {
+          data: { harness: { id: harness, access: "native" }, ...body },
         })
-        expect(response.ok(), await response.text()).toBe(true)
-        return await response.json() as { id: string }
-      }
-      const parent = await create()
-      const child = await create(parent.id)
+      const parentResponse = await create(parentHarness, { permissionMode: restricted(parentHarness), permissionCeiling: "ask" })
+      expect(parentResponse.ok(), await parentResponse.text()).toBe(true)
+      const parent = await parentResponse.json() as { id: string }
+      // The child receives no explicit mode or ceiling: the parent must supply it.
+      const childResponse = await create(childHarness, { parentID: parent.id })
+      expect(childResponse.ok(), await childResponse.text()).toBe(true)
+      const child = await childResponse.json() as { id: string }
       const mode = async (id: string) => {
         const response = await page.request.get(`${BACKEND_URL}/session/${id}/permission-mode${query}`)
         expect(response.ok(), await response.text()).toBe(true)
         return (await response.json() as { currentModeId: string }).currentModeId
       }
-      expect(await Promise.all([mode(parent.id), mode(child.id)])).toEqual([selectedMode, selectedMode])
+      const verify = async () => {
+        expect(await Promise.all([mode(parent.id), mode(child.id)])).toEqual([restricted(parentHarness), restricted(childHarness)])
+        const widened = await page.request.put(`${BACKEND_URL}/session/${child.id}/permission-mode${query}`, { data: { modeId: broad } })
+        expect(widened.status(), await widened.text()).toBe(403)
+        for (const endpoint of ["message", "prompt_async"]) {
+          const override = await page.request.post(`${BACKEND_URL}/session/${child.id}/${endpoint}${query}`, {
+            data: { permissionMode: broad, parts: [{ type: "text", text: "Do not run any commands." }] },
+          })
+          expect(override.status(), await override.text()).toBe(403)
+        }
+        const retried = await create(childHarness, { id: child.id, permissionMode: broad })
+        expect(retried.status(), await retried.text()).toBe(403)
+        const widenedParent = await page.request.put(`${BACKEND_URL}/session/${parent.id}/permission-mode${query}`, {
+          data: { modeId: parentHarness === "codex" ? "full-access" : "bypassPermissions" },
+        })
+        expect(widenedParent.status(), await widenedParent.text()).toBe(403)
+        const widerChild = await create(childHarness, { parentID: parent.id, permissionMode: broad, permissionCeiling: "full" })
+        expect(widerChild.status(), await widerChild.text()).toBe(403)
+        expect(await Promise.all([mode(parent.id), mode(child.id)])).toEqual([restricted(parentHarness), restricted(childHarness)])
+      }
+      await verify()
       await stopServer()
       await startServer(dataDir)
-      expect(await Promise.all([mode(parent.id), mode(child.id)])).toEqual([selectedMode, selectedMode])
+      await verify()
     })
+    }
+  }
 
+  for (const source of ["claude", "codex"] as const) {
+    test(`${source} restricted session retains its ceiling when switching harness`, async ({ page }) => {
+      const target = source === "claude" ? "codex" : "claude"
+      const dir = await makeWorkspace(`${source}-ceiling-handoff`)
+      await seedOneProject(page, dir)
+      const query = `?directory=${encodeURIComponent(dir)}`
+      const created = await page.request.post(`${BACKEND_URL}/session${query}&nativeHarness=${source}`, {
+        data: { harness: { id: source, access: "native" }, permissionCeiling: "ask" },
+      })
+      expect(created.ok(), await created.text()).toBe(true)
+      const session = await created.json() as { id: string }
+      const switched = await page.request.patch(`${BACKEND_URL}/session/${session.id}/config${query}`, {
+        data: { harness: { id: target, access: "native" } },
+      })
+      expect(switched.ok(), await switched.text()).toBe(true)
+      const mode = await page.request.get(`${BACKEND_URL}/session/${session.id}/permission-mode${query}`)
+      expect(mode.ok(), await mode.text()).toBe(true)
+      expect((await mode.json()).currentModeId).toBe(target === "codex" ? "read-only" : "default")
+    })
   }
 
   test("opencode native harness (embedded engine) completes 3 real turns and survives reload", async ({

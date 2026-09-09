@@ -672,6 +672,7 @@ export class RuntimeStore {
         handoff_json TEXT,
         goal_json TEXT,
         permission_mode TEXT,
+        permission_ceiling TEXT,
         permission_state_json TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
@@ -925,6 +926,7 @@ export class RuntimeStore {
       "ALTER TABLE session ADD COLUMN handoff_json TEXT",
       "ALTER TABLE session ADD COLUMN goal_json TEXT",
       "ALTER TABLE session ADD COLUMN permission_mode TEXT",
+      "ALTER TABLE session ADD COLUMN permission_ceiling TEXT",
       "ALTER TABLE session ADD COLUMN permission_state_json TEXT",
     ]) {
       try {
@@ -3665,6 +3667,7 @@ export class RuntimeStore {
       agent: string | null
       handoff_json: string | null
       permission_state_json: string | null
+      permission_ceiling: SessionConfig["permissionCeiling"] | null
       permission_mode: string | null
     }>(
         `
@@ -3680,6 +3683,7 @@ export class RuntimeStore {
           variant,
           agent,
           handoff_json,
+          permission_ceiling,
           permission_mode,
           permission_state_json
         FROM session
@@ -3699,6 +3703,7 @@ export class RuntimeStore {
       variant: nullable(row.variant) ?? null,
       agent: nullable(row.agent) ?? null,
       ...(handoff ? { handoff } : {}),
+      ...(row.permission_ceiling ? { permissionCeiling: row.permission_ceiling } : {}),
       ...(row.permission_mode ? { permissionMode: row.permission_mode } : {}),
       ...(row.permission_state_json ? { permissionState: JSON.parse(row.permission_state_json) } : {}),
     }
@@ -3720,6 +3725,7 @@ export class RuntimeStore {
       agent: string | null
       handoff_json: string | null
       permission_state_json: string | null
+      permission_ceiling: SessionConfig["permissionCeiling"] | null
       permission_mode: string | null
       updated_at: number
     }>(
@@ -3737,6 +3743,7 @@ export class RuntimeStore {
           variant,
           agent,
           handoff_json,
+          permission_ceiling,
           permission_mode,
           permission_state_json,
           updated_at
@@ -3759,8 +3766,8 @@ export class RuntimeStore {
         createdAt: ts,
         updatedAt: ts,
       })
-      if (patch.permissionMode !== undefined || patch.permissionState !== undefined) {
-        this.applyConfigUpdate(id, { permissionMode: patch.permissionMode, permissionState: patch.permissionState }, ts, directory)
+      if (patch.permissionCeiling !== undefined || patch.permissionMode !== undefined || patch.permissionState !== undefined) {
+        this.applyConfigUpdate(id, { permissionCeiling: patch.permissionCeiling, permissionMode: patch.permissionMode, permissionState: patch.permissionState }, ts, directory)
       }
       return
     }
@@ -3771,7 +3778,7 @@ export class RuntimeStore {
       .prepare(
         `
 	      UPDATE session
-	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, handoff_json = ?, permission_mode = ?, permission_state_json = ?, updated_at = ?
+	      SET harness_id = ?, harness_access = ?, harness_binary = ?, harness_transport = ?, harness_url = ?, harness_headers_json = ?, model_provider_id = ?, model_id = ?, variant = ?, agent = ?, handoff_json = ?, permission_mode = ?, permission_state_json = ?, permission_ceiling = ?, updated_at = ?
 	      WHERE id = ?
 	    `,
       )
@@ -3793,6 +3800,7 @@ export class RuntimeStore {
         patch.permissionState === undefined
           ? nextHarness?.id === prevHarness?.id && nextHarness?.access === prevHarness?.access ? prev.permission_state_json : null
           : patch.permissionState ? JSON.stringify(patch.permissionState) : null,
+        patch.permissionCeiling ?? prev.permission_ceiling,
         prev.updated_at,
         id,
       )

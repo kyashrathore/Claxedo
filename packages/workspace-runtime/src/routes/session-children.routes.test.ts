@@ -39,7 +39,7 @@ function fixture(input: { parentMode?: string } = {}) {
       if (updates.time?.archived !== undefined) calls.archived.push(binding.sessionId)
       return store.updateSession(binding.sessionId, updates)
     },
-    getSessionConfig: async () => config,
+    getSessionConfig: async (binding) => store.getSessionConfig(binding.sessionId) ?? config,
     updateSessionConfig: async () => config,
     deleteSession: async (binding) => {
       calls.deleted.push(binding.sessionId)
@@ -118,7 +118,7 @@ function fixture(input: { parentMode?: string } = {}) {
         ...(create?.parentID ? { parentSessionId: create.parentID } : {}),
         agentSessionId: session.id,
       })
-      store.updateSessionConfig(session.id, config)
+      store.updateSessionConfig(session.id, { ...config, ...(create?.permissionCeiling ? { permissionCeiling: create.permissionCeiling } : {}) })
       return session
     },
     listSessions: async (_c, directory) => store.listSessions(directory),
@@ -363,3 +363,44 @@ describe("POST /session with parentID", () => {
 })
 
 export { buildSession }
+
+
+describe("permission mode changes retain session ceilings", () => {
+  for (const child of [false, true]) {
+    test(`${child ? "child" : "parentless"} session rejects widening after creation`, async () => {
+      const item = fixture()
+      item.seedParent("parent")
+      const response = await item.create(child ? { parentID: "parent" } : { permissionCeiling: "ask" })
+      expect(response.status).toBe(201)
+      const session = await response.json() as { id: string }
+      const change = (modeId: string) => item.app.request(`http://localhost/session/${session.id}/permission-mode?directory=${encodeURIComponent(DIRECTORY)}`, {
+        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ modeId }),
+      })
+      const before = item.calls.modes.length
+      const denied = await change("full-access")
+      expect(denied.status).toBe(403)
+      expect(await denied.json()).toMatchObject({ error: { code: "permission_ceiling_exceeded", ceiling: "ask" } })
+      expect(item.calls.modes).toHaveLength(before)
+      expect((await change("read-only")).status).toBe(200)
+      expect(item.store.getSessionConfig(session.id)?.permissionCeiling).toBe("ask")
+    })
+  }
+})
+
+
+describe("prompt permission overrides respect child ceilings", () => {
+  for (const endpoint of ["message", "prompt_async"]) {
+    test(endpoint, async () => {
+      const item = fixture()
+      item.seedParent("parent")
+      const child = await (await item.create({ parentID: "parent" })).json() as { id: string }
+      const response = await item.app.request(`http://localhost/session/${child.id}/${endpoint}?directory=${encodeURIComponent(DIRECTORY)}`, {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ permissionMode: "full-access", parts: [{ type: "text", text: "restricted turn" }] }),
+      })
+      expect(response.status).toBe(403)
+      expect(item.calls.prompts).toEqual([])
+      expect(item.calls.modes).toEqual([{ sessionId: child.id, modeId: "read-only" }])
+    })
+  }
+})

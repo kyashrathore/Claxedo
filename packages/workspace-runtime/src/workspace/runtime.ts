@@ -1616,6 +1616,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
                 harness: selectedHarness,
               }, { directory })
             }
+            if (create?.permissionCeiling) store().updateSessionConfig(session.id, { permissionCeiling: create.permissionCeiling }, { directory })
             const persisted = store().getSession(session.id)
             if (!persisted) throw new Error(`Session ${session.id} was not persisted`)
             return persisted

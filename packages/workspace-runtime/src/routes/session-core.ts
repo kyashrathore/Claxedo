@@ -187,6 +187,25 @@ async function effectivePermissionCeiling(
   return declared ? narrowerPermissionLevel(parentLevel, declared) : parentLevel
 }
 
+/** Resolve the persisted ceiling and the current parent restriction for mutations. */
+async function sessionPermissionCeiling(opts: Opts, c: Ctx, directory: RuntimeDirectory, session: AgentSession, adapter: AgentHarnessAdapter) {
+  const config = opts.getSessionConfig
+    ? await opts.getSessionConfig(c, directory, session.id, adapter)
+    : await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, session.id, adapter))
+  const parent = session.parentID ? await readSession(opts, c, directory, session.parentID) : undefined
+  if (session.parentID && !parent) throw new HTTPException(403, { message: "Parent session not found" })
+  return effectivePermissionCeiling(opts, c, directory, parent ?? undefined, config.permissionCeiling)
+}
+
+async function rejectPermissionOverride(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter, modeId: string | undefined) {
+  if (!modeId) return
+  const session = await readSession(opts, c, directory, sessionId, adapter)
+  if (!session) return c.json(errorBody("session_not_found", "Session not found"), 404)
+  const ceiling = await sessionPermissionCeiling(opts, c, directory, session, adapter)
+  if (!ceiling) return
+  return (await permissionModeUnderCeiling(c, adapter, directory, ceiling, modeId)).refusal
+}
+
 /**
  * The mode the new session starts in. A requested mode that widens the
  * ceiling is refused; with none requested the widest mode under the ceiling is
@@ -401,7 +420,7 @@ type Opts = {
   ) => Promise<RuntimeDirectory> | RuntimeDirectory
   listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSession[]>
   listSubagents?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string) => Promise<unknown[]> | unknown[]
-  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { parentID?: string }) => Promise<{ id: string }>
+  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"] }) => Promise<{ id: string }>
   /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
   childSessions?: ChildSessionHost
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
@@ -1324,11 +1343,16 @@ export function createSessionRoutes(opts: Opts) {
               ), 409)
             }
           }
-          const ceiling = await effectivePermissionCeiling(opts, c, directory, parent, body.permissionCeiling)
+          const inherited = existing
+            ? await sessionPermissionCeiling(opts, c, directory, existing, adapter)
+            : await effectivePermissionCeiling(opts, c, directory, parent, undefined)
+          const ceiling = inherited && body.permissionCeiling
+            ? narrowerPermissionLevel(inherited, body.permissionCeiling)
+            : inherited ?? body.permissionCeiling
           const childMode = await permissionModeUnderCeiling(c, adapter, directory, ceiling, body.permissionMode)
           if (childMode.refusal) return childMode.refusal
           let session = existing ?? (opts.createSession
-            ? await opts.createSession(c, directory, body.title, body.id, body.parentID ? { parentID: body.parentID } : undefined)
+            ? await opts.createSession(c, directory, body.title, body.id, { ...(body.parentID ? { parentID: body.parentID } : {}), ...(ceiling ? { permissionCeiling: ceiling } : {}) })
             : await adapter.createSession(directory, body.title, body.id))
           if (Object.keys(config).length > 0) {
             try {
@@ -1617,6 +1641,8 @@ export function createSessionRoutes(opts: Opts) {
       const access = sessionAccessContext(c)
       const parsedBody = parseSessionPromptBody(await c.req.json().catch(() => undefined))
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
+      const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, adapter, body.permissionMode)
+      if (permissionRefusal) return permissionRefusal
       const turnAdmission = await acquireManagedPromptLease({
         opts,
         c,
@@ -1818,6 +1844,13 @@ export function createSessionRoutes(opts: Opts) {
       }
       const modeId = str((await requestBody(c)).modeId) ?? ""
       if (!modeId) return c.json({ error: "modeId is required" }, 400)
+      const session = await readSession(opts, c, directory, sessionId, adapter)
+      if (!session) return c.json(errorBody("session_not_found", "Session not found"), 404)
+      const ceiling = await sessionPermissionCeiling(opts, c, directory, session, adapter)
+      if (ceiling) {
+        const permitted = await permissionModeUnderCeiling(c, adapter, directory, ceiling, modeId)
+        if (permitted.refusal) return permitted.refusal
+      }
       // The adapter's own read-back is returned verbatim. A harness that kept a
       // different mode than the one requested must reach the client as the mode
       // it kept, not as an echo of the request.
@@ -1991,6 +2024,8 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
       const parsedBody = parseSessionPromptBody(await c.req.json().catch(() => undefined))
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
+      const permissionRefusal = await rejectPermissionOverride(opts, c, directory, id, adapter, body.permissionMode)
+      if (permissionRefusal) return permissionRefusal
       if (body.messageID) {
         const admitted = promptAdmissions.get(id) ?? new Set<string>()
         if (admitted.has(body.messageID)) return c.body(null, 204)

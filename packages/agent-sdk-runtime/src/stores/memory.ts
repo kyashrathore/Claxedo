@@ -153,13 +153,16 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   updateSessionConfig(id: string, update: SessionConfigUpdate) {
     const prev = this.configs.get(id)
     if (!prev && !update.harness) return null
+    const sameHarness = !update.harness || (update.harness.id === prev?.harness.id && update.harness.access === prev?.harness.access)
+    const permissionCeiling = update.permissionCeiling ?? prev?.permissionCeiling
     const next: SessionConfig = {
       harness: update.harness ?? prev!.harness,
+      ...(permissionCeiling ? { permissionCeiling } : {}),
       ...(update.permissionMode === undefined
-        ? prev?.permissionMode && (!update.harness || (update.harness.id === prev.harness.id && update.harness.access === prev.harness.access)) ? { permissionMode: prev.permissionMode } : {}
+        ? prev?.permissionMode && sameHarness ? { permissionMode: prev.permissionMode } : {}
         : update.permissionMode ? { permissionMode: update.permissionMode } : {}),
       ...(update.permissionState === undefined
-        ? prev?.permissionState && (!update.harness || (update.harness.id === prev.harness.id && update.harness.access === prev.harness.access)) ? { permissionState: prev.permissionState } : {}
+        ? prev?.permissionState && sameHarness ? { permissionState: prev.permissionState } : {}
         : update.permissionState ? { permissionState: update.permissionState } : {}),
       ...(update.model === undefined
         ? prev?.model ? { model: prev.model } : {}

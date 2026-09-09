@@ -202,6 +202,8 @@ export type SessionHarness = {
 }
 
 export type SessionConfig = {
+  /** Host-owned maximum permission level, retained across harness changes. */
+  permissionCeiling?: import("./adapter-contract").AutoLevel
   /** Accepted harness mode, persisted by the permission-mode operation. */
   permissionMode?: string
   /** Native permission state accepted by the driver; opaque to shared consumers. */
@@ -223,6 +225,7 @@ export type SessionConfig = {
  * `harness` is a full replacement, not a deep merge.
  */
 export type SessionConfigUpdate = {
+  permissionCeiling?: SessionConfig["permissionCeiling"]
   permissionMode?: string | null
   permissionState?: Record<string, unknown> | null
   harness?: SessionHarness
@@ -235,7 +238,7 @@ export type SessionConfigUpdate = {
 /** Config fields accepted from public session create/update requests.
  * Handoff and accepted permission state are runtime-owned; permission changes
  * must go through the adapter permission-mode or permission-reply operation. */
-export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff" | "permissionMode" | "permissionState">
+export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff" | "permissionMode" | "permissionState" | "permissionCeiling">
 
 export type AgentRuntimeStreamEvent = RuntimeStreamEvent | CompatEvent
 export type RuntimeDirectory = string | undefined
