@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
+import fs from "node:fs/promises"
+import path from "node:path"
 import { callTool, startLiveFirstPartyMcp, toolJson, toolText, type LiveMcpFixture } from "./test-support/first-party-mcp-live"
 
 /**
@@ -43,6 +45,33 @@ const initialize = (url: string, headers: Record<string, string> = {}) =>
   })
 
 describe("the first-party MCP a local session is launched with", () => {
+  test("lists and opens a real repository document for its own runtime session", async () => {
+    const file = path.join(live.workspace.directory, "mcp-document.md")
+    const markdown = "# MCP document\n\nActual repository bytes 日本語\n"
+    await fs.writeFile(file, markdown)
+    const created = await fetch(`http://127.0.0.1:${live.port}/documents/from-repo`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ directory: live.workspace.directory, workspace_id: live.workspace.id, path: "mcp-document.md", display_name: "MCP document" }),
+    })
+    expect(created.ok, await created.clone().text()).toBe(true)
+    const document = await created.json() as { id: string }
+    const client = await live.connect(sessionId)
+    const listed = await callTool(client, "documents_list")
+    const scoped = await callTool(client, "documents_list", { directory: live.workspace.directory })
+    expect.soft(listed.isError, toolText(listed)).not.toBe(true)
+    expect(scoped.isError, toolText(scoped)).not.toBe(true)
+    expect((toolJson(listed) as { documents: Array<{ id: string }> }).documents.map((row) => row.id)).toContain(document.id)
+    const other = await live.createSession("document grant must remain self-scoped")
+    const opened = await callTool(client, "documents_open", { document: document.id, session: other })
+    expect(opened.isError, toolText(opened)).not.toBe(true)
+    const grant = toolJson(opened) as { document: string; session: string; path: string }
+    expect(grant).toMatchObject({ document: document.id, session: sessionId })
+    expect(path.isAbsolute(grant.path)).toBe(true)
+    expect(await fs.readFile(grant.path, "utf8")).toBe(markdown)
+    expect(await fs.realpath(grant.path)).toBe(await fs.realpath(file))
+  })
+
   test("names the session in the URL the runtime injects, and serves the runtime audience over it", async () => {
     const entry = live.entryFor(sessionId)
     expect(entry.name).toBe("claxedo")
