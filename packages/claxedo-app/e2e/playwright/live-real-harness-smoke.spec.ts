@@ -607,6 +607,50 @@ test.describe("live real-harness smoke @live", () => {
     })
   }
 
+  for (const harness of ["claude", "codex"] as const) {
+    test(`live project removal preserves its ${harness} session and repository when reopened`, async ({ page }, testInfo) => {
+      const dir = await makeWorkspace(`project-remove-${harness}`)
+      const original = await fs.readFile(path.join(dir, "README.md"), "utf8")
+      const head = (await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: dir })).stdout
+      const query = `?directory=${encodeURIComponent(dir)}`
+      const created = await page.request.post(`${BACKEND_URL}/session${query}&nativeHarness=${harness}`, {
+        data: { harness: { id: harness, access: "native" }, title: `Keep ${harness} session` },
+      })
+      expect(created.ok(), await created.text()).toBe(true)
+      const session = await created.json() as { id: string }
+      await seedOneProject(page, dir)
+      const sessionUrl = `/${slug(dir)}/session/${session.id}`
+      await page.goto(sessionUrl)
+      const header = page.locator('[data-testid="project-header"][data-active="true"]')
+      await expect(header).toBeVisible()
+      const projectHeader = page.getByTestId("project-header").filter({ hasText: path.basename(dir) })
+      await expect(projectHeader).toBeVisible()
+      const projectCount = await page.getByTestId("project-header").count()
+      await header.hover()
+      await header.getByRole("button", { name: "More options for main" }).click()
+      const deletions: string[] = []
+      page.on("request", (request) => {
+        if (request.method() === "DELETE" && /\/workspace\/[^/]+$/.test(new URL(request.url()).pathname)) deletions.push(request.url())
+      })
+      await page.getByRole("menuitem", { name: "Remove project", exact: true }).click()
+      await expect(projectHeader).toHaveCount(0)
+      await page.reload()
+      if (projectCount === 1) await expect(page.getByTestId("no-project-composer")).toBeVisible()
+      else await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible()
+      await expect(projectHeader).toHaveCount(0)
+      expect(await fs.readFile(path.join(dir, "README.md"), "utf8")).toBe(original)
+      expect((await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: dir })).stdout).toBe(head)
+      await page.goto(sessionUrl)
+      await expect(header).toBeVisible()
+      await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible()
+      const restored = await page.request.get(`${BACKEND_URL}/session/${session.id}${query}`)
+      expect(restored.ok(), await restored.text()).toBe(true)
+      expect(await restored.json()).toMatchObject({ id: session.id, title: `Keep ${harness} session` })
+      expect(deletions).toEqual([])
+      await page.screenshot({ path: testInfo.outputPath("project-reopened.png") })
+    })
+  }
+
   test("live project rename persists across reload and leaves another project unchanged", async ({ page }, testInfo) => {
     const dir = await makeWorkspace("project-rename")
     const neighbor = await makeWorkspace("project-rename-neighbor")

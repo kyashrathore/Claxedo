@@ -1,3 +1,4 @@
+import { startTransition } from "solid-js"
 import {
   DialogDeleteWorkspace,
   DialogSettings,
@@ -23,7 +24,6 @@ import { shellDataKeys } from "@/platform/sync/keys"
 import type { DirectorySessionCacheValue } from "../../session/data/sync/queries"
 import { ensureLocalProject, refreshProjectInventory } from "../data/query/project-ensure"
 import {
-  controlWorkspaceUrl,
   experimentalSandboxPath,
   workspaceResolveUrl,
 } from "@/platform/runtime/agent/workspace-control-routes"
@@ -41,7 +41,7 @@ type WorkspaceDirectoryRef = string
  * three lists overlap but none of them is a superset: a git worktree created
  * from the project shows up in `workspaces` without ever being a sandbox, so
  * walking only `worktree + sandboxes` left that worktree's tabs behind in the
- * switcher, pointing at a project that no longer exists.
+ * switcher, pointing at a project the user has removed from the sidebar.
  */
 function projectDirectories(project: ProjectItem): string[] {
   return [
@@ -442,27 +442,6 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     }
   }
 
-  const deleteProjectWorkspace = async (project: ProjectItem) => {
-    const workspaceId = project.workspaces?.[project.worktree]?.workspaceId ?? project.workspaces?.[project.worktree]?.id ?? project.id
-    const res = await (props.platform.fetch ?? fetch)(
-      controlWorkspaceUrl({ workspaceId }),
-      { method: "DELETE" },
-    )
-    if (res.ok || res.status === 404) return
-    const body = await res.json().catch(() => undefined)
-    const description = body && typeof body === "object" && "error" in body
-      ? message(body.error)
-      : "Failed to remove project from workspace store"
-    throw new Error(description)
-  }
-
-  const removeProjectFromInventory = (project: ProjectItem) => {
-    queryClient.setQueryData<ProjectItem[] | undefined>(
-      props.projectInventoryActions.queryKey(),
-      (cached) => cached?.filter((item) => item.id !== project.id && item.worktree !== project.worktree),
-    )
-  }
-
   const handleCloudMainWorkspaceDeleted = (dir: string) => {
     purgeWorkspaceState(dir)
     props.layout.projects.remove(dir)
@@ -502,34 +481,18 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     ))
   }
 
-  const handleRemoveProject = (project: ProjectItem) => {
+  const handleRemoveProject = (project: ProjectItem) => startTransition(() => {
     const current = props.activeProjectId()
-    // Navigate away BEFORE purging tabs. While the route still names the
-    // removed workspace (`/w/:workspaceId/session`), route-intent recreates the draft
-    // surface the purge just closed (`route-intent.ts` receive() opens a
-    // `sessionId: "new"` draft for a workspace session route), route-sync then
-    // keeps the URL parked on the removed workspace, and
-    // `autoOpenActiveProject` (`app-shell-state.ts`, `ignoreClosed: true`)
-    // silently re-opens the project the user just removed — the sidebar row
-    // came back within a second of the (successful) optimistic removal.
-    // Leaving the route first makes the purge below final.
-    if (current === project.worktree) {
-      props.navigate("/")
-    }
+    // Router navigation itself uses a Solid transition. Commit the new route,
+    // closed tabs and sidebar preference together so route synchronization
+    // cannot recreate a draft for the workspace being closed.
     for (const dir of projectDirectories(project)) {
       purgeWorkspaceState(dir)
       props.state.workspace.cleanupDeletedWorktree(dir, project.id)
     }
-    removeProjectFromInventory(project)
     props.layout.projects.close(project.worktree)
-    void deleteProjectWorkspace(project).catch((err) => {
-      showToast({
-        title: "Failed to remove project",
-        description: message(err),
-        variant: "error",
-      })
-    })
-  }
+    if (current === project.worktree) props.navigate("/")
+  })
 
   return {
     handleNewProject,

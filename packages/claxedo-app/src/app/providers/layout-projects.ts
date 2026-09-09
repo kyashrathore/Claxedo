@@ -108,11 +108,9 @@ export function projectCatalog(input: {
 export function shouldStoreOpenedProject(input: {
   root: string
   sidebar: readonly { worktree: string }[]
-  isLocal: boolean
   valid: DirectoryPredicate
 }) {
   if (!input.valid(input.root)) return false
-  if (!input.isLocal) return false
   return !input.sidebar.some((project) => project.worktree === input.root)
 }
 
@@ -283,7 +281,7 @@ export function canAutoOpenProject(input: {
   return !input.closed(root)
 }
 
-export type LayoutProjectsServer = Pick<ReturnType<typeof useServer>, "isLocal" | "projects">
+export type LayoutProjectsServer = Pick<ReturnType<typeof useServer>, "projects">
 
 /**
  * The layout's `projects` API: the sidebar list, the open/close/expand
@@ -313,15 +311,13 @@ export function createLayoutProjectsApi<List extends Accessor<unknown>>(deps: {
       const root = deps.rootFor(directory)
       if (!deps.validProjectRef(root)) return
       deps.ensureDirectorySessionCache(root)
-      if (!shouldStoreOpenedProject({ root, sidebar: deps.sidebarProjects(), isLocal: server.isLocal(), valid: deps.validProjectRef })) return
+      if (!shouldStoreOpenedProject({ root, sidebar: deps.sidebarProjects(), valid: deps.validProjectRef })) return
       server.projects.open(root)
     },
     close: (directory: string) => {
-      if (!server.isLocal()) return
       server.projects.close(directory)
     },
     isClosed: (directory: string) => {
-      if (!server.isLocal()) return false
       return server.projects.isClosed(directory)
     },
     remove: (directory: string) => {

@@ -8,6 +8,7 @@ describe("useRailEmptyDraftController", () => {
   test("opens a draft session for the active workspace when the workbench is empty", async () => {
     const opened: (string | undefined)[] = []
     await withController({
+      projects: [{ worktree: "/repo/active" }],
       activeDirectory: "/repo/active",
       onNewSession: (workspaceDir) => opened.push(workspaceDir),
     }, async () => {
@@ -19,9 +20,19 @@ describe("useRailEmptyDraftController", () => {
     })
   })
 
+  test("does not recreate a draft from a route whose project was closed", async () => {
+    const opened: (string | undefined)[] = []
+    await withController({ activeDirectory: "/repo/closed", projects: [], onNewSession: (dir) => opened.push(dir) }, async (controller) => {
+      await settleMicrotasks()
+      expect(controller.emptyDraftDirectory()).toBeUndefined()
+      expect(opened).toEqual([])
+    })
+  })
+
   test("does not auto-open while disabled by route state or recent last-tab close", async () => {
     const opened: (string | undefined)[] = []
     await withController({
+      projects: [{ worktree: "/repo/active" }],
       activeDirectory: "/repo/active",
       autoOpenDisabled: true,
       onNewSession: (workspaceDir) => opened.push(workspaceDir),
@@ -59,6 +70,7 @@ describe("useRailEmptyDraftController", () => {
   test("does not auto-open when a visible renderable surface exists", async () => {
     const opened: (string | undefined)[] = []
     await withController({
+      projects: [{ worktree: "/repo/active" }],
       activeDirectory: "/repo/active",
       contents: [sessionMeta("surface-session", "/repo/active")],
       panes: [{ contentId: "surface-session" }],
@@ -158,7 +170,7 @@ async function withSuppressibleCloseSequence(
           get: (contentId) => contentId === "surface-session" ? sessionMeta("surface-session", "/repo/active") : undefined,
         },
       },
-      projects: () => [],
+      projects: () => [{ worktree: "/repo/active" }],
       activeDirectory: () => "/repo/active",
       autoOpenDisabled: () => false,
       onNewSession,

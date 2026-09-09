@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, on, type Accessor } from "solid-js"
 import { sessionPerf } from "@/platform/performance/session-perf"
+import { projectForDirectory } from "@/platform/runtime/agent/project-owner"
 
 import { isGlobalContent, type ContentMeta } from "../state/index"
 
@@ -38,7 +39,13 @@ export function useRailEmptyDraftController(input: {
       ? input.state.meta.get(contentId)
       : undefined
   })
-  const emptyDraftDirectory = createMemo(() => input.activeDirectory() ?? input.projects()[0]?.worktree)
+  const emptyDraftDirectory = createMemo(() => {
+    const projects = input.projects()
+    const directory = input.activeDirectory()
+    // A route can still name the project during its removal transition.
+    // Only open projects may produce replacement drafts.
+    return directory && projectForDirectory(projects, directory) ? directory : projects[0]?.worktree
+  })
   const sidebarEligible = createMemo(() => input.projects().length > 0 || hasOpenSurfaces())
 
   // The block window must be reactive: a plain `let` read inside the memo below

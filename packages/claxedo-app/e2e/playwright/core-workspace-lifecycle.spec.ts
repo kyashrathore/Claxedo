@@ -44,11 +44,11 @@ type SeedProject = {
 
 async function seedProject(page: Page, dir: string = DIR) {
   await page.addInitScript((d: string) => {
-    localStorage.clear()
     ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
+    if (localStorage.getItem("claxedo.global.dat:server")) return
     localStorage.setItem(
       "claxedo.global.dat:server",
       JSON.stringify({
@@ -571,7 +571,7 @@ test.describe("core workspace lifecycle @core", () => {
       .toHaveText("Sandbox Destroyed", { timeout: 10_000 })
   })
 
-  test("kebab Remove project removes optimistically; forced server failure surfaces a toast without restoring it", async ({ page }) => {
+  test("kebab Remove project closes the row without deleting its workspace", async ({ page }) => {
     await installLifecycleMock(page)
     await seedProject(page)
 
@@ -593,18 +593,13 @@ test.describe("core workspace lifecycle @core", () => {
     await page.getByRole("button", { name: "More options for main" }).click()
     await page.getByRole("menuitem", { name: "Remove project", exact: true }).click()
 
-    // Optimistic: the project disappears from the sidebar immediately, synchronously
-    // with the click — before the (failing) server DELETE has even resolved.
+    // Closing is a persisted UI preference; the workspace stays on the server.
     await expect(projectHeader).toHaveCount(0, { timeout: 5_000 })
 
-    await expect.poll(() => deleteCalls, { timeout: 10_000 }).toBe(1)
-    // Background reconnect failures can raise their own toast at the same time, so assert
-    // on content rather than on this being the only toast in the stack.
-    await expect(toastTitle(page).filter({ hasText: "Failed to remove project" }))
-      .toHaveText("Failed to remove project", { timeout: 10_000 })
-
-    // The already-removed row does not come back after the failure.
+    await page.reload()
+    await expect(page.locator("[data-claxedo]")).toBeVisible()
     await expect(projectHeader).toHaveCount(0)
+    expect(deleteCalls).toBe(0)
   })
 
   test("New session on a missing local workspace opens the recovery dialog and recreates it", async ({ page }) => {

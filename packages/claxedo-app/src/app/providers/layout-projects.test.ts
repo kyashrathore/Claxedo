@@ -272,7 +272,7 @@ describe("shouldStoreOpenedProject (persisting the open-project intent)", () => 
     // registered, so gating the write on the catalog would silently drop the
     // project and lose it after a restart.
     expect(
-      shouldStoreOpenedProject({ root: "/Users/me/formlink", sidebar: [], isLocal: true, valid }),
+      shouldStoreOpenedProject({ root: "/Users/me/formlink", sidebar: [], valid }),
     ).toBe(true)
   })
 
@@ -281,16 +281,14 @@ describe("shouldStoreOpenedProject (persisting the open-project intent)", () => 
       shouldStoreOpenedProject({
         root: "/Users/me/formlink",
         sidebar: [{ worktree: "/Users/me/formlink" }],
-        isLocal: true,
         valid,
       }),
     ).toBe(false)
   })
 
-  test("stores nothing for a remote server or an invalid worktree", () => {
-    expect(shouldStoreOpenedProject({ root: "/Users/me/formlink", sidebar: [], isLocal: false, valid })).toBe(false)
+  test("stores nothing for an invalid worktree", () => {
     expect(
-      shouldStoreOpenedProject({ root: "/Users/me/formlink", sidebar: [], isLocal: true, valid: () => false }),
+      shouldStoreOpenedProject({ root: "/Users/me/formlink", sidebar: [], valid: () => false }),
     ).toBe(false)
   })
 
@@ -587,7 +585,6 @@ describe("createLayoutProjectsApi", () => {
       calls.push(`${name}:${directory}`)
     }
     const server = {
-      isLocal: () => true,
       projects: {
         open: record("open"),
         close: record("close"),
@@ -621,7 +618,7 @@ describe("createLayoutProjectsApi", () => {
     expect(projects.createRequests()).toBe(2)
   })
 
-  test("open resolves the root, warms its cache, and stores it on a local server", () => {
+  test("open resolves the root, warms its cache, and stores the project preference", () => {
     const { projects, calls } = api()
     projects.open("/repo/one")
     expect(calls).toEqual(["cache:/repo/one", "open:/repo/one"])

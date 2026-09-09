@@ -466,11 +466,11 @@ describe("createProjectActions", () => {
     ])
   })
 
-  test("removing the active project deletes it from the workspace store and navigates away", () => {
+  test("removing the active project closes it without deleting workspace identity", async () => {
     const { props, nav, routes, closes, removes, workspaceDeletes, cleaned, order } = make("/workspace/feature")
     props.activeProjectId = () => "/workspace/main"
 
-    createProjectActions(props, nav).handleRemoveProject(project({
+    await createProjectActions(props, nav).handleRemoveProject(project({
       id: "p1",
       worktree: "/workspace/main",
       sandboxes: ["/workspace/formlink", "/workspace/feature"],
@@ -483,15 +483,12 @@ describe("createProjectActions", () => {
     ])
     expect(closes).toEqual(["/workspace/main"])
     expect(removes).toEqual([])
-    expect(workspaceDeletes).toEqual([{
-      url: "http://test.local/api/workspace/p1",
-      method: "DELETE",
-    }])
+    expect(workspaceDeletes).toEqual([])
     expect(routes).toEqual(["/"])
-    expect(order).toEqual(["navigate", "cleanup", "cleanup", "cleanup"])
+    expect(order).toEqual(["cleanup", "cleanup", "cleanup", "navigate"])
   })
 
-  test("removing a project closes the tabs of every directory it owns", () => {
+  test("removing a project closes the tabs of every directory it owns", async () => {
     const { props, nav, metas, closedContents, cleaned } = make("/workspace/feature")
     // A worktree that only ever appears under `workspaces` — never a sandbox.
     // Closing must walk `workspaces` too, or its tab is left open pointing at
@@ -504,7 +501,7 @@ describe("createProjectActions", () => {
       { id: "tab-other-project", directory: "/workspace/unrelated" },
     )
 
-    createProjectActions(props, nav).handleRemoveProject(project({
+    await createProjectActions(props, nav).handleRemoveProject(project({
       id: "p1",
       worktree: "/workspace/main",
       sandboxes: ["/workspace/formlink"],
