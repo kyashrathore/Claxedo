@@ -28,6 +28,7 @@ export const cloudStrings = {
     "settings.general.connectedApps.empty": "No application has been given access to your Claxedo account.",
     "settings.general.connectedApps.revoke": "Disconnect",
     "settings.general.connectedApps.revoking": "Disconnecting...",
+    "settings.general.connectedApps.unavailable": "Connected applications are unavailable right now.",
   },
 
   zh: {
@@ -46,6 +47,7 @@ export const cloudStrings = {
     "settings.general.connectedApps.empty": "还没有应用获得您 Claxedo 账户的访问权限。",
     "settings.general.connectedApps.revoke": "断开连接",
     "settings.general.connectedApps.revoking": "正在断开...",
+    "settings.general.connectedApps.unavailable": "暂时无法获取已连接的应用。",
   },
 
   zht: {
@@ -64,6 +66,7 @@ export const cloudStrings = {
     "settings.general.connectedApps.empty": "尚未有應用程式取得您 Claxedo 帳戶的存取權。",
     "settings.general.connectedApps.revoke": "中斷連接",
     "settings.general.connectedApps.revoking": "正在中斷...",
+    "settings.general.connectedApps.unavailable": "暫時無法取得已連接的應用程式。",
   },
 
   ja: {
@@ -82,6 +85,7 @@ export const cloudStrings = {
     "settings.general.connectedApps.empty": "Claxedoアカウントへのアクセスを許可したアプリケーションはありません。",
     "settings.general.connectedApps.revoke": "連携を解除",
     "settings.general.connectedApps.revoking": "解除しています...",
+    "settings.general.connectedApps.unavailable": "接続済みアプリケーションを現在取得できません。",
   },
 
   ko: {
@@ -100,6 +104,7 @@ export const cloudStrings = {
     "settings.general.connectedApps.empty": "Claxedo 계정에 접근 권한을 부여한 애플리케이션이 없습니다.",
     "settings.general.connectedApps.revoke": "연결 해제",
     "settings.general.connectedApps.revoking": "연결 해제 중...",
+    "settings.general.connectedApps.unavailable": "연결된 애플리케이션을 지금 불러올 수 없습니다.",
   },
 
   de: {
@@ -118,6 +123,7 @@ export const cloudStrings = {
     "settings.general.connectedApps.empty": "Keine Anwendung hat Zugriff auf Ihr Claxedo-Konto erhalten.",
     "settings.general.connectedApps.revoke": "Trennen",
     "settings.general.connectedApps.revoking": "Wird getrennt...",
+    "settings.general.connectedApps.unavailable": "Verbundene Anwendungen sind derzeit nicht verfügbar.",
   },
 
   fr: {
@@ -136,6 +142,7 @@ export const cloudStrings = {
     "settings.general.connectedApps.empty": "Aucune application n a recu l acces a votre compte Claxedo.",
     "settings.general.connectedApps.revoke": "Deconnecter",
     "settings.general.connectedApps.revoking": "Deconnexion...",
+    "settings.general.connectedApps.unavailable": "Les applications connectées sont momentanément indisponibles.",
   },
 
   es: {
@@ -154,6 +161,7 @@ export const cloudStrings = {
     "settings.general.connectedApps.empty": "Ninguna aplicacion tiene acceso a su cuenta Claxedo.",
     "settings.general.connectedApps.revoke": "Desconectar",
     "settings.general.connectedApps.revoking": "Desconectando...",
+    "settings.general.connectedApps.unavailable": "Las aplicaciones conectadas no están disponibles en este momento.",
   },
 } as const satisfies Record<string, Record<string, string>>
 

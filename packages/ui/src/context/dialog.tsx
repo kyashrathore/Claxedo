@@ -14,6 +14,7 @@ import {
   startTransition,
   For,
   Suspense,
+  ErrorBoundary,
 } from "solid-js"
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
 import { makeEventListener } from "@solid-primitives/event-listener"
@@ -38,6 +39,24 @@ type Active = {
 function ReadySentinel(props: { ready: () => void }) {
   onMount(props.ready)
   return null
+}
+
+/** What a dialog shows in place of content it could not render. */
+function DialogFailure(props: { error: unknown; onClose: () => void }) {
+  const message = () => {
+    const error = props.error
+    if (error instanceof Error && error.message) return error.message
+    if (typeof error === "string" && error) return error
+    return "Something went wrong."
+  }
+  return (
+    <div data-component="dialog-error" role="alert" class="ui-dialog-error" style={{ "pointer-events": "auto" }}>
+      <p data-slot="dialog-error-message">{message()}</p>
+      <button type="button" data-slot="dialog-error-close" data-testid="dialog-error-close" onClick={() => props.onClose()}>
+        Close
+      </button>
+    </div>
+  )
 }
 
 const Context = createContext<ReturnType<typeof init>>()
@@ -144,10 +163,21 @@ function init() {
                   "pointer-events": "none",
                 }}
               >
-                <Suspense fallback={null}>
-                  {element()}
-                  <ReadySentinel ready={() => setPending(false)} />
-                </Suspense>
+                {/* A dialog is mounted from the caller's owner, so a throw
+                    inside one lands on whatever boundary encloses that caller —
+                    which is the application's own. One Settings pane whose
+                    consent endpoint answered 404 replaced the entire app with
+                    the error page, taking the shell, the toast region and the
+                    workbench header with it. A dialog's failure ends at the
+                    dialog. */}
+                <ErrorBoundary fallback={(error: unknown) => (
+                  <DialogFailure error={error} onClose={() => close(id)} />
+                )}>
+                  <Suspense fallback={null}>
+                    {element()}
+                    <ReadySentinel ready={() => setPending(false)} />
+                  </Suspense>
+                </ErrorBoundary>
               </div>
             </Kobalte.Portal>
           </Kobalte>

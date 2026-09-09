@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import { ErrorBoundary } from "solid-js"
 import { afterEach, expect, test, vi } from "vitest"
 
 import { ConnectedAppsSettingsSection } from "./connected-apps-section"
@@ -59,4 +60,27 @@ test("says so when nothing has been connected", async () => {
 
   expect(await screen.findByText("No application has been given access to your Claxedo account."))
     .toBeInTheDocument()
+})
+
+/**
+ * A build whose consent endpoint answers 404 threw out of this section, past
+ * the dialog it renders in, into the application's own ErrorBoundary — which
+ * replaced the whole app with the error page.
+ */
+test("reports a list that could not be loaded without throwing out of the section", async () => {
+  render(() => (
+    <ErrorBoundary fallback={() => <div>escaped to the boundary</div>}>
+      <ConnectedAppsSettingsSection
+        t={t}
+        list={async () => {
+          throw new Error("Connected applications are unavailable")
+        }}
+        revoke={vi.fn()}
+      />
+    </ErrorBoundary>
+  ))
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("Connected applications are unavailable")
+  expect(screen.queryByText("escaped to the boundary")).not.toBeInTheDocument()
+  expect(screen.getByText("No application has been given access to your Claxedo account.")).toBeInTheDocument()
 })
