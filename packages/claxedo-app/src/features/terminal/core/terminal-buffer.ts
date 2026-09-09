@@ -8,6 +8,15 @@ import { sanitizeReplay } from "./replay-sanitize"
 export const MAX_RESTORE_BUFFER_BYTES = 256 * 1024
 export const MAX_PERSIST_BUFFER_BYTES = 256 * 1024
 
+/** A serialized screen is meaningful only with its stream position and grid. */
+export function readTerminalSnapshot(input: { buffer?: string; cursor?: number; cols?: number; rows?: number }) {
+  if (!input.buffer
+    || typeof input.cursor !== "number" || !Number.isSafeInteger(input.cursor) || input.cursor < 0
+    || typeof input.cols !== "number" || !Number.isSafeInteger(input.cols) || input.cols < 2
+    || typeof input.rows !== "number" || !Number.isSafeInteger(input.rows) || input.rows < 1) return undefined
+  return { buffer: input.buffer, cursor: input.cursor, cols: input.cols, rows: input.rows }
+}
+
 /**
  * Ceiling on the COMBINED persisted snapshots in one workspace's terminal store.
  *

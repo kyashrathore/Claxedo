@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { isLikelyTui, restoreSize } from "./reconnect-heuristics"
+import { isLikelyTui } from "./reconnect-heuristics"
 
 describe("terminal reconnect/restore heuristics", () => {
   test("isLikelyTui: matches title", () => {
@@ -35,48 +35,4 @@ describe("terminal reconnect/restore heuristics", () => {
   // whose TUI had exited. Modes are now resynced from live server truth
   // (workspace-runtime `pty/mode-tracker.ts`, covered by mode-tracker.test.ts),
   // so there is no snapshot left to filter and nothing to port these to.
-
-  test("restoreSize: prefers mountCols for TUI split", () => {
-    const size = restoreSize({
-      likelyTui: true,
-      splitWidthChanged: true,
-      mountCols: 57,
-      snapshotCols: 117,
-      snapshotRows: 44,
-      backendCols: 57,
-      backendRows: 44,
-    })
-    expect(size.cols).toBe(57)
-    expect(size.rows).toBe(44)
-  })
-
-  test("restoreSize: ignores tiny persisted cols from hidden or unstable panes", () => {
-    const size = restoreSize({
-      likelyTui: true,
-      splitWidthChanged: false,
-      mountCols: 120,
-      snapshotCols: 4,
-      snapshotRows: 44,
-      backendCols: 120,
-      backendRows: 44,
-    })
-    expect(size.cols).toBe(120)
-    expect(size.rows).toBe(44)
-  })
-
-  test("restoreSize: keeps plausible persisted cols for same-width restores", () => {
-    const size = restoreSize({
-      likelyTui: true,
-      splitWidthChanged: false,
-      mountCols: 120,
-      snapshotCols: 100,
-      snapshotRows: 44,
-      backendCols: 120,
-      backendRows: 44,
-    })
-    expect(size.cols).toBe(100)
-    expect(size.rows).toBe(44)
-  })
-
-
 })

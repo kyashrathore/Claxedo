@@ -6,9 +6,25 @@ import {
   pickPersistBufferEvictions,
   preparePersistBuffer,
   prepareRestoreBuffer,
+  readTerminalSnapshot,
 } from "./terminal-buffer"
 
 describe("terminal buffer guards", () => {
+  test("requires one complete screen, cursor and geometry checkpoint", () => {
+    const snapshot = { buffer: "screen", cursor: 42, cols: 4, rows: 2 }
+    expect(readTerminalSnapshot(snapshot)).toEqual(snapshot)
+    for (const field of ["buffer", "cursor", "cols", "rows"] as const) {
+      expect(readTerminalSnapshot({ ...snapshot, [field]: undefined })).toBeUndefined()
+    }
+    for (const cursor of [-1, NaN, Infinity, 1.5]) {
+      expect(readTerminalSnapshot({ ...snapshot, cursor })).toBeUndefined()
+    }
+    for (const cols of [0, 1, NaN, Infinity, 2.5]) {
+      expect(readTerminalSnapshot({ ...snapshot, cols })).toBeUndefined()
+    }
+    expect(readTerminalSnapshot({ ...snapshot, rows: 0 })).toBeUndefined()
+  })
+
   test("retains snapshot buffer structure while dropping queries and stale input modes", () => {
     const structural = "normal history\x1b[?1049h\x1b[Halternate frame"
     const unsafe = "\x1b[?1003h\x1b[>7u\x1b[6n\x1b[?1049;1003h"

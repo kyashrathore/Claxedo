@@ -10,7 +10,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useTheme } from "@opencode-ai/ui/theme"
 import { useLanguage } from "@/platform/i18n/provider"
 import { showToast } from "@opencode-ai/ui/toast"
-import { preparePersistBuffer, prepareRestoreBuffer } from "@/features/terminal/core/terminal-buffer"
+import { preparePersistBuffer, prepareRestoreBuffer, readTerminalSnapshot } from "@/features/terminal/core/terminal-buffer"
 import { hostStable, shouldRecoverDesync, shouldSendResize, sizeSane } from "@/features/terminal/core/terminal-geometry"
 import {
   sigwinchToggleSize,
@@ -24,7 +24,7 @@ import {
   openTerminalWebSocket,
 } from "@/features/terminal/core/terminal-connection"
 import { createTerminalRuntimeQueue } from "@/features/terminal/core/terminal-runtime-queue"
-import { isLikelyTui, restoreSize } from "@/features/terminal/core/reconnect-heuristics"
+import { isLikelyTui } from "@/features/terminal/core/reconnect-heuristics"
 import { stripTerminalRepliesFromInput } from "@/features/terminal/core/input-reply-filter"
 import { getCapabilityResponses } from "@/features/terminal/core/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
@@ -179,9 +179,6 @@ export const Terminal = (props: TerminalProps) => {
       backend.fit()
     } catch {}
     try {
-      backend.flushResize()
-    } catch {}
-    try {
       if (backend.rows > 0) backend.refresh(0, backend.rows - 1)
     } catch {}
   }
@@ -282,7 +279,7 @@ export const Terminal = (props: TerminalProps) => {
       // to its container. `b.cols` straight after creation is xterm's 80-column
       // default (fonts have not settled, no fit has run) — reading it early
       // would compare a real snapshot width against 80 and register a spurious
-      // change, altering the replay cursor and restoreSize decisions.
+      // change, altering the width-change handling before restoration.
       // `undefined` when the container has no usable size yet, so
       // an unmeasurable width reads as unchanged, never as changed.
       const mountCols = (() => {
@@ -311,18 +308,13 @@ export const Terminal = (props: TerminalProps) => {
         container.removeEventListener("focusout", onFocusOut)
       })
 
-      const snapshotCursor =
-        typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) && local.pty.cursor >= 0
-          ? local.pty.cursor : undefined
-      // Screen and cursor are one checkpoint. Without its cursor the cache
-      // cannot be joined to server output, so request a full replay instead.
-      const snapshotBuffer = snapshotCursor === undefined ? undefined : local.pty.buffer
+      const snapshot = readTerminalSnapshot(local.pty)
+      const snapshotBuffer = snapshot?.buffer
       const snapshotWasAltScreen = local.pty.wasAltScreen ?? false
-      const snapshotRows = local.pty.rows
-      const snapshotCols = local.pty.cols
+      const snapshotCols = snapshot?.cols
       const snapshotWasAtBottom = local.pty.wasAtBottom
       const snapshotScrollY = local.pty.scrollY
-      cursor = snapshotBuffer && snapshotCursor !== undefined ? snapshotCursor : 0
+      cursor = snapshot?.cursor ?? 0
       const splitWidthChanged =
         typeof mountCols === "number" &&
         typeof snapshotCols === "number" &&
@@ -364,15 +356,15 @@ export const Terminal = (props: TerminalProps) => {
           }
         })()
         const size = { rows: backend.rows, cols: backend.cols }
-        const rect = container.getBoundingClientRect()
-        const saneSize = shouldSendResize(size, rect)
         props.onUpdate?.({
           id: local.pty.id,
           buffer,
           wasAltScreen,
           wasAtBottom,
           cursor,
-          ...(saneSize ? size : {}),
+          // These describe the serialized grid, even in a hidden pane. Using
+          // older dimensions here would make the saved bytes unreplayable.
+          ...size,
           scrollY: backend.getViewportY(),
         })
       }
@@ -599,23 +591,8 @@ export const Terminal = (props: TerminalProps) => {
       const modeSequences = snapshotModeSequences
       const wasAltScreen = snapshotWasAltScreen
 
-      if (bufferToRestore) {
-        const size = restoreSize({
-          likelyTui,
-          splitWidthChanged,
-          // restoreSize already falls back to backendCols for a nonsense width;
-          // an unmeasured mount takes the same path.
-          mountCols: mountCols ?? b.cols,
-          snapshotCols,
-          snapshotRows,
-          backendCols: b.cols,
-          backendRows: b.rows,
-        })
-        if (size.cols > 2 && size.rows > 0) {
-          b.resize(size.cols, size.rows)
-        } else {
-          b.resize(80, 24)
-        }
+      if (bufferToRestore && snapshot) {
+        b.resize(snapshot.cols, snapshot.rows)
 
         const widthChanged = splitWidthChanged
         const shouldTrimTrailingLine = shouldTrimRestoredTail({
@@ -655,7 +632,7 @@ export const Terminal = (props: TerminalProps) => {
               if (rect.width < 10 || rect.height < 10) return false
 
               try {
-                b.flushResize()
+                b.fit()
                 if (b.cols < 2 || b.rows < 2) return false
                 return true
               } catch {
@@ -688,7 +665,7 @@ export const Terminal = (props: TerminalProps) => {
             if (rect.width < 10 || rect.height < 10) return false
 
             try {
-              b.flushResize()
+              b.fit()
               if (b.cols < 2 || b.rows < 2) return false
               return true
             } catch {

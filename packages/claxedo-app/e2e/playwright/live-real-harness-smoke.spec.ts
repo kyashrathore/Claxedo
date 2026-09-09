@@ -735,10 +735,12 @@ test.describe("live real-harness smoke @live", () => {
     try {
       await expect.poll(screen).toContain("ALT_FRAME")
       await expect.poll(screen).toContain("NORMAL_HISTORY")
+      const beforeReload = await screen()
       await page.reload()
       await expect(page.locator(selector)).toHaveAttribute("data-terminal-connected", "true")
       await expect.poll(screen).toContain("ALT_FRAME")
       await expect.poll(screen).toContain("\x1b[?1049h")
+      await expect.poll(screen).toBe(beforeReload)
       await fs.writeFile(path.join(dir, "release"), "done")
       await expect.poll(screen).toContain("EXITED_ALT")
       await test.info().attach("terminal-after-alt-exit", { body: (await screen()) ?? "", contentType: "text/plain" })

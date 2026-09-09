@@ -353,15 +353,11 @@ export const createBackend: CreateBackendFn = async (
     },
 
     fit() {
-      fitAddon.fit()
+      resizeHandlers.coordinator.flush()
     },
 
     refresh(start, end) {
       xterm.refresh(start, end)
-    },
-
-    flushResize() {
-      resizeHandlers.coordinator.flush()
     },
 
     serialize(options) {

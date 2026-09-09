@@ -3,7 +3,7 @@ import { Terminal } from "@xterm/headless"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import { buildRestoreWrite } from "../../ui/restore"
 import { createModeScanner } from "../mode-scan"
-import { preparePersistBuffer, prepareRestoreBuffer } from "../terminal-buffer"
+import { preparePersistBuffer, prepareRestoreBuffer, readTerminalSnapshot } from "../terminal-buffer"
 
 const terminals: Terminal[] = []
 function terminal() {
@@ -18,6 +18,26 @@ const lines = (target: Terminal) => Array.from({ length: target.buffer.active.le
 afterEach(() => { for (const value of terminals.splice(0)) value.dispose() })
 
 describe("canonical restore bytes through the xterm parser", () => {
+  test("restores a resized TUI snapshot at its saved width before fitting", async () => {
+    const source = terminal()
+    source.resize(20, 24)
+    const serializer = new SerializeAddon()
+    source.loadAddon(serializer)
+    await write(source, "abcdefghijklmnopqrstuvwxyz1234\rXXX")
+    const buffer = serializer.serialize({ excludeModes: true })
+    const target = terminal()
+    const snapshot = readTerminalSnapshot({ buffer, cursor: 100, cols: 20, rows: 24 })!
+    target.resize(snapshot.cols, snapshot.rows)
+    await write(target, buildRestoreWrite({ modeSequences: "", restoreBuffer: buffer, likelyTui: true }))
+    source.resize(30, 24)
+    target.resize(30, 24)
+    await write(source, "NEXT")
+    await write(target, "NEXT")
+    expect(lines(target)).toEqual(lines(source))
+    expect(target.buffer.active.cursorX).toBe(source.buffer.active.cursorX)
+    expect(target.buffer.active.cursorY).toBe(source.buffer.active.cursorY)
+  })
+
   test("restores a normal screen with input modes and accepts subsequent output", async () => {
     const target = terminal()
     await write(target, buildRestoreWrite({
