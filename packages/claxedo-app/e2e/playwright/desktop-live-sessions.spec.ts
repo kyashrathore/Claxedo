@@ -847,13 +847,27 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       expect(discovery).toBeDefined()
       expect(await verifyClaxedoDaemonDiscovery(discovery!)).toBe(serverBase)
       const lease = await holdClaxedoDaemonLease(discovery!)
+      const attachActivity = async (phase: string) => {
+        const current = readClaxedoDaemonDiscovery(claxedoDaemonDiscoveryPath(path.join(profile, "server-data")))
+        expect(current).toBeDefined()
+        expect(await verifyClaxedoDaemonDiscovery(current!)).toBe(serverBase)
+        const response = await fetch(`${serverBase}/api/claxedo/daemon/state`, {
+          headers: { authorization: `Bearer ${current!.token}` },
+        })
+        expect(response.ok).toBe(true)
+        await test.info().attach(`deletion-activity-${phase}`, {
+          body: await response.text(), contentType: "application/json",
+        })
+      }
       try {
+        await attachActivity("before")
         const exiting = packaged.app.process()
         await packaged.close()
         await expect.poll(() => exiting.exitCode !== null || exiting.signalCode !== null).toBe(true)
         const deleted = await fetch(`${serverBase}/session/${session.id}?directory=${encodeURIComponent(directory)}`, { method: "DELETE" })
         expect(deleted.ok, await deleted.text()).toBe(true)
         expect((await fetch(`${serverBase}/session/${session.id}?directory=${encodeURIComponent(directory)}`)).status).toBe(404)
+        await attachActivity("after-delete")
         packaged = await launch()
         expect(new URL(await expectServerReachable(packaged, 45_000)).origin).toBe(serverBase)
         expect((await fetch(`${serverBase}/session/${session.id}?directory=${encodeURIComponent(directory)}`)).status).toBe(404)
@@ -876,6 +890,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       }
       await expect(packaged.page.locator('[data-slot="session-turn-assistant-content"]').filter({ hasText: marker })).toHaveCount(0)
       await verifyDeletedSessionRecovery(session.id)
+      await attachActivity("after-fresh-reply")
     }
     if (flow === "rename across full restart") {
       const session = await created.json() as { id: string }
