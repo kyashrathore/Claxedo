@@ -1,3 +1,5 @@
+import { expectRunningChildCleanup } from "../helpers/running-child-cleanup"
+import { deletePendingQuestion } from "../helpers/question-deletion"
 import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
 /** Real native-harness browser journeys against an isolated self-host server and scripted model HTTP endpoints. */
 import { expectConcurrentQuestionIsolation } from "../helpers/question-isolation"
@@ -1229,7 +1231,31 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   }
 
-  for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true]] as const) {
+  for (const [parentHarness, childHarness] of [["claude", "codex"], ["codex", "claude"]] as const) {
+    for (const action of ["Archive", "Delete"] as const) {
+      test(`${action} ${parentHarness} parent stops its running ${childHarness} child`, async ({ page }) => {
+        const dir = await makeWorkspace(`child-cleanup-${parentHarness}-${action}`, parentHarness)
+        await seedOneProject(page, dir)
+        await expectRunningChildCleanup(page, {
+          backendUrl: BACKEND_URL, directory: dir, parentHarness, childHarness, action,
+          startChild: async (sessionId, command, marker) => {
+            scripted!.scriptTool({
+              name: childHarness === "claude" ? "Bash" : "exec_command",
+              input: childHarness === "claude" ? { command, timeout: 120000 } : { cmd: command, yield_time_ms: 30000 },
+              whenPromptIncludes: marker,
+            })
+            const response = await page.request.post(`${BACKEND_URL}/session/${sessionId}/prompt_async?directory=${encodeURIComponent(dir)}`, {
+              data: { parts: [{ type: "text", text: `Run the command, then reply with exactly this one token: ${marker}` }] },
+            })
+            expect(response.ok(), await response.text()).toBe(true)
+          },
+        })
+        await page.screenshot({ path: test.info().outputPath("child-cleanup.png") })
+      })
+    }
+  }
+
+  for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false]] as const) {
     test(`codex native structured question ${action} reaches the question dock${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
       requireBinary(binary, "codex", "install the Codex CLI to exercise its structured question tool.")
@@ -1256,6 +1282,21 @@ test.describe("real harness journeys @core @tier-real", () => {
         const dock = page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
         await expect(dock).toBeVisible({ timeout: 20_000 })
         await expect(dock.locator('[data-slot="question-option"]', { hasText: "Staging" })).toContainText("Isolated environment")
+        if (action === "delete") {
+          const removedId = new URL(page.url()).pathname.split("/").at(-1)!
+          await deletePendingQuestion(page, { backendUrl: BACKEND_URL, directory: dir, sessionId: removedId })
+          await openDraftPrompt(page, dir)
+          await switchDraftHarness(page, "codex")
+          await waitForHarnessReady(page)
+          const followup = `AFTER-DELETE-${Date.now()}`
+          await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${followup}`)
+          await page.locator(SELECTORS.submitControl).last().click()
+          await expectAssistantReplyVisible(page, followup)
+          await page.reload({ waitUntil: "domcontentloaded" })
+          await expectAssistantReplyVisible(page, followup)
+          expect((await page.request.get(`${BACKEND_URL}/session/${removedId}?directory=${encodeURIComponent(dir)}`)).status()).toBe(404)
+          return
+        }
         if (action === "stop") {
           await page.reload({ waitUntil: "domcontentloaded" })
           await expect(dock).toBeVisible()
@@ -1291,7 +1332,7 @@ test.describe("real harness journeys @core @tier-real", () => {
   }
 
 
-  for (const [action, goalMode] of [["answer", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true]] as const) {
+  for (const [action, goalMode] of [["answer", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false]] as const) {
     test(`claude native SDK provider-issued question: ${action} after reload${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
       requireBinary(binary, "claude", "install the Claude CLI to exercise its AskUserQuestion tool.")
@@ -1337,6 +1378,21 @@ test.describe("real harness journeys @core @tier-real", () => {
       await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
       await page.reload({ waitUntil: "domcontentloaded" })
       await expect(dock).toBeVisible({ timeout: 30_000 })
+      if (action === "delete") {
+        const removedId = new URL(page.url()).pathname.split("/").at(-1)!
+        await deletePendingQuestion(page, { backendUrl: BACKEND_URL, directory: dir, sessionId: removedId })
+        await openDraftPrompt(page, dir)
+        await switchDraftHarness(page, "claude")
+        await waitForHarnessReady(page)
+        const followup = `AFTER-DELETE-${Date.now()}`
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${followup}`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expectAssistantReplyVisible(page, followup)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expectAssistantReplyVisible(page, followup)
+        expect((await page.request.get(`${BACKEND_URL}/session/${removedId}?directory=${encodeURIComponent(dir)}`)).status()).toBe(404)
+        return
+      }
       if (action === "dismiss" || action === "stop") {
         if (action === "dismiss") {
           await dock.getByRole("button", { name: "Dismiss", exact: true }).click()

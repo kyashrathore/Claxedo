@@ -1,3 +1,5 @@
+import { expectRunningChildCleanup } from "../helpers/running-child-cleanup"
+import { deletePendingQuestion } from "../helpers/question-deletion"
 import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
 /**
  * Real per-turn latency, measured against this repo's live `claxedo-server` with
@@ -505,7 +507,7 @@ test.describe("live real-harness smoke @live", () => {
       else await expect(dock.getByText("Complete", { exact: true })).toBeVisible()
     })
 
-    for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true]] as const) {
+    for (const [action, goalMode] of [["answer", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false]] as const) {
     test(`${harness} native SDK question ${action} survives reload and preserves session usability${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
       const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
       test.skip(!binary, `The live question flow requires the installed and authenticated ${harness} CLI.`)
@@ -542,6 +544,22 @@ test.describe("live real-harness smoke @live", () => {
       await page.reload({ waitUntil: "domcontentloaded" })
       await expect(dock).toBeVisible({ timeout: 30_000 })
       expect(await readQuestions()).toEqual(pending)
+      if (action === "delete") {
+        await deletePendingQuestion(page, { backendUrl: BACKEND_URL, directory: dir, sessionId })
+        await openDraftPrompt(page, dir)
+        await switchDraftHarness(page, harness === "claude" ? /^Claude$/ : /^Codex$/, 0)
+        await waitForHarnessReady(page)
+        const followup = `AFTER-DELETE-${Date.now()}`
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply exactly ${followup}. Do not use tools.`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expectAssistantReplyVisible(page, followup)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expectAssistantReplyVisible(page, followup)
+        expect(await readQuestions()).toEqual([])
+        expect((await page.request.get(`${BACKEND_URL}/session/${sessionId}?directory=${encodeURIComponent(dir)}`)).status()).toBe(404)
+        await page.screenshot({ path: test.info().outputPath("live-question-deleted.png") })
+        return
+      }
       if (action === "dismiss" || action === "stop") {
         const actionButton = dock.getByRole("button", { name: action === "stop" ? "Stop" : "Dismiss", exact: true })
         await expect(actionButton).toBeVisible({ timeout: 10_000 })
@@ -659,6 +677,25 @@ test.describe("live real-harness smoke @live", () => {
         await fs.writeFile(releaseFile, "release")
       }
     })
+  }
+
+  for (const [parentHarness, childHarness] of [["claude", "codex"]] as const) {
+    for (const action of ["Archive", "Delete"] as const) {
+      test(`live ${action} ${parentHarness} parent stops its running ${childHarness} child`, async ({ page }) => {
+        const dir = await makeWorkspace(`child-cleanup-${parentHarness}-${action}`)
+        await seedOneProject(page, dir)
+        await expectRunningChildCleanup(page, {
+          backendUrl: BACKEND_URL, directory: dir, parentHarness, childHarness, action,
+          startChild: async (sessionId, command, marker) => {
+            const response = await page.request.post(`${BACKEND_URL}/session/${sessionId}/prompt_async?directory=${encodeURIComponent(dir)}`, {
+              data: { parts: [{ type: "text", text: `Run exactly this shell command once: ${command}. Use exec_command with yield_time_ms 30000. Do not create the release file or run other tools. The test runner controls the command lifecycle. After the command finishes, reply exactly ${marker}.` }] },
+            })
+            expect(response.ok(), await response.text()).toBe(true)
+          },
+        })
+        await page.screenshot({ path: test.info().outputPath("live-child-cleanup.png") })
+      })
+    }
   }
 
   for (const harness of ["claude", "codex"] as const) {
