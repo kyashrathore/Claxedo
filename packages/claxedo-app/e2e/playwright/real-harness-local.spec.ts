@@ -1,3 +1,5 @@
+import { expectSessionRenamePersistence } from "../helpers/session-rename"
+import { expectUnsupportedFork } from "../helpers/unsupported-fork"
 import { expectRunningChildCleanup } from "../helpers/running-child-cleanup"
 import { deletePendingQuestion } from "../helpers/question-deletion"
 import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
@@ -1229,6 +1231,59 @@ test.describe("real harness journeys @core @tier-real", () => {
         })
       })
     }
+  }
+
+  for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} native unsupported fork leaves history unchanged`, async ({ page }) => {
+      const dir = await makeWorkspace(`unsupported-fork-${harness}`, harness)
+      await seedOneProject(page, dir)
+      const input = await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness)
+      await waitForHarnessReady(page)
+      const marker = `FORK-SOURCE-${Date.now()}`
+      await composePrompt(page, input, `Reply with exactly this one token: ${marker}. Do not use tools.`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expectAssistantReplyVisible(page, marker)
+      await page.reload()
+      await expectAssistantReplyVisible(page, marker)
+      const sessionId = new URL(page.url()).pathname.split("/").at(-1)!
+      await expectUnsupportedFork(page, { backendUrl: BACKEND_URL, directory: dir, sessionId })
+      await page.reload()
+      await expectAssistantReplyVisible(page, marker)
+      await page.screenshot({ path: test.info().outputPath("fork-unavailable-history-preserved.png") })
+    })
+  }
+
+  for (const harness of ["claude", "codex"] as const) {
+    test(`${harness} native session rename preserves history and harness across server restart`, async ({ page }) => {
+      const dir = await makeWorkspace(`session-rename-${harness}`, harness)
+      await seedOneProject(page, dir)
+      const input = await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness)
+      await waitForHarnessReady(page)
+      const marker = `RENAME-SOURCE-${Date.now()}`
+      await composePrompt(page, input, `Reply with exactly this one token: ${marker}. Do not use tools.`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expectAssistantReplyVisible(page, marker)
+      await page.reload()
+      await expectAssistantReplyVisible(page, marker)
+      const sessionId = new URL(page.url()).pathname.split("/").at(-1)!
+      await expectSessionRenamePersistence(page, {
+        backendUrl: BACKEND_URL, directory: dir, sessionId,
+        restartServer: async () => { await server!.restart() },
+      })
+      await expectAssistantReplyVisible(page, marker)
+      const followup = `RENAME-FOLLOWUP-${Date.now()}`
+      await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${followup}. Do not use tools.`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expectAssistantReplyVisible(page, followup)
+      await page.reload()
+      await expectAssistantReplyVisible(page, marker)
+      await expectAssistantReplyVisible(page, followup)
+      await expect(page.locator('h1[data-slot="session-title-child"]')).toHaveText("Renamed café 日本語 🚀")
+      expect(new URL(page.url()).pathname.split("/").at(-1)).toBe(sessionId)
+      await page.screenshot({ path: test.info().outputPath("session-renamed-after-restart.png") })
+    })
   }
 
   for (const [parentHarness, childHarness] of [["claude", "codex"], ["codex", "claude"]] as const) {
