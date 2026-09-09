@@ -323,6 +323,29 @@ for (const { harness, child, pause } of [
         expect(events.slice(0, -1), "Child completion must never settle the still-running parent").not.toContain("Idle")
       }
       await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-restarted.png`) })
+      if (!child && (harness === "claude" || harness === "codex")) {
+        const restoredRows = packaged.page.locator(`${selector} .xterm-rows`)
+        await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
+        // Native first-run notices can appear after a completed turn. Exercise
+        // their visible interaction before proving the next prompt is intact.
+        const notice = (await restoredRows.innerText()).includes("Press Enter to continue")
+        await test.info().attach(`${harness}-continuation-notice`, { body: JSON.stringify({ notice }), contentType: "application/json" })
+        if (notice) {
+          await packaged.page.keyboard.press("Enter")
+          await expect(restoredRows).not.toContainText("Press Enter to continue")
+        }
+        const prompt = "What is the capital of France? Answer with only the city name."
+        await packaged.page.keyboard.type(prompt, { delay: typingDelay })
+        await packaged.page.keyboard.press("Enter")
+        await expect.poll(async () => {
+          const response = await fetch(lifecycleUrl)
+          expect(response.ok).toBe(true)
+          const body = await response.json() as { session: { prompt?: string; eventType?: string } | null }
+          return body.session
+        }, { timeout: 90_000, message: "Another native turn must receive the full prompt and complete after restart" }).toMatchObject({ prompt, eventType: "Idle" })
+        await expect(restoredRows).toContainText("Paris")
+        await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-tui-third-turn.png`) })
+      }
       if (harness === "amp") {
         await packaged.page.evaluate(async ({ server, terminalId }) => {
           const events: unknown[] = []
