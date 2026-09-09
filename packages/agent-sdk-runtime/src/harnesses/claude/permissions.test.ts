@@ -42,7 +42,7 @@ for (const decision of ["allow_always", "allow_once", "deny", "storage-failure"]
         if (!ask) return
         ask = false
         const reply = input.options!.canUseTool!("Bash", { command: "printf approved-write" }, {
-          signal: new AbortController().signal, suggestions, toolUseID: "tool-1", requestId: "request-1",
+          signal: new AbortController().signal, suggestions, blockedPath: "/tmp/approved/result", toolUseID: "tool-1", requestId: "request-1",
         })
         pendingPermissions.values().next().value!.resolve(decision === "storage-failure" ? "allow_always" : decision)
         const result = await reply
@@ -76,3 +76,64 @@ test("native rule replacements and removals remain scoped to their behavior and 
   ])
   expect(result).toEqual({ permissions: { allow: ["Bash(echo (hello))"], deny: ["Write"], ask: [], additionalDirectories: [] }, mode: "plan" })
 })
+
+for (const decision of ["allow_always", "allow_once", "deny", "reject_always"] as const) {
+  test(`${decision} only reuses the exact accepted Bash request after driver reconstruction`, async () => {
+    const states = new Map<string, Record<string, unknown>>()
+    const pendingPermissions = new Map<string, PendingPermission>()
+    const host = {
+      lifecycle: () => createSessionTurnLifecycle(), pendingPermissions, pendingQuestions: new Map(),
+      bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
+      getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
+      getSessionConfig: (id: string) => ({ harness: { id: "claude", access: "native" }, permissionState: states.get(id) }),
+      updatePermissionState: (id: string, state: Record<string, unknown>) => states.set(id, JSON.parse(JSON.stringify(state))),
+    } as SdkRuntimeDriverHost
+    let requests = 0
+    let callbacks = 0
+    const run = async (sessionId: string, answer: typeof decision, overrides: {
+      directory?: string; mode?: string; tool?: string; input?: Record<string, unknown>; context?: Record<string, unknown>
+    } = {}) => {
+      const query: NonNullable<ClaudeSdkDriverOptions["query"]> = ({ options }) => Object.assign((async function* () {
+        callbacks++
+        const result = options!.canUseTool!(overrides.tool ?? "Bash", overrides.input ?? { command: "printf approved > /tmp/approved/result" }, {
+          signal: new AbortController().signal, suggestions, blockedPath: "/tmp/approved/result",
+          toolUseID: `tool-${callbacks}`, requestId: `request-${callbacks}`, ...overrides.context,
+        })
+        for (const [id, pending] of pendingPermissions) {
+          requests++
+          pendingPermissions.delete(id)
+          pending.resolve(answer)
+        }
+        const reply = await result
+        if (!reply) throw new Error("Expected a permission decision")
+        expect(reply.behavior).toBe(answer === "allow_always" || answer === "allow_once" ? "allow" : "deny")
+      })(), { close() {} }) as unknown as Query
+      const driver = createClaudeSdkDriver(host, { query, executable: () => "/fake/claude" })
+      if (overrides.mode) await driver.setPermissionMode!(sessionId, overrides.mode, overrides.directory ?? "/repo")
+      await driver.runTurn({ ...turn(sessionId), directory: overrides.directory ?? "/repo" })
+    }
+    await run("approved", decision)
+    expect(requests).toBe(1)
+    await run("approved", decision)
+    expect(requests).toBe(decision === "allow_always" ? 1 : 2)
+    for (const [sessionId, overrides] of [
+      ["other", {}],
+      ["approved", { directory: "/other" }],
+      ["approved", { mode: "plan" }],
+      ["approved", { tool: "Write", input: { file_path: "/tmp/approved/result", content: "changed" } }],
+      ["approved", { input: { command: "rm /tmp/approved/result" } }],
+      ["approved", { context: { blockedPath: "/tmp/other" } }],
+      ["approved", { context: { agentID: "child" } }],
+      ["approved", { context: { futurePolicy: "new" } }],
+      ["approved", { context: { matchedAskRule: { toolName: "Bash" } } }],
+      ["approved", { context: { decisionReason: "new safety check" } }],
+    ] as const) {
+      const before = requests
+      await run(sessionId, "deny", overrides)
+      expect(requests).toBe(before + 1)
+    }
+    const restored: Record<string, unknown> = applyClaudePermissionUpdates(states.get("approved"), []).permissions
+    expect(restored.claudeCommandGrants)
+      .toEqual(states.get("approved")?.claudeCommandGrants)
+  })
+}

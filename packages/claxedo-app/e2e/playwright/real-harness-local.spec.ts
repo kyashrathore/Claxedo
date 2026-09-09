@@ -1967,7 +1967,7 @@ test.describe("real harness journeys @core @tier-real", () => {
       ["Allow once", false, false, false], ["Allow always", false, false, false], ["Deny", false, false, false], ["Stop", false, false, false],
       ...(harness === "codex" ? [["Stop", false, false, true] as const] : []),
       ...(harness === "claude" ? [["Allow always", true, false, false] as const] : []),
-      ...(harness === "codex" ? [["Allow always", false, true, false] as const] : []),
+      ["Allow always", false, true, false],
       ...(harness === "codex" ? [["Allow always", false, "idle", false] as const] : []),
     ] as const) {
       test(`${harness} native permission ${decision} gates a real file write after reload${canonicalDirectory ? " with a canonical directory" : ""}${restartServer === "idle" ? " and native idle disposal" : restartServer ? " and server restart" : ""}${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {

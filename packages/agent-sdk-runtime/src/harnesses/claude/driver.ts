@@ -9,6 +9,7 @@ import {
   claudeSubagentObservations,
 } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { randomUUID } from "crypto"
+import { claudeCommandGrant, hasClaudeCommandGrant, withClaudeCommandGrant } from "./permission-state"
 import { spawn } from "child_process"
 import {
   query,
@@ -376,6 +377,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       }
     }
     const requestPermission: CanUseTool = async (toolName, toolInput, options) => {
+      const grant = claudeCommandGrant(toolName, toolInput, options, input.directory, this.permissionSelection.currentId(input.sessionId))
+      if (grant && hasClaudeCommandGrant(this.host.getSessionConfig(input.sessionId)?.permissionState, grant)) {
+        return { behavior: "allow", updatedInput: toolInput }
+      }
       const questions = toolName === "AskUserQuestion" ? toolInput.questions : undefined
       if (toolName === "AskUserQuestion" && (!Array.isArray(questions) || !questions.length || questions.some((question) => !text(asRecord(question)?.question)))) {
         throw new Error("Claude AskUserQuestion requires a non-empty questions array")
@@ -439,11 +444,11 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         })
       })
       const updates = decision === "allow_always" ? sessionPermissionSuggestions(options.suggestions) : undefined
-      if (updates?.length) {
+      if (decision === "allow_always" && (updates?.length || grant)) {
         const accepted = applyClaudePermissionUpdates(this.host.getSessionConfig(input.sessionId)?.permissionState, updates)
         // Persist before allowing execution, so a failed write cannot silently
         // turn a durable approval into a one-turn approval.
-        this.host.updatePermissionState(input.sessionId, accepted.permissions, accepted.mode)
+        this.host.updatePermissionState(input.sessionId, grant ? withClaudeCommandGrant(accepted.permissions, grant) : accepted.permissions, accepted.mode)
         if (accepted.mode) this.permissionSelection.set(input.sessionId, accepted.mode)
       }
       const result: PermissionResult = decision === "allow_once" || decision === "allow_always"
@@ -794,7 +799,7 @@ function readClaudePermissionState(state?: Record<string, unknown>): ClaudePermi
 }
 
 /** Replay the provider's accepted updates; rule matching remains Claude's job. */
-export function applyClaudePermissionUpdates(state: Record<string, unknown> | undefined, updates: PermissionUpdate[]) {
+export function applyClaudePermissionUpdates(state: Record<string, unknown> | undefined, updates: PermissionUpdate[] = []) {
   const permissions = readClaudePermissionState(state)
   let mode: string | undefined
   for (const update of updates) {
@@ -813,5 +818,5 @@ export function applyClaudePermissionUpdates(state: Record<string, unknown> | un
         : [...new Set([...current, ...rules])]
     }
   }
-  return { permissions, mode }
+  return { permissions: { ...state, ...permissions }, mode }
 }
