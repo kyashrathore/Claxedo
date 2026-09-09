@@ -668,6 +668,46 @@ test.describe("live real-harness smoke @live", () => {
     await page.screenshot({ path: test.info().outputPath("terminal-exited-scrollback.png") })
   })
 
+  test("live terminal retains output produced while the browser is away", async ({ page }) => {
+    await page.addInitScript(() => {
+      const host = window as typeof window & { terminalAudit?: () => string }
+      Object.defineProperty(window, "__CLAXEDO_AGENT_APP_BENCHMARK__", { value: {
+        terminalWriteParsed(receipt: { serialize(): string }) { host.terminalAudit = receipt.serialize },
+      } })
+    })
+    const screen = () => page.evaluate(() => (window as typeof window & { terminalAudit?: () => string }).terminalAudit?.())
+    const dir = await makeWorkspace("terminal-offline-output")
+    await seedOneProject(page, dir)
+    await openDraftPrompt(page, dir)
+    await page.locator('[data-testid="workspace-scope-new-terminal"]').click()
+    const created = page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname.endsWith("/pty"))
+    await page.locator('[data-component="terminal-new-launchers"] [data-launcher-id="shell"]').click()
+    const response = await created
+    expect(response.ok()).toBe(true)
+    const { id } = await response.json() as { id: string }
+    const selector = `[data-testid="terminal-pane"][data-terminal-id="${id}"]`
+    await expect(page.locator(selector)).toHaveAttribute("data-terminal-connected", "true")
+    await page.locator(`${selector} .xterm-helper-textarea`).focus()
+    await page.keyboard.type("printf '\\x42EFORE_OFFLINE\\n'; while [ ! -f release ]; do sleep 0.2; done; printf '\\x44URING_OFFLINE\\n'; touch produced; while [ ! -f finish ]; do sleep 0.2; done")
+    await page.keyboard.press("Enter")
+    try {
+      await expect.poll(screen).toContain("BEFORE_OFFLINE")
+      const url = page.url()
+      await page.goto("about:blank")
+      await fs.writeFile(path.join(dir, "release"), "done")
+      await expect.poll(() => fs.access(path.join(dir, "produced")).then(() => true, () => false)).toBe(true)
+      await page.goto(url)
+      await expect(page.locator(selector)).toHaveAttribute("data-terminal-connected", "true")
+      await expect.poll(screen).toContain("BEFORE_OFFLINE")
+      await expect.poll(screen).toContain("DURING_OFFLINE")
+      expect((await screen())!.split("DURING_OFFLINE").length - 1).toBe(1)
+      await page.screenshot({ path: test.info().outputPath("terminal-after-offline-output.png") })
+    } finally {
+      await fs.writeFile(path.join(dir, "release"), "done")
+      await fs.writeFile(path.join(dir, "finish"), "done")
+    }
+  })
+
   test("live terminal preserves shell history when a TUI exits after reload", async ({ page }) => {
     await page.addInitScript(() => {
       const host = window as typeof window & { terminalAudit?: () => string }

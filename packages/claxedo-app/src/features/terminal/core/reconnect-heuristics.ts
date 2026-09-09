@@ -16,57 +16,10 @@ export function isLikelyTui(input: {
  * mirrors its output through a headless xterm and sends a preamble built from
  * the current mode state on every attach (workspace-runtime
  * `pty/mode-tracker.ts`). `isLikelyTui` plays no part in that — it only feeds
- * the other heuristics below (cursor replay strategy, SIGWINCH forcing, settle
+ * the other heuristics below (restore sizing, SIGWINCH forcing, settle
  * delays), which are about how to reconnect, not about what the program's
  * modes are.
  */
-
-export function cursorPlan(input: {
-  likelyTui: boolean
-  splitWidthChanged: boolean
-  isReload: boolean
-  snapshotHasBuffer: boolean
-  snapshotWasAltScreen: boolean
-  snapshotCursor?: number
-  lookbackBytes?: number
-}) {
-  const LOOKBACK_BYTES = input.lookbackBytes ?? 256 * 1024
-
-  const hasPersistedBuffer = input.snapshotHasBuffer
-  // The live tail is only the right ask when the client already has the
-  // content locally (the `!likelyTui && hasPersistedBuffer` branch below),
-  // because replaying it then would duplicate what's on screen. A reload that
-  // lands with no persisted buffer and no cursor must not ask for the tail
-  // either: the server's buffer is the PTY's only copy of scrollback, and
-  // asking for the tail there throws it away, leaving the screen blank behind
-  // a session that is still alive.
-  const hasAltSnapshot = input.snapshotWasAltScreen && input.snapshotHasBuffer
-  const splitTuiLiveTail = input.likelyTui && input.splitWidthChanged && input.snapshotHasBuffer
-
-  const lookback =
-    input.likelyTui &&
-    typeof input.snapshotCursor === "number" &&
-    Number.isSafeInteger(input.snapshotCursor) &&
-    input.snapshotCursor > 0
-      ? Math.max(0, input.snapshotCursor - LOOKBACK_BYTES)
-      : undefined
-
-  const tuiLiveTail = input.isReload && hasAltSnapshot
-  const useLiveTailCursor =
-    (!input.likelyTui && hasPersistedBuffer) || tuiLiveTail || splitTuiLiveTail
-
-  const cursorStart = input.likelyTui
-    ? useLiveTailCursor
-      ? undefined
-      : lookback ?? input.snapshotCursor
-    : useLiveTailCursor
-      ? undefined
-      : input.snapshotCursor
-
-  const cursorParam = cursorStart !== undefined ? cursorStart : useLiveTailCursor ? -1 : 0
-
-  return { cursorStart, cursorParam, useLiveTailCursor }
-}
 
 export function restoreSize(input: {
   likelyTui: boolean

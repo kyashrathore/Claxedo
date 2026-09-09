@@ -24,7 +24,7 @@ import {
   openTerminalWebSocket,
 } from "@/features/terminal/core/terminal-connection"
 import { createTerminalRuntimeQueue } from "@/features/terminal/core/terminal-runtime-queue"
-import { cursorPlan, isLikelyTui, restoreSize } from "@/features/terminal/core/reconnect-heuristics"
+import { isLikelyTui, restoreSize } from "@/features/terminal/core/reconnect-heuristics"
 import { stripTerminalRepliesFromInput } from "@/features/terminal/core/input-reply-filter"
 import { getCapabilityResponses } from "@/features/terminal/core/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
@@ -312,15 +312,17 @@ export const Terminal = (props: TerminalProps) => {
       })
 
       const snapshotCursor =
-        typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) ? local.pty.cursor : undefined
-      const snapshotBuffer = local.pty.buffer
-      const snapshotHasBuffer = !!(snapshotBuffer && snapshotBuffer.length > 0)
+        typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) && local.pty.cursor >= 0
+          ? local.pty.cursor : undefined
+      // Screen and cursor are one checkpoint. Without its cursor the cache
+      // cannot be joined to server output, so request a full replay instead.
+      const snapshotBuffer = snapshotCursor === undefined ? undefined : local.pty.buffer
       const snapshotWasAltScreen = local.pty.wasAltScreen ?? false
       const snapshotRows = local.pty.rows
       const snapshotCols = local.pty.cols
       const snapshotWasAtBottom = local.pty.wasAtBottom
       const snapshotScrollY = local.pty.scrollY
-      cursor = snapshotCursor ?? 0
+      cursor = snapshotBuffer && snapshotCursor !== undefined ? snapshotCursor : 0
       const splitWidthChanged =
         typeof mountCols === "number" &&
         typeof snapshotCols === "number" &&
@@ -415,19 +417,9 @@ export const Terminal = (props: TerminalProps) => {
       // than a snapshot of one that may have exited.
       const snapshotModeSequences = ""
 
-      // Setup WebSocket connection.
-      // For normal shell buffers, reconnect from live tail to avoid replaying
-      // stale prompt redraw bytes during split/remount churn.
-      // For TUI/alt-screen sessions, keep cursor replay so the screen can
-      // recover full layout before SIGWINCH reflow.
-      const plan = cursorPlan({
-        likelyTui,
-        splitWidthChanged,
-        isReload,
-        snapshotHasBuffer,
-        snapshotWasAltScreen:  snapshotWasAltScreen,
-        snapshotCursor,
-      })
+      // Replay exactly after the saved screen, including output produced while
+      // detached. A live-tail request drops that output; looking back before
+      // the checkpoint duplicates already-restored screen operations.
       // --- Reconnect state ---
       // Mutable reference so all handlers (onData, publishResize) always use
       // the current socket across reconnections.
@@ -435,7 +427,6 @@ export const Terminal = (props: TerminalProps) => {
       let reconnectAttempt = 0
       let reconnectTimer: ReturnType<typeof setTimeout> | undefined
       let reconnecting = false
-      let firstConnect = true
       const once = { value: false }
       let replayReady = false
 
@@ -752,8 +743,6 @@ export const Terminal = (props: TerminalProps) => {
         if (disposed || overload) return
 
         // Build URL with live cursor on reconnect, or planned cursor on first connect.
-        const cursorParamValue = firstConnect ? plan.cursorParam : cursor
-        firstConnect = false
 
         // Close previous socket if still lingering
         const prev = socketRef.current
@@ -764,7 +753,7 @@ export const Terminal = (props: TerminalProps) => {
         const ws = await openTerminalWebSocket({
           serverUrl: claxedoServerUrl,
           ptyId: local.pty.id,
-          cursor: cursorParamValue,
+          cursor,
           workspaceId: await terminalWorkspaceId(),
           directory: sdk.directory,
           request: ptyRequest,
