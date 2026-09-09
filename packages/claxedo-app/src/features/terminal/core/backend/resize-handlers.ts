@@ -25,6 +25,8 @@ export function setupResizeHandlers(
   /** Gate that defers a fit while the xterm parser is mid-async-handler.
    *  Optional so existing tests can construct handlers without one. */
   parserGate: ParserIdleGate = createParserIdleGate(),
+  /** Remote PTYs apply geometry through ordered host checkpoints. */
+  requestHostSize?: (cols: number, rows: number) => void,
 ): ResizeHandlersResult {
   // Guard: xterm's internal RenderService accesses `_renderer.value.dimensions`
   // during resize()/refresh(). When a WebGL addon is loading asynchronously,
@@ -46,6 +48,7 @@ export function setupResizeHandlers(
     typeof document !== "undefined" && document.documentElement.dataset.terminalResizeSuspended === "1"
   let disposed = false
   let fontMetricsDirty = false
+  let proposedSize: { cols: number; rows: number } | undefined
 
   const refresh = () => {
     if (disposed || !isRendererReady()) return
@@ -76,9 +79,15 @@ export function setupResizeHandlers(
         }
       })()
       if (!dims) {
+        if (requestHostSize) return
         try {
           fitAddon.fit()
         } catch {}
+        return
+      }
+      if (requestHostSize) {
+        proposedSize = dims
+        requestHostSize(dims.cols, dims.rows)
         return
       }
       fitAddon.fit()
@@ -98,8 +107,8 @@ export function setupResizeHandlers(
       runWhenParserIdle(parserGate, runFit)
     },
     measure: () => ({ width: container.clientWidth, height: container.clientHeight }),
-    getCols: () => xterm.cols,
-    getRows: () => xterm.rows,
+    getCols: () => proposedSize?.cols ?? xterm.cols,
+    getRows: () => proposedSize?.rows ?? xterm.rows,
     refresh,
     notify: (cols, rows) => onResize(cols, rows),
     clock: {

@@ -38,6 +38,21 @@ function makeQueue(input?: { maxPendingBytes?: number; maxStreamBytes?: number; 
 }
 
 describe("terminal runtime queue", () => {
+  test("a checkpoint supersedes queued old output and holds new output until restore completes", () => {
+    const env = makeQueue()
+    env.queue.flushPending()
+    env.queue.push("covered by checkpoint")
+    env.queue.beginRestore()
+    env.queue.push("after checkpoint")
+    env.runFrames()
+    expect(env.writes).toEqual([])
+    expect(env.queue.pendingCount()).toBe(1)
+    env.queue.flushPending()
+    env.runFrames()
+    expect(env.writes).toEqual(["after checkpoint"])
+    env.queue.dispose()
+  })
+
   test("queue_pending_before_restore_flushes_in_exact_order", () => {
     const env = makeQueue()
     env.queue.push("A")

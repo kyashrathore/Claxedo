@@ -1,4 +1,6 @@
 export { createWorkspaceRuntimeClient } from "./client/index"
+export { terminalCheckpointSchema, applyTerminalCheckpointState, TERMINAL_SCROLLBACK_ROWS } from "./pty/terminal-checkpoint-state"
+export type { TerminalCheckpoint } from "./pty/terminal-checkpoint-state"
 export type { GitCommitSummary, GitStatusEntry, GitWorktreeStatus } from "./workspace-files/git-worktree"
 export type { WorkspaceRuntimeClient, WorkspaceRuntimeConfigApplyOptions, WorkspaceRuntimeHealth } from "./client/index"
 export {

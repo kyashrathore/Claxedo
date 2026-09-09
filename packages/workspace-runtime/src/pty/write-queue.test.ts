@@ -65,6 +65,7 @@ describe("PTY write queue", () => {
     const session = createSession()
     const operations: string[] = []
     session.modeTracker.resize = (cols, rows) => { operations.push(`emulator:${cols}x${rows}`) }
+    session.onResize = () => { operations.push("checkpoint") }
     session.process.resize = (cols, rows) => { operations.push(`process:${cols}x${rows}`) }
     session.process.write = (data) => { operations.push(`input:${data}`) }
     session.ready = false
@@ -77,8 +78,8 @@ describe("PTY write queue", () => {
     session.ready = true
     flushWriteQueue(session)
     expect(operations).toEqual([
-      "emulator:120x42", "process:120x42", "input:one",
-      "emulator:126x42", "process:126x42", "input:two",
+      "emulator:120x42", "checkpoint", "process:120x42", "input:one",
+      "emulator:126x42", "checkpoint", "process:126x42", "input:two",
     ])
   })
 })

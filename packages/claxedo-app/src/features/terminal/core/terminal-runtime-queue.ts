@@ -62,6 +62,15 @@ export function createTerminalRuntimeQueue(input: {
   }
 
   return {
+    beginRestore() {
+      if (frame) input.cancelFrame(frame)
+      frame = 0
+      restored = false
+      stream.items = []
+      stream.bytes = 0
+      pending.items = []
+      pending.bytes = 0
+    },
     push(data: string) {
       if (restored) {
         enqueueLive(data)

@@ -4,6 +4,8 @@ import os from "node:os"
 import path from "node:path"
 import type { WSContext } from "hono/ws"
 import { historyPath } from "./history-disk"
+import xterm from "@xterm/headless"
+import { terminalCheckpointSchema, applyTerminalCheckpointState } from "./terminal-checkpoint-state"
 
 /**
  * End-to-end cover for the COLD RESTORE path: the PTY a client was attached to
@@ -54,17 +56,40 @@ let tmpDir: string
 let kill: ReturnType<typeof spyOn<typeof process, "kill">>
 
 function socket() {
-  const sent: string[] = []
+  const sent: Array<string | Uint8Array> = []
   return {
     ws: {
       readyState: 1,
       send: (data: unknown) => {
-        if (typeof data === "string") sent.push(data)
+        if (typeof data === "string" || data instanceof Uint8Array) sent.push(data)
+        else throw new Error("Unexpected PTY frame")
       },
       close: () => {},
     } as unknown as WSContext,
     sent,
-    text: () => sent.join(""),
+    async text() {
+      const terminal = new xterm.Terminal({ cols: 80, rows: 24, scrollback: 5000, allowProposedApi: true })
+      const write = (data: string) => new Promise<void>((resolve) => terminal.write(data, resolve))
+      try {
+        for (const frame of sent) {
+          if (typeof frame === "string") await write(frame)
+          else {
+            expect(frame[0]).toBe(0)
+            const control = JSON.parse(new TextDecoder().decode(frame.subarray(1)))
+            expect(Number.isSafeInteger(control.cursor)).toBe(true)
+            if (control.checkpoint === undefined) continue
+            const checkpoint = terminalCheckpointSchema.parse(control.checkpoint)
+            terminal.reset()
+            terminal.resize(checkpoint.cols, checkpoint.rows)
+            await write(checkpoint.screen)
+            await write(checkpoint.continuation)
+            applyTerminalCheckpointState(terminal, checkpoint.state)
+          }
+        }
+        return Array.from({ length: terminal.buffer.active.length }, (_, index) =>
+          terminal.buffer.active.getLine(index)?.translateToString(true) ?? "").join("\n")
+      } finally { terminal.dispose() }
+    },
   }
 }
 
@@ -133,7 +158,7 @@ describe("cold restore: replacing a lost PTY", () => {
     const client = socket()
     Pty.connect(replacement.id, client.ws)
 
-    expect(client.text()).toContain("REPLAYED-TO-THE-CLIENT")
+    expect((await client.text())).toContain("REPLAYED-TO-THE-CLIENT")
   })
 
   test("the restored session is marked with the separator, exactly once", async () => {
@@ -153,15 +178,15 @@ describe("cold restore: replacing a lost PTY", () => {
 
     const firstClient = socket()
     Pty.connect(replacement.id, firstClient.ws)
-    expect(firstClient.text()).toContain("Session contents restored")
+    expect((await firstClient.text())).toContain("Session contents restored")
 
     // The same stream checkpoint must not replay the seam a second time.
     const secondClient = socket()
     Pty.connect(replacement.id, secondClient.ws, Pty.snapshot(replacement.id).length)
-    expect(secondClient.text()).not.toContain("Session contents restored")
+    expect((await secondClient.text())).not.toContain("Session contents restored")
     const freshClient = socket()
     Pty.connect(replacement.id, freshClient.ws, 0)
-    expect(freshClient.text().split("Session contents restored")).toHaveLength(2)
+    expect((await freshClient.text()).split("Session contents restored")).toHaveLength(2)
   })
 
   test("the separator sits between restored content and fresh shell output", async () => {
@@ -182,7 +207,7 @@ describe("cold restore: replacing a lost PTY", () => {
     const client = socket()
     Pty.connect(replacement.id, client.ws)
 
-    const text = client.text()
+    const text = (await client.text())
     expect(text.indexOf("OLD-CONTENT")).toBeLessThan(text.indexOf("Session contents restored"))
     expect(text.indexOf("Session contents restored")).toBeLessThan(text.indexOf("NEW-PROMPT"))
   })
@@ -194,7 +219,7 @@ describe("cold restore: replacing a lost PTY", () => {
     const client = socket()
     Pty.connect(fresh.id, client.ws)
 
-    expect(client.text()).not.toContain("Session contents restored")
+    expect((await client.text())).not.toContain("Session contents restored")
   })
 
   test("the history file is re-keyed onto the new id, leaving none behind", async () => {
@@ -230,7 +255,7 @@ describe("cold restore: replacing a lost PTY", () => {
 
     expect(Pty.snapshot(replacement.id)).toBe("")
     // Nothing was restored, so there is no seam to mark.
-    expect(client.text()).not.toContain("Session contents restored")
+    expect((await client.text())).not.toContain("Session contents restored")
   })
 
   test("restored content survives a SECOND loss — the chain does not break", async () => {

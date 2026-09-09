@@ -160,6 +160,21 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("setupResizeHandlers — ResizeObserver + fontSize nudge", () => {
+  test("a remote size proposal leaves parser geometry unchanged until the host applies it", () => {
+    const container = makeContainer(600, 400)
+    const xterm = makeXterm(true, 80, 24)
+    const fit = makeFitAddon(() => ({ cols: 100, rows: 30 }))
+    const requestSize = vi.fn()
+    const handlers = setupResizeHandlers(container, xterm, fit, vi.fn(), makeRenderer(), createParserIdleGate(), requestSize)
+    try {
+      handlers.coordinator.flush()
+      expect(requestSize).toHaveBeenCalledWith(100, 30)
+      expect(fit.fit).not.toHaveBeenCalled()
+      expect(xterm.cols).toBe(80)
+      expect(xterm.rows).toBe(24)
+    } finally { handlers.cleanup() }
+  })
+
   test("resizing a quiet alternate-screen program does not erase its frame", () => {
     const container = makeContainer(600, 400)
     const xterm = makeXterm(true)

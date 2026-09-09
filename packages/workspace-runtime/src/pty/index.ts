@@ -104,7 +104,8 @@ export namespace Pty {
    *
    *   BUFFER_LIMIT          2 MB code units  — the replay buffer, ~2–4 MB heap
    *   QUEUE_HIGH_WATERMARK  1 MB             — pending writes to a slow pty
-   *   modeTracker                            — headless xterm, scrollback: 0
+   *   modeTracker                            — headless xterm, 5000 scrollback rows
+   *                                            + up to 1 MB pending control string
    *
    * History is not in this list: it lives only on disk (see history-disk.ts),
    * never mirrored in RAM — mirroring it would cost HISTORY_LIMIT, 16 MB per
@@ -162,8 +163,8 @@ export namespace Pty {
     return `${match[1] ?? ""}${shellQuote(wrapper)}${match[3] ?? ""}`
   }
 
-  const meta = (cursor: number) => {
-    const json = JSON.stringify({ cursor })
+  const meta = (cursor: number, checkpoint?: ReturnType<ModeTracker["checkpoint"]>) => {
+    const json = JSON.stringify({ cursor, ...(checkpoint ? { checkpoint } : {}) })
     const bytes = encoder.encode(json)
     const out = new Uint8Array(bytes.length + 1)
     out[0] = 0
@@ -198,7 +199,7 @@ export namespace Pty {
     }
   }
 
-  function safeBroadcast(session: ActiveSession, data: string) {
+  function safeBroadcast(session: ActiveSession, data: string | Uint8Array) {
     for (const ws of session.subscribers) {
       if (ws.readyState !== 1) {
         session.subscribers.delete(ws)
@@ -296,6 +297,7 @@ export namespace Pty {
      * than to a snapshot the renderer guessed earlier. See mode-tracker.ts.
      */
     modeTracker: ModeTracker
+    onResize(): void
     history: Awaited<ReturnType<typeof createDiskHistory>>
     osc7: string
     processExitBuf: string
@@ -775,10 +777,19 @@ export namespace Pty {
       bufferCursor: 0,
       cursor: restoredBuffer.length,
       // @lydell/node-pty's own default geometry; the client's first resize on attach
-      // brings both the pty and this emulator to the real size. Geometry only
-      // affects where the emulator wraps, not which modes it records, so a
-      // brief mismatch cannot corrupt the preamble.
+      // brings both the pty and its checkpoint owner to the real size.
       modeTracker: createModeTracker(80, 24),
+      onResize() {
+        try {
+          const checkpoint = session.modeTracker.checkpoint()
+          checkpoint.screen = session.modeTracker.buildPreamble() + checkpoint.screen
+          safeBroadcast(session, meta(session.cursor, checkpoint))
+        } catch (error) {
+          log.warn("pty resize checkpoint failed", { id, error: String(error) })
+          for (const ws of session.subscribers) ws.close(1011, "terminal checkpoint unavailable")
+          session.subscribers.clear()
+        }
+      },
       history,
       osc7: "",
       processExitBuf: "",
@@ -801,6 +812,7 @@ export namespace Pty {
       ...(owner ? { owner } : {}),
       ...(agentHookAccess ? { agentHookAccess } : {}),
     }
+    if (restoredBuffer) session.modeTracker.feed(restoredBuffer)
     sessions.set(id, session)
     armOrphanTimer(id, session)
     ptyProcess.onData((data) => {
@@ -1028,7 +1040,21 @@ export namespace Pty {
     // so a fresh xterm needs them re-asserted on every attach — even when the
     // replay itself is empty (a live-tail reconnect to a running TUI).
     const preamble = session.modeTracker.buildPreamble()
-    if (!safeReplay(ws, preamble + data)) {
+    let replaySent: boolean
+    try {
+      if (from === 0) {
+        const checkpoint = session.modeTracker.checkpoint()
+        checkpoint.screen = preamble + checkpoint.screen
+        replaySent = sendWebSocketWithBackpressure(ws, meta(end, checkpoint), { maxBufferedBytes: WEBSOCKET_BUFFERED_AMOUNT_MAX })
+      } else {
+        replaySent = safeReplay(ws, preamble + data)
+          && sendWebSocketWithBackpressure(ws, meta(end), { maxBufferedBytes: WEBSOCKET_BUFFERED_AMOUNT_MAX })
+      }
+    } catch (error) {
+      log.warn("pty checkpoint failed", { id, error: String(error) })
+      replaySent = false
+    }
+    if (!replaySent) {
       session.subscribers.delete(ws)
       workspaceRuntimeBus.publish({
         type: "pty.stream",
@@ -1038,11 +1064,6 @@ export namespace Pty {
         message: "replay_send_failed",
       })
       ws.close()
-      return undefined
-    }
-
-    if (!sendWebSocketWithBackpressure(ws, meta(end), { maxBufferedBytes: WEBSOCKET_BUFFERED_AMOUNT_MAX })) {
-      session.subscribers.delete(ws)
       return undefined
     }
 

@@ -230,6 +230,10 @@ for (const { harness, child, pause } of [
         await expect(rows).toContainText(/DESKTOP_TUI_OK|Out of Credits/, { timeout: 90_000 })
         expect(await rows.innerText(), "Amp provider execution requires available account credits").not.toContain("Out of Credits")
       }
+      if (harness === "claude") {
+        await expect(rows).toContainText(/DESKTOP_TUI_OK|OAuth access token has been revoked/, { timeout: 90_000 })
+        expect(await rows.innerText(), "Claude OAuth login was revoked; log back in before testing Opus").not.toContain("OAuth access token has been revoked")
+      }
       await expect(rows).toContainText("DESKTOP_TUI_OK", { timeout: 90_000 })
       const lifecycleUrl = `${server}/api/wr/hook/terminal-session?terminalId=${pty.id}&directory=${encodeURIComponent(directory)}`
       await expect.poll(async () => {

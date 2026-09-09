@@ -23,6 +23,7 @@ export interface WriteQueueSession {
   modeTracker: {
     resize(cols: number, rows: number): void
   }
+  onResize?(): void
   process: {
     write(data: string): void
     resize(cols: number, rows: number): void
@@ -69,6 +70,7 @@ export function flushWriteQueue(session: WriteQueueSession): void {
     // A resize can make the process emit a redraw immediately. Its emulator
     // must already have the same geometry when that output is observed.
     session.modeTracker.resize(next.cols, next.rows)
+    session.onResize?.()
     session.process.resize(next.cols, next.rows)
   }
   if (session.queuedBytes < 0) session.queuedBytes = 0

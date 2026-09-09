@@ -1,4 +1,5 @@
 import { objectProperty } from "./reflect"
+import { applyTerminalCheckpointState, terminalCheckpointSchema } from "@claxedo/workspace-runtime/client"
 import { SerializeAddon } from "@xterm/addon-serialize"
 import "@xterm/xterm/css/xterm.css"
 import "../terminal.css"
@@ -42,8 +43,8 @@ export const createBackend: CreateBackendFn = async (
     .catch(() => {})
 
   // Track bracketed paste mode across split writes.
-  const mode = createModeScanner()
-  const suppress = createQuerySuppressor()
+  let mode = createModeScanner()
+  let suppress = createQuerySuppressor()
 
   // Disarm mouse / focus / kitty-keyboard modes that a TUI killed uncleanly
   // left armed in the shell that reclaimed the pty. Installed on every
@@ -196,6 +197,9 @@ export const createBackend: CreateBackendFn = async (
     },
     instance.renderer,
     parserGate,
+    (cols, rows) => {
+      for (const fn of resizeListeners) fn({ cols, rows })
+    },
   )
   cleanups.push(resizeHandlers.cleanup)
   // Drop any fit parked behind a write that will never complete now.
@@ -229,8 +233,29 @@ export const createBackend: CreateBackendFn = async (
   })
 
   let disposed = false
+  let checkpointRestore = Promise.resolve()
 
   const backend: TerminalBackend = {
+    async restoreCheckpoint(input) {
+      const checkpoint = terminalCheckpointSchema.parse(input)
+      checkpointRestore = checkpointRestore.then(async () => {
+        // The caller has paused stream draining. This write fence waits for all
+        // already-admitted native writes; its await resumes outside the parser.
+        await new Promise<void>((resolve) => originalWrite("", resolve))
+        if (disposed) return
+        xterm.reset()
+        mode = createModeScanner()
+        suppress = createQuerySuppressor()
+        xterm.resize(checkpoint.cols, checkpoint.rows)
+        await new Promise<void>((resolve) => backend.write(checkpoint.screen, resolve))
+        if (disposed) return
+        mode.scan(checkpoint.continuation)
+        await new Promise<void>((resolve) => originalWrite(checkpoint.continuation, resolve))
+        if (disposed) return
+        applyTerminalCheckpointState(xterm, checkpoint.state)
+      })
+      return checkpointRestore
+    },
     get cols() {
       return xterm.cols
     },

@@ -1,4 +1,5 @@
 import type { ITerminalOptions } from "@xterm/xterm"
+import { TERMINAL_SCROLLBACK_ROWS } from "@claxedo/workspace-runtime/client"
 
 // Font stack prioritizing Nerd Fonts for shell theme compatibility
 const TERMINAL_FONT_FAMILY = [
@@ -23,7 +24,7 @@ export const TERMINAL_OPTIONS = {
   fontSize: 14,
   fontFamily: TERMINAL_FONT_FAMILY,
   allowProposedApi: true,
-  scrollback: 5000,
+  scrollback: TERMINAL_SCROLLBACK_ROWS,
   macOptionIsMeta: false,
   cursorStyle: "bar",
   cursorInactiveStyle: "outline",

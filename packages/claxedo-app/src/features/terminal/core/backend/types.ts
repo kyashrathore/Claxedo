@@ -46,6 +46,7 @@ export interface TerminalBackend {
 
   // I/O
   write(data: string, callback?: () => void): void
+  restoreCheckpoint(input: unknown): Promise<void>
   onData(fn: (data: string) => void): Disposable
   onKey(fn: (e: { key: string }) => void): Disposable
   onResize(fn: (size: { cols: number; rows: number }) => void): Disposable

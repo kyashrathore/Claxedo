@@ -128,7 +128,6 @@ export const Terminal = (props: TerminalProps) => {
   const [terminalFocused, setTerminalFocused] = createSignal(false)
   let disposed = false
   let cleaned = false
-  let isBufferRestored = !props.pty.buffer
   let cursor =
     typeof local.pty.cursor === "number" && Number.isSafeInteger(local.pty.cursor) ? local.pty.cursor : 0
 
@@ -571,10 +570,10 @@ export const Terminal = (props: TerminalProps) => {
         onThrottled: () => {},
       })
       cleanups.push(() => queue.dispose())
+      let checkpointGeneration = 0
 
       const flushPendingMessages = () => {
-        isBufferRestored = true
-        queue.flushPending()
+        if (checkpointGeneration === 0) queue.flushPending()
       }
 
       // Restore saved buffer on both tab switch and reload. The serialized buffer
@@ -642,7 +641,6 @@ export const Terminal = (props: TerminalProps) => {
                 if (disposed) return
                 if (!ok) {
                   try {
-                    b.resize(80, 24)
                     b.refresh(0, b.rows - 1)
                   } catch {}
                 }
@@ -653,7 +651,6 @@ export const Terminal = (props: TerminalProps) => {
           cleanups.push(stop)
         })
       } else {
-        isBufferRestored = true
         const stop = retry(
           () => {
             if (disposed) return true
@@ -675,7 +672,6 @@ export const Terminal = (props: TerminalProps) => {
               if (disposed) return
               if (!ok) {
                 try {
-                  b.resize(80, 24)
                   b.refresh(0, b.rows - 1)
                 } catch {}
               }
@@ -827,10 +823,26 @@ export const Terminal = (props: TerminalProps) => {
               // PTY-data path below.
               const json = new TextDecoder().decode(bytes.subarray(1))
               try {
-                const next = readField(JSON.parse(json), "cursor")
+                const control = JSON.parse(json)
+                const next = readField(control, "cursor")
                 if (typeof next === "number" && Number.isSafeInteger(next) && next >= 0) {
                   replayReady = true
                   cursor = next
+                  const checkpoint = readField(control, "checkpoint")
+                  if (checkpoint !== undefined) {
+                    const generation = ++checkpointGeneration
+                    queue.beginRestore()
+                    void b.restoreCheckpoint(checkpoint).then(() => {
+                      if (disposed || generation !== checkpointGeneration) return
+                      queue.flushPending()
+                      b.fit()
+                    }).catch((error: unknown) => {
+                      if (disposed) return
+                      overload = true
+                      showToast({ variant: "error", title: "Terminal restore failed", description: String(error) })
+                      ws.close(1002, "invalid terminal checkpoint")
+                    })
+                  }
                   return
                 }
               } catch {
@@ -870,13 +882,9 @@ export const Terminal = (props: TerminalProps) => {
               }
             }
           }
-          const next = data
-          // Queue messages if buffer restoration is still in progress
-          if (!isBufferRestored) {
-            queue.push(next)
-            return
-          }
-          b.write(next)
+          // Every stream write shares the checkpoint barrier and parser
+          // backpressure, including output after the initial mount restore.
+          queue.push(data)
         }
         ws.addEventListener("message", handleMessage)
         socketCleanups.push(() => ws.removeEventListener("message", handleMessage))

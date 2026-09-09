@@ -36,7 +36,11 @@
 // interop shims, which is why the bundled sidecar worked and hid the break.
 // The default binding is `module.exports`, which every loader agrees on.
 import xtermHeadless from "@xterm/headless"
+import { SerializeAddon } from "@xterm/addon-serialize"
+import { Unicode11Addon } from "@xterm/addon-unicode11"
 import { rec } from "../json-value"
+import { captureTerminalCheckpointState, terminalCheckpointSchema, TERMINAL_SCROLLBACK_ROWS, type TerminalCheckpoint } from "./terminal-checkpoint-state"
+import { createTerminalParserContinuation } from "./terminal-parser-continuation"
 
 const HeadlessTerminal = xtermHeadless.Terminal
 
@@ -50,6 +54,8 @@ export type ModeTracker = {
    * program already believes are active. Empty when everything is default.
    */
   buildPreamble(): string
+  /** Consistent screen and continuation from this same host emulator. */
+  checkpoint(): TerminalCheckpoint
   dispose(): void
 }
 
@@ -77,11 +83,16 @@ export function createModeTracker(cols: number, rows: number): ModeTracker {
   const term = new HeadlessTerminal({
     cols: Math.max(2, cols),
     rows: Math.max(1, rows),
-    // No scrollback: this emulator exists only to answer "what modes are set",
-    // never to serve content, and a per-session 1000-line buffer is real memory.
-    scrollback: 0,
+    // This same emulator owns reconnect checkpoints; retain bounded history.
+    scrollback: TERMINAL_SCROLLBACK_ROWS,
     allowProposedApi: true,
   })
+  term.loadAddon(new Unicode11Addon())
+  term.unicode.activeVersion = "11"
+  const serializer = new SerializeAddon()
+  term.loadAddon(serializer)
+  const continuation = createTerminalParserContinuation(term)
+  let trackingError: unknown
   // The private surface is CHECKED once, at construction, and the check is what
   // produces the type — so an @xterm/headless upgrade that renames internals
   // fails loudly here instead of inside every PTY-output callback, and nothing
@@ -109,9 +120,10 @@ export function createModeTracker(cols: number, rows: number): ModeTracker {
       if (!data) return
       try {
         writeBuffer.writeSync(data)
-      } catch {
-        // A malformed sequence must never take down the PTY data path; the
-        // worst case is a slightly stale preamble.
+        continuation.observe(data)
+      } catch (error) {
+        // Keep the PTY alive, but never serve stale state as a checkpoint.
+        trackingError = error
       }
     },
 
@@ -121,7 +133,19 @@ export function createModeTracker(cols: number, rows: number): ModeTracker {
       if (term.cols === c && term.rows === r) return
       try {
         term.resize(c, r)
-      } catch {}
+      } catch (error) { trackingError = error }
+    },
+
+    checkpoint() {
+      if (trackingError) throw trackingError
+      return terminalCheckpointSchema.parse({
+        version: 1,
+        cols: term.cols,
+        rows: term.rows,
+        screen: serializer.serialize(),
+        continuation: continuation.read(),
+        state: captureTerminalCheckpointState(term),
+      })
     },
 
     buildPreamble() {
