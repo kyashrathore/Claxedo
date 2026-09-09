@@ -669,6 +669,15 @@ test.describe("live real-harness smoke @live", () => {
   })
 
   test("live terminal restores the same screen in a fresh browser", async ({ page, browser }) => {
+    const streams: Record<string, Array<{ url: string; data: string; binary: boolean }>> = { original: [], restored: [] }
+    const recordStream = (target: Page, side: "original" | "restored") => target.on("websocket", (socket) => {
+      if (!socket.url().includes("/pty/")) return
+      socket.on("framereceived", ({ payload }) => streams[side]!.push({
+        url: socket.url(),
+        data: typeof payload === "string" ? payload : payload.toString("utf8"),
+        binary: typeof payload !== "string",
+      }))
+    })
     const observe = async (target: Page) => target.addInitScript(() => {
       const host = window as typeof window & { terminalAudit?: () => { screen: string; cols: number; rows: number }; terminalAuditWrites?: Array<{ cols: number; rows: number }> }
       host.terminalAuditWrites = []
@@ -683,6 +692,7 @@ test.describe("live real-harness smoke @live", () => {
       window as typeof window & { terminalAudit?: () => { screen: string; cols: number; rows: number } }
     ).terminalAudit?.())
     const dir = await makeWorkspace("terminal-fresh-browser")
+    recordStream(page, "original")
     await observe(page)
     await seedOneProject(page, dir)
     await openDraftPrompt(page, dir)
@@ -705,6 +715,7 @@ test.describe("live real-harness smoke @live", () => {
     const fresh = await browser.newContext({ viewport: page.viewportSize() })
     try {
       const restored = await fresh.newPage()
+      recordStream(restored, "restored")
       await observe(restored)
       await seedOneProject(restored, dir)
       await restored.goto(page.url())
@@ -715,6 +726,7 @@ test.describe("live real-harness smoke @live", () => {
       const writes = (target: Page) => target.evaluate(() => (window as typeof window & { terminalAuditWrites?: unknown }).terminalAuditWrites)
       await test.info().attach("terminal-write-dimensions", { body: JSON.stringify({ original: await writes(page), restored: await writes(restored) }), contentType: "application/json" })
       await test.info().attach("terminal-screen-comparison", { body: JSON.stringify({ before, after }), contentType: "application/json" })
+      await test.info().attach("terminal-replay-streams", { body: JSON.stringify(streams), contentType: "application/json" })
       await restored.screenshot({ path: test.info().outputPath("terminal-fresh-screen.png") })
       expect(after).toEqual(before)
     } finally {
