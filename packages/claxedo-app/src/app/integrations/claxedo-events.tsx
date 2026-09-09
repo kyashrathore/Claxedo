@@ -122,8 +122,7 @@ export type ClaxedoEvent =
       ts: number
     }
 
-export type ClaxedoDirectoryEvent = {
-  type:
+type ClaxedoDirectoryEventType =
     | "message.updated"
     | "message.part.updated"
     | "message.part.delta"
@@ -132,6 +131,7 @@ export type ClaxedoDirectoryEvent = {
     | "session.error"
     | "session.status"
     | "session.updated"
+    | "session.deleted"
     | "session.agent"
     | "todo.updated"
     | "permission.asked"
@@ -141,6 +141,9 @@ export type ClaxedoDirectoryEvent = {
     | "question.rejected"
     | "session.diff"
     | "session.compacted"
+
+export type ClaxedoDirectoryEvent = { [Type in ClaxedoDirectoryEventType]: {
+  type: Type
   directory?: string
   /**
    * The workspace the frame was published for. Workspace-runtime's bridge
@@ -153,7 +156,7 @@ export type ClaxedoDirectoryEvent = {
    */
   workspaceId?: string
   properties?: unknown
-}
+} }[ClaxedoDirectoryEventType]
 
 type ClaxedoEventType = ClaxedoEvent["type"]
 type ClaxedoEventOf<T extends ClaxedoEventType> = Extract<ClaxedoEvent, { type: T }>

@@ -1,3 +1,4 @@
+import { closeDeletedSessionSurfaces } from "./session-deletion"
 // Orchestration — `state.layout.openX` / `closeContent` / `closePane` etc.
 //
 // These are the high-level "user did a thing" actions that cross slice
@@ -50,6 +51,7 @@ export type LayoutOrchestrationApi = {
    * Close a content fully — drop the meta entry, remove from workbench, run
    * cleanup hooks (e.g. terminal owner/lifecycle teardown).
    */
+  closeDeletedSession: (identity: Required<Pick<ContentMeta, "sessionId" | "directory">>) => void
   closeContent: (id: string, reason?: ContentCloseReason) => void
   closePane: (paneId: string, opts?: { destroyContent?: boolean }) => void
   moveContent: (id: string, fromPane: string, toPane: MovePaneTarget) => void
@@ -250,7 +252,7 @@ export function createLayoutOrchestration(input: {
     }
   }
 
-  return {
+  const actions: LayoutOrchestrationApi = {
     openSession(directory, sessionId, title, opts) {
       const existing = meta.find(
         (m) => sameWorkspaceSession(m, directory, sessionId, opts?.sessionRef, opts?.workspaceRouteId),
@@ -562,6 +564,10 @@ export function createLayoutOrchestration(input: {
       })
     },
 
+    closeDeletedSession(identity) {
+      closeDeletedSessionSurfaces({ identity, surfaces: meta.all, closeContent: actions.closeContent })
+    },
+
     closeContent(id, reason = "user") {
       const m = meta.get(id)
       // Pinned built-ins: refuse to close.
@@ -609,4 +615,5 @@ export function createLayoutOrchestration(input: {
 
     _cleanupOnClose,
   }
+  return actions
 }

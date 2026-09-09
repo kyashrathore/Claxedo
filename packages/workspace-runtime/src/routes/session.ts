@@ -49,9 +49,9 @@ function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]
   // Kept ahead of the `eventType` mapping so a future compat type that is BOTH
   // a row change and a lifecycle transition cannot be silently swallowed by
   // whichever branch happens to be written first.
-  if (payload.type === "session.updated") {
+  if (payload.type === "session.updated" || payload.type === "session.deleted") {
     workspaceRuntimeBus.publish({
-      type: "session.updated",
+      type: payload.type,
       ...(event.directory ? { directory: event.directory } : {}),
       workspaceId: workspaceId(),
       properties: payload.properties,

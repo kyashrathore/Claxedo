@@ -1963,3 +1963,40 @@ test("question listing filters the authoritative workspace inventory without res
     expect(await response.json()).toMatchObject({ error: { code: "interaction_session_mismatch" } })
   }
 })
+
+test("delete publishes the removed identity only after durable deletion succeeds", async () => {
+  for (const fail of [false, true]) {
+    const events: CompatEnvelope[] = []
+    const order: string[] = []
+    const a = adapter()
+    a.deleteSession = async () => { order.push("adapter") }
+    const app = createSessionRoutes({
+      resolveAdapter: () => a,
+      resolveDirectory: () => "/workspace",
+      resolveExecutionBinding: (_c, directory, sessionId) => ({ sessionId, directory: directory ?? "", workspaceId: "ws", connectionId: "native:codex", upstreamSessionId: sessionId }),
+      afterDeleteSession: () => { order.push("store"); if (fail) throw new Error("store deletion failed") },
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal: (event) => { order.push("event"); events.push(event) },
+    })
+    const result = await app.request("http://localhost/session/deleted", { method: "DELETE" })
+    expect(result.status).toBe(fail ? 500 : 200)
+    expect(order).toEqual(fail ? ["adapter", "store"] : ["adapter", "store", "event"])
+    expect(events).toEqual(fail ? [] : [{ directory: "/workspace", payload: { type: "session.deleted", properties: { info: { id: "deleted", directory: "/workspace" } } } }])
+  }
+})
+
+test("late approval is not found without resolving a retired harness", async () => {
+  let resolved = false
+  const app = createSessionRoutes({
+    resolveAdapter: () => { resolved = true; throw new Error("retired harness") },
+    resolveDirectory: () => "/workspace",
+    listPermissions: async () => [],
+    sessionBus: { publish() {}, subscribe: () => () => {} },
+    publishGlobal() {},
+  })
+  const result = await app.request("http://localhost/session/deleted/permissions/expired", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ response: "always" }),
+  })
+  expect(result.status).toBe(404)
+  expect(resolved).toBe(false)
+})

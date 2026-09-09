@@ -33,6 +33,7 @@ import {
   sessionError,
   sessionStatus,
   sessionUpdated,
+  sessionDeleted,
   withDir,
   type CompatEvent,
   type CompatEnvelope,
@@ -252,6 +253,7 @@ async function cascadeToChildren(
       await disposeRuntimeSessionDocuments(childSessionId)
       await childAdapter.deleteSession(binding)
       await after(opts.afterDeleteSession?.(c, directory, childSessionId))
+      opts.publishGlobal(withDir(compatScope(directory, childSessionId), sessionDeleted(childSessionId, directory ?? "")))
       continue
     }
     await childAdapter.abort?.(binding).catch(() => undefined)
@@ -1599,6 +1601,7 @@ export function createSessionRoutes(opts: Opts) {
       await disposeRuntimeSessionDocuments(sessionId)
       await adapter.deleteSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
       await after(opts.afterDeleteSession?.(c, directory, sessionId))
+      opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionDeleted(sessionId, directory ?? "")))
       return c.json({ ok: true })
     })
     .post("/session/:id/message", async (c) => {
@@ -2161,6 +2164,7 @@ export function createSessionRoutes(opts: Opts) {
       const permId = c.req.param("permId")
       const directory = await opts.resolveDirectory(c, { sessionId: suppliedSessionId })
       const listedSessionId = interactionSessionId(await opts.listPermissions?.(c, directory) ?? [], permId)
+      if (opts.listPermissions && !listedSessionId) return interactionNotFound(c, "permission", permId)
       if (listedSessionId && listedSessionId !== suppliedSessionId) {
         return interactionSessionMismatch(c, "permission", permId)
       }

@@ -37,6 +37,7 @@ messagePartDelta({
 }) satisfies Extract<CompatEvent, { type: "message.part.delta" }>
 
 const kinds: Record<CompatEvent["type"], true> = {
+  "session.deleted": true,
   "message.updated": true,
   "message.part.updated": true,
   "message.part.delta": true,

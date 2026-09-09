@@ -7,6 +7,7 @@ import type { ClaxedoSession } from "@/features/session/data/session-types"
 import type { SessionRef } from "@/platform/identity/session-ref"
 
 export type MessageTimelineProps = {
+  onSessionDeleted?: (sessionId: string) => void
   active: () => boolean
   actions?: UserActions
   scroll: { overflow: boolean; bottom: boolean; jump: boolean }

@@ -98,6 +98,7 @@ export type WorkspaceRuntimeEvent =
    * complete (`claxedoDirectoryEventTypes` subscribes, the projector reconciles).
    */
   | { type: "session.updated"; directory?: string; workspaceId?: string; properties?: unknown }
+  | { type: "session.deleted"; directory?: string; workspaceId?: string; properties?: unknown }
   | { type: "heartbeat" }
   | { type: "process.started"; directory: string; configId: string; ptyId: string }
   | { type: "process.stopped"; directory: string; configId: string; exitCode: number }

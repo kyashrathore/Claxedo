@@ -35,6 +35,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { ensureLocalProject } from "../../../features/workspaces/data/query/project-ensure"
 import { useAgentHooks } from "./agent-status-listener"
 import { createBatchAutoTabListener } from "./batch-autotab"
+import { listenForSessionDeletion } from "./session-deletion"
 import { useClaxedoState } from "./"
 import { projectWorkspaceDirectories, workspaceRouteIdentity } from "../../../features/workspaces/lib/workspace-display"
 import { resolveWorkspaceRouteDirectory } from "./route-workspace-directory"
@@ -147,6 +148,20 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       })
     })
     onCleanup(unsubscribe)
+  })
+
+  createEffect(() => {
+    onCleanup(listenForSessionDeletion({
+      listen: (listener) => {
+        const global = globalSDK.event.listen(listener)
+        const workspace = events?.on("session.deleted", (event) => {
+          listener({ name: event.directory ?? "", details: event })
+        })
+        return () => { global(); workspace?.() }
+      },
+      surfaces: state.meta.all,
+      closeContent: state.layout.closeContent,
+    }))
   })
 
   createEffect(() => {

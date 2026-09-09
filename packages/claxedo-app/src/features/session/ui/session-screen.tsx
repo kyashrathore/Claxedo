@@ -1330,6 +1330,10 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
                   >
                     {(_id) => (
                       <MessageTimeline
+                        onSessionDeleted={(sessionId) => claxedoState.layout.closeDeletedSession({
+                          sessionId,
+                          directory: dir(),
+                        })}
                         active={paneActive}
                         actions={actions()}
                         title={resolvedTitle}

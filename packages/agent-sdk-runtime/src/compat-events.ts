@@ -45,7 +45,16 @@ export type EventServerHeartbeat = {
   properties: Record<string, never>
 }
 
-type SdkRuntimeOnlyEvent = EventServerHeartbeat
+export type EventSessionDeleted = {
+  type: "session.deleted"
+  properties: { info: { id: string; directory: string } }
+}
+
+export function sessionDeleted(id: string, directory: string): EventSessionDeleted {
+  return { type: "session.deleted", properties: { info: { id, directory } } }
+}
+
+type SdkRuntimeOnlyEvent = EventServerHeartbeat | EventSessionDeleted
 
 export type CompatEvent = AgentPresentationEvent | SdkRuntimeOnlyEvent
 

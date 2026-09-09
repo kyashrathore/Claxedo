@@ -23,7 +23,7 @@ export async function cancelPendingPermission(page: Page, input: { backendUrl: s
   const late = await page.request.post(`${input.backendUrl}/session/${input.sessionId}/permissions/${pending[0]!.id}${query}`, {
     data: { response: "always" },
   })
-  expect(late.status()).toBe(404)
+  expect(late.status(), await late.text()).toBe(404)
   await page.reload({ waitUntil: "domcontentloaded" })
   expect(await read()).toEqual([])
   if (input.action === "Delete") {

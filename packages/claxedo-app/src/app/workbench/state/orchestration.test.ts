@@ -100,6 +100,18 @@ const localSessionRef = (sessionId: string, cwd = "/work/foo") => ({
 })
 
 describe("state/orchestration", () => {
+  test("successful deletion removes persisted content identity and preserves neighbors", () => {
+    const { layout, meta, getState } = makeFixture()
+    const removed = layout.openSession("/work/foo", "deleted", "Deleted", { sessionRef: localSessionRef("deleted") })
+    const neighbor = layout.openSession("/work/foo", "neighbor", "Neighbor", { sessionRef: localSessionRef("neighbor") })
+    layout.closeDeletedSession({ sessionId: "deleted", directory: "/work/foo" })
+    expect(meta.get(removed)).toBeUndefined()
+    expect(getState().contentIds).not.toContain(removed)
+    expect(getState().panes.some((pane) => pane.contentId === removed)).toBe(false)
+    expect(meta.get(neighbor)?.sessionId).toBe("neighbor")
+    expect(getState().contentIds).toContain(neighbor)
+  })
+
   test("openSession creates meta + adds to workbench + focuses", () => {
     const { layout, meta, wb, getState } = makeFixture()
     const id = layout.openSession("/work/foo", "ses_1", "Session 1", {

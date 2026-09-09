@@ -2423,3 +2423,18 @@ describe("session prompt route", () => {
     expect(resolvedAdapters).toBe(0)
   })
 })
+
+it("forwards successful session deletion onto the workspace stream", async () => {
+  const directory = process.cwd()
+  const events: Extract<WorkspaceRuntimeEvent, { type: "session.deleted" }>[] = []
+  const unsubscribe = workspaceRuntimeBus.subscribe((event) => {
+    if (event.type === "session.deleted") events.push(event)
+  })
+  try {
+    const app = SessionRoutes(() => adapter({}))
+    const response = await app.request(`http://localhost/session/s1?directory=${encodeURIComponent(directory)}`, { method: "DELETE" })
+    expect(response.status).toBe(200)
+    expect(events).toHaveLength(1)
+    expect(events[0]).toMatchObject({ type: "session.deleted", directory, properties: { info: { id: "s1", directory } } })
+  } finally { unsubscribe() }
+})

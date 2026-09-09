@@ -171,6 +171,7 @@ const claxedoDirectoryEventTypes = [
   "session.error",
   "session.status",
   "session.updated",
+  "session.deleted",
   "session.agent",
   "todo.updated",
   "permission.asked",
@@ -457,13 +458,13 @@ async function handleSessionShareRevoked(
 function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extract<ClaxedoEvent, { type: typeof claxedoDirectoryEventTypes[number] }>) {
   const directory = event.directory
   if (!directory) return
-  if (event.type === "session.updated") {
+  if (event.type === "session.updated" || event.type === "session.deleted") {
     const info = readField(event.properties, "info")
     if (info) {
       projectCanonicalSessionTitle({
         writer: input.sessionTitles,
         info,
-        type: "updated",
+        type: event.type === "session.deleted" ? "deleted" : "updated",
         directory,
         // The bridged auto-title frame's `info` names no workspaceID, but the
         // frame itself is workspace-stamped. Without this the canonical title

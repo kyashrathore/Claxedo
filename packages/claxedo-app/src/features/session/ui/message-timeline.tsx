@@ -1187,6 +1187,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
     removeDirectorySessionTree(sdk.directory, sessionID)
     navigateAfterSessionRemoval(sessionID, session.parentID, nextSession?.id)
+    props.onSessionDeleted?.(sessionID)
     return true
   }
 
