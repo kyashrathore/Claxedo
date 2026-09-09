@@ -1,3 +1,12 @@
+@keyframes session-review-row-controls-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 [data-component="session-review"] {
   display: flex;
   flex-direction: column;
@@ -91,31 +100,32 @@
     overflow: hidden;
   }
 
+  /* One flex line: icon, directory, filename, actions. The directory and the
+     filename are two spans of ONE path, so the line itself carries no gap —
+     the spacing the eye reads belongs to the icon and to the actions box. */
   [data-slot="session-review-trigger-content"] {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     width: 100%;
-    gap: 20px;
+    gap: 0;
   }
 
-  [data-slot="session-review-file-info"] {
-    flex-grow: 1;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    min-width: 0;
+  [data-slot="session-review-trigger-content"] .ui-file-icon {
+    flex-shrink: 0;
+    margin-right: 10px;
   }
 
-  [data-slot="session-review-file-name-container"] {
-    display: flex;
-    align-items: center;
-    flex-grow: 1;
-    min-width: 0;
-  }
+  /* Both spans truncate from the START — the tail of a path identifies the
+     file, the repository prefix every row shares does not. An RTL box puts the
+     ellipsis at the left edge; the marks the markup wraps the text in keep the
+     characters themselves in reading order.
 
+     The directory is starved a hundred times faster than the name, so a row
+     that cannot fit eats the folders before it touches the filename. */
   [data-slot="session-review-directory"] {
     color: var(--text-base);
+    flex: 0 100 auto;
+    min-width: 0;
     text-overflow: ellipsis;
     overflow: hidden;
     white-space: nowrap;
@@ -125,10 +135,13 @@
 
   [data-slot="session-review-filename"] {
     color: var(--text-strong);
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    direction: rtl;
+    text-align: left;
   }
 
   .ui-session-review-view-button {
@@ -157,12 +170,90 @@
     opacity: 1;
   }
 
+  /* Positioning parent for the hover control cluster, and wide enough that the
+     cluster it holds never overlaps the change counts it replaces. The auto
+     margin holds it against the right edge, so neither path span has to grow
+     into the row's free space to put it there. */
   [data-slot="session-review-trigger-actions"] {
+    position: relative;
     flex-shrink: 0;
     display: flex;
     gap: 12px;
     align-items: center;
     justify-content: flex-end;
+    min-width: 68px;
+    margin-left: auto;
+    padding-left: 20px;
+  }
+
+  .ui-session-review-row-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+    opacity: 1;
+    transition: opacity 0.12s ease;
+  }
+
+  /* A caller that owns hover state mounts this cluster only for the row that
+     can show it, so the fade IN cannot come from the transition: the cluster is
+     inserted already matching the hovered rule, and a transition needs a
+     previous value to animate from. The keyframe supplies that entry; the
+     transition still owns the fade OUT. Taken out of flow so mounting and
+     unmounting it never moves the rest of the row. */
+  .ui-session-review-row-controls {
+    position: absolute;
+    right: 0;
+    width: 64px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.12s ease;
+    animation: session-review-row-controls-in 0.12s ease;
+  }
+
+  [data-slot="accordion-trigger"]:is(:hover, :focus-within) .ui-session-review-row-summary {
+    opacity: 0;
+  }
+
+  [data-slot="accordion-trigger"]:is(:hover, :focus-within) .ui-session-review-row-controls {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .ui-session-review-row-controls :is(.ui-session-review-copy-button, .ui-session-review-view-button),
+  .ui-session-review-row-controls [data-slot="session-review-diff-chevron"] {
+    display: inline-flex;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+    padding: 3px;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--icon-weak-base);
+    opacity: 1;
+  }
+
+  .ui-session-review-row-controls :is(.ui-session-review-copy-button, .ui-session-review-view-button) {
+    cursor: pointer;
+
+    &:hover {
+      background: var(--row-surface-hover);
+      color: var(--icon-base);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-session-review-row-summary,
+    .ui-session-review-row-controls {
+      transition: none;
+      animation: none;
+    }
   }
 
   /* Calmer, denser change counts in the file list: muted + tabular at rest,
@@ -201,12 +292,6 @@
 
   [data-slot="accordion-item"][data-expanded] [data-slot="session-review-diff-chevron"] {
     transform: rotate(0deg);
-  }
-
-  [data-slot="session-review-change-group"] {
-    display: inline-flex;
-    align-items: center;
-    gap: 12px;
   }
 
   [data-slot="session-review-change"] {

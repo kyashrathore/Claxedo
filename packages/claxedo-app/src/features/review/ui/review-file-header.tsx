@@ -63,7 +63,7 @@ export function ReviewFileHeaderContent(props: {
       <Show when={file().includes("/")}>
         <span data-slot="session-review-directory">{`\u202A${getDirectory(file())}\u202C`}</span>
       </Show>
-      <span data-slot="session-review-filename">{getFilename(file())}</span>
+      <span data-slot="session-review-filename">{`\u202A${getFilename(file())}\u202C`}</span>
       <div data-slot="session-review-trigger-actions">
         <div data-slot="session-review-row-summary" class="ui-session-review-row-summary">
           <Switch>
@@ -88,8 +88,7 @@ export function ReviewFileHeaderContent(props: {
             </Match>
           </Switch>
         </div>
-        <Show when={props.showControls ?? true}>
-          <div data-slot="session-review-row-controls" class="ui-session-review-row-controls">
+        <div data-slot="session-review-row-controls" class="ui-session-review-row-controls">
             <Tooltip value={i18n.t("ui.message.copy")} placement="top" gutter={4}>
               <button
                 data-slot="session-review-copy-button" class="ui-session-review-copy-button"
@@ -121,8 +120,7 @@ export function ReviewFileHeaderContent(props: {
                 </button>
               </Tooltip>
             </Show>
-          </div>
-        </Show>
+        </div>
       </div>
     </div>
   )
