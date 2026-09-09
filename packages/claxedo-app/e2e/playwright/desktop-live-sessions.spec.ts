@@ -295,8 +295,8 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       expect(tools).toHaveLength(1)
       expect(tools[0]!.state?.status).toBe("running")
       expect(await fs.readFile(journal, "utf8")).toBe("start\n")
-      const next = `AFTER_RUNNING_TOOL_${Date.now()}`
-      const draft = `New task: the previous command task is over.\n\nContext: café — नमस्ते; preserve <tags> and "quotes".\nReply exactly ${next}. Do not use tools or retry the previous command.`
+      const next = "Paris"
+      const draft = `I’m planning a trip from Delhi (दिल्ली). My notes include café, <tags> and "quotes".\n\nWhat is the capital of France? Please answer in English from general knowledge, without running commands.`
       if (!stop) await composeText(packaged.page, packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), draft)
       await packaged.page.addInitScript(() => {
         const state = window as typeof window & { __prematureSessionSend?: boolean }
