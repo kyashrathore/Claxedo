@@ -670,9 +670,11 @@ test.describe("live real-harness smoke @live", () => {
 
   test("live terminal restores the same screen in a fresh browser", async ({ page, browser }) => {
     const observe = async (target: Page) => target.addInitScript(() => {
-      const host = window as typeof window & { terminalAudit?: () => { screen: string; cols: number; rows: number } }
+      const host = window as typeof window & { terminalAudit?: () => { screen: string; cols: number; rows: number }; terminalAuditWrites?: Array<{ cols: number; rows: number }> }
+      host.terminalAuditWrites = []
       Object.defineProperty(window, "__CLAXEDO_AGENT_APP_BENCHMARK__", { value: {
         terminalWriteParsed(receipt: { serialize(): string; dimensions(): { cols: number; rows: number } }) {
+          host.terminalAuditWrites!.push(receipt.dimensions())
           host.terminalAudit = () => ({ screen: receipt.serialize(), ...receipt.dimensions() })
         },
       } })
@@ -710,6 +712,8 @@ test.describe("live real-harness smoke @live", () => {
       await expect.poll(async () => (await snapshot(restored))?.screen).toContain("REPLAY_READY")
       await expect.poll(async () => (await snapshot(restored))?.cols).toBe(before?.cols)
       const after = await snapshot(restored)
+      const writes = (target: Page) => target.evaluate(() => (window as typeof window & { terminalAuditWrites?: unknown }).terminalAuditWrites)
+      await test.info().attach("terminal-write-dimensions", { body: JSON.stringify({ original: await writes(page), restored: await writes(restored) }), contentType: "application/json" })
       await test.info().attach("terminal-screen-comparison", { body: JSON.stringify({ before, after }), contentType: "application/json" })
       await restored.screenshot({ path: test.info().outputPath("terminal-fresh-screen.png") })
       expect(after).toEqual(before)
