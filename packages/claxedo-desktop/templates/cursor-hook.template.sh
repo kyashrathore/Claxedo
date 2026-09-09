@@ -3,13 +3,13 @@
 set -uo pipefail
 
 EVENT="${1:-}"
-# Drain stdin with timeout if present
+# Cursor supplies hook_event_name and session metadata in its JSON input.
+# Forward it intact; the argument controls only the provider reply below.
 if [ ! -t 0 ]; then
-  read -r -t 0.1 _UNUSED 2>/dev/null || true
-fi
-
-if [ -n "$EVENT" ]; then
-  printf '{"hook_event_name":"%s"}' "$EVENT" | "{{NOTIFY_PATH}}" >/dev/null 2>&1 || true
+  INPUT=$(cat)
+  if [ -n "$INPUT" ]; then
+    bash "{{NOTIFY_PATH}}" "$INPUT" >/dev/null 2>&1 || true
+  fi
 fi
 
 case "$EVENT" in

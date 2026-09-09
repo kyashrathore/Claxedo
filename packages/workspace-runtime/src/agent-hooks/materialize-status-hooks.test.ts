@@ -80,6 +80,7 @@ describe("materializeAgentHooks", () => {
     await expect(readJson(path.join(root, ".codex", "hooks.json"))).resolves.toMatchObject({
       hooks: {
         SessionStart: [{ hooks: [{ type: "command", command: notifyPath }] }],
+        Interrupt: [{ hooks: [{ type: "command", command: notifyPath }] }],
       },
     })
     await expect(readJson(path.join(root, ".gemini", "settings.json"))).resolves.toMatchObject({

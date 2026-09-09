@@ -28,7 +28,7 @@ export async function setupAgentHooks(options: SetupOptions = {}): Promise<void>
     force = false,
     wrappers,
     replaceWrappers = false,
-    codexNativeHooks = process.env.CLAXEDO_CODEX_NATIVE_HOOKS === "1",
+    codexNativeHooks = process.env.CLAXEDO_CODEX_NATIVE_HOOKS !== "0",
   } = options
 
   log.info("Setting up agent hooks", { port, force })

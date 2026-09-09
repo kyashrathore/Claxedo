@@ -37,6 +37,7 @@ for (const { harness, child, pause } of [
       : harness === "droid" ? { name: "Droid", command: "droid --auto high" }
       : harness === "antigravity" ? { name: "Antigravity", command: "agy --dangerously-skip-permissions" }
       : harness === "amp" ? { name: "Amp", command: "amp --dangerously-allow-all --visibility private --no-ide" } : undefined
+    let journeyCompleted = false
     let packaged: PackagedApp | undefined
     let ptyUrl: string | undefined
     const traffic: { at: number; launch: number; kind: string; data: string }[] = []
@@ -117,12 +118,12 @@ for (const { harness, child, pause } of [
         expect(typeof token === "string" && token.length > 0, "A real Claude login is required for the live TUI test").toBe(true)
         await fs.mkdir(path.join(home, ".claude"), { recursive: true })
         await fs.writeFile(path.join(home, ".claude/.credentials.json"), credential, { mode: 0o600 })
-        if (child) {
+        {
           await fs.mkdir(rawHookDirectory)
           // Each invocation owns a file: concurrent hooks must not interleave JSON writes.
           const command = `file=$(mktemp '${path.join(rawHookDirectory, "hook.XXXXXX")}'); cat > "$file"`
           await fs.writeFile(path.join(home, ".claude/settings.json"), JSON.stringify({ hooks: Object.fromEntries(
-            ["UserPromptSubmit", "Stop", "SubagentStart", "SubagentStop", "PostToolUse"].map((event) => [event, [{ hooks: [{ type: "command", command }] }]]),
+            ["UserPromptSubmit", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PostToolUse", "PostToolUseFailure"].map((event) => [event, [{ hooks: [{ type: "command", command }] }]]),
           ) }))
         }
       }
@@ -198,11 +199,18 @@ for (const { harness, child, pause } of [
       if (harness === "antigravity") {
         expect(await rows.innerText(), "Antigravity requires a completed Google OAuth login before a real turn can be qualified").not.toContain("You are currently not signed in")
       }
-      if ((harness === "claude" || harness === "codex") && /trust|allow Codex to work/i.test(await rows.innerText())) {
+      if ((harness === "claude" || harness === "codex") && /trust the contents|trust this folder|allow Codex to work/i.test(await rows.innerText())) {
         await packaged.page.locator(`${selector} .xterm-helper-textarea`).focus()
         if (harness === "claude") {
-          await packaged.page.keyboard.press("ArrowDown")
+          // Native Claude resets this selector during its initial capability
+          // detection window (also reproduced without Claxedo in a real PTY).
+          await expect.poll(() => {
+            const reply = traffic.findLast((event) => event.kind === "input" && event.data.includes("xterm.js("))
+            return reply ? Date.now() - reply.at : 0
+          }, { timeout: 10_000 }).toBeGreaterThan(250)
+          if (!/❯\s+Yes, I trust this folder/.test(await rows.innerText())) await packaged.page.keyboard.press("ArrowDown")
           await expect(rows).toContainText(/❯\s+Yes, I trust this folder/)
+          await packaged.page.waitForTimeout(200)
         }
         await packaged.page.keyboard.press("Enter")
       }
@@ -222,6 +230,37 @@ for (const { harness, child, pause } of [
         await expect(rows.locator(":scope > div").filter({ hasText: /╰.*workspace \(main\).*╯/ })).toBeVisible({ timeout: 15_000 })
         await expect(rows.locator(".xterm-bg-257")).toBeVisible({ timeout: 15_000 })
         await packaged.page.screenshot({ path: test.info().outputPath("amp-composer-ready.png") })
+      }
+      if (harness === "codex") {
+        const configuration = JSON.parse(await fs.readFile(path.join(home, ".codex/hooks.json"), "utf8")) as {
+          hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>
+        }
+        expect(Object.keys(configuration.hooks).sort()).toEqual(["Interrupt", "SessionStart", "Stop", "UserPromptSubmit"])
+        for (const definitions of Object.values(configuration.hooks)) {
+          for (const definition of definitions) {
+            for (const hook of definition.hooks) expect(hook.command).toBe(path.join(home, ".workspace-runtime/hooks/notify.sh"))
+          }
+        }
+        const notifyPath = path.join(home, ".workspace-runtime/hooks/notify.sh")
+        const notifySource = await fs.readFile(notifyPath, "utf8")
+        const diagnostic = `printf 'tab=%s terminal=%s token=%s port=%s\\n' "\${CLAXEDO_TAB_ID:+present}" "\${CLAXEDO_TERMINAL_ID:+present}" "\${CLAXEDO_AGENT_HOOK_TOKEN:+present}" "\${CLAXEDO_SERVER_PORT:+present}" >> '${path.join(root, "codex-hook-environment.txt")}'`
+        await fs.writeFile(notifyPath, notifySource.replace("#!/bin/bash", `#!/bin/bash\n${diagnostic}`), { mode: 0o755 })
+        await packaged.page.keyboard.type("/hooks", { delay: typingDelay })
+        await packaged.page.waitForTimeout(200)
+        await packaged.page.keyboard.press("Enter")
+        await expect(rows).toContainText("Hooks need review")
+        await packaged.page.keyboard.press("Enter")
+        await expect(rows).toContainText("Press t to trust all")
+        await packaged.page.keyboard.press("t")
+        await packaged.page.screenshot({ path: test.info().outputPath("codex-hook-trust-result.png") })
+        await expect(rows).not.toContainText("4 hooks need review")
+        await packaged.page.keyboard.press("Escape")
+        // Hook review preserves the command draft that opened it.
+        await packaged.page.keyboard.press("Control+u")
+        await packaged.page.keyboard.type("/new", { delay: typingDelay })
+        await packaged.page.waitForTimeout(200)
+        await packaged.page.keyboard.press("Enter")
+        await expect(rows).not.toContainText(/model:\s+loading/, { timeout: 30_000 })
       }
       await packaged.page.keyboard.type("Reply with the concatenation of DESKTOP and _TUI_OK, nothing else.", { delay: typingDelay })
       await expect(rows).not.toContainText(/model:\s+loading|Booting MCP server/, { timeout: 45_000 })
@@ -290,6 +329,8 @@ for (const { harness, child, pause } of [
           : "First use the Agent tool with run_in_background=false to launch one foreground general-purpose subagent with this task: reply CHILD_FINISHED, nothing else. Wait synchronously for its result, without ending your response. Then you, the parent, must do the following yourself. "
         : ""
       await packaged.page.keyboard.type(`${delegation}Run sleep 8 in the foreground with a timeout of at least 20000 ms and run_in_background=false. Wait for it to finish, then reply with the concatenation of RESTART and _TUI_OK, nothing else.`, { delay: typingDelay })
+      // Separate ordinary submission from Codex's native paste-burst newline guard.
+      if (harness === "codex") await packaged.page.waitForTimeout(200)
       await packaged.page.keyboard.press("Enter")
       await expect.poll(async () => {
         const response = await fetch(lifecycleUrl)
@@ -317,6 +358,19 @@ for (const { harness, child, pause } of [
         expect(transcripts.length, "The actual Claude CLI must have run a subagent").toBeGreaterThan(0)
         const contents = await Promise.all(transcripts.map((file) => fs.readFile(path.join(home, ".claude", "projects", file), "utf8")))
         expect(contents.some((content) => content.includes("CHILD_FINISHED"))).toBe(true)
+        const hookFiles = await fs.readdir(rawHookDirectory)
+        const hooks = await Promise.all(hookFiles.map(async (file) =>
+          JSON.parse(await fs.readFile(path.join(rawHookDirectory, file), "utf8")) as {
+            hook_event_name?: string
+            background_tasks?: Array<{ status?: string }>
+          }))
+        expect(hooks.some((hook) => hook.hook_event_name === "SubagentStart"), "The real provider must start a child").toBe(true)
+        expect(hooks.some((hook) => hook.hook_event_name === "SubagentStop"), "The real provider must finish that child").toBe(true)
+        if (pause) {
+          expect(hooks.some((hook) => hook.hook_event_name === "Stop" && hook.background_tasks?.some((task) => task.status === "running")),
+            "The parent must actually yield with a running background child; merely requesting background execution is insufficient").toBe(true)
+        }
+
         const events = await packaged.page.evaluate(() => {
           const state = window as unknown as { __claxedoChildLifecycle: string[]; __claxedoChildStream: EventSource }
           state.__claxedoChildStream.close()
@@ -373,6 +427,56 @@ for (const { harness, child, pause } of [
           await packaged.page.screenshot({ path: test.info().outputPath("codex-tui-burst-submitted.png") })
         }
       }
+      if (!child && (harness === "codex" || harness === "claude")) {
+        const terminal = packaged.page.locator(selector)
+        const audioCount = await packaged.page.evaluate(() =>
+          (window as unknown as { __claxedoAudioEnded: unknown[] }).__claxedoAudioEnded.length)
+        await terminal.locator(".xterm-helper-textarea").focus()
+        const cancelPrompt = "Run sh -c 'echo $$ > .cancel-started; sleep 60; touch .cancel-finished' in the foreground. Do not run other commands."
+        await packaged.page.keyboard.type(cancelPrompt, { delay: typingDelay })
+        await packaged.page.waitForTimeout(200)
+        await packaged.page.keyboard.press("Enter")
+        await expect.poll(() => fs.access(path.join(directory, ".cancel-started")).then(() => true, () => false), { timeout: 45_000 }).toBe(true)
+        const commandPid = Number((await fs.readFile(path.join(directory, ".cancel-started"), "utf8")).trim())
+        expect(Number.isSafeInteger(commandPid) && commandPid > 0).toBe(true)
+        process.kill(commandPid, 0)
+        const cancelReceived = await (await fetch(lifecycleUrl)).json() as { session: { prompt?: string } }
+        await test.info().attach(`${harness}-received-cancel-prompt`, { body: JSON.stringify(cancelReceived.session), contentType: "application/json" })
+        expect.soft(cancelReceived.session.prompt, "Cancellation setup must preserve the entire submitted prompt").toBe(cancelPrompt)
+        await expectTerminalRailStatus({ page: packaged.page, terminalId: pty.id, status: "working" })
+        await packaged.page.keyboard.press("Escape")
+        await packaged.page.getByRole("button", { name: "New Session", exact: true }).click()
+        await expect.poll(() => {
+          try { process.kill(commandPid, 0); return true }
+          catch (error) {
+            if ((error as NodeJS.ErrnoException).code === "ESRCH") return false
+            throw error
+          }
+        }, { timeout: 15_000, message: "The interrupted native command process must actually exit" }).toBe(false)
+        await test.info().attach(`${harness}-cancelled-process`, { body: JSON.stringify({ commandPid, exitedBeforeTeardown: true }), contentType: "application/json" })
+        await expect.poll(async () => {
+          const response = await fetch(lifecycleUrl)
+          return (await response.json() as { session: { eventType?: string } }).session?.eventType
+        }, { timeout: 15_000, message: `Interrupting the native ${harness} tool must settle the terminal` }).toBe("Idle")
+        expect(await fs.access(path.join(directory, ".cancel-finished")).then(() => true, () => false)).toBe(false)
+        expect(await packaged.page.evaluate(() =>
+          (window as unknown as { __claxedoAudioEnded: unknown[] }).__claxedoAudioEnded.length)).toBe(audioCount)
+        await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-native-cancelled.png`) })
+        await packaged.page.locator(`[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${pty.id}"]`).click()
+        await terminal.locator(".xterm-helper-textarea").focus()
+        const followup = "What is the capital of Japan? Answer with only the city name."
+        await packaged.page.keyboard.type(followup, { delay: typingDelay })
+        await packaged.page.waitForTimeout(200)
+        await packaged.page.keyboard.press("Enter")
+        await expect.poll(async () => {
+          const response = await fetch(lifecycleUrl)
+          expect(response.ok).toBe(true)
+          return (await response.json() as { session: { prompt?: string; eventType?: string } }).session
+        }, { timeout: 90_000 }).toMatchObject({ prompt: followup, eventType: "Idle" })
+        await expect(terminal.locator(".xterm-rows")).toContainText("Tokyo")
+        expect(await fs.access(path.join(directory, ".cancel-finished")).then(() => true, () => false)).toBe(false)
+        await packaged.page.screenshot({ path: test.info().outputPath(`${harness}-native-cancel-followup.png`) })
+      }
       if (harness === "amp") {
         await packaged.page.evaluate(async ({ server, terminalId }) => {
           const events: unknown[] = []
@@ -422,6 +526,7 @@ for (const { harness, child, pause } of [
         await packaged.page.waitForTimeout(2000)
         expect(await packaged.page.evaluate(() => (window as unknown as { __claxedoAudioEnded: unknown[] }).__claxedoAudioEnded.length)).toBe(1)
       }
+      journeyCompleted = true
     } finally {
       if (harness === "amp" && packaged && !packaged.page.isClosed()) {
         const row = packaged.page.locator('[data-testid="rail-sidebar-terminal-row"]').first()
@@ -434,7 +539,7 @@ for (const { harness, child, pause } of [
         })
         await test.info().attach("amp-cancellation-observed", { body: JSON.stringify(events), contentType: "application/json" })
       }
-      if (child) {
+      if (harness === "claude") {
         const files = await fs.readdir(rawHookDirectory).catch(() => [])
         const hooks = await Promise.all(files.map(async (file) => ({
           file, payload: await fs.readFile(path.join(rawHookDirectory, file), "utf8"),
@@ -454,7 +559,11 @@ for (const { harness, child, pause } of [
           expect(removed.ok, "Final teardown must remove the test terminal").toBe(true)
         }
       })
-      await fs.rm(root, { recursive: true, force: true })
+      if (harness === "codex") await test.info().attach("codex-hook-environment", {
+        body: await fs.readFile(path.join(root, "codex-hook-environment.txt"), "utf8").catch(() => "No hook execution recorded"), contentType: "text/plain",
+      })
+      if (journeyCompleted) await fs.rm(root, { recursive: true, force: true })
+      else await test.info().attach("preserved-test-root", { body: root, contentType: "text/plain" })
     }
   })
 }

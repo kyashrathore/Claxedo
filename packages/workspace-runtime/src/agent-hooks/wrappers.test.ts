@@ -94,6 +94,8 @@ describe("generateCodexWrapper", () => {
       native: true,
     })
 
+    expect(script).not.toContain('notify=[')
+    expect(script).toContain('"$REAL_BIN" "$@"')
     expect(script).toContain("export CODEX_TUI_RECORD_SESSION=1")
     expect(script).toContain('"msg":{"type":"task_started"')
     expect(script).toContain('_claxedo_last_turn_id=""')
@@ -181,7 +183,7 @@ describe("copilot wrapper integration", () => {
 })
 
 describe("codex wrapper integration", () => {
-  it("forwards notify hook config through the wrapper", () => {
+  it("preserves native Codex arguments without installing a legacy completion notifier", () => {
     const realBinDir = path.join(TEST_ROOT, "real-bin")
     const wrapperBinDir = path.join(TEST_ROOT, "bin")
     const realCodex = path.join(realBinDir, "codex")
@@ -221,9 +223,7 @@ describe("codex wrapper integration", () => {
     })
 
     const args = readFileSync(argsFile, "utf-8")
-    expect(args).toContain(notifyPath)
-    expect(args).toContain("exec")
-    expect(args).toContain("Reply with exactly OK.")
+    expect(args).toBe("exec\nReply with exactly OK.\n")
   })
 })
 

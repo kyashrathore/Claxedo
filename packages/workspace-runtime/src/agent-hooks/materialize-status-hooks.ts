@@ -258,6 +258,7 @@ async function materializeCodex(input: { file: string; notifyPath: string; force
       { event: "SessionStart", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
       { event: "UserPromptSubmit", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
       { event: "Stop", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
+      { event: "Interrupt", definition: { hooks: [{ type: "command", command: input.notifyPath }] } },
     ]
     for (const item of events) {
       const current = hooks[item.event]

@@ -4,7 +4,7 @@ const eventTypes: Record<string, "Busy" | "Idle" | "UserActionRequired" | "Error
   Busy: "Busy", Start: "Busy", SessionStart: "Busy", UserPromptSubmit: "Busy", PostToolUse: "Busy",
   BeforeAgent: "Busy", AfterTool: "Busy", beforeSubmitPrompt: "Busy", sessionStart: "Busy",
   userPromptSubmitted: "Busy", postToolUse: "Busy", "agent-turn-start": "Busy",
-  Idle: "Idle", Stop: "Idle", SessionEnd: "Idle", AfterAgent: "Idle", stop: "Idle", sessionEnd: "Idle",
+  Idle: "Idle", Interrupt: "Idle", Stop: "Idle", SessionEnd: "Idle", AfterAgent: "Idle", stop: "Idle", sessionEnd: "Idle",
   "agent-turn-complete": "Idle",
   Error: "Error", Failed: "Error", PostToolUseFailure: "Error", StopFailure: "Error",
   "session.error": "Error", sessionError: "Error", "agent-turn-error": "Error", "task-failed": "Error",
@@ -56,6 +56,7 @@ export function providerLifecycle(input: Record<string, unknown>) {
     .map((key) => arr(input[key])).find((value) => value?.length)
   return {
     eventType,
+    ...(hook === "Interrupt" ? { outcome: "cancelled" as const } : {}),
     provider: first("provider", "provider_id", "providerId", "agent", "cli") ?? (!hook ? "codex" : undefined),
     sessionId: first("session_id", "sessionId", "conversation_id", "conversationId", "thread-id", "thread_id"),
     transcriptPath: first("transcript_path", "transcriptPath"),

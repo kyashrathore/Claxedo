@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { providerLifecycle } from "./provider-lifecycle"
 
 describe("provider lifecycle normalization", () => {
+  test("native interruption settles as cancellation without a success outcome", () => {
+    expect(providerLifecycle({ hook_event_name: "Interrupt", session_id: "codex-main", turn_id: "turn-1" })).toMatchObject({
+      eventType: "Idle", outcome: "cancelled", sessionId: "codex-main",
+    })
+  })
+
   test("Antigravity settles only an idle execution, never an individual model invocation", () => {
     const input = { provider: "antigravity", event: { conversationId: "agy-main", transcriptPath: "/tmp/transcript.jsonl" } }
     expect(providerLifecycle({ ...input, hook_event_name: "PreInvocation" })).toMatchObject({ eventType: "Busy", sessionId: "agy-main" })
