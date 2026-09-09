@@ -19,7 +19,7 @@ async function compose(input: Locator, text: string) {
 }
 
 for (const harness of ["Codex", "Claude"] as const) {
-for (const flow of ["MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
+for (const flow of ["Documents MCP read", "MCP error recovery", "Composio MCP discovery", "Composio authenticated MCP", "unavailable model recovery across full restart", "unavailable model recovery after daemon restart", "running tool completes across full restart", "running tool stops across full restart", "permission Allow always across full restart", "permission Allow always redirection across full restart", "permission Allow once across full restart", "permission Deny across full restart", "permission Stop across full restart", "reply", "tasks across full restart", "tool error recovery across full restart", "question answer across full restart", "question dismiss across full restart", "question stop across full restart"] as const) {
 test(`packaged app completes a real ${harness}-authenticated session: ${flow} @live @surface-desktop`, async () => {
   test.setTimeout(240_000)
   const directory = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-desktop-${harness.toLowerCase()}-`)))
@@ -34,6 +34,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       : harness === "Codex" ? { CODEX_HOME: path.join(os.homedir(), ".codex") } : {},
   })
   let permissionOutputDir: string | undefined
+  let cleanupDocumentSession: (() => Promise<void>) | undefined
   let packaged: PackagedApp | undefined
   try {
     await execFileAsync("git", ["init"], { cwd: directory })
@@ -116,6 +117,58 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await picker.locator('[data-slot="list-item"]').filter({ has: packaged.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
       await expect(control).toContainText("Opus")
       await packaged.page.keyboard.press("Escape")
+    }
+
+    if (flow === "Documents MCP read") {
+      const marker = `DOCUMENT_PROOF_${Date.now()}`
+      const file = path.join(directory, "agent-document.md")
+      const contents = `# Agent document\n\nProof phrase: ${marker}\n`
+      await fs.writeFile(file, contents)
+      const registered = await fetch(`${serverBase}/documents/from-repo`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ directory, workspace_id: workspaceId, path: "agent-document.md", display_name: "Agent document" }),
+      })
+      expect(registered.ok, await registered.clone().text()).toBe(true)
+      const document = await registered.json() as { id: string }
+      const prompt = `Use the Claxedo MCP server named claxedo. First call documents_list for this workspace, then documents_open for document ${document.id}. Read the returned canonical path using your file-reading tool and report the proof phrase stored inside. Do not search for the file independently, modify files, or use another integration.`
+      await compose(input, prompt)
+      const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      const created = await creation
+      expect(created.ok()).toBe(true)
+      const session = await created.json() as { id: string }
+      cleanupDocumentSession = async () => {
+        const response = await fetch(`${serverBase}/session/${session.id}/abort?directory=${encodeURIComponent(directory)}`, { method: "POST" })
+        expect(response.ok, "Document test cleanup must cancel any unfinished tool approval").toBe(true)
+      }
+      type Part = { id: string; type: string; tool?: string; text?: string; state?: { status: string; output?: string } }
+      const read = async (): Promise<Part[]> => {
+        const response = await fetch(`${serverBase}/session/${session.id}/message?directory=${encodeURIComponent(directory)}`)
+        expect(response.ok).toBe(true)
+        return (await response.json() as Array<{ parts: Part[] }>).flatMap((message) => message.parts)
+      }
+      try {
+        await expect.poll(async () => (await read()).some((part) => (part.tool ?? "").includes("documents_list") && part.state?.status === "completed"), { timeout: 90_000 }).toBe(true)
+        if (harness === "Codex") {
+          const dock = packaged.page.locator('[data-component="dock-prompt"][data-kind="question"]').filter({ visible: true })
+          await expect(dock).toContainText('run tool "documents_open"', { timeout: 90_000 })
+          expect((await read()).some((part) => (part.tool ?? "").includes("documents_open") && part.state?.status === "completed")).toBe(false)
+          await dock.getByText("Allow once", { exact: true }).click()
+          await dock.getByRole("button", { name: "Submit", exact: true }).click()
+        }
+        await expect.poll(async () => (await read()).some((part) => (part.tool ?? "").includes("documents_open") && part.state?.status === "completed"), { timeout: 90_000 }).toBe(true)
+        await expect(packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: marker })).toBeVisible({ timeout: 90_000 })
+        expect(await fs.readFile(file, "utf8")).toBe(contents)
+        const opened = (await read()).find((part) => (part.tool ?? "").includes("documents_open") && part.state?.status === "completed")!
+        expect(opened.state?.output).toContain(document.id)
+        await packaged.page.reload()
+        expect((await read()).find((part) => part.id === opened.id)).toEqual(opened)
+        await expect(packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: marker })).toBeVisible()
+      } finally {
+        await test.info().attach("document-mcp-parts", { body: JSON.stringify(await read(), null, 2), contentType: "application/json" })
+      }
+      return
     }
 
     if (flow === "MCP error recovery") {
@@ -675,6 +728,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await packaged.page.screenshot({ path: test.info().outputPath("desktop-session-final.png") })
     }
     await fs.writeFile(releaseFile, "release")
+    await cleanupDocumentSession?.()
     await packaged?.close()
     await shutdownPackagedTestDaemon(profile)
     await fs.rm(profile, { recursive: true, force: true })
