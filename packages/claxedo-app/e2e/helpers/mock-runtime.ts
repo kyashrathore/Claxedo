@@ -58,6 +58,7 @@ import {
 } from "./contracts/session-interactions"
 import { emptySessionNavigationListResponse } from "./contracts/session-list"
 import { emptySessionInventoryResponse } from "./contracts/session-inventory"
+import fuzzysort from "fuzzysort"
 import { workspaceResolveResponse } from "./contracts/workspace-resolve"
 import { unconfiguredWorkspaceDriversResponse } from "./contracts/workspace-drivers"
 import {
@@ -2430,11 +2431,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // ------------------------------------------------------------------------
   const workspaceFiles = options.workspaceFiles ?? DEFAULT_WORKSPACE_FILES
   const workspaceFilePaths = workspaceFiles.map((file) => file.path)
-  /** Mirrors `globSearch`/`searchWorkspaceFiles`: substring match, case-insensitive, capped. */
+  /** Mirrors `searchWorkspaceFiles`: fuzzy match over the indexed paths, capped. */
   const findFiles = (url: URL) => {
-    const query = (url.searchParams.get("query") ?? "").trim().toLowerCase()
+    const query = (url.searchParams.get("query") ?? "").trim()
     const limit = Math.min(Number(url.searchParams.get("limit") ?? "50") || 50, 200)
-    return workspaceFilePaths.filter((path) => !query || path.toLowerCase().includes(query)).slice(0, limit)
+    if (!query) return workspaceFilePaths.slice(0, limit)
+    return fuzzysort.go(query, workspaceFilePaths, { limit }).map((hit) => hit.target)
   }
   /** Mirrors `grepSearch`: real regex over the fixture's contents, 1-based line numbers, capped at 10. */
   const findText = (url: URL) => {

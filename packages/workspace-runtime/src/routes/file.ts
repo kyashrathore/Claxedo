@@ -7,6 +7,7 @@ import {
   readWorkspaceFileContent,
   resolveWorkspaceFile,
   searchWorkspaceFiles,
+  warmWorkspaceSearchIndex,
   workspaceFileStatus,
   workspaceRawFile,
 } from "../workspace-files/file"
@@ -64,6 +65,10 @@ export function FileRoutes(options: Options = {}) {
       if (!base) return c.json(invalidDirectory(), 400)
       const dir = await routeFile(base, c.req.query("path"))
       if (!dir) return c.json(invalidPath(), 400)
+      // The tree lists a directory when the panel opens, seconds before the
+      // first keystroke reaches /find/file — build the index off that path so
+      // the search itself never pays for the listing.
+      warmWorkspaceSearchIndex(base)
       try {
         return c.json(await listWorkspaceDirectory(base, dir))
       } catch {

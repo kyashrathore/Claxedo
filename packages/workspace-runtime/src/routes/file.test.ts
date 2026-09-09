@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import fs from "node:fs/promises"
+import fsNode from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { FileRoutes } from "./file"
@@ -159,5 +160,64 @@ describe("FileRoutes raw file streaming", () => {
         message: "File not found",
       },
     })
+  })
+})
+
+describe("FileRoutes file search", () => {
+  const search = async (query: string, extra = "") => {
+    const app = new Hono().route("/", FileRoutes())
+    const res = await app.request(
+      `http://localhost/find/file?directory=${encodeURIComponent(tmp)}&query=${encodeURIComponent(query)}${extra}`,
+    )
+    return (await res.json()) as string[]
+  }
+
+  beforeEach(async () => {
+    await fs.mkdir(path.join(tmp, "src/panel"), { recursive: true })
+    await fs.writeFile(path.join(tmp, "src/panel/widget.ts"), "")
+    await fs.writeFile(path.join(tmp, "src/panel/toolbar.ts"), "")
+    await fs.mkdir(path.join(tmp, "node_modules/pkg/deep"), { recursive: true })
+    await fs.writeFile(path.join(tmp, "node_modules/pkg/deep/widget.ts"), "")
+    await fs.mkdir(path.join(tmp, "dist/bundle"), { recursive: true })
+    await fs.writeFile(path.join(tmp, "dist/bundle/widget.ts"), "")
+  })
+
+  test("does not descend into ignored directories", async () => {
+    expect(await search("widget", "&dirs=false")).toEqual(["src/panel/widget.ts"])
+  })
+
+  test("matches a subsequence the way the picker does, not just a literal substring", async () => {
+    expect(await search("spwidget", "&dirs=false")).toEqual(["src/panel/widget.ts"])
+  })
+
+  test("returns directories derived from the indexed files", async () => {
+    expect(await search("panel", "&type=directory")).toEqual(["src/panel"])
+  })
+
+  test("reuses one listing across queries instead of walking per keystroke", async () => {
+    const readdir = fsNode.promises.readdir
+    let walks = 0
+    // @ts-expect-error -- counting the real calls the route makes
+    fsNode.promises.readdir = (...args: Parameters<typeof readdir>) => {
+      walks += 1
+      return readdir(...args)
+    }
+    try {
+      await search("w", "&dirs=false")
+      const afterFirst = walks
+      expect(afterFirst).toBeGreaterThan(0)
+
+      // A query that matches nothing is the case the old walk could not cut
+      // short: it read every directory before it could report zero hits.
+      expect(await search("qqzzxx", "&dirs=false")).toEqual([])
+      expect(await search("wid", "&dirs=false")).toEqual(["src/panel/widget.ts"])
+      expect(walks).toBe(afterFirst)
+    } finally {
+      fsNode.promises.readdir = readdir
+    }
+  })
+
+  test("honours the result limit", async () => {
+    expect((await search("", "&dirs=false&limit=2")).length).toBe(2)
   })
 })

@@ -9,7 +9,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-import { createSignal } from "solid-js"
+import { Suspense, createSignal } from "solid-js"
 
 const h = vi.hoisted(() => ({
   treeExpand: vi.fn(),
@@ -43,6 +43,7 @@ vi.mock("@/platform/runtime/session-switch", () => ({
 
 let statusFiles: Array<{ path: string; status: string }> = []
 let searchHits: string[] = []
+let searchNeverSettles = false
 let statusCalls = 0
 
 vi.mock("@/app/providers/sdk/sdk", () => ({
@@ -63,7 +64,7 @@ vi.mock("@/app/providers/sdk/sdk", () => ({
 vi.mock("@/app/providers/file", () => ({
   useFile: () => ({
     ready: () => true,
-    searchFiles: async () => searchHits,
+    searchFiles: () => (searchNeverSettles ? new Promise<string[]>(() => {}) : Promise.resolve(searchHits)),
     tree: {
       list: h.treeList,
       state: () => ({ loaded: true, loading: false }),
@@ -90,6 +91,7 @@ afterEach(() => {
   vi.useRealTimers()
   statusFiles = []
   searchHits = []
+  searchNeverSettles = false
   statusCalls = 0
   h.treeExpand.mockClear()
   h.treeList.mockClear()
@@ -190,5 +192,26 @@ describe("WorkspaceFilesNavigator", () => {
     view.getByTestId("file-tree").append(row)
 
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest" }))
+  })
+
+  test("a pending search does not suspend the enclosing boundary", async () => {
+    searchNeverSettles = true
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    navigatorClients.push(client)
+    // The only boundary above this panel is app.tsx's, which wraps the whole
+    // shell: suspending here replaces the entire window with the boot fallback.
+    const view = render(() => (
+      <QueryClientProvider client={client}>
+        <Suspense fallback={<div data-testid="shell-fallback" />}>
+          <WorkspaceFilesNavigator active onFileClick={() => {}} />
+        </Suspense>
+      </QueryClientProvider>
+    ))
+
+    fireEvent.input(view.getByPlaceholderText("Search files..."), { target: { value: "app" } })
+    await waitFor(() => expect(view.getByTestId("spinner")).toBeTruthy())
+
+    expect(view.queryByTestId("shell-fallback")).toBeNull()
+    expect(view.queryByTestId("workspace-files-navigator")).toBeTruthy()
   })
 })

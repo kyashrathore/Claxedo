@@ -198,7 +198,17 @@ export function WorkspaceFilesNavigator(props: {
     })
   })
 
-  const allowedList = createMemo(() => (query() ? searchResults() : undefined))
+  // Calling the resource registers the enclosing memo with the nearest
+  // SuspenseContext for as long as a fetch is in flight, and the only boundary
+  // above this panel wraps the whole shell — so reading it while a search is
+  // pending swapped the entire app for the boot fallback on every keystroke.
+  // `state` is a plain signal read: it neither suspends nor rethrows, and
+  // holding the previous hits keeps the tree stable while the next query runs.
+  const allowedList = createMemo<readonly string[] | undefined>((previous) => {
+    if (!query()) return undefined
+    if (searchResults.state !== "ready") return previous
+    return searchResults()
+  }, undefined)
 
   const emptySearch = createMemo(() => !!query() && !searchResults.loading && (allowedList()?.length ?? 0) === 0)
   const pendingFilesShell = createMemo(() => {
