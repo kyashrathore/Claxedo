@@ -3097,7 +3097,21 @@ ToolRegistry.register({
       </div>
     )
 
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails />
+    return (
+      <BasicTool {...props} icon="brain" trigger={trigger()}>
+        <Show when={props.output}>
+          <div
+            data-component="tool-output"
+            data-scrollable
+            tabIndex={0}
+            role="region"
+            aria-label={i18n.t("ui.scrollView.ariaLabel")}
+          >
+            <Markdown text={props.output!} />
+          </div>
+        </Show>
+      </BasicTool>
+    )
   },
 })
 
