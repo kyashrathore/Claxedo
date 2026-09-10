@@ -3120,6 +3120,7 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   command: "bash",
   shell: "bash",
   local_shell: "bash",
+  ls: "list",
   read_file: "read",
   write_file: "write",
   edit_file: "edit",

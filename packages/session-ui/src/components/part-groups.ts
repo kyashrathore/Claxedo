@@ -34,9 +34,10 @@ export type PartGroup =
 export type GroupablePart = { messageID: string; part: AgentContentPart }
 
 // Tool vocabularies span harnesses: OpenCode emits `bash`/`read`/…, Codex emits
-// `command`/`read_file`/… Keep both here or those runs never group (they'd render as
-// loud one-per-row generic rows). Mirrors TOOL_NAME_ALIASES in message-part.
-export const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list", "read_file"])
+// `command`/`read_file`/…, Claude `ls` where the others say `list`. Keep every
+// spelling here or those runs never group (they'd render as loud one-per-row
+// generic rows). Mirrors TOOL_NAME_ALIASES in message-part.
+export const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list", "ls", "read_file"])
 
 export const WORK_GROUP_TOOLS = new Set<string>([
   "bash",
