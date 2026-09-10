@@ -40,14 +40,12 @@ export type GroupablePart = { messageID: string; part: AgentContentPart }
  */
 export const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
 
-export const WORK_GROUP_TOOLS = new Set<string>([
-  "bash",
-  "edit",
-  "write",
-  "apply_patch",
-  "webfetch",
-  "websearch",
-])
+/**
+ * Tools that address the reader rather than doing work on their behalf. A settled
+ * question holds the answer they typed — the one part of the turn they authored — so
+ * folding it into a run of machinery would bury it.
+ */
+export const STANDALONE_TOOLS = new Set(["question"])
 
 export const EDIT_TOOL_NAMES = new Set(["edit", "write", "apply_patch"])
 
@@ -72,8 +70,21 @@ export function isContextGroupTool(part: AgentContentPart): part is AgentToolPar
   return !producedImage(part)
 }
 
+/**
+ * Work is everything the agent did that is not context-gathering, a subagent, hidden,
+ * or addressed to the reader — named by exclusion rather than by a list of six tools.
+ *
+ * A list could only ever name the tools it knew: across three captured sessions,
+ * `sendmessage`, `toolsearch`, `skill`, `listagents` and two MCP calls all fell outside
+ * it, and each one broke a run of 355 shell calls into another loud standalone row.
+ * That is the reported "command ran are not grouped properly" — the tools that split the
+ * runs were the ones nobody had thought to add.
+ */
 export function isWorkGroupTool(part: AgentContentPart): part is AgentToolPart {
-  return part.type === "tool" && WORK_GROUP_TOOLS.has(canonicalToolName(part.tool))
+  if (part.type !== "tool") return false
+  const tool = canonicalToolName(part.tool)
+  if (CONTEXT_GROUP_TOOLS.has(tool) || HIDDEN_TOOLS.has(tool) || STANDALONE_TOOLS.has(tool)) return false
+  return !isSubagentToolPart(part)
 }
 
 /**

@@ -12,7 +12,7 @@ import { renderable } from "./message-part"
 import {
   CONTEXT_GROUP_TOOLS,
   HIDDEN_TOOLS,
-  WORK_GROUP_TOOLS,
+  STANDALONE_TOOLS,
   groupParts,
   isSubagentToolPart,
   type GroupablePart,
@@ -1291,7 +1291,8 @@ function TranscriptLab() {
                 title="context group · any run length"
                 tools={[...CONTEXT_GROUP_TOOLS]}
               />
-              <FoldRule title="work group · runs of 2+" tools={[...WORK_GROUP_TOOLS]} />
+              <FoldRule title="work group · runs of 2+" tools={["everything not named below"]} />
+              <FoldRule title="standalone · never folded into a run" tools={[...STANDALONE_TOOLS]} />
               <FoldRule title="agent row · runs of 2+" tools={[...SUBAGENT_SPAWN_TOOL_NAMES]} />
               <FoldRule title="hidden · never rendered" tools={[...HIDDEN_TOOLS]} />
               <div style={{ "margin-top": "7px", color: "rgba(255,255,255,0.24)" }}>

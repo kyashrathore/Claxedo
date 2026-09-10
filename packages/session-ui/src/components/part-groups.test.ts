@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
 import { groupParts, isSubagentToolPart } from "./part-groups"
 
-function tool(id: string, name: string, input: Record<string, unknown> = {}): AgentContentPart {
+function tool_(id: string, name: string, input: Record<string, unknown> = {}): AgentContentPart {
   return {
     id,
     sessionID: "ses_test",
@@ -28,42 +28,64 @@ function shape(parts: AgentContentPart[]) {
 
 describe("groupParts", () => {
   test("folds a single context tool but keeps a single work tool and a single task standalone", () => {
-    expect(shape([tool("p1", "read")])).toEqual(["context"])
-    expect(shape([tool("p1", "bash")])).toEqual(["part"])
-    expect(shape([tool("p1", "task")])).toEqual(["part"])
+    expect(shape([tool_("p1", "read")])).toEqual(["context"])
+    expect(shape([tool_("p1", "bash")])).toEqual(["part"])
+    expect(shape([tool_("p1", "task")])).toEqual(["part"])
   })
 
   test("folds runs of two or more work tools and subagent spawns", () => {
-    expect(shape([tool("p1", "bash"), tool("p2", "bash")])).toEqual(["work:bash"])
-    expect(shape([tool("p1", "task"), tool("p2", "task")])).toEqual(["agents"])
+    expect(shape([tool_("p1", "bash"), tool_("p2", "bash")])).toEqual(["work:bash"])
+    expect(shape([tool_("p1", "task"), tool_("p2", "task")])).toEqual(["agents"])
   })
 
   test("names a work group after its strongest member: edit beats web beats shell", () => {
-    expect(shape([tool("p1", "bash"), tool("p2", "webfetch"), tool("p3", "edit")])).toEqual(["work:edit"])
-    expect(shape([tool("p1", "bash"), tool("p2", "websearch")])).toEqual(["work:webfetch"])
-    expect(shape([tool("p1", "command"), tool("p2", "shell")])).toEqual(["work:bash"])
+    expect(shape([tool_("p1", "bash"), tool_("p2", "webfetch"), tool_("p3", "edit")])).toEqual(["work:edit"])
+    expect(shape([tool_("p1", "bash"), tool_("p2", "websearch")])).toEqual(["work:webfetch"])
+    expect(shape([tool_("p1", "command"), tool_("p2", "shell")])).toEqual(["work:bash"])
   })
 
   test("groups the Codex tool vocabulary as well as OpenCode's", () => {
-    expect(shape([tool("p1", "read_file"), tool("p2", "read")])).toEqual(["context"])
-    expect(shape([tool("p1", "apply_patch"), tool("p2", "edit_file")])).toEqual(["work:edit"])
+    expect(shape([tool_("p1", "read_file"), tool_("p2", "read")])).toEqual(["context"])
+    expect(shape([tool_("p1", "apply_patch"), tool_("p2", "edit_file")])).toEqual(["work:edit"])
   })
 
   test("any non-groupable part flushes every open run", () => {
-    expect(shape([tool("p1", "read"), text("p2", "hi"), tool("p3", "read")])).toEqual(["context", "part", "context"])
-    expect(shape([tool("p1", "bash"), tool("p2", "read"), tool("p3", "bash")])).toEqual(["part", "context", "part"])
+    expect(shape([tool_("p1", "read"), text("p2", "hi"), tool_("p3", "read")])).toEqual(["context", "part", "context"])
+    expect(shape([tool_("p1", "bash"), tool_("p2", "read"), tool_("p3", "bash")])).toEqual(["part", "context", "part"])
   })
 
   test("a run switching category flushes without needing a separator part", () => {
-    expect(shape([tool("p1", "bash"), tool("p2", "bash"), tool("p3", "read"), tool("p4", "task"), tool("p5", "task")]))
+    expect(shape([tool_("p1", "bash"), tool_("p2", "bash"), tool_("p3", "read"), tool_("p4", "task"), tool_("p5", "task")]))
       .toEqual(["work:bash", "context", "agents"])
   })
 
   test("keys name the group's first part so a group survives a re-render", () => {
-    expect(groups([tool("p1", "read"), tool("p2", "grep")])[0]?.key).toBe("context:p1")
-    expect(groups([tool("p1", "bash"), tool("p2", "bash")])[0]?.key).toBe("work:p1")
-    expect(groups([tool("p1", "task"), tool("p2", "task")])[0]?.key).toBe("agents:p1")
+    expect(groups([tool_("p1", "read"), tool_("p2", "grep")])[0]?.key).toBe("context:p1")
+    expect(groups([tool_("p1", "bash"), tool_("p2", "bash")])[0]?.key).toBe("work:p1")
+    expect(groups([tool_("p1", "task"), tool_("p2", "task")])[0]?.key).toBe("agents:p1")
     expect(groups([text("p1", "hi")])[0]?.key).toBe("part:a1:p1")
+  })
+})
+
+describe("work is named by exclusion", () => {
+  test("a tool nobody thought to list still joins the run instead of breaking it", () => {
+    // Every one of these appears in the captured sessions between shell calls, and
+    // each used to flush the run and render as its own loud row.
+    for (const tool of ["skill", "sendmessage", "toolsearch", "listagents", "mcp__plugin_posthog_posthog__exec"]) {
+      expect(shape([tool_("p1", "bash"), tool_("p2", tool), tool_("p3", "bash")])).toEqual(["work:bash"])
+    }
+  })
+
+  test("a settled question is never folded into a run of machinery", () => {
+    expect(shape([tool_("p1", "bash"), tool_("p2", "question"), tool_("p3", "bash")]))
+      .toEqual(["part", "part", "part"])
+  })
+
+  test("context, subagents and hidden tools keep their own handling", () => {
+    expect(shape([tool_("p1", "bash"), tool_("p2", "read"), tool_("p3", "bash")]))
+      .toEqual(["part", "context", "part"])
+    expect(shape([tool_("p1", "bash"), tool_("p2", "agent"), tool_("p3", "agent")]))
+      .toEqual(["part", "agents"])
   })
 })
 
