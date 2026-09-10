@@ -14,11 +14,7 @@ export type ReviewVcsInvalidation = {
 
 const NOTHING: ReviewVcsInvalidation = { diffs: false, branch: false }
 
-/**
- * The two fields both classifiers read off a `session.status` payload. Each
- * used to restate the shape as its own inline assertion; there is one reading
- * of it now, and `status.type` defaults here rather than at each call site.
- */
+/** The two fields the classifier reads off a `session.status` payload. */
 function sessionStatus(properties: unknown) {
   const body = asRecord(properties)
   if (!body) return undefined
@@ -59,39 +55,12 @@ function watcherFileInvalidation(file: unknown): ReviewVcsInvalidation | undefin
 }
 
 /**
- * What one runtime event makes stale for a review of `sessionId`.
- *
- * Pure, and separate from the subscription: ReviewTab, which owns the
- * subscription, unmounts whenever another workspace tab is active, so a
- * review that stops watching must go quietly stale instead of loudly wrong.
- */
-export function reviewVcsInvalidationFromEvent(input: {
-  event: ReviewVcsEvent
-  sessionId?: string
-  /** The last `session.status` type seen for this session, if any. */
-  lastSessionStatusType?: string
-}): ReviewVcsInvalidation & { nextSessionStatusType?: string } {
-  const { event } = input
-  if (event.type === "session.status") {
-    const status = sessionStatus(event.properties)
-    if (!status || status.sessionID !== input.sessionId) return NOTHING
-    const next = status.type
-    // A turn that just finished is the moment its edits are complete.
-    const settled = next === "idle" && !!input.lastSessionStatusType && input.lastSessionStatusType !== "idle"
-    return { diffs: settled, branch: false, nextSessionStatusType: next }
-  }
-  if (event.type === "vcs.branch.updated") return { diffs: true, branch: true }
-  if (event.type !== "file.watcher.updated") return NOTHING
-  return watcherFileInvalidation(readField(event.properties, "file")) ?? NOTHING
-}
-
-/**
  * Directory-level staleness: what does this runtime event make out of date for
  * the workspace, whichever session caused it?
  *
- * Unlike `reviewVcsInvalidationFromEvent` this tracks every session on the
- * stream, because the stream is already directory-scoped and any session's
- * settled turn may have edited the worktree the review describes.
+ * It tracks every session on the stream, because the stream is already
+ * directory-scoped and any session's settled turn may have edited the worktree
+ * the review describes.
  *
  * It returns the same `{ diffs, branch }` pair rather than one boolean because
  * its caller owns two caches with different lifetimes: the review/file-status

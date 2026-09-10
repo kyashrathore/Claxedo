@@ -72,7 +72,7 @@ describe("useWorkspaceGitMutations", () => {
     expect(invalidated(fileStatusKey)).toBe(true)
     expect(invalidated(branchKey)).toBe(true)
     expect(invalidated(diffSummaryKey)).toBe(true)
-    expect(queryClient.getQueryData(diffKey)).toBeUndefined()
+    expect(invalidated(diffKey)).toBe(true)
     dispose()
   })
 

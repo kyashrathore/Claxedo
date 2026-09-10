@@ -12,6 +12,7 @@ import {
   type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useQuery } from "@tanstack/solid-query"
 
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -39,19 +40,18 @@ import type {
   AgentFileContent as FileContent,
   AgentVcsFileDiff as VcsFileDiff,
 } from "@claxedo/agent-runtime-contract"
-import { queryClient } from "@/platform/query/query-client"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 import { getClaxedoServerUrl } from "@/platform/api/api"
-import { createReviewDiffClient, fetchReviewVcsDiffSummary, normalizeVcsStatus, type RawVcsFileDiff } from "./review-vcs-load"
+import { createReviewDiffClient, normalizeVcsStatus, reviewVcsDiffSummaryQueryOptions, type RawVcsFileDiff } from "./review-vcs-load"
 import { createReviewSelection, type ReviewMode } from "@/features/review/review-intent"
 import { ReviewToolbar, type VcsRefs } from "./review-toolbar"
 import { reviewToggleAllAction } from "./review-toggle-all"
 import { reviewLoadedDiffIdentity } from "./review-loaded-diff-identity"
 import {
-  peekReviewVcsDiff,
   cachedReviewVcsFile,
   cachedReviewVcsRefs,
   cachedReviewVcsTargets,
+  invalidateReviewVcsDirectory,
   updateCachedReviewVcsDiff,
 } from "./review-vcs-cache"
 import { reviewDiffsReady, reviewShouldShowLoadingPane } from "./review-loading-state"
@@ -74,13 +74,6 @@ export type ReviewTabProps = {
   onRetainedChange?: (state: ReviewSurfaceState) => void
   /** Semantic scroll anchor the workspace's restoration will target. */
   scrollAnchorPath?: string
-  /**
-   * Bumped by the workspace when a runtime event stales this review. The
-   * workspace owns that subscription because it outlives this surface, which
-   * unmounts whenever another workspace tab is active.
-   */
-  staleDiffsVersion?: number
-  staleBranchVersion?: number
   focusedDiffPath?: string
   focusedDiffVersion?: number
   /** Applied with the focus: the mode whose diff the focused file is revealed in. */
@@ -117,25 +110,19 @@ export function ReviewTab(props: ReviewTabProps) {
   const sdk = useSDK()
   const platform = usePlatform()
   const signedWorkspace = createMemo(() => sdk.workspace?.(props.directory))
-  const [vcsInfo, setVcsInfo] = createSignal<{ branch?: string | null; default_branch?: string | null }>()
-  const loadVcsInfo = (directory = props.directory) =>
-    queryClient.fetchQuery(workspaceVcsQuery({
-        baseUrl: sdk.url,
-        directory,
-        request: platform.fetch,
-        workspaceId: signedWorkspace()?.workspaceId,
-        workspace: signedWorkspace(),
-        signedControlPlane: !!signedWorkspace(),
-        client: sdk.createClient({ directory }),
-      }))
-      .then((info) => setVcsInfo(info))
-      .catch(() => {})
-
-  createEffect(() => {
-    if (!props.directory) return
-    const stop = afterVisibleWork(() => void loadVcsInfo(props.directory))
-    onCleanup(stop)
-  })
+  const vcsInfoQuery = useQuery(() => ({
+    ...workspaceVcsQuery({
+      baseUrl: sdk.url,
+      directory: props.directory,
+      request: platform.fetch,
+      workspaceId: signedWorkspace()?.workspaceId,
+      workspace: signedWorkspace(),
+      signedControlPlane: !!signedWorkspace(),
+      client: sdk.createClient({ directory: props.directory }),
+    }),
+    enabled: !!props.directory,
+  }))
+  const vcsInfo = () => vcsInfoQuery.data
 
   // Read once: this is where a reopened panel picks its review back up when
   // the pane has no persisted selection yet.
@@ -170,23 +157,6 @@ export function ReviewTab(props: ReviewTabProps) {
     workspace: signedWorkspace(),
   }))
 
-  const fetchVcsDiff = async (
-    mode: string,
-    fromRef?: string,
-    toRef?: string,
-    directory = props.directory,
-    options?: { force?: boolean },
-  ) => {
-    return fetchReviewVcsDiffSummary({
-      client: diffClient(),
-      directory,
-      mode,
-      fromRef,
-      toRef,
-      force: options?.force,
-    })
-  }
-
   const [vcsRefs, setVcsRefs] = createSignal<VcsRefs>({ branches: [], tags: [], recent: [] })
   createEffect(() => {
     if (!props.directory) return
@@ -209,89 +179,50 @@ export function ReviewTab(props: ReviewTabProps) {
     onCleanup(stop)
   })
 
-  // Seed the first render from the shared cache: a review remounting after a
-  // panel disposal (or a tab switch) paints its corpus in the mount pass
-  // instead of sitting empty until the deferred load runs. The deferred load
-  // still runs and no-ops on a matching key; the workspace-level staleness
-  // watcher already dropped this entry if anything changed while unmounted.
-  // Component setup is not a tracking scope, so these are plain one-time reads
-  // of the freshly seeded mode/ref signals.
-  const seededTarget = {
-    directory: props.directory,
-    mode: activeMode(),
-    fromRef: activeMode() === "to-from" ? activeFromRef().trim() || undefined : undefined,
-    toRef: activeMode() === "to-from" ? activeToRef().trim() || undefined : undefined,
-  }
-  const seededDiffKey = vcsDiffCacheKey(
-    seededTarget.directory,
-    seededTarget.mode,
-    seededTarget.fromRef,
-    seededTarget.toRef,
-  )
-  const seededDiffs = peekReviewVcsDiff(seededTarget)
   const [store, setStore] = createStore({
     openDiffs: [] as string[],
     diffStyle: (retained.diffStyle ?? initialDiffStyle()),
     focusedFile: retained.focusedFile,
     forcedDiffPaths: retained.forcedDiffPaths ?? [],
-    loading: false,
-    remoteDiffKey: seededDiffs ? seededDiffKey : "",
-    remoteDiffs: (seededDiffs ?? []),
   })
   const [renderedHunks, setRenderedHunks] = createSignal(0)
 
-  const activeDiffRefs = () => {
-    const mode = untrack(activeMode)
+  /** The review target: which changed-file set this surface is showing. */
+  const diffTarget = createMemo(() => {
+    const mode = activeMode()
     return {
+      directory: props.directory,
       mode,
-      from: mode === "to-from" ? untrack(activeFromRef).trim() || undefined : undefined,
-      to: mode === "to-from" ? untrack(activeToRef).trim() || undefined : undefined,
+      fromRef: mode === "to-from" ? activeFromRef().trim() || undefined : undefined,
+      toRef: mode === "to-from" ? activeToRef().trim() || undefined : undefined,
     }
-  }
+  })
+  const diffKey = createMemo(() => {
+    const target = diffTarget()
+    return vcsDiffCacheKey(target.directory, target.mode, target.fromRef, target.toRef)
+  })
 
-  let vcsRun = 0
-  let vcsTask: Promise<void> | undefined
+  // An observer, not a fetch: the changed-file set belongs to the worktree, and
+  // `WorkspaceVcsCacheHonesty` invalidates it from the runtime's event stream.
+  // A surface holding its own copy could not be reached by that invalidation,
+  // so a change landing while the review was on screen left it showing the
+  // corpus it had already loaded.
+  const diffQuery = useQuery(() => ({
+    ...reviewVcsDiffSummaryQueryOptions({ client: diffClient(), ...diffTarget() }),
+    enabled: !!props.directory,
+  }))
+  const remoteDiffs = createMemo((): VcsFileDiff[] => diffQuery.data ?? [])
 
-  const loadVcsDiffs = (force = false) => {
-    const { mode, from, to } = activeDiffRefs()
-    const key = vcsDiffCacheKey(props.directory, mode, from, to)
-
-    if (!force && !store.loading && store.remoteDiffKey === key) {
-      return
-    }
-    const run = ++vcsRun
-
-    batch(() => {
-      setStore("loading", true)
-      if (store.remoteDiffKey !== key) {
-        setStore("remoteDiffKey", key)
-        setStore("remoteDiffs", [])
-      }
-    })
-    const task = fetchVcsDiff(mode, from, to, props.directory, { force })
-      .then((diffs) => {
-        if (vcsRun !== run) return
-        batch(() => {
-          setStore("remoteDiffKey", key)
-          setStore("remoteDiffs", diffs)
-        })
-      })
-      .catch(() => {
-        if (vcsRun !== run) return
-        if (store.remoteDiffKey === key && store.remoteDiffs.length > 0) return
-        batch(() => {
-          setStore("remoteDiffKey", key)
-          setStore("remoteDiffs", [])
-        })
-      })
-      .finally(() => {
-        if (vcsRun !== run) return
-        setStore("loading", false)
-        if (vcsTask === task) vcsTask = undefined
-      })
-
-    vcsTask = task
-  }
+  /**
+   * The corpus as it stands, read outside the reactive graph: the callers are
+   * the callbacks a file fetch resolves into, which must compare against the
+   * target that started them rather than subscribe to the one on screen now.
+   */
+  const currentDiffState = () => untrack(() => ({
+    target: diffTarget(),
+    key: diffKey(),
+    diffs: remoteDiffs(),
+  }))
 
   const fetchVcsFileDiff = async (file: string, mode: string, from?: string, to?: string) => {
     return cachedReviewVcsFile({
@@ -309,99 +240,57 @@ export function ReviewTab(props: ReviewTabProps) {
     })
   }
 
+  // The cached row is the one the surface renders, so a file's fetched content
+  // is merged into the cache rather than into a copy of it. A target the user
+  // has since moved off writes nothing: its rows are no longer on screen and
+  // the fetch that produced them was keyed to the target it started under.
   const mergeVcsFileDiff = (
-    diffKey: string,
+    key: string,
     file: string,
     diff: Partial<VcsFileDiff> & { file: string } | undefined,
   ) => {
-    if (!diff || store.remoteDiffKey !== diffKey) return
-    const index = store.remoteDiffs.findIndex((item) => item.file === file)
-    if (index === -1) return
-
-    const next = { ...store.remoteDiffs[index], ...diff }
-    setStore("remoteDiffs", index, next)
-
-    const { mode, from, to } = activeDiffRefs()
+    const { target, key: current } = currentDiffState()
+    if (!diff || current !== key) return
     updateCachedReviewVcsDiff({
-      directory: props.directory,
-      mode,
-      fromRef: from,
-      toRef: to,
+      ...target,
       file,
-      update: () => next,
+      update: (current) => ({ ...current, ...diff }),
     })
   }
 
   const loadRequiredVcsDiffContent = (files: string[]) => {
-    if (store.loading) return
-    const { mode, from, to } = activeDiffRefs()
-    const diffKey = vcsDiffCacheKey(props.directory, mode, from, to)
-    if (store.remoteDiffKey !== diffKey) return
+    if (diffQuery.isPending) return
+    const { target, key, diffs: corpus } = currentDiffState()
 
     for (const file of files) {
-      const diff = store.remoteDiffs.find((item) => item.file === file)
+      const diff = corpus.find((item) => item.file === file)
       if (!diff || hasDiffContent(diff as RawVcsFileDiff)) continue
-      void fetchVcsFileDiff(file, mode, from, to).then((next) => mergeVcsFileDiff(diffKey, file, next))
+      void fetchVcsFileDiff(file, target.mode, target.fromRef, target.toRef)
+        .then((next) => mergeVcsFileDiff(key, file, next))
     }
   }
 
-  let scheduledVcsRefresh: VoidFunction | undefined
-  let scheduledVcsRefreshForce = false
-
-  const scheduleVcsDiffRefresh = (force = false) => {
-    scheduledVcsRefreshForce = scheduledVcsRefreshForce || force
-    if (scheduledVcsRefresh) return
-
-    scheduledVcsRefresh = afterVisibleWork(() => {
-      const forceRefresh = scheduledVcsRefreshForce
-      scheduledVcsRefresh = undefined
-      scheduledVcsRefreshForce = false
-      loadVcsDiffs(forceRefresh)
-    })
-  }
-
-  const refreshVcsDiffs = () => {
-    scheduleVcsDiffRefresh(true)
-  }
-
-  createEffect(
-    on(
-      () => [activeMode(), activeFromRef(), activeToRef()] as const,
-      () => {
-        const stop = afterVisibleWork(() => loadVcsDiffs(false))
-        onCleanup(stop)
-      },
-    ),
-  )
-
-  // The workspace watches the runtime and invalidates the shared review cache;
-  // this surface only has to reload when it is the one on screen.
-  createEffect(on(() => props.staleDiffsVersion, () => refreshVcsDiffs(), { defer: true }))
-  createEffect(on(() => props.staleBranchVersion, () => void loadVcsInfo(props.directory), { defer: true }))
-  onCleanup(() => {
-    scheduledVcsRefresh?.()
-    scheduledVcsRefresh = undefined
-    scheduledVcsRefreshForce = false
-  })
-
+  // A branch move the runtime never announced: the diff cache is keyed by mode
+  // and refs, not by the commit those refs point at, so every mode's entry for
+  // this worktree is now describing the old HEAD.
   createEffect(
     on(
       () => [vcsInfo()?.branch, vcsInfo()?.default_branch] as const,
       (next, prev) => {
         if (prev === undefined) return
         if (next[0] === prev[0] && next[1] === prev[1]) return
-        refreshVcsDiffs()
+        invalidateReviewVcsDirectory({ directory: props.directory })
       },
       { defer: true },
     ),
   )
 
-  const diffs = createMemo((): VcsFileDiff[] => store.remoteDiffs)
+  const diffs = remoteDiffs
   // A corpus on screen is a promise that some row will be expanded. Build the
   // highlighter's workers now, while the surface is idle, instead of inside
   // the expand click — see `warmDiffHighlightWorkerPool`.
   createEffect(() => {
-    if (store.remoteDiffs.length === 0) return
+    if (diffs().length === 0) return
     const style = store.diffStyle
     const stop = afterVisibleWork(() => warmDiffHighlightWorkerPool(style))
     onCleanup(stop)
@@ -424,9 +313,10 @@ export function ReviewTab(props: ReviewTabProps) {
     if (activeMode() === "to-from") return `${activeFromRef()} -> ${activeToRef()}`
     return `uncommitted changes${branchLabel}`
   })
-  const diffsReady = createMemo(() => reviewDiffsReady({ loading: store.loading, diffCount: store.remoteDiffs.length }))
+  const loading = () => diffQuery.isFetching
+  const diffsReady = createMemo(() => reviewDiffsReady({ loading: loading(), diffCount: diffs().length }))
   const reviewLoading = createMemo(() =>
-    reviewShouldShowLoadingPane({ loading: store.loading, diffCount: store.remoteDiffs.length })
+    reviewShouldShowLoadingPane({ loading: loading(), diffCount: diffs().length })
   )
   const diffFiles = createMemo(() => diffs().map((diff) => diff.file))
   const diffFileKey = createMemo(() => diffFiles().join("\0"))
@@ -564,7 +454,7 @@ export function ReviewTab(props: ReviewTabProps) {
         vcsRefs={vcsRefs()}
         onApplyMode={setReviewMode}
         hasReview={hasReview()}
-        loading={store.loading}
+        loading={loading()}
         reviewCount={reviewCount()}
         totalChanges={totalChanges()}
         scopeLabel={diffScopeLabel()}

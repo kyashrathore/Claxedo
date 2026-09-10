@@ -22,6 +22,6 @@
   "signedControlPlaneAccess": 0,
   "suppressionFlags": 7,
   "timerDrivenDataPolls": 1,
-  "untrackCalls": 17,
+  "untrackCalls": 15,
   "userHostedComparisons": 39
 }

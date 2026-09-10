@@ -58,7 +58,7 @@ afterEach(() => {
 })
 
 describe("WorkspaceVcsCacheHonesty", () => {
-  test("drops review entries and invalidates file status when the worktree changes", async () => {
+  test("invalidates review entries and file status when the worktree changes", async () => {
     vi.useFakeTimers()
     const diffKey = reviewVcsDiffQueryKey({ directory: "/repo", mode: "uncommitted" })
     const statusKey = queryKeys.directory.fileStatus("http://test.local", "/repo", "ws_a")
@@ -70,9 +70,11 @@ describe("WorkspaceVcsCacheHonesty", () => {
 
     emit({ type: "file.watcher.updated", properties: { file: "src/app.ts" } })
 
-    // Review entries are one-shot fetchQuery reads: removed outright, so a
-    // review remounting later refetches instead of restoring stale diffs.
-    expect(queryClient.getQueryData(diffKey)).toBeUndefined()
+    // The mounted Review surface observes this entry, so it is invalidated
+    // rather than removed: the surface refetches in place, and a surface that
+    // mounts later refetches too because a stale entry does not satisfy
+    // `fetchQuery`.
+    expect(queryClient.getQueryState(diffKey)?.isInvalidated).toBe(true)
     // The file-status entry has a live-observer contract: invalidated (stale),
     // not removed -- after the burst debounce.
     expect(queryClient.getQueryState(statusKey)?.isInvalidated).toBe(false)
@@ -98,7 +100,7 @@ describe("WorkspaceVcsCacheHonesty", () => {
     emit({ type: "file.watcher.updated", properties: { file: ".git/index" } })
     emit({ type: "file.watcher.updated", properties: { file: ".git/index.lock" } })
 
-    expect(queryClient.getQueryData(diffKey)).toBeUndefined()
+    expect(queryClient.getQueryState(diffKey)?.isInvalidated).toBe(true)
     await vi.advanceTimersByTimeAsync(300)
     expect(queryClient.getQueryState(statusKey)?.isInvalidated).toBe(true)
     expect(invalidationsOf(invalidate, statusKey)).toBe(1)
@@ -186,8 +188,7 @@ describe("WorkspaceVcsCacheHonesty", () => {
 
     await invalidateWorkspaceVcs({ directory: "/repo", serverUrl: "http://test.local", workspaceId: "ws_a" })
 
-    expect(queryClient.getQueryData(diffKey)).toBeUndefined()
-    for (const key of [statusKey, vcsKey, gitStatusKey, gitLogKey, diffSummaryKey]) {
+    for (const key of [diffKey, statusKey, vcsKey, gitStatusKey, gitLogKey, diffSummaryKey]) {
       expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true)
     }
   })
@@ -211,10 +212,11 @@ describe("WorkspaceVcsCacheHonesty", () => {
 
   test("two panes share one owner: one refresh per event, last unmount releases", async () => {
     vi.useFakeTimers()
+    const diffKey = reviewVcsDiffQueryKey({ directory: "/repo", mode: "uncommitted" })
     const statusKey = queryKeys.directory.fileStatus("http://test.local", "/repo", "ws_a")
+    queryClient.setQueryData(diffKey, [])
     queryClient.setQueryData(statusKey, [])
     const invalidate = vi.spyOn(queryClient, "invalidateQueries")
-    const remove = vi.spyOn(queryClient, "removeQueries")
 
     const first = render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
     const second = render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
@@ -223,7 +225,7 @@ describe("WorkspaceVcsCacheHonesty", () => {
 
     emit({ type: "file.watcher.updated", properties: { file: "src/app.ts" } })
     await vi.advanceTimersByTimeAsync(300)
-    expect(remove).toHaveBeenCalledTimes(1)
+    expect(queryClient.getQueryState(diffKey)?.isInvalidated).toBe(true)
     expect(invalidationsOf(invalidate, statusKey)).toBe(1)
     expect(invalidationsOf(invalidate, gitStatusKey)).toBe(1)
 
@@ -263,7 +265,7 @@ describe("WorkspaceVcsCacheHonesty", () => {
     queryClient.setQueryData(gitLogKey, [])
 
     const first = render(() => <WorkspaceVcsCacheHonesty directory="/repo" />)
-    expect(queryClient.getQueryData(diffKey)).toBeUndefined()
+    expect(queryClient.getQueryState(diffKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(statusKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(gitStatusKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(gitLogKey)?.isInvalidated).toBe(true)

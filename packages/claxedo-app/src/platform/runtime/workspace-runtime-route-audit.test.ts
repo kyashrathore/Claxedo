@@ -2069,19 +2069,19 @@ describe("workspace runtime route audit", () => {
   test("ReviewTab keeps VCS payloads query-owned without mount-time status fetches", async () => {
     const text = await Bun.file(path.join(root, reviewTab)).text()
     const cache = await Bun.file(path.join(root, "features/review/ui/review-vcs-cache.ts")).text()
-    // The diff-summary fetch split into review-vcs-load.ts (still funneling
-    // through the query-owned cache), and the session.status-driven staleness
-    // classification split into review-vcs-invalidation.ts, subscribed at
-    // workspace scope by review-workspace-vcs-staleness.ts so an unmounted
-    // review cannot go quietly stale.
+    // The diff-summary loader lives in review-vcs-load.ts and is exposed as
+    // query options: ReviewTab OBSERVES them, so the directory-scoped
+    // invalidation in review-vcs-invalidation.ts reaches the surface on screen
+    // instead of only the next mount.
     const vcsLoad = await Bun.file(path.join(root, "features/review/ui/review-vcs-load.ts")).text()
     const vcsInvalidation = await Bun.file(path.join(root, "features/review/ui/review-vcs-invalidation.ts")).text()
-    const vcsStaleness = await Bun.file(
-      path.join(root, "app/workbench/review/review-workspace-vcs-staleness.ts"),
-    ).text()
 
-    expect(text).toMatch(/fetchReviewVcsDiffSummary/)
+    expect(text).toMatch(/reviewVcsDiffSummaryQueryOptions/)
+    expect(text).toMatch(/useQuery/)
+    expect(text).not.toMatch(/remoteDiffKey/)
     expect(vcsLoad).toMatch(/cachedReviewVcsDiff/)
+    expect(vcsLoad).toMatch(/fetchReviewVcsDiffSummary/)
+    expect(cache).toMatch(/invalidateReviewVcsDirectory[\s\S]*?invalidateQueries/)
     expect(text).toMatch(/cachedReviewVcsFile/)
     expect(text).toMatch(/cachedReviewVcsRefs/)
     expect(text).toMatch(/cachedReviewVcsTargets/)
@@ -2090,8 +2090,7 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/onDiffContentRequired/)
     expect(text).toMatch(/afterVisibleWork/)
     expect(vcsInvalidation).toMatch(/event\.type === "session\.status"/)
-    expect(vcsStaleness).toMatch(/reviewVcsInvalidationFromEvent/)
-    for (const source of [text, vcsLoad, vcsInvalidation, vcsStaleness]) {
+    for (const source of [text, vcsLoad, vcsInvalidation]) {
       expect(source).not.toMatch(/sessionStatusQueryOptions/)
     }
     expect(text).not.toMatch(/initialReviewContentPrefetchFiles/)
@@ -2107,7 +2106,7 @@ describe("workspace runtime route audit", () => {
       expect(source).not.toMatch(/vcsFileCache = new Map/)
       expect(source).not.toMatch(/vcsFileInflight = new Map/)
     }
-    for (const source of [text, vcsLoad, vcsInvalidation, vcsStaleness]) {
+    for (const source of [text, vcsLoad, vcsInvalidation]) {
       expect(source).not.toMatch(/\buseSync\b/)
       expect(source).not.toMatch(/sync\.data\.session_status/)
     }

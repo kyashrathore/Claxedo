@@ -42,7 +42,6 @@ import { SessionPaneScope } from "@/features/session/ui/components/session-pane-
 const SessionPage = lazy(() => import("@/features/session/ui/session-screen"))
 import { ReviewTab } from "@/features/review/ui/review-tab"
 import { peekReviewVcsDiff } from "@/features/review/ui/review-vcs-cache"
-import { useSDK } from "@/app/providers/sdk/sdk"
 import { isMarkdownPath, TabFile } from "@/app/workbench/content/tab-file"
 import { useClaxedoState } from "@/app/workbench/state"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
@@ -68,7 +67,6 @@ import {
   createReviewWorkspaceTabPresentation,
   unhandledReviewWorkspaceTab,
 } from "./review-workspace-tab-presentation"
-import { createReviewWorkspaceVcsStaleness } from "./review-workspace-vcs-staleness"
 import { createReviewScrollRestoration } from "./review-scroll-restoration"
 import { createReviewTabActivation, type PreparedReviewTabActivation } from "./review-tab-activation"
 import {
@@ -121,7 +119,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const dialog = useDialog()
   const processPane = useWorkspaceProcessPane()
   const claxedoState = useClaxedoState()
-  const sdk = useSDK()
   const queryOptions = useQueryOptions()
   const projects = useQuery(() => queryOptions.projects())
 
@@ -168,11 +165,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
 
   createEffect(() => {
     workingSet.publish(store.tabs, store.activeTabId)
-  })
-
-  const vcsStaleness = createReviewWorkspaceVcsStaleness({
-    listen: sdk.event.listen,
-    sessionId: () => props.sessionId,
   })
 
   const tabActivation = createReviewTabActivation({
@@ -638,8 +630,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
           initialToRef={props.toRef}
           retained={retained}
           scrollAnchorPath={reviewScroll.anchorPath()}
-          staleDiffsVersion={vcsStaleness.diffsVersion()}
-          staleBranchVersion={vcsStaleness.branchVersion()}
           onRetainedChange={(surface) =>
             workingSet.publishSurface(surface, store.tabs, store.activeTabId)
           }

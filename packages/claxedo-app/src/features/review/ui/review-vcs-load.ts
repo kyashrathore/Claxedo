@@ -1,6 +1,11 @@
 import { createWorkspaceDiffClient } from "@/platform/runtime/workspace-diff-client"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
-import { cachedReviewVcsDiff, type ReviewVcsDiffInput, type VcsFileDiff } from "./review-vcs-cache"
+import {
+  cachedReviewVcsDiff,
+  reviewVcsDiffQueryOptions,
+  type ReviewVcsDiffInput,
+  type VcsFileDiff,
+} from "./review-vcs-cache"
 
 export type RawVcsFileDiff = Omit<VcsFileDiff, "status" | "patch"> & {
   before?: string
@@ -35,30 +40,53 @@ export function createReviewDiffClient(input: Omit<DiffClientInput, "resolveWork
 }
 
 /**
- * The canonical changed-file summary fetch: one loader and one cache key for
- * every reader — the mounted Review surface and the panel-open prefetch — so
- * a click-time warm-up and the surface's own load always dedupe.
+ * The summary read needs one method off the diff client. Naming just that
+ * lets a caller — a test, a narrower surface — supply what it actually has.
  */
-export function fetchReviewVcsDiffSummary(input: ReviewVcsDiffInput & {
-  client: ReturnType<typeof createReviewDiffClient>
+type ReviewVcsDiffSummaryInput = ReviewVcsDiffInput & {
+  client: Pick<ReturnType<typeof createReviewDiffClient>, "vcs">
   force?: boolean
-}) {
+}
+
+function reviewVcsDiffSummaryLoad(input: ReviewVcsDiffSummaryInput) {
   const { client, directory, mode, fromRef, toRef, force } = input
+  return () => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("claxedo:review-vcs-load", {
+        detail: { directory, mode, from: fromRef, to: toRef, force: force === true },
+      }))
+    }
+    return client
+      .vcs({ directory, mode, fromRef, toRef, content: "summary" })
+      .then((data) => data.map((diff) => normalizeVcsDiff(diff)))
+  }
+}
+
+/**
+ * The canonical changed-file summary read: one loader and one cache key for
+ * every reader — the mounted Review surface, which observes these options, and
+ * the panel-open prefetch, which fetches them — so a click-time warm-up and
+ * the surface's own load always dedupe, and one invalidation reaches both.
+ */
+export function reviewVcsDiffSummaryQueryOptions(input: ReviewVcsDiffSummaryInput) {
+  const { directory, mode, fromRef, toRef } = input
+  return reviewVcsDiffQueryOptions({
+    directory,
+    mode,
+    fromRef,
+    toRef,
+    load: reviewVcsDiffSummaryLoad(input),
+  })
+}
+
+export function fetchReviewVcsDiffSummary(input: ReviewVcsDiffSummaryInput) {
+  const { directory, mode, fromRef, toRef, force } = input
   return cachedReviewVcsDiff({
     directory,
     mode,
     fromRef,
     toRef,
     force,
-    load: () => {
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("claxedo:review-vcs-load", {
-          detail: { directory, mode, from: fromRef, to: toRef, force: force === true },
-        }))
-      }
-      return client
-        .vcs({ directory, mode, fromRef, toRef, content: "summary" })
-        .then((data) => data.map((diff) => normalizeVcsDiff(diff)))
-    },
+    load: reviewVcsDiffSummaryLoad(input),
   })
 }
