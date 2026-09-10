@@ -1,3 +1,4 @@
+/// <reference path="../../types/tokentracker-cli.d.ts" />
 import { isJsonRecord } from "../../platform/runtime/lib/json"
 
 /** The exact-pinned tokentracker-cli version this adapter prices against. */
@@ -20,8 +21,6 @@ type TokenTrackerPricingModule = {
   }
 }
 
-const tokenTrackerPricingModule = "tokentracker-cli/src/lib/pricing/index.js"
-
 /** tokentracker-cli ships no types, so its pricing entry point is checked once, here. */
 function isPricingModule(value: unknown): value is TokenTrackerPricingModule {
   if (!isJsonRecord(value)) return false
@@ -29,9 +28,13 @@ function isPricingModule(value: unknown): value is TokenTrackerPricingModule {
 }
 
 async function loadPricingModule(): Promise<TokenTrackerPricingModule> {
-  const loaded: unknown = await import(tokenTrackerPricingModule)
+  // The specifier must stay a literal. Bun inlines a dynamic import only when
+  // it can read the specifier statically; hoisting it into a constant leaves
+  // tokentracker-cli out of the bundled server entirely, where the import then
+  // resolves nowhere and every priced Usage view answers 500.
+  const loaded: unknown = await import("tokentracker-cli/src/lib/pricing/index.js")
   if (!isPricingModule(loaded)) {
-    throw new Error(`${tokenTrackerPricingModule} does not export the tokentracker-cli pricing API`)
+    throw new Error("tokentracker-cli/src/lib/pricing/index.js does not export the tokentracker-cli pricing API")
   }
   return loaded
 }
