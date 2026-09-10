@@ -1,4 +1,4 @@
-import { isSubagentSpawnToolName, type AgentContentPart, type AgentToolPart } from "@claxedo/agent-runtime-contract"
+import { canonicalToolName, isSubagentSpawnToolName, type AgentContentPart, type AgentToolPart } from "@claxedo/agent-runtime-contract"
 
 export type PartRef = {
   messageID: string
@@ -33,30 +33,25 @@ export type PartGroup =
 
 export type GroupablePart = { messageID: string; part: AgentContentPart }
 
-// Tool vocabularies span harnesses: OpenCode emits `bash`/`read`/…, Codex emits
-// `command`/`read_file`/…, Claude `ls` where the others say `list`. Keep every
-// spelling here or those runs never group (they'd render as loud one-per-row
-// generic rows). Mirrors TOOL_NAME_ALIASES in message-part.
-export const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list", "ls", "read_file"])
+/*
+ * Canonical spellings only. Harness variants (`command`, `read_file`, `ls`) fold into
+ * these through `canonicalToolName`, which every predicate below applies, so a new
+ * harness spelling is added once in the contract rather than in each vocabulary.
+ */
+export const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
 
 export const WORK_GROUP_TOOLS = new Set<string>([
   "bash",
-  "command",
-  "shell",
-  "local_shell",
   "edit",
-  "edit_file",
   "write",
-  "write_file",
   "apply_patch",
   "webfetch",
   "websearch",
-  "web_search",
 ])
 
-export const EDIT_TOOL_NAMES = new Set(["edit", "edit_file", "write", "write_file", "apply_patch"])
+export const EDIT_TOOL_NAMES = new Set(["edit", "write", "apply_patch"])
 
-export const WEB_TOOL_NAMES = new Set(["webfetch", "websearch", "web_search"])
+export const WEB_TOOL_NAMES = new Set(["webfetch", "websearch"])
 
 export const HIDDEN_TOOLS = new Set(["todowrite"])
 
@@ -73,12 +68,12 @@ function producedImage(part: AgentToolPart) {
 }
 
 export function isContextGroupTool(part: AgentContentPart): part is AgentToolPart {
-  if (part.type !== "tool" || !CONTEXT_GROUP_TOOLS.has(part.tool)) return false
+  if (part.type !== "tool" || !CONTEXT_GROUP_TOOLS.has(canonicalToolName(part.tool))) return false
   return !producedImage(part)
 }
 
 export function isWorkGroupTool(part: AgentContentPart): part is AgentToolPart {
-  return part.type === "tool" && WORK_GROUP_TOOLS.has(part.tool)
+  return part.type === "tool" && WORK_GROUP_TOOLS.has(canonicalToolName(part.tool))
 }
 
 /**
@@ -98,8 +93,8 @@ function partRef(item: GroupablePart): PartRef {
 }
 
 function workGroupTool(slice: GroupablePart[]): WorkGroupTool {
-  if (slice.some((item) => item.part.type === "tool" && EDIT_TOOL_NAMES.has(item.part.tool))) return "edit"
-  if (slice.some((item) => item.part.type === "tool" && WEB_TOOL_NAMES.has(item.part.tool))) return "webfetch"
+  if (slice.some((item) => item.part.type === "tool" && EDIT_TOOL_NAMES.has(canonicalToolName(item.part.tool)))) return "edit"
+  if (slice.some((item) => item.part.type === "tool" && WEB_TOOL_NAMES.has(canonicalToolName(item.part.tool)))) return "webfetch"
   return "bash"
 }
 

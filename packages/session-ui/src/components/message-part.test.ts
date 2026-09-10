@@ -35,8 +35,16 @@ describe("cross-harness tool registry", () => {
     )
   })
 
-  test("U2: aliases the Claude Agent tool to the task renderer", async () => {
-    expect(await Bun.file(`${import.meta.dir}/message-part.tsx`).text()).toMatch(/agent:\s*["']task["']/)
+  /*
+   * The alias table moved to @claxedo/agent-runtime-contract so the projection, the
+   * grouping vocabularies and this registry share one spelling. `Agent -> task` is
+   * asserted there, against the function; this only pins that the registry consumes it
+   * rather than reintroducing a private copy.
+   */
+  test("U2: registers the shared aliases instead of its own table", async () => {
+    const source = await Bun.file(`${import.meta.dir}/message-part.tsx`).text()
+    expect(source).toContain("toolNameAliases()")
+    expect(source).not.toMatch(/const TOOL_NAME_ALIASES/)
   })
 
   test("uses only authoritative subagent associations for task cards", async () => {

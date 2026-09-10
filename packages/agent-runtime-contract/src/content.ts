@@ -1,5 +1,6 @@
 import type { AgentMessageAuthor } from "./sessions"
 import { isRecord } from "./values"
+import { canonicalToolName } from "./tool-names"
 
 /** Token accounting, reported identically by assistant messages and step-finish parts. */
 export type AgentTokenUsage = {
@@ -216,7 +217,7 @@ export type AgentToolPart = AgentPartBase<"tool"> & {
  * because only the client-presentation projection canonicalises case.
  */
 export function isSubagentSpawnToolName(toolName: string) {
-  return SUBAGENT_SPAWN_TOOL_NAMES.has(toolName.toLowerCase())
+  return canonicalToolName(toolName) === "task"
 }
 
 export const SUBAGENT_SPAWN_TOOL_NAMES: ReadonlySet<string> = new Set([

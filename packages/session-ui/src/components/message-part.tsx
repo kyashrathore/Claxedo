@@ -1,3 +1,4 @@
+import { toolNameAliases } from "@claxedo/agent-runtime-contract"
 import {
   Component,
   createEffect,
@@ -3126,24 +3127,7 @@ ToolRegistry.register({
  * pane, and — because the grouping pass keys off these names — they fold into work groups.
  * Registered after the definitions above so the targets exist.
  */
-const TOOL_NAME_ALIASES: Record<string, string> = {
-  agent: "task",
-  subagent: "task",
-  spawn_agent: "task",
-  spawnagent: "task",
-  create_subagent: "task",
-  mcp__claxedo__create_subagent: "task",
-  command: "bash",
-  shell: "bash",
-  local_shell: "bash",
-  ls: "list",
-  read_file: "read",
-  write_file: "write",
-  edit_file: "edit",
-  web_search: "websearch",
-}
-
-for (const [alias, target] of Object.entries(TOOL_NAME_ALIASES)) {
+for (const [alias, target] of toolNameAliases()) {
   if (ToolRegistry.render(alias)) continue
   const render = ToolRegistry.render(target)
   if (render) ToolRegistry.register({ name: alias, render })

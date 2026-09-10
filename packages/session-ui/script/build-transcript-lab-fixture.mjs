@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, statSync } from "node:fs"
 import { basename, dirname, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { canonicalToolName } from "@claxedo/agent-runtime-contract"
 import { reconstructQuestionAnswers } from "../src/components/question-result.ts"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -31,12 +32,6 @@ const SOURCES = [
   { id: "toolrun", file: `${LOG_DIR}/57c90445-b05e-445f-bd67-c3cbe349f7aa.jsonl` },
 ]
 
-/*
- * The projection canonicalises a harness tool name by lowercasing it and does nothing
- * else, so this fixture must too. Renaming here (LS -> list, Agent -> task) would make
- * the lab group and render transcripts the product cannot.
- */
-const TOOL_NAMES = {}
 
 /** Claude Code names tool inputs in snake_case; every renderer in message-part.tsx reads the camelCase key. */
 const INPUT_KEYS = {
@@ -48,7 +43,7 @@ const INPUT_KEYS = {
 }
 
 function toolName(name) {
-  return TOOL_NAMES[name] ?? String(name).toLowerCase()
+  return canonicalToolName(String(name))
 }
 
 function toolInput(tool, input) {

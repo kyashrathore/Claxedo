@@ -123,3 +123,33 @@ describe("a read that returned an image", () => {
     expect(groups.map((g) => g.type)).toEqual(["context"])
   })
 })
+
+describe("harness spellings", () => {
+  function named(id: string, tool: string): AgentContentPart {
+    return {
+      id,
+      sessionID: "ses_test",
+      messageID: "a1",
+      type: "tool",
+      tool,
+      callID: `${id}_c`,
+      state: { status: "completed", input: {}, output: "", title: tool, metadata: {}, time: { start: 1, end: 2 } },
+    } as AgentContentPart
+  }
+  const types = (parts: AgentContentPart[]) =>
+    groupParts(parts.map((part) => ({ messageID: "a1", part }))).map((group) => group.type)
+
+  test("Claude's own casing groups the same as OpenCode's", () => {
+    expect(types([named("p1", "Bash"), named("p2", "Bash")])).toEqual(["work"])
+    expect(types([named("p1", "Read"), named("p2", "Grep")])).toEqual(["context"])
+  })
+
+  test("a harness alias groups with the tool it names", () => {
+    expect(types([named("p1", "local_shell"), named("p2", "bash")])).toEqual(["work"])
+    expect(types([named("p1", "LS"), named("p2", "read_file")])).toEqual(["context"])
+  })
+
+  test("consecutive spawns fold however the harness spells them", () => {
+    expect(types([named("p1", "Agent"), named("p2", "spawn_agent")])).toEqual(["agents"])
+  })
+})
