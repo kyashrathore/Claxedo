@@ -33,6 +33,89 @@ reorder, reflow, or re-fold anything under the pointer.
 
 ---
 
+## Status, 2026-09-10
+
+Closed, each verified in the transcript lab against the three captured sessions
+rather than by reading the diff:
+
+| # | Change | Evidence |
+|---|---|---|
+| D1 | skill row opens and shows its output | click goes from 0 to 1 output region, holding "Launching skill: code-review" |
+| D4 | subagent cards exempt from the fold | with the shipped fold on, 8 context groups and 10 tool rows hide; the subagent chips stay |
+| D11 | `session.idle` no longer bumps the row | new test fails when the case is put back |
+| D23/D27 | a running tool names itself and opens | all three `pending()` guards removed together |
+
+Two defects were found while measuring and are closed with them:
+
+- **Claude's `Agent` spawns were never recognised as subagents.** The transcript
+  knew `task`, `create_subagent` and `mcp__claxedo__create_subagent`; the event
+  runtime's `canonicalToolIntent` knew `agent` as well, but the projection never
+  puts that intent on the part, so the two sides had drifted. 4 real spawns, 0
+  recognised. This is also why D4 looked worse than the log describes: an
+  unrecognised spawn is a standalone tool part, so it folds by the ordinary rule.
+- **Claude's `ls` had no renderer and no group.** Every listing was a "Called ls"
+  row beside the reads it belongs with.
+
+Both came out of a vocabulary matrix — every tool name the harnesses actually
+emit, against the renderer registry, the alias table and the four grouping
+vocabularies. Exactly two names had no way to render: `ls` and `askuserquestion`.
+
+### D6/D13's pattern reaches the lab itself
+
+Two measuring instruments were wrong in the same way the assertions in D6 and
+D13 are wrong, and both hid the defects they were built to show:
+
+- The lab's fold census reported **grouping** as folding — its "rows folded"
+  note counted group membership, so it did not move when the fold changed. It
+  now measures the fold.
+- The lab's fixture builder attaches question answers under
+  `part.tool === "question"`, but produces the tool as `askuserquestion`, so the
+  guard never fires. Its comment claims all 54 answered calls carry the record;
+  all 4 in the fixture carry `metadata: {}`.
+
+### Refuted or refined by measurement
+
+- **D21 is already fixed and survives being broken.** `[data-scrollable]` now
+  carries an always-painted thin bar, and its thumb token is genuinely
+  theme-aware (`alpha-dark-20` light, `alpha-light-20` dark), so it does not
+  vanish in dark mode. `overflow-x: auto` is set, so the long-line half of the
+  entry does not reproduce either. The 240px cap itself is untouched — that is
+  R2, and it is open.
+- **D2 is already fixed at the canonical owner.** The client-presentation
+  projection lowercases `toolName` once at `tool-start`, and every other case
+  reads the canonicalised name back out, so no path leaks harness casing.
+- **D23 has a second path that is not fixed.** The bare verb is also reachable
+  when a call is interrupted before its input finished streaming, leaving no
+  `command` key at all. That needs an interrupted trace to reproduce.
+
+### D25's cause, located but not fixed
+
+The flap is not in the Thinking row and not in the 80 ms hold — it is the
+session status the row reads. `dispatchSessionStatusEvent`
+(`store/session-status-dispatcher.ts:137`) writes the status unconditionally,
+whatever its source, so a server `idle` that describes the state *before* the
+prompt overwrites the optimistic `busy`; the row drops and returns when the real
+busy lands. Same two-writer shape as D15.
+
+It is deliberately not fixed by widening `THINKING_HIDE_HOLD_MS`. The gap is a
+request round trip, so no hysteresis value is both long enough to cover it and
+short enough to drop the row when a turn really ends. A correct fix needs to
+distinguish a stale idle from a genuinely instant turn, and neither
+`session.idle` nor `message.completed` carries a timestamp or generation to do
+it with. `hasPendingPrompt()` is the causal signal, but `submit/pending.ts`
+already imports the dispatcher, so reading it there would be circular.
+
+### R1 is blocked behind its precondition
+
+Aliasing `askuserquestion` onto the `question` renderer *alone* is a regression:
+that renderer gates its entire body on `completed()`, which reads
+`metadata.answers`, and nothing populates that on the Claude path — so the answer
+text the generic row shows today would disappear. The Claude driver writes the
+answers into the tool's `updatedInput`, but whether that reaches the part was not
+established, so the alias is deliberately not applied yet.
+
+---
+
 ## D1 — The `skill` tool row is a dead click target
 
 **Reported by the user:**
