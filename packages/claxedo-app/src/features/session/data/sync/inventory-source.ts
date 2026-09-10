@@ -59,7 +59,13 @@ export type InventoryGlobalSession = {
   directory: ProjectDirectory
   projectID?: string
   parentID?: string
-  time: { created: number; updated: number; archived?: number }
+  time: {
+    created: number
+    updated: number
+    archived?: number
+    /** When a human last started a turn here — what the rail bands on. */
+    lastHumanTurn?: number
+  }
   rootID?: string
   workspaceID?: string
   workspaceId?: string
@@ -216,7 +222,11 @@ export function toSessionInventoryRow(session: InventoryGlobalSession, input: { 
     ...(git ? { git } : {}),
     ...(typeof session.time.archived === "number" ? { archived: true } : {}),
     ...(lastTurn ? { lastTurn } : {}),
-    time: { created: session.time.created, updated: session.time.updated },
+    time: {
+      created: session.time.created,
+      updated: session.time.updated,
+      ...(typeof session.time.lastHumanTurn === "number" ? { lastHumanTurn: session.time.lastHumanTurn } : {}),
+    },
   }
 }
 
@@ -242,6 +252,7 @@ export function controlMetaToGlobalSession(input: unknown): InventoryGlobalSessi
     time: {
       created,
       updated: typeof row?.updatedAt === "number" ? row.updatedAt : created,
+      ...(typeof row?.lastHumanTurnAt === "number" ? { lastHumanTurn: row.lastHumanTurnAt } : {}),
       ...(typeof row?.archived === "number" ? { archived: row.archived } : {}),
     },
   }

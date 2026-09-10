@@ -30,6 +30,13 @@ export type SessionNavigationDisplayRow = {
 
 export type SessionNavigationProps = {
   rows: readonly SessionNavigationDisplayRow[]
+  /**
+   * Index a rule is drawn before, separating the sessions still in play from the ones
+   * that have gone quiet. It renders inside the one list rather than splitting it in
+   * two, so keyboard navigation still crosses the boundary.
+   */
+  dividerAt?: number
+  dividerLabel?: string
   onPrepareActivate?: (row: SessionNavigationDisplayRow) => void
   onActivate: (row: SessionNavigationDisplayRow) => void
   onArchive?: (row: SessionNavigationDisplayRow) => void | Promise<void>
@@ -52,7 +59,21 @@ export function SessionNavigation(props: SessionNavigationProps) {
 
   return (
     <For each={props.rows.map((row) => row.source.sessionId)}>
-      {(sessionId) => (
+      {(sessionId, index) => (
+        <>
+        <Show when={props.dividerAt !== undefined && index() === props.dividerAt}>
+          <div
+            data-testid="rail-sidebar-session-band-divider"
+            aria-hidden="true"
+            class="flex items-center gap-2 pl-9 pr-2.5 pt-2 pb-1 select-none"
+          >
+            <span class="h-px flex-1 bg-border-weak-base/15" />
+            <Show when={props.dividerLabel}>
+              <span class="text-[10px] leading-none text-text-weaker tabular-nums">{props.dividerLabel}</span>
+              <span class="h-px flex-1 bg-border-weak-base/15" />
+            </Show>
+          </div>
+        </Show>
         <SessionNavigationItem
           row={rowsBySessionId().get(sessionId)!}
           onPrepareActivate={props.onPrepareActivate}
@@ -61,6 +82,7 @@ export function SessionNavigation(props: SessionNavigationProps) {
           onPrepareDrag={props.onPrepareDrag}
           onDragStart={props.onDragStart}
         />
+        </>
       )}
     </For>
   )

@@ -130,7 +130,7 @@ import { nextSiblingAfterRemoval } from "@/features/session/ui/session-archive"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
 import { createHoverEngagement, railHeaderActionsBox } from "./rail-hover-engagement"
 import { readArray, readField, readString } from "@/lib/record"
-import { holdSessionOrder, isBusyRow } from "./session-order-hold"
+import { quietForLabel, settledForMs, splitSessionBands } from "./session-bands"
 export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 
 const VIEW_KEY = "claxedo.session-view.v1"
@@ -276,12 +276,20 @@ type Row = SessionItem & {
   archived?: boolean
   status: string[]
   active?: boolean
+  /** Orders the row inside its band; never changes, so the row never moves. */
+  createdAt?: number
+  /** Decides which band the row is in — a turn the reader started, not one an agent did. */
+  lastHumanTurnAt?: number
 }
 
 type Section = {
   id: string
   label: string
   rows: Row[]
+  /** Index the quiet band starts at; absent when one of the two bands is empty. */
+  settledFrom?: number
+  /** How long every row from `settledFrom` on has been quiet. */
+  settledForMs?: number
   project: ProjectItem
   workspaceDir: string
 }
@@ -625,6 +633,8 @@ export function RailSidebar(props: RailSidebarProps) {
       id: item.id,
       get title() { return title() },
       time: item.time.updated ?? item.time.created,
+      createdAt: item.time.created,
+      lastHumanTurnAt: item.time.lastHumanTurn,
       directory: directory ?? item.directory,
       workspaceId: item.workspaceId,
       projectID: item.projectID,
@@ -729,30 +739,20 @@ export function RailSidebar(props: RailSidebarProps) {
   )
 
   /**
-   * Whether the reader is aiming at the list. A pointer resting over it or focus
-   * inside it both mean the next click is already committed to a position, so the
-   * order is held until neither is true.
+   * The two bands the rail renders, and how long the quiet one has been quiet. `Section`
+   * carries the whole list plus the index the divider sits at rather than two arrays, so
+   * every existing reader of `rows` — keyboard navigation, the visible-row register, the
+   * page size — keeps seeing one list.
    */
-  const [railPointerInside, setRailPointerInside] = createSignal(false)
-  const [railFocusInside, setRailFocusInside] = createSignal(false)
-  const railPointerHeld = () => railPointerInside() || railFocusInside()
-
-  /**
-   * The order last shown, per workspace section, so a reorder can be deferred rather
-   * than applied under a pointer that is already aiming at a row. Written from the
-   * memo below, which is why it is a plain map and not a signal: reading it must not
-   * make the memo depend on its own output.
-   */
-  const shownSessionOrder = new Map<string, string[]>()
-  const sessionOrder = (sectionId: string, next: Row[]) => {
-    const settled = holdSessionOrder({
-      next,
-      held: shownSessionOrder.get(sectionId),
-      frozen: railPointerHeld(),
-      pinned: isBusyRow,
-    })
-    shownSessionOrder.set(sectionId, settled.map((item) => item.id))
-    return settled
+  const banded = (rows: Row[]) => {
+    const now = Date.now()
+    const { active, settled } = splitSessionBands(rows, { now })
+    return {
+      rows: [...active, ...settled],
+      ...(active.length && settled.length
+        ? { settledFrom: active.length, settledForMs: settledForMs(settled, { now }) }
+        : {}),
+    }
   }
 
   const groups = createMemo<Cluster[]>(() => {
@@ -774,10 +774,9 @@ export function RailSidebar(props: RailSidebarProps) {
         return {
           id: dir,
           label: workspaceName(dir, project),
-          rows: sessionOrder(dir, (group?.sessions ?? [])
+          ...banded((group?.sessions ?? [])
             .map((item) => row(item, project, group?.directory ?? dir))
-            .filter(match)
-            .sort((a, b) => (b.time ?? 0) - (a.time ?? 0))),
+            .filter(match)),
           project,
           workspaceDir: dir,
         }
@@ -1958,6 +1957,8 @@ export function RailSidebar(props: RailSidebarProps) {
                 // would subscribe this whole rows map to every focus change.
                 active: () => sessionActiveInWorkbench(session, section.workspaceDir),
               }))}
+              dividerAt={section.settledFrom}
+              dividerLabel={quietForLabel(section.settledForMs)}
               onPrepareActivate={(item) => prepareSessionActivationFromRows(sectionRows(), item)}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
               onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}
@@ -2348,16 +2349,6 @@ export function RailSidebar(props: RailSidebarProps) {
         style={{
           "scrollbar-width": "thin",
           "scrollbar-color": "var(--scrollbar-thumb) transparent",
-        }}
-        onPointerEnter={() => setRailPointerInside(true)}
-        onPointerLeave={() => setRailPointerInside(false)}
-        onFocusIn={() => setRailFocusInside(true)}
-        onFocusOut={(event) => {
-          // Moving between two rows leaves and re-enters in the same tick; only a
-          // landing outside the list counts as the reader looking away.
-          const next = event.relatedTarget
-          if (next instanceof Node && event.currentTarget.contains(next)) return
-          setRailFocusInside(false)
         }}
       >
         <GlobalNavigation

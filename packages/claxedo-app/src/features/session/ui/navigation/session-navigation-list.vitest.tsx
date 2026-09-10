@@ -110,6 +110,34 @@ describe("SessionNavigation", () => {
     expect(view.getByText("Own session")).toBeTruthy()
   })
 
+  test("the band divider renders between the two bands, inside one list", () => {
+    const rows = ["a", "b", "c"].map((id) =>
+      row({ source: { ...row().source, sessionId: `ses_${id}`, sessionRef: `local:/repo:session:ses_${id}` } }),
+    )
+    const view = render(() => (
+      <SessionNavigation
+        rows={rows}
+        dividerAt={1}
+        dividerLabel="quiet for 4h"
+        onActivate={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const divider = view.getByTestId("rail-sidebar-session-band-divider")
+    expect(divider.textContent).toContain("quiet for 4h")
+    // Rows stay siblings of the rule rather than moving into a second list, so
+    // keyboard navigation still crosses the boundary.
+    const order = [...divider.parentElement!.children].map((el) => el.getAttribute("data-testid") ?? el.tagName)
+    expect(order.indexOf("rail-sidebar-session-band-divider")).toBe(1)
+  })
+
+  test("no divider is drawn when the caller gives no index", () => {
+    const view = render(() => (
+      <SessionNavigation rows={[row()]} onActivate={() => {}} onPrepareDrag={() => undefined} />
+    ))
+    expect(view.queryByTestId("rail-sidebar-session-band-divider")).toBeNull()
+  })
+
   test("updates a stable row's status projection without remounting it", async () => {
     const [status, setStatus] = createSignal<SessionNavigationDisplayRow["status"]>("idle")
     const displayRow = row({ nested: true })
