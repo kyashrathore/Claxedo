@@ -2554,3 +2554,37 @@ void it("persists Goal state across reopen and clears it with the session", () =
   reopened.deleteSession("goal-session")
   assert.equal(store.getGoal("goal-session"), null)
 })
+
+describe("session ordering timestamps", () => {
+  void it("recovery does not restamp the session the way a turn does", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1_000 })
+    store.startTurn({
+      sessionId: "s1",
+      assistantMessageId: "m1",
+      agent: "claude",
+      model: { providerID: "anthropic", modelID: "claude-opus-5" },
+      parts: [{ type: "text", text: "hi" }],
+    })
+
+    // A turn and a recovery both stamp `Date.now()`, so within one test run they are
+    // the same millisecond and indistinguishable. Pin the turn's stamp to a value the
+    // clock cannot produce, so a restamp is visible.
+    const db = (store as unknown as { db: { prepare(sql: string): { run(...p: unknown[]): unknown } } }).db
+    db.prepare("UPDATE session SET updated_at = ? WHERE id = ?").run(111, "s1")
+
+    // The three recovery paths: the runtime's own bookkeeping, never the reader
+    // speaking to the session, so the sidebar must not reorder behind them.
+    store.markRecovering("s1", "recovering")
+    store.createNotice("s1", { notice: "recovery_error", message: "created notice" })
+    store.markDirectorySessionsInterrupted("/work", "ACP process restarted")
+
+    const after = store.getSession("s1") as
+      | { status?: string; time?: { created?: number; updated?: number } }
+      | null
+    assert.equal(after?.status, "recovering")
+    assert.equal(after?.time?.updated, 111)
+    assert.equal(after?.time?.created, 1_000)
+  })
+})

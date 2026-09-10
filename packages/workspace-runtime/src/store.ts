@@ -2120,7 +2120,9 @@ export class RuntimeStore {
       return
     }
     if (control.type === "turn.start") {
-      const session = this.getSession(row.sessionId) as { directory?: string } | null
+      const session = this.getSession(row.sessionId) as
+        | { directory?: string; time?: { created?: number; updated?: number } }
+        | null
       const directory = session?.directory ?? ""
       if (control.userMessageId) {
         this.upsertMessage(
@@ -2198,13 +2200,19 @@ export class RuntimeStore {
       return
     }
     if (control.type === "session.recovering") {
-      const session = this.getSession(row.sessionId) as { directory?: string } | null
+      const session = this.getSession(row.sessionId) as
+        | { directory?: string; time?: { created?: number; updated?: number } }
+        | null
       this.finishTools(row.sessionId, row.ts, control.message)
       this.upsertSession({
         id: row.sessionId,
         directory: session?.directory ?? "",
-        createdAt: row.ts,
-        updatedAt: row.ts,
+        createdAt: session?.time?.created ?? row.ts,
+        // Recovery is the runtime's own bookkeeping, not the reader speaking to the
+        // session, so it must not restamp it. The idle/status/error handlers already
+        // preserve for the same reason; these three narrowed their `getSession` cast
+        // until the timestamps were out of reach.
+        updatedAt: session?.time?.updated ?? row.ts,
         status: "recovering",
         recoveryError: control.message,
       })
@@ -2220,12 +2228,14 @@ export class RuntimeStore {
     }
     if (control.type === "notice.created") {
       if (control.notice === "recovery_error") {
-        const session = this.getSession(row.sessionId) as { directory?: string } | null
+        const session = this.getSession(row.sessionId) as
+        | { directory?: string; time?: { created?: number; updated?: number } }
+        | null
         this.upsertSession({
           id: row.sessionId,
           directory: session?.directory ?? "",
-          createdAt: row.ts,
-          updatedAt: row.ts,
+          createdAt: session?.time?.created ?? row.ts,
+          updatedAt: session?.time?.updated ?? row.ts,
           recoveryError: control.message,
         })
       }
@@ -2245,13 +2255,19 @@ export class RuntimeStore {
           "UPDATE pending_question SET status = 'stale', updated_at = ? WHERE session_id = ? AND status = 'pending'",
         )
         .run(row.ts, row.sessionId)
-      const session = this.getSession(row.sessionId) as { directory?: string } | null
+      const session = this.getSession(row.sessionId) as
+        | { directory?: string; time?: { created?: number; updated?: number } }
+        | null
       this.finishTools(row.sessionId, row.ts, control.message)
       this.upsertSession({
         id: row.sessionId,
         directory: session?.directory ?? "",
-        createdAt: row.ts,
-        updatedAt: row.ts,
+        createdAt: session?.time?.created ?? row.ts,
+        // Recovery is the runtime's own bookkeeping, not the reader speaking to the
+        // session, so it must not restamp it. The idle/status/error handlers already
+        // preserve for the same reason; these three narrowed their `getSession` cast
+        // until the timestamps were out of reach.
+        updatedAt: session?.time?.updated ?? row.ts,
         status: "recovering",
         recoveryError: control.message,
       })
@@ -2461,7 +2477,9 @@ export class RuntimeStore {
 
   private turnStartEvents(row: TurnStartRow): CompatEvent[] {
     const control = row.control
-    const session = this.getSession(row.sessionId) as { directory?: string } | null
+    const session = this.getSession(row.sessionId) as
+        | { directory?: string; time?: { created?: number; updated?: number } }
+        | null
     return [
       sessionStatus(row.sessionId, { type: "busy" }),
       ...(control.userMessageId
