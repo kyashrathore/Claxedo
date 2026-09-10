@@ -282,6 +282,26 @@
   }
 }
 
+/* Both image surfaces — an attachment on a message, and an image a `read` returned. */
+[data-slot="file-part-image"],
+[data-slot="tool-image-thumbnail"] {
+  display: block;
+  /* Thumbnail, not the artefact: 320px is the bounded-block width already used for
+     message comments, 240px the height shared with bash and tool output. Clicking
+     opens the full-size preview. */
+  max-width: min(100%, 320px);
+  max-height: 240px;
+  object-fit: contain;
+  object-position: left top;
+  border-radius: var(--radius-md);
+  border: 0.5px solid var(--border-weak-base);
+  cursor: pointer;
+}
+
+.ui-tool-image {
+  margin-top: 6px;
+}
+
 [data-component="compaction-part"] {
   width: 100%;
   display: flex;
@@ -358,13 +378,16 @@
 
 [data-component="tool-output"] {
   white-space: pre;
-  padding: 0;
+  padding: 8px 10px;
   margin-bottom: 24px;
   height: fit-content;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   justify-content: flex-start;
+  border: 0.5px solid var(--v2-border-border-base);
+  border-radius: var(--radius-md);
+  background: transparent;
 
   .ui-markdown {
     width: 100%;
@@ -388,11 +411,23 @@
     height: auto;
     max-height: 240px;
     overflow-y: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+
+    /* Always painted, not hover-revealed: this block carries no other overflow cue,
+       so a hidden bar reads as a truncated result rather than a scrollable one. */
+    scrollbar-width: thin;
+    scrollbar-color: var(--v2-border-border-strong) transparent;
 
     &::-webkit-scrollbar {
-      display: none;
+      width: 8px;
+    }
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: var(--v2-border-border-strong);
+      border-radius: var(--radius-sm);
+      border: 2px solid transparent;
+      background-clip: padding-box;
     }
 
     .ui-markdown {
@@ -755,9 +790,16 @@
   flex-direction: column;
   gap: 4px;
 
-  [data-slot="context-tool-group-item"] {
+  [data-component="tool-part-wrapper"] {
     min-width: 0;
     padding: 0;
+  }
+
+  /* Members render through their own tool renderer; strip the leading icon and the
+     per-row chevron so nesting reads as one indented list, not a second stack of rows. */
+  .ui-basic-tool-tool-leading-icon,
+  .ui-collapsible-arrow {
+    display: none;
   }
 }
 

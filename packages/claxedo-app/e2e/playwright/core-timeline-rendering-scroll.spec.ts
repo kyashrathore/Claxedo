@@ -839,6 +839,52 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(root).toHaveAttribute("data-session-rendered-user-count", "8")
   })
 
+  test("scroll-to-bottom stays centered on the composer as the Environment card changes", async ({ page }) => {
+    await page.setViewportSize({ width: 1600, height: 700 })
+    await installSeededSession(page, [
+      userRow({ id: "msg_user_alignment", text: "Show a long answer" }),
+      assistantRow({
+        id: "msg_assistant_alignment",
+        parentID: "msg_user_alignment",
+        completed: true,
+        text: Array.from({ length: 60 }, (_, i) => `Paragraph ${i + 1}: ${"Environment card alignment. ".repeat(8)}`).join("\n\n"),
+      }),
+    ])
+    await gotoSession(page)
+    const shell = page.locator(`.session-envcard-shell[data-session-id="${SESSION_ID}"]`)
+    const jump = jumpToBottomButton(page)
+    const dockColumn = shell.locator('[data-component="session-prompt-dock"] > div').first()
+    const assertCentered = async () => {
+      await scrollTimelineToTop(page)
+      await expect.poll(() => jumpToBottomOpacity(page)).toBe("1")
+      await expect.poll(async () => {
+        const button = await jump.boundingBox()
+        const column = await dockColumn.boundingBox()
+        expect(button).not.toBeNull()
+        expect(column).not.toBeNull()
+        return Math.abs(button!.x + button!.width / 2 - column!.x - column!.width / 2)
+      }).toBeLessThan(2)
+    }
+
+    await expect(shell).toHaveAttribute("data-session-envcard", "collapsed")
+    await assertCentered()
+    await page.getByRole("button", { name: "Expand Environment", exact: true }).click()
+    await expect(shell).toHaveAttribute("data-session-envcard", "expanded")
+    await assertCentered()
+    await page.getByRole("button", { name: "Collapse Environment", exact: true }).click()
+    await expect(shell).toHaveAttribute("data-session-envcard", "collapsed")
+    await assertCentered()
+
+    // A narrow pane inside a desktop viewport hides the rail and removes its gutter.
+    await page.setViewportSize({ width: 1000, height: 700 })
+    await expect(shell.locator(".session-envcard")).toBeHidden()
+    await assertCentered()
+    await page.setViewportSize({ width: 700, height: 700 })
+    await assertCentered()
+    await jump.click()
+    await expect.poll(() => jumpToBottomOpacity(page)).toBe("0")
+  })
+
   test("a user scroll held in the middle survives virtual-row measurement", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 500 })
     await installSeededSession(page, seededTurnRows(8))

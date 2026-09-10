@@ -75,12 +75,12 @@
   strong,
   b {
     color: var(--v2-text-text-base);
-    font-weight: var(--font-weight-medium);
+    font-weight: var(--font-weight-semibold);
   }
 
   /* Paragraphs */
   p {
-    margin-bottom: 12px;
+    margin-bottom: 6px;
   }
 
   /* Links */
@@ -319,6 +319,7 @@
 
   :not(pre) > code {
     font-family: var(--font-family-mono);
+    font-size: var(--font-size-inline-code);
     font-feature-settings: var(--font-family-mono--font-feature-settings);
     color: var(--v2-text-text-base, var(--text-strong));
     font-weight: var(--font-weight-medium);

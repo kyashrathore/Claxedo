@@ -149,6 +149,14 @@ function DirectoryDataProvider(props: ParentProps<{
     void ensureSubagents(sessionID, controller.signal).catch(() => undefined)
     onCleanup(() => controller.abort())
   })
+  /* Tool attachments that stayed on disk carry a workspace-relative path; the raw file
+     route is what a browser can actually fetch. */
+  const fileUrl = (path: string) => {
+    const base = sdk.url
+    if (!base) return undefined
+    return `${base}/file/raw?directory=${encodeURIComponent(props.directory)}&path=${encodeURIComponent(path)}`
+  }
+
   const agentQuery = useWorkspaceQuery(() => ({
     ...agentListQuery({
       baseUrl: sdk.url,
@@ -204,6 +212,7 @@ function DirectoryDataProvider(props: ParentProps<{
       onNavigateToSession={navigateToSession}
       onSessionHref={sessionHref}
       resolveSubagents={resolveSubagents}
+      fileUrl={fileUrl}
     >
       <ModelsProvider
         workspaceKey={modelsWorkspaceKey}

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createSubagentRegistry } from "./subagent-registry"
-import { hydrateSubagentRows, isSubagentToolPart, presentSubagents, subagentStatusLabel } from "./subagent-presentation"
+import { hydrateSubagentRows, presentSubagents, subagentStatusLabel } from "./subagent-presentation"
 
 describe("subagent presentation", () => {
   test("hydrates explicit tool edges and never derives identity from display copy", () => {
@@ -64,15 +64,5 @@ describe("subagent presentation", () => {
       ["later", "not-yet-bound"],
       ["none", "unavailable"],
     ])
-  })
-
-  test("treats the runtime's create_subagent MCP call as a subagent card, not a generic tool row", () => {
-    expect(isSubagentToolPart({ type: "tool", tool: "task" })).toBe(true)
-    expect(isSubagentToolPart({ type: "tool", tool: "mcp__claxedo__create_subagent", state: { input: { intent: "mcp" } } })).toBe(true)
-    expect(isSubagentToolPart({ type: "tool", tool: "create_subagent" })).toBe(true)
-    expect(isSubagentToolPart({ type: "tool", tool: "mcp__claxedo__session_list", state: { input: { intent: "task" } } })).toBe(true)
-    expect(isSubagentToolPart({ type: "tool", tool: "mcp__claxedo__session_list", state: { input: { intent: "mcp" } } })).toBe(false)
-    expect(isSubagentToolPart({ type: "tool", tool: "bash" })).toBe(false)
-    expect(isSubagentToolPart({ type: "text", tool: "task" })).toBe(false)
   })
 })

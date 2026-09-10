@@ -147,6 +147,10 @@ export const dict: Record<string, string> = {
   "ui.tool.skill": "Skill",
 
   "ui.basicTool.called": "Called `{{tool}}`",
+  "ui.basicTool.title.to": "{{action}} to",
+  "ui.basicTool.action.sendMessage": "Send message",
+  "ui.basicTool.action.searchTools": "Search tools",
+  "ui.basicTool.action.listAgents": "List agents",
   "ui.toolErrorCard.failed": "Failed",
   "ui.toolErrorCard.copyError": "Copy error",
 

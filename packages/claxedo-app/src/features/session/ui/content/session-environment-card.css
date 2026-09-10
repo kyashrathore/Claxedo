@@ -90,16 +90,19 @@
    messages land (`[data-session-timeline-loading]`, session-timeline-skeleton.tsx):
    it replaces the scroll viewport rather than living inside it, so without its
    own rule it centres on the full pane and the column visibly jumps left the
-   moment the real messages arrive. */
+   moment the real messages arrive. The scroll-to-bottom overlay uses the same
+   inset to center its button on this column while remaining outside the scroller. */
 @media (min-width: 769px) {
   .session-envcard-shell[data-session-envcard] [data-session-timeline-root] .scroll-view__viewport,
   .session-envcard-shell[data-session-envcard] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-jump],
   .session-envcard-shell[data-session-envcard] .ui-session-prompt-dock {
     padding-right: 16.4rem;
   }
 
   .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-root] .scroll-view__viewport,
   .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-jump],
   .session-envcard-shell[data-session-envcard="collapsed"] .ui-session-prompt-dock {
     padding-right: 3rem;
   }
@@ -129,9 +132,11 @@
 
   .session-envcard-shell[data-session-envcard] [data-session-timeline-root] .scroll-view__viewport,
   .session-envcard-shell[data-session-envcard] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard] [data-session-timeline-jump],
   .session-envcard-shell[data-session-envcard] .ui-session-prompt-dock,
   .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-root] .scroll-view__viewport,
   .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-loading],
+  .session-envcard-shell[data-session-envcard="collapsed"] [data-session-timeline-jump],
   .session-envcard-shell[data-session-envcard="collapsed"] .ui-session-prompt-dock {
     padding-right: 0;
   }

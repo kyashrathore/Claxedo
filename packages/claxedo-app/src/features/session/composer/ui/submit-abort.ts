@@ -1,7 +1,8 @@
 import type { Accessor } from "solid-js"
+import type { WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { setPromptSessionStatus, takePendingPrompt } from "../../submit/index"
-import { dispatchSessionRequestsEvent, dispatchSessionTodoEvent } from "../../store/session-status-dispatcher"
+import { dispatchSessionRequestsEvent } from "../../store/session-status-dispatcher"
 import type { PermissionRequest, QuestionRequest, SessionRequestsQueryData, SessionStatus } from "../../data/sync/queries"
 
 type SessionRequestState = SessionRequestsQueryData
@@ -9,7 +10,7 @@ type SessionRequestItem = (PermissionRequest | QuestionRequest) & { sessionID?: 
 
 type AbortClient = {
   session: {
-    abort(input: { sessionID: string; directory: string }): Promise<unknown>
+    abort(input: { sessionID: string; directory: string }): Promise<Pick<Awaited<ReturnType<WorkspaceRuntimeClient["session"]["abort"]>>, "data">>
     status(): Promise<{ data?: Record<string, SessionStatus> }>
   }
   permission: {
@@ -75,7 +76,6 @@ export function createPromptAbort(input: {
   sessionDirectory?: Accessor<string | undefined>
   defaultDirectory: string
   clientForDirectory: (directory: string) => AbortClient
-  usesSignedControlPlane: (directory: string) => boolean
 }) {
   return async () => {
     if (input.canAbort?.() === false) return Promise.resolve()
@@ -85,49 +85,30 @@ export function createPromptAbort(input: {
     const client = input.clientForDirectory(directory)
 
     phCapture("prompt_aborted", { ...identityProps(), surface: "composer" })
-    dispatchSessionTodoEvent({ event: { type: "session.todo", source: "server", sessionID, todos: [] } })
-    setPromptSessionStatus({ sessionID, status: { type: "idle" }, source: "server" })
 
     const queued = takePendingPrompt(sessionID)
     if (queued) {
       queued.abort.abort()
       queued.cleanup()
+      setPromptSessionStatus({ sessionID, status: { type: "idle" }, source: "optimistic" })
       return Promise.resolve()
     }
-    return client.session
-      .abort({ sessionID, directory })
-      .catch(() => {})
-      .finally(() => {
-        if (input.usesSignedControlPlane(directory)) {
-          setPromptSessionStatus({ sessionID, status: { type: "idle" }, source: "server" })
-          dispatchSessionRequestsEvent({ event: { type: "session.requests", source: "server", sessionID, requests: { permissions: [], questions: [] } } })
-          return Promise.resolve()
-        }
-        return Promise.all([
-          client.session
-            .status()
-            .then((x) => {
-              const status = x.data?.[sessionID]
-              setPromptSessionStatus({
-                sessionID,
-                status: status ?? { type: "idle" },
-                source: "server",
-              })
-            })
-            .catch(() => {}),
-          Promise.all([
-            client.permission.list().then((x) => x.data ?? []).catch(() => []),
-            client.question.list().then((x) => x.data ?? []).catch(() => []),
-          ]).then(([permissions, questions]) => {
-            dispatchSessionRequestsEvent({
-              event: { type: "session.requests", source: "server", sessionID, requests: {
-                permissions: permissions.filter((item: SessionRequestItem) => item.sessionID === sessionID),
-                questions: questions.filter((item: SessionRequestItem) => item.sessionID === sessionID),
-              } },
-            })
-          }),
-        ])
-      })
+    const result = await client.session.abort({ sessionID, directory })
+    if (!result.data) throw new Error("Stop returned no cancellation result")
+    if (!result.data.ok) throw new Error(result.data.message)
+    await Promise.all([
+      client.session.status().then((x) => {
+        setPromptSessionStatus({ sessionID, status: x.data?.[sessionID] ?? { type: "idle" }, source: "server" })
+      }),
+      Promise.all([client.permission.list(), client.question.list()]).then(([permissions, questions]) => {
+        dispatchSessionRequestsEvent({
+          event: { type: "session.requests", source: "server", sessionID, requests: {
+            permissions: (permissions.data ?? []).filter((item: SessionRequestItem) => item.sessionID === sessionID),
+            questions: (questions.data ?? []).filter((item: SessionRequestItem) => item.sessionID === sessionID),
+          } },
+        })
+      }),
+    ])
   }
 }
 
@@ -135,6 +116,7 @@ export function createPromptAbort(input: {
 export function createSubmitAbort(input: Parameters<typeof createPromptAbort>[0] & {
   hasActiveGoal?: () => boolean
   stopGoal?: () => void | Promise<unknown>
+  stopFailedTitle: () => string
   stopGoalFailedTitle: () => string
   errorMessage: (err: unknown) => string
   showToast: (toast: { title: string; description: string; variant: "error" }) => void
@@ -143,7 +125,13 @@ export function createSubmitAbort(input: Parameters<typeof createPromptAbort>[0]
   return createGoalAwareAbort({
     hasActiveGoal: input.hasActiveGoal,
     stopGoal: input.stopGoal,
-    promptAbort,
+    promptAbort: async () => {
+      try {
+        await promptAbort()
+      } catch (err) {
+        input.showToast({ title: input.stopFailedTitle(), description: input.errorMessage(err), variant: "error" })
+      }
+    },
     onStopGoalError: (err) => {
       input.showToast({
         title: input.stopGoalFailedTitle(),

@@ -78,3 +78,51 @@ test("interaction Stop surfaces Goal failure after interrupting its turn", async
   })).rejects.toThrow("Goal unavailable")
   expect(aborted).toBe(true)
 })
+
+describe("prompt Stop results", () => {
+  test.each(["transport", "failed", "recovering"])("reports %s failure without clearing authoritative state", async (failure) => {
+    const { createSubmitAbort } = await import("./submit-abort")
+    const toasts: Array<{ description: string }> = []
+    let reads = 0
+    const abort = createSubmitAbort({
+      sessionID: () => "stop-failure",
+      defaultDirectory: "/repo",
+      clientForDirectory: () => ({
+        session: {
+          abort: async () => {
+            if (failure === "transport") throw new Error("Stop request failed")
+            return { data: { ok: false as const, status: failure as "failed" | "recovering", message: "Stop request failed" } }
+          },
+          status: async () => { reads++; return { data: {} } },
+        },
+        permission: { list: async () => { reads++; return { data: [] } } },
+        question: { list: async () => { reads++; return { data: [] } } },
+      }),
+      stopFailedTitle: () => "Request failed",
+      stopGoalFailedTitle: () => "Goal Stop failed",
+      errorMessage: (error) => (error as Error).message,
+      showToast: (toast) => { toasts.push(toast) },
+    })
+    await expect(abort()).resolves.toBeUndefined()
+    expect(toasts).toEqual([{ title: "Request failed", description: "Stop request failed", variant: "error" }])
+    expect(reads).toBe(0)
+  })
+
+  test("acknowledged Stop refreshes the server snapshot", async () => {
+    const { createPromptAbort } = await import("./submit-abort")
+    const calls: string[] = []
+    await createPromptAbort({
+      sessionID: () => "stop-success",
+      defaultDirectory: "/repo",
+      clientForDirectory: () => ({
+        session: {
+          abort: async () => { calls.push("abort"); return { data: { ok: true as const, status: "already_idle" as const } } },
+          status: async () => { calls.push("status"); return { data: {} } },
+        },
+        permission: { list: async () => { calls.push("permissions"); return { data: [] } } },
+        question: { list: async () => { calls.push("questions"); return { data: [] } } },
+      }),
+    })()
+    expect(calls).toEqual(["abort", "status", "permissions", "questions"])
+  })
+})

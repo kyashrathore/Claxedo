@@ -907,6 +907,43 @@ describe("codexAppServerAdapter", () => {
     ])
   })
 
+  test("carries MCP image content and a dynamic tool call's data-url image as attachments", () => {
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQ=="
+    const mcp = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+      id: "mcp-shot", type: "mcpToolCall", server: "browser", tool: "screenshot", pluginId: null, arguments: {}, status: "completed", error: null,
+      result: { content: [{ type: "text", text: "captured" }, { type: "image", data: png, mimeType: "image/png" }] },
+    } } }).events
+    expect(mcp.at(-1)).toMatchObject({
+      type: "tool-output",
+      toolCallId: "mcp-shot",
+      output: { content: [{ type: "text", text: "captured" }, { type: "image", data: png, mimeType: "image/png" }] },
+      attachments: [{ kind: "inline", mime: "image/png", url: `data:image/png;base64,${png}` }],
+    })
+
+    const dynamic = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+      id: "dyn-shot", type: "dynamicToolCall", namespace: null, tool: "capture", arguments: {}, status: "completed", success: true,
+      contentItems: [
+        { type: "inputText", text: "captured" },
+        { type: "inputImage", imageUrl: `data:image/jpeg;base64,${png}` },
+        { type: "inputImage", imageUrl: "https://example.test/shot.png" },
+      ],
+    } } }).events
+    expect(dynamic.at(-1)).toMatchObject({
+      type: "tool-output",
+      toolCallId: "dyn-shot",
+      attachments: [{ kind: "inline", mime: "image/jpeg", url: `data:image/jpeg;base64,${png}` }],
+    })
+  })
+
+  test("leaves a text-only MCP result attachment-free", () => {
+    const events = runtime().ingest({ source: "codex.app-server", method: "item/completed", payload: { item: {
+      id: "mcp-text", type: "mcpToolCall", server: "claxedo", tool: "session_list", pluginId: null, arguments: {}, status: "completed", error: null,
+      result: { content: [{ type: "text", text: "one session" }] },
+    } } }).events
+    expect(events.at(-1)).toMatchObject({ type: "tool-output", toolCallId: "mcp-text" })
+    expect(events.at(-1)).not.toHaveProperty("attachments")
+  })
+
   test("classifies a create_subagent MCP item as task work by its tool name", () => {
     const agent = runtime()
     expect(agent.ingest({

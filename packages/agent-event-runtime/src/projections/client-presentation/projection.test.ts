@@ -614,6 +614,84 @@ describe("createClientPresentationProjection", () => {
     expect(projection.snapshot().state.toolStatusByCallId["tool-1"]).toBe("completed")
   })
 
+  test("mints tool-output image attachments as file parts on the completed tool state", () => {
+    const projection = makeProjection()
+    const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+    projection.ingest({ type: "tool-start", toolCallId: "tool-1", toolName: "read" })
+    const part = projection.ingest({
+      type: "tool-output",
+      toolCallId: "tool-1",
+      output: "Read 1 image.",
+      attachments: [
+        { kind: "inline", mime: "image/png", url: `data:image/png;base64,${png}`, filename: "screenshot.png" },
+        { kind: "inline", mime: "image/jpeg", url: "data:image/jpeg;base64,/9j/4AAQ" },
+        { kind: "workspace-file", mime: "image/webp", path: "docs/shot.webp", sourcePath: "/repo/docs/shot.webp" },
+        { kind: "unretained", mime: "image/png", bytes: 346_112, sourcePath: "/tmp/huge.png" },
+      ],
+    }).map((envelope) => envelope.payload).find(
+      (payload): payload is Extract<typeof payload, { type: "message.part.updated" }> => payload.type === "message.part.updated",
+    )?.properties.part
+
+    expect(part).toMatchObject({
+      type: "tool",
+      state: {
+        status: "completed",
+        output: "Read 1 image.",
+        attachments: [
+          { type: "file", sessionID: "session-1", messageID: "msg_turn_1_r", mime: "image/png", filename: "screenshot.png", url: `data:image/png;base64,${png}` },
+          { type: "file", sessionID: "session-1", messageID: "msg_turn_1_r", mime: "image/jpeg", filename: "image.jpg", url: "data:image/jpeg;base64,/9j/4AAQ" },
+          { type: "file", mime: "image/webp", filename: "image.webp", url: "file://docs/shot.webp", location: { kind: "workspace-file", path: "docs/shot.webp" } },
+          { type: "file", mime: "image/png", filename: "image.png", url: "file:///tmp/huge.png", location: { kind: "unretained", bytes: 346_112 } },
+        ],
+      },
+    })
+    const attachments = part?.type === "tool" && part.state.status === "completed" ? part.state.attachments ?? [] : []
+    expect(new Set(attachments.map((attachment) => attachment.id)).size).toBe(4)
+    expect(attachments[0]).not.toHaveProperty("location")
+  })
+
+  test("an unretained attachment with no source path carries its size and no locator", () => {
+    const projection = makeProjection()
+    projection.ingest({ type: "tool-start", toolCallId: "tool-1", toolName: "screenshot" })
+    const part = projection.ingest({
+      type: "tool-output",
+      toolCallId: "tool-1",
+      output: "captured",
+      attachments: [{ kind: "unretained", mime: "image/png", bytes: 661_000 }],
+    }).map((envelope) => envelope.payload).find(
+      (payload): payload is Extract<typeof payload, { type: "message.part.updated" }> => payload.type === "message.part.updated",
+    )?.properties.part
+
+    expect(part).toMatchObject({
+      state: {
+        status: "completed",
+        output: "captured",
+        attachments: [{ type: "file", mime: "image/png", url: "", location: { kind: "unretained", bytes: 661_000 } }],
+      },
+    })
+  })
+
+  test("replays tool-output attachments onto a later terminal tool re-render", () => {
+    const projection = makeProjection()
+    projection.ingest({ type: "tool-start", toolCallId: "tool-1", toolName: "read" })
+    projection.ingest({
+      type: "tool-output",
+      toolCallId: "tool-1",
+      output: "Read 1 image.",
+      attachments: [{ kind: "inline", mime: "image/png", url: "data:image/png;base64,iVBORw0K", filename: "screenshot.png" }],
+    })
+
+    const part = projection.ingest({ type: "tool-status", toolCallId: "tool-1", status: "completed" })
+      .map((envelope) => envelope.payload).find(
+        (payload): payload is Extract<typeof payload, { type: "message.part.updated" }> => payload.type === "message.part.updated",
+      )?.properties.part
+
+    expect(part).toMatchObject({
+      state: { status: "completed", attachments: [{ mime: "image/png", filename: "screenshot.png", url: "data:image/png;base64,iVBORw0K" }] },
+    })
+  })
+
   test("diagnoses duplicate terminal tool updates without emitting repeated tool cards", () => {
     const projection = makeProjection()
 

@@ -1,5 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
-import type { AgentRuntimeEvent, ToolDisplay } from "../../contracts/agent-runtime-event"
+import type { AgentRuntimeEvent, RuntimeToolAttachment, ToolDisplay } from "../../contracts/agent-runtime-event"
 import { object, text } from "../../value"
 import { userMessageIdForAssistantReply } from "../../contracts/turn-message-ids"
 import type { RuntimeProjection } from "../../core/projection"
@@ -641,6 +641,7 @@ function filePart(input: {
   mime: string
   url: string
   filename?: string
+  location?: Extract<ClientPresentationPart, { type: "file" }>["location"]
   source?: Extract<ClientPresentationPart, { type: "file" }>["source"]
 }): Extract<ClientPresentationPart, { type: "file" }> {
   return {
@@ -651,8 +652,42 @@ function filePart(input: {
     mime: input.mime,
     url: input.url,
     ...(input.filename ? { filename: input.filename } : {}),
+    ...(input.location ? { location: input.location } : {}),
     ...(input.source ? { source: input.source } : {}),
   }
+}
+
+function attachmentFilename(attachment: RuntimeToolAttachment) {
+  if (attachment.filename) return attachment.filename
+  return `${attachment.mime.startsWith("image/") ? "image" : "attachment"}.${extension(attachment.mime)}`
+}
+
+/**
+ * The locator spelling the workbench already uses for a file part it did not
+ * inline: `file://` plus the path. Nothing fetches it — `location` is what a
+ * view reads — but it keeps `url` naming the file rather than lying about
+ * carrying it.
+ */
+function fileLocator(path: string) {
+  return `file://${path.split("/").map(encodeURIComponent).join("/")}`
+}
+
+function attachmentPart(ctx: CompatContext, id: string, attachment: RuntimeToolAttachment) {
+  const common = { ctx, id, mime: attachment.mime, filename: attachmentFilename(attachment) }
+  if (attachment.kind === "inline") return filePart({ ...common, url: attachment.url })
+  if (attachment.kind === "workspace-file") {
+    return filePart({ ...common, url: fileLocator(attachment.path), location: { kind: "workspace-file", path: attachment.path } })
+  }
+  return filePart({
+    ...common,
+    url: attachment.sourcePath ? fileLocator(attachment.sourcePath) : "",
+    location: { kind: "unretained", bytes: attachment.bytes },
+  })
+}
+
+function toolAttachments(ctx: CompatContext, toolCallId: string) {
+  return (ctx.toolAttachmentsByCallId[toolCallId] ?? []).map((attachment, index) =>
+    attachmentPart(ctx, seqId(ctx, `${toolCallId}-attachment-${index}`), attachment))
 }
 
 function toolState(input: {
@@ -663,6 +698,7 @@ function toolState(input: {
   now: number
   output?: string
   error?: string
+  attachments: Extract<ClientPresentationPart, { type: "file" }>[]
 }): ToolPart["state"] {
   if (input.status === "pending") {
     return {
@@ -679,6 +715,7 @@ function toolState(input: {
       title: input.tool,
       metadata: input.metadata,
       time: { start: input.now, end: input.now },
+      ...(input.attachments.length ? { attachments: input.attachments } : {}),
     }
   }
   if (input.status === "error") {
@@ -722,6 +759,7 @@ function toolPart(input: {
       stateInput: input.stateInput,
       metadata: input.metadata ?? {},
       now: input.now,
+      attachments: toolAttachments(input.ctx, input.toolCallId),
       ...(input.output !== undefined ? { output: input.output } : {}),
       ...(input.error !== undefined ? { error: input.error } : {}),
     }),
@@ -1108,7 +1146,11 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "tool-start": {
       split()
-      const tool = chunk.toolName || chunk.toolCallId
+      /* Harnesses spell their tools differently — Claude sends `Bash`/`Read`, OpenCode
+         sends `bash`/`read`. Every downstream reader (the grouping vocabularies, the
+         renderer registry, getToolInfo) matches lowercase, so canonicalise once here
+         rather than at each of them. */
+      const tool = chunk.toolName ? chunk.toolName.toLowerCase() : chunk.toolCallId
       ctx.toolNamesByCallId[chunk.toolCallId] = tool
       const metadata = mergeMetadata(ctx.toolMetadataByCallId[chunk.toolCallId], chunk.metadata)
       const display = mergeDisplay(ctx.toolDisplaysByCallId[chunk.toolCallId], chunk.display)
@@ -1254,6 +1296,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
       ctx.toolDisplaysByCallId[chunk.toolCallId] = display
       ctx.toolStatusByCallId[chunk.toolCallId] = "completed"
       ctx.toolOutputsByCallId[chunk.toolCallId] = formatted.value
+      if (chunk.attachments?.length) ctx.toolAttachmentsByCallId[chunk.toolCallId] = chunk.attachments
       const endedAt = now()
       return [
         ...(formatted.issues.length ? [withDir(ctx.directory, projectionDiagnostic({

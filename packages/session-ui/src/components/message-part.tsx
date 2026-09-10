@@ -17,6 +17,7 @@ import { createStore } from "solid-js/store"
 import stripAnsi from "strip-ansi"
 import { Dynamic } from "solid-js/web"
 import type {
+  AgentFileLocation,
   AgentAgentPart,
   AgentAssistantMessage,
   AgentContentPart,
@@ -34,12 +35,33 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type UiI18n, useI18n } from "@opencode-ai/ui/context/i18n"
 import { BasicTool, GenericTool } from "./basic-tool"
+import {
+  EDIT_TOOL_NAMES,
+  groupParts,
+  HIDDEN_TOOLS,
+  sameGroups,
+  WEB_TOOL_NAMES,
+  type PartGroup,
+  type PartRef,
+} from "./part-groups"
+import {
+  assistantMessageSettled,
+  countFoldableGroups,
+  foldedGroupKeys,
+  turnFoldDecision,
+  finalTextPartID,
+  type FoldScope,
+  type TurnShape,
+} from "./turn-fold"
+import { TurnFoldRow } from "./turn-fold-row"
+import { SubagentChipRow } from "./subagent-chip"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ToolErrorCard } from "./tool-error-card"
+import { isQuestionDeclined } from "./question-result"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Markdown } from "./markdown"
@@ -412,6 +434,8 @@ export type ToolInfo = {
   icon: IconProps["name"]
   title: string
   subtitle?: string
+  /** Secondary `key=value` chips, shown after the subtitle. */
+  args?: string[]
 }
 
 function agentTitle(i18n: UiI18n, type?: string) {
@@ -514,30 +538,41 @@ export function getToolInfo(
 ): ToolInfo {
   const i18n = useI18n()
   switch (tool) {
-    case "read":
+    case "read": {
+      const args: string[] = []
+      if (input.offset) args.push("offset=" + input.offset)
+      if (input.limit) args.push("limit=" + input.limit)
       return {
         icon: "glasses",
         title: i18n.t("ui.tool.read"),
         subtitle: input.filePath ? getFilename(input.filePath) : undefined,
+        args,
       }
+    }
     case "list":
       return {
         icon: "bullet-list",
         title: i18n.t("ui.tool.list"),
-        subtitle: input.path ? getFilename(input.path) : undefined,
+        subtitle: getDirectory(input.path || "/"),
       }
     case "glob":
       return {
         icon: "magnifying-glass-menu",
         title: i18n.t("ui.tool.glob"),
-        subtitle: input.pattern,
+        subtitle: getDirectory(input.path || "/"),
+        args: input.pattern ? ["pattern=" + input.pattern] : [],
       }
-    case "grep":
+    case "grep": {
+      const args: string[] = []
+      if (input.pattern) args.push("pattern=" + input.pattern)
+      if (input.include) args.push("include=" + input.include)
       return {
         icon: "magnifying-glass-menu",
         title: i18n.t("ui.tool.grep"),
-        subtitle: input.pattern,
+        subtitle: getDirectory(input.path || "/"),
+        args,
       }
+    }
     case "webfetch":
       return {
         icon: "window-cursor",
@@ -637,9 +672,6 @@ function sessionLink(
   return `${path.slice(0, idx)}/session/${id}`
 }
 
-const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
-const HIDDEN_TOOLS = new Set(["todowrite"])
-
 function list<T>(value: T[] | undefined | null, fallback: T[]) {
   if (Array.isArray(value)) return value
   return fallback
@@ -650,137 +682,6 @@ function same<T>(a: readonly T[] | undefined, b: readonly T[] | undefined) {
   if (!a || !b) return false
   if (a.length !== b.length) return false
   return a.every((x, i) => x === b[i])
-}
-
-export type PartRef = {
-  messageID: string
-  partID: string
-}
-
-/** Category discriminator for a work group: drives icon + summary priority. */
-export type WorkGroupTool = "bash" | "edit" | "write" | "apply_patch" | "webfetch" | "websearch"
-
-export const WORK_GROUP_TOOLS = new Set<string>([
-  "bash",
-  "command",
-  "shell",
-  "local_shell",
-  "edit",
-  "edit_file",
-  "write",
-  "write_file",
-  "apply_patch",
-  "webfetch",
-  "websearch",
-  "web_search",
-])
-
-export function isWorkGroupTool(part: AgentContentPart): part is AgentToolPart {
-  return part.type === "tool" && WORK_GROUP_TOOLS.has(part.tool)
-}
-
-export type PartGroup =
-  | {
-      key: string
-      type: "part"
-      ref: PartRef
-    }
-  | {
-      key: string
-      type: "context"
-      refs: PartRef[]
-    }
-  | {
-      key: string
-      type: "work"
-      tool: WorkGroupTool
-      refs: PartRef[]
-    }
-  | {
-      key: string
-      type: "agents"
-      refs: PartRef[]
-    }
-
-function sameRef(a: PartRef, b: PartRef) {
-  return a.messageID === b.messageID && a.partID === b.partID
-}
-
-function sameRefs(a: PartRef[], b: PartRef[]) {
-  if (a.length !== b.length) return false
-  return a.every((ref, i) => sameRef(ref, b[i]))
-}
-
-function sameGroup(a: PartGroup, b: PartGroup) {
-  if (a === b) return true
-  if (a.key !== b.key) return false
-  if (a.type !== b.type) return false
-  if (a.type === "part") {
-    if (b.type !== "part") return false
-    return sameRef(a.ref, b.ref)
-  }
-  if (a.type === "work") {
-    if (b.type !== "work") return false
-    if (a.tool !== b.tool) return false
-    return sameRefs(a.refs, b.refs)
-  }
-  if (a.type === "agents") {
-    if (b.type !== "agents") return false
-    return sameRefs(a.refs, b.refs)
-  }
-  if (b.type !== "context") return false
-  return sameRefs(a.refs, b.refs)
-}
-
-export function sameGroups(a: readonly PartGroup[] | undefined, b: readonly PartGroup[] | undefined) {
-  if (a === b) return true
-  if (!a || !b) return false
-  if (a.length !== b.length) return false
-  return a.every((item, i) => sameGroup(item, b[i]))
-}
-
-export function groupParts(parts: { messageID: string; part: AgentContentPart }[]) {
-  const result: PartGroup[] = []
-  let start = -1
-
-  const flush = (end: number) => {
-    if (start < 0) return
-    const first = parts[start]
-    const last = parts[end]
-    if (!first || !last) {
-      start = -1
-      return
-    }
-    result.push({
-      key: `context:${first.part.id}`,
-      type: "context",
-      refs: parts.slice(start, end + 1).map((item) => ({
-        messageID: item.messageID,
-        partID: item.part.id,
-      })),
-    })
-    start = -1
-  }
-
-  parts.forEach((item, index) => {
-    if (isContextGroupTool(item.part)) {
-      if (start < 0) start = index
-      return
-    }
-
-    flush(index - 1)
-    result.push({
-      key: `part:${item.messageID}:${item.part.id}`,
-      type: "part",
-      ref: {
-        messageID: item.messageID,
-        partID: item.part.id,
-      },
-    })
-  })
-
-  flush(parts.length - 1)
-  return result
 }
 
 function index<T extends { id: string }>(items: readonly T[]) {
@@ -809,19 +710,160 @@ export function partDefaultOpen(part: AgentContentPart, shell = false, edit = fa
   return toolDefaultOpen(part.tool, shell, edit)
 }
 
-export function AssistantParts(props: {
-  messages: AgentAssistantMessage[]
+type GroupMember = { message: AgentAssistantMessage; part: AgentToolPart }
+
+type PartGroupSlots = {
   showAssistantCopyPartID?: string | null
   turnDurationMs?: number
   useV2Actions?: boolean
-  working?: boolean
-  showReasoningSummaries?: boolean
   shellToolDefaultOpen?: boolean
   editToolDefaultOpen?: boolean
-}) {
+}
+
+function PartGroups(
+  props: PartGroupSlots & {
+    groups: PartGroup[]
+    message: (messageID: string) => AgentAssistantMessage | undefined
+    part: (ref: PartRef) => AgentContentPart | undefined
+    busyGroupKey?: string
+  },
+) {
+  const emptyTools: AgentToolPart[] = []
+  const emptyMembers: GroupMember[] = []
+
+  const tools = (group: PartGroup) => {
+    if (group.type === "part") return emptyTools
+    return group.refs
+      .map((ref) => props.part(ref))
+      .filter((part): part is AgentToolPart => part?.type === "tool")
+  }
+
+  const members = (group: PartGroup) => {
+    if (group.type === "part") return emptyMembers
+    return group.refs
+      .map((ref) => {
+        const message = props.message(ref.messageID)
+        const part = props.part(ref)
+        if (!message || part?.type !== "tool") return undefined
+        return { message, part }
+      })
+      .filter((member): member is GroupMember => !!member)
+  }
+
+  return (
+    <Index each={props.groups}>
+      {(entryAccessor) => {
+        const entryType = createMemo(() => entryAccessor().type)
+        const busy = createMemo(() => props.busyGroupKey === entryAccessor().key)
+
+        return (
+          <Switch>
+            <Match when={entryType() === "context"}>
+              {(() => {
+                const group = createMemo(() => members(entryAccessor()))
+                return (
+                  <Show when={group().length > 0}>
+                    <ContextToolGroup parts={group().map((member) => member.part)} busy={busy()}>
+                      <For each={group()}>
+                        {(member) => <Part part={member.part} message={member.message} />}
+                      </For>
+                    </ContextToolGroup>
+                  </Show>
+                )
+              })()}
+            </Match>
+            <Match when={entryType() === "agents"}>
+              {(() => {
+                const parts = createMemo(() => tools(entryAccessor()), emptyTools, { equals: same })
+                return <SubagentChipRow parts={parts()} />
+              })()}
+            </Match>
+            <Match when={entryType() === "work"}>
+              {(() => {
+                const group = createMemo(() => members(entryAccessor()))
+
+                return (
+                  <WorkGroup parts={group().map((member) => member.part)} busy={busy()}>
+                    <For each={group()}>
+                      {(member) => (
+                        <Part
+                          part={member.part}
+                          message={member.message}
+                          turnDurationMs={props.turnDurationMs}
+                          useV2Actions={props.useV2Actions}
+                          defaultOpen={partDefaultOpen(
+                            member.part,
+                            props.shellToolDefaultOpen,
+                            props.editToolDefaultOpen,
+                          )}
+                        />
+                      )}
+                    </For>
+                  </WorkGroup>
+                )
+              })()}
+            </Match>
+            <Match when={entryType() === "part"}>
+              {(() => {
+                const message = createMemo(() => {
+                  const entry = entryAccessor()
+                  if (entry.type !== "part") return undefined
+                  return props.message(entry.ref.messageID)
+                })
+                const item = createMemo(() => {
+                  const entry = entryAccessor()
+                  if (entry.type !== "part") return undefined
+                  return props.part(entry.ref)
+                })
+
+                return (
+                  <Show when={message()}>
+                    {(message) => (
+                      <Show when={item()}>
+                        {(item) => (
+                          <Part
+                            part={item()}
+                            message={message()}
+                            showAssistantCopyPartID={props.showAssistantCopyPartID}
+                            turnDurationMs={props.turnDurationMs}
+                            useV2Actions={props.useV2Actions}
+                            defaultOpen={partDefaultOpen(
+                              item(),
+                              props.shellToolDefaultOpen,
+                              props.editToolDefaultOpen,
+                            )}
+                          />
+                        )}
+                      </Show>
+                    )}
+                  </Show>
+                )
+              })()}
+            </Match>
+          </Switch>
+        )
+      }}
+    </Index>
+  )
+}
+
+export function AssistantParts(
+  props: PartGroupSlots & {
+    messages: AgentAssistantMessage[]
+    working?: boolean
+    showReasoningSummaries?: boolean
+    /** Folds a settled turn's machinery behind one "Worked for Xs" divider. */
+    foldSettledTurn?: boolean
+    /** Folds a running turn's completed phases behind "Working for Xs", keeping the live group. */
+    foldRunningTurn?: boolean
+    /** Defaults to `interleaved`, the only shape the harnesses currently support. */
+    turnShape?: TurnShape
+    turnInterrupted?: boolean
+    turnErrored?: boolean
+  },
+) {
   const data = useData()
   const emptyParts: AgentContentPart[] = []
-  const emptyTools: AgentToolPart[] = []
   const msgs = createMemo(() => index(props.messages))
   const part = createMemo(
     () =>
@@ -848,140 +890,57 @@ export function AssistantParts(props: {
 
   const last = createMemo(() => grouped().at(-1)?.key)
 
+  const partOf = (ref: PartRef) => part().get(ref.messageID)?.get(ref.partID)
+  const [foldChoice, setFoldChoice] = createSignal<boolean | undefined>(undefined)
+  const settled = createMemo(() => props.messages.some(assistantMessageSettled))
+  /* Mid-turn the latest text is not yet known to be the last, so narration only folds
+     once the turn has settled. */
+  const foldScope = createMemo<FoldScope>(() =>
+    props.turnShape === "final-message" && settled()
+      ? { shape: "final-message", finalTextPartID: finalTextPartID(grouped(), partOf) }
+      : {},
+  )
+  const fold = createMemo(() =>
+    turnFoldDecision({
+      foldableCount: countFoldableGroups(grouped(), partOf, foldScope()),
+      settled: settled(),
+      interrupted: props.turnInterrupted,
+      errored: props.turnErrored,
+      busy: props.working,
+      foldWhenSettled: props.foldSettledTurn,
+      foldWhileRunning: props.foldRunningTurn ?? true,
+      userChoice: foldChoice(),
+    }),
+  )
+  const folded = createMemo(() => foldedGroupKeys(fold(), grouped(), partOf, foldScope()))
+  const visibleGroups = createMemo(() => {
+    const keys = folded()
+    return keys.size === 0 ? grouped() : grouped().filter((group) => !keys.has(group.key))
+  })
+
   return (
-    <Index each={grouped()}>
-      {(entryAccessor) => {
-        const entryType = createMemo(() => entryAccessor().type)
-
-        return (
-          <Switch>
-            <Match when={entryType() === "context"}>
-              {(() => {
-                const parts = createMemo(
-                  () => {
-                    const entry = entryAccessor()
-                    if (entry.type !== "context") return emptyTools
-                    return entry.refs
-                      .map((ref) => part().get(ref.messageID)?.get(ref.partID))
-                      .filter((part): part is AgentToolPart => !!part && isContextGroupTool(part))
-                  },
-                  emptyTools,
-                  { equals: same },
-                )
-                const busy = createMemo(() => props.working && last() === entryAccessor().key)
-
-                return (
-                  <Show when={parts().length > 0}>
-                    <ContextToolGroup parts={parts()} busy={busy()} />
-                  </Show>
-                )
-              })()}
-            </Match>
-            <Match when={entryType() === "part"}>
-              {(() => {
-                const message = createMemo(() => {
-                  const entry = entryAccessor()
-                  if (entry.type !== "part") return undefined
-                  return msgs().get(entry.ref.messageID)
-                })
-                const item = createMemo(() => {
-                  const entry = entryAccessor()
-                  if (entry.type !== "part") return undefined
-                  return part().get(entry.ref.messageID)?.get(entry.ref.partID)
-                })
-
-                return (
-                  <Show when={message()}>
-                    <Show when={item()}>
-                      <Part
-                        part={item()!}
-                        message={message()!}
-                        showAssistantCopyPartID={props.showAssistantCopyPartID}
-                        turnDurationMs={props.turnDurationMs}
-                        useV2Actions={props.useV2Actions}
-                        defaultOpen={partDefaultOpen(item()!, props.shellToolDefaultOpen, props.editToolDefaultOpen)}
-                      />
-                    </Show>
-                  </Show>
-                )
-              })()}
-            </Match>
-          </Switch>
-        )
-      }}
-    </Index>
+    <>
+      <Show when={fold().canFold}>
+        <TurnFoldRow
+          durationMs={props.turnDurationMs}
+          folded={fold().folded}
+          running={fold().canFoldRunning}
+          onToggle={() => setFoldChoice(!fold().folded)}
+        />
+      </Show>
+      <PartGroups
+        groups={visibleGroups()}
+        message={(messageID) => msgs().get(messageID)}
+        part={partOf}
+        busyGroupKey={props.working ? last() : undefined}
+        showAssistantCopyPartID={props.showAssistantCopyPartID}
+        turnDurationMs={props.turnDurationMs}
+        useV2Actions={props.useV2Actions}
+        shellToolDefaultOpen={props.shellToolDefaultOpen}
+        editToolDefaultOpen={props.editToolDefaultOpen}
+      />
+    </>
   )
-}
-
-function isContextGroupTool(part: AgentContentPart): part is AgentToolPart {
-  return part.type === "tool" && CONTEXT_GROUP_TOOLS.has(part.tool)
-}
-
-function contextToolDetail(part: AgentToolPart): string | undefined {
-  const info = getToolInfo(
-    part.tool,
-    part.state.input ?? {},
-    "metadata" in part.state ? part.state.metadata : undefined,
-  )
-  if (info.subtitle) return info.subtitle
-  if (part.state.status === "error") return part.state.error
-  if ((part.state.status === "running" || part.state.status === "completed") && part.state.title)
-    return part.state.title
-  const description = part.state.input?.description
-  if (typeof description === "string") return description
-  return undefined
-}
-
-function contextToolTrigger(part: AgentToolPart, i18n: ReturnType<typeof useI18n>) {
-  const input = (part.state.input ?? {})
-  const path = typeof input.path === "string" ? input.path : "/"
-  const filePath = typeof input.filePath === "string" ? input.filePath : undefined
-  const pattern = typeof input.pattern === "string" ? input.pattern : undefined
-  const include = typeof input.include === "string" ? input.include : undefined
-  const offset = typeof input.offset === "number" ? input.offset : undefined
-  const limit = typeof input.limit === "number" ? input.limit : undefined
-
-  switch (part.tool) {
-    case "read": {
-      const args: string[] = []
-      if (offset !== undefined) args.push("offset=" + offset)
-      if (limit !== undefined) args.push("limit=" + limit)
-      return {
-        title: i18n.t("ui.tool.read"),
-        subtitle: filePath ? getFilename(filePath) : "",
-        args,
-      }
-    }
-    case "list":
-      return {
-        title: i18n.t("ui.tool.list"),
-        subtitle: getDirectory(path),
-      }
-    case "glob":
-      return {
-        title: i18n.t("ui.tool.glob"),
-        subtitle: getDirectory(path),
-        args: pattern ? ["pattern=" + pattern] : [],
-      }
-    case "grep": {
-      const args: string[] = []
-      if (pattern) args.push("pattern=" + pattern)
-      if (include) args.push("include=" + include)
-      return {
-        title: i18n.t("ui.tool.grep"),
-        subtitle: getDirectory(path),
-        args,
-      }
-    }
-    default: {
-      const info = getToolInfo(part.tool, input, "metadata" in part.state ? part.state.metadata : undefined)
-      return {
-        title: info.title,
-        subtitle: info.subtitle || contextToolDetail(part),
-        args: [],
-      }
-    }
-  }
 }
 
 function contextToolSummary(parts: AgentToolPart[]) {
@@ -1067,7 +1026,6 @@ export function AssistantMessageDisplay(props: {
   showReasoningSummaries?: boolean
   useV2Actions?: boolean
 }) {
-  const emptyTools: AgentToolPart[] = []
   const part = createMemo(() => index(props.parts))
   const grouped = createMemo(
     () =>
@@ -1084,66 +1042,28 @@ export function AssistantMessageDisplay(props: {
   )
 
   return (
-    <Index each={grouped()}>
-      {(entryAccessor) => {
-        const entryType = createMemo(() => entryAccessor().type)
-
-        return (
-          <Switch>
-            <Match when={entryType() === "context"}>
-              {(() => {
-                const parts = createMemo(
-                  () => {
-                    const entry = entryAccessor()
-                    if (entry.type !== "context") return emptyTools
-                    return entry.refs
-                      .map((ref) => part().get(ref.partID))
-                      .filter((part): part is AgentToolPart => !!part && isContextGroupTool(part))
-                  },
-                  emptyTools,
-                  { equals: same },
-                )
-
-                return (
-                  <Show when={parts().length > 0}>
-                    <ContextToolGroup parts={parts()} />
-                  </Show>
-                )
-              })()}
-            </Match>
-            <Match when={entryType() === "part"}>
-              {(() => {
-                const item = createMemo(() => {
-                  const entry = entryAccessor()
-                  if (entry.type !== "part") return undefined
-                  return part().get(entry.ref.partID)
-                })
-
-                return (
-                  <Show when={item()}>
-                    <Part
-                      part={item()!}
-                      message={props.message}
-                      showAssistantCopyPartID={props.showAssistantCopyPartID}
-                      useV2Actions={props.useV2Actions}
-                    />
-                  </Show>
-                )
-              })()}
-            </Match>
-          </Switch>
-        )
-      }}
-    </Index>
+    <PartGroups
+      groups={grouped()}
+      message={() => props.message}
+      part={(ref) => part().get(ref.partID)}
+      showAssistantCopyPartID={props.showAssistantCopyPartID}
+      useV2Actions={props.useV2Actions}
+    />
   )
 }
 
+/**
+ * A run of read/list/glob/grep folded to one "Explored" line. `parts` drives the header
+ * counts only; the member rows are passed in as children so each one renders through its
+ * own tool renderer, and context-tool-group-list strips them back to a compact row.
+ */
 export function ContextToolGroup(props: {
   parts: AgentToolPart[]
   busy?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
   onSizeChange?: () => void
+  children: JSX.Element
 }) {
   const i18n = useI18n()
   const [localOpen, setLocalOpen] = createSignal(false)
@@ -1214,41 +1134,7 @@ export function ContextToolGroup(props: {
         </div>
       </Collapsible.Trigger>
       <Collapsible.Content>
-        <div data-component="context-tool-group-list">
-          <Index each={props.parts}>
-            {(partAccessor) => {
-              const trigger = createMemo(() => contextToolTrigger(partAccessor(), i18n))
-              const running = createMemo(
-                () => partAccessor().state.status === "pending" || partAccessor().state.status === "running",
-              )
-              return (
-                <div data-slot="context-tool-group-item">
-                  <div data-component="tool-trigger">
-                    <div data-slot="basic-tool-tool-trigger-content">
-                      <div data-slot="basic-tool-tool-info">
-                        <div data-slot="basic-tool-tool-info-structured">
-                          <div data-slot="basic-tool-tool-info-main">
-                            <span data-slot="basic-tool-tool-title">
-                              <TextShimmer text={trigger().title} active={running()} />
-                            </span>
-                            <Show when={!running() && trigger().subtitle}>
-                              <span data-slot="basic-tool-tool-subtitle">{trigger().subtitle}</span>
-                            </Show>
-                            <Show when={!running() && trigger().args?.length}>
-                              <For each={trigger().args}>
-                                {(arg) => <span data-slot="basic-tool-tool-arg" class="ui-basic-tool-tool-arg">{arg}</span>}
-                              </For>
-                            </Show>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )
-            }}
-          </Index>
-        </div>
+        <div data-component="context-tool-group-list">{props.children}</div>
       </Collapsible.Content>
     </Collapsible>
   )
@@ -1288,9 +1174,6 @@ function workGroupSummary(parts: AgentToolPart[]): WorkGroupCounts {
   }
   return { edited, commands, fetched, searched }
 }
-
-const EDIT_TOOL_NAMES = new Set(["edit", "edit_file", "write", "write_file", "apply_patch"])
-const WEB_TOOL_NAMES = new Set(["webfetch", "websearch", "web_search"])
 
 function workGroupIcon(parts: AgentToolPart[]): IconProps["name"] {
   if (parts.some((p) => EDIT_TOOL_NAMES.has(p.tool))) return "code-lines"
@@ -1476,7 +1359,6 @@ export function UserMessageDisplay(props: {
   comments?: UserMessageComment[]
 }) {
   const data = useData()
-  const dialog = useDialog()
   const i18n = useI18n()
   const [state, setState] = createStore({
     copied: false,
@@ -1528,11 +1410,7 @@ export function UserMessageDisplay(props: {
 
   const metaTail = stamp
 
-  const openImagePreview = (url: string, alt?: string) => {
-    // `show` resolves when Solid's transition settles; nothing here waits on the dialog
-    // being on screen, and the transition promise does not reject.
-    void dialog.show(() => <ImagePreview src={url} alt={alt} />)
-  }
+  const openImagePreview = useImagePreview()
 
   const handleCopy = async () => {
     const content = text()
@@ -1762,6 +1640,8 @@ export interface ToolProps {
   toolCallId?: string
   sessionID?: string
   output?: string
+  /** Files the call produced. A `read` of an image lands here; text output stays in `output`. */
+  attachments?: AgentFilePart[]
   status?: string
   startedAt?: number
   hideDetails?: boolean
@@ -1897,6 +1777,11 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     const state = part().state
     return state.status === "completed" ? state.output : undefined
   })
+  /** Like `output`, the contract carries attachments only on a completed call. */
+  const toolAttachments = createMemo(() => {
+    const state = part().state
+    return state.status === "completed" ? state.attachments : undefined
+  })
   const taskId = createMemo(() => {
     if (part().tool !== "task") return undefined
     const value = partMetadata().sessionId
@@ -1924,8 +1809,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
         <Switch>
           <Match when={toolError()}>
             {(error) => {
-              const cleaned = error().replace("Error: ", "")
-              if (part().tool === "question" && cleaned.includes("dismissed this question")) {
+              if (part().tool === "question" && isQuestionDeclined(error())) {
                 return (
                   <div style="width: 100%; display: flex; justify-content: flex-end;">
                     <span class="text-13-regular text-text-weak cursor-default">
@@ -1957,6 +1841,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               sessionID={part().sessionID}
               metadata={partMetadata()}
               output={toolOutput()}
+              attachments={toolAttachments()}
               status={part().state.status}
               startedAt={toolStartedAt()}
               hideDetails={props.hideDetails}
@@ -2149,8 +2034,30 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   )
 }
 
-PART_MAPPING["file"] = function FilePartDisplay(props) {
+/**
+ * Opens an image in the full-view dialog. `show` resolves when Solid's transition
+ * settles; nothing here waits on the dialog being on screen, and the transition promise
+ * does not reject.
+ */
+function useImagePreview() {
   const dialog = useDialog()
+  return (url: string, alt?: string) => void dialog.show(() => <ImagePreview src={url} alt={alt} />)
+}
+
+function ToolImageUnavailable(props: { name: string; location?: AgentFileLocation }) {
+  return (
+    <div data-slot="tool-image-unavailable" class="ui-tool-image-unavailable">
+      <Icon name="file" size="small" />
+      <span>{props.name}</span>
+      <Show when={props.location?.kind === "unretained" ? props.location : undefined}>
+        {(location) => <span data-slot="tool-image-size">{`${Math.round(location().bytes / 1024)} KB`}</span>}
+      </Show>
+    </div>
+  )
+}
+
+PART_MAPPING["file"] = function FilePartDisplay(props) {
+  const openImagePreview = useImagePreview()
   const part = () => {
     const value = props.part
     if (value.type !== "file") throw wrongPartType("file", value)
@@ -2181,7 +2088,7 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
             data-slot="file-part-image"
             src={part().url}
             alt={name()}
-            onClick={() => dialog.show(() => <ImagePreview src={part().url} alt={name()} />)}
+            onClick={() => openImagePreview(part().url, name())}
           />
         </Match>
         <Match when={isAudio()}>
@@ -2197,26 +2104,62 @@ ToolRegistry.register({
   render(props) {
     const data = useData()
     const i18n = useI18n()
-    const args: string[] = []
-    if (props.input.offset) args.push("offset=" + props.input.offset)
-    if (props.input.limit) args.push("limit=" + props.input.limit)
+    const openImagePreview = useImagePreview()
+    // The registered name, not props.tool: an alias (`read_file`) renders here too.
+    const info = createMemo(() => getToolInfo("read", props.input))
     const loaded = createMemo(() => {
       if (props.status !== "completed") return []
       const value = props.metadata.loaded
       if (!value || !Array.isArray(value)) return []
       return value.filter((p): p is string => typeof p === "string")
     })
+    const images = createMemo(() => (props.attachments ?? []).filter((file) => file.mime.startsWith("image/")))
     return (
       <>
         <BasicTool
           {...props}
-          icon="glasses"
-          trigger={{
-            title: i18n.t("ui.tool.read"),
-            subtitle: props.input.filePath ? getFilename(props.input.filePath) : "",
-            args,
-          }}
+          icon={info().icon}
+          trigger={{ title: info().title, subtitle: info().subtitle ?? "", args: info().args }}
         />
+        <For each={images()}>
+          {(image) => {
+            const name = () => image.filename ?? getFilename(image.url) ?? image.url
+            /* A file left on disk carries only a path; `file://` is not fetchable from a
+               page, so it renders only once the host resolves the path to a real url. */
+            const src = createMemo(() => {
+              const location = image.location
+              if (!location) return image.url
+              if (location.kind === "unretained") return undefined
+              return data.fileUrl?.(location.path)
+            })
+            return (
+              <div data-component="tool-image" class="ui-tool-image">
+                <Show
+                  when={src()}
+                  fallback={<ToolImageUnavailable name={name()} location={image.location} />}
+                >
+                  {(url) => {
+                    const [failed, setFailed] = createSignal(false)
+                    return (
+                      <Show
+                        when={!failed()}
+                        fallback={<ToolImageUnavailable name={name()} location={image.location} />}
+                      >
+                        <img
+                          data-slot="tool-image-thumbnail"
+                          src={url()}
+                          alt={name()}
+                          onError={() => setFailed(true)}
+                          onClick={() => openImagePreview(url(), name())}
+                        />
+                      </Show>
+                    )
+                  }}
+                </Show>
+              </div>
+            )
+          }}
+        </For>
         <For each={loaded()}>
           {(filepath) => (
             <div data-component="tool-loaded-file" class="ui-tool-loaded-file">
@@ -2236,12 +2179,9 @@ ToolRegistry.register({
   name: "list",
   render(props) {
     const i18n = useI18n()
+    const info = createMemo(() => getToolInfo("list", props.input))
     return (
-      <BasicTool
-        {...props}
-        icon="bullet-list"
-        trigger={{ title: i18n.t("ui.tool.list"), subtitle: getDirectory(props.input.path || "/") }}
-      >
+      <BasicTool {...props} icon={info().icon} trigger={{ title: info().title, subtitle: info().subtitle }}>
         <Show when={props.output}>
           <div
             data-component="tool-output"
@@ -2262,15 +2202,12 @@ ToolRegistry.register({
   name: "glob",
   render(props) {
     const i18n = useI18n()
+    const info = createMemo(() => getToolInfo("glob", props.input))
     return (
       <BasicTool
         {...props}
-        icon="magnifying-glass-menu"
-        trigger={{
-          title: i18n.t("ui.tool.glob"),
-          subtitle: getDirectory(props.input.path || "/"),
-          args: props.input.pattern ? ["pattern=" + props.input.pattern] : [],
-        }}
+        icon={info().icon}
+        trigger={{ title: info().title, subtitle: info().subtitle, args: info().args }}
       >
         <Show when={props.output}>
           <div
@@ -2292,18 +2229,12 @@ ToolRegistry.register({
   name: "grep",
   render(props) {
     const i18n = useI18n()
-    const args: string[] = []
-    if (props.input.pattern) args.push("pattern=" + props.input.pattern)
-    if (props.input.include) args.push("include=" + props.input.include)
+    const info = createMemo(() => getToolInfo("grep", props.input))
     return (
       <BasicTool
         {...props}
-        icon="magnifying-glass-menu"
-        trigger={{
-          title: i18n.t("ui.tool.grep"),
-          subtitle: getDirectory(props.input.path || "/"),
-          args,
-        }}
+        icon={info().icon}
+        trigger={{ title: info().title, subtitle: info().subtitle, args: info().args }}
       >
         <Show when={props.output}>
           <div

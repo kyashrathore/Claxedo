@@ -1,5 +1,5 @@
 import { cloneSnapshotValue } from "../../core/state"
-import type { ToolDisplay } from "../../contracts/agent-runtime-event"
+import type { RuntimeToolAttachment, ToolDisplay } from "../../contracts/agent-runtime-event"
 
 export type ClientPresentationProjectionState = {
   assistantMsgId?: string
@@ -28,6 +28,7 @@ export type ClientPresentationProjectionState = {
   toolMetadataByCallId: Record<string, Record<string, unknown>>
   toolStatusByCallId: Record<string, "pending" | "running" | "completed" | "error">
   toolOutputsByCallId: Record<string, string>
+  toolAttachmentsByCallId: Record<string, RuntimeToolAttachment[]>
   toolErrorsByCallId: Record<string, string>
   textPartSeq: number
   reasoningPartSeq: number
@@ -53,6 +54,7 @@ export function createClientPresentationProjectionState(
     toolMetadataByCallId: cloneSnapshotValue(initial?.toolMetadataByCallId ?? {}),
     toolStatusByCallId: cloneSnapshotValue(initial?.toolStatusByCallId ?? {}),
     toolOutputsByCallId: cloneSnapshotValue(initial?.toolOutputsByCallId ?? {}),
+    toolAttachmentsByCallId: cloneSnapshotValue(initial?.toolAttachmentsByCallId ?? {}),
     toolErrorsByCallId: cloneSnapshotValue(initial?.toolErrorsByCallId ?? {}),
     textPartSeq: initial?.textPartSeq ?? 0,
     reasoningPartSeq: initial?.reasoningPartSeq ?? 0,

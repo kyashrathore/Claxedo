@@ -1,9 +1,8 @@
 // Standalone presentational rows for the message timeline: the thinking
-// shimmer, the "Worked for Xs" turn-fold header, the "N previous messages"
-// reveal row, and the per-turn diff summary (with its accordion, hover
-// preview, and undo affordance). These render purely from props — no
-// timeline, virtualizer, or session state — which is why they live beside
-// message-timeline.tsx rather than inside it.
+// shimmer, the "N previous messages" reveal row, and the per-turn diff summary
+// (with its accordion, hover preview, and undo affordance). These render purely
+// from props — no timeline, virtualizer, or session state — which is why they
+// live beside message-timeline.tsx rather than inside it.
 import { createMemo, For, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
@@ -18,7 +17,6 @@ import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
 import { normalize } from "@/ui/session-kit"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useLanguage } from "@/platform/i18n/provider"
-import { formatDuration } from "@/ui/session-kit"
 import type { SummaryDiff } from "./message-timeline.data"
 
 export function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSummaries: boolean }) {
@@ -30,57 +28,6 @@ export function TimelineThinkingRow(props: { reasoningHeading?: string; showReas
       <Show when={!props.showReasoningSummaries}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
-    </div>
-  )
-}
-
-function formatTokenCount(tokens: number): string {
-  if (tokens >= 1000) return `${(tokens / 1000).toFixed(1)}k`
-  return String(tokens)
-}
-
-export function TurnFoldRow(props: {
-  durationMs?: number
-  folded: boolean
-  onToggle: () => void
-  tokens?: number
-  cost?: number
-  showTokens?: boolean
-  running?: boolean
-}) {
-  const label = () => {
-    const verb = props.running ? "Working" : "Worked"
-    return typeof props.durationMs === "number" ? `${verb} for ${formatDuration(props.durationMs)}` : verb
-  }
-  const footer = () => {
-    if (!props.showTokens || !props.tokens) return undefined
-    const parts = [`${formatTokenCount(props.tokens)} tokens`]
-    if (typeof props.cost === "number" && props.cost > 0) parts.push(`$${props.cost.toFixed(2)}`)
-    return parts.join(" · ")
-  }
-  return (
-    <div data-component="turn-fold" class="w-full">
-      <button
-        type="button"
-        aria-expanded={!props.folded}
-        onClick={(event) => {
-          event.stopPropagation()
-          props.onToggle()
-        }}
-        class="group/turn-fold flex items-center gap-1.5 h-8 rounded-sm px-1 -mx-1 text-text-weak hover:text-text-strong focus-visible:text-text-strong focus-visible:outline-none transition-colors"
-      >
-        <span class="text-14-medium tabular-nums">{label()}</span>
-        <span
-          class="inline-flex items-center opacity-60 group-hover/turn-fold:opacity-100 transition-transform duration-300"
-          style={{ transform: props.folded ? "rotate(0deg)" : "rotate(90deg)" }}
-        >
-          <Icon name="chevron-right" size="small" />
-        </span>
-        <Show when={footer()}>
-          <span class="ml-auto text-12-regular text-text-weaker tabular-nums">{footer()}</span>
-        </Show>
-      </button>
-      <div class="h-px w-full bg-border-weak-base" aria-hidden="true" />
     </div>
   )
 }

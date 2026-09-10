@@ -149,10 +149,21 @@ export type AgentResourceSource = {
 
 export type AgentFilePartSource = AgentFileSource | AgentSymbolSource | AgentResourceSource
 
+/**
+ * Where a file part's bytes are when `url` does not carry them. A workspace
+ * file is read by path when the view needs it; unretained bytes were dropped
+ * at capture and only their size survives, so a view can say how large the
+ * image was instead of rendering a broken one.
+ */
+export type AgentFileLocation =
+  | { kind: "workspace-file"; path: string }
+  | { kind: "unretained"; bytes: number }
+
 export type AgentFilePart = AgentPartBase<"file"> & {
   mime: string
   filename?: string
   url: string
+  location?: AgentFileLocation
   source?: AgentFilePartSource
 }
 

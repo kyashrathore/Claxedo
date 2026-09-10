@@ -140,7 +140,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         : directory === sdk.directory
           ? sdk.client
           : sdk.createClient({ directory }),
-    usesSignedControlPlane,
+    stopFailedTitle: () => language.t("common.requestFailed"),
     hasActiveGoal: input.hasActiveGoal,
     stopGoal: input.stopGoal,
     stopGoalFailedTitle: () => language.t("prompt.toast.goalStopFailed.title"),

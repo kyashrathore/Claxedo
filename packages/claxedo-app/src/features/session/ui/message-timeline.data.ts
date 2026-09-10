@@ -10,7 +10,16 @@ import type {
 // all of which the optimistic stub carries, so it takes the projected row and
 // the just-typed turn renders before the runtime echoes it back.
 import type { ProjectedUserMessage as UserMessage } from "../conversation/agent-conversation-codec"
-import type { PartGroup, WorkGroupTool } from "@/ui/session-kit"
+import {
+  assistantMessageSettled,
+  countFoldableGroups,
+  foldedGroupKeys,
+  groupParts,
+  isSubagentToolPart,
+  turnFoldDecision,
+  HIDDEN_TOOLS,
+  type PartRef,
+} from "@/ui/session-kit"
 import {
   isTurnAdmissionConflict,
   sessionRecoveryClass,
@@ -19,7 +28,6 @@ import {
 import { stripRelayPrefix } from "../onboarding/provider-error-detail"
 import type { SessionTurnOutcome } from "../data/session-types"
 import { TimelineRow } from "./timeline-row-model"
-import { isSubagentToolPart } from "../subagents/subagent-presentation"
 
 export type SummaryDiff = SnapshotFileDiff & { file: string }
 
@@ -68,7 +76,7 @@ export namespace Timeline {
     isActive: boolean,
     firstTurnRecovery = index === 0,
     isFoldedChoice: (userMessageID: string) => boolean | undefined = () => undefined,
-    foldWhileRunning = false,
+    foldWhileRunning = true,
     lastTurn?: SessionTurnOutcome,
     visibleAssistantMessageIDs?: ReadonlySet<string>,
   ) {
@@ -164,16 +172,9 @@ export namespace Timeline {
       )
     }
 
-    // A settled turn with ≥2 foldable rows folds its work behind one "Worked for
-    // Xs" divider, leaving the prose visible; an explicit user toggle beats the
-    // auto-fold.
     const partByID = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part] as const))
-    const isGroupFoldable = (group: PartGroup): boolean => {
-      if (group.type === "context" || group.type === "work" || group.type === "agents") return true
-      if (group.type === "part") return partByID.get(group.ref.partID)?.type === "tool"
-      return false
-    }
-    const foldableCount = groupParts(assistantPartRefs).filter(isGroupFoldable).length
+    const partOfRef = (ref: PartRef) => partByID.get(ref.partID)
+    const foldableCount = countFoldableGroups(groupParts(assistantPartRefs), partOfRef)
     const completedTimes = assistantMessages
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")
@@ -192,17 +193,15 @@ export namespace Timeline {
       endTimes.length && typeof createdTime === "number"
         ? Math.max(0, Math.max(...endTimes) - createdTime)
         : undefined
-    const running = isActive && status === "busy" && !settled && !error
-    // A single tool is already one compact, useful row. Folding it replaces the
-    // only actionable content with an extra click and breaks the established
-    // standalone-tool/task-card contract. Collapse only multi-row work; grouped
-    // runs still count as one row because they already own their own disclosure.
-    const canFoldSettled = settled && !interrupted && !error && foldableCount >= 2
-    // While a turn is still running, fold its *completed* phases (≥3 groups) behind the
-    // summary but keep the latest live group visible so active work never disappears.
-    const canFoldRunning = running && foldWhileRunning && foldableCount >= 3
-    const userChoice = isFoldedChoice(userMessage.id)
-    const foldActive = canFoldSettled || canFoldRunning ? (userChoice ?? true) : false
+    const fold = turnFoldDecision({
+      foldableCount,
+      settled,
+      interrupted,
+      errored: !!error,
+      busy: isActive && status === "busy",
+      foldWhileRunning,
+      userChoice: isFoldedChoice(userMessage.id),
+    })
     const turnTokens = assistantMessages.reduce((sum, message) => {
       const t = message.tokens
       if (!t) return sum
@@ -210,28 +209,25 @@ export namespace Timeline {
     }, 0)
     const turnCost = assistantMessages.reduce((sum, message) => sum + (message.cost ?? 0), 0)
 
-    let lastFoldableIndex = -1
-    assistantItems.forEach((item, i) => {
-      if (item.type === "part" && isGroupFoldable(item.group)) lastFoldableIndex = i
-    })
-    const shouldFold = (item: (typeof assistantItems)[number], itemIndex: number) => {
-      if (!foldActive || item.type !== "part" || !isGroupFoldable(item.group)) return false
-      // Running-only phase fold keeps the last (live) group visible.
-      if (canFoldRunning && !canFoldSettled && itemIndex === lastFoldableIndex) return false
-      return true
-    }
-    const emittedCount = assistantItems.filter((item, i) => item.type === "part" && !shouldFold(item, i)).length
+    const foldedKeys = foldedGroupKeys(
+      fold,
+      assistantItems.flatMap((item) => (item.type === "part" ? [item.group] : [])),
+      partOfRef,
+    )
+    const emittedCount = assistantItems.filter(
+      (item) => item.type === "part" && !foldedKeys.has(item.group.key),
+    ).length
 
     // The fold row is the turn's header: it sits above the turn's content, not
     // wherever the first tool landed.
-    if (canFoldSettled || canFoldRunning) {
+    if (fold.canFold) {
       rows.push(
         TimelineRow.TurnFold({
           userMessageID: userMessage.id,
           durationMs,
           foldCount: foldableCount,
-          folded: foldActive,
-          running: running && !settled,
+          folded: fold.folded,
+          running: fold.running,
           tokens: turnTokens,
           cost: turnCost,
         }),
@@ -239,7 +235,7 @@ export namespace Timeline {
     }
 
     let assistantGroupIndex = 0
-    assistantItems.forEach((item, itemIndex) => {
+    assistantItems.forEach((item) => {
       if (item.type === "interrupted") {
         rows.push(
           TimelineRow.TurnDivider({
@@ -251,7 +247,7 @@ export namespace Timeline {
         return
       }
 
-      if (shouldFold(item, itemIndex)) return
+      if (foldedKeys.has(item.group.key)) return
 
       rows.push(
         TimelineRow.AssistantPart({
@@ -454,25 +450,6 @@ export namespace Timeline {
   }
 }
 
-// Tool vocabularies span harnesses: OpenCode emits `bash`/`read`/…, Codex emits
-// `command`/`read_file`/… Keep both here or those runs never group (they'd render as
-// loud one-per-row generic rows). Mirrors TOOL_NAME_ALIASES in session-ui message-part.
-const contextGroupTools = new Set(["read", "glob", "grep", "list", "read_file"])
-const workGroupTools = new Set([
-  "bash",
-  "command",
-  "shell",
-  "local_shell",
-  "edit",
-  "edit_file",
-  "write",
-  "write_file",
-  "apply_patch",
-  "webfetch",
-  "websearch",
-  "web_search",
-])
-const hiddenTools = new Set(["todowrite"])
 // Mirrors PART_MAPPING's registered part types (message-part.tsx): non-text/reasoning/
 // tool parts render only when a dedicated component exists. "file" carries assistant
 // image/audio/resource-link attachments to FilePartDisplay.
@@ -496,10 +473,6 @@ function readHandoffPart(part: Part): Array<{ to?: { id?: string; access?: strin
   }]
 }
 
-export function assistantMessageSettled(message: AssistantMessage) {
-  return typeof message.time.completed === "number" || !!message.error
-}
-
 // Best-effort stop timestamp for native aborts whose message has no completed time.
 function lastKnownPartActivity(parts: Part[]): number | undefined {
   const times = parts.flatMap((part): number[] => {
@@ -516,124 +489,9 @@ function lastKnownPartActivity(parts: Part[]): number | undefined {
   return times.length ? Math.max(...times) : undefined
 }
 
-type GroupablePart = { messageID: string; part: Part }
-
-function partRef(item: GroupablePart) {
-  return { messageID: item.messageID, partID: item.part.id }
-}
-
-const editToolNames = new Set(["edit", "edit_file", "write", "write_file", "apply_patch"])
-const webToolNames = new Set(["webfetch", "websearch", "web_search"])
-
-function workGroupTool(slice: GroupablePart[]): WorkGroupTool {
-  if (slice.some((i) => i.part.type === "tool" && editToolNames.has(i.part.tool))) return "edit"
-  if (slice.some((i) => i.part.type === "tool" && webToolNames.has(i.part.tool))) return "webfetch"
-  return "bash"
-}
-
-// Consecutive context tools fold into a context group; consecutive work tools
-// fold into a work group only when the run has ≥2 members — a lone work tool
-// stays a standalone row. Any non-groupable part flushes both runs.
-function groupParts(parts: GroupablePart[]) {
-  const result: PartGroup[] = []
-  let contextStart = -1
-  let workStart = -1
-  let taskStart = -1
-
-  const flushContext = (end: number) => {
-    if (contextStart < 0) return
-    const first = parts[contextStart]
-    if (!first) {
-      contextStart = -1
-      return
-    }
-    result.push({
-      key: `context:${first.part.id}`,
-      type: "context",
-      refs: parts.slice(contextStart, end + 1).map(partRef),
-    })
-    contextStart = -1
-  }
-
-  const flushWork = (end: number) => {
-    if (workStart < 0) return
-    const slice = parts.slice(workStart, end + 1)
-    const first = parts[workStart]
-    if (!first) {
-      workStart = -1
-      return
-    }
-    if (slice.length >= 2) {
-      result.push({
-        key: `work:${first.part.id}`,
-        type: "work",
-        tool: workGroupTool(slice),
-        refs: slice.map(partRef),
-      })
-    } else {
-      result.push({ key: `part:${first.messageID}:${first.part.id}`, type: "part", ref: partRef(first) })
-    }
-    workStart = -1
-  }
-
-  // Consecutive subagent (task) calls fold into a chip row; a lone task stays a card.
-  const flushTask = (end: number) => {
-    if (taskStart < 0) return
-    const slice = parts.slice(taskStart, end + 1)
-    const first = parts[taskStart]
-    if (!first) {
-      taskStart = -1
-      return
-    }
-    if (slice.length >= 2) {
-      result.push({ key: `agents:${first.part.id}`, type: "agents", refs: slice.map(partRef) })
-    } else {
-      result.push({ key: `part:${first.messageID}:${first.part.id}`, type: "part", ref: partRef(first) })
-    }
-    taskStart = -1
-  }
-
-  parts.forEach((item, index) => {
-    const isContext = item.part.type === "tool" && contextGroupTools.has(item.part.tool)
-    const isWork = item.part.type === "tool" && workGroupTools.has(item.part.tool)
-    const isTask = isSubagentToolPart(item.part)
-
-    if (isContext) {
-      flushWork(index - 1)
-      flushTask(index - 1)
-      if (contextStart < 0) contextStart = index
-      return
-    }
-
-    if (isWork) {
-      flushContext(index - 1)
-      flushTask(index - 1)
-      if (workStart < 0) workStart = index
-      return
-    }
-
-    if (isTask) {
-      flushContext(index - 1)
-      flushWork(index - 1)
-      if (taskStart < 0) taskStart = index
-      return
-    }
-
-    flushContext(index - 1)
-    flushWork(index - 1)
-    flushTask(index - 1)
-    result.push({ key: `part:${item.messageID}:${item.part.id}`, type: "part", ref: partRef(item) })
-  })
-
-  flushContext(parts.length - 1)
-  flushWork(parts.length - 1)
-  flushTask(parts.length - 1)
-  return result
-}
-
 function renderablePart(part: Part, showReasoning = true) {
   if (part.type === "tool") {
-    if (hiddenTools.has(part.tool)) return false
+    if (HIDDEN_TOOLS.has(part.tool)) return false
     if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
     return true
   }

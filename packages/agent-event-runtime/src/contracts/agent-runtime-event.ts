@@ -122,6 +122,17 @@ type RuntimeEventMeta = {
   diagnostics?: RuntimeDiagnostic[]
 }
 
+/**
+ * A tool result's image, carried by location when the workspace can serve it
+ * and by value only when it cannot. `path` is workspace-relative because the
+ * workspace file routes reject absolute paths outright.
+ */
+export type RuntimeToolAttachment = { mime: string; filename?: string } & (
+  | { kind: "workspace-file"; path: string; sourcePath: string }
+  | { kind: "inline"; url: string }
+  | { kind: "unretained"; sourcePath?: string; bytes: number }
+)
+
 export type ToolDisplay = {
   kind?: string
   intent?: ToolIntent
@@ -153,7 +164,7 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "tool-input"; toolCallId: string; input: unknown; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "tool-status"; toolCallId: string; status: RuntimeToolStatus; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "tool-content"; toolCallId: string; content: AcpToolCallContent; display?: ToolDisplay; metadata?: Record<string, unknown> }
-  | { type: "tool-output"; toolCallId: string; output: unknown; display?: ToolDisplay; metadata?: Record<string, unknown> }
+  | { type: "tool-output"; toolCallId: string; output: unknown; attachments?: RuntimeToolAttachment[]; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "tool-error"; toolCallId: string; error: string; display?: ToolDisplay; metadata?: Record<string, unknown> }
   | { type: "file-diff"; toolCallId?: string; path: string; oldText?: string; newText: string }
   | { type: "step-start"; newMessageId: string }

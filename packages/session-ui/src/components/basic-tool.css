@@ -137,6 +137,16 @@
     letter-spacing: var(--letter-spacing-normal);
     color: var(--v2-text-text-muted);
 
+    /*
+     * text-overflow cannot elide an atomic inline, so a subtitle whose text sits inside
+     * an inline-block wrapper (the shell row's animated command span) clips mid-word with
+     * no ellipsis. The wrapper's own display comes from a sheet imported after this one,
+     * so the attribute selector is what wins the cascade, not the source order.
+     */
+    & > [data-slot] {
+      display: inline;
+    }
+
     &.clickable {
       cursor: pointer;
       text-decoration: underline;
@@ -212,7 +222,9 @@
   padding: 8px 12px;
   border-radius: var(--radius-md);
   border: 0.5px solid var(--border-weak-base);
-  background: color-mix(in srgb, var(--background-base) 92%, transparent);
+  /* --background-base is the page itself, so mixing it with transparency painted
+     nothing. An inset tint steps in both themes. */
+  background: var(--surface-inset-base);
   transition:
     border-color 0.15s ease,
     background-color 0.15s ease,

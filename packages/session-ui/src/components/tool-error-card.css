@@ -2,7 +2,7 @@
   --card-pad-y: 8px;
   --card-line-pad: 12px;
 
-  border: 1px solid var(--border-weak-base);
+  border: 0.5px solid var(--border-weaker-base);
   border-radius: var(--radius-lg);
   background: transparent;
 
@@ -27,8 +27,11 @@
     gap: 4px;
   }
 
+  /* The dim end of the critical ramp, the same step `success` and `info` cards take
+     for their accent. `--card-accent` is the vivid alarm red and overpowers a
+     transcript drawn in hairlines. */
   [data-component="tool-error-card-icon"] .ui-icon {
-    color: var(--card-accent);
+    color: var(--icon-critical-active);
   }
 
   [data-slot="tool-error-card-content"] {

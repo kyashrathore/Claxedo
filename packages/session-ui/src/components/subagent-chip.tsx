@@ -1,4 +1,4 @@
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, createSignal, For, Show } from "solid-js"
 import type { AgentToolPart } from "@claxedo/agent-runtime-contract"
 import { AgentGlyph } from "./agent-glyph"
 import { useData, type SubagentView } from "../context"
@@ -6,7 +6,7 @@ import { useData, type SubagentView } from "../context"
 /**
  * SubagentChip row (T12/T13) — when a turn spawns ≥2 subagents, they render as chips
  * instead of stacked cards (D§3.8): a deterministic glyph + agent name + status suffix,
- * first 3 shown then "and N other agents". Clicking a chip opens the child session.
+ * first 3 shown, with the rest behind a toggle. Clicking a chip opens the child session.
  */
 type ChipModel = {
   key: string
@@ -63,7 +63,8 @@ export function SubagentChipRow(props: {
       (data.resolveSubagents?.(part.sessionID, part.callID) ?? []).map(chipFromView)
     )
   })
-  const visible = createMemo(() => chips().slice(0, 3))
+  const [expanded, setExpanded] = createSignal(false)
+  const visible = createMemo(() => (expanded() ? chips() : chips().slice(0, 3)))
   const overflow = createMemo(() => Math.max(0, chips().length - 3))
 
   return (
@@ -110,9 +111,14 @@ export function SubagentChipRow(props: {
         }}
       </For>
       <Show when={overflow() > 0}>
-        <span data-slot="subagent-chip-overflow">
-          and {overflow()} other {overflow() === 1 ? "agent" : "agents"}
-        </span>
+        <button
+          type="button"
+          data-slot="subagent-chip-overflow"
+          aria-expanded={expanded()}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded() ? "show fewer" : `and ${overflow()} other ${overflow() === 1 ? "agent" : "agents"}`}
+        </button>
       </Show>
     </div>
   )

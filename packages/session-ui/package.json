@@ -9,6 +9,8 @@
     "./session-diff": "./src/components/session-diff.ts",
     "./message-file": "./src/components/message-file.ts",
     "./message-part-text": "./src/components/message-part-text.ts",
+    "./part-groups": "./src/components/part-groups.ts",
+    "./turn-fold": "./src/components/turn-fold.ts",
     "./format-duration": "./src/components/format-duration.ts",
     "./markdown-stream": "./src/components/markdown-stream.ts",
     "./markdown-rich-stage": "./src/components/markdown-rich-stage.ts",
@@ -28,6 +30,7 @@
   },
   "scripts": {
     "typecheck": "tsgo --noEmit",
+    "build:transcript-lab-fixture": "bun run script/build-transcript-lab-fixture.mjs",
     "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --only-failures --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "verify:mermaid": "bun run verify:mermaid-sanitizer && bun run verify:mermaid-wiring",
     "verify:mermaid-sanitizer": "bun run script/verify-mermaid-svg-sanitizer.mjs",

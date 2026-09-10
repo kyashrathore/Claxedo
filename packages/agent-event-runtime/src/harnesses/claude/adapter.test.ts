@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "../../core/runtime"
 import type { RuntimeSnapshot } from "../../core/state"
 import { createClientPresentationProjection } from "../../projections/client-presentation/projection"
+import { TOOL_ATTACHMENT_INLINE_MAX_BYTES } from "../tool-attachments"
 import {
   claudeChildCorrelationKey,
   claudeSdkAdapter,
@@ -309,6 +310,174 @@ describe("claudeSdkAdapter", () => {
       toolCallId: "tool-grep-array-1",
       output: "first\nsecond",
     }])
+  })
+
+  function readImageSession(input: { cwd?: string; filePath: string; data: string }) {
+    const agent = runtime()
+    const projection = createClientPresentationProjection({ sessionId: "session-1", directory: "/repo", assistantMessageId: "reply-1" })
+    const ingest = (payload: unknown) => {
+      const events = agent.ingest({ source: "claude.sdk.message", payload }).events
+      return { events, envelopes: events.flatMap((event) => projection.ingest(event)) }
+    }
+    if (input.cwd) ingest({ type: "system", subtype: "init", cwd: input.cwd, uuid: "init-1" })
+    ingest({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "tool-read-image-1", name: "Read", input: { file_path: input.filePath } }] },
+    })
+    const { events, envelopes } = ingest({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{
+          type: "tool_result",
+          tool_use_id: "tool-read-image-1",
+          content: [
+            { type: "image", source: { type: "base64", media_type: "image/png", data: input.data } },
+            { type: "text", text: "This image may contain text." },
+            { type: "text", text: "Read 1 image." },
+          ],
+        }],
+      },
+    })
+    const part = envelopes.map((envelope) => envelope.payload).find(
+      (payload): payload is Extract<typeof payload, { type: "message.part.updated" }> => payload.type === "message.part.updated",
+    )?.properties.part
+    return { events, part }
+  }
+
+  test("canonicalises Claude's tool names so the grouping vocabularies match", () => {
+    const agent = runtime()
+    const projection = createClientPresentationProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "reply-1",
+    })
+    const parts = [
+      { id: "c1", name: "Bash", input: { command: "bun test" } },
+      { id: "c2", name: "Read", input: { file_path: "/repo/a.ts" } },
+      { id: "c3", name: "Grep", input: { pattern: "x" } },
+    ].flatMap(({ id, name, input }) =>
+      agent
+        .ingest({
+          source: "claude.sdk.message",
+          payload: { type: "assistant", message: { content: [{ type: "tool_use", id, name, input }] } },
+        })
+        .events.flatMap((event) => projection.ingest(event)),
+    )
+      .map((envelope) => envelope.payload)
+      .filter((payload): payload is Extract<typeof payload, { type: "message.part.updated" }> =>
+        payload.type === "message.part.updated",
+      )
+      .map((payload) => payload.properties.part)
+      .filter((part): part is Extract<typeof part, { type: "tool" }> => part.type === "tool")
+
+    expect([...new Set(parts.map((part) => part.tool))].sort()).toEqual(["bash", "grep", "read"])
+  })
+
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+  test("carries a read inside the session cwd by path alongside its unchanged text output", () => {
+    const { events, part } = readImageSession({ cwd: "/repo", filePath: "/repo/docs/screenshot.png", data: png })
+
+    expect(events).toMatchObject([{
+      type: "tool-output",
+      toolCallId: "tool-read-image-1",
+      output: "This image may contain text.\nRead 1 image.",
+      attachments: [{
+        kind: "workspace-file",
+        mime: "image/png",
+        path: "docs/screenshot.png",
+        sourcePath: "/repo/docs/screenshot.png",
+        filename: "screenshot.png",
+      }],
+    }])
+    expect(events[0]).not.toHaveProperty("attachments.0.url")
+
+    expect(part).toMatchObject({
+      type: "tool",
+      /* Canonicalised at the projection: Claude sends `Read`, every downstream
+         vocabulary matches lowercase. */
+      tool: "read",
+      state: {
+        status: "completed",
+        output: "This image may contain text.\nRead 1 image.",
+        attachments: [{
+          type: "file",
+          sessionID: "session-1",
+          messageID: "reply-1",
+          mime: "image/png",
+          filename: "screenshot.png",
+          url: "file://docs/screenshot.png",
+          location: { kind: "workspace-file", path: "docs/screenshot.png" },
+        }],
+      },
+    })
+  })
+
+  test("carries a small read outside the session cwd by value", () => {
+    const { events, part } = readImageSession({ cwd: "/repo", filePath: "/tmp/screenshot.png", data: png })
+
+    expect(events).toMatchObject([{
+      type: "tool-output",
+      output: "This image may contain text.\nRead 1 image.",
+      attachments: [{ kind: "inline", mime: "image/png", url: `data:image/png;base64,${png}`, filename: "screenshot.png" }],
+    }])
+    expect(part).toMatchObject({
+      state: {
+        status: "completed",
+        output: "This image may contain text.\nRead 1 image.",
+        attachments: [{ type: "file", mime: "image/png", filename: "screenshot.png", url: `data:image/png;base64,${png}` }],
+      },
+    })
+    const attachment = part?.type === "tool" && part.state.status === "completed" ? part.state.attachments?.[0] : undefined
+    expect(attachment).not.toHaveProperty("location")
+  })
+
+  test("drops an oversized read outside the session cwd but keeps its size and text output", () => {
+    const oversized = "A".repeat(TOOL_ATTACHMENT_INLINE_MAX_BYTES)
+    const { events, part } = readImageSession({ cwd: "/repo", filePath: "/tmp/huge.png", data: oversized })
+
+    expect(events).toMatchObject([{
+      type: "tool-output",
+      output: "This image may contain text.\nRead 1 image.",
+      attachments: [{
+        kind: "unretained",
+        mime: "image/png",
+        filename: "huge.png",
+        sourcePath: "/tmp/huge.png",
+        bytes: `data:image/png;base64,${oversized}`.length,
+      }],
+    }])
+    expect(part).toMatchObject({
+      state: {
+        status: "completed",
+        output: "This image may contain text.\nRead 1 image.",
+        attachments: [{
+          type: "file",
+          mime: "image/png",
+          filename: "huge.png",
+          url: "file:///tmp/huge.png",
+          location: { kind: "unretained", bytes: `data:image/png;base64,${oversized}`.length },
+        }],
+      },
+    })
+  })
+
+  test("leaves a text-only read result without attachments", () => {
+    const agent = runtime()
+    agent.ingest({
+      source: "claude.sdk.message",
+      payload: { type: "assistant", message: { content: [{ type: "tool_use", id: "tool-read-text-1", name: "Read", input: { file_path: "/repo/src/index.ts" } }] } },
+    })
+    const events = agent.ingest({
+      source: "claude.sdk.message",
+      payload: {
+        type: "user",
+        message: { role: "user", content: [{ type: "tool_result", tool_use_id: "tool-read-text-1", content: "     1\texport const a = 1" }] },
+      },
+    }).events
+    expect(events).toMatchObject([{ type: "tool-output", toolCallId: "tool-read-text-1", output: "     1\texport const a = 1" }])
+    expect(events[0]).not.toHaveProperty("attachments")
   })
 
   test("U5: registers complete Agent tool blocks and renders the structured result", () => {

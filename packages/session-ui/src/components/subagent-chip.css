@@ -79,6 +79,11 @@ span[data-component="subagent-chip"] {
 }
 
 [data-slot="subagent-chip-overflow"] {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
   font-size: var(--font-size-compact);
   color: var(--text-weak);
   text-decoration: underline;

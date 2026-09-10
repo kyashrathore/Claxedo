@@ -542,12 +542,23 @@ test.describe("core boot, deep links, and home @core", () => {
       })
     })
 
-    await seedOneProject(page, DIR)
-    await seedDestination(page, "both")
-    await page.goto("/?onboarding=ai", { waitUntil: "domcontentloaded" })
+    await seedNoProjects(page)
+    await page.goto("/", { waitUntil: "domcontentloaded" })
+
+    await expect(page.getByRole("heading", { name: "Do you want to run cloud sessions too?" })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText("Sandbox provider", { exact: true })).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()
+    const cloudChoice = page.getByRole("button", { name: /^Yes, run cloud sessions too/ })
+    await cloudChoice.click()
+    await expect(cloudChoice).toHaveAttribute("aria-pressed", "true")
 
     // An unconfigured driver keeps the cloud question open; its form is where the key gets saved.
-    await expect(page.getByRole("heading", { name: "Do you want to run cloud sessions too?" })).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText("Sandbox provider", { exact: true })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Save key" })).toBeVisible()
+    await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()
+
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(cloudChoice).toHaveAttribute("aria-pressed", "true")
     await expect(page.getByText("Sandbox provider", { exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: "Save key" })).toBeVisible()
     await expect(page.getByRole("button", { name: "Next" })).toBeDisabled()

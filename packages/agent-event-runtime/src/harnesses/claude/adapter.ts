@@ -2,13 +2,16 @@ import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type {
   AgentRuntimeEvent,
+  RuntimeToolAttachment,
   SubagentMode,
   SubagentStatus,
   SubagentToolCallRole,
+  ToolDisplay,
 } from "../../contracts/agent-runtime-event"
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext, HarnessEventAdapterResult } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
+import { imageAttachment } from "../tool-attachments"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
 import { optionLabels, pathFields, text } from "../../value"
 import { applyClaudeTaskResult, type ClaudeTrackedTask } from "./task-tracking"
@@ -36,6 +39,8 @@ export type ClaudeSdkAdapterState = {
   blocksByIndex: Record<string, ClaudeBlockState>
   toolsById: Record<string, ClaudeBlockState>
   emittedAssistantText: string
+  /** The session root reported by `init`; the only place a read path can be tested against a workspace. */
+  cwd?: string
   lastKnownContextWindow?: number
   /**
    * Per-request usage snapshots for the current turn, keyed by API message id.
@@ -205,6 +210,40 @@ function toolResultText(block: Record<string, unknown>) {
   return content.flatMap((item) => text(item) ?? text(asRecord(item)?.text) ?? []).join("\n")
 }
 
+/**
+ * Only base64 sources are mapped: across 1,543 local transcripts all 1,052
+ * tool-result image blocks used `source.type === "base64"`, and a URL source
+ * carries no `media_type` to filter or name the attachment by.
+ */
+function toolResultImages(block: Record<string, unknown>): Array<{ mime: string; data: string }> {
+  const content = block.content
+  if (!Array.isArray(content)) return []
+  return content.flatMap((item) => {
+    const row = asRecord(item)
+    if (row?.type !== "image") return []
+    const source = asRecord(row.source)
+    if (source?.type !== "base64") return []
+    const mime = text(source.media_type)
+    const data = text(source.data)
+    if (!mime || !data) return []
+    return [{ mime, data }]
+  })
+}
+
+/**
+ * The read path names the image, and — when it sits under the session cwd —
+ * lets the attachment travel as a location instead of 85 KB of base64.
+ */
+function resultAttachments(
+  images: Array<{ mime: string; data: string }>,
+  display: ToolDisplay,
+  root: string | undefined,
+): RuntimeToolAttachment[] {
+  const sourcePath = display.filePath ?? display.path
+  const filename = sourcePath?.split(/[\\/]/).pop()
+  return images.map((image) => imageAttachment({ ...image, filename, sourcePath, root }))
+}
+
 function toolResultBlocks(message: Record<string, unknown>) {
   const row = asRecord(message.message) ?? {}
   const content = Array.isArray(row.content) ? row.content : []
@@ -217,6 +256,7 @@ function toolResultBlocks(message: Record<string, unknown>) {
       toolCallId,
       block,
       text: toolResultText(block),
+      images: toolResultImages(block),
       isError: block.is_error === true,
       structured: asRecord(message.tool_use_result),
     }]
@@ -835,6 +875,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
               type: "tool-output",
               toolCallId: result.toolCallId,
               output: isTaskTool(tool.toolName) ? agentResultText(result.structured, result.text) : result.text,
+              ...(result.images.length ? { attachments: resultAttachments(result.images, display, state.cwd) } : {}),
               display,
               metadata,
             }]
@@ -1005,15 +1046,20 @@ function translateSystemMessage(
       }
     }
 
-    case "init":
-      return [
-        ...slashCommandEvents(rawMessage),
-        ...unmappedSdkEvent({
-          sdkEvent: "SDKSystemMessage(init)",
-          reason: "cwd, model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
-          event,
-        }),
-      ]
+    case "init": {
+      const cwd = text(rawMessage.cwd)
+      return {
+        ...(cwd ? { state: { ...state, cwd } } : {}),
+        events: [
+          ...slashCommandEvents(rawMessage),
+          ...unmappedSdkEvent({
+            sdkEvent: "SDKSystemMessage(init)",
+            reason: "model, tools, MCP server status, permission mode, and output style have no complete AgentRuntimeEvent mapping",
+            event,
+          }),
+        ],
+      }
+    }
 
     case "compact_boundary":
       return unmappedSdkEvent({

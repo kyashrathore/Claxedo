@@ -41,18 +41,6 @@ export type SubagentPresentation = {
   ambient: boolean
 }
 
-/**
- * A tool part that is a subagent spawn: the harness's own `task` tool, or the
- * runtime's `create_subagent` MCP tool, which the harness reports under its
- * MCP name but the event runtime classifies as task work.
- */
-export function isSubagentToolPart(part: { type: string; tool?: string; state?: { input?: unknown } }): boolean {
-  if (part.type !== "tool") return false
-  if (part.tool === "task" || part.tool === "create_subagent" || part.tool === "mcp__claxedo__create_subagent") return true
-  const input = part.state?.input
-  return typeof input === "object" && input !== null && (input as { intent?: unknown }).intent === "task"
-}
-
 export function hydrateSubagentRows(
   registry: SubagentRegistry,
   parentSessionId: string,

@@ -15,6 +15,7 @@ import type {
 import { DataProvider } from "../context/data"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { SessionTurn } from "./session-turn"
+import { FileStub } from "./story-stubs"
 import { isKeyOf } from "@opencode-ai/ui/utils/record"
 import { isRecord } from "@claxedo/helpers/guards"
 
@@ -1214,10 +1215,6 @@ const CSS_CONTROLS: CSSControl[] = [
 // ---------------------------------------------------------------------------
 // Playground component
 // ---------------------------------------------------------------------------
-function FileStub() {
-  return <div style={{ padding: "8px", color: "var(--text-weak)", "font-size": "13px" }}>File viewer stub</div>
-}
-
 function Playground() {
   // ---- Messages & parts state ----
   const [state, setState] = createStore<{

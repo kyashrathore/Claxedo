@@ -69,6 +69,31 @@ describe("Pi RPC normalization", () => {
   })
 })
 
+test("Pi read result carries its image block alongside the unchanged result payload", () => {
+  const send = translate()
+  const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQ=="
+  send({ type: "tool_execution_start", toolCallId: "call-image", toolName: "read", args: { path: "/repo/shot.png" } })
+  const result = {
+    content: [
+      { type: "text", text: "Read image /repo/shot.png" },
+      { type: "image", data: png, mimeType: "image/png" },
+    ],
+  }
+  expect(send({ type: "tool_execution_end", toolCallId: "call-image", isError: false, result })).toEqual([{
+    type: "tool-output",
+    toolCallId: "call-image",
+    output: result,
+    attachments: [{ kind: "inline", mime: "image/png", url: `data:image/png;base64,${png}` }],
+  }])
+})
+
+test("Pi text-only tool result stays attachment-free", () => {
+  const send = translate()
+  send({ type: "tool_execution_start", toolCallId: "call-text", toolName: "read", args: { path: "/repo/a.ts" } })
+  const events = send({ type: "tool_execution_end", toolCallId: "call-text", isError: false, result: { content: [{ type: "text", text: "export const a = 1" }] } })
+  expect(events).toEqual([{ type: "tool-output", toolCallId: "call-text", output: { content: [{ type: "text", text: "export const a = 1" }] } }])
+})
+
 test("Pi partial tool output preserves tool identity and aborted compaction reports its outcome", () => {
   const send = translate()
   expect(

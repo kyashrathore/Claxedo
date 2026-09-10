@@ -21,6 +21,7 @@ import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
+import type { TurnShape } from "./turn-fold"
 import { SessionRetry } from "./session-retry"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
@@ -159,6 +160,19 @@ export function SessionTurn(
     showReasoningSummaries?: boolean
     shellToolDefaultOpen?: boolean
     editToolDefaultOpen?: boolean
+    /**
+     * Folds a settled turn's machinery behind one "Worked for Xs" divider, leaving
+     * the prose. Defaults to the app timeline's behaviour; `false` renders every
+     * group expanded.
+     */
+    foldSettledTurn?: boolean
+    /**
+     * Folds a running turn's completed phases behind "Working for Xs", keeping the
+     * live group visible. Defaults to the app's `timelineFoldWhileRunning` default.
+     */
+    foldRunningTurn?: boolean
+    /** Defaults to `interleaved`, the only shape the harnesses currently support. */
+    turnShape?: TurnShape
     active?: boolean
     status?: AgentRuntimeStatus
     onUserInteracted?: () => void
@@ -415,6 +429,11 @@ export function SessionTurn(
                     showReasoningSummaries={showReasoningSummaries()}
                     shellToolDefaultOpen={props.shellToolDefaultOpen}
                     editToolDefaultOpen={props.editToolDefaultOpen}
+                    foldSettledTurn={props.foldSettledTurn}
+                    foldRunningTurn={props.foldRunningTurn}
+                    turnShape={props.turnShape}
+                    turnInterrupted={interrupted()}
+                    turnErrored={!!error()}
                   />
                 </div>
               </Show>

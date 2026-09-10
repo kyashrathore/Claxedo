@@ -7,6 +7,7 @@ import type {
 import { runtimeDiagnostic } from "../../contracts/diagnostics"
 import type { HarnessEventAdapter, HarnessEventAdapterContext } from "../../core/adapter"
 import { toolDisplayFromInput } from "../tool-display"
+import { contentBlockImages, imageUrlAttachment } from "../tool-attachments"
 import { optionLabels, pathFields, text } from "../../value"
 import type { ServerNotification, ServerRequest } from "./protocol"
 
@@ -744,11 +745,16 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
               ? (Array.isArray(mcpResult?.content) ? mcpResult.content.flatMap((part) => text(asRecord(part)?.text) ?? []).join("\n") : "") || "MCP tool call failed"
               : undefined)
             : undefined
+          const attachments = [
+            ...contentBlockImages(mcpResult?.content),
+            ...(Array.isArray(completedItem.contentItems) ? completedItem.contentItems : []).flatMap((item) =>
+              asRecord(item)?.type === "inputImage" ? imageUrlAttachment(asRecord(item)?.imageUrl) : []),
+          ]
           const completion = mcpError !== undefined
             ? { type: "tool-error" as const, toolCallId: id, error: mcpError }
             : itemType === "command_execution" && exitCode !== undefined && exitCode !== 0
             ? { type: "tool-error" as const, toolCallId: id, error: text(output) ?? `Process exited with code ${exitCode}` }
-            : { type: "tool-output" as const, toolCallId: id, output }
+            : { type: "tool-output" as const, toolCallId: id, output, ...(attachments.length ? { attachments } : {}) }
           if (!existing) {
             const toolName = toolNameForItem(itemType, completedItem)
             const input = structuredInput(completedItem)

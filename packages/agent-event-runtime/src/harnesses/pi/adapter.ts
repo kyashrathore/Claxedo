@@ -1,6 +1,7 @@
 import type { AgentRuntimeEvent } from "../../contracts/agent-runtime-event"
 import type { HarnessEventAdapter } from "../../core/adapter"
 import { object, text } from "../../value"
+import { contentBlockImages } from "../tool-attachments"
 
 /** Pi payload readers: absent or non-object fields read as empty rather than throwing. */
 const row = (value: unknown): Record<string, unknown> => object(value) ?? {}
@@ -86,11 +87,18 @@ export function piRpcAdapter(): HarnessEventAdapter<State> {
             { type: "tool-start", toolCallId: message.toolCallId, toolName: message.toolName },
             { type: "tool-input", toolCallId: message.toolCallId, input: message.args },
           ]
-        case "tool_execution_end":
+        case "tool_execution_end": {
           if (typeof message.toolCallId !== "string") throw new Error("Pi tool completion lacks identity")
-          return message.isError
-            ? [{ type: "tool-error", toolCallId: message.toolCallId, error: JSON.stringify(message.result) }]
-            : [{ type: "tool-output", toolCallId: message.toolCallId, output: message.result }]
+          if (message.isError)
+            return [{ type: "tool-error", toolCallId: message.toolCallId, error: JSON.stringify(message.result) }]
+          const images = contentBlockImages(row(message.result).content)
+          return [{
+            type: "tool-output",
+            toolCallId: message.toolCallId,
+            output: message.result,
+            ...(images.length ? { attachments: images } : {}),
+          }]
+        }
         case "auto_compaction_start":
         case "compaction_start":
           return [{ type: "session-compaction", phase: "started" }]

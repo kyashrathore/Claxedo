@@ -24,12 +24,15 @@ import { observeElementOffsetReconnectAware, observeElementRectDeduped } from ".
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import { Button } from "@opencode-ai/ui/button"
 import {
+  assistantMessageSettled,
   ContextToolGroup,
+  isSubagentToolPart,
   MessageNav,
   MessageDivider,
   Part as MessagePart,
   partDefaultOpen,
   SubagentChipRow,
+  TurnFoldRow,
   WorkGroup,
 } from "@/ui/session-kit"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
@@ -67,13 +70,9 @@ import { messageAgentColor } from "@/features/session/ui/agent-color"
 import { sessionTitle } from "@/features/session/data/session-title"
 import { createActivePaneProjection } from "../store/active-pane-projection"
 import { createTimelineWorkingStatus } from "./timeline-working-status"
-import {
-  assistantMessageSettled,
-  MessageComment,
-  Timeline,
-} from "./message-timeline.data"
+import { MessageComment, Timeline } from "./message-timeline.data"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
-import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineThinkingRow, TurnFoldRow } from "./message-timeline-turn-rows"
+import { PreviousMessagesRow, TimelineDiffSummaryRow, TimelineThinkingRow } from "./message-timeline-turn-rows"
 import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
 import { TimelineFileContextMenu } from "./timeline-file-context-menu"
 import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
@@ -124,14 +123,12 @@ import { scheduleTimelineFirstFoldReveal } from "./timeline-first-fold-reveal"
 import { BP_MD } from "@/ui/controls/breakpoints"
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 import type { MessageTimelineProps } from "./message-timeline-props"
-import { isSubagentToolPart } from "../subagents/subagent-presentation"
 import "./message-nav-gutter.css"
 import "./markdown-surfaces.css"
 
 // Keep parity with the upstream session row model.
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
-const emptyTools: ToolPart[] = []
 const emptyAssistantMessages: AssistantMessage[] = []
 const idle = { type: "idle" as const }
 
@@ -1268,24 +1265,46 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   const renderAssistantPartGroup = (row: Accessor<TimelineRowMap["AssistantPart"]>, onSizeChange?: () => void) => {
     if (row().group.type === "context") {
-      const parts = createMemo(() => {
+      const members = createMemo(() => {
         const group = row().group
-        if (group.type !== "context") return emptyTools
+        if (group.type !== "context") return []
         return group.refs
-          .map((ref) => getMsgPart(ref.messageID, ref.partID))
-          .filter((part): part is ToolPart => part?.type === "tool")
+          .map((ref) => {
+            const message = messageByID().get(ref.messageID)
+            const part = getMsgPart(ref.messageID, ref.partID)
+            if (!message || !isRuntimeAgentMessage(message)) return undefined
+            if (!part || part.type !== "tool") return undefined
+            return { message, part }
+          })
+          .filter((member): member is { message: MessageType; part: ToolPart } => !!member)
       })
 
       return (
         <ContextToolGroup
-          parts={parts()}
+          parts={members().map((member) => member.part)}
           open={groupOpen[row().group.key] ?? false}
           onOpenChange={(open) => setGroupOpen(row().group.key, open)}
           busy={
             workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
           }
           onSizeChange={onSizeChange}
-        />
+        >
+          <For each={members()}>
+            {(member) => (
+              <MessagePart
+                part={member.part}
+                message={member.message}
+                turnDurationMs={turnDurationMs(row().userMessageID)}
+                turnInterrupted={turnInterrupted(row().userMessageID)}
+                toolOpen={toolOpen[member.part.id] ?? false}
+                onToolOpenChange={(open) => setToolOpen(member.part.id, open)}
+                deferToolContent={false}
+                virtualizeDiff
+                onContentRendered={onSizeChange}
+              />
+            )}
+          </For>
+        </ContextToolGroup>
       )
     }
 
@@ -1746,25 +1765,30 @@ export function MessageTimeline(props: MessageTimelineProps) {
         </div>
       </Show>
       <div
-        class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60] transition-all duration-200 ease-out"
-        classList={{
-          "opacity-100 translate-y-0 scale-100 pointer-events-auto": props.scroll.overflow && props.scroll.jump,
-          "opacity-0 translate-y-2 scale-95 pointer-events-none": !props.scroll.overflow || !props.scroll.jump,
-        }}
+        data-session-timeline-jump
+        class="pointer-events-none absolute inset-x-0 bottom-6 z-[60] flex justify-center"
       >
-        <button
-          class="flex h-8 w-8 items-center justify-center rounded-full border border-border-weaker-base bg-surface-raised-stronger-non-alpha text-text-base cursor-pointer p-0 transition-colors hover:border-border-weak-base"
-          aria-label={language.t("session.timeline.scrollToBottom")}
-          onClick={props.onResumeScroll}
+        <div
+          class="transition-all duration-200 ease-out"
+          classList={{
+            "opacity-100 translate-y-0 scale-100 pointer-events-auto": props.scroll.overflow && props.scroll.jump,
+            "opacity-0 translate-y-2 scale-95 pointer-events-none": !props.scroll.overflow || !props.scroll.jump,
+          }}
         >
-          <Show when={sessionStatus().type === "busy"} fallback={<Icon name="scroll-to-latest" size="large" />}>
-            <span class="tl-dot-wave" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-          </Show>
-        </button>
+          <button
+            class="flex h-8 w-8 items-center justify-center rounded-full border border-border-weaker-base bg-surface-raised-stronger-non-alpha text-text-base cursor-pointer p-0 transition-colors hover:border-border-weak-base"
+            aria-label={language.t("session.timeline.scrollToBottom")}
+            onClick={props.onResumeScroll}
+          >
+            <Show when={sessionStatus().type === "busy"} fallback={<Icon name="scroll-to-latest" size="large" />}>
+              <span class="tl-dot-wave" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </Show>
+          </button>
+        </div>
       </div>
       <ScrollView
         data-slot="session-timeline-scroll"

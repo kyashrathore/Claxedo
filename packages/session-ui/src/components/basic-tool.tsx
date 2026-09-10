@@ -1,5 +1,6 @@
 import {
   createEffect,
+  createMemo,
   createSignal,
   For,
   Match,
@@ -12,7 +13,7 @@ import {
   type JSX,
 } from "solid-js"
 import { animate, type AnimationPlaybackControls } from "motion"
-import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { useI18n, type UiI18n } from "@opencode-ai/ui/context/i18n"
 import { createStore } from "solid-js/store"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
@@ -245,6 +246,7 @@ export function BasicTool(props: BasicToolProps) {
                       <Show when={title().subtitle}>
                         <span
                           data-slot="basic-tool-tool-subtitle"
+                          title={title().subtitle}
                           classList={{
                             [title().subtitleClass ?? ""]: !!title().subtitleClass,
                             clickable: !!props.onSubtitleClick,
@@ -342,12 +344,48 @@ export function BasicTool(props: BasicToolProps) {
   )
 }
 
-const LABEL_KEYS = ["description", "query", "url", "filePath", "path", "pattern", "name", "command"]
+const LABEL_KEYS = ["description", "query", "url", "filePath", "path", "pattern", "name", "command", "to"]
 
-function label(input: Record<string, unknown> | undefined) {
-  return LABEL_KEYS.map((key) => input?.[key]).find(
-    (value): value is string => typeof value === "string" && value.length > 0,
-  )
+/** The input a tool row is about, and the key it came from — the key can carry a preposition. */
+/**
+ * Collapses a JSON payload embedded in a subtitle to `{…}`.
+ *
+ * A tool argument often carries a whole request body (`call generate-app-url {"url":
+ * "/data-management/events", "params": {}}`). The subtitle is a single clipped line, so
+ * the payload arrives shredded mid-token and reads as noise; the body renders it in full.
+ * Only balanced runs are collapsed, so a lone brace in prose survives untouched.
+ */
+export function collapsePayload(value: string) {
+  let out = ""
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < value.length; i++) {
+    const char = value[i]
+    if (char === "{" || char === "[") {
+      if (depth === 0) start = i
+      depth++
+      continue
+    }
+    if (char !== "}" && char !== "]") {
+      if (depth === 0) out += char
+      continue
+    }
+    if (depth === 0) {
+      out += char
+      continue
+    }
+    depth--
+    if (depth === 0) out += value.slice(start, start + 1) === "{" ? "{…}" : "[…]"
+  }
+  return depth === 0 ? out.replace(/\s+/g, " ").trim() : value
+}
+
+function labelEntry(input: Record<string, unknown> | undefined) {
+  for (const key of LABEL_KEYS) {
+    const value = input?.[key]
+    if (typeof value === "string" && value.length > 0) return { key, value }
+  }
+  return undefined
 }
 
 /**
@@ -441,6 +479,103 @@ function genericToolIcon(tool: string, input?: Record<string, unknown>): IconPro
   }
 }
 
+/**
+ * Tool names that reach the timeline as one lowercased token (`SendMessage` arrives as
+ * `sendmessage`), so no splitter can recover the words. Every other name is split
+ * mechanically; this table exists only where that recovery is impossible.
+ */
+const ACTION_KEYS: Record<string, string> = {
+  sendmessage: "ui.basicTool.action.sendMessage",
+  toolsearch: "ui.basicTool.action.searchTools",
+  listagents: "ui.basicTool.action.listAgents",
+}
+
+/** Input keys that are themselves the preposition joining the action to its object. */
+const PREPOSITION_TITLE_KEYS: Record<string, string> = {
+  to: "ui.basicTool.title.to",
+}
+
+function mcpName(tool: string) {
+  const parts = tool.split("__")
+  if (parts.length < 3 || parts[0] !== "mcp" || !parts[1]) return undefined
+  const name = parts.slice(2).join("__")
+  if (!name) return undefined
+  return { server: parts[1], name }
+}
+
+function words(identifier: string) {
+  return identifier
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[\s_\-.]+/)
+    .filter((word) => word.length > 0)
+}
+
+const isAcronym = (word: string) => word.length > 1 && word === word.toUpperCase()
+
+function sentenceCase(parts: string[]) {
+  return parts
+    .map((word, index) => {
+      if (isAcronym(word)) return word
+      const lower = word.toLowerCase()
+      return index === 0 ? lower[0]!.toUpperCase() + lower.slice(1) : lower
+    })
+    .join(" ")
+}
+
+/**
+ * `plugin_posthog_posthog` is a plugin name followed by the server it ships; when the two
+ * repeat, one word is the whole context.
+ */
+function serverLabel(server: string) {
+  const parts = words(server).map((word) => (isAcronym(word) ? word : word.toLowerCase()))
+  return parts.filter((word, index) => word !== parts[index - 1]).join(" ")
+}
+
+/**
+ * A single word says nothing the raw name did not, so it becomes a title only for an MCP
+ * name, which arrives with a server to carry the missing context.
+ */
+function actionPhrase(name: string, hasContext: boolean, i18n: UiI18n) {
+  const key = ACTION_KEYS[name.toLowerCase()]
+  if (key) return i18n.t(key)
+  const parts = words(name)
+  if (parts.length === 0 || (parts.length === 1 && !hasContext)) return undefined
+  return sentenceCase(parts)
+}
+
+export type GenericToolTitle = {
+  title: string
+  subtitle?: string
+  /** The MCP server, shown beside the row as secondary context. */
+  context?: string
+}
+
+/**
+ * A tool row with no registered renderer, read as a sentence: the action from the tool
+ * name, the object from the input. A name that yields neither falls back to the raw call.
+ */
+export function humanizeTool(
+  tool: string,
+  input: Record<string, unknown> | undefined,
+  i18n: UiI18n,
+): GenericToolTitle {
+  const object = labelEntry(input)
+  const mcp = mcpName(tool)
+  const action = actionPhrase(mcp?.name ?? tool, mcp !== undefined, i18n)
+  if (!action) {
+    return {
+      title: i18n.t("ui.basicTool.called", { tool }).replaceAll("`", ""),
+      subtitle: object ? collapsePayload(object.value) : undefined,
+    }
+  }
+  const prepositionKey = object ? PREPOSITION_TITLE_KEYS[object.key] : undefined
+  return {
+    title: prepositionKey ? i18n.t(prepositionKey, { action }) : action,
+    subtitle: object ? collapsePayload(object.value) : undefined,
+    context: mcp ? serverLabel(mcp.server) : undefined,
+  }
+}
+
 export function GenericTool(props: {
   tool: string
   status?: string
@@ -450,7 +585,7 @@ export function GenericTool(props: {
   startedAt?: number
 }) {
   const i18n = useI18n()
-  const subtitle = () => label(props.input)
+  const title = createMemo(() => humanizeTool(props.tool, props.input, i18n))
   const output = () => (typeof props.output === "string" ? props.output.trim() : "")
 
   return (
@@ -459,9 +594,9 @@ export function GenericTool(props: {
       status={props.status}
       startedAt={props.startedAt}
       trigger={{
-        title: i18n.t("ui.basicTool.called", { tool: props.tool }).replaceAll("`", ""),
-        subtitle: subtitle(),
-        args: args(props.input, subtitle()),
+        title: title().title,
+        subtitle: title().subtitle,
+        args: [...(title().context ? [title().context!] : []), ...args(props.input, title().subtitle)],
       }}
       hideDetails={props.hideDetails}
     >
