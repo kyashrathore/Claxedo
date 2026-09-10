@@ -65,8 +65,7 @@ export const UI_CODEX_ICON_ALIASES = {
   discord: "codex-20-153",
   download: "codex-20-012",
   "three-dots": "codex-custom-three-dots",
-  edit: "codex-20-019",
-  "edit-small-2": "codex-20-019",
+  edit: "codex-native-square-and-pencil-light-20",
   "enter": "codex-native-arrow-curved-right-large-typographic-light-20",
   expand: "codex-native-arrow-up-right-arrow-down-left-sm-light-20",
   "eye": "codex-native-eye-light-20",
@@ -137,8 +136,8 @@ export const UI_CODEX_ICON_ALIASES = {
   stop: "codex-custom-stop",
   task: "codex-20-139",
   terminal: "codex-20-050",
-  // Raw Codex source mapping. The shared artwork policy selects OpenCode
-  // for both terminal states in every theme.
+  // Codex keeps its terminal outline in both states; the control brightens
+  // the foreground when active. OpenCode uses its bare console prompt.
   "terminal-active": "codex-20-050",
   trash: "codex-20-080",
   warning: "codex-20-082",

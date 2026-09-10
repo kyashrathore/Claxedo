@@ -1,6 +1,6 @@
 # Applied native Codex artwork
 
-These 21 SVGs come from the installed ChatGPT application, version 26.901.51231, build 8109. They supply approved production mappings and their Storybook source references. The production sprite combines the original build-5848 extraction with these separately prefixed native symbols.
+These 22 SVGs come from the installed ChatGPT application, version 26.901.51231, build 8109. They supply approved production mappings and their Storybook source references. The production sprite combines the original build-5848 extraction with these separately prefixed native symbols.
 
 The newer renderer contains a named icon system with 298 definitions, in addition to JSX icon components spread across renderer chunks. The keyboard, photo, eye, cloud, circle, lined document, browser cursor, link, and folder candidates were selected from that named system. Cloud upload, dashed circle, and folder add were extracted from static JSX components.
 

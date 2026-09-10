@@ -135,8 +135,8 @@ const patterns: Pattern[] = [
     alternate: "terminal-active",
     off: "Show terminal",
     on: "Hide terminal",
-    // Both themes use the same OpenCode terminal state pair.
-    rule: "Both themes use the bare OpenCode >_ prompt. Active state brightens the same mark; no enclosing frame.",
+    // Terminal artwork follows the theme; active state changes emphasis.
+    rule: "Codex uses its terminal outline; OpenCode uses the bare >_ console prompt. Active state brightens the same mark.",
   },
   {
     id: "folder",
@@ -723,7 +723,7 @@ const MappingGallery = () => {
       <p class="icon-reference-note">
         The previews use the current production mappings. Codex includes native ChatGPT app artwork from build{" "}
         {nativeCodexManifest.appBuild}; OpenCode uses its own v1/v2 artwork and approved custom glyphs. Globe, cloud,
-        gauge, reload, reset and worktree share Codex artwork across themes; Discord shares OpenCode’s brand mark, and all process/terminal states use OpenCode’s >_ artwork. Other
+        gauge, reload, reset and worktree share Codex artwork across themes; Discord shares OpenCode’s brand mark. Process/terminal controls use Codex’s terminal or OpenCode’s bare >_ console prompt. Other
         harness marks also share one source across themes.{" "}
         <a href="#usage">Review where every unresolved icon is used.</a>
       </p>

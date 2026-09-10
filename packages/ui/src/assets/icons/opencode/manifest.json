@@ -1,8 +1,8 @@
 {
   "source": "packages/ui/src/components/icon.tsx",
   "extraction": "Source artwork; SHA-256 of viewBox + newline + SVG content",
-  "count": 119,
-  "uniqueGeometries": 118,
+  "count": 118,
+  "uniqueGeometries": 117,
   "icons": [
     {
       "id": "opencode-icon-codex-collapse-all",
@@ -292,12 +292,6 @@
       "name": "circle-ban-sign",
       "viewBox": "0 0 20 20",
       "hash": "1f4474de7b3691247b30aaecd14a173c05579b47d9c0155cb36b3d6a98075e46"
-    },
-    {
-      "id": "opencode-icon-edit-small-2",
-      "name": "edit-small-2",
-      "viewBox": "0 0 20 20",
-      "hash": "2cfa59f01068d3a7d53f13309a261fefb6e4baa9bdd8ee3bc4335702310ef923"
     },
     {
       "id": "opencode-icon-eye",

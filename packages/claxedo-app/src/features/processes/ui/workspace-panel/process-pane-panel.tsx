@@ -179,7 +179,7 @@ export function ProcessPanePanel(props: ProcessPanePanelProps) {
         <Show when={props.onEdit}>
           <Tooltip value="Edit process config">
             <IconButton
-              icon="edit-small-2"
+              icon="edit"
               variant="ghost"
               onClick={() => props.onEdit?.()}
               aria-label="Edit process"

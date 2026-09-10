@@ -10,6 +10,7 @@ export { OPEN_CODE_CUSTOM_ARTWORK as openCodeDraftArtwork } from "../components/
 export const appliedIconReplacements: Partial<
   Record<string, { codex?: NativeCodexProposal; opencode?: OpenCodeProposal }>
 > = {
+  edit: { codex: { native: "square-and-pencil-light-20" } },
   changes: {
     opencode: {
       library: "opencode",
@@ -173,6 +174,13 @@ export type IconMappingAudit = {
 }
 
 export const iconMappingAudit: Partial<Record<string, IconMappingAudit>> = {
+  edit: {
+    status: "accepted",
+    affected: [],
+    observed: { codex: "Pencil in a rounded square", opencode: "Pencil in a square" },
+    expected: "Edit action with a pencil-in-square mark.",
+    reason: "Codex uses its verified native square-and-pencil artwork; one edit API serves message and process-config actions.",
+  },
   "align-right": {
     status: "accepted",
     affected: [],
@@ -558,12 +566,12 @@ export const iconMappingAudit: Partial<Record<string, IconMappingAudit>> = {
     status: "accepted",
     affected: [],
     observed: {
-      codex: "Bare >_ prompt",
+      codex: "Codex terminal outline",
       opencode: "Bare >_ prompt",
     },
     expected:
-      "Process and terminal share OpenCode’s >_ artwork across all themes.",
-    reason: "ICON_ARTWORK_POLICY selects OpenCode for process and both terminal states; PROCESS_ICON_GLYPHS maps process to terminal.",
+      "Process and terminal share the theme’s terminal artwork: Codex outline or bare OpenCode >_ console prompt.",
+    reason: "PROCESS_ICON_GLYPHS maps process to the terminal artwork in each theme.",
   },
   reload: {
     status: "accepted",
@@ -641,12 +649,12 @@ export const iconMappingAudit: Partial<Record<string, IconMappingAudit>> = {
     status: "accepted",
     affected: [],
     observed: {
-      codex: "Bare >_ prompt",
+      codex: "Codex terminal outline",
       opencode: "Bare >_ prompt",
     },
     expected:
-      "Both themes use the same bare >_ prompt in both states; only foreground emphasis changes.",
-    reason: "The shared artwork policy keeps both terminal states on OpenCode artwork in every theme.",
+      "Each theme keeps its terminal artwork in both states; only foreground emphasis changes.",
+    reason: "Codex retains its native terminal outline. OpenCode retains the bare console prompt.",
   },
   unified: {
     status: "accepted",

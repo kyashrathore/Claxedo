@@ -54,7 +54,7 @@ const OPEN_CODE_GLYPHS = [
   "code-lines",
   // Accepted as-is for now (user review, 2026-09-09).
   "circle-ban-sign",
-  "edit-small-2",
+  "edit",
   "eye",
   "enter",
   "folder",
@@ -131,7 +131,6 @@ const OPEN_CODE_ALIASES = {
   "changes": "review",
   "inspect-element": "window-cursor",
   cloud: "cloud-upload",
-  edit: "edit-small-2",
   "folder-open": "folders",
   gauge: "status",
   globe: "server",

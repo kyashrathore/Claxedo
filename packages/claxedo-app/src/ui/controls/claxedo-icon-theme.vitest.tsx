@@ -74,7 +74,7 @@ afterEach(() => {
 })
 
 describe("theme-driven icon libraries", () => {
-  test("honors explicit shared-artwork choices in both theme previews", async () => {
+  test("honors shared artwork while keeping process and terminal artwork theme-specific", async () => {
     const names = [
       "globe",
       "cloud",
@@ -117,20 +117,23 @@ describe("theme-driven icon libraries", () => {
       setIconLibraryPreference(theme)
       await waitFor(() => {
         for (const name of names) {
-          const family = ["discord", "process", "terminal", "terminal-active"].includes(name) ? "opencode" : "codex"
+          const themeSpecific = ["process", "terminal", "terminal-active"].includes(name)
           for (const preview of ["codex", "opencode"]) {
+            const family = themeSpecific ? preview : name === "discord" ? "opencode" : "codex"
             expect(view.getByTestId(`${preview}-${name}`).querySelector("[data-library]")).toHaveAttribute(
               "data-library",
               family,
             )
           }
-          expect(symbolMarkup(view, `codex-${name}`)).toBe(symbolMarkup(view, `opencode-${name}`))
+          if (themeSpecific) expect(symbolMarkup(view, `codex-${name}`)).not.toBe(symbolMarkup(view, `opencode-${name}`))
+          else expect(symbolMarkup(view, `codex-${name}`)).toBe(symbolMarkup(view, `opencode-${name}`))
         }
         expect(symbolMarkup(view, "shared-reset")).toBe(symbolMarkup(view, "codex-reset"))
         expect(symbolMarkup(view, "shared-discord")).toBe(symbolMarkup(view, "codex-discord"))
-        expect(symbolMarkup(view, "shared-terminal")).toBe(symbolMarkup(view, "codex-terminal"))
-        expect(symbolMarkup(view, "shared-terminal-active")).toBe(symbolMarkup(view, "codex-terminal-active"))
+        expect(symbolMarkup(view, "shared-terminal")).toBe(symbolMarkup(view, `${theme}-terminal`))
+        expect(symbolMarkup(view, "shared-terminal-active")).toBe(symbolMarkup(view, `${theme}-terminal-active`))
         expect(symbolMarkup(view, "codex-process")).toBe(symbolMarkup(view, "codex-terminal"))
+        expect(symbolMarkup(view, "opencode-process")).toBe(symbolMarkup(view, "opencode-terminal"))
       })
     }
   })
@@ -189,7 +192,7 @@ describe("theme-driven icon libraries", () => {
       for (const icon of [off, on, off]) {
         setName(icon)
         await waitFor(() => {
-          const family = icon === "terminal" || icon === "terminal-active" ? "opencode" : library
+          const family = library
           expect(view.container.querySelector("[data-library]")?.getAttribute("data-library")).toBe(family)
           const href = view.container.querySelector("use")?.getAttribute("href")
           expect(href?.startsWith("#opencode-icon-")).toBe(family === "opencode")

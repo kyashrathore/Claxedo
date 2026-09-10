@@ -40,7 +40,6 @@ export const APP_ICONS = {
   discord: true,
   download: true,
   edit: true,
-  "edit-small-2": true,
   enter: true,
   expand: true,
   "expand-all": true,

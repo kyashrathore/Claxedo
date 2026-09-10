@@ -7,10 +7,6 @@ export const ICON_ARTWORK_POLICY = {
   reset: "codex",
   worktree: "codex",
   discord: "opencode",
-  // Processes and terminals share OpenCode's >_ mark in every theme and state.
-  process: "opencode",
-  terminal: "opencode",
-  "terminal-active": "opencode",
 } as const
 
 export function resolveIconArtworkLibrary(name: string, themeLibrary: "codex" | "opencode") {
