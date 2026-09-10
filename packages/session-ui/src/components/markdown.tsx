@@ -47,7 +47,6 @@ import {
   stageMarkdownCollections as stageCollections,
 } from "./markdown-progressive"
 import { parseMarkdownMeasured } from "./markdown-parse-timing"
-import { rememberCompletedMarkdownPaint } from "./markdown-rich-stage"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -973,7 +972,6 @@ export function Markdown(
         copied: i18n.t("ui.message.copied"),
       }))
     traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
-    if (content.every((block) => block.key !== "initial")) rememberCompletedMarkdownPaint(local.cacheKey, local.text)
   })
 
   onCleanup(() => {

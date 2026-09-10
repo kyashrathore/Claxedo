@@ -1,7 +1,6 @@
 import { cleanup, render } from "@solidjs/testing-library"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { Markdown } from "@opencode-ai/session-ui/markdown"
-import { clearCompletedMarkdownPaintCache } from "@opencode-ai/session-ui/markdown-rich-stage"
 import { createSignal, Suspense } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
@@ -62,7 +61,6 @@ afterEach(() => {
     if (descriptor) Object.defineProperty(window, name, descriptor)
     else Reflect.deleteProperty(window, name)
   }
-  clearCompletedMarkdownPaintCache()
 })
 
 describe("Markdown completed-body first paint", () => {
