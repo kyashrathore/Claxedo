@@ -44,6 +44,10 @@ rather than by reading the diff:
 | D4 | subagent cards exempt from the fold | with the shipped fold on, 8 context groups and 10 tool rows hide; the subagent chips stay |
 | D11 | `session.idle` no longer bumps the row | new test fails when the case is put back |
 | D23/D27 | a running tool names itself and opens | all three `pending()` guards removed together |
+| D18 | an interrupted turn keeps its fold control | control and default separated; a reader can re-collapse |
+| D13 | the disabled rich-staging module deleted | its paint cache was write-only; the 8 paint tests still pass |
+| D28 | a non-zero exit is no longer a failure | Codex/Cursor keep only their own verdict; Claude never had it |
+| D5 | folding a running turn can be turned off | a Settings row plus all 17 locales |
 
 Two defects were found while measuring and are closed with them:
 
