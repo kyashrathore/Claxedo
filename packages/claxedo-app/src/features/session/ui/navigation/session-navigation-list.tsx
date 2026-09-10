@@ -69,7 +69,7 @@ export function SessionNavigation(props: SessionNavigationProps) {
           >
             <span class="h-px flex-1 bg-border-weak-base/15" />
             <Show when={props.dividerLabel}>
-              <span class="text-[10px] leading-none text-text-weaker tabular-nums">{props.dividerLabel}</span>
+              <span class="text-2xs leading-none text-text-weaker tabular-nums">{props.dividerLabel}</span>
               <span class="h-px flex-1 bg-border-weak-base/15" />
             </Show>
           </div>
