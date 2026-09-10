@@ -116,21 +116,23 @@ Every site that turns a process result into a failure, and what it reads:
 | Cursor | `cursor/adapter.ts:352-358` | `status === "error"` | nested `value.exitCode !== 0` |
 | Claude | `claude/adapter.ts:220` | `is_error` | — (the SDK folds both into `is_error`) |
 
-The matrix shows the fix is two changes, not one. Codex and Cursor each already
-carry a signal from the harness that the call *failed*, separate from the code
-the process exited with — so for them the fix is to stop inferring, and let the
-exit code travel as a result rather than as an error.
+Correction: the row for Claude above, and the entry's claim that "Claude Code
+sets `is_error` for a non-zero Bash exit, so the observable behavior matches",
+are both refuted by the logs. Across 9,915 bash `tool_result` blocks in the local
+sessions, `is_error` is false on every one. Claude Code does not flag a non-zero
+exit at all — it adds `returnCodeInterpretation`, whose observed value is
+"No matches found". So D28 never affected the Claude harness.
 
-Claude cannot be fixed the same way. Claude Code sets `is_error` for a non-zero
-Bash exit itself, so by the time the adapter sees it the two meanings are already
-one flag and no client-side rule can separate them. That half needs the exit code
-carried separately by the harness, and is not something the adapter can recover.
+That makes the fix symmetric after all, and it landed: Codex and Cursor stop
+inferring failure from the exit code and keep only the verdict the harness
+itself supplies — Cursor's `status === "error"`, and Codex's
+`CommandExecutionStatus`, which distinguishes `completed` from `failed` beside
+the code it reports. Codex's bare `process/exited` notification carries no
+verdict at all, only a code, so it now always completes; the code stays in
+`metadata.codex.exitCode` for the row to show.
 
-This is why the entry's own warning — "any fix has to land in all three or the
-surfaces drift" — is not achievable as stated: two harnesses can stop guessing
-today, the third needs information it is not currently given. Landing the two
-without deciding what Claude does would leave the transcript disagreeing with
-itself about what an error is, so nothing is changed here yet.
+What remains open is presentation, not classification: a completed call that
+exited non-zero should still say so, which is D22's other half.
 
 ### R1 is blocked behind its precondition
 

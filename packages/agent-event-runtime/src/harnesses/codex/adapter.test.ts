@@ -196,6 +196,35 @@ describe("codexAppServerAdapter", () => {
     })
   }
 
+  test("a non-zero exit Codex did not call a failure completes normally", () => {
+    const agent = runtime()
+    const events = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
+      item: {
+        id: "no-match",
+        type: "commandExecution",
+        command: "grep needle haystack",
+        cwd: "/repo",
+        status: "completed",
+        exitCode: 1,
+        aggregatedOutput: "",
+      },
+    } }).events
+    expect(events.some((event) => event.type === "tool-error")).toBe(false)
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool-output", toolCallId: "no-match" }))
+  })
+
+  test("a bare process exit is a result, not an error, whatever the code", () => {
+    const agent = runtime()
+    const events = agent.ingest({ source: "codex.app-server", method: "process/exited", payload: {
+      processHandle: "proc-1",
+      exitCode: 1,
+      stdout: "",
+      stderr: "",
+    } }).events
+    expect(events.some((event) => event.type === "tool-error")).toBe(false)
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool-output", toolCallId: "proc-1" }))
+  })
+
   test("a command that produced no output yields empty output, not the raw envelope", () => {
     const agent = runtime()
 

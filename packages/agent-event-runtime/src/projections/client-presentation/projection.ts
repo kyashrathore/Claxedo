@@ -1,4 +1,5 @@
 import { asRecord } from "@claxedo/helpers/guards"
+import { canonicalToolName } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeEvent, RuntimeToolAttachment, ToolDisplay } from "../../contracts/agent-runtime-event"
 import { object, text } from "../../value"
 import { userMessageIdForAssistantReply } from "../../contracts/turn-message-ids"
@@ -1146,11 +1147,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
     case "tool-start": {
       split()
-      /* Harnesses spell their tools differently — Claude sends `Bash`/`Read`, OpenCode
-         sends `bash`/`read`. Every downstream reader (the grouping vocabularies, the
-         renderer registry, getToolInfo) matches lowercase, so canonicalise once here
-         rather than at each of them. */
-      const tool = chunk.toolName ? chunk.toolName.toLowerCase() : chunk.toolCallId
+      const tool = chunk.toolName ? canonicalToolName(chunk.toolName) : chunk.toolCallId
       ctx.toolNamesByCallId[chunk.toolCallId] = tool
       const metadata = mergeMetadata(ctx.toolMetadataByCallId[chunk.toolCallId], chunk.metadata)
       const display = mergeDisplay(ctx.toolDisplaysByCallId[chunk.toolCallId], chunk.display)

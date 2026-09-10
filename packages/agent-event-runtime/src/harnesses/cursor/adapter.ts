@@ -349,12 +349,15 @@ export function cursorRuntimeMessage(value: unknown) {
   }
 }
 
+/**
+ * Only the harness's own verdict. A non-zero exit is how a large class of tools
+ * reports a normal negative answer — `grep` found nothing, `diff` saw a
+ * difference, `git diff --quiet` found changes, a test suite failed — so
+ * inferring failure from it renders "the tool answered no" identically to "the
+ * tool crashed", and loses the distinction the reader needs.
+ */
 function isErrorResult(value: unknown) {
-  const row = asRecord(value)
-  if (row?.status === "error") return true
-  const nested = asRecord(row?.value)
-  const exitCode = asFiniteNumber(nested?.exitCode)
-  return exitCode !== undefined && exitCode !== 0
+  return asRecord(value)?.status === "error"
 }
 
 function toolCompletedEvents(input: {

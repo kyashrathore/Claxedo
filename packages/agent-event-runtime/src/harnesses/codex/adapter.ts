@@ -545,9 +545,11 @@ function processExitEvents(input: {
     },
     events: [
       ...ensured.events,
-      exitCode === 0
-        ? { type: "tool-output", toolCallId: input.toolCallId, output, display: ensured.display, metadata: input.metadata }
-        : { type: "tool-error", toolCallId: input.toolCallId, error: output || `Process exited with code ${exitCode}`, display: ensured.display, metadata: input.metadata },
+      // A process exit notification carries no verdict from Codex, only the code,
+      // and a non-zero code is how a large class of tools reports a normal
+      // negative answer. So the call completed; the caller already records the
+      // code in `metadata.codex.exitCode` for the row to show.
+      { type: "tool-output", toolCallId: input.toolCallId, output, display: ensured.display, metadata: input.metadata },
     ] satisfies AgentRuntimeEvent[],
   }
 }
@@ -750,9 +752,14 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
             ...(Array.isArray(completedItem.contentItems) ? completedItem.contentItems : []).flatMap((item) =>
               asRecord(item)?.type === "inputImage" ? imageUrlAttachment(asRecord(item)?.imageUrl) : []),
           ]
+          // Codex's own verdict decides, not the exit code it reports beside it:
+          // `CommandExecutionStatus` distinguishes `completed` from `failed`, while a
+          // non-zero code is how `grep`, `diff`, `git diff --quiet` and a red test
+          // suite all report a normal negative answer.
+          const commandFailed = itemType === "command_execution" && completedItem.status === "failed"
           const completion = mcpError !== undefined
             ? { type: "tool-error" as const, toolCallId: id, error: mcpError }
-            : itemType === "command_execution" && exitCode !== undefined && exitCode !== 0
+            : commandFailed
             ? { type: "tool-error" as const, toolCallId: id, error: text(output) ?? `Process exited with code ${exitCode}` }
             : { type: "tool-output" as const, toolCallId: id, output, ...(attachments.length ? { attachments } : {}) }
           if (!existing) {
