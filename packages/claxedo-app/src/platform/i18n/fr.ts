@@ -477,6 +477,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Afficher les résumés de raisonnement",
   "settings.general.row.reasoningSummaries.description":
     "Afficher les résumés de raisonnement du modèle dans la chronologie",
+  "settings.general.row.timelineFoldWhileRunning.title": "Replier un tour en cours",
+  "settings.general.row.timelineFoldWhileRunning.description":
+    "Replier le travail terminé pendant que le tour se poursuit, en gardant la dernière étape visible",
   "settings.general.row.shellToolPartsExpanded.title": "Développer les parties de l'outil shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Afficher les parties de l'outil shell développées par défaut dans la chronologie",

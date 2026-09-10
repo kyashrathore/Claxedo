@@ -529,6 +529,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Vis tænkeoversigter",
   "settings.general.row.reasoningSummaries.description": "Vis model tænkeoversigter i tidslinjen",
 
+  "settings.general.row.timelineFoldWhileRunning.title": "Fold en igangværende tur sammen",
+  "settings.general.row.timelineFoldWhileRunning.description":
+    "Fold færdigt arbejde sammen, mens en tur stadig kører, og hold det seneste trin synligt",
   "settings.general.row.shellToolPartsExpanded.title": "Udvid shell-værktøjsdele",
   "settings.general.row.shellToolPartsExpanded.description": "Vis shell-værktøjsdele udvidet som standard i tidslinjen",
   "settings.general.row.editToolPartsExpanded.title": "Udvid edit-værktøjsdele",

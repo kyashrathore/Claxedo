@@ -469,6 +469,9 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Sterowanie",
   "settings.general.row.reasoningSummaries.title": "Pokaż podsumowania wnioskowania",
   "settings.general.row.reasoningSummaries.description": "Wyświetlaj podsumowania wnioskowania modelu na osi czasu",
+  "settings.general.row.timelineFoldWhileRunning.title": "Zwijaj trwającą turę",
+  "settings.general.row.timelineFoldWhileRunning.description":
+    "Zwijaj ukończoną pracę, gdy tura wciąż trwa, pozostawiając widoczny ostatni krok",
   "settings.general.row.shellToolPartsExpanded.title": "Rozwijaj elementy narzędzia shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Domyślnie pokazuj rozwinięte elementy narzędzia shell na osi czasu",

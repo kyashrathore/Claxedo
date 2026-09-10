@@ -537,6 +537,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Prikaži sažetke rasuđivanja",
   "settings.general.row.reasoningSummaries.description": "Prikaži sažetke rasuđivanja modela na vremenskoj traci",
 
+  "settings.general.row.timelineFoldWhileRunning.title": "Sklopi tekući potez",
+  "settings.general.row.timelineFoldWhileRunning.description":
+    "Sklopi završeni rad dok je potez još u toku, uz zadržavanje posljednjeg koraka vidljivim",
   "settings.general.row.shellToolPartsExpanded.title": "Proširi dijelove shell alata",
   "settings.general.row.shellToolPartsExpanded.description":
     "Prikaži dijelove shell alata podrazumijevano proširene na vremenskoj traci",

@@ -468,6 +468,9 @@ export const dict = {
   "settings.general.row.followup.option.steer": "即座に実行 (Steer)",
   "settings.general.row.reasoningSummaries.title": "推論の要約を表示",
   "settings.general.row.reasoningSummaries.description": "タイムラインにモデルの推論の要約を表示します",
+  "settings.general.row.timelineFoldWhileRunning.title": "実行中のターンを折りたたむ",
+  "settings.general.row.timelineFoldWhileRunning.description":
+    "ターンの実行中に完了した作業を折りたたみ、最新のステップだけを表示します",
   "settings.general.row.shellToolPartsExpanded.title": "shell ツールパーツを展開",
   "settings.general.row.shellToolPartsExpanded.description":
     "タイムラインで shell ツールパーツをデフォルトで展開して表示します",

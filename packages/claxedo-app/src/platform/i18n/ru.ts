@@ -536,6 +536,9 @@ export const dict = {
   "settings.general.row.reasoningSummaries.title": "Показывать сводки рассуждений",
   "settings.general.row.reasoningSummaries.description": "Отображать сводки рассуждений модели в ленте",
 
+  "settings.general.row.timelineFoldWhileRunning.title": "Сворачивать выполняющийся ход",
+  "settings.general.row.timelineFoldWhileRunning.description":
+    "Сворачивать завершённую работу, пока ход ещё выполняется, оставляя последний шаг на виду",
   "settings.general.row.shellToolPartsExpanded.title": "Разворачивать элементы инструмента shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Показывать элементы инструмента shell в ленте развернутыми по умолчанию",

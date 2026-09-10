@@ -536,6 +536,9 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Styr",
   "settings.general.row.reasoningSummaries.title": "Vis resonneringssammendrag",
   "settings.general.row.reasoningSummaries.description": "Vis sammendrag av modellresonnering i tidslinjen",
+  "settings.general.row.timelineFoldWhileRunning.title": "Fold sammen en pågående tur",
+  "settings.general.row.timelineFoldWhileRunning.description":
+    "Fold sammen ferdig arbeid mens en tur fortsatt kjører, og hold det siste trinnet synlig",
   "settings.general.row.shellToolPartsExpanded.title": "Utvid shell-verktøydeler",
   "settings.general.row.shellToolPartsExpanded.description": "Vis shell-verktøydeler utvidet som standard i tidslinjen",
   "settings.general.row.editToolPartsExpanded.title": "Utvid edit-verktøydeler",

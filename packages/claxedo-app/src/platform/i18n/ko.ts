@@ -465,6 +465,9 @@ export const dict = {
   "settings.general.row.followup.option.steer": "조종",
   "settings.general.row.reasoningSummaries.title": "추론 요약 표시",
   "settings.general.row.reasoningSummaries.description": "타임라인에 모델 추론 요약 표시",
+  "settings.general.row.timelineFoldWhileRunning.title": "실행 중인 턴 접기",
+  "settings.general.row.timelineFoldWhileRunning.description":
+    "턴이 실행되는 동안 완료된 작업을 접고 최신 단계만 표시합니다",
   "settings.general.row.shellToolPartsExpanded.title": "shell 도구 파트 펼치기",
   "settings.general.row.shellToolPartsExpanded.description":
     "타임라인에서 기본적으로 shell 도구 파트를 펼친 상태로 표시합니다",

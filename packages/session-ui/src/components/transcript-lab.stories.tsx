@@ -546,8 +546,8 @@ const LEVERS: Lever[] = [
     group: "Density",
     label: "Last turn",
     finding:
-      "The app never folds a running turn (message-timeline.data.ts:79 sets foldWhileRunning=false) while session-ui defaults it on.",
-    origin: "message-timeline.data.ts:79 vs message-part.tsx:910",
+      "Folding a running turn is on by default and keeps the live group visible; Settings \u2192 General turns it off.",
+    origin: "settings general.timelineFoldWhileRunning",
     control: {
       kind: "segment",
       options: [
