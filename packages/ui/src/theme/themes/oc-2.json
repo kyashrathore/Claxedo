@@ -18,8 +18,8 @@
     "overrides": {
       "text-strong": "#171717",
       "text-base": "#6F6F6F",
-      "text-weak": "#8F8F8F",
-      "text-weaker": "#C7C7C7",
+      "text-weak": "#535353",
+      "text-weaker": "#6F6F6F",
       "text-diff-add-base": "var(--v2-state-fg-success)",
       "text-diff-delete-base": "var(--v2-state-fg-danger)",
       "border-weak-base": "#DBDBDB",
@@ -253,8 +253,8 @@
     "overrides": {
       "text-strong": "#EDEDED",
       "text-base": "#A0A0A0",
-      "text-weak": "#707070",
-      "text-weaker": "#505050",
+      "text-weak": "#AEAEAE",
+      "text-weaker": "#9E9E9E",
       "text-diff-add-base": "var(--v2-state-fg-success)",
       "text-diff-delete-base": "var(--v2-state-fg-danger)",
       "border-weak-base": "#282828",

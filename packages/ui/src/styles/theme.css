@@ -31,7 +31,7 @@
   --font-size-rich-heading-one: 1.15rem;
   --font-size-rich-heading-two: 1.05rem;
   --font-size-rich-heading-three: 0.95rem;
-  --font-size-inline-code: 0.85em;
+  --font-size-inline-code: 0.8em;
   --font-size-document-code: 0.9em;
   --font-size-relative: 1em;
   --font-size-relative-small: 80%;
@@ -278,8 +278,8 @@
   --input-focus: #fcfdff;
   --input-disabled: #ededed;
   --text-base: #6f6f6f;
-  --text-weak: #8f8f8f;
-  --text-weaker: #c7c7c7;
+  --text-weak: #535353;
+  --text-weaker: #6f6f6f;
   --text-strong: #171717;
   --text-invert-base: #f8f8f8;
   --text-invert-weak: #f3f3f3;
@@ -550,8 +550,8 @@
     --input-focus: #091123;
     --input-disabled: #282828;
     --text-base: rgba(255, 255, 255, 0.618);
-    --text-weak: rgba(255, 255, 255, 0.422);
-    --text-weaker: rgba(255, 255, 255, 0.284);
+    --text-weak: rgba(255, 255, 255, 0.679);
+    --text-weaker: rgba(255, 255, 255, 0.61);
     --text-strong: rgba(255, 255, 255, 0.936);
     --text-invert-base: #a0a0a0;
     --text-invert-weak: #707070;
