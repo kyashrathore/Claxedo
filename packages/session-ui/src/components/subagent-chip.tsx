@@ -2,6 +2,24 @@ import { createMemo, createSignal, For, Show } from "solid-js"
 import type { AgentToolPart } from "@claxedo/agent-runtime-contract"
 import { AgentGlyph } from "./agent-glyph"
 import { useData, type SubagentView } from "../context"
+import { clampLabel } from "./message-part-text"
+
+/**
+ * The one line under a subagent's name. `description` is whatever the runtime last
+ * wrote to the row, and a finished subagent writes its own summary there — prose,
+ * markdown headings and all — so it is flattened and clamped to a line's worth here.
+ * Handing the full text to the layout instead leaves the row's width to whatever the
+ * surrounding CSS happens to allow, and a paragraph then runs out of the transcript
+ * column.
+ */
+export function subagentSubtitle(subagent: Pick<SubagentView, "description" | "mode" | "resolution">) {
+  return [
+    clampLabel(subagent.description),
+    subagent.mode === "background" ? "Background · continues independently" : undefined,
+    subagent.resolution === "unavailable" ? "Transcript unavailable" : undefined,
+    subagent.resolution === "not-yet-bound" ? "Transcript not yet available" : undefined,
+  ].filter(Boolean).join(" · ")
+}
 
 /**
  * SubagentChip row (T12/T13) — when a turn spawns ≥2 subagents, they render as chips

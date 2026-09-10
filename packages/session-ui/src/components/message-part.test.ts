@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readPartText } from "./message-part-text"
-import { dispatchSubagentOpen } from "./subagent-chip"
+import { dispatchSubagentOpen, subagentSubtitle } from "./subagent-chip"
 
 describe("readPartText", () => {
   test("returns empty string when accum is undefined and part text is undefined", () => {
@@ -112,5 +112,30 @@ describe("dispatchSubagentOpen", () => {
       openable: false,
     })).toBe(false)
     expect(count).toBe(0)
+  })
+})
+
+describe("subagentSubtitle", () => {
+  const findings =
+    "Findings below. No files were modified.\n\n## 1. Where tool call parts are rendered as rows\n" +
+    "Single dispatch point for every tool invocation in the transcript"
+
+  test("flattens and clamps a summary the runtime wrote into the description", () => {
+    const line = subagentSubtitle({ description: findings, resolution: "ready" })
+    expect(line).not.toContain("\n")
+    expect(line.length).toBeLessThanOrEqual(72)
+    expect(line.endsWith("…")).toBe(true)
+    expect(line.startsWith("Findings below. No files were modified.")).toBe(true)
+  })
+
+  test("keeps a short description whole and appends the row's own facts", () => {
+    expect(subagentSubtitle({ description: "Find skill part click handling", mode: "background", resolution: "ready" }))
+      .toBe("Find skill part click handling · Background · continues independently")
+    expect(subagentSubtitle({ description: "Delegated task", resolution: "unavailable" }))
+      .toBe("Delegated task · Transcript unavailable")
+  })
+
+  test("an empty description contributes nothing rather than an empty segment", () => {
+    expect(subagentSubtitle({ description: "", resolution: "not-yet-bound" })).toBe("Transcript not yet available")
   })
 })

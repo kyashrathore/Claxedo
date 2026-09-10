@@ -55,7 +55,7 @@ import {
   type TurnShape,
 } from "./turn-fold"
 import { TurnFoldRow } from "./turn-fold-row"
-import { SubagentChipRow } from "./subagent-chip"
+import { SubagentChipRow, subagentSubtitle } from "./subagent-chip"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
@@ -88,7 +88,7 @@ import { patchFiles } from "./apply-patch-file"
 import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind, typeLabel } from "./message-file"
-import { readPartText } from "./message-part-text"
+import { readPartText, clampLabel } from "./message-part-text"
 import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
 import { dispatchSubagentOpen } from "./subagent-chip"
@@ -1200,11 +1200,6 @@ function workGroupTitle(counts: WorkGroupCounts, pending: boolean): string {
   const segs = workGroupSegments(counts, pending)
   if (segs.length === 0) return pending ? "Working" : "Worked"
   return segs.map((seg, i) => (i === 0 ? seg.charAt(0).toUpperCase() + seg.slice(1) : seg)).join(" · ")
-}
-
-function clampLabel(value: string, max = 72) {
-  const flat = value.replace(/\s+/g, " ").trim()
-  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
 }
 
 /**
@@ -2352,12 +2347,7 @@ function SubagentTaskCard(props: {
     !!(data.navigateToSession || href())
   )
   const status = createMemo(() => subagentStatus(props.subagent.status))
-  const subtitle = createMemo(() => [
-    props.subagent.description,
-    props.subagent.mode === "background" ? "Background · continues independently" : undefined,
-    props.subagent.resolution === "unavailable" ? "Transcript unavailable" : undefined,
-    props.subagent.resolution === "not-yet-bound" ? "Transcript not yet available" : undefined,
-  ].filter(Boolean).join(" · "))
+  const subtitle = createMemo(() => subagentSubtitle(props.subagent))
 
   const activate = () => {
     if (props.subagent.toolCallRole === "interaction") {
