@@ -117,6 +117,14 @@ function sessionIdFromDirectoryEvent(properties: unknown): string | undefined {
     ?? nonEmpty(readString(properties, "sessionId"))
 }
 
+/**
+ * Advances a row to "just now" for activity the event stream reports without a
+ * timestamp of its own. Only real activity may call this: `session.idle` says a
+ * session stopped being busy, which the runtime store deliberately records
+ * without moving `time.updated` ("Status polls / visit must not reshuffle the
+ * session list"), and bumping it here would reorder the list under a user who
+ * did nothing but open the session.
+ */
 function bumpSessionListActivity(input: { event: DirectoryEvent; directory: WorkspaceDirectory; workspaceId?: string }) {
   const sessionId = sessionIdFromDirectoryEvent(input.event.properties)
   if (!sessionId) return
@@ -149,8 +157,7 @@ export function applyDirectoryEventToShellQueries(input: {
       }
       break
     }
-    case "message.completed":
-    case "session.idle": {
+    case "message.completed": {
       bumpSessionListActivity(input)
       break
     }
