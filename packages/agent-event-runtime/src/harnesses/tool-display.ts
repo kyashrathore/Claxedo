@@ -1,3 +1,4 @@
+import { isSubagentSpawnToolName } from "@claxedo/agent-runtime-contract"
 import type { ToolDisplay, ToolIntent } from "../contracts/agent-runtime-event"
 import { text } from "../value"
 import { isHostSubagentTool } from "./host-subagent"
@@ -14,7 +15,7 @@ export function canonicalToolIntent(input: { kind?: string; toolName?: string })
   if (kind === "web_search") return "search"
   if (isHostSubagentTool(tool)) return "task"
   if (kind === "mcp_tool_call" || tool.startsWith("mcp__") || tool === "mcp") return "mcp"
-  if (kind === "collab_agent_tool_call" || tool === "task" || tool === "agent" || tool === "subagent" || tool === "spawn_agent" || tool === "spawnagent") return "task"
+  if (kind === "collab_agent_tool_call" || isSubagentSpawnToolName(tool)) return "task"
   if (kind === "fetch") return "fetch"
   if (kind === "move") return "move"
   if (kind === "delete") return "delete"

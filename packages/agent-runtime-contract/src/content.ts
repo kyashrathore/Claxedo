@@ -204,6 +204,31 @@ export type AgentToolPart = AgentPartBase<"tool"> & {
   metadata?: Record<string, unknown>
 }
 
+/**
+ * Tool names that spawn a subagent, in every spelling a harness reports. Claude
+ * names its tool `Agent`, OpenCode and Codex `task`, and the runtime's own MCP
+ * tool arrives bare as `create_subagent` or prefixed as
+ * `mcp__claxedo__create_subagent`. Both the event runtime's tool-intent mapping
+ * and the transcript's grouping ask this question, so they ask it here — a name
+ * missing from one copy is a subagent that renders as a generic tool row.
+ *
+ * Callers pass the tool name as the part carries it; matching is case-insensitive
+ * because only the client-presentation projection canonicalises case.
+ */
+export function isSubagentSpawnToolName(toolName: string) {
+  return SUBAGENT_SPAWN_TOOL_NAMES.has(toolName.toLowerCase())
+}
+
+export const SUBAGENT_SPAWN_TOOL_NAMES: ReadonlySet<string> = new Set([
+  "agent",
+  "task",
+  "subagent",
+  "spawn_agent",
+  "spawnagent",
+  "create_subagent",
+  "mcp__claxedo__create_subagent",
+])
+
 export type AgentSubtaskPart = AgentPartBase<"subtask"> & {
   prompt: string
   description: string

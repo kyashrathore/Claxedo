@@ -1,4 +1,4 @@
-import type { AgentContentPart, AgentToolPart } from "@claxedo/agent-runtime-contract"
+import { isSubagentSpawnToolName, type AgentContentPart, type AgentToolPart } from "@claxedo/agent-runtime-contract"
 
 export type PartRef = {
   messageID: string
@@ -81,14 +81,13 @@ export function isWorkGroupTool(part: AgentContentPart): part is AgentToolPart {
 }
 
 /**
- * A tool part that is a subagent spawn: the harness's own `task` tool, or the
- * runtime's `create_subagent` MCP tool, which the harness reports under its
- * MCP name but the event runtime classifies as task work.
+ * A tool part that is a subagent spawn. The name is the primary signal and the
+ * contract owns its spellings; an MCP tool that answers task work without one of
+ * those names declares it on the input instead.
  */
 export function isSubagentToolPart(part: { type: string; tool?: string; state?: { input?: unknown } }): boolean {
   if (part.type !== "tool") return false
-  if (part.tool === "task" || part.tool === "create_subagent" || part.tool === "mcp__claxedo__create_subagent")
-    return true
+  if (part.tool && isSubagentSpawnToolName(part.tool)) return true
   const input = part.state?.input
   return typeof input === "object" && input !== null && (input as { intent?: unknown }).intent === "task"
 }

@@ -77,6 +77,11 @@ describe("isSubagentToolPart", () => {
     expect(isSubagentToolPart({ type: "tool", tool: "bash" })).toBe(false)
     expect(isSubagentToolPart({ type: "text", tool: "task" })).toBe(false)
   })
+
+  test("recognises the Claude harness's own spelling of the spawn tool", () => {
+    expect(isSubagentToolPart({ type: "tool", tool: "agent" })).toBe(true)
+    expect(isSubagentToolPart({ type: "tool", tool: "Agent" })).toBe(true)
+  })
 })
 
 describe("a read that returned an image", () => {

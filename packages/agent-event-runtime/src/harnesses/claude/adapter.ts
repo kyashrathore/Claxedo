@@ -1,3 +1,4 @@
+import { isSubagentSpawnToolName } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type {
@@ -142,7 +143,7 @@ function toolInput(value: unknown) {
 }
 
 function isTaskTool(toolName: string) {
-  return ["agent", "task"].includes(toolName.toLowerCase()) || isHostSubagentTool(toolName)
+  return isSubagentSpawnToolName(toolName) || isHostSubagentTool(toolName)
 }
 
 function parseJsonRecord(value: string) {

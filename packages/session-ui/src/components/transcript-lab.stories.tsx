@@ -1,6 +1,10 @@
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { AgentContentPart, AgentPresentationMessage } from "@claxedo/agent-runtime-contract"
+import {
+  SUBAGENT_SPAWN_TOOL_NAMES,
+  type AgentContentPart,
+  type AgentPresentationMessage,
+} from "@claxedo/agent-runtime-contract"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { DataProvider } from "../context/data"
@@ -1277,7 +1281,7 @@ function TranscriptLab() {
                 tools={[...CONTEXT_GROUP_TOOLS]}
               />
               <FoldRule title="work group · runs of 2+" tools={[...WORK_GROUP_TOOLS]} />
-              <FoldRule title="agent row · runs of 2+" tools={["task", "create_subagent", "mcp__claxedo__create_subagent"]} />
+              <FoldRule title="agent row · runs of 2+" tools={[...SUBAGENT_SPAWN_TOOL_NAMES]} />
               <FoldRule title="hidden · never rendered" tools={[...HIDDEN_TOOLS]} />
               <div style={{ "margin-top": "7px", color: "rgba(255,255,255,0.24)" }}>
                 Everything else — text, reasoning, question, permission, mcp, file, patch — renders standalone and
