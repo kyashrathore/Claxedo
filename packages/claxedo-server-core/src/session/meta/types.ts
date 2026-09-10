@@ -23,6 +23,8 @@ export type SessionMeta = {
   archived?: number
   createdAt: number
   updatedAt: number
+  /** When a human last started a turn here; absent when only agents ever have. */
+  lastHumanTurnAt?: number
   tags: string[]
   attachments: SessionAttachment[]
 }
@@ -36,6 +38,13 @@ export type SessionMetaNavigationListInput = {
   status?: string[]
   search?: string
   sort?: "updated_desc" | "created_desc"
+  /**
+   * Which side of the staleness boundary to return. `active` is every session a human
+   * started a turn in since the cutoff, `settled` the rest — the two bands the session
+   * list renders. The caller passes one cutoff for every page of a listing, so a row
+   * cannot change band between page one and page two.
+   */
+  band?: { side: "active" | "settled"; humanTurnSince: number }
   limit: number
   cursor?: {
     updatedAt: number

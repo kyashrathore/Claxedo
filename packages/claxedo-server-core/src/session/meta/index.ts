@@ -124,6 +124,7 @@ export async function putSessionMeta(
     /** Preserve corpus/import stamps; do not invent "now" for seeds. */
     createdAt?: number
     updatedAt?: number
+    lastHumanTurnAt?: number
   },
 ) {
   const stamp = now()
@@ -172,6 +173,11 @@ export async function putSessionMeta(
       : contentChanged
         ? stamp
         : prev?.updated_at ?? stamp
+    // Only ever moves forward: a stale snapshot from a reconnecting engine must not
+    // erase a turn the reader has since started.
+    const lastHumanTurnAt = input.lastHumanTurnAt !== undefined
+      ? Math.max(input.lastHumanTurnAt, prev?.last_human_turn_at ?? 0)
+      : prev?.last_human_turn_at ?? null
     const update = {
       session_id: sessionID,
       workspace_id: workspaceID,
@@ -184,6 +190,7 @@ export async function putSessionMeta(
       parent_session_id: parentSessionID,
       archived_at: archivedAt,
       updated_at: updatedAt,
+      last_human_turn_at: lastHumanTurnAt,
     }
     db.insert(ClaxedoSessionMetaTable).values({
       ...update,
@@ -346,6 +353,14 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
     for (const item of status) {
       params.push(item, item, item, item)
     }
+  }
+  if (input.band) {
+    // A session only agents have ever driven has no human turn at all, so it belongs
+    // to the settled side rather than being dropped from both.
+    where.push(input.band.side === "active"
+      ? "m.last_human_turn_at IS NOT NULL AND m.last_human_turn_at > ?"
+      : "(m.last_human_turn_at IS NULL OR m.last_human_turn_at <= ?)")
+    params.push(input.band.humanTurnSince)
   }
   if (input.cursor) {
     const sortKey = input.sort === "created_desc" ? "created_at" : "updated_at"

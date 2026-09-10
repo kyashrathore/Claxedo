@@ -115,6 +115,9 @@ function hydrateSessionRows(
         ...(item.archived_at ? { archived: item.archived_at } : {}),
         createdAt: item.created_at,
         updatedAt: item.updated_at,
+        ...(item.last_human_turn_at !== null && item.last_human_turn_at !== undefined
+          ? { lastHumanTurnAt: item.last_human_turn_at }
+          : {}),
         tags: [],
         attachments: [],
       },

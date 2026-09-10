@@ -435,6 +435,42 @@ describe("claxedo schema", () => {
     expect(repair(sqlite)).toEqual([])
   })
 
+  test("a placement rebuild keeps the last human turn it was given", () => {
+    const sqlite = new Database(":memory:")
+
+    // The shape that triggers a placement rebuild — NOT NULL directory, no session_ref
+    // — but already carrying the column, as a database migrated before repair runs.
+    sqlite.exec(`
+      CREATE TABLE claxedo_session_meta (
+        session_id text PRIMARY KEY NOT NULL,
+        workspace_id text,
+        project_id text,
+        host text NOT NULL DEFAULT 'workspace',
+        directory text NOT NULL,
+        title text,
+        parent_session_id text,
+        archived_at integer,
+        created_at integer NOT NULL,
+        updated_at integer NOT NULL,
+        last_human_turn_at integer
+      )
+    `)
+    sqlite
+      .prepare(
+        `INSERT INTO claxedo_session_meta (
+          session_id, workspace_id, project_id, host, directory, title,
+          parent_session_id, archived_at, created_at, updated_at, last_human_turn_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run("s1", null, null, "workspace", "/tmp/project", "Session", null, null, 3, 4, 777)
+
+    expect(repair(sqlite)).toContain("claxedo_session_meta.placement")
+    expect(hasColumn(sqlite, "claxedo_session_meta", "last_human_turn_at")).toBe(true)
+    expect(
+      sqlite.prepare("SELECT last_human_turn_at FROM claxedo_session_meta WHERE session_id = ?").get("s1"),
+    ).toEqual({ last_human_turn_at: 777 })
+  })
+
   test("repair preserves session meta hosts during placement rebuilds", () => {
     const sqlite = new Database(":memory:")
 

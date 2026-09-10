@@ -106,6 +106,7 @@ export function sessionMetaSyncRow(input: unknown, ws?: Workspace) {
     archived_at: time.archived ?? null,
     created_at: time.created,
     updated_at: time.updated,
+    last_human_turn_at: time.lastHumanTurn ?? null,
   }
 }
 
@@ -125,5 +126,6 @@ function stamp(input: unknown) {
   const created = asFiniteNumber(time?.created) ?? asFiniteNumber(row?.created_at) ?? now()
   const updated = asFiniteNumber(time?.updated) ?? asFiniteNumber(row?.updated_at) ?? created
   const archived = asFiniteNumber(time?.archived) ?? asFiniteNumber(row?.archived_at)
-  return { created, updated, archived }
+  const lastHumanTurn = asFiniteNumber(time?.lastHumanTurn) ?? asFiniteNumber(row?.last_human_turn_at)
+  return { created, updated, archived, lastHumanTurn }
 }

@@ -33,6 +33,12 @@ export type SessionNavigationRow = {
   projectId?: string
   createdAt: number
   updatedAt: number
+  /**
+   * When a human last started a turn here. `updatedAt` moves for any actor's turn —
+   * a wake, a subagent, a channel message — so the session list bands on this instead.
+   * Absent for a session only agents have driven, and for one that predates the field.
+   */
+  lastHumanTurnAt?: number
   archivedAt?: number
   tags: string[]
   attachments: Array<{ kind: string; targetId?: string }>
@@ -223,6 +229,7 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
   const directory = stringValue(item.directory) ?? workspaceId ?? "global"
   const createdAt = numberValue(item.createdAt) ?? numberValue(item.created_at) ?? 0
   const updatedAt = numberValue(item.updatedAt) ?? numberValue(item.updated_at) ?? createdAt
+  const lastHumanTurnAt = numberValue(item.lastHumanTurnAt) ?? numberValue(item.last_human_turn_at)
   const archivedAt = numberValue(item.archived) ?? numberValue(item.archived_at)
   const environment = record(item.environment)
   const git = record(item.git)
@@ -236,6 +243,7 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
     ...(projectId ? { projectId } : {}),
     createdAt,
     updatedAt,
+    ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...(archivedAt ? { archivedAt } : {}),
     tags: stringArray(item.tags),
     attachments: arrayValue(item.attachments).flatMap((attachment) => {

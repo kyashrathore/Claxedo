@@ -145,13 +145,16 @@ const tabs = [
 
 function rebuildSessionMeta(
   db: SqliteInstance,
-  existing: { host: boolean; directory: boolean; toolSandbox: boolean; model: boolean },
+  existing: { host: boolean; directory: boolean; toolSandbox: boolean; model: boolean; lastHumanTurn: boolean },
 ) {
   const host = existing.host ? "COALESCE(NULLIF(`host`, ''), 'workspace')" : "'workspace'"
   const directory = existing.directory ? "NULLIF(`directory`, '')" : "NULL"
   const toolSandbox = existing.toolSandbox ? "`tool_sandbox`" : "NULL"
   const modelProviderID = existing.model ? "`model_provider_id`" : "NULL"
   const modelID = existing.model ? "`model_id`" : "NULL"
+  // Repair rebuilds this table by copying named columns, so a column missing from the
+  // list is silently dropped along with its data. Read it when the old table has it.
+  const lastHumanTurnAt = existing.lastHumanTurn ? "`last_human_turn_at`" : "NULL"
 
   db.exec("SAVEPOINT claxedo_session_meta_repair")
   try {
@@ -171,7 +174,8 @@ function rebuildSessionMeta(
         \`parent_session_id\` text,
         \`archived_at\` integer,
         \`created_at\` integer NOT NULL,
-        \`updated_at\` integer NOT NULL
+        \`updated_at\` integer NOT NULL,
+        \`last_human_turn_at\` integer
       )
     `)
     db.exec(`
@@ -189,7 +193,8 @@ function rebuildSessionMeta(
         \`parent_session_id\`,
         \`archived_at\`,
         \`created_at\`,
-        \`updated_at\`
+        \`updated_at\`,
+        \`last_human_turn_at\`
       )
       SELECT
         CASE
@@ -209,7 +214,8 @@ function rebuildSessionMeta(
         \`parent_session_id\`,
         \`archived_at\`,
         \`created_at\`,
-        \`updated_at\`
+        \`updated_at\`,
+        ${lastHumanTurnAt}
       FROM \`claxedo_session_meta_old_repair\`
     `)
     db.exec("DROP TABLE `claxedo_session_meta_old_repair`")
@@ -413,6 +419,7 @@ export function repair(db: SqliteInstance) {
       directory: sessionMetaHasDirectory,
       toolSandbox: sessionMetaHasToolSandbox,
       model: sessionMetaHasModel,
+      lastHumanTurn: hasColumn(db, "claxedo_session_meta", "last_human_turn_at"),
     })
     out.push("claxedo_session_meta.placement")
   }
