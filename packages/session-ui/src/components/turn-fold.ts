@@ -105,26 +105,27 @@ export type TurnFoldDecision = {
 
 /**
  * A settled turn folds its machinery behind one "Worked for Xs" divider, leaving
- * the prose visible; an explicit user toggle beats the auto-fold. An interrupted
- * or failed turn never folds, because the rows the fold would hide are the ones
- * that explain what happened.
+ * the prose visible; an explicit user toggle beats the auto-fold.
+ *
+ * An interrupted or failed turn keeps the control but does not fold on its own:
+ * the rows the fold would hide are the ones that explain what happened, so they
+ * stay up unless the reader asks otherwise. Withholding the control instead
+ * takes the fold away from a reader who was already using it — a turn expanded
+ * by hand and then interrupted could never be collapsed again.
  */
 export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
   const running = !!status.busy && !status.settled && !status.errored
   const canFoldSettled =
-    status.foldWhenSettled !== false &&
-    status.settled &&
-    !status.interrupted &&
-    !status.errored &&
-    status.foldableCount >= SETTLED_FOLD_MINIMUM
+    status.foldWhenSettled !== false && status.settled && status.foldableCount >= SETTLED_FOLD_MINIMUM
   const canFoldRunning = running && !!status.foldWhileRunning && status.foldableCount >= RUNNING_FOLD_MINIMUM
   const canFold = canFoldSettled || canFoldRunning
+  const explainsItself = !!status.interrupted || !!status.errored
   return {
     running,
     canFoldSettled,
     canFoldRunning,
     canFold,
-    folded: canFold ? (status.userChoice ?? true) : false,
+    folded: canFold ? (status.userChoice ?? !explainsItself) : false,
   }
 }
 

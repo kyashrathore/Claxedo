@@ -87,9 +87,16 @@ describe("turnFoldDecision", () => {
     expect(turnFoldDecision({ settled: false, busy: true, foldableCount: 4 }).canFoldRunning).toBe(false)
   })
 
-  test("an interrupted or failed turn never folds", () => {
-    expect(turnFoldDecision({ ...settledTurn, interrupted: true }).canFold).toBe(false)
-    expect(turnFoldDecision({ ...settledTurn, errored: true }).canFold).toBe(false)
+  test("an interrupted or failed turn keeps its control but does not fold itself", () => {
+    for (const outcome of [{ interrupted: true }, { errored: true }]) {
+      const decision = turnFoldDecision({ ...settledTurn, ...outcome })
+      expect(decision.canFold).toBe(true)
+      expect(decision.folded).toBe(false)
+    }
+  })
+
+  test("a reader can still collapse a turn that was interrupted while expanded", () => {
+    expect(turnFoldDecision({ ...settledTurn, interrupted: true, userChoice: true }).folded).toBe(true)
   })
 
   test("an explicit user choice beats the auto-fold", () => {
