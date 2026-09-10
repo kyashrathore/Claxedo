@@ -27,10 +27,13 @@ function shape(parts: AgentContentPart[]) {
 }
 
 describe("groupParts", () => {
-  test("folds a single context tool but keeps a single work tool and a single task standalone", () => {
+  test("folds a single context tool but keeps a single work tool standalone", () => {
     expect(shape([tool_("p1", "read")])).toEqual(["context"])
     expect(shape([tool_("p1", "bash")])).toEqual(["part"])
-    expect(shape([tool_("p1", "task")])).toEqual(["part"])
+  })
+
+  test("a lone spawn is an agents group too, so delegated work has one shape", () => {
+    expect(shape([tool_("p1", "task")])).toEqual(["agents"])
   })
 
   test("folds runs of two or more work tools and subagent spawns", () => {

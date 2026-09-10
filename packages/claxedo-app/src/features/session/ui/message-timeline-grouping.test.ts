@@ -100,9 +100,9 @@ describe("timeline grouping across harness vocabularies", () => {
     expect(rows.some((row) => row._tag === "TurnFold")).toBe(false)
   })
 
-  test("a lone subagent task stays visible as its standalone card", () => {
+  test("a lone subagent task is a one-chip agents row, not a second card shape", () => {
     const rows = rowsFor([toolPart("p1", "a1", "task")])
-    expect(groupTypes(rows)).toEqual(["part"])
+    expect(groupTypes(rows)).toEqual(["agents"])
     expect(rows.some((row) => row._tag === "TurnFold")).toBe(false)
   })
 

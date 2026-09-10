@@ -69,8 +69,8 @@ describe("cross-harness tool registry", () => {
   })
 
   test("scopes interaction rows to the canonical parent timeline", async () => {
-    expect(await Bun.file(`${import.meta.dir}/message-part.tsx`).text()).toContain(
-      'data-session-timeline-session-id="${CSS.escape(props.subagent.parentSessionId)}"',
+    expect(await Bun.file(`${import.meta.dir}/subagent-chip.tsx`).text()).toContain(
+      'data-session-timeline-session-id="${CSS.escape(chip.parentSessionId)}"',
     )
   })
 })
@@ -92,6 +92,26 @@ describe("dispatchSubagentOpen", () => {
     })).toBe(true)
     expect(events).toHaveLength(1)
     expect(events[0]?.detail).toEqual({ childSessionId: "child-1", subagentKey: "subagent-1" })
+  })
+
+  test("carries the agent's name so the opening surface can title the transcript", () => {
+    const target = new EventTarget()
+    const events: CustomEvent[] = []
+    target.addEventListener("claxedo:open-subagent", (event) => events.push(event as CustomEvent))
+
+    dispatchSubagentOpen(target, {
+      childSessionId: "child-1",
+      subagentKey: "subagent-1",
+      label: "code-reviewer",
+      interaction: false,
+      openable: true,
+    })
+
+    expect(events[0]?.detail).toEqual({
+      childSessionId: "child-1",
+      subagentKey: "subagent-1",
+      label: "code-reviewer",
+    })
   })
 
   test("does not emit for interaction rows or unavailable transcripts", () => {

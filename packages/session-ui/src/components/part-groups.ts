@@ -164,11 +164,9 @@ export function groupParts(parts: GroupablePart[]) {
       taskStart = -1
       return
     }
-    if (slice.length >= 2) {
-      result.push({ key: `agents:${first.part.id}`, type: "agents", refs: slice.map(partRef) })
-    } else {
-      result.push({ key: `part:${first.messageID}:${first.part.id}`, type: "part", ref: partRef(first) })
-    }
+    // Every spawn is a chip, a lone one included: two shapes for one thing made
+    // the same delegated work read as two different kinds of event down a turn.
+    result.push({ key: `agents:${first.part.id}`, type: "agents", refs: slice.map(partRef) })
     taskStart = -1
   }
 

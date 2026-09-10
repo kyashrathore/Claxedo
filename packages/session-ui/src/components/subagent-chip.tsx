@@ -30,14 +30,21 @@ type ChipModel = {
   key: string
   childSessionId?: string
   name: string
+  description?: string
   status: SubagentView["status"]
   resolution: SubagentView["resolution"]
+  toolCallRole?: SubagentView["toolCallRole"]
+  parentSessionId: string
   color?: string
 }
 
 export function dispatchSubagentOpen(target: EventTarget | null, input: {
   childSessionId?: string
   subagentKey: string
+  /** The agent's name, so the surface that opens the transcript can title it. */
+  label?: string
+  /** The row's one-line summary, for that surface's header. Clamped like the card's. */
+  description?: string
   interaction: boolean
   openable: boolean
 }) {
@@ -48,6 +55,8 @@ export function dispatchSubagentOpen(target: EventTarget | null, input: {
     detail: {
       childSessionId: input.childSessionId,
       subagentKey: input.subagentKey,
+      ...(input.label ? { label: input.label } : {}),
+      ...(input.description ? { description: clampLabel(input.description) } : {}),
     },
   }))
 }
@@ -57,9 +66,27 @@ function chipFromView(view: SubagentView): ChipModel {
     key: view.subagentKey,
     childSessionId: view.childSessionId,
     name: view.agentLabel || view.label,
+    ...(view.description ? { description: view.description } : {}),
     status: view.status,
     resolution: view.resolution,
+    ...(view.toolCallRole ? { toolCallRole: view.toolCallRole } : {}),
+    parentSessionId: view.parentSessionId,
   }
+}
+
+/**
+ * An interaction row is not its own transcript — it reports a message sent to a
+ * subagent already spawned earlier in this turn. Activating it takes the reader
+ * to that spawn row instead of opening anything.
+ */
+function scrollToCanonicalSpawn(chip: ChipModel) {
+  const canonical = document.querySelector<HTMLElement>(
+    `[data-session-timeline-session-id="${CSS.escape(chip.parentSessionId)}"] [data-subagent-key="${CSS.escape(chip.key)}"][data-subagent-role="spawn"]`,
+  )
+  if (!canonical) return false
+  canonical.scrollIntoView({ block: "center", behavior: "smooth" })
+  canonical.focus({ preventScroll: true })
+  return true
 }
 
 function statusLabel(status: ChipModel["status"]) {
@@ -72,7 +99,6 @@ function statusLabel(status: ChipModel["status"]) {
 export function SubagentChipRow(props: {
   parts?: AgentToolPart[]
   subagents?: SubagentView[]
-  onOpen?: (childSessionId: string, origin: HTMLButtonElement) => void
 }) {
   const data = useData()
   const chips = createMemo(() => {
@@ -96,14 +122,30 @@ export function SubagentChipRow(props: {
               <span data-slot="subagent-chip-status" aria-live="polite">{statusLabel(chip.status)}</span>
             </>
           )
+          const interaction = () => chip.toolCallRole === "interaction"
           const openable = () => chip.resolution === "ready" && !!chip.childSessionId
+          const activate = (target: EventTarget | null) => {
+            if (interaction() && scrollToCanonicalSpawn(chip)) return
+            if (dispatchSubagentOpen(target, {
+              childSessionId: chip.childSessionId,
+              subagentKey: chip.key,
+              label: chip.name,
+              ...(chip.description ? { description: chip.description } : {}),
+              interaction: interaction(),
+              openable: openable(),
+            })) return
+            // No surface claimed the open — a standalone reader, where following
+            // the session's own route is the only way in.
+            if (chip.childSessionId) data.navigateToSession?.(chip.childSessionId)
+          }
           return (
             <Show
-              when={openable()}
+              when={openable() || interaction()}
               fallback={
                 <span
                   data-component="subagent-chip"
                   data-subagent-key={chip.key}
+                  data-subagent-role={chip.toolCallRole ?? "ambient"}
                   data-status={chip.status}
                   aria-label={`${chip.name}, ${statusLabel(chip.status)}, transcript unavailable`}
                 >
@@ -115,11 +157,12 @@ export function SubagentChipRow(props: {
                 type="button"
                 data-component="subagent-chip"
                 data-subagent-key={chip.key}
+                data-subagent-role={chip.toolCallRole ?? "ambient"}
                 data-status={chip.status}
                 aria-label={`${chip.name}, ${statusLabel(chip.status)}`}
                 onClick={(event) => {
                   event.stopPropagation()
-                  if (chip.childSessionId) props.onOpen?.(chip.childSessionId, event.currentTarget)
+                  activate(event.currentTarget)
                 }}
               >
                 {content()}
