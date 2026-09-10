@@ -105,6 +105,33 @@ distinguish a stale idle from a genuinely instant turn, and neither
 it with. `hasPendingPrompt()` is the causal signal, but `submit/pending.ts`
 already imports the dispatcher, so reading it there would be circular.
 
+### D28's matrix, and why the fix is not symmetric
+
+Every site that turns a process result into a failure, and what it reads:
+
+| Harness | Site | Authoritative failure signal | Inferred signal |
+|---|---|---|---|
+| Codex | `codex/adapter.ts:534-549` | — | `exitCode !== 0` |
+| Codex | `codex/adapter.ts:744-756` | `completedItem.error`, `mcpFailed` | `exitCode !== 0` when `itemType === "command_execution"` |
+| Cursor | `cursor/adapter.ts:352-358` | `status === "error"` | nested `value.exitCode !== 0` |
+| Claude | `claude/adapter.ts:220` | `is_error` | — (the SDK folds both into `is_error`) |
+
+The matrix shows the fix is two changes, not one. Codex and Cursor each already
+carry a signal from the harness that the call *failed*, separate from the code
+the process exited with — so for them the fix is to stop inferring, and let the
+exit code travel as a result rather than as an error.
+
+Claude cannot be fixed the same way. Claude Code sets `is_error` for a non-zero
+Bash exit itself, so by the time the adapter sees it the two meanings are already
+one flag and no client-side rule can separate them. That half needs the exit code
+carried separately by the harness, and is not something the adapter can recover.
+
+This is why the entry's own warning — "any fix has to land in all three or the
+surfaces drift" — is not achievable as stated: two harnesses can stop guessing
+today, the third needs information it is not currently given. Landing the two
+without deciding what Claude does would leave the transcript disagreeing with
+itself about what an error is, so nothing is changed here yet.
+
 ### R1 is blocked behind its precondition
 
 Aliasing `askuserquestion` onto the `question` renderer *alone* is a regression:
