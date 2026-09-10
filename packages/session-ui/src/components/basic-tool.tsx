@@ -251,41 +251,39 @@ export function BasicTool(props: BasicToolProps) {
                         the pattern being searched. Withholding them until the call finishes
                         leaves a bare verb on screen for exactly as long as the call is
                         interesting, so they show as soon as the input names them. */}
-                    <>
-                      <Show when={title().subtitle}>
-                        <span
-                          data-slot="basic-tool-tool-subtitle"
-                          title={title().subtitle}
-                          classList={{
-                            [title().subtitleClass ?? ""]: !!title().subtitleClass,
-                            clickable: !!props.onSubtitleClick,
-                          }}
-                          onClick={(e) => {
-                            if (props.onSubtitleClick) {
-                              e.stopPropagation()
-                              props.onSubtitleClick()
-                            }
-                          }}
-                        >
-                          {title().subtitle}
-                        </span>
-                      </Show>
-                      <Show when={title().args?.length}>
-                        <For each={title().args}>
-                          {(arg) => (
-                            <span
-                              data-slot="basic-tool-tool-arg"
-                              classList={{
-                                "ui-basic-tool-tool-arg": true,
-                                [title().argsClass ?? ""]: !!title().argsClass,
-                              }}
-                            >
-                              {arg}
-                            </span>
-                          )}
-                        </For>
-                      </Show>
-                    </>
+                    <Show when={title().subtitle}>
+                      <span
+                        data-slot="basic-tool-tool-subtitle"
+                        title={title().subtitle}
+                        classList={{
+                          [title().subtitleClass ?? ""]: !!title().subtitleClass,
+                          clickable: !!props.onSubtitleClick,
+                        }}
+                        onClick={(e) => {
+                          if (props.onSubtitleClick) {
+                            e.stopPropagation()
+                            props.onSubtitleClick()
+                          }
+                        }}
+                      >
+                        {title().subtitle}
+                      </span>
+                    </Show>
+                    <Show when={title().args?.length}>
+                      <For each={title().args}>
+                        {(arg) => (
+                          <span
+                            data-slot="basic-tool-tool-arg"
+                            classList={{
+                              "ui-basic-tool-tool-arg": true,
+                              [title().argsClass ?? ""]: !!title().argsClass,
+                            }}
+                          >
+                            {arg}
+                          </span>
+                        )}
+                      </For>
+                    </Show>
                   </div>
                   <Show when={!pending() && title().action}>
                     <span data-slot="basic-tool-tool-action">{title().action}</span>
