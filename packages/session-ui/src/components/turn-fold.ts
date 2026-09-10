@@ -101,6 +101,8 @@ export type TurnFoldDecision = {
   canFoldRunning: boolean
   canFold: boolean
   folded: boolean
+  /** The reader folded this turn themselves, rather than it folding on its own. */
+  explicit: boolean
 }
 
 /**
@@ -126,13 +128,18 @@ export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
     canFoldRunning,
     canFold,
     folded: canFold ? (status.userChoice ?? !explainsItself) : false,
+    explicit: status.userChoice !== undefined,
   }
 }
 
 /**
- * The groups the fold hides, keyed by `PartGroup.key`. A running turn folds its
- * *completed* phases only: its last foldable group is the live one and stays on
- * screen so active work never disappears.
+ * The groups the fold hides, keyed by `PartGroup.key`.
+ *
+ * A running turn folding on its own hides its *completed* phases only — the last
+ * foldable group is the live one and stays on screen so active work never disappears.
+ * A reader who folds the turn themselves means all of it: leaving a card open under a
+ * control that reads collapsed is the state they reported as wrong ("the tool call card
+ * i have expanded and remain expaned even on turn folded").
  */
 export function foldedGroupKeys(
   decision: TurnFoldDecision,
@@ -142,6 +149,6 @@ export function foldedGroupKeys(
 ): ReadonlySet<string> {
   if (!decision.folded) return NO_KEYS
   const foldable = groups.filter((group) => isFoldableGroup(group, part, scope))
-  const live = decision.canFoldRunning ? foldable.at(-1)?.key : undefined
+  const live = decision.canFoldRunning && !decision.explicit ? foldable.at(-1)?.key : undefined
   return new Set(foldable.filter((group) => group.key !== live).map((group) => group.key))
 }

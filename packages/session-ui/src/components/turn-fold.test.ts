@@ -163,6 +163,14 @@ describe("foldedGroupKeys", () => {
     expect(foldedGroupKeys(decision, groups, part).size).toBe(0)
   })
 
+  test("folding a running turn by hand hides the live group too", () => {
+    const running = { settled: false, busy: true, foldWhileRunning: true, foldableCount: countFoldableGroups(groups, part) }
+    const auto = turnFoldDecision(running)
+    const byHand = turnFoldDecision({ ...running, userChoice: true })
+    expect(foldedGroupKeys(auto, groups, part).has(groups.at(-1)!.key)).toBe(false)
+    expect(foldedGroupKeys(byHand, groups, part).has(groups.at(-1)!.key)).toBe(true)
+  })
+
   test("a running fold keeps the live group on screen", () => {
     const decision = turnFoldDecision({
       settled: false,
