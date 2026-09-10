@@ -130,6 +130,7 @@ import { nextSiblingAfterRemoval } from "@/features/session/ui/session-archive"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
 import { createHoverEngagement, railHeaderActionsBox } from "./rail-hover-engagement"
 import { readArray, readField, readString } from "@/lib/record"
+import { holdSessionOrder, isBusyRow } from "./session-order-hold"
 export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 
 const VIEW_KEY = "claxedo.session-view.v1"
@@ -727,6 +728,33 @@ export function RailSidebar(props: RailSidebarProps) {
     })),
   )
 
+  /**
+   * Whether the reader is aiming at the list. A pointer resting over it or focus
+   * inside it both mean the next click is already committed to a position, so the
+   * order is held until neither is true.
+   */
+  const [railPointerInside, setRailPointerInside] = createSignal(false)
+  const [railFocusInside, setRailFocusInside] = createSignal(false)
+  const railPointerHeld = () => railPointerInside() || railFocusInside()
+
+  /**
+   * The order last shown, per workspace section, so a reorder can be deferred rather
+   * than applied under a pointer that is already aiming at a row. Written from the
+   * memo below, which is why it is a plain map and not a signal: reading it must not
+   * make the memo depend on its own output.
+   */
+  const shownSessionOrder = new Map<string, string[]>()
+  const sessionOrder = (sectionId: string, next: Row[]) => {
+    const settled = holdSessionOrder({
+      next,
+      held: shownSessionOrder.get(sectionId),
+      frozen: railPointerHeld(),
+      pinned: isBusyRow,
+    })
+    shownSessionOrder.set(sectionId, settled.map((item) => item.id))
+    return settled
+  }
+
   const groups = createMemo<Cluster[]>(() => {
     const wsStore = sessionInventory().byWorkspace
     if (!groupsMarked && props.projects.length > 0) {
@@ -746,10 +774,10 @@ export function RailSidebar(props: RailSidebarProps) {
         return {
           id: dir,
           label: workspaceName(dir, project),
-          rows: (group?.sessions ?? [])
+          rows: sessionOrder(dir, (group?.sessions ?? [])
             .map((item) => row(item, project, group?.directory ?? dir))
             .filter(match)
-            .sort((a, b) => (b.time ?? 0) - (a.time ?? 0)),
+            .sort((a, b) => (b.time ?? 0) - (a.time ?? 0))),
           project,
           workspaceDir: dir,
         }
@@ -2320,6 +2348,16 @@ export function RailSidebar(props: RailSidebarProps) {
         style={{
           "scrollbar-width": "thin",
           "scrollbar-color": "var(--scrollbar-thumb) transparent",
+        }}
+        onPointerEnter={() => setRailPointerInside(true)}
+        onPointerLeave={() => setRailPointerInside(false)}
+        onFocusIn={() => setRailFocusInside(true)}
+        onFocusOut={(event) => {
+          // Moving between two rows leaves and re-enters in the same tick; only a
+          // landing outside the list counts as the reader looking away.
+          const next = event.relatedTarget
+          if (next instanceof Node && event.currentTarget.contains(next)) return
+          setRailFocusInside(false)
         }}
       >
         <GlobalNavigation
