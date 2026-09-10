@@ -299,15 +299,12 @@ export const appLocal: Policy = {
   // quick-launch buttons and the creator read the pair instead of reaching into
   // a settings pane, and `settings/ui/terminals.tsx` leaves this closure with
   // the lazy Settings dialog. Net +1; no new package edge. Measured 1007 / 38.
-  // +1 module (2026-09-10): session-bands, the rail's own split of the session
-  // list into the sessions still in play and the ones gone quiet. It replaces
-  // session-order-hold one-for-one at the same call site and is reached only
-  // from rail-sidebar. No new package edge. Measured 1008 / 38.
   // +1 module (2026-09-11): review-workspace-tab-button, the workspace panel's
   // one tab chip. It splits out of review-workspace.tsx, which the subagent tab
   // pushed past the 800-line budget, and imports only what that file already
-  // did. No new package edge. Measured 1009 / 38.
-  ceilings: { modules: 1009, packages: 38 },
+  // did. It took the slot session-bands held before the rail's ordering moved to
+  // the server's `created_desc` list. No new package edge. Measured 1008 / 38.
+  ceilings: { modules: 1008, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

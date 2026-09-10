@@ -5,7 +5,6 @@ import {
   projectActionDirectory,
   railWorkspaceMetaLabels,
   railWorkspaceSessionBacking,
-  sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
   workspaceInventoryGroupFor,
@@ -226,18 +225,6 @@ describe("railWorkspaceSessionBacking", () => {
         },
       }),
     })).toBeUndefined()
-  })
-})
-
-describe("sessionProjectSort", () => {
-  test("orders terminal-like sessions ahead of regular ones, then by recency", () => {
-    const rows = [
-      { id: "ses_a", time: 100 },
-      { id: "pty_b", time: 1 },
-      { id: "ses_c", time: 200 },
-    ]
-    const sorted = [...rows].sort(sessionProjectSort)
-    expect(sorted.map((r) => r.id)).toEqual(["pty_b", "ses_c", "ses_a"])
   })
 })
 

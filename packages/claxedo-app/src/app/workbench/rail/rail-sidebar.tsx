@@ -69,7 +69,6 @@ import {
   railProjectCaptionFromName,
   railProjectLabel,
   railWorkspaceMetaLabels,
-  sessionProjectSort,
   sessionRowTitle,
   shouldAutoOpenWorkspaceSection,
   workspaceRowId,
@@ -130,7 +129,6 @@ import { nextSiblingAfterRemoval } from "@/features/session/ui/session-archive"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
 import { createHoverEngagement, railHeaderActionsBox } from "./rail-hover-engagement"
 import { readArray, readField, readString } from "@/lib/record"
-import { quietForLabel, settledForMs, splitSessionBands } from "./session-bands"
 export type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 
 const VIEW_KEY = "claxedo.session-view.v1"
@@ -138,17 +136,20 @@ const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const SESSION_GROUP_PAGE_SIZE = 5
 /**
- * The rail's order: most recently ACTIVE first.
+ * The rail's order: newest CREATED first, and a row never moves again.
  *
- * `updatedAt` advances on real activity — a prompt submitted, a turn settled,
- * a title resolved — and not on visiting a row, so the list stays stable while
- * the user moves through it and still surfaces the session they just worked
- * in. It is also the order every applier in `session-list.ts` maintains
- * (`reconcileUpdatedSessionListQueryData` re-sorts a row whose `updatedAt`
- * moved), so asking for any other order leaves those appliers unable to place
- * what they just rewrote.
+ * `updatedAt` ordering put the session you just messaged at the top, which is
+ * the reported defect — "as soon as i click second session it moves to first,
+ * feels like auto jumped back this is very bad". Ordering by the reader's own
+ * last message only trades agent churn for their own, since alternating between
+ * two sessions then swaps the top two rows every time.
+ *
+ * `createdAt` never changes: the runtime writes it once and its upsert never
+ * updates the column. `reconcileUpdatedSessionListQueryData` reads the sort off
+ * the query key and leaves a `created_desc` list exactly as the server sent it,
+ * so nothing re-orders a row behind the reader either.
  */
-const SESSION_LIST_SORT_DEFAULT = "updated_desc" as const
+const SESSION_LIST_SORT_DEFAULT = "created_desc" as const
 type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
 
 export function SessionListNotice(props: {
@@ -276,20 +277,12 @@ type Row = SessionItem & {
   archived?: boolean
   status: string[]
   active?: boolean
-  /** Orders the row inside its band; never changes, so the row never moves. */
-  createdAt?: number
-  /** Decides which band the row is in — a turn the reader started, not one an agent did. */
-  lastHumanTurnAt?: number
 }
 
 type Section = {
   id: string
   label: string
   rows: Row[]
-  /** Index the quiet band starts at; absent when one of the two bands is empty. */
-  settledFrom?: number
-  /** How long every row from `settledFrom` on has been quiet. */
-  settledForMs?: number
   project: ProjectItem
   workspaceDir: string
 }
@@ -633,8 +626,6 @@ export function RailSidebar(props: RailSidebarProps) {
       id: item.id,
       get title() { return title() },
       time: item.time.updated ?? item.time.created,
-      createdAt: item.time.created,
-      lastHumanTurnAt: item.time.lastHumanTurn,
       directory: directory ?? item.directory,
       workspaceId: item.workspaceId,
       projectID: item.projectID,
@@ -732,28 +723,10 @@ export function RailSidebar(props: RailSidebarProps) {
       label: projectLabel(project),
       rows: (sessionInventory().byProject[project.id] ?? [])
         .map((item) => row(item, project))
-        .filter(match)
-        .sort(sessionProjectSort),
+        .filter(match),
       project,
     })),
   )
-
-  /**
-   * The two bands the rail renders, and how long the quiet one has been quiet. `Section`
-   * carries the whole list plus the index the divider sits at rather than two arrays, so
-   * every existing reader of `rows` — keyboard navigation, the visible-row register, the
-   * page size — keeps seeing one list.
-   */
-  const banded = (rows: Row[]) => {
-    const now = Date.now()
-    const { active, settled } = splitSessionBands(rows, { now })
-    return {
-      rows: [...active, ...settled],
-      ...(active.length && settled.length
-        ? { settledFrom: active.length, settledForMs: settledForMs(settled, { now }) }
-        : {}),
-    }
-  }
 
   const groups = createMemo<Cluster[]>(() => {
     const wsStore = sessionInventory().byWorkspace
@@ -774,9 +747,9 @@ export function RailSidebar(props: RailSidebarProps) {
         return {
           id: dir,
           label: workspaceName(dir, project),
-          ...banded((group?.sessions ?? [])
+          rows: (group?.sessions ?? [])
             .map((item) => row(item, project, group?.directory ?? dir))
-            .filter(match)),
+            .filter(match),
           project,
           workspaceDir: dir,
         }
@@ -1957,8 +1930,6 @@ export function RailSidebar(props: RailSidebarProps) {
                 // would subscribe this whole rows map to every focus change.
                 active: () => sessionActiveInWorkbench(session, section.workspaceDir),
               }))}
-              dividerAt={section.settledFrom}
-              dividerLabel={quietForLabel(section.settledForMs)}
               onPrepareActivate={(item) => prepareSessionActivationFromRows(sectionRows(), item)}
               onActivate={(item) => activateSessionFromRows(sectionRows(), item)}
               onArchive={(item) => archiveSessionFromRows(sectionRows(), item, reconcileArchivedSessionListRow)}

@@ -138,19 +138,6 @@ export function railWorkspaceSessionBacking(input: {
   return { workspaceId: input.workspaceId, kind: "user-hosted" }
 }
 
-export function sessionIsTerminalLike(session: { id: string; title?: string }) {
-  return session.id.startsWith("pty_") ||
-    session.id.startsWith("pty-") ||
-    session.id.startsWith("terminal_") ||
-    session.id.startsWith("terminal-") ||
-    (session.title ?? "").trim().toLowerCase() === "terminal"
-}
-
-export function sessionProjectSort(a: { id: string; title?: string; time?: number }, b: { id: string; title?: string; time?: number }) {
-  return Number(sessionIsTerminalLike(b)) - Number(sessionIsTerminalLike(a)) ||
-    (b.time ?? 0) - (a.time ?? 0)
-}
-
 export function isRootWorktreeRef(input: {
   dir: string
   projectWorktree: string
