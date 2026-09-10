@@ -1,4 +1,4 @@
-import { Show, createMemo, type Accessor, type JSX, type ParentProps } from "solid-js"
+import { Show, createContext, createMemo, useContext, type Accessor, type JSX, type ParentProps } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -17,6 +17,14 @@ import { authFetch } from "@/platform/api/api"
 import { PaneIdProvider } from "@/features/session/app-ports"
 import { SessionParamsProvider } from "@/features/session/providers/session-params"
 import { DirectoryScope } from "@/features/session/app-ports"
+
+/**
+ * Whether an enclosing scope already decided this subtree renders no WorkspaceGate.
+ * The workspace panel makes that call once for its whole body; a scope nested inside
+ * it (a subagent transcript beside the parent turn) is on the same connection and
+ * would otherwise draw a second "Connecting to workspace" surface over one region.
+ */
+const GateSuppressedBySurface = createContext<Accessor<boolean>>(() => false)
 
 export function SessionPaneScope(props: ParentProps<{
   directory: string
@@ -41,6 +49,8 @@ export function SessionPaneScope(props: ParentProps<{
   // the main content gate remains the only full workspace startup/offline view.
   suppressConnectionGate?: boolean
 }>) {
+  const gateSuppressedBySurface = useContext(GateSuppressedBySurface)
+  const gateSuppressed = createMemo(() => !!props.suppressConnectionGate || gateSuppressedBySurface())
   const workspaceScopes = useWorkspaceScopeRegistryOptional()
   const directorySessionCacheActions = useDirectorySessionCacheActions()
   const globalSDK = useGlobalSDK()
@@ -139,12 +149,13 @@ export function SessionPaneScope(props: ParentProps<{
       active={props.active}
     >
       <PaneIdProvider paneId={props.paneId?.() ?? ""}>
+       <GateSuppressedBySurface.Provider value={gateSuppressed}>
         {/* Key the gate by workspaceId so swapping the pane to a different
             workspace re-acquires a fresh connection; local panes (undefined
             id) key on the directory and the gate is an immediate no-op. */}
         <Show keyed when={workspaceKey()}>
           <Show
-            when={!props.suppressConnectionGate}
+            when={!gateSuppressed()}
             fallback={
               // Panel boundary: never render the WorkspaceGate connecting/offline
               // surface here. The child region reads the shared authority and
@@ -167,6 +178,7 @@ export function SessionPaneScope(props: ParentProps<{
             </WorkspaceGate>
           </Show>
         </Show>
+       </GateSuppressedBySurface.Provider>
       </PaneIdProvider>
     </SessionParamsProvider>
   )

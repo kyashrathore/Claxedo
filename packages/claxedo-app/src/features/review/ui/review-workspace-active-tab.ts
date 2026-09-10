@@ -6,6 +6,7 @@ export type ReviewWorkspaceActiveTab =
   | { kind: "browser"; label: string }
   | { kind: "context"; label: string }
   | { kind: "process"; label: string }
+  | { kind: "subagent"; label: string; description?: string }
 
 const [activeTab, setActiveTabInternal] = createSignal<ReviewWorkspaceActiveTab | undefined>()
 
@@ -34,6 +35,7 @@ function sameActiveTab(left: ReviewWorkspaceActiveTab | undefined, right: Review
   if (!left || !right) return left === right
   if (left.kind !== right.kind || left.label !== right.label) return false
   if (left.kind === "file" && right.kind === "file") return left.path === right.path
+  if (left.kind === "subagent" && right.kind === "subagent") return left.description === right.description
   return true
 }
 

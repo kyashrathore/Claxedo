@@ -67,6 +67,7 @@ function sameFocus(left: WorkspacePanelFocus | undefined, right: WorkspacePanelF
   }
   if (left.kind === "browser" && right.kind === "browser") return left.url === right.url
   if (left.kind === "process" && right.kind === "process") return left.processId === right.processId
+  if (left.kind === "subagent" && right.kind === "subagent") return left.sessionId === right.sessionId
   return left.kind === "context" && right.kind === "context" && left.sessionId === right.sessionId
 }
 

@@ -4,6 +4,8 @@ import {
   closeWorkspaceTab,
   openBrowserWorkspaceTab,
   openFileWorkspaceTab,
+  openSubagentWorkspaceTab,
+  subagentTabId,
   nextActiveWorkspaceTabAfterClose,
   type ReviewWorkspaceTab,
 } from "./review-workspace-tabs"
@@ -61,6 +63,31 @@ describe("review workspace tabs", () => {
         navigationVersion: 2,
       },
     ])
+  })
+
+  test("each subagent gets its own tab, named by the agent that ran", () => {
+    const first = openSubagentWorkspaceTab({ tabs: [REVIEW_TAB], sessionId: "ses_child_a", label: "code-reviewer" })
+    const second = openSubagentWorkspaceTab({ tabs: first.tabs, sessionId: "ses_child_b", label: "explorer" })
+
+    expect(second.activeTabId).toBe("subagent:ses_child_b")
+    expect(second.tabs).toEqual([
+      REVIEW_TAB,
+      { id: "subagent:ses_child_a", kind: "subagent", sessionId: "ses_child_a", label: "code-reviewer" },
+      { id: "subagent:ses_child_b", kind: "subagent", sessionId: "ses_child_b", label: "explorer" },
+    ])
+  })
+
+  test("reopening the same subagent selects its tab instead of stacking another", () => {
+    const opened = openSubagentWorkspaceTab({ tabs: [REVIEW_TAB], sessionId: "ses_child", label: "explorer" })
+    const again = openSubagentWorkspaceTab({ tabs: opened.tabs, sessionId: "ses_child" })
+
+    expect(again.added).toBe(false)
+    expect(again.activeTabId).toBe("subagent:ses_child")
+    expect(again.tabs).toBe(opened.tabs)
+  })
+
+  test("a subagent tab id cannot collide with a file tab for a path of the same name", () => {
+    expect(subagentTabId("ses_child")).toBe("subagent:ses_child")
   })
 
   test("closing the active file tab selects its neighbor", () => {

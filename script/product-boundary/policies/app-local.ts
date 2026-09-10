@@ -303,7 +303,11 @@ export const appLocal: Policy = {
   // list into the sessions still in play and the ones gone quiet. It replaces
   // session-order-hold one-for-one at the same call site and is reached only
   // from rail-sidebar. No new package edge. Measured 1008 / 38.
-  ceilings: { modules: 1008, packages: 38 },
+  // +1 module (2026-09-11): review-workspace-tab-button, the workspace panel's
+  // one tab chip. It splits out of review-workspace.tsx, which the subagent tab
+  // pushed past the 800-line budget, and imports only what that file already
+  // did. No new package edge. Measured 1009 / 38.
+  ceilings: { modules: 1009, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

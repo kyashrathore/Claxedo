@@ -60,6 +60,7 @@ function panelFocusTarget(value: WorkspacePanelFocus): string {
     case "process":
       return value.processId
     case "context":
+    case "subagent":
       return value.sessionId
     default: {
       // Focus requests are only ever built in-app from `WorkspacePanelFocus`,
@@ -234,6 +235,22 @@ export function WorkspacePanelBody(props: {
   const focusProcessVersion = () => {
     const value = focus()
     return value?.kind === "process" ? value.version : 0
+  }
+  const focusSubagentSessionId = () => {
+    const value = focus()
+    return value?.kind === "subagent" ? value.sessionId : undefined
+  }
+  const focusSubagentLabel = () => {
+    const value = focus()
+    return value?.kind === "subagent" ? value.label : undefined
+  }
+  const focusSubagentDescription = () => {
+    const value = focus()
+    return value?.kind === "subagent" ? value.description : undefined
+  }
+  const focusSubagentVersion = () => {
+    const value = focus()
+    return value?.kind === "subagent" ? value.version : 0
   }
   const focusContextSessionId = () => {
     const value = focus()
@@ -514,6 +531,10 @@ export function WorkspacePanelBody(props: {
                                   focusReviewMode={focusReviewMode()}
                                   focusProcessId={focusProcessId()}
                                   focusProcessVersion={focusProcessVersion()}
+                                  focusSubagentSessionId={focusSubagentSessionId()}
+                                  focusSubagentLabel={focusSubagentLabel()}
+                                  focusSubagentDescription={focusSubagentDescription()}
+                                  focusSubagentVersion={focusSubagentVersion()}
                                   focusContextSessionId={focusContextSessionId()}
                                   focusContextVersion={focusContextVersion()}
                                   focusBrowserUrl={focusBrowserUrl()}

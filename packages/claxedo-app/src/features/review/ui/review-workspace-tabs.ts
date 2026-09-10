@@ -1,4 +1,5 @@
 const PROCESS_SECTION_PREFIX = "process:"
+const SUBAGENT_SECTION_PREFIX = "subagent:"
 
 export type ReviewWorkspaceTab =
   | { id: "review"; kind: "review" }
@@ -6,6 +7,13 @@ export type ReviewWorkspaceTab =
   | { id: string; kind: "file"; tabId: string }
   | { id: "browser"; kind: "browser"; browserId: string; url?: string; navigationVersion?: number }
   | { id: string; kind: "process"; processId: string }
+  /**
+   * A subagent's own session, opened beside the work that spawned it. Keyed by the
+   * child session id rather than a fixed id, so a turn that spawns several holds
+   * several tabs — the same shape `process` and `file` already use, and the reason
+   * `context` (a singleton) could not carry these.
+   */
+  | { id: string; kind: "subagent"; sessionId: string; label?: string; description?: string }
 
 export const REVIEW_TAB_ID = "review"
 export const CONTEXT_TAB_ID = "context"
@@ -23,6 +31,35 @@ export function openFileWorkspaceTab(input: { tabs: readonly ReviewWorkspaceTab[
   return {
     tabs: [...input.tabs, { id: input.tabId, kind: "file", tabId: input.tabId } satisfies ReviewWorkspaceTab],
     activeTabId: input.tabId,
+    added: true,
+  }
+}
+
+export function subagentTabId(sessionId: string) {
+  return `${SUBAGENT_SECTION_PREFIX}${sessionId}`
+}
+
+export function openSubagentWorkspaceTab(input: {
+  tabs: readonly ReviewWorkspaceTab[]
+  sessionId: string
+  /** The spawning row already knows the agent's name; nothing else here does. */
+  label?: string
+  description?: string
+}) {
+  const id = subagentTabId(input.sessionId)
+  if (input.tabs.some((tab) => tab.id === id)) return { tabs: input.tabs, activeTabId: id, added: false }
+  return {
+    tabs: [
+      ...input.tabs,
+      {
+        id,
+        kind: "subagent",
+        sessionId: input.sessionId,
+        ...(input.label ? { label: input.label } : {}),
+        ...(input.description ? { description: input.description } : {}),
+      } satisfies ReviewWorkspaceTab,
+    ],
+    activeTabId: id,
     added: true,
   }
 }

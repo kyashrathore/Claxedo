@@ -122,7 +122,17 @@ import {
   sessionMarkdownTimelineGate,
 } from "@/features/session/ui/content/session-markdown-preload"
 import { trackSessionOpen } from "@/features/session/ui/session-open-perf"
-export default function SessionPage(props: { presentation: Accessor<PanePresentation> }) {
+/**
+ * `readOnly` is for a surface that embeds someone else's session — the workspace
+ * panel showing a subagent's transcript beside the turn that spawned it. The
+ * embedding surface owns the chrome, and the reader is reading, not driving: no
+ * composer, no title bar, and no route back to the parent, which would navigate
+ * the pane out from under the transcript they opened.
+ */
+export default function SessionPage(props: {
+  presentation: Accessor<PanePresentation>
+  readOnly?: Accessor<boolean>
+}) {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
@@ -467,7 +477,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
     stableSessionInfo(prev, sessionKey(), sessionController.info()),
   )
   const info = createMemo(() => infoState()?.value)
-  const navigateParent = createParentSessionNavigation(info, sessionID, claxedoState, navigate)
+  const navigateParent = createParentSessionNavigation(info, navigate)
   createEffect(() => {
     if (!paneActive()) return
     const sessionIDValue = sessionID()
@@ -501,6 +511,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const centered = createMemo(() => isDesktop())
   const floating = createMemo(() => props.presentation() === "floating")
+  const readOnly = createMemo(() => props.readOnly?.() === true)
 
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const messageState = createMemo((prev: ReturnType<typeof stableSessionMessages> | undefined) =>
@@ -1367,7 +1378,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
                         historyShift={false}
                         userMessages={historyWindow.renderedUserMessages()}
                         hiddenTurnCount={historyWindow.hiddenTurnCount}
-                        hideTitle={floating}
+                        hideTitle={() => floating() || readOnly()}
                         onRevealPreviousMessages={() => void historyWindow.loadAndReveal(0)}
                         navMessages={visibleUserMessages()}
                         currentMessage={activeMessage()}
@@ -1459,7 +1470,7 @@ export default function SessionPage(props: { presentation: Accessor<PanePresenta
             </Switch>
           </div>
 
-          <Show when={!gate.open && !newSession()}>
+          <Show when={!gate.open && !newSession() && !readOnly()}>
             <Suspense
               fallback={
                 <div

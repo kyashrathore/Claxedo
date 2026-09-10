@@ -134,6 +134,16 @@ vi.mock("./review-workspace-process-section", () => ({
   ReviewWorkspaceProcessSection: () => <div data-testid="mock-process-section" />,
 }))
 
+vi.mock("@/features/session/ui/components/session-pane-scope", () => ({
+  SessionPaneScope: (props: { sessionId?: () => string | undefined; children: JSX.Element }) => (
+    <div data-testid="mock-session-pane-scope" data-session-id={props.sessionId?.()}>{props.children}</div>
+  ),
+}))
+
+vi.mock("@/features/session/ui/session-screen", () => ({
+  default: () => <div data-testid="mock-session-screen" />,
+}))
+
 vi.mock("@/features/documents/data/documents-api", () => ({
   documentsApi: {},
 }))
@@ -401,5 +411,77 @@ describe("review-intent focus", () => {
     const tab = mounts().at(-1)
     expect(tab?.focusedDiffPath()).toBe("src/new.ts")
     expect(tab?.focusedDiffMode()).toBe("staged")
+  })
+})
+
+describe("subagent focus", () => {
+  test("opens the child's transcript as its own tab, named by the agent that ran", async () => {
+    // The panel clears its focus the moment the request is consumed, so the
+    // label has to have been read before that.
+    const [focus, setFocus] = createSignal<{ sessionId?: string; label?: string }>({
+      sessionId: "ses_child",
+      label: "code-reviewer",
+    })
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId="ses_parent"
+        directory="/repo/main"
+        mode="uncommitted"
+        focusSubagentSessionId={focus().sessionId}
+        focusSubagentLabel={focus().label}
+        focusSubagentVersion={1}
+        onFocusConsumed={() => setFocus({})}
+      />
+    ))
+    flushFrames()
+
+    expect(activeTabId(container)).toBe("subagent:ses_child")
+    expect(tabButton(container, "subagent:ses_child").textContent).toContain("code-reviewer")
+    await vi.waitFor(() =>
+      expect(container.querySelector('[data-testid="mock-session-pane-scope"]')?.getAttribute("data-session-id"))
+        .toBe("ses_child"),
+    )
+  })
+
+  test("a second subagent opens beside the first instead of replacing it", () => {
+    const [focus, setFocus] = createSignal({ sessionId: "ses_a", label: "explorer", version: 1 })
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId="ses_parent"
+        directory="/repo/main"
+        mode="uncommitted"
+        focusSubagentSessionId={focus().sessionId}
+        focusSubagentLabel={focus().label}
+        focusSubagentVersion={focus().version}
+      />
+    ))
+    flushFrames()
+    setFocus({ sessionId: "ses_b", label: "code-reviewer", version: 2 })
+    flushFrames()
+
+    expect(container.querySelectorAll('[data-workspace-tab-kind="subagent"]').length).toBe(2)
+    expect(activeTabId(container)).toBe("subagent:ses_b")
+  })
+
+  test("reopening a subagent already on screen selects its tab", () => {
+    const [version, setVersion] = createSignal(1)
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId="ses_parent"
+        directory="/repo/main"
+        mode="uncommitted"
+        focusSubagentSessionId="ses_child"
+        focusSubagentVersion={version()}
+      />
+    ))
+    flushFrames()
+    tabButton(container, "review").click()
+    expect(activeTabId(container)).toBe("review")
+
+    setVersion(2)
+    flushFrames()
+
+    expect(container.querySelectorAll('[data-workspace-tab-kind="subagent"]').length).toBe(1)
+    expect(activeTabId(container)).toBe("subagent:ses_child")
   })
 })

@@ -234,41 +234,20 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
 
-  const openSubagent = (childSessionId: string, origin?: HTMLElement, subagentKey?: string) => {
-    const contentId = claxedoState.layout.openSession(sdk.directory, childSessionId, "Subagent", {
-      focus: false,
-      sessionRef: retargetSessionRef({ sessionId: childSessionId, source: props.sessionRef }),
-    })
-    const childPane = claxedoState.wb.selectors.contentPane(contentId)
-    const parentSessionId = sessionID() ?? ""
-    const dedicatedPane = claxedoState.meta
-      .findAll((item) => item.id !== contentId && item.returnFocus?.parentSessionId === parentSessionId)
-      .map((item) => claxedoState.wb.selectors.contentPane(item.id))
-      .find((id): id is string => !!id && id !== paneId)
-    if (origin) {
-      document.querySelectorAll<HTMLElement>(`[data-subagent-origin-id="${CSS.escape(contentId)}"]`)
-        .forEach((item) => delete item.dataset.subagentOriginId)
-      origin.dataset.subagentOriginId = contentId
-      claxedoState.meta.patch(contentId, {
-        returnFocus: {
-          parentSessionId,
-          subagentKey: subagentKey ?? origin.closest<HTMLElement>("[data-subagent-key]")?.dataset.subagentKey,
-          originId: contentId,
-        },
-      })
-    }
-    if (window.matchMedia(`(min-width: ${BP_MD}px)`).matches && paneId && !childPane && !dedicatedPane) {
-      claxedoState.layout.splitContent(paneId, "right", contentId)
-    } else if (dedicatedPane && !childPane) {
-      claxedoState.wb.panes.assign(dedicatedPane, contentId)
-      claxedoState.layout.showContent(contentId)
-    } else {
-      claxedoState.layout.showContent(contentId)
-    }
-    requestAnimationFrame(() => {
-      document.querySelector<HTMLElement>(
-        `[data-session-timeline-session-id="${CSS.escape(childSessionId)}"] [data-subagent-child-heading]`,
-      )?.focus()
+  // A subagent's transcript is a workspace-panel tab, not a second pane: the
+  // reader is reading the parent turn, and splitting the pane took the turn they
+  // were reading down to half width to show work they only glanced at.
+  const openSubagent = (input: { childSessionId: string; label?: string; description?: string }) => {
+    claxedoState.workspacePanel.open({
+      workspaceDir: sdk.directory.replace(/\/$/, ""),
+      targetPaneId: paneId,
+      navigator: null,
+      focus: {
+        kind: "subagent",
+        sessionId: input.childSessionId,
+        ...(input.label ? { label: input.label } : {}),
+        ...(input.description ? { description: input.description } : {}),
+      },
     })
   }
 
@@ -348,10 +327,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
       const childSessionId = readString(detail, "childSessionId")
       if (!childSessionId) return
       event.preventDefault()
-      const origin = event.target instanceof Element
-        ? event.target.closest<HTMLElement>("button, a, [tabindex]") ?? undefined
-        : undefined
-      openSubagent(childSessionId, origin, readString(detail, "subagentKey"))
+      openSubagent({
+        childSessionId,
+        label: readString(detail, "label"),
+        description: readString(detail, "description"),
+      })
     }
     el.addEventListener("claxedo:open-subagent", onOpenSubagent)
     const onCapture = (event: MouseEvent) => {
@@ -1316,7 +1296,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
           .map((ref) => getMsgPart(ref.messageID, ref.partID))
           .filter((part): part is ToolPart => part?.type === "tool")
       })
-      return <SubagentChipRow parts={members()} onOpen={openSubagent} />
+      return <SubagentChipRow parts={members()} />
     }
 
     if (row().group.type === "work") {
@@ -1983,7 +1963,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <h2 id="background-subagents-heading" class="pb-2 text-12-medium text-text-weak">
               Background subagents
             </h2>
-            <SubagentChipRow subagents={ambientSubagents()} onOpen={openSubagent} />
+            <SubagentChipRow subagents={ambientSubagents()} />
           </section>
         </Show>
         <div

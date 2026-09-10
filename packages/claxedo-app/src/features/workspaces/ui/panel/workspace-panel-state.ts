@@ -30,12 +30,14 @@ export type WorkspacePanelFocus =
   | { kind: "browser"; url: string; version: number }
   | { kind: "process"; processId: string; version: number }
   | { kind: "context"; sessionId: string; version: number }
+  | { kind: "subagent"; sessionId: string; label?: string; description?: string; version: number }
 export type WorkspacePanelFocusTarget =
   | { kind: "review" }
   | { kind: "file"; path: string; intent: FileFocusIntent; line?: number; col?: number; reviewMode?: ReviewMode }
   | { kind: "browser"; url: string }
   | { kind: "process"; processId: string }
   | { kind: "context"; sessionId: string }
+  | { kind: "subagent"; sessionId: string; label?: string; description?: string }
 export type WorkspacePanelActivityTarget = {
   subjectType: string
   subjectId: string

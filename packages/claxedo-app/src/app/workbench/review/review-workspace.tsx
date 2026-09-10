@@ -13,6 +13,7 @@ import {
   createMemo,
   createEffect,
   createSignal,
+  lazy,
   on,
   onCleanup,
 } from "solid-js"
@@ -24,7 +25,6 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { useFile } from "@/app/providers/file"
 import { PromptProvider } from "@/features/session/providers/prompt"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/ui/utils/path"
@@ -36,13 +36,19 @@ import { WorkspaceBrowserPanel } from "@/app/workbench/workspace-panel/browser-p
 import { reviewTabHeaderSlot } from "@/ui/controls/portal-slot"
 import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { SessionParamsProvider } from "@/features/session/providers/session-params"
+import { SessionPaneScope } from "@/features/session/ui/components/session-pane-scope"
+// The child session's own surface. Lazy so a workspace that never opens a subagent
+// does not pull the session screen into the panel's chunk.
+const SessionPage = lazy(() => import("@/features/session/ui/session-screen"))
 import { ReviewTab } from "@/features/review/ui/review-tab"
 import { peekReviewVcsDiff } from "@/features/review/ui/review-vcs-cache"
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { isMarkdownPath, TabFile } from "@/app/workbench/content/tab-file"
 import { useClaxedoState } from "@/app/workbench/state"
-import { documentsApi } from "@/features/documents/data/documents-api"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
+import { documentsApi } from "@/features/documents/data/documents-api"
+import { readField, readString } from "@/lib/record"
+import { errorMessage } from "@/lib/server-errors"
 import {
   BROWSER_TAB_ID,
   CONTEXT_TAB_ID,
@@ -52,9 +58,11 @@ import {
   openContextWorkspaceTab,
   openFileWorkspaceTab,
   openProcessWorkspaceTab,
+  openSubagentWorkspaceTab,
   type ReviewWorkspaceTab,
 } from "@/features/review/ui/review-workspace-tabs"
 import { closeReviewWorkspaceTab } from "./review-close"
+import { ReviewWorkspaceTabButton } from "./review-workspace-tab-button"
 import { createReviewTabActivationTransition, reviewWorkspaceMountedTabs } from "./review-mounted-tabs"
 import {
   createReviewWorkspaceTabPresentation,
@@ -69,8 +77,6 @@ import {
 } from "./review-workspace-working-set"
 import { ReviewWorkspaceProcessSection } from "./review-workspace-process-section"
 import type { ReviewMode } from "@/features/review/review-intent"
-import { readField, readString } from "@/lib/record"
-import { errorMessage } from "@/lib/server-errors"
 
 export type ReviewWorkspaceProps = {
   sessionId: string
@@ -87,6 +93,10 @@ export type ReviewWorkspaceProps = {
   focusReviewMode?: ReviewMode
   focusProcessId?: string
   focusProcessVersion?: number
+  focusSubagentSessionId?: string
+  focusSubagentLabel?: string
+  focusSubagentDescription?: string
+  focusSubagentVersion?: number
   focusContextSessionId?: string
   focusContextVersion?: number
   focusBrowserUrl?: string
@@ -223,6 +233,22 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
 
   const openProcessTab = (processId: string) => {
     const next = openProcessWorkspaceTab({ tabs: store.tabs, processId })
+    if (next.added) {
+      const activation = tabActivation.prepare(next.activeTabId)
+      setStore("tabs", next.tabs)
+      activatePreparedTabAfterMount(activation)
+      return
+    }
+    activateTab(next.activeTabId)
+  }
+
+  const openSubagentTab = (sessionId: string, label?: string, description?: string) => {
+    const next = openSubagentWorkspaceTab({
+      tabs: store.tabs,
+      sessionId,
+      ...(label ? { label } : {}),
+      ...(description ? { description } : {}),
+    })
     if (next.added) {
       const activation = tabActivation.prepare(next.activeTabId)
       setStore("tabs", next.tabs)
@@ -385,6 +411,23 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     },
   ))
 
+  // The label rides in the tracked tuple, not read from props inside the body:
+  // consuming the request clears the panel's focus synchronously, so a later
+  // `props.focusSubagentLabel` reads undefined and every tab reads "Subagent".
+  createEffect(on(
+    () => [
+      props.focusSubagentVersion,
+      props.focusSubagentSessionId,
+      props.focusSubagentLabel,
+      props.focusSubagentDescription,
+    ] as const,
+    ([, sessionId, label, description]) => {
+      if (!sessionId) return
+      props.onFocusConsumed?.()
+      openSubagentTab(sessionId, label, description)
+    },
+  ))
+
   createEffect(on(
     () => [props.focusContextVersion, props.focusContextSessionId] as const,
     ([, sessionId]) => {
@@ -435,6 +478,13 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         setReviewWorkspaceActiveTab({ kind: "process", label: config?.name ?? "Process" })
         return
       }
+      case "subagent":
+        setReviewWorkspaceActiveTab({
+          kind: "subagent",
+          label: active.label ?? "Subagent",
+          ...(active.description ? { description: active.description } : {}),
+        })
+        return
     }
   })
 
@@ -460,31 +510,6 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     queueMicrotask(remove)
   }
 
-  // No radius override in `class`: `IconButton` already draws `--radius-sm`, the
-  // same corner every other icon button in the app uses. This carried
-  // `rounded-full`, which made the one dismiss affordance on the tab a circle.
-  const closeButtonFor = (id: string, label: string, visible: boolean) => (
-    <IconButton
-      icon="close-small"
-      variant="ghost"
-      class="h-5 w-5 transition-opacity focus-visible:pointer-events-auto focus-visible:opacity-100"
-      classList={{
-        "opacity-100 pointer-events-auto": visible,
-        "opacity-0 pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100": !visible,
-      }}
-      onClick={(event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        closeReviewWorkspaceTab({
-          id,
-          closePanel: claxedoState.workspacePanel.close,
-          closeTab,
-        })
-      }}
-      aria-label={label}
-    />
-  )
-
   const { tabLabel, tabIcon, tabIconPx, closeLabel } = createReviewWorkspaceTabPresentation({
     reviewLabel: () => language.t("session.tab.review"),
     contextLabel: () => language.t("session.tab.context"),
@@ -492,58 +517,23 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     processName: (processId) => processPane.configs().find((item) => item.id === processId)?.name,
   })
 
-  const renderTabButton = (tab: ReviewWorkspaceTab) => {
-    const selected = () => store.activeTabId === tab.id
-    return (
-      <div
-        data-slot="workspace-tab"
-        data-selected={selected() ? "true" : undefined}
-        data-workspace-tab-id={tab.id}
-        data-workspace-tab-kind={tab.kind}
-        class="group relative my-1 ml-0.5 flex h-7 max-w-[180px] shrink-0 items-center rounded-md border border-transparent text-13-medium transition-[background-color,color] duration-100"
-        classList={{
-          "bg-surface-base-hover text-text-base": selected(),
-          "text-text-weak hover:bg-surface-base-hover/35 hover:text-text-base": !selected(),
-        }}
-      >
-        <button
-          type="button"
-          class="flex h-full min-w-0 flex-1 items-center gap-1.5 px-2.5 pr-7 leading-none"
-          aria-current={selected() ? "true" : undefined}
-          onClick={() => setActiveTab(tab.id)}
-          onAuxClick={(event) => {
-            if (event.button !== 1 || tab.kind === "review") return
-            event.preventDefault()
-            closeTab(tab.id)
-          }}
-        >
-          <Icon
-            name={tabIcon(tab)}
-            size="small"
-            /* The tab glyph is optically sized per tab kind (13/14/15px) inside
-               a 16px slot, so the label sits at the same x whatever the tab is;
-               the icon is the box, so the slot is the svg plus a margin.
-               Padding would express the same geometry but Blink rasterises an
-               outermost <svg> with an inset viewport worse than a margin does,
-               which leaves the viewport, its origin, and its raster untouched. */
-            style={{ width: `${tabIconPx(tab)}px`, height: `${tabIconPx(tab)}px`, margin: `${(16 - tabIconPx(tab)) / 2}px` }}
-            classList={{ "text-icon-base": selected(), "text-icon-weak-base": !selected() }}
-          />
-          <span class="truncate">{tabLabel(tab)}</span>
-        </button>
-        <div class="absolute right-1 flex h-full items-center">
-          {/* `flex` is load-bearing, not cosmetic. As a block, this wrapper laid
-              out the inline-flex button on a text baseline, so it measured 22px
-              around a 20px button — 2px of descender space below. `items-center`
-              centred the 22px box, leaving the X one pixel above the label and
-              the tab's own glyph. */}
-          <div class="flex" data-testid="workspace-tab-close" data-workspace-tab-id={tab.id}>
-            {closeButtonFor(tab.id, closeLabel(tab), selected())}
-          </div>
-        </div>
-      </div>
-    )
-  }
+  const renderTabButton = (tab: ReviewWorkspaceTab) => (
+    <ReviewWorkspaceTabButton
+      tab={tab}
+      selected={store.activeTabId === tab.id}
+      label={tabLabel(tab)}
+      icon={tabIcon(tab)}
+      iconPx={tabIconPx(tab)}
+      closeLabel={closeLabel(tab)}
+      closable={tab.kind !== "review"}
+      onActivate={() => setActiveTab(tab.id)}
+      onClose={() => closeReviewWorkspaceTab({
+        id: tab.id,
+        closePanel: claxedoState.workspacePanel.close,
+        closeTab,
+      })}
+    />
+  )
 
   const renderTabContent = (tab: ReviewWorkspaceTab) => {
     switch (tab.kind) {
@@ -594,6 +584,24 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
               directory={props.directory}
               active={store.activeTabId === tab.id}
             />
+          </div>
+        )
+      case "subagent":
+        return (
+          <div class="relative flex h-full min-h-0 flex-col overflow-hidden">
+            <SessionPaneScope
+              directory={props.directory}
+              sessionId={() => tab.sessionId}
+              paneId={() => props.leafId ?? ""}
+              surfaceId={() => tab.id}
+              leafId={() => tab.id}
+              active={() => store.activeTabId === tab.id}
+            >
+              {/* Docked, not floating: the panel is the surface here, so the child
+                  session renders as a column rather than overlaying a pane it does
+                  not have. SessionPage owns the conversation registration itself. */}
+              <SessionPage presentation={() => "docked"} readOnly={() => true} />
+            </SessionPaneScope>
           </div>
         )
       default:

@@ -281,6 +281,10 @@ function L2HeaderStrip(props: {
     return tab?.kind === "file" ? tab : undefined
   }
   const reviewContextActive = () => workspaceTab()?.kind === "review" && props.workspacePanelMode() === "review"
+  const subagentTabDescription = () => {
+    const tab = workspaceTab()
+    return tab?.kind === "subagent" ? tab.description : undefined
+  }
   const WorkspaceTools = () => (
     <WorkspacePanelToolTrio
       focusedPanelTarget={props.focusedPanelTarget}
@@ -370,7 +374,14 @@ function L2HeaderStrip(props: {
                 when={tab().kind === "process"}
                 fallback={
                   <>
-                    <span class="truncate text-sm text-text-weak">{tab().label}</span>
+                    <span class="shrink-0 text-sm text-text-base">{tab().label}</span>
+                    <Show when={tab().kind === "subagent" ? subagentTabDescription() : undefined}>
+                      {(description) => (
+                        <span class="truncate text-sm text-text-weak" title={description()}>
+                          {description()}
+                        </span>
+                      )}
+                    </Show>
                     <span class="flex-1" />
                   </>
                 }

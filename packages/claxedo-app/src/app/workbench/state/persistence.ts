@@ -240,6 +240,19 @@ function validateWorkspacePanelFocus(input: unknown): WorkspacePanelState["focus
     const processId = asString(input.processId)
     return processId === undefined ? undefined : { kind: "process", processId, version }
   }
+  if (input.kind === "subagent") {
+    const sessionId = asString(input.sessionId)
+    if (sessionId === undefined) return undefined
+    const label = asString(input.label)
+    const description = asString(input.description)
+    return {
+      kind: "subagent",
+      sessionId,
+      ...(label === undefined ? {} : { label }),
+      ...(description === undefined ? {} : { description }),
+      version,
+    }
+  }
   if (input.kind === "context") {
     const sessionId = asString(input.sessionId)
     return sessionId === undefined ? undefined : { kind: "context", sessionId, version }
