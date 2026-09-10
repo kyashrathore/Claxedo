@@ -1,6 +1,6 @@
-# Codex exposes completion notifications via notify.
-# For per-prompt Start notifications and permission requests, watch the TUI
-# session log for task_started/exec_command_begin and *_approval_request events.
+# Native Stop hooks own completion. The legacy notify callback also fires for
+# internal title-generation threads, so do not register it on this native path.
+# Watch the TUI session log for task_started/exec_command_begin and approval events.
 if [ -n "$CLAXEDO_TAB_ID" ] && [ -f "{{CODEX_NOTIFY_PATH}}" ]; then
   export CODEX_TUI_RECORD_SESSION=1
   if [ -z "$CODEX_TUI_SESSION_LOG_PATH" ]; then
@@ -72,7 +72,7 @@ if [ -n "$CLAXEDO_TAB_ID" ] && [ -f "{{CODEX_NOTIFY_PATH}}" ]; then
   CLAXEDO_CODEX_START_WATCHER_PID=$!
 fi
 
-"$REAL_BIN" -c 'notify=["bash","{{CODEX_NOTIFY_PATH}}"]' "$@"
+"$REAL_BIN" "$@"
 CLAXEDO_CODEX_STATUS=$?
 
 if [ -n "$CLAXEDO_CODEX_START_WATCHER_PID" ]; then
