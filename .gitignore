@@ -68,6 +68,9 @@ packages/claxedo-app/dev-docs/
 
 # Claxedo runtime data
 .claxedo/
+# The server data dir resolved to the string "undefined" and wrote the whole
+# profile — sqlite db, compile cache, agent-plugin generations — to ./undefined.
+/undefined/
 .opencode/processes.jsonc
 
 # Playwright test artifacts

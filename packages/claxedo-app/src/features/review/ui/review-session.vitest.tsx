@@ -258,7 +258,7 @@ describe("ClaxedoSessionReview", () => {
     expect(anchored.container.querySelectorAll("[data-review-file]").length).toBeLessThanOrEqual(21)
   })
 
-  test("mounts a row's hover-only controls for the hovered row, and for a focused row", async () => {
+  test("keeps row controls mounted in a stable slot and reveals the hovered row", async () => {
     const diffs = [
       { file: "src/a.ts", additions: 1, deletions: 1, status: "modified" as const },
       { file: "src/b.ts", additions: 2, deletions: 2, status: "modified" as const },
@@ -273,16 +273,16 @@ describe("ClaxedoSessionReview", () => {
     const trigger = (file: string) =>
       view.container.querySelector<HTMLElement>(`[data-review-file='${file}'] [data-slot='accordion-trigger']`)!
 
-    // At rest the cluster is invisible and inert, so no row carries it.
-    expect(controls("src/a.ts")).toBeNull()
-    expect(controls("src/b.ts")).toBeNull()
+    // Controls stay mounted so hover cannot change the measured row geometry.
+    expect(controls("src/a.ts")).toBeTruthy()
+    expect(controls("src/b.ts")).toBeTruthy()
 
     trigger("src/a.ts").dispatchEvent(pointerOver(10, 10))
     await flush()
     expect(controls("src/a.ts")).toBeTruthy()
     expect(controls("src/a.ts")!.querySelector("[data-slot='session-review-copy-button']")).toBeTruthy()
     expect(controls("src/a.ts")!.querySelector("[data-slot='session-review-view-button']")).toBeTruthy()
-    expect(controls("src/b.ts")).toBeNull()
+    expect(controls("src/b.ts")).toBeTruthy()
 
     // Keyboard reaches the cluster the same way: focusing the row's trigger
     // mounts it before the next Tab can land on the copy button.

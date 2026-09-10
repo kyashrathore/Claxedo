@@ -29,6 +29,10 @@ resources/opencode-cli*
 resources/claxedo-mcp*
 resources/claxedo-server.js
 resources/claxedo-server/
+# bundle-claxedo-server.ts builds into a pid-suffixed staging dir and renames it
+# onto resources/claxedo-server. A killed build (not a failed one — failure
+# removes it) orphans 340 MB under a name nothing ever collects.
+resources/claxedo-server.pending-*/
 resources/claxedo-server-compile-cache/
 resources/opencode-compile-cache/
 resources/acp/
