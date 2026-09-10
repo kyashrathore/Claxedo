@@ -1,14 +1,14 @@
 # Icon mapping review · September 9, 2026
 
-128 app icon names. The latest user decisions are applied; glasses is the only remaining artwork correction. The story renders both theme columns through the same production component, including explicit shared-artwork choices.
+127 app icon names. The latest user decisions are applied; glasses is the only remaining artwork correction. The story renders both theme columns through the same production component, including explicit shared-artwork choices.
 
 ## Current decisions
 
 - `three-dots` is the single overflow icon API. `kebab`, `more-horizontal` and the app-only `outline-dots` alias are removed. The browser rotates it 90 degrees; sidebar overflow stays horizontal.
 - `folders` is the single folder-stack identity. `file-tree` and `file-tree-active` app names are removed. OpenCode `folder-open` also uses `folders`; Codex retains its open-folder drawing.
-- Both themes use Codex artwork for globe, cloud, gauge, reload, reset and worktree. Both use OpenCode’s Discord brand mark and >_ artwork for process and terminal states. [Authoritative artwork policy](/Users/yashvardhansingh/test/opencode/packages/ui/src/components/icon-artwork-policy.tsx).
+- Both themes use Codex artwork for globe, cloud, gauge, reload, reset and worktree. Both use OpenCode’s Discord brand mark. [Authoritative artwork policy](/Users/yashvardhansingh/test/opencode/packages/ui/src/components/icon-artwork-policy.tsx).
 - Accepted as-is for now, with comments in the mapping source: layout-right-full, layout-right-partial, monitor, new-session-active, review-active, server, arrow-down-to-line, chevron-double-left, chevron-double-right, circle-ban-sign and code-lines.
-- Both themes use the bare OpenCode >_ prompt; active state only changes foreground emphasis. Raw-message and edit/write/patch file accordions use down/up carets from the trigger’s expanded state.
+- Processes and terminals use Codex’s terminal outline in Codex and the bare OpenCode >_ console prompt in other themes; active state only changes foreground emphasis. Raw-message and edit/write/patch file accordions use down/up carets from the trigger’s expanded state.
 - Raw upstream inventories retain their upstream names; the app vocabulary is separate from the extracted source inventory.
 
 ## Remaining correction
@@ -64,8 +64,7 @@
 | `dash` | `codex: codex-20-053` | `opencode: dash` | Accepted / not flagged |
 | `discord` | `opencode: discord` | `opencode: discord` | Accepted / not flagged |
 | `download` | `codex: codex-20-012` | `opencode: download` | Accepted / not flagged |
-| `edit` | `codex: codex-20-019` | `opencode: edit-small-2` | Accepted / not flagged |
-| `edit-small-2` | `codex: codex-20-019` | `opencode: edit-small-2` | Accepted / not flagged |
+| `edit` | `codex: codex-native-square-and-pencil-light-20` | `opencode: edit` | Accepted / not flagged |
 | `enter` | `codex: codex-native-arrow-curved-right-large-typographic-light-20` | `opencode: enter` | Accepted / not flagged |
 | `expand` | `codex: codex-native-arrow-up-right-arrow-down-left-sm-light-20` | `opencode: expand` | Accepted / not flagged |
 | `expand-all` | `codex: codex-custom-expand-all` | `opencode: expand-all` | Accepted / not flagged |
@@ -118,7 +117,7 @@
 | `pi` | `codex: codex-custom-pi` | `opencode: pi` | Accepted / not flagged |
 | `plus` | `codex: codex-20-006` | `opencode: plus` | Accepted / not flagged |
 | `plus-small` | `codex: codex-20-006` | `opencode: plus-small` | Accepted / not flagged |
-| `process` | `opencode: terminal` | `opencode: terminal` | Accepted / not flagged |
+| `process` | `codex: codex-20-050` | `opencode: terminal` | Accepted / not flagged |
 | `process-cwd` | `codex: codex-20-152` | `opencode: folder` | Accepted / not flagged |
 | `prompt` | `codex: codex-20-153` | `opencode: prompt` | Accepted / not flagged |
 | `providers` | `codex: codex-custom-providers` | `opencode: providers` | Accepted / not flagged |
@@ -143,8 +142,8 @@
 | `stop` | `codex: codex-custom-stop` | `opencode: stop` | Accepted / not flagged |
 | `subagent` | `codex: codex-20-110` | `opencode: subagent` | Accepted / not flagged |
 | `task` | `codex: codex-20-139` | `opencode: checklist` | Accepted / not flagged |
-| `terminal` | `opencode: terminal` | `opencode: terminal` | Accepted / not flagged |
-| `terminal-active` | `opencode: terminal-active` | `opencode: terminal-active` | Accepted / not flagged |
+| `terminal` | `codex: codex-20-050` | `opencode: terminal` | Accepted / not flagged |
+| `terminal-active` | `codex: codex-20-050` | `opencode: terminal-active` | Accepted / not flagged |
 | `trash` | `codex: codex-20-080` | `opencode: trash` | Accepted / not flagged |
 | `unified` | `codex: codex-custom-diff-unified` | `opencode: unified` | Accepted / not flagged |
 | `warning` | `codex: codex-20-082` | `opencode: warning` | Accepted / not flagged |
@@ -173,10 +172,21 @@
 - packages/ui: `bun test src/components/codex-icon-map.test.ts src/storybook/icon-mapping-audit.test.ts src/storybook/opencode-icon-extraction.test.ts` — 11 passed after regenerating the inventory.
 - Live Storybook: visually checked outward and inward arrows in both themes and exercised the expand/restore buttons.
 
-### Shared process and terminal artwork
+### Theme-specific process and terminal artwork
 
-`ICON_ARTWORK_POLICY` selects OpenCode for `process`, `terminal`, and `terminal-active` in every theme. Process resolves to the same >_ geometry as terminal; active terminals keep the same bare prompt and brighten it. The original OpenCode console artwork is retained under the canonical terminal name, with no square frame.
+`process`, `terminal`, and `terminal-active` follow their theme. Codex uses its terminal outline; OpenCode uses the bare >_ console prompt. Active state brightens the same artwork. The original OpenCode console artwork is retained under the canonical terminal name, with no square frame.
 
-- packages/claxedo-app: `bun run test:vitest -- src/ui/controls/claxedo-icon-theme.vitest.tsx src/ui/controls/claxedo-icon.vitest.tsx src/ui/semantic-icon.vitest.tsx` — 18 passed, including shared/app geometry equality across themes and terminal state transitions.
+- packages/claxedo-app: `bun run test:vitest -- src/ui/controls/claxedo-icon-theme.vitest.tsx src/ui/controls/claxedo-icon.vitest.tsx src/ui/semantic-icon.vitest.tsx` — 18 passed, including shared/app geometry equality within each theme, distinct Codex/OpenCode terminal artwork, and terminal state transitions.
 - `bun run typecheck` in packages/claxedo-app and packages/ui — passed.
-- Live Storybook: visually verified matching Processes/Create terminal artwork and both terminal states in the Codex and OpenCode columns.
+- Live Storybook: visually verified Codex terminal artwork and OpenCode’s bare >_ prompt for Processes/Create terminal.
+
+### Edit icon consolidation
+
+`edit` uses native Codex `square-and-pencil-light-20` and OpenCode `edit`. The sole direct `edit-small-2` caller, ProcessPanePanel’s Edit process config button, now uses `edit`. Removed the duplicate app name, shared alias and unused artwork; retained pencil-only names for their separate concepts.
+
+- packages/ui: `bun run script/verify-codex-alternatives.ts` — 22 SVGs verified against ChatGPT build 8109.
+- packages/claxedo-app: `bun test src/ui/icons/registry.test.ts` — 15 passed.
+- packages/ui: `bun test src/components/codex-icon-map.test.ts src/storybook/icon-mapping-audit.test.ts src/storybook/opencode-icon-extraction.test.ts` — 11 passed.
+- packages/ui: `bun run typecheck` — passed; `bun run extract:icons` — 118 v1 entries / 117 unique geometries and 37 v2 entries.
+- packages/claxedo-app: `bun run typecheck` — blocked by TS2307 for `@claxedo/agent-sdk-runtime` in an unrelated concurrent edit to `src/features/session/composer/ui/submit-abort.ts:2`.
+- Live Storybook: visually confirmed the native pencil-in-square shape against the supplied screenshot and that `edit-small-2` is absent.

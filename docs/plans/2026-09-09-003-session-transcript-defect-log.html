@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claxedo — session transcript, composer and navigation defect log</title>
+<style>
+:root{--bg:#fbfaf9;--fg:#22201d;--muted:#6b655e;--line:#e5e1dc;--code-bg:#f4f1ee;--accent:#b4501e;--quote:#8a5a2b;--quote-bg:#fdf8f3}
+@media (prefers-color-scheme:dark){:root{--bg:#191817;--fg:#e8e4df;--muted:#9a938a;--line:#332f2b;--code-bg:#221f1d;--accent:#e0855a;--quote:#d8a373;--quote-bg:#231e19}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);
+ font:16px/1.65 ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
+ -webkit-font-smoothing:antialiased}
+.wrap{max-width:860px;margin:0 auto;padding:64px 28px 160px}
+h1{font-size:2rem;line-height:1.2;letter-spacing:-.02em;margin:0 0 .3em}
+h2{font-size:1.35rem;line-height:1.3;letter-spacing:-.015em;margin:3.2em 0 .6em;padding-top:1.4em;border-top:1px solid var(--line)}
+h1+h2,hr+h2{border-top:none;padding-top:0;margin-top:2em}
+h3{font-size:1.05rem;margin:2em 0 .5em;color:var(--accent)}
+p{margin:0 0 1.05em}
+a{color:var(--accent)}
+code{font:.86em/1.5 ui-monospace,SFMono-Regular,"SF Mono",Menlo,monospace;
+ background:var(--code-bg);padding:.14em .38em;border-radius:4px}
+pre{background:var(--code-bg);border:1px solid var(--line);border-radius:10px;
+ padding:14px 16px;overflow-x:auto;margin:0 0 1.3em}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.55}
+blockquote{margin:0 0 1.2em;padding:.85em 1.1em;border-left:3px solid var(--quote);
+ background:var(--quote-bg);border-radius:0 8px 8px 0;color:var(--fg)}
+table{border-collapse:collapse;width:100%;margin:0 0 1.4em;font-size:.92rem}
+th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:var(--code-bg);font-weight:600}
+hr{border:none;border-top:1px solid var(--line);margin:3em 0}
+ul,ol{margin:0 0 1.1em;padding-left:1.4em}
+li{margin:.3em 0}
+strong{font-weight:650}
+.meta{color:var(--muted);font-size:.9rem;margin:0 0 2.5em}
+@media print{.wrap{max-width:none;padding:0}h2{page-break-after:avoid}pre,table{page-break-inside:avoid}}
+</style></head>
+<body><div class="wrap">
+<p class="meta">Local copy rendered 2026-09-10 · source:
+<code>docs/plans/2026-09-09-003-session-transcript-defect-log.md</code></p>
+<h1 id="session-transcript-composer-and-navigation-defect-log">Session transcript, composer, and navigation defect log</h1>
+<p>Status: observations only. Nothing here has been changed.</p>
+<p>Reported by the user on 2026-09-09 while driving a live session. Each entry names the canonical owner, the evidence, and whether the behavior is a defect or an intentional design that a defect makes worse.</p>
+<h2 id="how-to-read-an-entry">How to read an entry</h2>
+<p>Every entry leads with <strong>Reported by the user</strong> — their words, verbatim, including the ones that carry how it felt to hit it — then <strong>Impact</strong>, then the diagnosis. The report is the requirement; the diagnosis is only my current best explanation of it and may be wrong. Two entries (D6, D13) have no user report and say so.</p>
+<p>Do not let a fix close an entry because the mechanism was addressed. It closes when the reported experience is gone.</p>
+<h2 id="verification-method">Verification method</h2>
+<p>Findings marked <strong>measured</strong> were produced by calling the real <code>Timeline.constructMessageRows</code> from <code>message-timeline.data.ts</code> in a temporary <code>bun:test</code> probe (since removed) and printing the resulting row tags. Findings marked <strong>read</strong> come from reading the implementation only.</p>
+<h2 id="standing-requirement-user-2026-09-09">Standing requirement (user, 2026-09-09)</h2>
+<blockquote>No matter what happens there should be no content shift when I jump from one<br>session to another.</blockquote>
+<p>This governs D11 and constrains any fix to D4/D5: switching sessions must not reorder, reflow, or re-fold anything under the pointer.</p>
+<hr>
+<h2 id="d1-the-skill-tool-row-is-a-dead-click-target">D1 — The <code>skill</code> tool row is a dead click target</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>clicking on skill does nothing.</blockquote>
+<p><strong>Impact:</strong> A row that looks clickable and answers with nothing. The user cannot tell whether the click missed, the app is stuck, or there was never anything to show.</p>
+<p>Owner: <code>packages/session-ui/src/components/message-part.tsx:3150</code>.</p>
+<pre><code class="lang-tsx">return &lt;BasicTool icon=&quot;brain&quot; status={props.status} trigger={trigger()} hideDetails /&gt;</code></pre>
+<p>Every other renderer (<code>read</code> :2196, <code>grep</code> :2292, <code>bash</code> :2558) does <code>&lt;BasicTool {...props} …&gt;{output}&lt;/BasicTool&gt;</code>. This one differs three ways:</p>
+<ol><li><code>hideDetails</code> is hardcoded; <code>basic-tool.tsx:323</code> gates <code>Collapsible.Content</code> on <code>hasChildren() &amp;&amp; !props.hideDetails</code>.</li><li>No <code>{...props}</code> spread and no <code>props.output</code>, so <code>hasChildren()</code> (<code>basic-tool.tsx:108</code>) is false and <code>basic-tool.tsx:292</code> also suppresses the chevron. The skill&#x27;s output is discarded — the storybook fixture at <code>timeline-playground.stories.tsx:437</code> supplies <code>output: &quot;Skill loaded successfully&quot;</code> that never renders.</li><li>No <code>onTriggerClick</code> / <code>triggerHref</code> / <code>clickable</code>. <code>webfetch</code> (:2337) and <code>task</code> (:2521) are also <code>hideDetails</code> but attach navigation instead.</li></ol>
+<p>The row is still a Kobalte <code>Collapsible.Trigger</code> — a real <code>&lt;button&gt;</code>, focusable, with a hover brighten (<code>basic-tool.css:390</code>) and focus background (<code>collapsible.css:57</code>). A click reaches <code>handleOpenChange</code> (<code>basic-tool.tsx:211</code>) and flips <code>state.open</code> onto nothing. A dead toggle, not a missing handler.</p>
+<p>Collateral: <code>startedAt</code> (no live elapsed), <code>defaultOpen</code>, and the timeline&#x27;s controlled <code>open</code>/<code>onOpenChange</code> are dropped, so per-part open persistence (<code>message-timeline.tsx:677</code>) is ignored for skills.</p>
+<p>Read.</p>
+<h2 id="d2-claude-harness-tool-names-never-group-case-mismatch">D2 — Claude-harness tool names never group (case mismatch)</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>command ran are not grouped properly, see i can expand and see calls in acordion below &quot;working&quot;, i hve to clickon working toggle to see list of commands.<br>why so? is this expected?</blockquote>
+<p><strong>Impact:</strong> Every command is a separate loud row, and reaching any of them costs an extra click. The user had to ask whether this was intentional — the transcript gave no way to tell a design decision from a bug.</p>
+<p>Owner: the lowercase-only sets in <code>message-timeline.data.ts:458-470</code>.</p>
+<pre><code class="lang-ts">const contextGroupTools = new Set([&quot;read&quot;, &quot;glob&quot;, &quot;grep&quot;, &quot;list&quot;, &quot;read_file&quot;])
+const workGroupTools    = new Set([&quot;bash&quot;, &quot;command&quot;, &quot;shell&quot;, …])
+const hiddenTools       = new Set([&quot;todowrite&quot;])</code></pre>
+<p><code>packages/agent-event-runtime/src/harnesses/claude/adapter.ts:249</code> copies the SDK tool name verbatim, and the native Claude SDK capitalizes: <code>Bash</code>, <code>Read</code>, <code>Skill</code>, <code>Task</code>. The fixture confirms it — <code>e2e/fixtures/harness-traces/claude-sdk.json</code> contains exactly one tool name, <code>&quot;Grep&quot;</code>, where <code>opencode.json</code> has <code>bash</code>/<code>read</code>/<code>skill</code>.</p>
+<p>The renderer registry survives because <code>getTool</code> lowercases (<code>message-part.tsx:1794</code>). The grouping pass does not, and neither does <code>isSubagentToolPart</code> (<code>subagent-presentation.ts:51</code>, <code>part.tool === &quot;task&quot;</code>), so <code>Task</code> never becomes a subagent chip either.</p>
+<p>Measured:</p>
+<pre><code class="lang-">lowercase bash x3             -&gt; [ &quot;work&quot; ]                       one accordion
+lowercase read x3             -&gt; [ &quot;context&quot; ]
+CAPITAL  Bash x3              -&gt; [ &quot;part&quot;, &quot;part&quot;, &quot;part&quot; ]       three loud rows
+CAPITAL  Read x3              -&gt; [ &quot;part&quot;, &quot;part&quot;, &quot;part&quot; ]
+CAPITAL  Bash,Read,Skill,Task -&gt; [ &quot;part&quot;, &quot;part&quot;, &quot;part&quot;, &quot;part&quot; ]</code></pre>
+<p>Fix direction: normalize once at the harness adapter boundary so every consumer agrees, rather than adding capitalized aliases to each set.</p>
+<h2 id="d3-skill-splits-a-work-run-in-two">D3 — <code>skill</code> splits a work run in two</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>command ran are not grouped properly</blockquote>
+<p><strong>Impact:</strong> Grouping that works elsewhere breaks apart for no visible reason, so the transcript reads as inconsistent rather than organized.</p>
+<p>Owner: <code>groupParts</code>, <code>message-timeline.data.ts:537</code>.</p>
+<p><code>skill</code> is in no group set, so it falls to the final branch (:622-625), which flushes the in-progress context/work/task runs before emitting itself. Measured:</p>
+<pre><code class="lang-">bash,bash,skill,bash,bash -&gt; [ &quot;work&quot;, &quot;part&quot;, &quot;work&quot; ]</code></pre>
+<p>Interleaved assistant text does the same. On a harness that emits short prose between tool calls this is a large share of the &quot;commands are not grouped&quot; symptom, independent of D2.</p>
+<h2 id="d4-the-auto-fold-swallows-subagent-cards">D4 — The auto-fold swallows subagent cards</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>suagents are also folded.</blockquote>
+<p><strong>Impact:</strong> Subagent cards are among the most valuable rows in a turn and they are hidden by default. The user has to hunt for the work they most want to see.</p>
+<p>Owner: <code>isGroupFoldable</code> / <code>canFoldSettled</code>, <code>message-timeline.data.ts:171-200</code>.</p>
+<p>The comment at :196-199 states the intent:</p>
+<blockquote>A single tool is already one compact, useful row. Folding it replaces the only<br>actionable content with an extra click and breaks the established<br>standalone-tool/task-card contract.</blockquote>
+<p>But the guard is only <code>foldableCount &gt;= 2</code>, and <code>isGroupFoldable</code> returns true for the <code>agents</code> group type and for any standalone tool part — including a <code>task</code>. The task-card contract that comment protects therefore holds only for a turn whose <em>entire</em> tool activity is subagents. Measured:</p>
+<pre><code class="lang-">2 tasks + 1 bash -&gt; [ UserMessage, TurnFold(folded=true, count=2) ]
+1 task  + 2 bash -&gt; [ UserMessage, TurnFold(folded=true, count=2) ]
+1 task  + 1 bash -&gt; [ UserMessage, TurnFold(folded=true, count=2) ]
+3 tasks only     -&gt; [ UserMessage, AssistantPart(agents) ]      survives
+1 task only      -&gt; [ UserMessage, AssistantPart(part) ]        survives</code></pre>
+<p>The rule is inverted from the intent: the more real work a turn does alongside a subagent, the more certain the subagent card is to disappear behind &quot;Worked for Xs&quot;. D2 makes this near-universal on the Claude harness, because every capitalized tool becomes its own foldable <code>part</code> and <code>foldableCount</code> passes 2 immediately.</p>
+<h2 id="d5-timelinefoldwhilerunning-is-on-by-default-with-no-way-to-turn-it-off">D5 — <code>timelineFoldWhileRunning</code> is on by default with no way to turn it off</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>i hve to clickon working toggle to see list of commands. why so? is this expected?</blockquote>
+<p><strong>Impact:</strong> Behavior the user dislikes, on by default, with no setting anywhere to turn it off.</p>
+<p>Owner: <code>packages/claxedo-app/src/platform/settings/provider.tsx:120</code>.</p>
+<p>Defaults to <code>true</code>; consumed at <code>message-timeline.tsx:570</code> → <code>canFoldRunning</code> (<code>message-timeline.data.ts:203</code>). There is no settings-UI control and no i18n label for it anywhere in the repo, so it can only be changed by hand-editing the store.</p>
+<p>The fold itself is intentional and keeps the last live group visible. Listed here because D2 and D4 push far more behind it than the design assumed, and because a user who dislikes it has no supported way to opt out.</p>
+<h2 id="d6-core-harness-rendering-matrix-spec-ts-753-does-not-test-what-it-claims">D6 — <code>core-harness-rendering-matrix.spec.ts:753</code> does not test what it claims</h2>
+<p><strong>Reported:</strong> Not user-reported. Found while investigating D2 — recorded because it explains why D2 was never caught.</p>
+<p>Named <em>&quot;raw \&quot;Grep\&quot; falls back to GenericTool&quot;</em>, it asserts a <code>basic-tool-tool-title</code> with text <code>&quot;Grep&quot;</code>. But <code>ui.tool.grep</code> is literally <code>&quot;Grep&quot;</code> (<code>packages/ui/src/i18n/en.ts:136</code>) and <code>getTool</code> lowercases, so the real <code>grep</code> renderer produces the same title. The assertion passes under either renderer and cannot distinguish them. Presumably how D2 stayed invisible.</p>
+<h2 id="d7-subagent-card-does-not-reliably-open-in-the-right-workspace-panel">D7 — Subagent card does not reliably open in the right workspace panel</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>subagent card does&#x27;nt open in right workspace panel</blockquote>
+<p><strong>Impact:</strong> The card does not go where the user expects it to go, so the pane layout they set up is ignored.</p>
+<p>Owner: <code>openSubagent</code>, <code>packages/claxedo-app/src/features/session/ui/message-timeline.tsx:240</code>.</p>
+<p>The right-hand split is conditional:</p>
+<pre><code class="lang-ts">if (window.matchMedia(`(min-width: ${BP_MD}px)`).matches &amp;&amp; paneId &amp;&amp; !childPane &amp;&amp; !dedicatedPane) {
+  claxedoState.layout.splitContent(paneId, &quot;right&quot;, contentId)
+} else if (dedicatedPane &amp;&amp; !childPane) {
+  claxedoState.wb.panes.assign(dedicatedPane, contentId)
+  claxedoState.layout.showContent(contentId)
+} else {
+  claxedoState.layout.showContent(contentId)
+}</code></pre>
+<p>Four independent conditions must all hold to get a right split. Any one failing falls through to bare <code>showContent(contentId)</code>, which surfaces the subagent in the <em>current</em> pane instead of a right panel. The card is also opened with <code>focus: false</code>, and the post-open focus call targets <code>[data-subagent-child-heading]</code> inside a <code>requestAnimationFrame</code>, so it silently does nothing if that node has not mounted yet.</p>
+<p>Read. Not yet narrowed to which of the four conditions fails in the reported case — needs a live repro with the window width and existing pane layout recorded.</p>
+<h2 id="d8-subagent-card-overflows-the-transcript-column">D8 — Subagent card overflows the transcript column</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>suabent card is going outside normal width.</blockquote>
+<p><strong>Impact:</strong> The card breaks the transcript column and makes the layout look broken.</p>
+<p>Reported. Not yet investigated; the two background agents assigned to D7/D8 were killed before reporting.</p>
+<h2 id="d9-videos-cannot-be-attached-to-the-composer-by-design-not-by-filter">D9 — Videos cannot be attached to the composer (by design, not by filter)</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>can&#x27;t paste videos in composer.</blockquote>
+<p><strong>Impact:</strong> Pasting a video silently fails with a generic “unsupported” toast that does not say videos are not supported at all.</p>
+<p>Owner: <code>attachmentMime</code>, <code>packages/claxedo-app/src/features/session/composer/ui/files.ts:52</code>.</p>
+<p>The paste handler itself (<code>attachments.ts:93</code>) does <strong>not</strong> filter by MIME — it accepts any <code>item.kind === &quot;file&quot;</code>. The rejection is downstream:</p>
+<pre><code class="lang-ts">export async function attachmentMime(file: File) {
+  const type = kind(file.type)
+  if (IMAGE_MIMES.has(type)) return type
+  if (type === &quot;application/pdf&quot;) return type
+  …
+  const bytes = new Uint8Array(await file.slice(0, SAMPLE).arrayBuffer())
+  if (!textBytes(bytes)) return undefined     // video lands here
+  return &quot;text/plain&quot;
+}</code></pre>
+<p><code>IMAGE_MIMES</code> is <code>ACCEPTED_IMAGE_TYPES</code> = <code>[&quot;image/png&quot;,&quot;image/jpeg&quot;,&quot;image/gif&quot;,&quot;image/webp&quot;]</code> (<code>packages/claxedo-app/src/lib/file-picker.ts:1</code>). A <code>video/mp4</code> is not an image, not a PDF, not text-ish, and sniffs as binary → <code>undefined</code> → <code>add()</code> shows the generic &quot;paste unsupported&quot; toast and drops it.</p>
+<p>This is deeper than a filter. The attachment the composer builds is hardcoded <code>type: &quot;image&quot;</code> as an <code>ImageAttachmentPart</code> (<code>attachments.ts:60-66</code>), so the prompt model has no non-image attachment kind at all. Supporting video is a feature with a contract change, not a one-line allowlist edit. Same gate applies to drop and the file picker, so no path accepts video today.</p>
+<p>Read.</p>
+<h2 id="d10-sending-while-a-turn-is-running-aborts-it-instead-of-steering-or-queueing">D10 — Sending while a turn is running aborts it instead of steering or queueing</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>I hit send another msg in composer, instead of getting queud or steer, it hosws me you stoped after x minute. first it stops current turn then send another msg</blockquote>
+<p><strong>Impact:</strong> The user expected to steer or queue. Instead their work was cancelled and their message was not sent — two unwanted outcomes from one keystroke, neither of them asked for.</p>
+<p>Owner: <code>admitPromptSubmission</code>, <code>packages/claxedo-app/src/features/session/commands/prompt-admission.ts</code>.</p>
+<pre><code class="lang-ts">/** The primary composer control stops an active turn, even with a queued draft. */
+export function admitPromptSubmission(input): PromptAdmission {
+  if (input.working) return &quot;abort-active&quot;
+  if (input.bodyMd.trim().length &gt; 0 || input.imageCount || input.commentCount) return &quot;admit&quot;
+  return &quot;ignore&quot;
+}</code></pre>
+<p><code>working</code> is tested <strong>before</strong> the text is considered, and the caller (<code>composer/ui/submit.ts:173</code>) does <code>if (admission === &quot;abort-active&quot;) return abort()</code>. So Enter-with-text mid-turn stops the turn and never submits; the draft stays in the composer and a second Enter sends it. That is exactly the reported &quot;first it stops current turn then sends another msg&quot;, and the &quot;you stopped after X minutes&quot; notice is the abort surfacing.</p>
+<p>The runtime already supports the intended behavior. <code>packages/workspace-runtime/src/opencode/session-port.ts:74-78</code>:</p>
+<pre><code class="lang-ts">/**
+ * How V2 admits the turn. `steer` interrupts the running turn with this
+ * text; `queue` waits for it to finish. Claxedo&#x27;s &quot;send while running&quot;
+ * maps to `steer`.
+ */
+delivery?: &quot;steer&quot; | &quot;queue&quot;</code></pre>
+<p><code>opencode/harness-adapter.ts:224</code> sets <code>delivery: &quot;steer&quot;</code>. But <strong>no app code ever passes a prompt <code>delivery</code></strong> — every <code>delivery</code> hit under <code>claxedo-app</code> is the unrelated permission-mode delivery. A one-sided seam: the port documents the contract and the client never fulfills it, so the composer falls back to a policy that conflates Send with Stop.</p>
+<p>Read.</p>
+<h2 id="d11-selecting-a-session-bumps-it-to-the-top-of-the-list">D11 — Selecting a session bumps it to the top of the list</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>most recent session auto moves to top, which make means, as soon as i click second session it moves to first , feels like auto jumped back this is very bad</blockquote>
+<p><strong>Impact:</strong> The list reorders under the pointer mid-click. The user&#x27;s word: <strong>very bad</strong>. It makes the sidebar feel unreliable to aim at.</p>
+<p>Owner: <code>bumpSessionListActivity</code>, <code>packages/claxedo-app/src/features/session/data/sync/directory-event-projector.ts:120</code>.</p>
+<pre><code class="lang-ts">case &quot;message.completed&quot;:
+case &quot;session.idle&quot;: {
+  bumpSessionListActivity(input)
+  break
+}</code></pre>
+<p><code>bumpSessionListActivity</code> writes <code>updatedAt: Date.now()</code> — the client wall clock at event receipt, <strong>not</strong> the session&#x27;s real last-activity time. Contrast the <code>session.updated</code> branch immediately above (:145), which correctly uses <code>info.updated</code> from the event.</p>
+<p>Every session list sorts strictly by that value, descending, with no stable secondary key and no pinning of the selected row:</p>
+<ul><li><code>data/sync/queries.ts:142</code> — <code>sort((a, b) =&gt; sessionUpdatedAt(b) - sessionUpdatedAt(a))</code></li><li><code>data/query/session-list.ts:538</code> — <code>sort((a, b) =&gt; (b.updatedAt ?? 0) - (a.updatedAt ?? 0))</code></li><li><code>data/sync/inventory-source.ts:400</code> — <code>sort((a, b) =&gt; (b.time.updated ?? 0) - (a.time.updated ?? 0))</code></li></ul>
+<p>So a <code>session.idle</code> event arriving on open rewrites the clicked session&#x27;s position to &quot;now&quot; and the list reorders under the pointer — the row jumps from second place to first as it is clicked. This directly violates the standing requirement above.</p>
+<p>Two separable defects: (a) <code>session.idle</code> should not be treated as activity, or should carry the session&#x27;s real timestamp rather than <code>Date.now()</code>; (b) the list should not reorder while the user is interacting with it, regardless of what the data does.</p>
+<p>Read.</p>
+<h2 id="d12-completed-blocks-keep-growing-after-paint-progressive-list-staging">D12 — Completed blocks keep growing after paint (progressive list staging)</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>there are times one transcript above last para is updating, which si also bad</blockquote>
+<p><strong>Impact:</strong> Text the user is reading moves under them because a block above is still growing. Called out as <strong>bad</strong> in its own right.</p>
+<p>Owner: <code>stageMarkdownCollections</code>, <code>packages/session-ui/src/components/markdown-progressive.ts</code>.</p>
+<p>Any rendered block containing a <code>ul</code>, <code>ol</code>, or <code>tbody</code> with <strong>more than 20</strong> children is painted with only its first <strong>8</strong> rows. The rest are removed from the DOM, then re-appended <strong>4 per animation frame</strong> after a <strong>260 ms</strong> delay:</p>
+<pre><code class="lang-ts">const initialRows = 8
+const batchRows = 4
+const minimumRows = 20
+…
+collections.forEach((entry) =&gt; entry.children.slice(initialRows).forEach((node) =&gt; node.remove()))
+…
+delays.set(root, setTimeout(() =&gt; { … requestAnimationFrame(step) }, 260))</code></pre>
+<p>A 40-row list therefore grows for 8 frames after a 260 ms pause; a 100-row list for 23 frames. The block&#x27;s height increases monotonically <em>after</em> it has been painted, so everything below it — including the streaming tail the user is reading — is pushed down for the whole window.</p>
+<p>This matches the report directly: a block that has finished streaming stabilizes its hash, but its final <code>stageMarkdownCollections</code> pass is still re-growing it while the <em>next</em> block streams below. The paragraph above the last one is visibly still updating.</p>
+<p><code>markdown.tsx:1038-1042</code> does guard re-entry with a <code>data-markdown-hash</code> check, so an unchanged block is not re-staged. Two windows remain:</p>
+<ul><li>First paint of every qualifying block (the main one).</li><li>The block currently streaming, whose hash changes on each delta — it is re-truncated to 8 rows and re-grown on every token.</li></ul>
+<p>Not yet checked: whether the timeline virtualizer re-measures during the regrow, or whether rows below sit at stale offsets until the next measurement pass. That determines whether the symptom is smooth push-down or a jump. Worth resolving before choosing a fix, since it decides whether the fix is &quot;reserve the final height up front&quot; or &quot;drop the staging entirely&quot;.</p>
+<p>Read.</p>
+<h2 id="d13-markdown-rich-stage-ts-is-dead-production-code-with-a-test-that-cannot-fail">D13 — <code>markdown-rich-stage.ts</code> is dead production code with a test that cannot fail</h2>
+<p><strong>Reported:</strong> Not user-reported. Found while investigating D12 — recorded as debt and as a second instance of the D6 pattern.</p>
+<p>Owner: <code>packages/session-ui/src/components/markdown-rich-stage.ts</code>.</p>
+<p><code>shouldStageCompletedMarkdown</code> takes four inputs and ignores all of them:</p>
+<pre><code class="lang-ts">export function shouldStageCompletedMarkdown(input: {
+  streaming?: boolean; delayMs: number; cacheKey?: string; text: string
+}) {
+  if (input.streaming) return false
+  if (input.delayMs &lt;= 0) return false
+  if (!input.text) return false
+  return false          // every path returns false
+}</code></pre>
+<p>Outside its own test file, neither it nor <code>scheduleCompletedMarkdownRichUpgrade</code> nor <code>completedMarkdownRichDelayMs</code> is referenced anywhere in the repo. The plain-then-rich staging this module implemented was disabled by making the predicate constant rather than by deleting the module, and the module survives only because its test imports it.</p>
+<p><code>markdown-rich-stage.test.ts:46-47</code> asserts <code>false</code> for inputs whose result is unconditionally <code>false</code> — it would pass against an empty function body. Same class as D6: a test that cannot distinguish the behavior it names.</p>
+<p>This is not the cause of D12 — the plain→rich morph is genuinely off. Recorded as debt to delete, and as a second instance of the assertion-that-cannot-fail pattern.</p>
+<p>Read.</p>
+<h2 id="d14-assistant-text-can-be-emitted-twice-snapshot-delta-reconciliation-fallback">D14 — Assistant text can be emitted twice (snapshot/delta reconciliation fallback)</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>see duplciate msgs<br><br>same thing in unfolded</blockquote>
+<p><strong>Impact:</strong> The transcript shows content that was never produced twice. The user checked the unfolded view to rule out a display artifact, which is exactly the right instinct — it is a data defect.</p>
+<p>Owner: <code>packages/agent-event-runtime/src/harnesses/claude/adapter.ts:862-870</code>.</p>
+<p>Assistant text reaches the projection twice over: as streamed <code>text_delta</code>s, and again as a cumulative snapshot on the completed assistant message. The adapter reconciles them by subtracting what it has already emitted:</p>
+<pre><code class="lang-ts">const snapshot = assistantSnapshotText(rawMessage)
+const childOwned = !!claudeChildCorrelationKey(rawMessage)
+const deltaText = childOwned
+  ? snapshot                                             // 1
+  : snapshot.startsWith(state.emittedAssistantText)
+    ? snapshot.slice(state.emittedAssistantText.length)   // 2  correct: emit the tail
+    : state.emittedAssistantText.endsWith(snapshot)
+      ? &quot;&quot;                                               // 3  already emitted
+      : snapshot                                         // 4  emit EVERYTHING again</code></pre>
+<p>Branch 4 is a duplication fallback: when the snapshot is neither a continuation of the emitted text nor already contained in it, the adapter re-emits the <strong>entire snapshot</strong> on top of the deltas already streamed. The message then renders twice.</p>
+<p>Reaching branch 4 requires only that the deltas and the snapshot diverge before their common tail.</p>
+<p>Correction: an earlier revision of this entry blamed the dropped <code>citations_delta</code> / <code>signature_delta</code> / <code>compaction_delta</code> cases at <code>:763-768</code>. Reading the accumulation paths refutes that — those deltas do not contribute text to a text block, so they cannot desynchronize <code>emittedAssistantText</code> from the snapshot. The claim was written before the paths were read and is withdrawn.</p>
+<p>What the accumulation paths actually show, confirmed by reading:</p>
+<ul><li><code>text_delta</code> (:722) appends to <code>emittedAssistantText</code>.</li><li><code>content_block_stop</code> with a text block&#x27;s <code>fallbackText</code> (:782) also appends.</li><li><code>thinking_delta</code> (:730) correctly does <strong>not</strong> append; thinking is not in the text snapshot.</li><li><code>emittedAssistantText</code> is replaced with this message&#x27;s snapshot on completion (:899) and reset to <code>&quot;&quot;</code> only on <code>result</code> (:918) — once per turn, not per message.</li></ul>
+<p>So within one turn carrying several assistant messages, at message N&#x27;s completion <code>emittedAssistantText</code> holds <code>snapshot(N-1) + deltas(N)</code>, and <code>snapshot</code> holds only message N&#x27;s text. Branch 3&#x27;s <code>endsWith</code> check absorbs that correctly <strong>when the streamed deltas exactly equal the final snapshot text</strong>. When they do not — any message whose deltas cover only part of its final text — <code>endsWith</code> fails and branch 4 re-emits the whole snapshot on top of what already streamed.</p>
+<p>Branch 1 is a second, simpler exposure: for child (subagent) messages the full snapshot is always emitted, and the state update deliberately skips recording it — <code>...(snapshot &amp;&amp; !childOwned ? { emittedAssistantText: snapshot } : {})</code>. Two snapshots for the same child message emit their full text twice with no suppression possible.</p>
+<p>The user confirms the duplicate is assistant text repeated within one reply, and that it persists in the unfolded view — so this is a data-layer duplication, not a fold or virtualizer rendering artifact. Which of branch 1 or branch 4 fires needs the raw harness event stream for a reproducing turn; that has not been captured.</p>
+<p>The e2e coverage cannot catch this. <code>core-harness-rendering-matrix.spec.ts:645-649</code> asserts <code>&quot;Building the Building the&quot;</code> has count 0, but its own comment concedes:</p>
+<blockquote>The adapter turned the provider&#x27;s cumulative snapshots into deltas before the<br>trace was recorded, so this checks accumulation, not snapshot dedup.</blockquote>
+<p>The fixture is pre-normalized, so the recorded trace never exercises the reconciliation at all. Third instance of the can&#x27;t-fail-assertion pattern after D6 and D13.</p>
+<p>Read. Not yet confirmed as the cause of the user&#x27;s report — see the open question below.</p>
+<h2 id="d15-a-resolved-question-flashes-when-navigating-back-to-a-session">D15 — A resolved question flashes when navigating back to a session</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>an already reoslved question appaering for a brief second when i navigate back from other sesson</blockquote>
+<p><strong>Impact:</strong> A question the user already answered reappears as if it still needs them. Even for a second, it re-raises work that is done.</p>
+<p>Owner: <code>applyDirectorySessionMeta</code>, <code>packages/claxedo-app/src/features/session/store/directory-session-meta.ts:21</code>.</p>
+<p>The pending permissions/questions the docks read are a pure client cache. The query is declared with <code>queryFn: skipToken, enabled: false</code> (<code>store/session-pane-queries.ts:58</code>), so it never refetches — it holds whatever was last dispatched into it, keyed by session id, and keeps holding it after you navigate away.</p>
+<p>Answering a question clears that entry by dispatching a fresh <code>session.requests</code> (<code>ui/composer/session-question-dock.tsx:213</code>). Returning to the session re-runs the directory status/permission/question hydration, which calls <code>applyDirectorySessionMeta</code> and dispatches <code>session.requests</code> again from that read. If that read was taken or cached before the answer landed, it re-seeds the already-answered question into the cache; the next authoritative event clears it again. The dock renders in between — the brief flash.</p>
+<p>Two writers with no ordering guarantee feed one cache entry. The module&#x27;s own header comment already names this hazard for status:</p>
+<blockquote>This payload has two independent authorities that fetch it — the session pane&#x27;s<br>hydration (<code>syncSessionMeta</code>) and the rail&#x27;s status batch … Both must produce<br>the same status from the same bytes, or the two writers flap against each other<br>through the shared cache entry.</blockquote>
+<p>The same reasoning applies to requests, but there is no staleness guard on that leg — no timestamp or generation counter — so an older read can overwrite a newer resolution. Basic exploration only; the exact re-seeding caller on the navigate-back path was not traced.</p>
+<p>Related: memory records a plan (<code>2026-09-07-001-feat-transcript-interaction-records-plan.md</code>) to make questions, permissions, and todos persisted transcript parts instead of transient tables, which would remove this class outright.</p>
+<h2 id="d16-composer-images-persist-into-other-threads-and-new-threads">D16 — Composer images persist into other threads and new threads</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>i had sent images in other thread, but when i come back to other thread or new thread i find those images in composer</blockquote>
+<p><strong>Impact:</strong> Attachments from one conversation follow the user into another. Beyond confusing, this risks sending an image into the wrong thread.</p>
+<p>Owner: prompt draft scoping, <code>composer/ui/submit-prompt-scope.ts:21</code>.</p>
+<p>Images are not a separate store — <code>imageAttachments</code> is a memo over the draft (<code>composer/composer.tsx:304</code>):</p>
+<pre><code class="lang-ts">const imageAttachments = createMemo(() =&gt;
+  prompt.current().filter((part): part is ImageAttachmentPart =&gt; part.type === &quot;image&quot;),
+)</code></pre>
+<p>So an attached image is a <code>type: &quot;image&quot;</code> part inside the prompt draft, and clearing the draft should clear it. <code>createSubmitDraftLifecycle.clear()</code> (<code>submit-draft-lifecycle.ts:28</code>) resets each submitted scope.</p>
+<p>The scope is the suspect:</p>
+<pre><code class="lang-ts">export function promptViewScope(input: { directory?: string; sessionId?: string; draftId?: string }) {
+  return { dir: input.directory ?? &quot;&quot;, id: input.sessionId, ...(input.draftId ? { draftId: input.draftId } : {}) }
+}</code></pre>
+<p>For a <strong>new thread</strong> there is no session id and no draft id, so the scope collapses to <code>{ dir, id: undefined }</code> — a single draft shared by every new thread in that directory. An image attached in one new thread is therefore the same draft every later new thread in that directory mounts. That accounts for the &quot;new thread&quot; half of the report directly.</p>
+<p>The &quot;come back to another existing thread&quot; half is not explained by that alone, since a real session id gives a distinct scope. Not traced further — basic exploration only. The thing to check next is whether <code>add()</code> (<code>composer/ui/attachments.ts:60-68</code>) writes through <code>prompt.set(...)</code> with no scope argument, and therefore lands on whichever scope is mounted at paste time rather than the one the user believes they are typing into.</p>
+<p>Update: a second writer with exactly that shape was found while investigating D29. <code>app/workbench/workspace-panel/browser-panel.tsx:68</code> appends a browser screenshot to the draft with no scope:</p>
+<pre><code class="lang-ts">prompt.set([...prompt.current(), attachment])</code></pre>
+<p><code>composer/ui/attachments.ts:67</code> does the same for pasted files. So at least two attachment writers target the ambient mounted scope rather than an explicit one, which is consistent with an image following the user into a thread they did not attach it to.</p>
+<h2 id="d17-a-late-landing-abort-stops-the-wrong-turn">D17 — A late-landing abort stops the wrong turn</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>the msg i send when i turn is going(cancel current turn - that is already recorded) but it also stops current turn like after 5 seconds</blockquote>
+<p><strong>Impact:</strong> A second stop the user never asked for, arriving late and killing a turn they had just started. Work is lost with no visible cause.</p>
+<p>Owner: <code>createPromptAbort</code>, <code>composer/ui/submit-abort.ts</code>, and the abort contract it calls.</p>
+<p>The abort carries no turn or message identifier:</p>
+<pre><code class="lang-ts">abort(input: { sessionID: string; directory: string }): Promise&lt;…&gt;</code></pre>
+<p><code>createPromptAbort</code> awaits that network call. Nothing scopes it to the turn the user was looking at when they pressed send, so whatever turn is running in that session when the request arrives is the turn that dies.</p>
+<p>Combined with D10, the reported sequence follows: the first Enter aborts turn 1 over the network; the user sends again and turn 2 starts; the in-flight abort lands afterwards and stops turn 2. The user observes a second stop several seconds after the first, on a turn they never asked to cancel.</p>
+<p>The user reports roughly five seconds. That does <strong>not</strong> match the optimistic status ladder — those stages are 8s / 20s / 45s / 5min (<code>store/session-status-dispatcher.ts:13-16</code>) — so the delay is the abort round trip, not a client timer. Timing not measured.</p>
+<p>Note also that <code>registerPendingPrompt</code> (<code>submit/pending.ts:17</code>) is keyed by session id alone and overwrites any existing entry without aborting it, so a superseded controller is dropped rather than cancelled.</p>
+<p>Basic exploration only; not reproduced.</p>
+<h2 id="d18-an-interrupted-turn-loses-its-fold-control-entirely">D18 — An interrupted turn loses its fold control entirely</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>i expanded &quot;working&quot; folded tab -&gt; started new turn, now no option to fold that back.</blockquote>
+<p><strong>Impact:</strong> A control the user was actively using disappears. Having expanded a turn, they are stuck with it expanded forever.</p>
+<p>Owner: <code>canFoldSettled</code>, <code>message-timeline.data.ts:200</code>.</p>
+<p><code>canFoldSettled = settled &amp;&amp; !interrupted &amp;&amp; !error &amp;&amp; foldableCount &gt;= 2</code>. When a turn is interrupted, no <code>TurnFold</code> row is emitted at all, so there is no control to fold it back — regardless of what the user had chosen. Measured:</p>
+<pre><code class="lang-">settled, user expanded -&gt; [ UserMessage, TurnFold(folded=false), Part(work), Part(context) ]
+ABORTED, user expanded -&gt; [ UserMessage, Part(work), Part(context), TurnDivider ]</code></pre>
+<p>This is the reported &quot;I expanded Working, started a new turn, now no option to fold that back&quot;. D10 is what makes it reachable every time: sending mid-turn aborts the previous turn, which marks it interrupted, which deletes its fold row.</p>
+<p>The user&#x27;s explicit choice also persists in <code>turnFoldCache</code> (<code>turn-fold-store.ts</code>), so the turn stays expanded even if it later stops counting as interrupted.</p>
+<p>Measured. (Reported in conversation earlier but omitted from this log; recorded here after the user re-raised it.)</p>
+<h2 id="d19-session-switching-shifts-content">D19 — Session switching shifts content</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>there many content shift, title feels from going showing loader to no loader to loader<br><br>folding happens after session switch</blockquote>
+<p><strong>Impact:</strong> Directly against the user&#x27;s own standing requirement: <strong>no matter what happens there should be no content shift when i jump from one session to other.</strong> Every switch visibly reflows.</p>
+<p>Directly violates the standing requirement at the top of this document. Two distinct symptoms reported:</p>
+<p><strong>Title flickers loader → no loader → loader.</strong> The title resolves through more than one source and each transition repaints. Not traced.</p>
+<p><strong>The fold is applied after the switch, not before the first paint.</strong> Owner: <code>message-timeline.data.ts:204</code> — <code>foldActive = canFoldSettled || canFoldRunning ? (userChoice ?? true) : false</code>. Whether a turn folds depends on <code>settled</code>, <code>interrupted</code>, <code>error</code>, and <code>foldableCount</code>, all derived from message data that arrives after mount. The first frame therefore renders with the pre-hydration answer and re-folds once the data lands, collapsing rows underneath the user.</p>
+<p><code>message-timeline.tsx:680</code> shows the cold/warm split feeding the same problem:</p>
+<pre><code class="lang-ts">const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length ? 6 : 1)</code></pre>
+<p>A session without cached measurements mounts in a deliberately degraded state and upgrades afterwards. Combined with D12 (blocks growing after paint) and D20 (under-rendered scroll band), a switch has at least three independent sources of post-paint reflow.</p>
+<p>Basic exploration only.</p>
+<h2 id="d20-fast-scrolling-shows-blank-regions-that-fill-in-as-they-are-reached">D20 — Fast scrolling shows blank regions that fill in as they are reached</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>on scroll losing frames -&gt; i see big blank screen and rows render as i see in blank area</blockquote>
+<p><strong>Impact:</strong> Scrolling shows empty space where content should be, and rows only appear once the user has already arrived. The transcript feels like it cannot keep up.</p>
+<p>Owner: the <code>rangeExtractor</code> override in <code>message-timeline.tsx:758-768</code>.</p>
+<p><code>message-timeline.tsx:748</code> sets <code>overscan: 50</code>, but the custom <code>rangeExtractor</code> immediately below replaces it with <code>renderOverscan()</code>, which is <strong>1</strong> on a cold mount and <strong>6</strong> once measurements exist (<code>:680</code>, <code>:688</code>). The effective band is 1–6 rows, not 50, so the <code>overscan: 50</code> option is dead and misleading.</p>
+<p>With rows as tall and variable as transcript turns, a fast flick outruns a six-row band: the viewport reaches rows that have not been rendered yet, which is the reported blank area that fills in as you arrive.</p>
+<p><code>timeline-virtualization.ts:118-129</code> documents this exact failure mode as already addressed — <code>content-visibility: auto</code> was removed because &quot;a fast flick scrolls skipped rows into the viewport before the browser renders them, showing estimate-sized blank boxes&quot;. The symptom is being observed again, so either that mitigation regressed or the band is simply too small for the scroll speeds in use.</p>
+<p>That same comment asserts &quot;The overscan band is small (≤6 rows)&quot; — consistent with <code>renderOverscan()</code> but contradicting the <code>overscan: 50</code> literal a few lines away. One of the two is wrong on its face and should be resolved before tuning.</p>
+<p>Basic exploration only.</p>
+<h2 id="d21-expanded-tool-output-has-a-hidden-scrollbar-and-a-silent-240px-clip">D21 — Expanded tool output has a hidden scrollbar and a silent 240px clip</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>no scrollbar in expanded tool call</blockquote>
+<p><strong>Impact:</strong> Output is cut off with nothing indicating more exists or that the region scrolls. The user cannot tell whether they have seen everything.</p>
+<p>Owner: <code>packages/session-ui/src/components/message-part.css:387-397</code>.</p>
+<pre><code class="lang-css">&amp;[data-scrollable] {
+  height: auto;
+  max-height: 240px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+
+  &amp;::-webkit-scrollbar { display: none; }
+}</code></pre>
+<p>The region scrolls but every scrollbar affordance is explicitly suppressed on all three engines. Combined with <code>max-height: 240px</code>, an expanded tool call silently clips its output with nothing indicating more content exists or that the area is scrollable. <code>.error-card</code> (<code>session-turn.css:73</code>) uses the same 240px cap.</p>
+<p>Correction after further reading: this is <strong>not</strong> uniform, and the inconsistency is the real finding. The <code>bash</code> output region solves it properly (<code>message-part.css:469-502</code>):</p>
+<pre><code class="lang-css">.ui-bash-scroll {
+  overflow-y: auto;
+  max-height: 240px;
+
+  /* Discoverable scrollability (T20): thin transparent-track scrollbar that surfaces
+     on hover instead of the fully hidden bar. */
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+&amp;:hover .ui-bash-scroll { scrollbar-color: var(--border-weak-base) transparent; }</code></pre>
+<p>So a fix for exactly this complaint was already made and shipped — for shell output only. The shared <code>[data-component=&quot;tool-output&quot;]</code> region every <em>other</em> expandable tool uses (<code>grep</code>, <code>websearch</code>, <code>list</code>, <code>glob</code>, <code>GenericTool</code>) still carries the fully-hidden variant. The T20 fix was never propagated to the canonical owner, so the two surfaces disagree.</p>
+<p>That also narrows the fix: adopt the <code>ui-bash-scroll</code> treatment on <code>[data-component=&quot;tool-output&quot;][data-scrollable]</code> rather than inventing one.</p>
+<p>A second clip is worth checking separately: <code>[data-component=&quot;tool-output&quot;]</code> sets <code>white-space: pre</code> (<code>:360</code>) with no <code>overflow-x</code> of its own, and <code>.ui-bash-scroll</code> sets <code>overflow-x: hidden</code> outright (<code>:472</code>). Long unwrapped lines may therefore be horizontally unreachable in shell output. Not verified in a browser.</p>
+<p>Read.</p>
+<h2 id="d22-the-aborted-failed-card-is-visually-too-heavy">D22 — The aborted/failed card is visually too heavy</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>the Aborted by user based failed card is too bold and looks ugly</blockquote>
+<p><strong>Impact:</strong> The user&#x27;s words: <strong>too bold and looks ugly.</strong> The loudest treatment in the transcript is spent on an ordinary outcome. D28 explains why they see it so often.</p>
+<p>Reported as &quot;too bold and looks ugly&quot;.</p>
+<p>Candidate owners, not yet narrowed:</p>
+<ul><li><code>packages/session-ui/src/components/tool-error-card.css:1</code> — <code>.ui-card[data-kind=&quot;tool-error-card&quot;]</code>. On its own this is restrained (transparent background, <code>--border-weak-base</code>), so it is probably not the offender by itself.</li><li><code>session-turn.css:73</code> and <code>:230</code> — <code>.error-card</code> inside the turn, which sets <code>--v2-text-text-base</code> and the 240px cap from D21.</li><li><code>session-turn.tsx:292-299</code> decides interrupted-vs-error: <code>MessageAbortedError</code> marks the turn interrupted, and any <em>other</em> error becomes the error card. So a user abort and a genuine failure may be reaching different surfaces than intended — worth confirming which one the user is actually seeing before restyling either.</li><li><code>message-timeline.data.ts</code> emits a separate <code>TurnDivider({ label: &quot;interrupted&quot; })</code> for the abort case.</li></ul>
+<p>Needs a screenshot or the exact card text to identify which of these renders. Basic exploration only.</p>
+<h2 id="d23-a-shell-row-can-render-as-the-bare-verb-running-ran-with-no-command">D23 — A shell row can render as the bare verb &quot;Running&quot; / &quot;Ran&quot; with no command</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>tool call in folded on show &quot;Running&quot;, &quot;Ran&quot; and nothing else sometimes.</blockquote>
+<p><strong>Impact:</strong> A row that reports something happened but refuses to say what. The single most useful piece of information is the one that is missing.</p>
+<p>Owner: the <code>bash</code> renderer, <code>packages/session-ui/src/components/message-part.tsx:2596-2612</code>.</p>
+<pre><code class="lang-tsx">&lt;span data-slot=&quot;basic-tool-tool-title&quot;&gt;
+  &lt;TextShimmer text={pending() ? &quot;Running&quot; : &quot;Ran&quot;} active={pending()} /&gt;
+&lt;/span&gt;
+{/* Keep the command in the header even while expanded — the verb alone
+    (&quot;Ran&quot;) says nothing, and the header is what you scan when scrolling. */}
+&lt;Show when={!pending() &amp;&amp; displayCommand()}&gt;
+  &lt;ShellSubmessage text={displayCommand()} animate={sawPending &amp;&amp; !open()} /&gt;
+&lt;/Show&gt;</code></pre>
+<p>The command is the only informative part of the row and it is behind a two-part guard. Two ways to reach a bare verb:</p>
+<p><strong><code>pending()</code> is true.</strong> The guard is <code>!pending() &amp;&amp; …</code>, so <em>every</em> running shell row shows the bare word &quot;Running&quot; with no command — by construction, not by accident. The command only appears once the call completes.</p>
+<p><strong><code>displayCommand()</code> is empty.</strong> It reads <code>stripShellWrapper(String(props.input.command ?? props.metadata.command ?? &quot;&quot;))</code>, which yields <code>&quot;&quot;</code> when neither key is present. An empty string is falsy, so the <code>Show</code> renders nothing and the row is the single word &quot;Ran&quot;. This is reachable whenever the tool input never finished streaming — the input arrives by <code>input_json_delta</code> accumulation (<code>claude/adapter.ts:744</code>) and is only committed once the partial JSON parses, so a call interrupted mid-input completes with no <code>command</code> key at all. D10 and D17 both produce exactly that: turns aborted while a tool call was still streaming its input.</p>
+<p>The comment above the guard already states the conclusion — &quot;the verb alone (&#x27;Ran&#x27;) says nothing&quot; — while the guard it annotates permits precisely that state.</p>
+<p>Read.</p>
+<h2 id="d24-an-expanded-tool-card-survives-its-turn-being-folded">D24 — An expanded tool card survives its turn being folded</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>the tool call card i have expanded and remain expaned even on turn folded</blockquote>
+<p><strong>Impact:</strong> The user&#x27;s explicit expand survives a fold that should have collapsed it, so the turn claims to be folded while plainly not being folded.</p>
+<p>Owner: <code>shouldFold</code>, <code>message-timeline.data.ts:217-222</code>.</p>
+<pre><code class="lang-ts">const shouldFold = (item, itemIndex) =&gt; {
+  if (!foldActive || item.type !== &quot;part&quot; || !isGroupFoldable(item.group)) return false
+  // Running-only phase fold keeps the last (live) group visible.
+  if (canFoldRunning &amp;&amp; !canFoldSettled &amp;&amp; itemIndex === lastFoldableIndex) return false
+  return true
+}</code></pre>
+<p>While a turn is running, the last foldable group is deliberately exempted from the fold so active work stays visible. The <code>TurnFold</code> row still renders with <code>folded=true</code>, so the turn <em>reads</em> as folded while that one group — including a tool card the user expanded — remains on screen underneath it. The state looks inconsistent even though each half is behaving as written.</p>
+<p>Per-tool open state is separately persistent (<code>toolOpen</code>, <code>message-timeline.tsx:677</code>, cached per session in <code>timelineCache</code> at <code>:933</code>), so an expanded card stays expanded across the fold and across pane remounts rather than collapsing with its turn.</p>
+<p>Whether the reported case is this exemption or a genuine leak needs the turn&#x27;s running/settled state at the time; if the turn had already settled, <code>canFoldRunning</code> is false and the exemption cannot apply, which would point somewhere else. Basic exploration only.</p>
+<h2 id="d25-thinking-appears-drops-and-returns-on-send">D25 — &quot;Thinking…&quot; appears, drops, and returns on send</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>there is content shift when i send msg.<br><br>because &quot;thinking...&quot; text appears for a second and then disappers immediately and then comes back</blockquote>
+<p><strong>Impact:</strong> Sending a message — the single most common action in the app — makes the view jump. Again against the no-content-shift requirement.</p>
+<p>Owner: <code>nextThinkingVisibilityHold</code>, <code>packages/claxedo-app/src/features/session/ui/thinking-visibility-hold.ts</code>.</p>
+<p>The flap is already known and already mitigated — the module header says so:</p>
+<blockquote>Status can blip idle→busy (or settled→unsettled) for a few frames while a<br>stream is still running. Dropping the row immediately collapses the<br>virtualizer and jumps the composer.</blockquote>
+<p>The mitigation is a hide-only hysteresis of <strong>80 ms</strong>:</p>
+<pre><code class="lang-ts">export const THINKING_HIDE_HOLD_MS = 80</code></pre>
+<p>80 ms is about five frames. It covers a few-frame blip and nothing longer. On send, the sequence is optimistic-busy → server-reported-not-yet-busy → actually-busy, and the middle leg is a network round trip, which is one to two orders of magnitude longer than the hold. The row therefore drops and returns — the reported behavior — because the hold was sized for a render blip, not for a request.</p>
+<p>Two further observations:</p>
+<ul><li>The hold is one-sided. It delays hiding but not showing, so an optimistic show followed by a real hide still produces a visible appear/disappear pair.</li><li>A second, unrelated hold exists for the same family of transitions: <code>createTimelineWorkingStatus</code> (<code>timeline-working-status.ts</code>) defaults to <code>hideDelay = 260</code>. Two different constants (80 and 260) govern the visibility of two rows that flip on the same status changes, so they cannot stay in sync by construction.</li></ul>
+<p>Read.</p>
+<h2 id="d26-textshimmer-repaints-text-every-frame-per-instance-forever">D26 — <code>TextShimmer</code> repaints text every frame, per instance, forever</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>shimmering in tool call/thinking text or loader in header have performance issues, find performant alternative</blockquote>
+<p><strong>Impact:</strong> The user identified this as a performance problem unprompted and asked for a cheaper approach, not a defence of the current one.</p>
+<p>Owner: <code>packages/ui/src/components/text-shimmer.css</code> and <code>packages/ui/src/components/text-shimmer.tsx</code>.</p>
+<p>The effect animates <code>background-position</code> on an element using <code>background-clip: text</code>:</p>
+<pre><code class="lang-css">[data-component=&quot;text-shimmer&quot;] .ui-text-shimmer-char-shimmer[data-run=&quot;true&quot;] {
+  animation-name: text-shimmer-sweep;
+  animation-duration: var(--text-shimmer-duration);   /* 1200ms */
+  animation-iteration-count: infinite;
+  will-change: background-position;
+}
+
+@keyframes text-shimmer-sweep {
+  0%   { background-position: 100% 0, 0 0; }
+  100% { background-position:   0% 0, 0 0; }
+}</code></pre>
+<p>Why this is the expensive shape:</p>
+<ul><li><code>background-position</code> is not a compositor-animatable property. Combined with <code>background-clip: text</code> the browser must re-rasterize the glyph mask against the gradient <strong>on every frame</strong>. <code>will-change</code> promotes a layer but cannot remove the repaint; it only hints.</li><li><code>--text-shimmer-size: 360%</code> makes the gradient 3.6× the element width, so each of those repaints covers a large raster area.</li><li><code>animation-iteration-count: infinite</code> — it never stops while the row is mounted.</li><li>The cost is per instance and they run concurrently. <code>TextShimmer</code> is used by the thinking row, every <code>BasicTool</code> title (<code>message-part.tsx:1232</code>), the bash verb (<code>:2604</code>), the skill title (<code>:3157</code>), and the reasoning title (<code>:2142</code>). Every running tool row is an independent infinite text repaint.</li><li>The component renders the text <strong>twice</strong> in the DOM (<code>text-shimmer-char-base</code> plus <code>text-shimmer-char-shimmer</code>) for every instance, active or not, doubling glyph count across a long transcript.</li><li><code>data-run</code> only clears 220 ms after <code>active</code> goes false, so the animation keeps running past the point it is visible.</li></ul>
+<p>Performant alternatives, cheapest first:</p>
+<ol><li><strong>Opacity pulse</strong> — compositor-only, no repaint. Loses the sweep look.</li><li><strong>Transform-animated overlay</strong> — keep the gradient in a pseudo-element and animate <code>transform: translateX()</code> instead of <code>background-position</code>, with the text as a <code>mask-image</code>. Transform and opacity are the only two properties the compositor animates without paint.</li><li><strong>Shimmer one row at a time</strong> — restrict the effect to the single active row rather than every pending tool title. Reduces N concurrent animations to 1 regardless of which technique is used.</li></ol>
+<p>The <code>prefers-reduced-motion</code> branch already disables the animation entirely, so a non-animated fallback path exists and is known to render acceptably.</p>
+<p>Read. Not profiled — the analysis is from the animated property and the usage count, not from a measurement. A trace should confirm paint cost before choosing between the alternatives.</p>
+<hr>
+<h1 id="design-requests-not-defects">Design requests (not defects)</h1>
+<p>Recorded separately from D1–D26: these describe intended product behavior that differs from what is built, not code failing its own contract.</p>
+<h2 id="r1-the-question-tool-should-be-its-own-surface-and-an-answered-question-should-persist-as-a-card">R1 — The question tool should be its own surface, and an answered question should persist as a card</h2>
+<p>Requested by the user on 2026-09-09:</p>
+<blockquote>question tool should be a clearly separate tool in UI, and the answered thing<br>should be clearly visible as a very nice looking card with the answered answer,<br>and not just go away like any other tool call.</blockquote>
+<h3 id="what-it-does-today">What it does today</h3>
+<p>Owner: the <code>question</code> entry in <code>ToolRegistry</code>, <code>packages/session-ui/src/components/message-part.tsx:3101-3147</code>.</p>
+<p>An answered question renders through the <em>same</em> <code>BasicTool</code> chrome as <code>bash</code>, <code>read</code>, and <code>grep</code> — leading icon, title, subtitle, collapsible body:</p>
+<pre><code class="lang-tsx">&lt;BasicTool
+  {...props}
+  defaultOpen={completed()}
+  icon=&quot;bubble-5&quot;
+  trigger={{ title: i18n.t(&quot;ui.tool.questions&quot;), subtitle: subtitle() }}
+&gt;</code></pre>
+<p>The content is there and it does default to open once answered, so the answer is not lost. What is missing is any visual distinction: it is a tool row among tool rows.</p>
+<p>Its full lifecycle today is three different surfaces:</p>
+<ol><li><strong>Pending</strong> — excluded from the transcript entirely. <code>message-timeline.data.ts</code> <code>renderablePart()</code>: <code>if (part.tool === &quot;question&quot;) return part.state.status !== &quot;pending&quot; &amp;&amp; part.state.status !== &quot;running&quot;</code>. It lives in <code>session-question-dock.tsx</code> instead.</li><li><strong>Answered</strong> — becomes an ordinary <code>BasicTool</code> row in the transcript.</li><li><strong>Turn settles</strong> — and it disappears.</li></ol>
+<h3 id="why-it-goes-away">Why it &quot;goes away&quot;</h3>
+<p>Step 3 is the substantive half of the request, and it is mechanical. <code>isGroupFoldable</code> (<code>message-timeline.data.ts:171</code>) returns true for any <code>group.type === &quot;part&quot;</code> whose part is a tool. An answered question <em>is</em> a tool part, so it is foldable, it counts toward <code>foldableCount</code>, and once the turn settles with two or more foldable groups it is hidden behind &quot;Worked for Xs&quot; along with the shell commands.</p>
+<p>So the answer the user gave — the one piece of the turn they authored themselves — is collapsed by the same rule that collapses <code>ls</code>. That is the behavior being objected to, and it is D4&#x27;s mechanism reaching a part that should have been exempt.</p>
+<h3 id="change-points">Change points</h3>
+<ul><li><strong>Exempt questions from the fold.</strong> <code>isGroupFoldable</code> should return false for <code>question</code> parts, the same way the code already special-cases them in <code>renderablePart</code>. This is the smallest change and it alone fixes &quot;goes away&quot;.</li><li><strong>Give it its own renderer.</strong> Today it reuses <code>BasicTool</code>. A dedicated card — like <code>SubagentTaskCard</code> (<code>:2537</code>) or <code>ToolErrorCard</code>, both of which already escape the standard row chrome — would make it visually distinct without inventing a new mechanism.</li><li><strong>Decide the pending surface.</strong> The dock/transcript split means a question is in one place while unanswered and another once answered. If the card is to be the durable record, it may want to own both states rather than hand off.</li><li>Related: <code>2026-09-07-001-feat-transcript-interaction-records-plan.md</code> already proposes making questions, permissions, and todos persisted transcript parts instead of transient dock tables. That plan is the natural home for this.</li></ul>
+<h2 id="d27-a-running-tool-is-uninspectable-no-name-no-chevron-and-clicks-are-discarded">D27 — A running tool is uninspectable: no name, no chevron, and clicks are discarded</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>see all the one &quot;running&quot; for minutes, i can&#x27;t click and see what is, very bad</blockquote>
+<p><strong>Impact:</strong> Minutes of watching a row that will not say what it is doing and will not respond to being asked. The user&#x27;s word: <strong>very bad</strong>.</p>
+<p>Owner: <code>BasicTool</code>, <code>packages/session-ui/src/components/basic-tool.tsx</code>.</p>
+<p>Reported as: a row sits on &quot;Running&quot; for minutes and cannot be clicked to find out what it is.</p>
+<p>Three independent guards all key off <code>pending()</code>, and together they remove every way to learn what a running tool is doing:</p>
+<p><strong>1. Clicks are explicitly discarded</strong> (<code>:211-215</code>):</p>
+<pre><code class="lang-ts">const handleOpenChange = (value: boolean) =&gt; {
+  if (pending()) return
+  if (props.locked &amp;&amp; !value) return
+  setOpen(value)
+}</code></pre>
+<p>The row is still a Kobalte <code>Collapsible.Trigger</code>, so it is focusable and hover-styled — it looks interactive and silently does nothing. Same dead-click shape as D1, but here it is a deliberate early return rather than an absent handler.</p>
+<p><strong>2. The chevron is suppressed</strong> (<code>:292</code>):</p>
+<pre><code class="lang-tsx">&lt;Show when={hasChildren() &amp;&amp; !props.hideDetails &amp;&amp; !props.locked &amp;&amp; !pending()}&gt;
+  &lt;Collapsible.Arrow /&gt;
+&lt;/Show&gt;</code></pre>
+<p>So there is not even an affordance suggesting the row could expand.</p>
+<p><strong>3. The command is hidden</strong> — D23. The <code>bash</code> renderer gates its command behind <code>!pending()</code>, so the title is the bare word &quot;Running&quot;.</p>
+<p>The only thing a running row does surface is elapsed time (<code>:289</code>), which is why the symptom reads as &quot;Running&quot; plus a growing duration and nothing else. For a long command that is minutes of a row that says something is happening, will not say what, and refuses to be asked.</p>
+<p>Note the guards are not redundant — fixing any one alone is insufficient. Removing the <code>pending()</code> term from the chevron without also fixing <code>handleOpenChange</code> produces a chevron that does nothing; fixing both without D23 produces an expandable row whose header still will not name the command.</p>
+<p>Worth questioning whether <code>pending()</code> should gate interaction at all. Streaming output is the single most useful thing to see while a command runs, and the partial input is usually available before completion — the <code>bash</code> input carries <code>command</code> as soon as its <code>input_json_delta</code> accumulation parses (<code>claude/adapter.ts:744</code>), which is typically long before the command finishes.</p>
+<p>Read.</p>
+<h2 id="d28-any-non-zero-exit-code-is-recorded-as-a-tool-error">D28 — Any non-zero exit code is recorded as a tool error</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>I don&#x27;t know if exit tools are rcorded as error, also very bad</blockquote>
+<p><strong>Impact:</strong> The user cannot trust the error state, because it fires on normal results. Called <strong>very bad</strong> — an error surface that cries wolf is worse than none.</p>
+<p>Owners: the per-harness adapters in <code>packages/agent-event-runtime/src/harnesses/</code>.</p>
+<p>Every harness treats a non-zero process exit as a failure and emits <code>tool-error</code>:</p>
+<p><strong>Codex</strong> (<code>codex/adapter.ts:534-549</code>):</p>
+<pre><code class="lang-ts">const exitCode = asFiniteNumber(input.row.exitCode) ?? 0
+…
+exitCode === 0
+  ? { /* normal completion */ }
+  : { type: &quot;tool-error&quot;, toolCallId: input.toolCallId,
+      error: output || `Process exited with code ${exitCode}`, … }</code></pre>
+<p>The same mapping again at <code>codex/adapter.ts:749-750</code>.</p>
+<p><strong>Cursor</strong> (<code>cursor/adapter.ts:356-357</code>):</p>
+<pre><code class="lang-ts">const exitCode = asFiniteNumber(nested?.exitCode)
+return exitCode !== undefined &amp;&amp; exitCode !== 0</code></pre>
+<p><strong>Claude</strong> keys off the SDK&#x27;s own flag rather than the code — <code>isError: block.is_error === true</code> (<code>claude/adapter.ts:220</code>), consumed at <code>:826</code> — but Claude Code sets <code>is_error</code> for a non-zero Bash exit, so the observable behavior matches.</p>
+<p>A non-zero exit is not a failure in general; it is how a large class of standard tools reports a normal negative result:</p>
+<table><thead><tr><th>Command</th><th>Exit</th><th>Meaning</th></tr></thead><tbody><tr><td><code>grep pattern file</code></td><td>1</td><td>no match — expected, often the point of the call</td></tr><tr><td><code>diff a b</code></td><td>1</td><td>files differ</td></tr><tr><td><code>git diff --quiet</code></td><td>1</td><td>there are changes — this is the documented use</td></tr><tr><td><code>test</code> / <code>[ … ]</code></td><td>1</td><td>condition false</td></tr><tr><td>a failing test suite</td><td>non-zero</td><td>a real result the agent asked for</td></tr></tbody></table>
+<p>So a <code>grep</code> that finds nothing renders identically to a crash. The transcript loses the distinction between &quot;the tool failed&quot; and &quot;the tool answered no&quot;, which is the distinction the reader actually needs.</p>
+<p>This compounds D22: the error card is visually heavy, and this defect makes it fire on routine negative results, so the loudest surface in the transcript is attached to the most ordinary outcome.</p>
+<p>Worth noting the harnesses disagree in shape even while agreeing in effect — Codex reads <code>exitCode</code> directly, Cursor reads a nested <code>exitCode</code>, Claude reads <code>is_error</code>. Any fix has to land in all three or the surfaces drift.</p>
+<p>Read. Which harness the user is on was not confirmed.</p>
+<hr>
+<h2 id="r2-a-tool-row-should-be-able-to-show-its-complete-output">R2 — A tool row should be able to show its complete output</h2>
+<p>Requested by the user on 2026-09-09:</p>
+<blockquote>not sure what tool it is, but i want to see complete msg in that tool</blockquote>
+<p>Good news first: <strong>the output is not truncated in the data.</strong> A search of the runtime and projection paths found no general output cap on the way to the UI — the only truncations are <code>session-handoff.ts:14</code> (handoff context, unrelated) and <code>acp/title.ts:126</code> (title generation, unrelated). <code>clampLabel</code> (<code>message-part.tsx:1321</code>, 72 chars) affects only the collapsed <code>WorkGroup</code> <em>header</em> label, never a body.</p>
+<p>So everything needed is already client-side. What withholds it is a stack of independent presentation limits, each recorded separately:</p>
+<table><thead><tr><th>#</th><th>Limit</th><th>Effect</th></tr></thead><tbody><tr><td>D27</td><td><code>pending()</code> blocks clicks, hides the chevron</td><td>cannot open a running tool at all</td></tr><tr><td>D23</td><td>command hidden while pending</td><td>cannot tell which tool it is</td></tr><tr><td>D21</td><td><code>max-height: 240px</code> + hidden scrollbar on <code>tool-output</code></td><td>output clipped with no cue</td></tr><tr><td>D12</td><td>lists &gt;20 rows render 8, grow after 260 ms</td><td>long list output arrives late</td></tr><tr><td>D21</td><td><code>white-space: pre</code> / <code>overflow-x: hidden</code></td><td>long lines may be horizontally unreachable</td></tr></tbody></table>
+<p>These are five separate guards, so &quot;show me the whole thing&quot; is not one change. The user-visible requirement is a single sentence — a tool row must be able to reveal its complete content, running or finished — and satisfying it means resolving all five, or introducing one deliberate &quot;full output&quot; surface that bypasses them (an expand-to-pane or copy-all affordance) rather than loosening each limit in place.</p>
+<p>The second option is likely cheaper and is more consistent with D21&#x27;s finding that the one surface which <em>did</em> get fixed (<code>ui-bash-scroll</code>, T20) diverged from the shared one rather than fixing it.</p>
+<h2 id="d29-opening-one-panel-silently-switches-you-to-a-different-one">D29 — Opening one panel silently switches you to a different one</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>i find when i open browsr -&gt; files panel opened it self, then when i clicked<br>full screen review panel open itself very irrtitating.</blockquote>
+<p><strong>Impact:</strong> The user opens Browser and lands on Files; goes full screen and lands on Review. Their explicit choice of surface is discarded twice in a row by the app itself. Their word: <strong>very irritating</strong>.</p>
+<p>Owner: <code>workspacePanelTopLevelOpenTarget</code>, <code>packages/claxedo-app/src/app/workbench/rail/workspace-panel-visual-state.ts:27-54</code>.</p>
+<p>Both overrides are in the code, each with a comment explaining the intent:</p>
+<pre><code class="lang-ts">// A first top-level open has no prior surface to restore. Files is the
+// useful workspace default and lets the shell begin loading the tree at
+// the opening click; later closes/reopens preserve the user&#x27;s selection.
+navigator: panel.navigator ?? &quot;files&quot;,
+
+// The physical top-level button means &quot;open Workspace&quot;, whose primary
+// surface is Review. Preserve every warm inner tab in the working set, but
+// explicitly reactivate Review instead of restoring an arbitrary process
+// or file tab from the last close.
+// A focus request still present here has not been consumed …
+...(panel.focus ? {} : { focus: { kind: &quot;review&quot; as const } }),</code></pre>
+<p>Read on their own terms both are defensible: Files is a reasonable cold default, and a button labelled &quot;open Workspace&quot; reasonably lands on Review.</p>
+<p>The defect is the condition they are gated on. The Review override fires whenever <code>panel.focus</code> is absent — and <code>panel.focus</code> only holds an <em>unconsumed focus request</em>, not the surface the user is currently on. There is no term anywhere in this function for &quot;the user already chose Browser&quot;. So a top-level open reactivates Review over a live Browser panel, and the <code>?? &quot;files&quot;</code> default applies on any path reaching it without a navigator, not only the genuine first cold open its comment describes.</p>
+<p>Both comments say &quot;preserve the user&#x27;s selection&quot; / &quot;preserve every warm inner tab&quot;, which is the intent this code does not implement for the active surface.</p>
+<p>Read.</p>
+<h2 id="d30-a-localhost-url-cannot-be-opened-from-the-transcript-and-the-browser-tab-does-not-survive-navigation">D30 — A localhost URL cannot be opened from the transcript, and the browser tab does not survive navigation</h2>
+<p><strong>Reported by the user:</strong></p>
+<blockquote>i can&#x27;t click http://localhost:6006/?path=/story/playground-transcript-lab--lab and open in browser<br><br>i manually opened the link went back and it vanished</blockquote>
+<p><strong>Impact:</strong> A URL the agent produced cannot be acted on. The user worked around it by opening the link by hand, and lost even that when they navigated away.</p>
+<p>Two separate problems, neither fully traced.</p>
+<p><strong>Not clickable.</strong> A URL extractor exists (<code>message-part.tsx:613</code>) and handles this shape correctly — <code>/https?:\/\/[^\s&lt;&gt;&quot;&#x27;</code>)\]]+/g<code> matches the whole URL including </code>?path=/story/…<code>, and the trailing-punctuation strip (</code>[),.;:!?]+$<code>) does not touch it since it ends in a letter. So extraction is not the failure. What was not established is whether transcript text routes a URL to anything: </code>openBrowserTab(url)<code> exists (</code>app/workbench/review/review-workspace.tsx:235<code>) and </code>platform.openLink(url)<code> exists for external opens (</code>app/composition/agent-plugin-ports.tsx:83`), but whether a URL rendered in assistant text or tool output is wired to either was not confirmed.</p>
+<p>Note the <code>bash</code> renderer has a narrower path that <em>does</em> work — a &quot;Local preview&quot; chip from a localhost match in command output (<code>message-part.tsx:2578-2585</code>). If the URL arrives any other way, there appears to be no equivalent.</p>
+<p><strong>Vanishes on return.</strong> The browser tab is created through <code>openBrowserWorkspaceTab</code> (<code>features/review/ui/review-workspace-tabs.ts:66</code>). Whether that tab is persisted across navigation was not traced. D29 is a plausible contributor rather than the cause: if returning triggers a top-level open, the forced <code>focus: { kind: &quot;review&quot; }</code> would reactivate Review over the Browser tab — which would look exactly like the tab vanishing, while the tab itself still exists.</p>
+<p>Basic exploration only. Both halves need tracing before either is actionable.</p>
+
+</div></body></html>
