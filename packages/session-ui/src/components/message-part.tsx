@@ -2534,9 +2534,11 @@ ToolRegistry.register({
               <span data-slot="basic-tool-tool-title">
                 <TextShimmer text={pending() ? "Running" : "Ran"} active={pending()} />
               </span>
-              {/* Keep the command in the header even while expanded — the verb alone
-                  ("Ran") says nothing, and the header is what you scan when scrolling. */}
-              <Show when={!pending() && displayCommand()}>
+              {/* Keep the command in the header while running and while expanded — the
+                  verb alone ("Running") says nothing, and a long command is exactly when
+                  the reader needs to know which one it is. The input carries `command` as
+                  soon as its partial JSON parses, well before the call returns. */}
+              <Show when={displayCommand()}>
                 <ShellSubmessage text={displayCommand()} animate={sawPending && !open()} />
               </Show>
             </div>

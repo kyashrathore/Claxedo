@@ -209,8 +209,13 @@ export function BasicTool(props: BasicToolProps) {
     heightAnim?.stop()
   })
 
+  /**
+   * A running tool is the one a reader most wants to open — streaming output is the
+   * only thing that says how far along a long call is — so `pending` does not gate
+   * this. `hasChildren` already withholds the affordance until there is something
+   * to show.
+   */
   const handleOpenChange = (value: boolean) => {
-    if (pending()) return
     if (props.locked && !value) return
     setOpen(value)
   }
@@ -242,7 +247,11 @@ export function BasicTool(props: BasicToolProps) {
                     >
                       <TextShimmer text={title().title} active={pending()} />
                     </span>
-                    <Show when={!pending()}>
+                    {/* The subtitle and args are what name the call — the file being read,
+                        the pattern being searched. Withholding them until the call finishes
+                        leaves a bare verb on screen for exactly as long as the call is
+                        interesting, so they show as soon as the input names them. */}
+                    <>
                       <Show when={title().subtitle}>
                         <span
                           data-slot="basic-tool-tool-subtitle"
@@ -276,7 +285,7 @@ export function BasicTool(props: BasicToolProps) {
                           )}
                         </For>
                       </Show>
-                    </Show>
+                    </>
                   </div>
                   <Show when={!pending() && title().action}>
                     <span data-slot="basic-tool-tool-action">{title().action}</span>
@@ -291,7 +300,7 @@ export function BasicTool(props: BasicToolProps) {
       <Show when={pending() && typeof props.startedAt === "number"}>
         <span data-slot="basic-tool-tool-elapsed">{elapsed()}</span>
       </Show>
-      <Show when={hasChildren() && !props.hideDetails && !props.locked && !pending()}>
+      <Show when={hasChildren() && !props.hideDetails && !props.locked}>
         <Collapsible.Arrow />
       </Show>
     </div>
