@@ -160,15 +160,8 @@ export {
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
 } from "./harness-types"
-export {
-  SDK_MODEL_CATALOG,
-  isSdkModelId,
-  modelConfigOption,
-  requireSdkModelId,
-  sdkModelConfigOption,
-  sdkModelOptions,
-} from "./sdk-model-catalog"
-export type { NativeSdkHarnessId, SdkModelCatalog, SdkModelEntry, SdkModelId } from "./sdk-model-catalog"
+export { modelConfigOption } from "./sdk-model-options"
+export type { SdkModelEntry } from "./sdk-model-options"
 export { createLiveModelSource } from "./live-model-source"
 export type { LiveModelSource } from "./live-model-source"
 export type {
@@ -178,6 +171,7 @@ export type {
   AgentHarnessKey,
   AgentHarnessTransport,
   NativeHarnessId,
+  NativeSdkHarnessId,
   SessionHarnessId,
 } from "./harness-types"
 export {

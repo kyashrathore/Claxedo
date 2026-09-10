@@ -52,6 +52,8 @@ export type AgentHarnessId = (typeof AGENT_HARNESS_IDS)[number]
 export type AgentHarnessAccess = (typeof AGENT_HARNESS_ACCESSES)[number]
 export type AgentHarnessKey = (typeof AGENT_HARNESS_KEYS)[number]
 export type NativeHarnessId = AgentHarnessId
+/** The native harnesses driven through `SdkRuntimeDriver`; `opencode` is composed by `@claxedo/workspace-runtime/opencode` instead. */
+export type NativeSdkHarnessId = Extract<AgentHarnessId, "claude" | "codex" | "cursor" | "pi">
 /**
  * A harness identity's id field: one of the finite built-in ids, or a
  * validated configured connection id for `access: "connection"` identities.

@@ -1,5 +1,8 @@
-import { SDK_MODEL_CATALOG } from "../../sdk-model-catalog"
 import { describe, expect, test } from "bun:test"
+import type { Query } from "@anthropic-ai/claude-agent-sdk"
+import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
+import type { SdkRuntimeDriverHost, SdkRuntimeTurnInput } from "../shared/sdk-runtime-driver"
+import type { ClaudeSdkDriverOptions } from "./driver"
 import {
   claudePluginConfigs,
   CLAUDE_FORWARD_SUBAGENT_TEXT,
@@ -212,16 +215,73 @@ describe("Claude SDK driver", () => {
     })).toEqual({ PATH: "/bin" })
   })
 
-  test("serves the static catalog until a live probe answers", () => {
-    // `peek` never spawns the probe query, so the picker would otherwise render
-    // empty on every cold read. The static catalog is the backstop; the live
-    // list replaces it as soon as `configOptions` gets an answer.
-    const [model, ...rest] = driver().peekConfigOptions("claude-from-a-future-release")
-    expect(rest).toEqual([])
-    expect(model).toMatchObject({
+  test("offers no model until a live probe answers", () => {
+    // `peek` never spawns the probe query. An unanswered harness has no model
+    // list, and an empty picker beats one naming models it may not serve.
+    expect(driver().peekConfigOptions("claude-from-a-future-release")).toEqual([])
+  })
+
+  test("marks the SDK's default row, so the picker shows the model an unset session runs", async () => {
+    const options = await probedDriver().configOptions("", "/repo")
+    expect(options[0]).toMatchObject({
       id: "model",
-      type: "select",
-      selectOptions: SDK_MODEL_CATALOG.claude.map(({ id, name }) => ({ id, name })),
+      currentValue: "default",
+      selectOptions: [
+        { id: "opus[1m]", name: "Opus (1M context)" },
+        { id: "default", name: "Default (recommended)" },
+        { id: "sonnet", name: "Sonnet" },
+      ],
     })
   })
+
+  test("sends the default row rather than letting the CLI resolve a model of its own", async () => {
+    // Omitting `model` hands the choice to the CLI's settings chain, which can
+    // name a model the picker never showed. `default` is a row the SDK serves.
+    expect(await turnModelOption("default")).toBe("default")
+    expect(await turnModelOption("opus[1m]")).toBe("opus[1m]")
+  })
 })
+
+// `default` is deliberately not first: the picker must find it by the harness's
+// own marking, not by position.
+const PROBED_MODELS = [
+  { value: "opus[1m]", displayName: "Opus (1M context)", description: "", resolvedModel: "claude-opus-5[1m]" },
+  { value: "default", displayName: "Default (recommended)", description: "", resolvedModel: "claude-opus-5[1m]" },
+  { value: "sonnet", displayName: "Sonnet", description: "", resolvedModel: "claude-sonnet-5" },
+]
+
+function probeQuery(calls: Parameters<NonNullable<ClaudeSdkDriverOptions["query"]>>[0][] = []): NonNullable<ClaudeSdkDriverOptions["query"]> {
+  return (input) => {
+    calls.push(input)
+    return Object.assign((async function* () {})(), {
+      close() {},
+      supportedModels: async () => PROBED_MODELS,
+    }) as unknown as Query
+  }
+}
+
+function probedDriver() {
+  return createClaudeSdkDriver(
+    { lifecycle: () => createSessionTurnLifecycle(), pendingPermissions: new Map(), pendingQuestions: new Map(), bindSession() {} } as never,
+    { query: probeQuery(), executable: () => "/fake/claude" },
+  )
+}
+
+async function turnModelOption(modelID: string) {
+  const calls: Parameters<NonNullable<ClaudeSdkDriverOptions["query"]>>[0][] = []
+  const host = {
+    lifecycle: () => createSessionTurnLifecycle(), pendingPermissions: new Map(), pendingQuestions: new Map(),
+    bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
+    getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
+    getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
+    updatePermissionState() {},
+  } as unknown as SdkRuntimeDriverHost
+  await createClaudeSdkDriver(host, { query: probeQuery(calls), executable: () => "/fake/claude" }).runTurn({
+    sessionId: "session-1",
+    getAgentSessionId: () => "claude-sdk:session-1",
+    input: { parts: [{ type: "text", text: "hi" }], assistantMessageId: "assistant-1", model: { providerID: "claude", modelID } },
+    directory: "/repo", abort: new AbortController(), ingest() {}, associateChild() {},
+    observeSubagent: async () => ({ event: {} }), rebindAgentSession() {}, model: "",
+  } as unknown as SdkRuntimeTurnInput)
+  return calls.at(-1)!.options!.model
+}

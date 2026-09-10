@@ -153,7 +153,6 @@
       "isAutoLevel",
       "isPermissionCeilingError",
       "isRuntimeGoalStatus",
-      "isSdkModelId",
       "live",
       "modelConfigOption",
       "narrowerPermissionLevel",
@@ -166,13 +165,9 @@
       "recovering",
       "requireGoalAction",
       "requireGoalResource",
-      "requireSdkModelId",
       "resolveSessionModel",
       "RUNTIME_GOAL_STATUSES",
       "safeAgentProcessDescriptor",
-      "SDK_MODEL_CATALOG",
-      "sdkModelConfigOption",
-      "sdkModelOptions",
       "widestPermissionModeUnder"
     ],
     "@claxedo/agent-sdk-runtime/harnesses": [

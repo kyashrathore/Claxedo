@@ -28,7 +28,7 @@ import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
 import { createRuntimeEventHub } from "./runtime-event-hub"
 import { deriveSessionTitle, extractPromptTitleText, hasConcreteSessionTitle } from "./session-title"
-import { resolveSessionModel } from "./session-model"
+import { DEFAULT_MODEL_ID, resolveSessionModel } from "./session-model"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./runtime/turn-outcome"
 import { createTurnPublication } from "./runtime/turn-publication"
@@ -675,7 +675,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (create.id) assertCreateBindingScope(create.id, create)
         const adapter = await adapterFor(create.harness)
         if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
-          adapter.setModel(create.model.modelID === "default" ? "" : create.model.modelID)
+          adapter.setModel(create.model.modelID === DEFAULT_MODEL_ID ? "" : create.model.modelID)
         }
         const session = await adapter.createSession(create.directory, create.title, create.id)
         // Provider creation establishes the local row; the runtime completes
@@ -748,6 +748,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const { adapter, config } = await runtimeForSession(turn.sessionId)
         if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
         const directory = session.directory ?? undefined
+        const binding = executionBinding(turn.sessionId, directory)
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
@@ -803,7 +804,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             payload.type === "message.updated"
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId)
-          void track(() => runTurn(executionBinding(turn.sessionId, directory), prompt, adapter, admission, releaseAdmission, !!handoff, openingUserPublished, turn.admission)
+          void track(() => runTurn(binding, prompt, adapter, admission, releaseAdmission, !!handoff, openingUserPublished, turn.admission)
             .finally(releaseAdmission)).catch((error) => console.error("AgentRuntime turn finalization failed", error))
         } catch (error) {
           releaseAdmission()
@@ -815,7 +816,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const adapter = await adapterForSession(sessionId)
         if (!adapter.abort) throw new Error("This harness does not support abort")
         const result = await adapter.abort(executionBinding(sessionId, directory))
-        if (result.ok && result.status === "cancelled") {
+        // An adapter with no live turn can still have an unfinished persisted
+        // turn after its process restarted. Its idle acknowledgement also
+        // completes that cancellation; otherwise Stop can never clear busy.
+        if (result.ok && (result.status === "cancelled" || store.getSession(sessionId)?.status === "busy")) {
           completeCancellation(sessionId, directory)
         }
         return result

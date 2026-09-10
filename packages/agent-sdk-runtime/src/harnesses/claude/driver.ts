@@ -32,7 +32,8 @@ import { goalCapabilities } from "../../capabilities"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-party-mcp"
 import { createLiveModelSource } from "../../live-model-source"
-import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
+import { DEFAULT_MODEL_ID } from "../../session-model"
+import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-options"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
@@ -597,11 +598,11 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
    */
   private async fetchModels(directory?: string): Promise<SdkModelEntry[]> {
     const abort = new AbortController()
-    const q: Query = query({
+    const q: Query = (this.driverOptions.query ?? query)({
         prompt: idlePrompt(),
       options: {
         cwd: directory ?? process.cwd(),
-        pathToClaudeCodeExecutable: requireClaudeExecutable(),
+        pathToClaudeCodeExecutable: (this.driverOptions.executable ?? requireClaudeExecutable)(),
         abortController: abort,
         env: claudeSpawnEnv({
           ...process.env,
@@ -627,6 +628,9 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         id: model.value,
         name: model.displayName,
         ...(model.description ? { description: model.description } : {}),
+        // The row `defaultSessionModel` selects when the session names no model,
+        // so the picker marks the same one the turn sends.
+        ...(model.value === DEFAULT_MODEL_ID ? { isDefault: true as const } : {}),
         // Model-specific effort metadata drives the harness config options.
         ...(model.supportsEffort ? { supportsEffort: true } : {}),
         ...(model.supportedEffortLevels?.length
@@ -767,10 +771,13 @@ function claudeMcpServers(input: Record<string, ResolvedMcpServer>): Record<stri
   }))
 }
 
+/**
+ * `default` is forwarded, not swallowed: the SDK serves it as a real model row.
+ * Omitting `model` instead hands the choice to the CLI's settings resolution,
+ * which answers `settings.json` and can name a model the picker never showed.
+ */
 function turnModel(input: string | undefined, configuredModel: string) {
-  const value = text(input) ?? text(configuredModel)
-  if (!value || value === "default") return undefined
-  return value
+  return text(input) ?? text(configuredModel)
 }
 
 function sessionPermissionSuggestions(suggestions?: PermissionUpdate[]) {

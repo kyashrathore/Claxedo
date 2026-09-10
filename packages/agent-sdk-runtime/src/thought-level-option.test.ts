@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { resolveTurnEffort, thoughtLevelConfigOption } from "./sdk-model-catalog"
+import { resolveTurnEffort, thoughtLevelConfigOption } from "./sdk-model-options"
 
 /**
  * Shapes transcribed from the Claude Agent SDK's `ModelInfo` (sdk.d.ts):

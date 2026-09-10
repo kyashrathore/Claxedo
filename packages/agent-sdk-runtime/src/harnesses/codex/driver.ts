@@ -20,7 +20,7 @@ import { Log } from "../../log"
 import { createLiveModelSource } from "../../live-model-source"
 import {
   resolveSupportedEffort,
-} from "../../sdk-model-catalog"
+} from "../../sdk-model-options"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,

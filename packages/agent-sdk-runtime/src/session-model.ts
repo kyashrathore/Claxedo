@@ -1,6 +1,13 @@
 import type { PromptModel, SessionConfig, SessionHarness } from "./index"
 import { harnessKey } from "./harness-types"
 
+/**
+ * The `modelID` a session carries while it has selected no model. Harnesses
+ * resolve it themselves: the Claude SDK serves a model row under exactly this
+ * id, so the driver forwards it rather than translating it away.
+ */
+export const DEFAULT_MODEL_ID = "default"
+
 const NATIVE_COMPATIBILITY_MODEL: PromptModel = {
   providerID: "anthropic",
   modelID: "claude-sonnet-4-6",
@@ -17,7 +24,7 @@ export function defaultSessionModel(harness: SessionHarness): PromptModel {
   if (harness.access === "connection" || harness.id !== "opencode") {
     const providerID = harnessKey(harness)
     if (!providerID) throw new Error(`Invalid harness identity: ${harness.id}`)
-    return { providerID, modelID: "default" }
+    return { providerID, modelID: DEFAULT_MODEL_ID }
   }
   return NATIVE_COMPATIBILITY_MODEL
 }

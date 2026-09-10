@@ -10,7 +10,7 @@ import os from "node:os"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { piRpcAdapter } from "@claxedo/agent-event-runtime/harnesses/pi"
 import type { AgentConfigOption } from "../../index"
-import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
+import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-options"
 import {
   extractTextFromParts,
   record,

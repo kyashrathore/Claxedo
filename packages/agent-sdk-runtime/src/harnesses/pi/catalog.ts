@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url"
 import path from "node:path"
 import { piPackageRoot } from "./executable"
-import type { SdkModelEntry } from "../../sdk-model-catalog"
+import type { SdkModelEntry } from "../../sdk-model-options"
 
 /**
  * `get_available_models` is auth-filtered. Pi's `ModelRuntime.getModels()` is

@@ -6,7 +6,7 @@ import {
   modelConfigOption,
   thoughtLevelConfigOption,
   type SdkModelEntry,
-} from "../../sdk-model-catalog"
+} from "../../sdk-model-options"
 import { asRecord } from "@claxedo/helpers/guards"
 import { text } from "../shared/sdk-runtime-adapter"
 import type { CodexAppServerProcess } from "./app-server-process"

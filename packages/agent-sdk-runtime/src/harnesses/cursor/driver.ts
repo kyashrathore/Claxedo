@@ -20,7 +20,7 @@ import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-party-mcp"
 import { randomUUID } from "crypto"
 import { createLiveModelSource } from "../../live-model-source"
-import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
+import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-options"
 import {
   CURSOR_PERMISSION_MODES,
   PermissionModeSelection,
@@ -135,9 +135,6 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   private processError: string | null = null
   private readonly modelSource = createLiveModelSource({
     harness: "cursor",
-    // Cursor's list is a cloud call behind an API key; a missing key must
-    // surface as a failure, not as a synthesized static catalog.
-    fallbackToCatalog: false,
     fetchModels: () => this.fetchModels(),
   })
 

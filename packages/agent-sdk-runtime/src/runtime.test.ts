@@ -1339,6 +1339,21 @@ describe("createAgentRuntime", () => {
     })
   })
 
+  test("rejects a turn without an execution binding before recording it as busy", async () => {
+    const store = createMemoryRuntimeStore()
+    store.bindSession({ sessionId: "unbound", directory: "/repo", agentSessionId: "unbound" })
+    store.updateSessionConfig("unbound", { harness: { id: "pi", access: "native" } })
+    const runtime = createAgentRuntime({ store, harnesses: [testHarness()] })
+    try {
+      await expect(runtime.turns.start({ sessionId: "unbound", text: "hello" })).rejects.toThrow()
+      expect(store.getSession("unbound")?.status).not.toBe("busy")
+      expect(store.getMessages("unbound")).toEqual([])
+      expect(store.acquireTurnLease("unbound")).toBeDefined()
+    } finally {
+      await runtime.dispose()
+    }
+  })
+
   test("rejects a caller-supplied id bound to another workspace before adapter creation", async () => {
     const store = createMemoryRuntimeStore()
     const rows = store
@@ -2039,6 +2054,48 @@ describe("createAgentRuntime", () => {
     } finally {
       release()
       await runtime.dispose()
+    }
+  })
+
+  test("an idle adapter acknowledgement settles a persisted unfinished turn", async () => {
+    const root = tempRoot()
+    let store = createSqliteRuntimeStore({ root })
+    const harness = () => testHarness({ abort: async () => ({ ok: true, status: "already_idle" }) })
+    let runtime = createAgentRuntime({ store, harnesses: [harness()] })
+    try {
+      const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
+      store.startTurn({
+        sessionId: session.id,
+        userMessageId: "interrupted-user",
+        assistantMessageId: "interrupted-assistant",
+        agent: "build",
+        model: { providerID: "pi", modelID: "default" },
+        parts: [{ type: "text", text: "interrupted" }],
+      })
+      await runtime.dispose()
+      store.close?.()
+      store = createSqliteRuntimeStore({ root })
+      runtime = createAgentRuntime({ store, harnesses: [harness()] })
+      expect(store.getSession(session.id)?.status).toBe("busy")
+      const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
+      await expect(runtime.turns.abort(session.id)).resolves.toEqual({ ok: true, status: "already_idle" })
+      expect(await events).toContainEqual(expect.objectContaining({ payload: { type: "finish", sessionId: session.id } }))
+      expect(store.getSession(session.id)).toMatchObject({
+        status: null,
+        lastTurn: { status: "cancelled", reason: "abort", assistantMessageId: "interrupted-assistant" },
+      })
+      const outcome = store.getSession(session.id)?.lastTurn
+      await runtime.turns.abort(session.id)
+      expect(store.getSession(session.id)?.lastTurn).toEqual(outcome)
+      const replacement = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
+      await runtime.turns.start({ sessionId: session.id, messageId: "replacement-user", text: "continue" })
+      await replacement
+      await tick()
+      expect(store.getSession(session.id)?.lastTurn?.status).toBe("completed")
+    } finally {
+      await runtime.dispose()
+      store.close?.()
+      removeTestTempDir(root)
     }
   })
 

@@ -13,7 +13,7 @@ import type {
   AgentPermissionModeState,
 } from "../../adapter-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
-import type { NativeSdkHarnessId } from "../../sdk-model-catalog"
+import type { NativeSdkHarnessId } from "../../harness-types"
 import type { AgentProcessObserver } from "../../process-observer"
 import type { SubagentObservation } from "../../subagent-admission"
 import type { AgentSessionBinding } from "./agent-session-index"
