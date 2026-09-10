@@ -16,7 +16,9 @@ import {
   groupParts,
   isSubagentToolPart,
   type GroupablePart,
+  type PartRef,
 } from "./part-groups"
+import { assistantMessageSettled, countFoldableGroups, foldedGroupKeys, turnFoldDecision } from "./turn-fold"
 import { SessionTurn } from "./session-turn"
 import { FileStub } from "./story-stubs"
 import type { SubagentView } from "../context/data"
@@ -1010,26 +1012,34 @@ function TranscriptLab() {
     const current = session()
     if (!current) return undefined
     const show = effective().machinery === "thinking"
-    const tally = { work: 0, context: 0, agents: 0, standalone: 0, members: 0, hidden: 0, subagents: 0 }
+    const tally = { work: 0, context: 0, agents: 0, standalone: 0, members: 0, hidden: 0, subagents: 0, folded: 0 }
     for (const user of current.messages) {
       if (user.role !== "user") continue
       const items: GroupablePart[] = []
+      const partByID = new Map<string, AgentContentPart>()
+      let settled = false
       for (const message of current.messages) {
         if (message.role !== "assistant" || message.parentID !== user.id) continue
+        settled ||= assistantMessageSettled(message)
         for (const part of parts()[message.id] ?? []) {
           if (part.type === "tool" && HIDDEN_TOOLS.has(part.tool)) tally.hidden += 1
           if (isSubagentToolPart(part)) tally.subagents += 1
           if (!renderable(part, show)) continue
+          partByID.set(part.id, part)
           items.push({ messageID: message.id, part })
         }
       }
-      for (const group of groupParts(items)) {
+      const groups = groupParts(items)
+      for (const group of groups) {
         if (group.type === "part") tally.standalone += 1
         else {
           tally[group.type] += 1
           tally.members += group.refs.length
         }
       }
+      const partOf = (ref: PartRef) => partByID.get(ref.partID)
+      const decision = turnFoldDecision({ settled, foldableCount: countFoldableGroups(groups, partOf) })
+      tally.folded += foldedGroupKeys(decision, groups, partOf).size
     }
     return tally
   })
@@ -1259,11 +1269,12 @@ function TranscriptLab() {
                     color: PANEL_TEXT,
                   }}
                 >
-                  <Census label="work groups" value={tally().work} note={`${tally().members} rows folded`} />
+                  <Census label="work groups" value={tally().work} note={`${tally().members} rows grouped`} />
                   <Census label="context groups" value={tally().context} />
                   <Census label="agent rows" value={tally().agents} note={`${tally().subagents} subagent calls`} />
                   <Census label="standalone rows" value={tally().standalone} />
                   <Census label="hidden parts" value={tally().hidden} note="never rendered" />
+                  <Census label="groups folded" value={tally().folded} note="hidden behind the fold" />
                 </div>
               )}
             </Show>

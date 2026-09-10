@@ -50,8 +50,23 @@ describe("isFoldableGroup", () => {
       tool("p4", "task"),
       tool("p5", "task"),
     ])
-    expect(groups.map((group) => isFoldableGroup(group, part))).toEqual([false, true, true, true])
-    expect(countFoldableGroups(groups, part)).toBe(3)
+    expect(groups.map((group) => isFoldableGroup(group, part))).toEqual([false, true, true, false])
+    expect(countFoldableGroups(groups, part)).toBe(2)
+  })
+
+  test("a subagent spawn stays visible whether it grouped or stands alone", () => {
+    const grouped = turn([tool("p1", "bash"), tool("p2", "agent"), tool("p3", "agent")])
+    expect(grouped.groups.map((group) => isFoldableGroup(group, grouped.part))).toEqual([true, false])
+
+    const alone = turn([tool("p1", "bash"), tool("p2", "bash"), tool("p3", "agent")])
+    expect(alone.groups.map((group) => isFoldableGroup(group, alone.part))).toEqual([true, false])
+  })
+
+  test("a turn whose only machinery is subagents does not fold at all", () => {
+    const { groups, part } = turn([text("p0", "prose"), tool("p1", "bash"), tool("p2", "agent"), tool("p3", "agent")])
+    const decision = turnFoldDecision({ settled: true, foldableCount: countFoldableGroups(groups, part) })
+    expect(decision.canFold).toBe(false)
+    expect(foldedGroupKeys(decision, groups, part).size).toBe(0)
   })
 
   test("a standalone group whose part is gone is not foldable", () => {
@@ -106,14 +121,34 @@ describe("foldedGroupKeys", () => {
     tool("p1", "read"),
     tool("p2", "bash"),
     tool("p3", "bash"),
-    tool("p4", "task"),
-    tool("p5", "task"),
+    tool("p4", "grep"),
+    tool("p5", "glob"),
   ])
 
   test("a settled fold hides every machinery group and keeps the prose", () => {
     const decision = turnFoldDecision({ settled: true, foldableCount: countFoldableGroups(groups, part) })
     const keys = foldedGroupKeys(decision, groups, part)
     expect(groups.filter((group) => !keys.has(group.key)).map((group) => group.type)).toEqual(["part"])
+  })
+
+  test("a settled fold keeps the prose and the subagent card", () => {
+    const withAgents = turn([
+      text("p0", "prose"),
+      tool("p1", "read"),
+      tool("p2", "bash"),
+      tool("p3", "bash"),
+      tool("p4", "agent"),
+      tool("p5", "agent"),
+    ])
+    const decision = turnFoldDecision({
+      settled: true,
+      foldableCount: countFoldableGroups(withAgents.groups, withAgents.part),
+    })
+    const keys = foldedGroupKeys(decision, withAgents.groups, withAgents.part)
+    expect(withAgents.groups.filter((group) => !keys.has(group.key)).map((group) => group.type)).toEqual([
+      "part",
+      "agents",
+    ])
   })
 
   test("an expanded turn hides nothing", () => {

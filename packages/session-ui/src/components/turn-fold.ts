@@ -1,16 +1,18 @@
 import type { AgentAssistantMessage } from "@claxedo/agent-runtime-contract"
-import type { PartGroup, PartRef } from "./part-groups"
+import { isSubagentToolPart, type PartGroup, type PartRef } from "./part-groups"
 
 /**
  * Resolves a group member to the part it renders. A standalone group is foldable
- * only when it holds a tool, so the caller's part index is the only way to tell
- * machinery from prose.
+ * only when it holds a tool that is not a subagent spawn, so the caller's part
+ * index is the only way to tell machinery from prose and from delegated work.
  */
-export type FoldablePartLookup = (ref: PartRef) => { type: string } | undefined
+export type FoldablePartLookup = (ref: PartRef) => FoldablePart | undefined
 
-// A single tool is already one compact, useful row. Folding it replaces the only
-// actionable content with an extra click and breaks the standalone-tool/task-card
-// contract. Grouped runs count as one row because they own their own disclosure.
+type FoldablePart = { type: string; tool?: string; state?: { input?: unknown } }
+
+// A single tool is already one compact, useful row: folding it replaces the only
+// actionable content with an extra click. Grouped runs count as one row because
+// they own their own disclosure.
 const SETTLED_FOLD_MINIMUM = 2
 // A running turn keeps its latest group visible, so it needs one more than the
 // settled minimum before the fold hides anything worth a click.
@@ -57,14 +59,20 @@ export function finalTextPartID(groups: readonly PartGroup[], part: FoldablePart
   return id
 }
 
-/** Machinery — everything a turn did that is not the message it is addressing to the user. */
+/**
+ * Machinery — everything a turn did that is not the message it is addressing to
+ * the user. A subagent spawn is not machinery: its card reports work the user
+ * delegated and is usually the row they most want from the turn, so it stays
+ * visible whether it landed in an agent group or alone.
+ */
 export function isFoldableGroup(group: PartGroup, part: FoldablePartLookup, scope: FoldScope = {}): boolean {
+  if (group.type === "agents") return false
   if (group.type !== "part") return true
-  const type = part(group.ref)?.type
-  if (type === "tool") return true
+  const resolved = part(group.ref)
+  if (resolved?.type === "tool") return !isSubagentToolPart(resolved)
   if (scope.shape !== "final-message") return false
-  if (type === "reasoning") return true
-  if (type === "text") return group.ref.partID !== scope.finalTextPartID
+  if (resolved?.type === "reasoning") return true
+  if (resolved?.type === "text") return group.ref.partID !== scope.finalTextPartID
   return false
 }
 
