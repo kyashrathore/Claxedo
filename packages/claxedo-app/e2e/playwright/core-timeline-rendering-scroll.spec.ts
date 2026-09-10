@@ -648,9 +648,12 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await expect(listItem.locator('[data-component="animated-number"]')).toHaveAttribute("aria-label", "1")
     await expect(listItem.locator('[data-slot="tool-count-label-stem"]')).toContainText("list")
 
-    await expect(group.locator('[data-slot="context-tool-group-item"]')).toHaveCount(0)
+    // An expanded group holds each member's own tool row — it no longer wraps them in a
+    // stripped-down item, so the rows are what the count is taken from.
+    const members = group.locator('[data-component="context-tool-group-list"] [data-component="tool-trigger"]')
+    await expect(members).toHaveCount(0)
     await group.locator('[data-component="context-tool-group-trigger"]').click()
-    await expect(group.locator('[data-slot="context-tool-group-item"]')).toHaveCount(4)
+    await expect(members).toHaveCount(4)
   })
 
   test("a context-tool run split by an unrelated tool call forms two separate groups", async ({ page }) => {

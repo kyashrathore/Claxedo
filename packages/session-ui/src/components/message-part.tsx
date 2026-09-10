@@ -1054,8 +1054,8 @@ export function AssistantMessageDisplay(props: {
 
 /**
  * A run of read/list/glob/grep folded to one "Explored" line. `parts` drives the header
- * counts only; the member rows are passed in as children so each one renders through its
- * own tool renderer, and context-tool-group-list strips them back to a compact row.
+ * counts only; the member rows are passed in as children and render through their own
+ * tool renderers, so an expanded group holds ordinary tool rows.
  */
 export function ContextToolGroup(props: {
   parts: AgentToolPart[]

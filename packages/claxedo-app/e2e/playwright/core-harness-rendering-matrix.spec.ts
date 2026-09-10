@@ -505,9 +505,10 @@ test.describe("core harness rendering matrix @core", () => {
     // the skill and compaction parts, so it is a lone work tool with no group of its own.
     await expect(content.locator('[data-slot="apply-patch-filename"], [data-slot="message-part-title-filename"]', { hasText: "app.ts" }).first()).toBeVisible({ timeout: 45_000 })
 
-    // An unregistered tool name falls back to GenericTool: the raw name becomes the
-    // title and the first matching input field becomes the subtitle.
-    await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "custom_mcp_tool" })).toBeVisible()
+    // An unregistered tool name falls back to GenericTool, which reads the row as a
+    // sentence (`humanizeTool`): the name becomes the action, the first matching input
+    // field the subtitle. It is the tool name that survives, not its raw punctuation.
+    await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "Custom mcp tool" })).toBeVisible()
     await expect(content.locator('[data-slot="basic-tool-tool-subtitle"]', { hasText: "vector search" })).toBeVisible()
   })
 
@@ -573,13 +574,16 @@ test.describe("core harness rendering matrix @core", () => {
     const fixture = loadFixtureFile("opencode", assistantId) as { lifecycle: Record<"pending" | "running" | "completed" | "error", Envelope> }
     const content = page.locator(assistantContent())
 
+    // The command names the row from the first payload onwards. A call that sits on
+    // "Running" for minutes while refusing to say which command it is running is the
+    // defect this replaced; the input carries `command` well before the call returns.
     mock.emit(fixture.lifecycle.pending.payload as never, fixture.lifecycle.pending.directory || dir)
     const row = content.locator('[data-component="tool-part-wrapper"]').filter({ has: page.locator('[data-slot="basic-tool-tool-title"]') }).last()
     await expect(row).toBeVisible({ timeout: 30_000 })
-    await expect(content.getByText("bun test")).toHaveCount(0)
+    await expect(content.getByText("bun test")).toBeVisible({ timeout: 30_000 })
 
     mock.emit(fixture.lifecycle.running.payload as never, fixture.lifecycle.running.directory || dir)
-    await expect(content.getByText("bun test")).toHaveCount(0)
+    await expect(content.getByText("bun test")).toBeVisible({ timeout: 30_000 })
 
     mock.emit(fixture.lifecycle.completed.payload as never, fixture.lifecycle.completed.directory || dir)
     await expect(content.getByText("bun test")).toBeVisible({ timeout: 30_000 })
