@@ -403,7 +403,11 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module (2026-09-09): the same terminal agent catalog / saved-commands
   // owner app-local reviews, reached from the rail and the terminal creator.
   // No new package edge. Measured 1058 / 57.
-  ceilings: { modules: 1058, packages: 57 },
+  // +1 module (2026-09-10): session-bands, the rail's own split of the session
+  // list into the sessions still in play and the ones gone quiet. It replaces
+  // session-order-hold one-for-one at the same call site and is reached only
+  // from rail-sidebar. No new package edge. Measured 1059 / 57.
+  ceilings: { modules: 1059, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -299,7 +299,11 @@ export const appLocal: Policy = {
   // quick-launch buttons and the creator read the pair instead of reaching into
   // a settings pane, and `settings/ui/terminals.tsx` leaves this closure with
   // the lazy Settings dialog. Net +1; no new package edge. Measured 1007 / 38.
-  ceilings: { modules: 1007, packages: 38 },
+  // +1 module (2026-09-10): session-bands, the rail's own split of the session
+  // list into the sessions still in play and the ones gone quiet. It replaces
+  // session-order-hold one-for-one at the same call site and is reached only
+  // from rail-sidebar. No new package edge. Measured 1008 / 38.
+  ceilings: { modules: 1008, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
