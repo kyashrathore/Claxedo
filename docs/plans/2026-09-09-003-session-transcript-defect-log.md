@@ -92,6 +92,48 @@ D13 are wrong, and both hid the defects they were built to show:
   when a call is interrupted before its input finished streaming, leaving no
   `command` key at all. That needs an interrupted trace to reproduce.
 
+### D26 measured: the cost is the duplicate, not the animation
+
+The entry reasoned from the animated property and the usage count, and said so
+("Not profiled"). Profiling inverts its emphasis. In the transcript lab on a real
+captured session, unfolded with a running last turn: **40 `TextShimmer`
+instances, 40 duplicated text copies, 1 animation actually running.** Only the
+live row is pending, so the N-concurrent-infinite-animations premise does not
+hold; what does scale with the transcript is the second copy of the text each
+instance renders whether or not it sweeps.
+
+Fixed by mounting the swept copy only while it sweeps — 40 spans and 469
+duplicated characters drop to 1 and 8. The technique is deliberately unchanged:
+trading the sweep for an opacity pulse would change the look on the strength of
+an assumption the measurement refutes.
+
+### D8 does not reproduce
+
+Measured across column widths 900, 700, 560, 460 and 380 px: the subagent chip
+row never overflows (`scrollWidth === clientWidth` at every width) and no chip
+escapes the column. A sweep for *any* element inside the transcript column whose
+box escapes it, excluding elements inside a scroll container, returns empty —
+the wide shell output and markdown tables are all contained.
+
+So no subagent surface the lab renders overflows. The card the report describes
+is most likely the one D7 names: the one-off right-side split, which is a
+different layout mechanism and is not in the lab. Worth re-checking as part of
+D7 rather than as a CSS defect of its own.
+
+### D16's new-thread half, located
+
+`sessionViewKey` keys a draft by session id, else by draft id, else by
+`workspace:<dir>:draft`. `PromptProvider` takes its `draftId` from the pane's
+`surfaceId` (`directory-scope.tsx:398`), so a new thread opened as a draft-session
+pane has its own draft — but one opened without a surface id falls to the shared
+per-directory key, which every later new thread in that directory then mounts.
+That accounts for the "new thread" half of the report.
+
+The submit path does clear the pre-provisioning scope: `capturePromptSubmitScope`
+records the mounted identity before the session exists, and `clear()` resets it.
+So the "come back to another existing thread" half is still unexplained, and
+reproducing it needs an actual send in a real session rather than a fixture.
+
 ### D25's cause, located but not fixed
 
 The flap is not in the Thinking row and not in the 80 ms hold — it is the
