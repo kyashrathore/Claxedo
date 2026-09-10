@@ -2587,4 +2587,60 @@ describe("session ordering timestamps", () => {
     assert.equal(after?.time?.updated, 111)
     assert.equal(after?.time?.created, 1_000)
   })
+
+  void it("only a human turn records lastHumanTurn; an agent turn moves updated alone", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    const turn = (sessionId: string, actorKind?: "human" | "agent") =>
+      store.startTurn({
+        sessionId,
+        assistantMessageId: `m-${sessionId}-${actorKind ?? "none"}`,
+        agent: "claude",
+        model: { providerID: "anthropic", modelID: "claude-opus-5" },
+        parts: [{ type: "text", text: "hi" }],
+        ...(actorKind ? { actorId: "actor-1", actorKind } : {}),
+      })
+    const read = (id: string) =>
+      store.getSession(id) as { time?: { updated?: number; lastHumanTurn?: number } } | null
+
+    store.bindSession({ sessionId: "human", directory: "/work", agentSessionId: "ah", createdAt: 1 })
+    store.bindSession({ sessionId: "agent", directory: "/work", agentSessionId: "aa", createdAt: 1 })
+    turn("human", "human")
+    turn("agent", "agent")
+
+    assert.ok(typeof read("human")?.time?.lastHumanTurn === "number")
+    // A wake or subagent driving a session must not make it look freshly spoken to.
+    assert.equal(read("agent")?.time?.lastHumanTurn, undefined)
+    assert.ok(typeof read("agent")?.time?.updated === "number")
+  })
+
+  void it("an agent turn after a human one leaves the human stamp where it was", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.startTurn({
+      sessionId: "s1",
+      assistantMessageId: "m1",
+      agent: "claude",
+      model: { providerID: "anthropic", modelID: "claude-opus-5" },
+      parts: [{ type: "text", text: "hi" }],
+      actorId: "actor-1",
+      actorKind: "human",
+    })
+    const db = (store as unknown as { db: { prepare(sql: string): { run(...p: unknown[]): unknown } } }).db
+    db.prepare("UPDATE session SET last_human_turn_at = ? WHERE id = ?").run(222, "s1")
+
+    store.startTurn({
+      sessionId: "s1",
+      assistantMessageId: "m2",
+      agent: "claude",
+      model: { providerID: "anthropic", modelID: "claude-opus-5" },
+      parts: [{ type: "text", text: "wake" }],
+      actorId: "wake-1",
+      actorKind: "agent",
+    })
+
+    const after = store.getSession("s1") as { time?: { lastHumanTurn?: number } } | null
+    assert.equal(after?.time?.lastHumanTurn, 222)
+  })
 })

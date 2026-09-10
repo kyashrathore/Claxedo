@@ -676,6 +676,7 @@ export class RuntimeStore {
         permission_state_json TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
+        last_human_turn_at INTEGER,
         status TEXT,
         recovery_error TEXT,
         archived_at INTEGER
@@ -928,6 +929,9 @@ export class RuntimeStore {
       "ALTER TABLE session ADD COLUMN permission_mode TEXT",
       "ALTER TABLE session ADD COLUMN permission_ceiling TEXT",
       "ALTER TABLE session ADD COLUMN permission_state_json TEXT",
+      // Existing rows stay null: a session whose last human turn predates this column
+      // reads as "not recently spoken to", which is what a long-dormant session is.
+      "ALTER TABLE session ADD COLUMN last_human_turn_at INTEGER",
     ]) {
       try {
         this.db.exec(sql)
@@ -1924,6 +1928,13 @@ export class RuntimeStore {
     handoff?: SessionConfig["handoff"]
     createdAt: number
     updatedAt: number
+    /**
+     * When a *human* last started a turn here. `updated_at` moves for any turn, so a
+     * wake, a subagent or a channel message advances it too; this only moves when the
+     * reader speaks, which is what the sidebar needs to tell a live session from one
+     * the agents are working through on their own.
+     */
+    lastHumanTurnAt?: number
     status?: string
     recoveryError?: string | null
     parentSessionId?: string
@@ -1934,6 +1945,7 @@ export class RuntimeStore {
       parent_id: string | null
       title: string | null
       recovery_error: string | null
+      last_human_turn_at: number | null
       agent_session_id: string | null
       process_key: string | null
       harness_id: string | null
@@ -1954,6 +1966,7 @@ export class RuntimeStore {
           parent_id,
           title,
           recovery_error,
+          last_human_turn_at,
           agent_session_id,
           process_key,
           harness_id,
@@ -1994,9 +2007,10 @@ export class RuntimeStore {
         handoff_json,
         created_at,
         updated_at,
+        last_human_turn_at,
         status,
         recovery_error
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         parent_id = COALESCE(excluded.parent_id, session.parent_id),
         directory = excluded.directory,
@@ -2017,6 +2031,7 @@ export class RuntimeStore {
         agent = excluded.agent,
         handoff_json = excluded.handoff_json,
         updated_at = excluded.updated_at,
+        last_human_turn_at = excluded.last_human_turn_at,
         status = COALESCE(excluded.status, session.status),
         recovery_error = excluded.recovery_error`,
       )
@@ -2040,6 +2055,7 @@ export class RuntimeStore {
         input.handoff === undefined ? (prev?.handoff_json ?? null) : sessionHandoffJson(input.handoff),
         prev?.created_at ?? input.createdAt,
         input.updatedAt,
+        input.lastHumanTurnAt ?? prev?.last_human_turn_at ?? null,
         input.status ?? null,
         input.recoveryError ?? prev?.recovery_error ?? null,
       )
@@ -2161,6 +2177,10 @@ export class RuntimeStore {
         directory,
         createdAt: row.ts,
         updatedAt: row.ts,
+        // A wake, a subagent or a channel message starts a turn the same way the
+        // reader does, so `updated_at` alone cannot tell them apart. `actorKind`
+        // comes from the request's auth claims and a client cannot forge it.
+        ...(control.actorKind === "human" ? { lastHumanTurnAt: row.ts } : {}),
         status: "busy",
         recoveryError: null,
       })
@@ -2863,6 +2883,7 @@ export class RuntimeStore {
     process_key?: string | null
     created_at: number
     updated_at: number
+    last_human_turn_at?: number | null
     archived_at?: number | null
     status?: string | null
     recovery_error?: string | null
@@ -2878,6 +2899,11 @@ export class RuntimeStore {
       time: {
         created: row.created_at,
         updated: row.updated_at,
+        /* Null on every session that predates the column, and on one only agents have
+           ever driven — both read as "the reader has not been here", which is true. */
+        ...(row.last_human_turn_at !== undefined && row.last_human_turn_at !== null
+          ? { lastHumanTurn: row.last_human_turn_at }
+          : {}),
         ...(row.archived_at !== undefined && row.archived_at !== null ? { archived: row.archived_at } : {}),
       },
       ...(harness
@@ -3004,6 +3030,7 @@ export class RuntimeStore {
           agent,
           created_at,
           updated_at,
+          last_human_turn_at,
           status,
           recovery_error,
           archived_at
@@ -3137,6 +3164,7 @@ export class RuntimeStore {
           agent,
           created_at,
           updated_at,
+          last_human_turn_at,
           status,
           recovery_error,
           archived_at,
