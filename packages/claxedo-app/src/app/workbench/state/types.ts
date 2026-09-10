@@ -121,7 +121,6 @@ export type ContentMeta = {
   terminalCreateRequestId?: string
   filePath?: string
   pageId?: string
-  returnFocus?: { parentSessionId: string; subagentKey?: string; originId?: string }
   /** Live runtime content payload (title, intent, command, etc.). */
   content?: ContentPayload
 }

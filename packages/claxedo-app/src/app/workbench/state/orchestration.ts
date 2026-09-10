@@ -14,7 +14,7 @@ import { measureRendererPhase } from "@/platform/performance/renderer-trace"
 import type { ContentMeta, ContentPayload, ContentType } from "./types"
 import { PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
-import type { Edge, MovePaneTarget, UseWorkbench } from "../workbench/index"
+import type { MovePaneTarget, UseWorkbench } from "../workbench/index"
 import type { MetadataSliceApi } from "./metadata"
 import type { TerminalSliceApi } from "./terminal"
 import {
@@ -55,10 +55,8 @@ export type LayoutOrchestrationApi = {
   closeContent: (id: string, reason?: ContentCloseReason) => void
   closePane: (paneId: string, opts?: { destroyContent?: boolean }) => void
   moveContent: (id: string, fromPane: string, toPane: MovePaneTarget) => void
-  splitContent: (targetPane: string, edge: Edge, id: string) => void
   /** Alias for `wb.navigation.show(id)`. */
   showContent: (id: string) => void
-  restoreContentFocus: (id: string) => void
 
   /**
    * Internal hook the rail-layout's `onContentClose` calls when the Workbench
@@ -83,45 +81,6 @@ export function createLayoutOrchestration(input: {
   cleanupHook?: CleanupHook
 }): LayoutOrchestrationApi {
   const { wb, meta, terminal, cleanupHook } = input
-
-  const restoreContentFocus = (id: string) => {
-    const origin = meta.get(id)?.returnFocus
-    if (!origin || typeof document === "undefined") return
-    // Focus can be lost twice on the way back to the parent surface: the
-    // target may not be rendered yet (virtualized timeline still mounting),
-    // and a re-render inside the frame budget can REPLACE the node we just
-    // focused — the browser then drops focus to <body>. So a successful
-    // focus() does not end the loop: keep watching for the rest of the budget
-    // and re-assert onto the replacement node, but only while focus sits on
-    // <body> — the user moving focus to any real element ends the restore.
-    const attempt = (remaining: number, focused?: HTMLElement) => {
-      if (focused) {
-        if (focused.isConnected && document.activeElement === focused) {
-          if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1, focused))
-          return
-        }
-        const active = document.activeElement
-        if (active && active !== document.body && active.isConnected) return
-      }
-      const exact = origin.originId
-        ? document.querySelector<HTMLElement>(`[data-subagent-origin-id="${CSS.escape(origin.originId)}"]`)
-        : undefined
-      const marker = origin.subagentKey
-        ? document.querySelector<HTMLElement>(
-            `[data-session-timeline-session-id="${CSS.escape(origin.parentSessionId)}"] [data-subagent-key="${CSS.escape(origin.subagentKey)}"]`,
-          )
-        : document.querySelector<HTMLElement>(`[data-session-timeline-session-id="${CSS.escape(origin.parentSessionId)}"]`)
-      const target = exact ?? marker?.closest<HTMLElement>("a, button") ?? marker
-      if (target && target.getClientRects().length > 0) {
-        target.focus()
-        if (!focused) target.scrollIntoView({ block: "center" })
-        if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1, target))
-        return
-      }
-      if (remaining > 0) requestAnimationFrame(() => attempt(remaining - 1, focused))
-    }
-    queueMicrotask(() => attempt(60))
-  }
 
   const showOrCreate = (
     existing: ContentMeta | undefined,
@@ -216,7 +175,6 @@ export function createLayoutOrchestration(input: {
       terminal.clearForContent(id)
     }
     cleanupHook?.(id, m, reason)
-    restoreContentFocus(id)
     meta.remove(id)
   }
 
@@ -603,15 +561,10 @@ export function createLayoutOrchestration(input: {
       wb.split.move(id, fromPane, toPane)
     },
 
-    splitContent(targetPane, edge, id) {
-      wb.split.split(targetPane, edge, id)
-    },
-
     showContent(id) {
       wb.navigation.show(id)
     },
 
-    restoreContentFocus,
 
     _cleanupOnClose,
   }

@@ -671,7 +671,7 @@ describe("state/orchestration", () => {
     expect(meta.get(id)).toBeDefined()
   })
 
-  test("splitContent + showContent route through wb", () => {
+  test("showContent refocuses a split half without collapsing the split", () => {
     const { layout, wb } = makeFixture()
     const a = layout.openSession("/d", "s1", "A")
     // openSession of `b` will collapse to a single pane. To get a 2-pane
@@ -680,7 +680,7 @@ describe("state/orchestration", () => {
     layout.showContent(a) // refocus on a → single pane displaying a
     const paneA = wb.selectors.contentPane(a)!
     expect(paneA).toBeTruthy()
-    layout.splitContent(paneA, "right" satisfies Edge, b)
+    wb.split.split(paneA, "right" satisfies Edge, b)
     expect(wb.selectors.visiblePanes().length).toBe(2)
     layout.showContent(a)
     expect(wb.selectors.focusedContent()).toBe(a)
@@ -766,7 +766,7 @@ describe("state/orchestration", () => {
         sessionRef: localSessionRef("ses_right", "/work/right"),
       })
       layout.showContent(left)
-      layout.splitContent(wb.selectors.contentPane(left)!, "right" satisfies Edge, right)
+      wb.split.split(wb.selectors.contentPane(left)!, "right" satisfies Edge, right)
       expect(wb.selectors.visiblePanes().length).toBe(2)
 
       // Background adds — `navigation.show` would collapse the split, which is
