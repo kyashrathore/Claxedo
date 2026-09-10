@@ -750,15 +750,21 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("Fix flake")).toHaveCount(0)
   })
 
-  test("claude-sdk (native) — raw \"Grep\" falls back to GenericTool, TodoWrite hidden", async ({ page }) => {
+  test("claude-sdk (native) — capitalised \"Grep\" groups as search, TodoWrite hidden", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page,"claude-sdk")
     const content = page.locator(assistantContent())
     const trace = loadTrace("claude-sdk", assistantId)
     await replay(mock, dir, trace, assistantInfo)
 
-    // Native "Grep" does not match the lowercase registry key, so it falls back to
-    // GenericTool with the raw name as the title.
-    await expect(content.locator('[data-slot="basic-tool-tool-title"]', { hasText: "Grep" })).toBeVisible({ timeout: 45_000 })
+    // The projection canonicalises `Grep` to `grep` at tool-start, so the trace's three
+    // calls reach the real renderer and fold into one context group like their lowercase
+    // peers — rather than three loud generic rows.
+    await expect(content.locator('[data-component="context-tool-group-trigger"]')).toBeVisible({ timeout: 45_000 })
+
+    // The distinguishing assertion: GenericTool titles a row "Called `Grep`". Asserting
+    // the title text alone cannot tell the two renderers apart, because `ui.tool.grep`
+    // is itself "Grep".
+    await expect(content.getByText("Called", { exact: false })).toHaveCount(0)
 
     // TodoWrite is intercepted before it can become a tool-start.
     await expect(content.getByText("Ship it", { exact: true })).toHaveCount(0)
