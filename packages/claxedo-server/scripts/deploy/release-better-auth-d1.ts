@@ -20,6 +20,7 @@ import {
   certifiedHostedWorkerArtifact,
   type CertifiedHostedWorkerEnvironment,
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
+import { HOSTED_WORKER_BUNDLE_CONTRACT } from "./hosted-worker-bundle"
 import { isTransientWranglerFailure } from "./prepare-better-auth-d1"
 import { fetchUrl } from "../../src/test-support/fetch-calls"
 import { asRecord, isRecordArray, numberField, parseJson, parseJsonRecords, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
@@ -504,10 +505,7 @@ id = ${quote(input.agentPlugins.credentialsNamespaceId)}
     : ""
   return `name = ${quote(releaseTrain.workerName)}
 main = ${quote(entrypoint)}
-compatibility_date = "2025-05-01"
-compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
-workers_dev = false
-preview_urls = false
+${HOSTED_WORKER_BUNDLE_CONTRACT}
 
 [version_metadata]
 binding = "CF_VERSION_METADATA"

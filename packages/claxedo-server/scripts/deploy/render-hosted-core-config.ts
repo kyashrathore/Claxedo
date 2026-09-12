@@ -2,6 +2,7 @@ import {
   certifiedHostedWorkerArtifact,
   type CertifiedHostedWorkerArtifactId,
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
+import { HOSTED_WORKER_BUNDLE_CONTRACT } from "./hosted-worker-bundle"
 
 export type RateLimitNamespaceAllocation = Readonly<{
   owner: string
@@ -87,10 +88,7 @@ new_sqlite_classes = ["LiveSyncRoom"]
     : ""
   return `name = ${quote(artifact.workerName)}
 main = ${quote(artifact.entrypointFromPackageRoot)}
-compatibility_date = "2025-05-01"
-compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
-workers_dev = false
-preview_urls = false
+${HOSTED_WORKER_BUNDLE_CONTRACT}
 
 [version_metadata]
 binding = "CF_VERSION_METADATA"
