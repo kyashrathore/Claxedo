@@ -542,7 +542,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         try {
           // Model turns use the prompt timeout; session creation and restoration
           // use the shorter handshake timeout.
-          const result = await bound("ACP prompt", proc.prompt(agentSessionId, input, forward), promptTimeoutMs())
+          const result = await bound("ACP prompt", proc.prompt(agentSessionId, input, forward, directory), promptTimeoutMs())
           // Prompt-result usage is the ONLY meterable usage on this rail:
           // mid-turn `usage_update` notifications carry a context meter, not
           // token categories. The ACP agent is authoritative for the final

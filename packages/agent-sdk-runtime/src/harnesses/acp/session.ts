@@ -11,7 +11,16 @@ import type {
 } from "@agentclientprotocol/sdk"
 import { methods } from "@agentclientprotocol/sdk"
 import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
+import path from "path"
+import { pathToFileURL } from "url"
 import type { PromptInput } from "../../index"
+import {
+  deliverPromptAttachments,
+  isPromptImageMime,
+  promptAttachments,
+  type PromptAttachment,
+} from "../shared/prompt-attachments"
+import { extractTextFromParts } from "../shared/sdk-runtime-values"
 import type {
   AgentConfigOptions,
   AgentPermissionMode,
@@ -538,79 +547,84 @@ export async function sync(
   return next
 }
 
-export function blocks(
-  parts: unknown[],
-  system: string | undefined,
-  caps: PromptCapabilities | null | undefined,
-): ContentBlock[] {
-  const out: ContentBlock[] = system ? [{ type: "text", text: system, annotations: { audience: ["assistant"] } }] : []
-  parts.forEach((part, index) => out.push(contentBlock(part, index, caps)))
+/** One attachment of a prompt, carrying the workspace path when one was written. */
+type PromptBlockAttachment = PromptAttachment & { path?: string }
 
+/**
+ * The prompt as `session/prompt` blocks: the system block, the user's text, then
+ * one block per attachment.
+ *
+ * A `directory` says the agent shares this filesystem, so every attachment is
+ * written there and the text names each path — the delivery every agent can act
+ * on with its own tools. Without one the bytes travel alone, because a path the
+ * agent cannot open is not a delivery.
+ */
+export async function blocks(input: {
+  parts: readonly unknown[]
+  system: string | undefined
+  caps: PromptCapabilities | null | undefined
+  directory?: string
+}): Promise<ContentBlock[]> {
+  const delivery: { text: string; attachments: PromptBlockAttachment[] } = input.directory
+    ? await deliverPromptAttachments({ parts: input.parts, directory: input.directory })
+    : { text: extractTextFromParts([...input.parts]), attachments: promptAttachments(input.parts) }
+  const out: ContentBlock[] = input.system
+    ? [{ type: "text", text: input.system, annotations: { audience: ["assistant"] } }]
+    : []
+  if (delivery.text) out.push({ type: "text", text: delivery.text })
+  delivery.attachments.forEach((attachment, index) => out.push(attachmentBlock(attachment, index, input.caps)))
   return out
 }
 
-function contentBlock(part: unknown, index: number, caps: PromptCapabilities | null | undefined): ContentBlock {
-  const row = asRecord(part)
-  switch (str(row?.type)) {
-    case "text":
-      return { type: "text", text: str(row?.text) ?? "" }
-    case "resource_link":
-      return resourceLink(row)
-    case "image":
-      return imageBlock(row, caps)
-    case "audio":
-      return audioBlock(row, caps)
-    case "resource":
-      return resourceBlock(row, index, caps)
-    default:
-      return { type: "text", text: JSON.stringify(part) }
+/**
+ * The block that carries one attachment, in the order of what the agent can take.
+ *
+ * `PromptRequest.prompt` states the choice: "As a baseline, the Agent MUST
+ * support [`ContentBlock::Text`] and [`ContentBlock::ResourceLink`], while
+ * other variants are optionally enabled via [`PromptCapabilities`]". So the
+ * picture, the sound and the bytes go inline where the agent negotiated them,
+ * and a link to the workspace file is what every other agent gets.
+ *
+ * An agent that negotiated none of the three and shares no filesystem cannot
+ * receive the attachment at all. That is an error: the user attached a file and
+ * a silent drop would have the turn answer as if they had not.
+ */
+function attachmentBlock(
+  attachment: PromptBlockAttachment,
+  index: number,
+  caps: PromptCapabilities | null | undefined,
+): ContentBlock {
+  const file = attachment.path
+  if (caps?.image && isPromptImageMime(attachment.mime)) {
+    return {
+      type: "image",
+      mimeType: attachment.mime,
+      data: attachment.base64,
+      ...(file ? { uri: pathToFileURL(file).href } : {}),
+    }
   }
-}
-
-function resourceLink(row: Record<string, unknown> | null | undefined): ContentBlock {
-  const uri = str(row?.uri)
-  if (!uri) throw new Error("ACP resource_link prompt part requires uri")
-  const mimeType = str(row?.mimeType)
-  const title = str(row?.title)
-  const description = str(row?.description)
-  return {
-    type: "resource_link",
-    uri,
-    name: str(row?.name) ?? title ?? "resource",
-    ...(mimeType ? { mimeType } : {}),
-    ...(title ? { title } : {}),
-    ...(description ? { description } : {}),
+  if (caps?.audio && attachment.mime.startsWith("audio/")) {
+    return { type: "audio", mimeType: attachment.mime, data: attachment.base64 }
   }
-}
-
-function imageBlock(row: Record<string, unknown> | null | undefined, caps: PromptCapabilities | null | undefined): ContentBlock {
-  if (!caps?.image) throw new Error("ACP agent does not support image prompt content")
-  const mimeType = str(row?.mimeType)
-  const data = str(row?.data)
-  if (!mimeType || !data) throw new Error("ACP image prompt part requires mimeType and data")
-  const uri = str(row?.uri)
-  return { type: "image", mimeType, data, ...(uri ? { uri } : {}) }
-}
-
-function audioBlock(row: Record<string, unknown> | null | undefined, caps: PromptCapabilities | null | undefined): ContentBlock {
-  if (!caps?.audio) throw new Error("ACP agent does not support audio prompt content")
-  const mimeType = str(row?.mimeType)
-  const data = str(row?.data)
-  if (!mimeType || !data) throw new Error("ACP audio prompt part requires mimeType and data")
-  return { type: "audio", mimeType, data }
-}
-
-function resourceBlock(row: Record<string, unknown> | null | undefined, index: number, caps: PromptCapabilities | null | undefined): ContentBlock {
-  const item = asRecord(row?.resource)
-  const text = str(item?.text)
-  if (!caps?.embeddedContext) {
-    if (text) return { type: "text", text }
-    throw new Error("ACP agent does not support embedded resource prompt content")
+  if (caps?.embeddedContext) {
+    return {
+      type: "resource",
+      resource: {
+        uri: file ? pathToFileURL(file).href : `wr://attachment/${index}`,
+        blob: attachment.base64,
+        mimeType: attachment.mime,
+      },
+    }
   }
-  const uri = str(item?.uri) ?? `wr://resource/${index}`
-  const mimeType = str(item?.mimeType)
-  if (text) return { type: "resource", resource: { uri, text, ...(mimeType ? { mimeType } : {}) } }
-  const blob = str(item?.blob)
-  if (blob) return { type: "resource", resource: { uri, blob, ...(mimeType ? { mimeType } : {}) } }
-  throw new Error("ACP embedded resource prompt part is invalid")
+  if (file) {
+    return {
+      type: "resource_link",
+      uri: pathToFileURL(file).href,
+      name: attachment.filename ?? path.basename(file),
+      mimeType: attachment.mime,
+    }
+  }
+  throw new Error(
+    `ACP agent cannot receive a ${attachment.mime} attachment: it negotiated no inline content and does not share the workspace`,
+  )
 }

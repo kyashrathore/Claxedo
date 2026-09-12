@@ -1,4 +1,12 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import fs from "fs"
+import os from "os"
+import path from "path"
+import { pathToFileURL } from "url"
+import type { ContentBlock, PromptCapabilities } from "@agentclientprotocol/sdk"
+import type { WithInternals } from "../../test-utils/class-internals"
+import { removeTestTempDir } from "../shared/test-temp-dir"
+import { ACPProcess } from "./process"
 import { init, merge, modeIds, sync, type ACPState } from "./session"
 
 describe("ACP session config sync", () => {
@@ -168,5 +176,152 @@ describe("ACP advertised modes", () => {
     expect(merge(base(), { modes: { currentModeId: "", availableModes: [] } }).modes).toEqual([])
     expect(merge(base(), { modes: {} }).modes).toEqual([])
     expect(base().modes).toEqual([])
+  })
+})
+
+const PNG = Buffer.from("iVBORw0KGgo=", "base64").toString("base64")
+const MP3 = Buffer.from([73, 68, 51, 4, 0, 0]).toString("base64")
+const PDF = Buffer.from("%PDF-1.7\n").toString("base64")
+const MP4 = Buffer.from([0, 0, 0, 24, 102, 116, 121, 112]).toString("base64")
+
+const ATTACHMENT_PARTS = [
+  { type: "text", text: "review these" },
+  { type: "file", mime: "image/png", filename: "shot.png", url: `data:image/png;base64,${PNG}` },
+  { type: "file", mime: "audio/mpeg", filename: "note.mp3", url: `data:audio/mpeg;base64,${MP3}` },
+  { type: "file", mime: "application/pdf", filename: "spec.pdf", url: `data:application/pdf;base64,${PDF}` },
+  { type: "file", mime: "video/mp4", filename: "clip.mp4", url: `data:video/mp4;base64,${MP4}` },
+]
+
+type PromptingProcess = {
+  agent: { request: (method: string, params: unknown) => Promise<unknown> }
+  idle: { touch: () => void; lease: () => { release: () => void } }
+  states: Map<string, ACPState>
+  caps: { promptCapabilities: PromptCapabilities }
+  transport: { kind: "stdio" | "websocket"; alive: boolean }
+  promptQueue: Promise<void>
+  promptQueueDepth: number
+  sessionListeners: Map<string, unknown>
+}
+
+/**
+ * An `ACPProcess` whose agent only records the `session/prompt` it receives, so
+ * the assertion is on the blocks that actually went over the wire.
+ */
+function promptingProcess(input: { caps: PromptCapabilities; kind: "stdio" | "websocket" }) {
+  const sent: Array<{ method: string; prompt: ContentBlock[] }> = []
+  const proc = Object.create(ACPProcess.prototype) as WithInternals<ACPProcess, PromptingProcess>
+  Object.assign(proc, {
+    agent: {
+      request: async (method: string, params: unknown) => {
+        sent.push({ method, prompt: (params as { prompt: ContentBlock[] }).prompt })
+        return { stopReason: "end_turn" }
+      },
+    },
+    idle: { touch() {}, lease: () => ({ release() {} }) },
+    states: new Map(),
+    caps: { promptCapabilities: input.caps },
+    transport: { kind: input.kind, alive: true },
+    promptQueue: Promise.resolve(),
+    promptQueueDepth: 0,
+    sessionListeners: new Map(),
+  })
+  return { proc, sent }
+}
+
+describe("ACP prompt attachments", () => {
+  let directory = ""
+  const attachmentDirectory = () => path.join(directory, ".claxedo", "attachments")
+  const written = (suffix: string) => {
+    const names = fs.readdirSync(attachmentDirectory())
+    const hit = names.find((name) => name.endsWith(suffix))
+    if (!hit) throw new Error(`no attachment ending in ${suffix}, only ${names.join(", ")}`)
+    return path.join(attachmentDirectory(), hit)
+  }
+  const fileUri = (suffix: string) => pathToFileURL(written(suffix)).href
+
+  const send = async (proc: { prompt: ACPProcess["prompt"] }) =>
+    await proc.prompt("agent-1", {
+      parts: ATTACHMENT_PARTS,
+      assistantMessageId: "a1",
+      agent: "build",
+      model: { providerID: "connection:example", modelID: "default" },
+      system: "sys",
+    } as never, () => {}, directory)
+
+  beforeEach(() => {
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), "acp-attachments-"))
+  })
+
+  afterEach(() => {
+    removeTestTempDir(directory)
+  })
+
+  test("carries each attachment in the block its capabilities admit, plus the path it was written to", async () => {
+    const { proc, sent } = promptingProcess({
+      caps: { image: true, audio: true, embeddedContext: true },
+      kind: "stdio",
+    })
+
+    await send(proc)
+
+    expect(sent).toHaveLength(1)
+    expect(sent[0].method).toBe("session/prompt")
+    expect(sent[0].prompt).toEqual([
+      { type: "text", text: "sys", annotations: { audience: ["assistant"] } },
+      {
+        type: "text",
+        text: [
+          "review these",
+          `Attached file (image/png): ${written("-shot.png")}`,
+          `Attached file (audio/mpeg): ${written("-note.mp3")}`,
+          `Attached file (application/pdf): ${written("-spec.pdf")}`,
+          `Attached file (video/mp4): ${written("-clip.mp4")}`,
+        ].join("\n"),
+      },
+      { type: "image", mimeType: "image/png", data: PNG, uri: fileUri("-shot.png") },
+      { type: "audio", mimeType: "audio/mpeg", data: MP3 },
+      { type: "resource", resource: { uri: fileUri("-spec.pdf"), blob: PDF, mimeType: "application/pdf" } },
+      { type: "resource", resource: { uri: fileUri("-clip.mp4"), blob: MP4, mimeType: "video/mp4" } },
+    ])
+    expect(fs.readFileSync(written("-spec.pdf")).toString("base64")).toBe(PDF)
+  })
+
+  test("links a baseline agent to the workspace file instead of inlining bytes it never negotiated", async () => {
+    const { proc, sent } = promptingProcess({ caps: {}, kind: "stdio" })
+
+    await send(proc)
+
+    expect(sent[0].prompt.slice(2)).toEqual([
+      { type: "resource_link", uri: fileUri("-shot.png"), name: "shot.png", mimeType: "image/png" },
+      { type: "resource_link", uri: fileUri("-note.mp3"), name: "note.mp3", mimeType: "audio/mpeg" },
+      { type: "resource_link", uri: fileUri("-spec.pdf"), name: "spec.pdf", mimeType: "application/pdf" },
+      { type: "resource_link", uri: fileUri("-clip.mp4"), name: "clip.mp4", mimeType: "video/mp4" },
+    ])
+  })
+
+  test("sends bytes alone to an agent off this filesystem, naming no path it cannot open", async () => {
+    const { proc, sent } = promptingProcess({
+      caps: { image: true, audio: true, embeddedContext: true },
+      kind: "websocket",
+    })
+
+    await send(proc)
+
+    expect(sent[0].prompt).toEqual([
+      { type: "text", text: "sys", annotations: { audience: ["assistant"] } },
+      { type: "text", text: "review these" },
+      { type: "image", mimeType: "image/png", data: PNG },
+      { type: "audio", mimeType: "audio/mpeg", data: MP3 },
+      { type: "resource", resource: { uri: "wr://attachment/2", blob: PDF, mimeType: "application/pdf" } },
+      { type: "resource", resource: { uri: "wr://attachment/3", blob: MP4, mimeType: "video/mp4" } },
+    ])
+    expect(fs.existsSync(path.join(directory, ".claxedo"))).toBe(false)
+  })
+
+  test("refuses to drop an attachment an agent can neither receive nor read", async () => {
+    const { proc, sent } = promptingProcess({ caps: {}, kind: "websocket" })
+
+    await expect(send(proc)).rejects.toThrow("image/png")
+    expect(sent).toEqual([])
   })
 })

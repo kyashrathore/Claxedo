@@ -132,7 +132,7 @@ export async function generateAITitle(
   }
 
   try {
-    await titlePrompt(proc, titleAcpSessionId, titleInput, (update) => {
+    await titlePrompt(proc, titleAcpSessionId, directory, titleInput, (update) => {
       const delta = chunkDelta(update)
       if (delta) responseText += delta
     })
@@ -183,6 +183,7 @@ export async function generateAITitle(
 async function titlePrompt(
   proc: ACPProcess,
   sessionId: string,
+  directory: string,
   input: PromptInput,
   onUpdate: (update: SessionUpdate) => void,
   ms = newSessionTimeoutMs(),
@@ -190,7 +191,7 @@ async function titlePrompt(
   let id: ReturnType<typeof setTimeout> | undefined
   try {
     return await Promise.race([
-      proc.prompt(sessionId, input, onUpdate),
+      proc.prompt(sessionId, input, onUpdate, directory),
       new Promise<never>((_, reject) => {
         id = setTimeout(() => reject(new Error(`ACP title prompt timed out after ${ms}ms`)), ms)
       }),

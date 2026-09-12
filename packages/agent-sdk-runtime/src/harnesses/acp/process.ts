@@ -600,6 +600,8 @@ export class ACPProcess {
     agentSessionId: string,
     input: PromptInput,
     onUpdate: (update: SessionUpdate) => void,
+    /** The session's workspace, which the agent shares only over stdio. */
+    directory: string,
   ): Promise<{ stopReason: StopReason; usage?: Usage | null }> {
     this.resetIdleTimer()
 
@@ -628,7 +630,12 @@ export class ACPProcess {
     // A prompt is active work for its whole duration, including quiet tool calls.
     const idleLease = this.leaseIdle()
     try {
-      const prompt = blocks(input.parts, input.system, this.state(agentSessionId).prompt)
+      const prompt = await blocks({
+        parts: input.parts,
+        system: input.system,
+        caps: this.state(agentSessionId).prompt,
+        ...(this.transport.kind === "stdio" ? { directory } : {}),
+      })
 
       // Inactivity timeout: resets on every received update so long tool calls
       // don't hit the wall-clock limit. Only fires when the agent goes silent.
