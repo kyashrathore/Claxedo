@@ -1,5 +1,11 @@
-import { describe, expect, test, vi } from "vitest"
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
+import { mkdirSync, realpathSync } from "fs"
+import fs from "fs/promises"
+import os from "os"
+import path from "path"
+import { randomUUID } from "crypto"
 import { CredentialRoutes } from "./credential"
+import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
@@ -463,11 +469,13 @@ describe("credential routes", () => {
               "has_secret": true,
               "health": null,
               "id": "cred_1",
+              "is_active": false,
               "kind": "api_key",
               "label": "OpenAI",
               "last_error": null,
               "last_used_at": null,
               "last_validated_at": 1,
+              "owner": null,
               "provider_id": "unsupported-provider",
               "scope": "local",
               "source": "managed",
@@ -527,6 +535,8 @@ describe("credential routes", () => {
         source: "managed",
         label: "OpenAI",
         account_id: null,
+        owner: null,
+        is_active: false,
         status: "available",
         health: null,
         has_secret: true,
@@ -694,5 +704,96 @@ describe("credential routes", () => {
         message: "Failed to update credential status",
       },
     })
+  })
+})
+
+describe("choosing which account a provider runs on", () => {
+  const root = path.join(realpathSync(os.tmpdir()), `credential-activate-${randomUUID().slice(0, 8)}`)
+  let registry: typeof import("@claxedo/server-core/credentials/registry")
+  let app: ReturnType<typeof CredentialRoutes>
+  let previousDataDir: string | undefined
+
+  beforeAll(async () => {
+    mkdirSync(root, { recursive: true })
+    previousDataDir = process.env.CLAXEDO_DATA_DIR
+    process.env.CLAXEDO_DATA_DIR = root
+    const backends = await import("@claxedo/server-core/credentials/backend-registry")
+    backends.setBackendOverride(backends.createTestBackend())
+    registry = await import("@claxedo/server-core/credentials/registry")
+    app = CredentialRoutes(defaultControlPlaneCredentials(), {})
+  })
+
+  afterAll(async () => {
+    const backends = await import("@claxedo/server-core/credentials/backend-registry")
+    backends.setBackendOverride(undefined)
+    const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+    ClaxedoDB.close()
+    await fs.rm(root, { recursive: true, force: true })
+    if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  })
+
+  async function account(providerId: string, accountId: string) {
+    return await registry.putCredential({
+      provider_id: providerId,
+      kind: "oauth_token",
+      source: "managed",
+      account_id: accountId,
+      label: accountId,
+      secret: `${accountId}-secret`,
+    })
+  }
+
+  test("activate moves the mark in the store, and both listings report it", async () => {
+    const first = await account("claude-sdk", "acc_first")
+    const second = await account("claude-sdk", "acc_second")
+
+    const listed = await (await app.request("http://localhost/")).json() as {
+      credentials: Array<{ id: string; owner: string | null; is_active: boolean }>
+    }
+    expect(listed.credentials.filter((row) => row.is_active).map((row) => row.id)).toEqual([first.id])
+    expect(listed.credentials.every((row) => row.owner === null)).toBe(true)
+
+    const response = await app.request(`http://localhost/${second.id}/activate`, { method: "POST" })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      credential: { id: second.id, is_active: true, owner: null, label: "acc_second" },
+    })
+    expect(registry.getCredential(first.id)?.is_active).toBe(false)
+    const effective = await (await app.request("http://localhost/effective")).json() as {
+      credentials: Array<{ id: string; provider_id: string }>
+    }
+    expect(effective.credentials.filter((row) => row.provider_id === "claude-sdk").map((row) => row.id))
+      .toEqual([second.id])
+  })
+
+  test("an unknown id is 404 and a credential no harness runs on is 409", async () => {
+    const driver = await registry.putCredential({
+      provider_id: "daytona",
+      kind: "sandbox_driver",
+      source: "managed",
+      secret: "daytona-master-key",
+    })
+
+    const missing = await app.request(`http://localhost/${randomUUID()}/activate`, { method: "POST" })
+    expect(missing.status).toBe(404)
+    await expect(missing.json()).resolves.toMatchObject({ error: { code: "credential_not_found" } })
+
+    const ineligible = await app.request(`http://localhost/${driver.id}/activate`, { method: "POST" })
+    expect(ineligible.status).toBe(409)
+    await expect(ineligible.json()).resolves.toMatchObject({ error: { code: "credential_not_activatable" } })
+    expect(registry.getCredential(driver.id)?.is_active).toBe(false)
+  })
+})
+
+describe("a host that holds one record per provider", () => {
+  test("reports activation as unsupported rather than pretending the choice was made", async () => {
+    const app = CredentialRoutes(credentials(), {})
+
+    const response = await app.request("http://localhost/cred_1/activate", { method: "POST" })
+
+    expect(response.status).toBe(501)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_activate_unsupported" } })
   })
 })

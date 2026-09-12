@@ -63,6 +63,8 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
     source: cred.source,
     label: cred.label,
     account_id: cred.account_id,
+    owner: cred.owner ?? null,
+    is_active: cred.is_active === true,
     status: cred.status,
     health: cred.health ?? null,
     has_secret: !!cred.secure_ref,
@@ -292,6 +294,18 @@ export function CredentialRoutes(
         }
         return c.json(errorBody("credential_verification_failed", "Credential verification failed"), 500)
       }
+    })
+    .post("/:id/activate", async (c) => {
+      if (!credentials.setActiveCredential) {
+        return c.json(errorBody("credential_activate_unsupported", "This host does not choose between accounts"), 501)
+      }
+      const result = await credentials.setActiveCredential(c.req.param("id"), org(c.req.raw))
+      if (!result.ok) {
+        return result.reason === "not_found"
+          ? c.json(errorBody("credential_not_found", "Credential not found"), 404)
+          : c.json(errorBody("credential_not_activatable", "This credential is not an account a harness runs on"), 409)
+      }
+      return c.json({ credential: redact(result.credential) })
     })
     .patch("/:id/status", async (c) => {
       const body = statusBody.safeParse(await c.req.json().catch(() => null))
