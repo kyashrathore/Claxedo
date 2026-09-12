@@ -465,6 +465,7 @@ describe("daytona egress translation", () => {
       start: async () => {},
       stop: async () => {},
       delete: async () => {},
+      updateSecrets: async () => {},
     }
     const client: DaytonaClientLike = {
       create: async (params) => {

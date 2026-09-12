@@ -31,6 +31,7 @@ export type DaytonaSandboxLike = {
   start: (timeout?: number) => Promise<void>
   stop: (timeout?: number) => Promise<void>
   delete: (timeout?: number) => Promise<void>
+  updateSecrets: (secrets: Record<string, string>) => Promise<void>
   /**
    * Replace the sandbox's outbound egress policy in place, without stopping it
    * — the Daytona SDK's `Sandbox.updateNetworkSettings`, which drives the same
@@ -402,6 +403,7 @@ export function createDaytonaSandboxDriver(
       throw err
     })
     if (!sandbox) return { provisioning: true as const, retryAfterMs: 2_000 }
+    if (existing && input.secrets !== undefined) await existing.updateSecrets(secrets)
     if (!(await ensureStarted(sandbox))) return { provisioning: true as const, retryAfterMs: 2_000 }
     // Reuse only: a sandbox this call just created already carries the policy as
     // creation parameters. See applyNetworkPolicy for why this sits between the
@@ -492,6 +494,9 @@ export function createDaytonaSandboxDriver(
 
     async resumeHost(input) {
       const sandbox = await sandboxById(input.lease.sandboxId!)
+      if (input.ensure.secrets !== undefined) {
+        await sandbox.updateSecrets(await brokeredSecretReferences(input.ensure))
+      }
       if (!(await ensureStarted(sandbox))) return { provisioning: true as const, retryAfterMs: 2_000 }
       // Resume always hands back a sandbox created by an earlier ensure, so the
       // requested policy has to be reapplied here too — see applyNetworkPolicy.
