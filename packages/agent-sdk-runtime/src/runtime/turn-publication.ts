@@ -10,11 +10,11 @@ export function createTurnPublication(
 ) {
   const terminal: AgentRuntimeEventEnvelope[] = []
   return {
-    publish(event: AgentRuntimeEventEnvelope) {
+    publish: (event: AgentRuntimeEventEnvelope) => {
       if (event.sessionId === sessionId && isTerminalRuntimePayload(event.payload)) terminal.push(event)
       else emit(event)
     },
-    finish() {
+    finish: () => {
       if (!admitted()) return
       releaseAdmission()
       for (const event of terminal) emit(event)

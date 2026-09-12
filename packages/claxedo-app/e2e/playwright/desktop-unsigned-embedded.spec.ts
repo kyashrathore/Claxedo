@@ -229,8 +229,8 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     }
     await expect.poll(async () => {
       const plugin = await read()
-      return [plugin.harnesses.claude!.effective.effective, plugin.harnesses.codex!.effective.effective,
-        plugin.harnesses.cursor!.effective.effective, plugin.harnesses.opencode!.effective.effective]
+      return [plugin.harnesses.claude.effective.effective, plugin.harnesses.codex.effective.effective,
+        plugin.harnesses.cursor.effective.effective, plugin.harnesses.opencode.effective.effective]
     }).toEqual([true, true, false, false])
     expect((await read()).retainedDigest).toBeTruthy()
     await expect(fs.readFile(path.join(codexHome, "config.toml"), "utf8")).resolves.toContain("composio")

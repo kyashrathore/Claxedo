@@ -57,7 +57,7 @@ async function openMenu() {
   return await screen.findByTestId("review-compare-menu")
 }
 
-const search = (menu: HTMLElement) => within(menu).getByTestId("review-compare-search") as HTMLInputElement
+const search = (menu: HTMLElement): HTMLInputElement => within(menu).getByTestId("review-compare-search")
 const options = (menu: HTMLElement) => within(menu).getAllByRole("option").map((item) => item.textContent?.trim())
 const choose = (menu: HTMLElement, label: string | RegExp) => fireEvent.click(within(menu).getByRole("option", { name: label }))
 const groupLabels = (menu: HTMLElement) =>

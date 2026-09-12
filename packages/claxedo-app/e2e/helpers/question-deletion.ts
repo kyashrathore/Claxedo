@@ -20,7 +20,7 @@ export async function deletePendingQuestion(page: Page, input: { backendUrl: str
   await expect(page.locator(`[data-session-id="${input.sessionId}"]`)).toHaveCount(0)
   await expect.poll(read).toEqual([])
   await expect(dock).toHaveCount(0)
-  const late = await page.request.post(`${input.backendUrl}/question/${pending[0]!.id}/reply${query}`, {
+  const late = await page.request.post(`${input.backendUrl}/question/${pending[0].id}/reply${query}`, {
     data: { answers: [["Staging"]] },
   })
   expect(late.status()).toBe(404)

@@ -19,7 +19,7 @@ import {
   type PartRef,
 } from "./part-groups"
 import { assistantMessageSettled, countFoldableGroups, foldedGroupKeys, turnFoldDecision } from "./turn-fold"
-import { SessionTurn } from "./session-turn"
+import { SessionTurn } from "./story-session-turn"
 import { FileStub } from "./story-stubs"
 import type { SubagentView } from "../context/data"
 import { TRANSCRIPT_LAB_SESSIONS, type TranscriptLabSession } from "./transcript-lab-fixture"

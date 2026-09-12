@@ -8,8 +8,8 @@ type CommandGrant = { directory: string; mode: string | null; request: JsonRecor
 const callbackFields = new Set(["threadId", "turnId", "itemId", "approvalId", "startedAtMs", "reason", "commandActions"])
 
 export function codexCommandGrant(method: string, params: JsonRecord, directory: string, mode: string | undefined): CommandGrant | undefined {
-  if (method !== "item/commandExecution/requestApproval") return
-  if (typeof params.command !== "string" || !params.command || typeof params.cwd !== "string" || !params.cwd || !directory) return
+  if (method !== "item/commandExecution/requestApproval") return undefined
+  if (typeof params.command !== "string" || !params.command || typeof params.cwd !== "string" || !params.cwd || !directory) return undefined
   return { directory, mode: mode ?? null, request: Object.fromEntries(Object.entries(params).filter(([key]) => !callbackFields.has(key))) }
 }
 

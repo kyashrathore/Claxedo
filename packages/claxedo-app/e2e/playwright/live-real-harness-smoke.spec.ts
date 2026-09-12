@@ -321,7 +321,7 @@ test.describe("live real-harness smoke @live", () => {
     testInfo.setTimeout(240_000)
   })
 
-  test.afterEach(async ({}, testInfo) => {
+  test.afterEach(async (_fixtures, testInfo) => {
     if (testInfo.status === testInfo.expectedStatus) return
     await testInfo.attach("claxedo-server.log", { body: serverLog, contentType: "text/plain" })
   })
@@ -450,7 +450,6 @@ test.describe("live real-harness smoke @live", () => {
     await fs.rm(missingPath, { recursive: true })
     const resolved = await page.request.get(`${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(missing.directory)}`)
     expect(resolved.ok()).toBe(true)
-    const { workspaceId } = await resolved.json() as { workspaceId: string }
     await seedOneProject(page, dir)
     await openDraftPrompt(page, dir)
     await page.getByTestId("rail-account-trigger").click()
@@ -590,7 +589,7 @@ test.describe("live real-harness smoke @live", () => {
       }
       const pending = await readQuestions()
       expect(pending).toHaveLength(1)
-      const request = pending[0]!
+      const request = pending[0]
       await page.screenshot({ path: test.info().outputPath("live-question-pending.png") })
       await page.reload({ waitUntil: "domcontentloaded" })
       await expect(dock).toBeVisible({ timeout: 30_000 })
@@ -617,7 +616,7 @@ test.describe("live real-harness smoke @live", () => {
         await actionButton.click()
         if (action === "dismiss") await expectAssistantReplyVisible(page, `${prefix}-DISMISSED`)
         await expect(dock).toHaveCount(0)
-        const late = await page.request.post(`${BACKEND_URL}/question/${request!.id}/reply?directory=${encodeURIComponent(dir)}`, {
+        const late = await page.request.post(`${BACKEND_URL}/question/${request.id}/reply?directory=${encodeURIComponent(dir)}`, {
           data: { answers: [["Staging"]] },
         })
         expect(late.status()).toBe(404)
@@ -1189,7 +1188,7 @@ test.describe("live real-harness smoke @live", () => {
       let noticeSeen = false
       Object.defineProperty(window, "__CLAXEDO_AGENT_APP_BENCHMARK__", { value: {
         terminalWriteParsed(receipt: { data: string; dimensions(): { cols: number; rows: number }; serialize(): string }) {
-          host.terminalAudit = receipt.serialize
+          host.terminalAudit = () => receipt.serialize()
           if (receipt.data.includes("Session contents restored")) noticeSeen = true
           if (noticeSeen) host.noticeWrites!.push({ data: receipt.data.slice(-8192), ...receipt.dimensions(), noticeVisible: receipt.serialize().includes("Session contents restored") })
         },
@@ -1246,7 +1245,7 @@ test.describe("live real-harness smoke @live", () => {
     await page.addInitScript(() => {
       const host = window as typeof window & { terminalAudit?: () => string }
       Object.defineProperty(window, "__CLAXEDO_AGENT_APP_BENCHMARK__", { value: {
-        terminalWriteParsed(receipt: { serialize(): string }) { host.terminalAudit = receipt.serialize },
+        terminalWriteParsed(receipt: { serialize(): string }) { host.terminalAudit = () => receipt.serialize() },
       } })
     })
     const screen = () => page.evaluate(() => (window as typeof window & { terminalAudit?: () => string }).terminalAudit?.())
@@ -1286,7 +1285,7 @@ test.describe("live real-harness smoke @live", () => {
     await page.addInitScript(() => {
       const host = window as typeof window & { terminalAudit?: () => string }
       Object.defineProperty(window, "__CLAXEDO_AGENT_APP_BENCHMARK__", { value: {
-        terminalWriteParsed(receipt: { serialize(): string }) { host.terminalAudit = receipt.serialize },
+        terminalWriteParsed(receipt: { serialize(): string }) { host.terminalAudit = () => receipt.serialize() },
       } })
     })
     const screen = () => page.evaluate(() => (window as typeof window & { terminalAudit?: () => string }).terminalAudit?.())
@@ -1330,7 +1329,7 @@ test.describe("live real-harness smoke @live", () => {
     const streams: Record<string, Array<{ url: string; data: string; binary: boolean }>> = { original: [], restored: [] }
     const recordStream = (target: Page, side: "original" | "restored") => target.on("websocket", (socket) => {
       if (!socket.url().includes("/pty/")) return
-      socket.on("framereceived", ({ payload }) => streams[side]!.push({
+      socket.on("framereceived", ({ payload }) => streams[side].push({
         url: socket.url(),
         data: typeof payload === "string" ? payload : payload.toString("utf8"),
         binary: typeof payload !== "string",

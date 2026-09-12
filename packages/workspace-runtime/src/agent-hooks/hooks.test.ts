@@ -52,7 +52,7 @@ it("Antigravity forwards native stop metadata through shell, HTTP and lifecycle 
     expect(events[1]).toMatchObject({ provider: "antigravity", eventType: "Idle", outcome: "done" })
   } finally {
     unsubscribe()
-    server.stop(true)
+    await server.stop(true)
     await rm(root, { recursive: true, force: true })
   }
 })
@@ -96,7 +96,7 @@ it("Amp plugin delivers awaited native events through the real notification tran
     expect(events[5]).toMatchObject({ eventType: "Error", outcome: "error" })
   } finally {
     unsubscribe()
-    server.stop(true)
+    await server.stop(true)
     await rm(root, { recursive: true, force: true })
   }
 })
@@ -135,10 +135,11 @@ describe("generateNotifyScript", () => {
       })
       expect(await child.exited).toBe(0)
       const deadline = Date.now() + 3000
-      while (!delivered && Date.now() < deadline) await Bun.sleep(20)
+      const settled = () => delivered !== undefined
+      while (!settled() && Date.now() < deadline) await Bun.sleep(20)
       expect(delivered).toEqual({ workspace: "ws_notify_test", terminal: "pty_notify_test", event: "agent-turn-complete" })
     } finally {
-      server.stop(true)
+      await server.stop(true)
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -172,7 +173,7 @@ describe("generateNotifyScript", () => {
       await invoke("Stop")
       expect(await state()).toBe("Idle")
     } finally {
-      server.stop(true)
+      await server.stop(true)
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -201,7 +202,7 @@ describe("generateNotifyScript", () => {
       expect(await invoke()).toBe(0)
       expect(requests).toBe(2)
     } finally {
-      server.stop(true)
+      await server.stop(true)
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -291,7 +292,7 @@ for (const [provider, generate, event, argument] of [
       expect<string | null>(received).toBe(payload)
       expect(JSON.parse(await new Response(child.stdout).text())).toEqual({})
     } finally {
-      server.stop(true)
+      await server.stop(true)
       await rm(root, { recursive: true, force: true })
     }
   })

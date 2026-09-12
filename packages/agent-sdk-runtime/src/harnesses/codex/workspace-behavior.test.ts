@@ -682,7 +682,7 @@ describe("CodexHarnessAdapter", () => {
       for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {}
       const children = store.listSessions(fake.dir).filter((item) => item.parentID === session.id)
       expect(children).toHaveLength(1)
-      expect(JSON.stringify(store.getMessages(children[0]!.id))).toContain("ACTIVITY-CHILD-ONLY")
+      expect(JSON.stringify(store.getMessages(children[0].id))).toContain("ACTIVITY-CHILD-ONLY")
       expect(JSON.stringify(store.getMessages(session.id))).not.toContain("ACTIVITY-CHILD-ONLY")
       const lifecycle = runtimeEvents.flatMap((event) => event.payload.type === "subagent-updated" ? [event.payload] : [])
       expect(lifecycle.map((event) => event.status)).toEqual(["running", "completed"])

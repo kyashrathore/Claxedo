@@ -6,7 +6,9 @@ import { isKeyOf } from "../../utils/record"
 const icons = OPEN_CODE_V2_ARTWORK
 
 const spriteID = "opencode-v2-icon-sprite"
-export const openCodeV2IconNames = Object.freeze(Object.keys(icons) as (keyof typeof icons)[])
+export const openCodeV2IconNames = Object.freeze(
+  Object.keys(icons).filter((name): name is keyof typeof icons => isKeyOf(icons, name)),
+)
 export function getOpenCodeV2IconArtwork(name: keyof typeof icons) {
   return { id: `opencode-v2-icon-${name}`, name, viewBox: icons[name].viewBox, content: icons[name].body }
 }

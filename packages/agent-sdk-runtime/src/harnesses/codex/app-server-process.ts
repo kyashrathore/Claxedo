@@ -7,7 +7,7 @@ import {
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
 } from "../../process-observer"
-import { asRecord } from "@claxedo/helpers/guards"
+import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import { errorMessage, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
 import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-process"
 
@@ -257,7 +257,7 @@ export class CodexAppServerProcess {
       try {
         process.kill(-pid, 0)
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ESRCH") return
+        if (isRecord(error) && error.code === "ESRCH") return
         throw error
       }
       if (!escalated && Date.now() >= deadline) {

@@ -170,7 +170,7 @@ function createEventEmitter() {
   const listeners = new Set<(event: ClaxedoEvent) => void>()
 
   return {
-    listenCentral(listener: (event: ClaxedoEvent) => void) {
+    listenCentral: (listener: (event: ClaxedoEvent) => void) => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
     },

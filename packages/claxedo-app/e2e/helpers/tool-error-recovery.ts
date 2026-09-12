@@ -28,13 +28,13 @@ export async function expectToolErrorRecovery(input: {
   }
   const failed = (await readTools()).filter((part) => part.state?.error?.includes(failure))
   expect(failed, "native nonzero exit must be recorded as a failed tool").toHaveLength(1)
-  expect(failed[0]!.state?.status).toBe("error")
-  const errorCard = page.locator(`[data-timeline-part-id="${failed[0]!.id}"] [data-kind="tool-error-card"]`)
+  expect(failed[0].state?.status).toBe("error")
+  const errorCard = page.locator(`[data-timeline-part-id="${failed[0].id}"] [data-kind="tool-error-card"]`)
   await expect(errorCard).toBeVisible()
   if (await errorCard.getAttribute("data-open") !== "true") await errorCard.locator('[data-component="tool-trigger"]').click()
   await expect(errorCard.locator('[data-slot="tool-error-card-content"]')).toContainText(failure)
   await page.reload({ waitUntil: "domcontentloaded" })
-  expect((await readTools()).find((part) => part.id === failed[0]!.id)).toEqual(failed[0])
+  expect((await readTools()).find((part) => part.id === failed[0].id)).toEqual(failed[0])
   await expect(errorCard).toBeVisible()
   await run(`node '${successScript}'`, `RECOVERY_OBSERVED_${Date.now()}`)
   expect(await fs.readFile(output, "utf8")).toBe("recovered")
@@ -43,7 +43,7 @@ export async function expectToolErrorRecovery(input: {
   expect(successful).toHaveLength(1)
   await page.reload({ waitUntil: "domcontentloaded" })
   const persisted = await readTools()
-  expect(persisted.find((part) => part.id === failed[0]!.id)).toEqual(failed[0])
-  expect(persisted.find((part) => part.id === successful[0]!.id)).toEqual(successful[0])
-  return { sessionID, failed: failed[0]!, successful: successful[0]! }
+  expect(persisted.find((part) => part.id === failed[0].id)).toEqual(failed[0])
+  expect(persisted.find((part) => part.id === successful[0].id)).toEqual(successful[0])
+  return { sessionID, failed: failed[0], successful: successful[0] }
 }

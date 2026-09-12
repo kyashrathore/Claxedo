@@ -183,9 +183,9 @@ const group = (id: "staged" | "changes" | "compare") => screen.getByTestId(`sour
 const rows = (id: "staged" | "changes" | "compare") =>
   within(screen.getByTestId(`source-control-section-${id}`)).getAllByTestId("source-control-row")
 const row = (path: string) => screen.getAllByTestId("source-control-row").find((el) => el.getAttribute("data-path") === path)!
-const message = () => screen.getByTestId("source-control-message") as HTMLTextAreaElement
-const commitButton = () => screen.getByTestId("source-control-commit") as HTMLButtonElement
-const menuItem = (label: string) => screen.getByRole("menuitem", { name: label }) as HTMLButtonElement
+const message = (): HTMLTextAreaElement => screen.getByTestId("source-control-message")
+const commitButton = (): HTMLButtonElement => screen.getByTestId("source-control-commit")
+const menuItem = (label: string): HTMLButtonElement => screen.getByRole("menuitem", { name: label })
 
 async function loaded() {
   await waitFor(() => expect(screen.queryByTestId("source-control-loading")).toBeNull())
@@ -379,7 +379,7 @@ describe("SourceControlView commit box", () => {
     fireEvent.click(menuItem("Commit & Push"))
     await waitFor(() => expect(h.push).toHaveBeenCalledWith({}))
     expect(h.commitStaged).toHaveBeenCalledWith({ message: "feat: ship", amend: false })
-    expect(h.commitStaged.mock.invocationCallOrder[0]).toBeLessThan(h.push.mock.invocationCallOrder[0]!)
+    expect(h.commitStaged.mock.invocationCallOrder[0]).toBeLessThan(h.push.mock.invocationCallOrder[0])
     await waitFor(() => expect(message().value).toBe(""))
   })
 
@@ -512,13 +512,13 @@ describe("SourceControlView graph", () => {
       "2222222222222222222222222222222222222222",
     ])
     expect(h.logLimits).toEqual([50])
-    expect(within(items[0]!).getByText("feat: second")).toBeTruthy()
-    expect(within(items[0]!).getByText("1111111")).toBeTruthy()
-    expect(within(items[0]!).getByText("HEAD -> feat/x")).toBeTruthy()
-    expect(within(items[0]!).getByText("origin/feat/x")).toBeTruthy()
-    expect(within(items[0]!).getByText("Ada")).toBeTruthy()
-    expect(within(items[0]!).getByText("1 hour ago")).toBeTruthy()
-    expect(within(items[1]!).getByText("1 day ago")).toBeTruthy()
+    expect(within(items[0]).getByText("feat: second")).toBeTruthy()
+    expect(within(items[0]).getByText("1111111")).toBeTruthy()
+    expect(within(items[0]).getByText("HEAD -> feat/x")).toBeTruthy()
+    expect(within(items[0]).getByText("origin/feat/x")).toBeTruthy()
+    expect(within(items[0]).getByText("Ada")).toBeTruthy()
+    expect(within(items[0]).getByText("1 hour ago")).toBeTruthy()
+    expect(within(items[1]).getByText("1 day ago")).toBeTruthy()
   })
 
   test("the Graph starts collapsed at the bottom under the groups; expanded, it shares the column", async () => {
@@ -583,8 +583,8 @@ describe("SourceControlView graph", () => {
     expect(rows("compare").map((el) => el.getAttribute("data-path"))).toEqual(["src/second.ts", "src/a.ts"])
     expect(rows("compare").map((el) => el.getAttribute("data-status"))).toEqual(["added", "modified"])
     expect(rows("compare").map((el) => el.getAttribute("data-group"))).toEqual(["compare", "compare"])
-    expect(within(rows("compare")[1]!).getByText("+1")).toBeTruthy()
-    expect(within(rows("compare")[1]!).getByText("-2")).toBeTruthy()
+    expect(within(rows("compare")[1]).getByText("+1")).toBeTruthy()
+    expect(within(rows("compare")[1]).getByText("-2")).toBeTruthy()
     expect(h.compareRequests).toEqual([
       {
         directory: "/repo/main",
@@ -595,9 +595,9 @@ describe("SourceControlView graph", () => {
       },
     ])
 
-    fireEvent.click(within(rows("compare")[0]!).getByText("second.ts"))
+    fireEvent.click(within(rows("compare")[0]).getByText("second.ts"))
     expect(onFileClick).toHaveBeenLastCalledWith("src/second.ts", "to-from")
-    expect(rows("compare")[0]!.classList.contains("bg-surface-base-active")).toBe(true)
+    expect(rows("compare")[0].classList.contains("bg-surface-base-active")).toBe(true)
 
     fireEvent.click(commitRow("1111111111111111111111111111111111111111"))
     expect(reviewSelection()).toEqual({ mode: "uncommitted" })

@@ -17,7 +17,7 @@ afterEach(() => vi.unstubAllGlobals())
 test("carries the exact SSE bytes and resume cursor, and aborts the reader", async () => {
   const abort = new AbortController()
   const response = openLocalEventWebSocket(new URL("http://127.0.0.1/api/claxedo/events"), { headers: { "Last-Event-ID": "17" }, signal: abort.signal })
-  const socket = Socket.instances[0]!
+  const socket = Socket.instances[0]
   expect(socket.url.href).toBe("ws://127.0.0.1/api/claxedo/events?lastEventId=17")
   expect(socket.binaryType).toBe("arraybuffer")
   socket.onopen!()
@@ -33,7 +33,7 @@ test("carries the exact SSE bytes and resume cursor, and aborts the reader", asy
 test("reader cancellation closes the socket without a later abort double-closing it", async () => {
   const abort = new AbortController()
   const response = openLocalEventWebSocket(new URL("http://127.0.0.1/api/claxedo/events"), { signal: abort.signal })
-  const socket = Socket.instances[0]!
+  const socket = Socket.instances[0]
   socket.onopen!()
   await (await response).body!.cancel()
   abort.abort()
@@ -43,7 +43,7 @@ test("reader cancellation closes the socket without a later abort double-closing
 
 test("handshake failure rejects instead of pretending that a stream opened", async () => {
   const response = openLocalEventWebSocket(new URL("http://127.0.0.1/api/claxedo/events"))
-  Socket.instances[0]!.onerror!()
+  Socket.instances[0].onerror!()
   await expect(response).rejects.toThrow("Local event WebSocket failed")
 })
 

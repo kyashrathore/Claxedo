@@ -22,7 +22,7 @@ export async function cancelPendingPermission(page: Page, input: { backendUrl: s
   }
   await expect.poll(read).toEqual([])
   await expect(page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })).toHaveCount(0)
-  const late = await page.request.post(`${input.backendUrl}/session/${input.sessionId}/permissions/${pending[0]!.id}${query}`, {
+  const late = await page.request.post(`${input.backendUrl}/session/${input.sessionId}/permissions/${pending[0].id}${query}`, {
     data: { response: "always" },
   })
   expect(late.status(), await late.text()).toBe(404)

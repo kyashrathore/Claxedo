@@ -86,7 +86,7 @@ export class SdkRuntimeInteractions {
   private ownedQuestion(binding: AgentExecutionBinding, questionId: string) {
     const directory = requireWorkspaceDirectory(binding.directory)
     const pending = this.questions.get(questionId)
-    if (!pending) return
+    if (!pending) return undefined
     if (pending.sessionId !== binding.sessionId) {
       throw new Error(`Question ${questionId} does not belong to session ${binding.sessionId}`)
     }

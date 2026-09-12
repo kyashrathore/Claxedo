@@ -2,7 +2,6 @@ import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { emptySessionInventory, sessionInventoryQueryOptions } from "../../../features/session/data/sync/queries"
-import type { SessionInventoryRow } from "../../../features/session/data/query/types"
 import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
 import { projectForDirectory } from "@/platform/runtime/agent/project-owner"
 import { parseOwnerRepo } from "../rail/rail-git-remote"
@@ -42,7 +41,7 @@ const GITHUB_HOST = /(^|[@/.])github\.com[:/]/
 
 /** `owner/repo` when the remote lives on GitHub, else undefined. */
 export function githubOwnerRepo(remote: string | undefined) {
-  if (!remote || !GITHUB_HOST.test(remote)) return
+  if (!remote || !GITHUB_HOST.test(remote)) return undefined
   return parseOwnerRepo(remote)
 }
 

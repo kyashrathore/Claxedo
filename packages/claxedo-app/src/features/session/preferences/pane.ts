@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js"
+import { isRecord } from "@claxedo/helpers/guards"
 
 /** What a pane's Review compares: the worktree against the index or HEAD, or two refs. */
 export type ReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from"
@@ -41,13 +42,12 @@ function optionalRef(value: unknown) {
 /** A stored entry: the object shape, or the bare mode string the key held before refs were persisted. */
 function parseReviewSelection(value: unknown): ReviewSelection | undefined {
   if (typeof value === "string") return isReviewMode(value) ? { mode: value } : undefined
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  const record = value as Record<string, unknown>
-  if (!isReviewMode(record.mode)) return undefined
-  const fromRef = optionalRef(record.fromRef)
-  const toRef = optionalRef(record.toRef)
+  if (!isRecord(value)) return undefined
+  if (!isReviewMode(value.mode)) return undefined
+  const fromRef = optionalRef(value.fromRef)
+  const toRef = optionalRef(value.toRef)
   return {
-    mode: record.mode,
+    mode: value.mode,
     ...(fromRef === undefined ? {} : { fromRef }),
     ...(toRef === undefined ? {} : { toRef }),
   }

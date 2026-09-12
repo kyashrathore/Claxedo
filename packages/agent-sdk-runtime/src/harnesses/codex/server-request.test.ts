@@ -18,7 +18,7 @@ for (const dismiss of [false, true]) {
       refreshTokens: async () => { throw new Error("unexpected authentication request") },
     })
     expect(projected).toEqual(["item/tool/requestUserInput"])
-    const pending = [...pendingQuestions.values()][0]!
+    const pending = [...pendingQuestions.values()][0]
     expect(pending.sessionId).toBe("session-1")
     if (dismiss) pending.reject()
     else pending.resolve([["Staging"]])
@@ -49,18 +49,18 @@ for (const kind of ["question", "permission"] as const) {
       })
     })
     expect(projected.map((row) => row.nativeId)).toEqual([0, 0])
-    expect(projected[0]!.requestId).not.toBe(projected[1]!.requestId)
+    expect(projected[0].requestId).not.toBe(projected[1].requestId)
     const requests = kind === "question" ? pendingQuestions : pendingPermissions
     expect(requests.size).toBe(2)
-    expect(requests.get(projected[0]!.requestId)?.sessionId).toBe("first")
-    expect(requests.get(projected[1]!.requestId)?.sessionId).toBe("second")
+    expect(requests.get(projected[0].requestId)?.sessionId).toBe("first")
+    expect(requests.get(projected[1].requestId)?.sessionId).toBe("second")
     if (kind === "question") {
-      pendingQuestions.get(projected[0]!.requestId)!.resolve([["Staging"]])
-      pendingQuestions.get(projected[1]!.requestId)!.reject()
+      pendingQuestions.get(projected[0].requestId)!.resolve([["Staging"]])
+      pendingQuestions.get(projected[1].requestId)!.reject()
       expect(await Promise.all(results)).toEqual([{ answers: { environment: { answers: ["Staging"] } } }, { answers: {} }])
     } else {
-      pendingPermissions.get(projected[0]!.requestId)!.resolve("allow_once")
-      pendingPermissions.get(projected[1]!.requestId)!.resolve("deny")
+      pendingPermissions.get(projected[0].requestId)!.resolve("allow_once")
+      pendingPermissions.get(projected[1].requestId)!.resolve("deny")
       expect(await Promise.all(results)).toEqual([{ decision: "accept" }, { decision: "decline" }])
     }
   })

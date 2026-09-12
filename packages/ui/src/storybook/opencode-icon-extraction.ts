@@ -21,7 +21,7 @@ async function extractArtwork(
     }),
   )
   const seen = new Map<string, string>()
-  const icons = artwork.map(({ content, ...icon }, index) => {
+  const icons = artwork.map(({ content: _content, ...icon }, index) => {
     const hash = hashes[index]
     const duplicateOf = seen.get(hash)
     if (!duplicateOf) seen.set(hash, icon.id)

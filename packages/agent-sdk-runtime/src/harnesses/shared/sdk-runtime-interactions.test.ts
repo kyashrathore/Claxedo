@@ -55,7 +55,7 @@ for (const [sessionId, directory] of [["other-session", "/work"], ["session-1", 
       sessionId: "session-1", agentSessionId: "agent-1", method: "permission", params: {},
       resolve: (decision) => decisions.push(decision),
     })
-    expect(() => interactions.respondPermission(executionBinding(sessionId!, directory!), "permission-1", "allow_always"))
+    expect(() => interactions.respondPermission(executionBinding(sessionId, directory), "permission-1", "allow_always"))
       .toThrow()
     expect(decisions).toEqual([])
     expect(committed).toEqual([])
@@ -127,7 +127,7 @@ for (const operation of ["reply", "reject"] as const) {
       const respond = (binding: ReturnType<typeof executionBinding>) => operation === "reply"
         ? interactions.replyQuestion(binding, "question-1", [["Staging"]])
         : interactions.rejectQuestion(binding, "question-1")
-      expect(() => respond(executionBinding(sessionId!, directory!))).toThrow()
+      expect(() => respond(executionBinding(sessionId, directory))).toThrow()
       expect(decisions).toEqual([])
       expect(committed).toEqual([])
       expect(interactions.questions.has("question-1")).toBe(true)

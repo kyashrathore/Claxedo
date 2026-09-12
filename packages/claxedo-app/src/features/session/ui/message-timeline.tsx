@@ -569,7 +569,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const hiddenTurnsRow = () => {
     const count = props.hiddenTurnCount?.() ?? 0
     const head = props.userMessages[0]
-    if (count <= 0 || !head) return
+    if (count <= 0 || !head) return undefined
     return TimelineRow.PreviousMessages({ userMessageID: head.id, count })
   }
 
@@ -1431,7 +1431,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     const current = row()
     switch (current._tag) {
       case "PreviousMessages": {
-        const previousMessagesRow = row as Accessor<TimelineRowByTag<"PreviousMessages">>
+        const previousMessagesRow = rowOfTag(row, "PreviousMessages", current)
         return (
           <TimelineRowFrame row={previousMessagesRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">

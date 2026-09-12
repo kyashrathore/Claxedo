@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process"
+import { isRecord } from "@claxedo/helpers/guards"
 
 /**
  * Whether this binary is a Windows .cmd/.bat launcher, which CreateProcess
@@ -31,7 +32,7 @@ export function killHarnessProcess(proc: ChildProcess, signal: NodeJS.Signals, o
     try {
       process.kill(-proc.pid, signal)
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error
+      if (!isRecord(error) || error.code !== "ESRCH") throw error
     }
     return
   }

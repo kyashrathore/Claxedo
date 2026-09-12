@@ -14,7 +14,7 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 import { DataProvider } from "../context/data"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
-import { SessionTurn } from "./session-turn"
+import { SessionTurn } from "./story-session-turn"
 import { FileStub } from "./story-stubs"
 import { isKeyOf } from "@opencode-ai/ui/utils/record"
 import { isRecord } from "@claxedo/helpers/guards"

@@ -90,7 +90,7 @@ for (const { harness, child, pause } of [
         const credentials = process.platform === "darwin"
           ? Object.fromEntries(await Promise.all([
             ["accessToken", "cursor-access-token"], ["refreshToken", "cursor-refresh-token"],
-          ].map(async ([field, service]) => [field, (await exec("security", ["find-generic-password", "-s", service!, "-a", "cursor-user", "-w"])).stdout.trim()])))
+          ].map(async ([field, service]) => [field, (await exec("security", ["find-generic-password", "-s", service, "-a", "cursor-user", "-w"])).stdout.trim()])))
           : JSON.parse(await fs.readFile(path.join(os.homedir(), ".config/cursor/auth.json"), "utf8"))
         await fs.writeFile(path.join(authDirectory, "auth.json"), JSON.stringify(credentials), { mode: 0o600 })
       } else if (harness === "amp") {
@@ -297,7 +297,7 @@ for (const { harness, child, pause } of [
       await packaged.page.evaluate(() => {
         const events: { src: string; time: number; muted: boolean; volume: number }[] = []
         Object.assign(window, { __claxedoAudioEnded: events })
-        const play = HTMLMediaElement.prototype.play
+        const play: (this: HTMLMediaElement) => Promise<void> = Reflect.get(HTMLMediaElement.prototype, "play")
         HTMLMediaElement.prototype.play = function () {
           this.addEventListener("ended", () => events.push({
             src: this.currentSrc, time: this.currentTime, muted: this.muted, volume: this.volume,

@@ -144,29 +144,29 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       expect((await fetch(`${serverBase}/session/${sessionId}${query}`)).status).toBe(404)
       await test.info().attach("deleted-session-restored-layout", {
         contentType: "application/json",
-        body: await packaged!.page.evaluate(() => localStorage.getItem("claxedo.state.v5") ?? "null"),
+        body: await packaged.page.evaluate(() => localStorage.getItem("claxedo.state.v5") ?? "null"),
       })
-      await expect(packaged!.page.locator(`[data-session-id="${sessionId}"]`)).toHaveCount(0)
-      await expect(packaged!.page.locator('[data-component="dock-prompt"]')).toHaveCount(0)
-      const freshProject = packaged!.page.locator(`[data-testid="project-group"][data-project-id="${workspaceId}"]`)
+      await expect(packaged.page.locator(`[data-session-id="${sessionId}"]`)).toHaveCount(0)
+      await expect(packaged.page.locator('[data-component="dock-prompt"]')).toHaveCount(0)
+      const freshProject = packaged.page.locator(`[data-testid="project-group"][data-project-id="${workspaceId}"]`)
       await freshProject.locator('[data-testid="project-header"]').hover()
       await freshProject.locator('[aria-label="New session in main"]').click()
-      const freshControl = packaged!.page.locator('[data-action="prompt-harness-model"]:visible').last()
+      const freshControl = packaged.page.locator('[data-action="prompt-harness-model"]:visible').last()
       await freshControl.click()
-      const freshPicker = packaged!.page.locator('[data-component="harness-model-picker"]')
+      const freshPicker = packaged.page.locator('[data-component="harness-model-picker"]')
       await freshPicker.locator('[data-slot="harness-picker-section"]').first().click()
       await freshPicker.getByRole("button", { name: harness, exact: true }).first().click()
-      await packaged!.page.keyboard.press("Escape")
+      await packaged.page.keyboard.press("Escape")
       await expect(freshControl).not.toContainText(/Loading models|Select model|^$/, { timeout: 45_000 })
       if (harness === "Claude") {
         await freshControl.click()
-        await freshPicker.locator('[data-slot="list-item"]').filter({ has: packaged!.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
-        await packaged!.page.keyboard.press("Escape")
+        await freshPicker.locator('[data-slot="list-item"]').filter({ has: packaged.page.locator('[data-slot="list-item-name"]').filter({ hasText: "Opus" }) }).first().click()
+        await packaged.page.keyboard.press("Escape")
       }
       const fresh = `AFTER_DELETE_${Date.now()}`
-      await compose(packaged!.page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply exactly ${fresh}. Do not use tools.`)
-      const creation = packaged!.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
-      await packaged!.page.locator('[data-action="prompt-submit"]:visible').last().click()
+      await compose(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply exactly ${fresh}. Do not use tools.`)
+      const creation = packaged.page.waitForResponse((response) => response.request().method() === "POST" && new URL(response.url()).pathname === "/session")
+      await packaged.page.locator('[data-action="prompt-submit"]:visible').last().click()
       const created = await creation
       expect(created.ok()).toBe(true)
       const replacement = await created.json() as { id: string }
@@ -174,9 +174,9 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       const config = await fetch(`${serverBase}/session/${replacement.id}/config${query}`)
       expect(config.ok).toBe(true)
       expect(await config.json()).toMatchObject({ harness: { id: harness.toLowerCase() } })
-      await expectAssistantReplyVisible(packaged!.page, fresh)
-      await packaged!.page.reload()
-      await expectAssistantReplyVisible(packaged!.page, fresh)
+      await expectAssistantReplyVisible(packaged.page, fresh)
+      await packaged.page.reload()
+      await expectAssistantReplyVisible(packaged.page, fresh)
       await expectNoPendingRequests()
       expect((await fetch(`${serverBase}/session/${sessionId}${query}`)).status).toBe(404)
     }
@@ -241,13 +241,13 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
               return (await response.json() as Record<string, { type: string }>)[session.id]?.type ?? "idle"
             }, { timeout: 90_000 }).toBe("idle")
             expect(await readQuestions()).toEqual([])
-            const late = await fetch(`${serverBase}/question/${pending[0]!.id}/reply?directory=${encodeURIComponent(directory)}`, {
+            const late = await fetch(`${serverBase}/question/${pending[0].id}/reply?directory=${encodeURIComponent(directory)}`, {
               method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["Allow once"]] }),
             })
             expect(late.status).toBe(404)
             const denied = (await read()).filter((part) => (part.tool ?? "").includes("documents_open"))
             expect(denied).toHaveLength(1)
-            expect(denied[0]!.state?.output ?? "").not.toContain(file)
+            expect(denied[0].state?.output ?? "").not.toContain(file)
             expect(JSON.stringify(await read())).not.toContain(marker)
             expect(await fs.readFile(file, "utf8")).toBe(contents)
             await compose(packaged.page.locator('[role="textbox"][aria-label*="Ask anything"]:visible').last(), "New task: what is 7 plus 4? Answer briefly without tools.")
@@ -256,7 +256,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
             await expect(packaged.page.locator('[data-slot="session-turn-assistant-content"]:visible').filter({ hasText: /\b11\b|eleven/i })).toBeVisible({ timeout: 90_000 })
             await packaged.page.reload()
             expect(await readQuestions()).toEqual([])
-            expect((await read()).find((part) => part.id === denied[0]!.id)).toEqual(denied[0])
+            expect((await read()).find((part) => part.id === denied[0].id)).toEqual(denied[0])
             expect(JSON.stringify(await read())).not.toContain(marker)
             return
           }
@@ -454,7 +454,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       }
       const tools = await readTools()
       expect(tools).toHaveLength(1)
-      expect(tools[0]!.state?.status).toBe("running")
+      expect(tools[0].state?.status).toBe("running")
       expect(await fs.readFile(journal, "utf8")).toBe("start\n")
       const next = "Paris"
       const draft = `I’m planning a trip from Delhi (दिल्ली). My notes include café, <tags> and "quotes".\n\nWhat is the capital of France? Please answer in English from general knowledge, without running commands.`
@@ -493,8 +493,8 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       await expect.poll(async () => (await readTools())[0]?.state?.status).toBe(stop ? "error" : "completed")
       const settled = await readTools()
       expect(settled).toHaveLength(1)
-      expect(settled[0]!.id).toBe(tools[0]!.id)
-      if (!stop) expect(settled[0]!.state?.output).toContain(marker)
+      expect(settled[0].id).toBe(tools[0].id)
+      if (!stop) expect(settled[0].state?.output).toContain(marker)
       expect(await fs.readFile(journal, "utf8")).toBe(stop ? "start\n" : "start\nfinish\n")
       if (stop) await composeText(packaged.page, packaged.page.getByRole("textbox", { name: /Ask anything/i }).last(), draft)
       else await expect(packaged.page.getByRole("textbox", { name: /Ask anything/i }).last()).toHaveText(draft, { useInnerText: true })
@@ -510,7 +510,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       const history = await historyResponse.json() as Array<{ info: { role: string }; parts: Array<{ type: string; text?: string }> }>
       const users = history.filter((row) => row.info.role === "user")
       expect(users).toHaveLength(2)
-      expect(users[1]!.parts.filter((part) => part.type === "text").map((part) => part.text).join("")).toBe(draft)
+      expect(users[1].parts.filter((part) => part.type === "text").map((part) => part.text).join("")).toBe(draft)
 
       return
     }
@@ -618,7 +618,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
         await expectAssistantReplyVisible(packaged.page, repeated)
         expect(await readPending()).toEqual([])
       }
-      const late = await fetch(`${serverBase}/session/${session.id}/permissions/${pending[0]!.id}${query}`, {
+      const late = await fetch(`${serverBase}/session/${session.id}/permissions/${pending[0].id}${query}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ response: "always" }),
       })
       expect(late.status).toBe(404)
@@ -722,7 +722,7 @@ test(`packaged app completes a real ${harness}-authenticated session: ${flow} @l
       }
       await expect(dock).toHaveCount(0)
       expect(await readQuestions()).toEqual([])
-      const late = await fetch(`${serverBase}/question/${pending[0]!.id}/reply?directory=${encodeURIComponent(directory)}`, {
+      const late = await fetch(`${serverBase}/question/${pending[0].id}/reply?directory=${encodeURIComponent(directory)}`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ answers: [["Production"]] }),
       })
       expect(late.status).toBe(404)

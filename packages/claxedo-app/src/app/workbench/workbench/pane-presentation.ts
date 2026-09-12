@@ -38,7 +38,7 @@ const dockedResolver: PanePresentationResolver = {
   presentationFor: () => "docked",
 }
 
-const PanePresentationContext = createContext<PanePresentationResolver>(dockedResolver)
+const PanePresentationContext = createContext(dockedResolver)
 
 export const PanePresentationProvider = PanePresentationContext.Provider
 

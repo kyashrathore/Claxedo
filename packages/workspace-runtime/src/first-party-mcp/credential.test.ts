@@ -17,7 +17,7 @@ describe("runtime credential issuer", () => {
     expect(issuer.verify(parent)?.sessionId).toBe("ses_parent")
     expect(issuer.verify(child)?.sessionId).toBe("ses_child")
     const [header, payload, signature] = child.split(".")
-    const claims = JSON.parse(Buffer.from(payload!, "base64url").toString())
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString())
     claims.session_id = "ses_parent"
     const forged = `${header}.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.${signature}`
     expect(issuer.verify(forged)).toBeUndefined()

@@ -37,12 +37,13 @@ export function providerLifecycle(input: Record<string, unknown>) {
     const sessionId = str(rec(event?.thread)?.id)
     if (!event || !sessionId) return undefined
     const outcome = event.status
-    if (hook === "agent.end" && outcome !== "done" && outcome !== "error" && outcome !== "cancelled") return undefined
+    const ended = outcome === "done" || outcome === "error" || outcome === "cancelled" ? outcome : undefined
+    if (hook === "agent.end" && !ended) return undefined
     return {
       provider: "amp",
       sessionId,
-      eventType: hook === "agent.start" ? "Busy" as const : outcome === "error" ? "Error" as const : "Idle" as const,
-      outcome: hook === "agent.end" ? outcome as "done" | "error" | "cancelled" : undefined,
+      eventType: hook === "agent.start" ? "Busy" as const : ended === "error" ? "Error" as const : "Idle" as const,
+      outcome: hook === "agent.end" ? ended : undefined,
       prompt: str(event.message)?.slice(0, 800),
     }
   }

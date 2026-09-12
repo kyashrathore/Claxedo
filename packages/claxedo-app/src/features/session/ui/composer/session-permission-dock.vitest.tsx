@@ -15,7 +15,7 @@ test("Stop blocks conflicting decisions and exposes an abort failure for retry",
   fireEvent.click(stop)
   expect(onStop).toHaveBeenCalledTimes(1)
   expect(stop.disabled).toBe(true)
-  expect((view.getByRole("button", { name: "ui.permission.allowAlways" }) as HTMLButtonElement).disabled).toBe(true)
+  expect(view.getByRole<HTMLButtonElement>("button", { name: "ui.permission.allowAlways" }).disabled).toBe(true)
   expect(onDecide).not.toHaveBeenCalled()
   reject(new Error("Server could not stop the turn"))
   await waitFor(() => expect(view.getByRole("alert").textContent).toBe("Server could not stop the turn"))

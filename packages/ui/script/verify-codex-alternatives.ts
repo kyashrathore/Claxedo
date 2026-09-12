@@ -14,6 +14,8 @@ const read = (position: number, size: number) => {
 }
 type Entry = { files?: Record<string, Entry>; offset?: string; size?: number; unpacked?: boolean }
 const hash = (body: string | Buffer) => createHash("sha256").update(body).digest("hex")
+const isNode = (value: unknown): value is Node =>
+  typeof value === "object" && value !== null && "type" in value && typeof value.type === "string"
 const scalar = (node: Node): string => {
   if (node.type === "StringLiteral" || node.type === "NumericLiteral") return String(node.value)
   if (node.type === "TemplateLiteral" && node.expressions.length === 0) return node.quasis[0].value.cooked!
@@ -96,7 +98,7 @@ try {
     let match: Node | undefined
     const visit = (node: Node) => {
       const start = node.start ?? 0
-      if (start > icon.sourceOffsetUTF16 || (node.end ?? source!.code.length) <= icon.sourceOffsetUTF16) return
+      if (start > icon.sourceOffsetUTF16 || (node.end ?? source.code.length) <= icon.sourceOffsetUTF16) return
       if (
         start === icon.sourceOffsetUTF16 &&
         (icon.kind === "named" ? node.type === "ObjectExpression" : node.type === "CallExpression")
@@ -105,8 +107,8 @@ try {
       if (match) return
       for (const value of Object.values(node)) {
         if (Array.isArray(value)) {
-          for (const item of value) if (item && typeof item === "object" && "type" in item) visit(item as Node)
-        } else if (value && typeof value === "object" && "type" in value) visit(value as Node)
+          for (const item of value) if (isNode(item)) visit(item)
+        } else if (isNode(value)) visit(value)
       }
     }
     visit(sourceTree)

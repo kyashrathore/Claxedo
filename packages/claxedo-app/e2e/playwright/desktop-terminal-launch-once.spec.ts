@@ -122,7 +122,7 @@ const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { d
 require('node:fs').writeFileSync(${JSON.stringify(childPidFile)}, String(child.pid));
 setInterval(() => {}, 1000);
 `)
-    const createUrl = new URL(ptyUrl!)
+    const createUrl = new URL(ptyUrl)
     createUrl.pathname = createUrl.pathname.slice(0, createUrl.pathname.lastIndexOf("/"))
     const childCreation = await fetch(createUrl, {
       method: "POST", headers: {

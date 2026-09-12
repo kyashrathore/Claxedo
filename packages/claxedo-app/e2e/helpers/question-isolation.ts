@@ -38,8 +38,8 @@ export async function expectConcurrentQuestionIsolation(page: Page, input: {
     const secondPending = await pending(second.directory)
     expect(firstPending).toHaveLength(1)
     expect(secondPending).toHaveLength(1)
-    const owner = firstPending[0]!
-    const sibling = secondPending[0]!
+    const owner = firstPending[0]
+    const sibling = secondPending[0]
     expect(owner.id).not.toBe(sibling.id)
     expect(owner.sessionID).not.toBe(sibling.sessionID)
     for (const action of ["reply", "reject"] as const) {

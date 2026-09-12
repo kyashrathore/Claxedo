@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
+import { isRecord } from "@claxedo/agent-runtime-contract"
 
 export const PI_VERSION = "0.85.0"
 export const PI_EXECUTABLE_ENV = "PI_EXECUTABLE"
@@ -63,8 +64,8 @@ export function piPackageRoot(binary: string): string | undefined {
   current = path.dirname(current)
   for (let depth = 0; depth < 8 && current !== path.dirname(current); depth++) {
     try {
-      const manifest = JSON.parse(fs.readFileSync(path.join(current, "package.json"), "utf8")) as { name?: string }
-      if (manifest.name === "@earendil-works/pi-coding-agent") return current
+      const manifest: unknown = JSON.parse(fs.readFileSync(path.join(current, "package.json"), "utf8"))
+      if (isRecord(manifest) && manifest.name === "@earendil-works/pi-coding-agent") return current
     } catch {}
     current = path.dirname(current)
   }

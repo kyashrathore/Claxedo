@@ -47,14 +47,14 @@ function gitRouteFailure(err: unknown) {
   if (err instanceof GitTimeoutError) {
     return { status: 504 as const, body: errorBody("git_timeout", err.message) }
   }
-  const stderr = (err as { stderr?: string } | undefined)?.stderr?.trim()
+  const stderr = isRecord(err) && isString(err.stderr) ? err.stderr.trim() : undefined
   const message = stderr || (err instanceof Error ? err.message : "git command failed")
   return { status: 400 as const, body: errorBody("git_command_failed", message) }
 }
 
 function pathList(body: unknown) {
   const paths = isRecord(body) ? body.paths : undefined
-  if (!Array.isArray(paths) || paths.length === 0 || !paths.every(isNonEmptyString)) return
+  if (!Array.isArray(paths) || paths.length === 0 || !paths.every(isNonEmptyString)) return undefined
   return paths
 }
 

@@ -34,18 +34,18 @@ test("WebSocket uses the authorized central producer, retains cursors, and detac
     resolveSubscription: () => ({ identity: { mode: "unmanaged-local", connectionId: "test" }, visible: () => visible }),
   }))
   await app.request("http://localhost/events", { headers: { upgrade: "websocket" } })
-  const first = wire.connections[0]!
+  const first = wire.connections[0]
   try {
     await expect.poll(() => first.frames.length).toBe(1)
     globalBus.publish({ directory: "/repo", payload: { type: "session.idle", properties: { sessionID: "owner" } } })
     await expect.poll(() => first.frames.length).toBe(2)
     expect(first.frames[1]).toContain('"sessionID":"owner"')
-    const cursor = /\nid: ([^\n]+)/.exec(first.frames[1]!)![1]!
+    const cursor = /\nid: ([^\n]+)/.exec(first.frames[1])![1]
     first.disconnect()
     const closedLength = first.frames.length
     globalBus.publish({ directory: "/repo", payload: { type: "session.idle", properties: { sessionID: "after-close" } } })
     await app.request(`http://localhost/events?lastEventId=${cursor}`, { headers: { upgrade: "websocket" } })
-    const resumed = wire.connections[1]!
+    const resumed = wire.connections[1]
     await expect.poll(() => resumed.frames.some((frame) => frame.includes('"sessionID":"after-close"'))).toBe(true)
     expect(first.frames).toHaveLength(closedLength)
     visible = false
@@ -89,5 +89,5 @@ test("WebSocket upgrade honors the composition's explicit CORS origin decision",
   })
   expect(allowed.status).toBe(200)
   expect(wire.connections).toHaveLength(1)
-  wire.connections[0]!.disconnect()
+  wire.connections[0].disconnect()
 })

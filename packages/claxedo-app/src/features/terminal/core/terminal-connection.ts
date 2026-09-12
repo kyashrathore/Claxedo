@@ -1,4 +1,5 @@
 import { authFetch } from "@/platform/api/api"
+import { isRecord } from "@claxedo/helpers/guards"
 import { createWorkspaceRelayConnection, openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
 
 export class WebSocketCloseError extends Error {
@@ -157,10 +158,9 @@ export function createTerminalPtyClient(input: {
     agents: async (init?: RequestInit) => {
       const res = await ptyFetch("/agents", { method: "GET", ...init })
       if (!res.ok) throw new Error(`Agent lookup failed (${res.status})`)
-      const body = await res.json() as { installed?: unknown }
-      return Array.isArray(body.installed)
-        ? body.installed.filter((name): name is string => typeof name === "string")
-        : []
+      const body: unknown = await res.json()
+      const installed = isRecord(body) ? body.installed : undefined
+      return Array.isArray(installed) ? installed.filter((name): name is string => typeof name === "string") : []
     },
   }
 }

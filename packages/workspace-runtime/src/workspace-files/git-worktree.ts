@@ -1,5 +1,6 @@
 import path from "node:path"
 import fs from "node:fs/promises"
+import { isRecord, isString } from "@claxedo/helpers/guards"
 import { createBoundedGit, GitTimeoutError, runGit } from "../git"
 import { resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import { parseNumstat } from "./diff"
@@ -61,7 +62,7 @@ function indexStatus(letter: string): GitStatusEntry["status"] | undefined {
     case "R":
       return "renamed"
     default:
-      return
+      return undefined
   }
 }
 
@@ -75,7 +76,7 @@ function worktreeStatus(letter: string): GitStatusEntry["status"] | undefined {
     case "D":
       return "deleted"
     default:
-      return
+      return undefined
   }
 }
 
@@ -102,7 +103,7 @@ export function parsePorcelainStatus(output: string, staged: LineCounts, unstage
   const untracked: string[] = []
   const records = output.split("\0")
   for (let i = 0; i < records.length; i++) {
-    const record = records[i]!
+    const record = records[i]
     if (!record) continue
     if (record.startsWith("# branch.head ")) {
       const head = record.slice("# branch.head ".length)
@@ -134,7 +135,7 @@ export function parsePorcelainStatus(output: string, staged: LineCounts, unstage
     const renamed = kind === "2"
     const file = fields.slice(renamed ? 9 : 8).join(" ")
     const from = renamed ? records[++i] : undefined
-    const index = indexStatus(xy[0]!)
+    const index = indexStatus(xy[0])
     if (index) {
       status.staged.push({
         path: file,
@@ -143,7 +144,7 @@ export function parsePorcelainStatus(output: string, staged: LineCounts, unstage
         ...(from ? { from } : {}),
       })
     }
-    const worktree = worktreeStatus(xy[1]!)
+    const worktree = worktreeStatus(xy[1])
     if (worktree) status.unstaged.push({ path: file, status: worktree, ...counted(file, unstaged) })
   }
   return { status, untracked }
@@ -223,7 +224,7 @@ export async function gitPush(base: string, input: { setUpstream?: boolean } = {
     await runNetworkGit(["push", ...(input.setUpstream ? ["-u"] : []), "origin", branch], base)
   } catch (err) {
     if (err instanceof GitTimeoutError) throw err
-    const stderr = (err as { stderr?: string }).stderr?.trim()
+    const stderr = isRecord(err) && isString(err.stderr) ? err.stderr.trim() : undefined
     throw new GitWorktreeError("git_push_rejected", stderr || (err instanceof Error ? err.message : "git push failed"))
   }
   return { remote: "origin", branch }

@@ -168,7 +168,7 @@ describe("POST /session with parentID", () => {
   test("refuses a ceiling when no target mode fits instead of using the harness default", async () => {
     const item = fixture()
     item.seedParent("parent")
-    item.adapter.listDraftPermissionModes = async () => ({ modes: [MODES[3]!], appliesFrom: "next-turn" })
+    item.adapter.listDraftPermissionModes = async () => ({ modes: [MODES[3]], appliesFrom: "next-turn" })
     const response = await item.create({ parentID: "parent" })
     expect(response.status).toBe(403)
     expect(await response.json()).toMatchObject({ error: { code: "permission_ceiling_unsupported" } })
@@ -252,10 +252,10 @@ describe("POST /session with parentID", () => {
     const item = fixture()
     item.seedParent("parent")
     const retries = await Promise.all(Array.from({ length: 3 }, () => item.create({ parentID: "parent", clientRequestId: "same" })))
-    expect(retries.map((response) => response.status).sort()).toEqual([200, 200, 201])
+    expect(retries.map((response) => response.status).sort((a, b) => a - b)).toEqual([200, 200, 201])
     expect(item.calls.created).toHaveLength(1)
     const creates = await Promise.all(Array.from({ length: 5 }, () => item.create({ parentID: "parent" })))
-    expect(creates.map((response) => response.status).sort()).toEqual([201, 201, 201, 409, 409])
+    expect(creates.map((response) => response.status).sort((a, b) => a - b)).toEqual([201, 201, 201, 409, 409])
     expect(item.calls.created).toHaveLength(4)
   })
 

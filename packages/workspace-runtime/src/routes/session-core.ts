@@ -198,11 +198,11 @@ async function sessionPermissionCeiling(opts: Opts, c: Ctx, directory: RuntimeDi
 }
 
 async function rejectPermissionOverride(opts: Opts, c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter, modeId: string | undefined) {
-  if (!modeId) return
+  if (!modeId) return undefined
   const session = await readSession(opts, c, directory, sessionId, adapter)
   if (!session) return c.json(errorBody("session_not_found", "Session not found"), 404)
   const ceiling = await sessionPermissionCeiling(opts, c, directory, session, adapter)
-  if (!ceiling) return
+  if (!ceiling) return undefined
   return (await permissionModeUnderCeiling(c, adapter, directory, ceiling, modeId)).refusal
 }
 

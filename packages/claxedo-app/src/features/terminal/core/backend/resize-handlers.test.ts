@@ -111,7 +111,12 @@ function makeContainer(clientWidth = 100, clientHeight = 40) {
   return el
 }
 
-type FakeXterm = XTerm & { refresh: ReturnType<typeof vi.fn>; options: { fontSize: number }; fontSizeWrites: number[] }
+type FakeXterm = Omit<XTerm, "write"> & {
+  refresh: ReturnType<typeof vi.fn>
+  write: ReturnType<typeof vi.fn>
+  options: { fontSize: number }
+  fontSizeWrites: number[]
+}
 
 function makeXterm(rendererReady: boolean, cols = 80, rows = 24): FakeXterm {
   let fontSize = 14

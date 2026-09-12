@@ -20,7 +20,7 @@ export async function expectPermissionReplyIsolation(page: Page, input: {
   expect(sibling.ok(), await sibling.text()).toBe(true)
   const { id } = await sibling.json() as { id: string }
   expect(id).not.toBe(input.sessionId)
-  const reply = await page.request.post(`${input.backendUrl}/session/${id}/permissions/${owned[0]!.id}${query}`, {
+  const reply = await page.request.post(`${input.backendUrl}/session/${id}/permissions/${owned[0].id}${query}`, {
     data: { response: "always" },
   })
   expect(reply.status()).toBe(409)

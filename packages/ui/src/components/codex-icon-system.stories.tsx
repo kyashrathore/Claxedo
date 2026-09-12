@@ -723,7 +723,7 @@ const MappingGallery = () => {
       <p class="icon-reference-note">
         The previews use the current production mappings. Codex includes native ChatGPT app artwork from build{" "}
         {nativeCodexManifest.appBuild}; OpenCode uses its own v1/v2 artwork and approved custom glyphs. Globe, cloud,
-        gauge, reload, reset and worktree share Codex artwork across themes; Discord shares OpenCode’s brand mark. Process/terminal controls use Codex’s terminal or OpenCode’s bare >_ console prompt. Other
+        gauge, reload, reset and worktree share Codex artwork across themes; Discord shares OpenCode’s brand mark. Process/terminal controls use Codex’s terminal or OpenCode’s bare {">"}_ console prompt. Other
         harness marks also share one source across themes.{" "}
         <a href="#usage">Review where every unresolved icon is used.</a>
       </p>
