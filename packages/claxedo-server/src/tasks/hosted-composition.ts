@@ -11,8 +11,9 @@ import {
   type TasksRuntimePrincipal,
 } from "@claxedo/server-core/tasks-host/authorization"
 import { createTasksCapabilities, randomTasksIds, systemTasksClock } from "@claxedo/server-core/tasks-host/host-ports"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { TASKS_ROUTE_PATH, createTasksRoutes } from "@claxedo/tasks/http"
-import type { TasksSessionBridgePort } from "@claxedo/tasks"
+import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
 import { createD1TasksStore } from "./d1-store"
@@ -27,11 +28,15 @@ export type HostedTasksCompositionInput = {
   authentication: RequestAuthenticationAdapter
   /**
    * Built here rather than passed in, because the bridge has to reserve each
-   * session as the person who started it and only this composition holds the
-   * registry that maps a Tasks actor back to that person.
+   * session — and create a cloud root's own workspace — as the person who
+   * started it, and only this composition holds the registry that maps a Tasks
+   * actor back to that person.
    */
-  bridge: (principal: TasksRuntimePrincipal) => TasksSessionBridgePort
+  bridge: (principal: TasksRuntimePrincipal, auth: TasksSignedAuth) => TasksSessionBridgePort
 }
+
+/** The signed request a Tasks actor was minted from, for authority calls that act as the caller. */
+export type TasksSignedAuth = (actor: TasksActor) => SignedControlPlaneAuth | undefined
 
 /**
  * The runtime principal Tasks dispatches as. Start reserves and creates a
@@ -77,11 +82,16 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
             signed: (request) =>
               signedOrError(request, { authentication: input.authentication, requireSigned: true }, input.services),
           }),
-          bridge: input.bridge(signedTasksRuntimePrincipal(principals)),
-          // `resolveStart` in session-bridge-core refuses cloud placement on
-          // every host, so a preset naming one is refused when it is saved
-          // rather than saved and refused at Start.
-          capabilities: createTasksCapabilities({ placements: ["local"], cloudSelectedCapabilities: false }),
+          bridge: input.bridge(signedTasksRuntimePrincipal(principals), (actor) => principals.authOf(actor)),
+          // The same reading the workspace routes make before they will create
+          // a cloud workspace at all. Without a sandbox manager this
+          // deployment has no isolated root to allocate, so a preset naming
+          // cloud placement is refused when it is saved rather than saved and
+          // refused at every Start.
+          capabilities: createTasksCapabilities({
+            placements: input.services.sandbox.sandboxManager ? ["local", "cloud"] : ["local"],
+            cloudSelectedCapabilities: false,
+          }),
           clock: systemTasksClock(),
           ids: randomTasksIds(),
         }),

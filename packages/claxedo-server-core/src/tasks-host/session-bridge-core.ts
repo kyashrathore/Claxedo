@@ -46,6 +46,23 @@ export type TasksRuntimeTarget = {
  */
 export type TasksTargetChoice = { target: TasksRuntimeTarget } | { detail: string }
 
+/**
+ * Where a cloud-placement root runs, or the blocker that says why it does not.
+ * The refusal names its own blocker because the two answers are not the same
+ * refusal: a deployment with no sandbox driver cannot offer this placement at
+ * all, while one that has a driver and could not reach the project's source
+ * has an unavailable source.
+ */
+export type TasksCloudTargetChoice = { target: TasksRuntimeTarget } | { blocker: StartBlocker }
+
+/** The root a cloud allocation is bound to: one workspace per `(scope, task, slot, attempt)`. */
+export type TasksCloudOrigin = {
+  actor: TasksActor
+  task: Task
+  slot: ConfigurationSlot
+  attempt: number
+}
+
 export type TasksSessionReservation =
   | { ok: true; headers: Record<string, string> }
   | { ok: false; error: TasksErrorDetail }
@@ -61,6 +78,13 @@ export type TasksSessionHost = {
    * the Start refusing for a choice nobody was asked to make.
    */
   projectTarget(projectId: string): Promise<TasksTargetChoice>
+  /**
+   * The isolated workspace a cloud-placement preset runs in, allocated to this
+   * root and recovered by a retry of it. A host that names none cannot offer
+   * cloud placement, and a preset asking for one is blocked rather than
+   * started in the task's own workspace.
+   */
+  cloudTarget?(origin: TasksCloudOrigin): Promise<TasksCloudTargetChoice>
   sessionMetas(
     sessionIds: readonly string[],
   ): Promise<ReadonlyMap<string, { workspaceID?: string; archived?: number }>>
@@ -324,6 +348,26 @@ function previousSessionOf(command: StartPreviewCommand | StartCommand): Session
   return command.currentLink?.sessionRef ?? null
 }
 
+async function cloudTarget(
+  host: TasksSessionHost,
+  command: StartPreviewCommand | StartCommand,
+): Promise<TasksCloudTargetChoice> {
+  if (!host.cloudTarget) {
+    return {
+      blocker: {
+        code: "placement_unsupported",
+        detail: "This host starts sessions in the task's own workspace; an isolated cloud root is not available yet",
+      },
+    }
+  }
+  return host.cloudTarget({
+    actor: command.actor,
+    task: command.task,
+    slot: command.slot,
+    attempt: command.attempt,
+  })
+}
+
 async function startTarget(host: TasksSessionHost, task: Task): Promise<TasksTargetChoice> {
   if (!task.workspaceId) return host.projectTarget(task.projectId)
   const target = await host.target(task.workspaceId)
@@ -364,15 +408,13 @@ async function resolveStart(
   command: StartPreviewCommand | StartCommand,
 ): Promise<ResolvedStart | Refusal> {
   const placement = command.preset.execution.placement
-  const choice = await startTarget(host, command.task)
+  const choice = placement === "cloud"
+    ? await cloudTarget(host, command)
+    : await startTarget(host, command.task)
   const blockers: StartBlocker[] = []
-  if (placement === "cloud") {
-    blockers.push({
-      code: "placement_unsupported",
-      detail: "This host starts sessions in the task's own workspace; an isolated cloud root is not available yet",
-    })
+  if (!("target" in choice)) {
+    blockers.push("blocker" in choice ? choice.blocker : { code: "source_unavailable", detail: choice.detail })
   }
-  if (!("target" in choice)) blockers.push({ code: "source_unavailable", detail: choice.detail })
   const target = "target" in choice ? choice.target : null
 
   let readable: Handoff | null = null

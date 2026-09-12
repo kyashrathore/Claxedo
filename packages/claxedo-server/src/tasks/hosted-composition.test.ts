@@ -50,7 +50,7 @@ async function database(): Promise<D1Database> {
 /** alice belongs to org-1 and may write project-a; bob belongs to org-2 and may write nothing of alice's. */
 const ORGS: Record<string, string> = { alice: "org-1", bob: "org-2" }
 
-function plane(): HostedControlPlane {
+function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
   const sessionAuthority = {
     reserveSession: vi.fn(async () => ({ state: "reserved" })),
     registerRuntimeSession: vi.fn(async () => ({})),
@@ -63,7 +63,7 @@ function plane(): HostedControlPlane {
   const services = {
     auth: { config: { enabled: true, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" } },
     relay: { relayUrl: "https://relay.test", resolverToken: "resolver-token" },
-    sandbox: {},
+    sandbox,
     authority: {
       resolveOrgId: vi.fn(async (auth: { user: { subject: string } }) => ORGS[auth.user.subject] ?? "org-unknown"),
       authorizeProject: vi.fn(async (auth: { user: { subject: string } }, args: { projectId: string }) =>
@@ -125,8 +125,8 @@ function reportingBridge(principal: TasksRuntimePrincipal): TasksSessionBridgePo
   }
 }
 
-async function hostedApp() {
-  const base = plane()
+async function hostedApp(sandbox: Record<string, unknown> = {}) {
+  const base = plane(sandbox)
   const authentication = testRequestAuthenticationAdapter()
   const tasks = createHostedTasksComposition({
     services: base.services,
@@ -192,6 +192,15 @@ const PRESET = {
   },
 }
 
+const CLOUD_PRESET = {
+  ...PRESET,
+  input: {
+    ...PRESET.input,
+    name: "Isolated review",
+    execution: { placement: "cloud", capabilities: { mode: "selected", plugins: [], skills: [] } },
+  },
+}
+
 const TASK = {
   type: "task.create",
   input: { projectId: "project-a", title: "Ship the hosted store", description: "", workspaceId: null, parentTaskId: null },
@@ -203,10 +212,10 @@ describe("hosted Tasks composition", () => {
     expect((await app.request(`https://core.test${TASKS}/capabilities`)).status).toBe(401)
   })
 
-  // The bridge refuses cloud placement on every host, so a preset naming one
-  // must be refused when it is saved rather than advertised and then refused
-  // at Start.
-  test("answers its capabilities to a signed caller, with no cloud placement", async () => {
+  // A deployment with no sandbox driver has no isolated root to allocate, so a
+  // preset naming cloud placement must be refused when it is saved rather than
+  // advertised and then refused at every Start.
+  test("answers its capabilities to a signed caller, with no cloud placement on a driverless deployment", async () => {
     const app = await hostedApp()
     const response = await app.request(`https://core.test${TASKS}/capabilities`, { headers: headers("alice") })
     expect(response.status).toBe(200)
@@ -214,6 +223,24 @@ describe("hosted Tasks composition", () => {
       protocolVersion: 1,
       placements: ["local"],
       cloudSelectedCapabilities: false,
+    })
+    const refused = await command(app, "alice", "request-preset-cloud", CLOUD_PRESET)
+    expect(refused.status).toBe(422)
+    expect(refused.body).toMatchObject({ error: { message: expect.stringContaining("does not support cloud") } })
+  })
+
+  test("offers cloud placement once the deployment has a sandbox driver to allocate a root from", async () => {
+    const app = await hostedApp({ sandboxManager: { ensure: vi.fn(), target: vi.fn() }, defaultDriver: "daytona" })
+    const response = await app.request(`https://core.test${TASKS}/capabilities`, { headers: headers("alice") })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ placements: ["local", "cloud"] })
+
+    // S6 still gates the saved preset: the placement is available, and the
+    // selected capability set this host would have to honour is not.
+    const refused = await command(app, "alice", "request-preset-cloud", CLOUD_PRESET)
+    expect(refused.status).toBe(422)
+    expect(refused.body).toMatchObject({
+      error: { message: expect.stringContaining("selected cloud capability set") },
     })
   })
 

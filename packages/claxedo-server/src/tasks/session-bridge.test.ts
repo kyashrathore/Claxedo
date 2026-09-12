@@ -140,7 +140,9 @@ function services(input: { meta?: Map<string, { workspaceID?: string; archived?:
     authority,
     projectionStore,
     metas,
-    value: { authority, projectionStore } as unknown as ControlPlaneServices,
+    // No sandbox manager, which is the deployment the cloud-placement case
+    // below is about: one with no isolated root to allocate.
+    value: { authority, projectionStore, sandbox: {} } as unknown as ControlPlaneServices,
   }
 }
 
@@ -591,7 +593,7 @@ describe("hosted tasks session bridge", () => {
     ])
   })
 
-  test("blocks a cloud preset and never reserves an origin for one", async () => {
+  test("blocks a cloud preset on a deployment with no sandbox driver, and never reserves an origin for one", async () => {
     const host = runtime()
     const composition = services()
     const kit = bridge(composition)
@@ -602,7 +604,9 @@ describe("hosted tasks session bridge", () => {
     const previewed = await kit.preview({ ...previewCommand(), preset: cloud })
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
-    expect(previewed.preview.blockers).toEqual([{ code: "placement_unsupported", detail: expect.any(String) }])
+    expect(previewed.preview.blockers).toEqual([
+      { code: "placement_unsupported", detail: expect.stringContaining("No cloud sandbox driver is configured") },
+    ])
 
     const started = await kit.start(await startCommand(previewed.preview.digest, cloud))
     expect(started).toMatchObject({ ok: false, error: { code: "unsupported" } })

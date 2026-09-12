@@ -20,11 +20,12 @@ export function hostedTasksRouteContributions(
 ): readonly ControlPlaneRouteContribution[] {
   return createHostedTasksComposition({
     ...input,
-    bridge: (principal) =>
+    bridge: (principal, auth) =>
       createHostedTasksSessionBridge({
         services: input.services,
         runtimeClient: hostedTasksRuntimeClient(input.services),
         principal,
+        auth,
       }),
   }).routeContributions
 }

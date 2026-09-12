@@ -3,6 +3,7 @@ import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/
 import {
   chooseProjectWorkspace,
   createTasksSessionBridge,
+  type TasksCloudTargetChoice,
   type TasksRuntimeTarget,
   type TasksSessionHost,
   type TasksSessionReservation,
@@ -13,10 +14,18 @@ import {
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import { listWorkspaces, resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
-import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
-import { tasksErrorDetail, type TasksActor, type TasksErrorDetail, type TasksSessionBridgePort } from "@claxedo/tasks"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import {
+  startOriginId,
+  tasksErrorDetail,
+  type TasksActor,
+  type TasksErrorDetail,
+  type TasksSessionBridgePort,
+} from "@claxedo/tasks"
 import { isComposedAuthorityPort } from "../authority/composed-authority"
 import type { ControlPlaneServices } from "../authority/services"
+import { allocateOriginCloudWorkspace } from "../workspace/origin-cloud-workspace"
 
 export type HostedTasksSessionBridgeInput = {
   services: ControlPlaneServices
@@ -32,6 +41,16 @@ export type HostedTasksSessionBridgeInput = {
    * actor id — so the composition resolves it from the signed caller.
    */
   principal?: (actor: TasksActor) => Promise<PrivateSessionRuntimePrincipal | undefined>
+  /**
+   * The signed request a Tasks actor was minted from.
+   *
+   * A cloud root is a workspace this control plane creates mid-Start, and the
+   * workspace authority records a creator and an organization from the signed
+   * caller. Created as anything else it is a workspace the caller cannot open
+   * and a session reservation the authority refuses, because the reservation
+   * selects the workspace row as the caller's own actor.
+   */
+  auth?: (actor: TasksActor) => SignedControlPlaneAuth | undefined
 }
 
 export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeInput): TasksSessionBridgePort {
@@ -50,6 +69,8 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
       }
     },
 
+    cloudTarget: createTasksCloudTarget(input),
+
     sessionMetas: (sessionIds) => input.services.projectionStore.session_metas([...sessionIds]),
 
     reserve: createTasksSessionReserve(input),
@@ -66,6 +87,55 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
 
     forgetSessionMeta: (sessionId) => input.services.projectionStore.delete_session_meta(sessionId),
   })
+}
+
+/**
+ * The isolated workspace one Tasks root runs in.
+ *
+ * The origin key is the kit's own `(scope, task, slot, attempt)` string, so
+ * the workspace belongs to the same root as the session id and the reservation
+ * derived from it, and a retry of that attempt recovers all three. The
+ * workspace is created as the signed caller against the task's own project, so
+ * the authority resolves the same organization it resolved to admit the task.
+ */
+function createTasksCloudTarget(
+  input: HostedTasksSessionBridgeInput,
+): NonNullable<TasksSessionHost["cloudTarget"]> {
+  return async (origin): Promise<TasksCloudTargetChoice> => {
+    const auth = input.auth?.(origin.actor)
+    const allocated = await allocateOriginCloudWorkspace({
+      services: input.services,
+      originKey: startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
+      projectId: origin.task.projectId,
+      displayName: `${origin.task.title} (${origin.slot}, attempt ${origin.attempt})`,
+      admit: async (workspace) => {
+        if (!auth) {
+          throw new Error("this host creates a cloud root as the person starting it, and this caller is not signed")
+        }
+        await requireAuthority(input.services).createCloudWorkspace(auth, {
+          workspaceId: workspace.id,
+          projectId: origin.task.projectId,
+          displayName: workspace.workspace_name ?? workspace.id,
+          ...(workspace.repo_url ? { repoUrl: workspace.repo_url } : {}),
+          ...(workspace.repo_name ? { repoName: workspace.repo_name } : {}),
+          ...(workspace.git_branch ? { gitBranch: workspace.git_branch } : {}),
+          ...(input.services.defaultHomeRegion ? { homeRegion: input.services.defaultHomeRegion } : {}),
+        })
+      },
+      discard: async (workspace) => {
+        if (!auth) return
+        await requireAuthority(input.services).deleteWorkspace(auth, { workspaceId: workspace.id })
+      },
+    })
+    if ("code" in allocated) return { blocker: { code: allocated.code, detail: allocated.detail } }
+    const target = dispatchTarget(allocated.workspace, input.runtimeClient)
+    return target ? { target } : {
+      blocker: {
+        code: "source_unavailable",
+        detail: `Cloud root ${allocated.workspace.id} is not reachable from this control plane`,
+      },
+    }
+  }
 }
 
 /**
