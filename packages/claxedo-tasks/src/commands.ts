@@ -12,7 +12,7 @@ import type { TasksCapabilitiesPort } from "./ports/capabilities"
 import type { TasksClockPort } from "./ports/clock"
 import type { TasksIdsPort } from "./ports/ids"
 import type { TasksSessionBridgePort } from "./ports/session-bridge"
-import { joinedTransaction, type TasksStoreOperations, type TasksStorePort } from "./ports/store"
+import { TasksStoreConflict, joinedTransaction, type TasksStoreOperations, type TasksStorePort } from "./ports/store"
 import { createPresetsService } from "./presets/service"
 import { createTasksService } from "./tasks/service"
 
@@ -121,27 +121,37 @@ export function createTasksCommands(deps: TasksCommandsDeps): TasksCommands {
 
       // The receipt is written inside the unit it describes, so a racing
       // duplicate discovers the taken key and rolls its own work back rather
-      // than committing the same command twice.
+      // than committing the same command twice. An adapter that cannot decide
+      // the key until it commits reports the same collision afterwards, once
+      // every operation in the unit has already answered — a duplicate is
+      // still the committed command, so it replays; a revision or origin this
+      // unit lost to a real competitor is a refusal.
       let raced = false
-      const result = await deps.store.transaction(async (operations) => {
-        const committed = await run(actor, request.command, operations)
-        const stored = await operations.receipts.put({
-          scopeId: actor.scopeId,
-          clientRequestId: request.clientRequestId,
-          commandName: request.command.type,
-          requestHash,
-          result: committed,
-          createdAt: deps.clock.now(),
+      const result = await deps.store
+        .transaction(async (operations) => {
+          const committed = await run(actor, request.command, operations)
+          const stored = await operations.receipts.put({
+            scopeId: actor.scopeId,
+            clientRequestId: request.clientRequestId,
+            commandName: request.command.type,
+            requestHash,
+            result: committed,
+            createdAt: deps.clock.now(),
+          })
+          if (!stored) {
+            raced = true
+            refuse("conflict", `Client request ${request.clientRequestId} is already committing`)
+          }
+          return committed
         })
-        if (!stored) {
-          raced = true
-          refuse("conflict", `Client request ${request.clientRequestId} is already committing`)
-        }
-        return committed
-      }).catch(async (cause: unknown) => {
-        if (!raced) throw cause
-        return undefined
-      })
+        .catch((cause: unknown) => {
+          if (raced) return undefined
+          if (cause instanceof TasksStoreConflict) {
+            if (cause.kind === "duplicate-receipt") return undefined
+            refuse("conflict", cause.message)
+          }
+          throw cause
+        })
       if (result === undefined) return replay(actor, request, requestHash)
       return { result, replayed: false }
     },

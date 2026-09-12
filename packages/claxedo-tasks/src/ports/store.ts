@@ -28,6 +28,27 @@ export type TasksCommandReceipt = {
   createdAt: number
 }
 
+/**
+ * Which predicate a commit found broken, ordered by the answer a caller owes
+ * its client: a duplicate receipt means the command already happened and its
+ * committed result is the reply, so it outranks the revision and origin
+ * conflicts the same commit may also have hit.
+ */
+export const TASKS_STORE_CONFLICTS = ["duplicate-receipt", "stale-revision", "link-conflict"] as const
+export type TasksStoreConflictKind = (typeof TASKS_STORE_CONFLICTS)[number]
+
+/** A predicate an operation reported as holding and the commit found broken. */
+export class TasksStoreConflict extends Error {
+  constructor(
+    readonly kind: TasksStoreConflictKind,
+    message: string,
+    options?: ErrorOptions,
+  ) {
+    super(message, options)
+    this.name = "TasksStoreConflict"
+  }
+}
+
 export type PresetStoreOperations = {
   get(scopeId: string, presetId: string): Promise<Preset | undefined>
   list(scopeId: string, ownerId: string, query: PresetListQuery): Promise<Page<Preset>>
@@ -93,6 +114,18 @@ export type TasksStorePort = TasksStoreOperations & {
    * Runs `work` against operations that commit together or not at all. A
    * throw from `work` rolls the whole unit back and propagates, which is how
    * a failed revision predicate takes its command receipt down with it.
+   *
+   * Units are arbitrated, not interleaved: a unit that rolls back never
+   * removes a write another unit committed, and two units that read one row at
+   * the same revision cannot both bump it. An operation's `expectedRevision`
+   * is the caller's evidence and is never replaced by a value the adapter
+   * reads for itself.
+   *
+   * An adapter with no interactive transaction answers each operation from
+   * committed rows and only learns at commit that a predicate it reported as
+   * holding has since broken. Such a unit rejects with `TasksStoreConflict`
+   * naming the predicate — after operations inside it have already returned
+   * success — and every other rejection is `work`'s own.
    */
   transaction<T>(work: (operations: TasksStoreOperations) => Promise<T>): Promise<T>
 }
@@ -104,4 +137,26 @@ export type TasksStorePort = TasksStoreOperations & {
  */
 export function joinedTransaction(operations: TasksStoreOperations): TasksStorePort {
   return { ...operations, transaction: (work) => work(operations) }
+}
+
+/**
+ * Opens one unit at a time, so an adapter whose rollback belongs to the
+ * connection rather than to the unit can still promise arbitration: a second
+ * `BEGIN` on one connection is an error, and a rollback that restores a
+ * snapshot taken before the unit opened would erase a unit that committed
+ * meanwhile. A unit that throws still releases the queue.
+ */
+export function serializedTransactions(
+  open: <T>(work: (operations: TasksStoreOperations) => Promise<T>) => Promise<T>,
+): TasksStorePort["transaction"] {
+  let pending: Promise<unknown> = Promise.resolve()
+  return <T>(work: (operations: TasksStoreOperations) => Promise<T>): Promise<T> => {
+    const run = () => open(work)
+    const settled = pending.then(run, run)
+    pending = settled.then(
+      () => undefined,
+      () => undefined,
+    )
+    return settled
+  }
 }

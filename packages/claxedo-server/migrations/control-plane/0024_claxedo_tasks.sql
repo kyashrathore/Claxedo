@@ -65,6 +65,7 @@ create table task_session_links (
   preset_id text not null,
   preset_revision integer not null,
   preset_name_at_start text not null,
+  configuration_digest text not null,
   created_at integer not null,
   primary key (scope_id, task_id, slot, attempt)
 );

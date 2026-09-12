@@ -2,7 +2,8 @@
  * Proof that the store conformance suite detects the divergences it claims.
  *
  * The suite is the only thing that will keep a SQLite adapter and a D1 adapter
- * agreeing about rollback, origin uniqueness and scope isolation, and a suite
+ * agreeing about rollback, arbitration, origin uniqueness and scope isolation,
+ * and a suite
  * whose assertion was weakened looks exactly like a suite that is passing
  * honestly. So every pinned case is paired with a store that breaks what the
  * case names, and the case must refuse against it.
@@ -35,6 +36,78 @@ function everywhere(apply: (operations: TasksStoreOperations) => TasksStoreOpera
   })
 }
 
+/**
+ * The revision the caller passed, replaced by the one the store reads for
+ * itself at write time — so every compare-and-set succeeds, including the one
+ * whose evidence a concurrent writer has already invalidated.
+ */
+const REREADS_THE_REVISION = everywhere((operations) => ({
+  ...operations,
+  tasks: {
+    ...operations.tasks,
+    update: async (task) => {
+      await operations.tasks.update(task, (await operations.tasks.get(task.scopeId, task.id))?.revision ?? 0)
+      return true
+    },
+  },
+}))
+
+/**
+ * Every write recorded, and a failed unit "rolled back" by replaying the
+ * recording as it stood when that unit opened — the memory store's rollback
+ * before it queued its units. Nothing arbitrates two open units, so the replay
+ * also erases whatever committed between them.
+ */
+function snapshotRollback(): TasksStorePort {
+  type Write = (operations: TasksStoreOperations) => Promise<unknown>
+  let live = createMemoryTasksStore()
+  const log: Write[] = []
+  const record = <Result>(replay: Write, applied: Promise<Result>): Promise<Result> => {
+    log.push(replay)
+    return applied
+  }
+  const operations: TasksStoreOperations = {
+    presets: {
+      get: (scopeId, presetId) => live.presets.get(scopeId, presetId),
+      list: (scopeId, ownerId, query) => live.presets.list(scopeId, ownerId, query),
+      insert: (preset) => record((into) => into.presets.insert(preset), live.presets.insert(preset)),
+      update: (preset, revision) => record((into) => into.presets.update(preset, revision), live.presets.update(preset, revision)),
+    },
+    tasks: {
+      get: (scopeId, taskId) => live.tasks.get(scopeId, taskId),
+      list: (scopeId, query) => live.tasks.list(scopeId, query),
+      listChildren: (scopeId, parentTaskId, query) => live.tasks.listChildren(scopeId, parentTaskId, query),
+      countChildren: (scopeId, parentTaskId, filter) => live.tasks.countChildren(scopeId, parentTaskId, filter),
+      insert: (task) => record((into) => into.tasks.insert(task), live.tasks.insert(task)),
+      update: (task, revision) => record((into) => into.tasks.update(task, revision), live.tasks.update(task, revision)),
+    },
+    links: {
+      getCurrent: (scopeId, taskId, slot) => live.links.getCurrent(scopeId, taskId, slot),
+      listByTask: (scopeId, taskId) => live.links.listByTask(scopeId, taskId),
+      insert: (link) => record((into) => into.links.insert(link), live.links.insert(link)),
+    },
+    receipts: {
+      get: (scopeId, clientRequestId) => live.receipts.get(scopeId, clientRequestId),
+      put: (receipt) => record((into) => into.receipts.put(receipt), live.receipts.put(receipt)),
+    },
+  }
+  return {
+    ...operations,
+    transaction: async (work) => {
+      const opened = log.length
+      try {
+        return await work(operations)
+      } catch (cause) {
+        const replay = log.splice(0, log.length).slice(0, opened)
+        live = createMemoryTasksStore()
+        for (const write of replay) await write(live)
+        log.push(...replay)
+        throw cause
+      }
+    },
+  }
+}
+
 const MUTANTS: readonly Mutant[] = [
   {
     breaks: "commits the work of a transaction that threw",
@@ -42,16 +115,7 @@ const MUTANTS: readonly Mutant[] = [
   },
   {
     breaks: "writes a row whose revision predicate missed",
-    apply: everywhere((operations) => ({
-      ...operations,
-      tasks: {
-        ...operations.tasks,
-        update: async (task) => {
-          await operations.tasks.update(task, (await operations.tasks.get(task.scopeId, task.id))?.revision ?? 0)
-          return true
-        },
-      },
-    })),
+    apply: REREADS_THE_REVISION,
   },
   {
     breaks: "rolls back everything except the rows inserted during the unit",
@@ -141,13 +205,21 @@ const MUTANTS: readonly Mutant[] = [
       },
     })),
   },
+  {
+    breaks: "restores a snapshot of the whole store over a unit that committed beside it",
+    apply: () => snapshotRollback(),
+  },
+  {
+    breaks: "lets two overlapping units bump one row from one revision",
+    apply: REREADS_THE_REVISION,
+  },
 ]
 
 describe("tasks store conformance", () => {
   const cases = tasksStoreConformance(async () => ({ store: createMemoryTasksStore() }))
 
   test("the pinned manifest lists exactly the cases the suite runs", () => {
-    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(1)
+    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(2)
     expect(cases.map((entry) => entry.name.replaceAll(/[^a-z]+/g, "_"))).toEqual([...TASKS_STORE_CONFORMANCE_SCOPE.cases])
   })
 

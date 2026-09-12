@@ -10,6 +10,7 @@
 import { and, count, desc, eq, isNull, lt, ne, or } from "drizzle-orm"
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core"
 import {
+  serializedTransactions,
   taskSummaryOf,
   type ConfigurationSlot,
   type ListQuery,
@@ -55,11 +56,13 @@ function taskSummaries(rows: readonly StoredTaskColumns[], limit: number): Page<
   return tasksPage(rows, limit, (row) => taskSummaryOf(taskOfColumns(row)))
 }
 
-function tasksOperations(): TasksStoreOperations {
+type Reader = <T>(callback: (db: ClaxedoDB.Client) => T) => T
+
+function tasksOperations(use: Reader): TasksStoreOperations {
   return {
     presets: {
       async get(scopeId, presetId) {
-        const row = ClaxedoDB.use((db) =>
+        const row = use((db) =>
           db
             .select()
             .from(ClaxedoTaskPresetTable)
@@ -71,7 +74,7 @@ function tasksOperations(): TasksStoreOperations {
 
       async list(scopeId, ownerId, query) {
         const page = windowConditions(query, ClaxedoTaskPresetTable.created_at, ClaxedoTaskPresetTable.preset_id)
-        const rows = ClaxedoDB.use((db) =>
+        const rows = use((db) =>
           db
             .select()
             .from(ClaxedoTaskPresetTable)
@@ -91,11 +94,11 @@ function tasksOperations(): TasksStoreOperations {
       },
 
       async insert(preset) {
-        ClaxedoDB.use((db) => db.insert(ClaxedoTaskPresetTable).values(presetColumns(preset)).run())
+        use((db) => db.insert(ClaxedoTaskPresetTable).values(presetColumns(preset)).run())
       },
 
       async update(preset, expectedRevision) {
-        const written = ClaxedoDB.use((db) =>
+        const written = use((db) =>
           db
             .update(ClaxedoTaskPresetTable)
             .set(presetColumns(preset))
@@ -115,7 +118,7 @@ function tasksOperations(): TasksStoreOperations {
 
     tasks: {
       async get(scopeId, taskId) {
-        const row = ClaxedoDB.use((db) =>
+        const row = use((db) =>
           db
             .select()
             .from(ClaxedoTaskTable)
@@ -127,7 +130,7 @@ function tasksOperations(): TasksStoreOperations {
 
       async list(scopeId, query) {
         const page = windowConditions(query, ClaxedoTaskTable.created_at, ClaxedoTaskTable.task_id)
-        const rows = ClaxedoDB.use((db) =>
+        const rows = use((db) =>
           db
             .select()
             .from(ClaxedoTaskTable)
@@ -150,7 +153,7 @@ function tasksOperations(): TasksStoreOperations {
 
       async listChildren(scopeId, parentTaskId, query) {
         const page = windowConditions(query, ClaxedoTaskTable.created_at, ClaxedoTaskTable.task_id)
-        const rows = ClaxedoDB.use((db) =>
+        const rows = use((db) =>
           db
             .select()
             .from(ClaxedoTaskTable)
@@ -170,7 +173,7 @@ function tasksOperations(): TasksStoreOperations {
       },
 
       async countChildren(scopeId, parentTaskId, filter) {
-        const row = ClaxedoDB.use((db) =>
+        const row = use((db) =>
           db
             .select({ children: count() })
             .from(ClaxedoTaskTable)
@@ -188,11 +191,11 @@ function tasksOperations(): TasksStoreOperations {
       },
 
       async insert(task) {
-        ClaxedoDB.use((db) => db.insert(ClaxedoTaskTable).values(taskColumns(task)).run())
+        use((db) => db.insert(ClaxedoTaskTable).values(taskColumns(task)).run())
       },
 
       async update(task, expectedRevision) {
-        const written = ClaxedoDB.use((db) =>
+        const written = use((db) =>
           db
             .update(ClaxedoTaskTable)
             .set(taskColumns(task))
@@ -212,7 +215,7 @@ function tasksOperations(): TasksStoreOperations {
 
     links: {
       async getCurrent(scopeId, taskId, slot) {
-        const row = ClaxedoDB.use((db) =>
+        const row = use((db) =>
           db
             .select()
             .from(ClaxedoTaskSessionLinkTable)
@@ -224,7 +227,7 @@ function tasksOperations(): TasksStoreOperations {
       },
 
       async listByTask(scopeId, taskId) {
-        const rows = ClaxedoDB.use((db) =>
+        const rows = use((db) =>
           db
             .select()
             .from(ClaxedoTaskSessionLinkTable)
@@ -236,7 +239,7 @@ function tasksOperations(): TasksStoreOperations {
       },
 
       async insert(link) {
-        const inserted = ClaxedoDB.use((db) =>
+        const inserted = use((db) =>
           db
             .insert(ClaxedoTaskSessionLinkTable)
             .values(linkColumns(link))
@@ -245,7 +248,7 @@ function tasksOperations(): TasksStoreOperations {
             .all(),
         )
         if (inserted.length > 0) return { status: "inserted" }
-        const stored = ClaxedoDB.use((db) =>
+        const stored = use((db) =>
           db
             .select()
             .from(ClaxedoTaskSessionLinkTable)
@@ -259,7 +262,7 @@ function tasksOperations(): TasksStoreOperations {
 
     receipts: {
       async get(scopeId, clientRequestId) {
-        const row = ClaxedoDB.use((db) =>
+        const row = use((db) =>
           db
             .select()
             .from(ClaxedoTaskCommandReceiptTable)
@@ -275,7 +278,7 @@ function tasksOperations(): TasksStoreOperations {
       },
 
       async put(receipt) {
-        const written = ClaxedoDB.use((db) =>
+        const written = use((db) =>
           db
             .insert(ClaxedoTaskCommandReceiptTable)
             .values(receiptColumns(receipt))
@@ -297,37 +300,64 @@ function slotScope(scopeId: string, taskId: string, slot: ConfigurationSlot) {
   )
 }
 
+/**
+ * Tasks reads and writes the claxedo database over a connection of its own,
+ * one per database file and shared by every adapter instance.
+ *
+ * A unit of work holds `BEGIN` across awaits, and the shared `ClaxedoDB` handle
+ * cannot carry that: a transaction open on it swallows every other module's
+ * autocommitted write and rolls it back with the unit, and a `BEGIN` issued
+ * while one is already open is an error rather than a nested unit. One
+ * connection per file rather than one per adapter, for the same reason — two
+ * adapters on two connections would each open a unit with nothing arbitrating
+ * them.
+ *
+ * `BEGIN DEFERRED`, not `IMMEDIATE`: the unit takes a WAL read snapshot and
+ * promotes it at its first write, so a write from elsewhere in the process
+ * commits and this unit refuses with SQLITE_BUSY_SNAPSHOT. `IMMEDIATE` would
+ * instead hold the write lock for as long as the unit awaits, and every other
+ * writer — synchronous, on this one thread — would block against it until
+ * `busy_timeout` expired.
+ */
+let connected: { path: string; connection: ClaxedoDB.Connection } | undefined
+
+function tasksConnection(): ClaxedoDB.Connection {
+  const path = ClaxedoDB.Path()
+  if (connected?.path === path) return connected.connection
+  connected?.connection.close()
+  connected = { path, connection: ClaxedoDB.connect() }
+  return connected.connection
+}
+
+/**
+ * A connection whose ROLLBACK fails is still inside the unit, and every later
+ * BEGIN on it would fail too, so it is dropped and the next unit opens a fresh
+ * one. What propagates is the failure that refused the unit, not the rollback's.
+ */
+function undo(connection: ClaxedoDB.Connection): void {
+  try {
+    connection.sqlite.exec("ROLLBACK")
+  } catch {
+    if (connected?.connection === connection) connected = undefined
+    connection.close()
+  }
+}
+
+const operations = tasksOperations((callback) => callback(tasksConnection().db))
+
+const transaction = serializedTransactions(async (work) => {
+  const connection = tasksConnection()
+  connection.sqlite.exec("BEGIN DEFERRED")
+  try {
+    const result = await work(operations)
+    connection.sqlite.exec("COMMIT")
+    return result
+  } catch (cause) {
+    undo(connection)
+    throw cause
+  }
+})
+
 export function createSqliteTasksStore(): TasksStorePort {
-  const operations = tasksOperations()
-  // better-sqlite3 and bun:sqlite are both synchronous, so a unit cannot be
-  // wrapped by the driver's own `transaction()` helper: the kit's work is an
-  // async function and the helper would return before its first await
-  // resolved. The statements are issued explicitly instead, and units are run
-  // one at a time because a second BEGIN on the shared connection is an error,
-  // not a nested transaction.
-  let pending: Promise<unknown> = Promise.resolve()
-  const unit = async <T>(work: (operations: TasksStoreOperations) => Promise<T>): Promise<T> => {
-    const sqlite = ClaxedoDB.raw()
-    sqlite.exec("BEGIN IMMEDIATE")
-    try {
-      const result = await work(operations)
-      sqlite.exec("COMMIT")
-      return result
-    } catch (cause) {
-      sqlite.exec("ROLLBACK")
-      throw cause
-    }
-  }
-  return {
-    ...operations,
-    transaction(work) {
-      const run = () => unit(work)
-      const settled = pending.then(run, run)
-      pending = settled.then(
-        () => undefined,
-        () => undefined,
-      )
-      return settled
-    },
-  }
+  return { ...operations, transaction }
 }

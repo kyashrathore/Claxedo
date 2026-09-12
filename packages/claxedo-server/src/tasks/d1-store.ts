@@ -13,9 +13,18 @@
  * write is therefore preceded in the same batch by a statement that inserts
  * into `task_write_guards` exactly when its predicate has stopped holding, and
  * that insert refuses, which rolls the whole batch back.
+ *
+ * A refused batch names no statement, and by then every operation in the unit
+ * has already reported success — so each queued predicate also carries the
+ * read that says whether it is the one that broke, and the unit rejects with a
+ * `TasksStoreConflict` naming it. A duplicate command receipt is the answer a
+ * caller replays; a moved revision or a claimed session origin is the answer it
+ * refuses.
  */
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import {
+  TASKS_STORE_CONFLICTS,
+  TasksStoreConflict,
   taskSummaryOf,
   type ConfigurationSlot,
   type ListQuery,
@@ -23,6 +32,7 @@ import {
   type Task,
   type TaskSessionLink,
   type TasksCommandReceipt,
+  type TasksStoreConflictKind,
   type TasksStoreOperations,
   type TasksStorePort,
 } from "@claxedo/tasks"
@@ -49,7 +59,7 @@ const PRESET_COLUMNS =
 const TASK_COLUMNS =
   "scope_id, task_id, revision, project_id, workspace_id, parent_task_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
 const LINK_COLUMNS =
-  "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, created_at"
+  "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, created_at"
 const RECEIPT_COLUMNS = "scope_id, client_request_id, command_name, request_hash, result, created_at"
 
 function presetValues(preset: Preset): unknown[] {
@@ -102,6 +112,7 @@ function linkValues(link: TaskSessionLink): unknown[] {
     row.preset_id,
     row.preset_revision,
     row.preset_name_at_start,
+    row.configuration_digest,
     row.created_at,
   ]
 }
@@ -139,14 +150,27 @@ type Overlay = {
   receipts: Map<string, TasksCommandReceipt>
 }
 
+/**
+ * How one statement in the batch can refuse, and how to tell afterwards
+ * whether it did. A batch reports the failure but not which predicate broke,
+ * and every predicate in it was true when the operation that queued it
+ * answered its caller — so the answer is read back from committed rows.
+ */
+type ConflictProbe = Readonly<{
+  kind: TasksStoreConflictKind
+  broken: () => Promise<string | undefined>
+}>
+
 type Unit = {
   statements: D1PreparedStatement[]
+  probes: ConflictProbe[]
   overlay: Overlay
 }
 
 function emptyUnit(): Unit {
   return {
     statements: [],
+    probes: [],
     overlay: { presets: new Map(), tasks: new Map(), links: new Map(), receipts: new Map() },
   }
 }
@@ -188,22 +212,75 @@ function windowClause(query: ListQuery, idColumn: string): { limit: number; wher
 export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
   const database = input.database
 
-  const guard = (refusal: string, stillHolds: string, bindings: readonly unknown[]): D1PreparedStatement =>
-    database
-      .prepare(`insert into task_write_guards (refusal) select ? where not exists (${stillHolds})`)
-      .bind(refusal, ...bindings)
+  const committedRevision = async (table: string, idColumn: string, scopeId: string, id: string) => {
+    const row = await database
+      .prepare(`select revision from ${table} where scope_id = ? and ${idColumn} = ?`)
+      .bind(scopeId, id)
+      .first<{ revision: number }>()
+    return row?.revision
+  }
+
+  /**
+   * The revision predicate as both halves it needs: the statement that refuses
+   * the batch when the row has left `expectedRevision`, and the read that says
+   * so afterwards. One description serves both, so the refusal the caller sees
+   * cannot drift from the one the batch enforced.
+   */
+  const revisionGuard = (
+    what: string,
+    table: string,
+    idColumn: string,
+    scopeId: string,
+    id: string,
+    expectedRevision: number,
+  ) => {
+    const refusal = `${what} left revision ${expectedRevision}`
+    return {
+      statement: database
+        .prepare(
+          `insert into task_write_guards (refusal) select ? where not exists (` +
+            `select 1 from ${table} where scope_id = ? and ${idColumn} = ? and revision = ?)`,
+        )
+        .bind(refusal, scopeId, id, expectedRevision),
+      probe: {
+        kind: "stale-revision",
+        broken: async () => ((await committedRevision(table, idColumn, scopeId, id)) === expectedRevision ? undefined : refusal),
+      } satisfies ConflictProbe,
+    }
+  }
+
+  const classify = async (probes: readonly ConflictProbe[], cause: unknown): Promise<TasksStoreConflict | undefined> => {
+    const ordered = [...probes].sort(
+      (left, right) => TASKS_STORE_CONFLICTS.indexOf(left.kind) - TASKS_STORE_CONFLICTS.indexOf(right.kind),
+    )
+    for (const probe of ordered) {
+      const broken = await probe.broken()
+      if (broken) return new TasksStoreConflict(probe.kind, broken, { cause })
+    }
+    return undefined
+  }
+
+  const runBatch = async (statements: readonly D1PreparedStatement[], probes: readonly ConflictProbe[]): Promise<void> => {
+    try {
+      await database.batch([...statements])
+    } catch (cause) {
+      throw (await classify(probes, cause)) ?? cause
+    }
+  }
 
   /** Outside a unit a write is its own commit; inside one it joins the batch. */
   const commit = async (
     unit: Unit | undefined,
     statements: readonly D1PreparedStatement[],
     record: (overlay: Overlay) => void,
+    probes: readonly ConflictProbe[] = [],
   ): Promise<void> => {
     if (!unit) {
-      await database.batch([...statements])
+      await runBatch(statements, probes)
       return
     }
     unit.statements.push(...statements)
+    unit.probes.push(...probes)
     record(unit.overlay)
   }
 
@@ -272,17 +349,15 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
         if (!stored || stored.revision !== expectedRevision) return false
         // A row this unit wrote needs no guard: the statement that wrote it is
         // in the same batch, so nothing outside can have moved it.
-        const guarded = pending
-          ? [statement]
-          : [
-              guard(
-                `preset ${preset.id} left revision ${expectedRevision}`,
-                "select 1 from task_presets where scope_id = ? and preset_id = ? and revision = ?",
-                [preset.scopeId, preset.id, expectedRevision],
-              ),
-              statement,
-            ]
-        await commit(unit, guarded, (overlay) => overlay.presets.set(key, preset))
+        const guard = pending
+          ? undefined
+          : revisionGuard(`preset ${preset.id}`, "task_presets", "preset_id", preset.scopeId, preset.id, expectedRevision)
+        await commit(
+          unit,
+          guard ? [guard.statement, statement] : [statement],
+          (overlay) => overlay.presets.set(key, preset),
+          guard ? [guard.probe] : [],
+        )
         return true
       },
     },
@@ -370,17 +445,15 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
         const pending = unit.overlay.tasks.get(key)
         const stored = pending ?? (await this.get(task.scopeId, task.id))
         if (!stored || stored.revision !== expectedRevision) return false
-        const guarded = pending
-          ? [statement]
-          : [
-              guard(
-                `task ${task.id} left revision ${expectedRevision}`,
-                "select 1 from tasks where scope_id = ? and task_id = ? and revision = ?",
-                [task.scopeId, task.id, expectedRevision],
-              ),
-              statement,
-            ]
-        await commit(unit, guarded, (overlay) => overlay.tasks.set(key, task))
+        const guard = pending
+          ? undefined
+          : revisionGuard(`task ${task.id}`, "tasks", "task_id", task.scopeId, task.id, expectedRevision)
+        await commit(
+          unit,
+          guard ? [guard.statement, statement] : [statement],
+          (overlay) => overlay.tasks.set(key, task),
+          guard ? [guard.probe] : [],
+        )
         return true
       },
     },
@@ -424,6 +497,15 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           unit,
           [database.prepare(insertStatement("task_session_links", LINK_COLUMNS, values)).bind(...values)],
           (overlay) => overlay.links.set(key, link),
+          [
+            {
+              kind: "link-conflict",
+              broken: async () =>
+                (await storedLink(link.scopeId, link.taskId, link.slot, link.attempt))
+                  ? `session link ${link.taskId}/${link.slot}/${link.attempt} was claimed by another session`
+                  : undefined,
+            },
+          ],
         )
         return { status: "inserted" }
       },
@@ -455,8 +537,22 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
             .then(() => true)
             .catch(() => false)
         }
-        await commit(unit, [statement], (overlay) =>
-          overlay.receipts.set(overlayKey(receipt.scopeId, receipt.clientRequestId), receipt),
+        await commit(
+          unit,
+          [statement],
+          (overlay) => overlay.receipts.set(overlayKey(receipt.scopeId, receipt.clientRequestId), receipt),
+          [
+            {
+              kind: "duplicate-receipt",
+              broken: async () =>
+                (await database
+                  .prepare(`select client_request_id from task_command_receipts where scope_id = ? and client_request_id = ?`)
+                  .bind(receipt.scopeId, receipt.clientRequestId)
+                  .first())
+                  ? `client request ${receipt.clientRequestId} was committed by another request`
+                  : undefined,
+            },
+          ],
         )
         return true
       },
@@ -468,7 +564,7 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
     async transaction(work) {
       const unit = emptyUnit()
       const result = await work(operations(unit))
-      if (unit.statements.length > 0) await database.batch(unit.statements)
+      if (unit.statements.length > 0) await runBatch(unit.statements, unit.probes)
       return result
     },
   }

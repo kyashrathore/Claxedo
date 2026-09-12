@@ -1,19 +1,20 @@
 /**
  * Runner-neutral conformance cases for `TasksStorePort`.
  *
- * Three invariants carry this kit and none of them can be checked by reading
+ * Four invariants carry this kit and none of them can be checked by reading
  * an adapter: a revision predicate that misses must write nothing AND take the
  * command receipt in its transaction down with it; the origin
  * `(scopeId, taskId, slot, attempt)` must be claimable exactly once so two
- * clients converge on one session instead of each getting their own; and a
- * scope must be a wall, not a filter someone forgot in one query. Each host
- * adapter — memory here, SQLite and D1 elsewhere — registers these with its
- * own runner.
+ * clients converge on one session instead of each getting their own; a scope
+ * must be a wall, not a filter someone forgot in one query; and two units that
+ * overlap must be arbitrated, so a rollback cannot erase a commit and one row
+ * cannot be bumped twice from one revision. Each host adapter — memory here,
+ * SQLite and D1 elsewhere — registers these with its own runner.
  */
 import type { ConfigurationSlot, Preset, Task, TaskSessionLink } from "../contracts"
-import type { TasksCommandReceipt, TasksStorePort } from "../ports/store"
+import { TasksStoreConflict, type TasksCommandReceipt, type TasksStorePort } from "../ports/store"
 
-export const TASKS_STORE_CONFORMANCE_VERSION = 1 as const
+export const TASKS_STORE_CONFORMANCE_VERSION = 2 as const
 
 export const TASKS_STORE_CONFORMANCE_SCOPE = {
   cases: [
@@ -26,17 +27,21 @@ export const TASKS_STORE_CONFORMANCE_SCOPE = {
     "a_receipt_is_written_once_and_replays_its_result",
     "pagination_is_stable_across_pages",
     "another_scope_can_neither_read_nor_mutate",
+    "a_rolled_back_unit_leaves_the_unit_that_committed_beside_it_intact",
+    "overlapping_units_cannot_both_bump_one_row_from_the_same_revision",
   ],
   // NOT pinned:
-  //
-  //   `concurrent_transaction_arbitration` — which of two overlapping units
-  //   commits. The memory store runs one at a time; only a real database can
-  //   lose one, and the answer is its isolation level's, not this port's.
   //
   //   `list_ordering_beyond_the_page_key` — every case compares id sequences
   //   produced by the port's own cursor, never a secondary sort an adapter
   //   might add.
-  remaining: ["concurrent_transaction_arbitration", "list_ordering_beyond_the_page_key"],
+  //
+  // Which of two overlapping units wins IS pinned, but only as "exactly one of
+  // them": the two arbitration cases name what may not happen — a rollback
+  // erasing a committed unit, two units bumping one row from one revision —
+  // and leave the winner to the adapter, because a queue and an optimistic
+  // batch order them differently and both are correct.
+  remaining: ["list_ordering_beyond_the_page_key"],
 } as const
 
 export type TasksStoreConformanceFactory = () => Promise<Readonly<{ store: TasksStorePort }>>
@@ -101,6 +106,7 @@ function linkRow(input: Partial<TaskSessionLink> & Pick<TaskSessionLink, "taskId
     presetId: input.presetId ?? "preset-conformance",
     presetRevision: input.presetRevision ?? 1,
     presetNameAtStart: input.presetNameAtStart ?? "Conformance preset",
+    configurationDigest: input.configurationDigest ?? "c".repeat(64),
     createdAt: input.createdAt ?? 2_000,
   }
 }
@@ -120,6 +126,38 @@ const LIST = { cursor: null, limit: 50, includeArchived: false } as const
 const TASK_LIST = { ...LIST, projectId: "project-alpha", status: null, parent: "any" } as const
 
 class ConformanceRollback extends Error {}
+
+/** A promise the case resolves itself, to hold one unit open while it opens a second. */
+function gate(): { opened: Promise<void>; open: () => void } {
+  let open = () => {}
+  const opened = new Promise<void>((resolve) => {
+    open = resolve
+  })
+  return { opened, open }
+}
+
+/**
+ * A unit's outcome as a value. Awaiting two overlapping units in order would
+ * report the second one's rejection as unhandled while the first is still in
+ * flight, so each is turned into a value the moment it is started.
+ */
+function settle<T>(unit: Promise<T>): Promise<{ value: T } | { failure: unknown }> {
+  return unit.then(
+    (value) => ({ value }),
+    (failure: unknown) => ({ failure }),
+  )
+}
+
+/**
+ * Whether a unit's compare-and-set won. A store that decides the predicate
+ * inline answers false; one that decides it at commit answers true and then
+ * rejects the unit with a stale-revision conflict. Both are refusals.
+ */
+function wonTheBump(outcome: { value: boolean } | { failure: unknown }): boolean {
+  if ("value" in outcome) return outcome.value
+  if (outcome.failure instanceof TasksStoreConflict && outcome.failure.kind === "stale-revision") return false
+  throw outcome.failure
+}
 
 export function tasksStoreConformance(factory: TasksStoreConformanceFactory): readonly TasksStoreConformanceCase[] {
   const start = async () => {
@@ -345,6 +383,66 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
         "another scope updated a row it cannot read",
       )
       assertEqual((await store.tasks.get(CONFORMANCE_SCOPES.first, "task-alpha"))?.title, "Conformance task", "the foreign update wrote through")
+    }),
+
+    conformanceCase("a rolled back unit leaves the unit that committed beside it intact", async () => {
+      const store = await start()
+      const held = gate()
+
+      const refused = settle(
+        store.transaction(async (tx) => {
+          await tx.tasks.insert(taskRow({ id: "task-rolled-back" }))
+          await held.opened
+          throw new ConformanceRollback("a later guard refused")
+        }),
+      )
+      const committed = settle(
+        store.transaction(async (tx) => {
+          await tx.tasks.insert(taskRow({ id: "task-committed" }))
+        }),
+      )
+      held.open()
+
+      const refusal = await refused
+      assert("failure" in refusal && refusal.failure instanceof ConformanceRollback, "the unit whose work threw committed")
+      const other = await committed
+      assert("value" in other, `the unit beside it was refused: ${String("failure" in other && other.failure)}`)
+
+      assert(
+        (await store.tasks.get(CONFORMANCE_SCOPES.first, "task-committed")) !== undefined,
+        "the rollback took a row that another unit had committed",
+      )
+      assertEqual(
+        await store.tasks.get(CONFORMANCE_SCOPES.first, "task-rolled-back"),
+        undefined,
+        "the rolled-back unit kept its insert",
+      )
+    }),
+
+    conformanceCase("overlapping units cannot both bump one row from the same revision", async () => {
+      const store = await start()
+      await store.tasks.insert(taskRow({ id: "task-contended", revision: 1 }))
+      const read = await store.tasks.get(CONFORMANCE_SCOPES.first, "task-contended")
+      assertEqual(read?.revision, 1, "the row is not at the revision both units are about to read")
+
+      const held = gate()
+      const first = settle(
+        store.transaction(async (tx) => {
+          await held.opened
+          return tx.tasks.update(taskRow({ id: "task-contended", revision: 2, title: "First" }), 1)
+        }),
+      )
+      const second = settle(
+        store.transaction(async (tx) => tx.tasks.update(taskRow({ id: "task-contended", revision: 2, title: "Second" }), 1)),
+      )
+      held.open()
+
+      const won = [wonTheBump(await first), wonTheBump(await second)]
+      assertEqual(won.filter((bumped) => bumped).length, 1, "both units bumped one row from one revision")
+
+      const stored = await store.tasks.get(CONFORMANCE_SCOPES.first, "task-contended")
+      assertEqual(stored?.revision, 2, "the bump that won is not the stored revision")
+      assert(stored?.title === "First" || stored?.title === "Second", `the stored row carries neither bump: ${String(stored?.title)}`)
     }),
   ]
 }

@@ -66,6 +66,7 @@ export type StoredLinkColumns = {
   preset_id: string
   preset_revision: number
   preset_name_at_start: string
+  configuration_digest: string
   created_at: number
 }
 
@@ -163,6 +164,7 @@ export function linkColumns(link: TaskSessionLink): StoredLinkColumns {
     preset_id: link.presetId,
     preset_revision: link.presetRevision,
     preset_name_at_start: link.presetNameAtStart,
+    configuration_digest: link.configurationDigest,
     created_at: link.createdAt,
   }
 }
@@ -187,6 +189,7 @@ export function linkOfColumns(row: StoredLinkColumns): TaskSessionLink {
     presetId: row.preset_id,
     presetRevision: row.preset_revision,
     presetNameAtStart: row.preset_name_at_start,
+    configurationDigest: row.configuration_digest,
     createdAt: row.created_at,
   }
 }

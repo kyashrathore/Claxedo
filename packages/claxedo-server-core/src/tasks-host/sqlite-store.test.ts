@@ -52,6 +52,82 @@ describe("SQLite TasksStorePort conformance", () => {
   }
 })
 
+function taskRow(id: string) {
+  return {
+    id,
+    revision: 1,
+    scopeId: "local",
+    projectId: "project-a",
+    workspaceId: null,
+    parentTaskId: null,
+    title: id,
+    description: "",
+    status: "todo",
+    childSetRevision: 0,
+    archivedAt: null,
+    createdAt: 1,
+    updatedAt: 1,
+  } as const
+}
+
+function deferred(): { reached: Promise<void>; reach: () => void } {
+  let reach = () => {}
+  const reached = new Promise<void>((resolve) => {
+    reach = resolve
+  })
+  return { reached, reach }
+}
+
+describe("SQLite Tasks store units", () => {
+  test("a write from another module survives a Tasks unit that rolls back", async () => {
+    freshDatabase()
+    const store = createSqliteTasksStore()
+    await store.tasks.insert(taskRow("task-anchor"))
+
+    const opened = deferred()
+    const release = deferred()
+    const refused = store.transaction(async (operations) => {
+      await operations.tasks.get("local", "task-anchor")
+      opened.reach()
+      await release.reached
+      throw new Error("the unit refused")
+    })
+    await opened.reached
+
+    // `__claxedo_meta` is the database engine's own row store and no Tasks
+    // statement names it, so a row written here through the shared handle is
+    // exactly the unrelated write a Tasks rollback must not reach.
+    ClaxedoDB.use((db) => db.run(`INSERT INTO __claxedo_meta (key, value) VALUES ('another-module', 'kept')`))
+    release.reach()
+
+    await expect(refused).rejects.toThrow("the unit refused")
+    expect(ClaxedoDB.use((db) => db.get(`SELECT value FROM __claxedo_meta WHERE key = 'another-module'`))).toEqual({
+      value: "kept",
+    })
+  })
+
+  test("two adapter instances run overlapping units one after another", async () => {
+    freshDatabase()
+    const first = createSqliteTasksStore()
+    const second = createSqliteTasksStore()
+
+    const held = deferred()
+    const holding = first.transaction(async (operations) => {
+      await operations.tasks.insert(taskRow("task-holding"))
+      await held.reached
+    })
+    const queued = second.transaction(async (operations) => {
+      await operations.tasks.insert(taskRow("task-queued"))
+    })
+    held.reach()
+
+    await holding
+    await queued
+    expect(await first.tasks.get("local", "task-holding")).toMatchObject({ id: "task-holding" })
+    expect(await second.tasks.get("local", "task-queued")).toMatchObject({ id: "task-queued" })
+  })
+})
+
 describe("SQLite Tasks store persistence", () => {
   test("rows survive a fresh adapter instance and a reopened database", async () => {
     freshDatabase()

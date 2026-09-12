@@ -398,6 +398,40 @@ export namespace ClaxedoDB {
     return state.sqlite!
   }
 
+  export type Sqlite = CompatibleSqlite
+  export type Connection = { sqlite: Sqlite; db: Client; close(): void }
+
+  /**
+   * A second connection to the same `claxedo.db`, for a module that holds a
+   * transaction open across awaits. The shared handle cannot serve that: a
+   * `BEGIN` on it captures every other module's writes until the holder
+   * commits, and a `BEGIN` while one is already open is an error rather than a
+   * nested unit. Callers own what they open and must close it.
+   *
+   * The shared handle is realized first because it is what applies the
+   * migration journal; a connection opened before it would query tables that
+   * do not exist yet. An in-memory database has no file for a second
+   * connection to reach, so it is refused rather than answered with an empty
+   * one.
+   */
+  export function connect(): Connection {
+    Drizzle()
+    const file = Path()
+    if (file === ":memory:") {
+      throw new Error("claxedo database is in memory and cannot be reached by a second connection")
+    }
+    const opened = openDatabase(file)
+    pragma(opened.sqlite, "journal_mode = WAL")
+    pragma(opened.sqlite, "synchronous = NORMAL")
+    pragma(opened.sqlite, "busy_timeout = 5000")
+    pragma(opened.sqlite, "foreign_keys = ON")
+    return {
+      sqlite: opened.sqlite,
+      db: opened.db,
+      close: () => void opened.sqlite.close(),
+    }
+  }
+
   export function use<T>(callback: (db: Client) => T): T {
     return callback(Drizzle())
   }
