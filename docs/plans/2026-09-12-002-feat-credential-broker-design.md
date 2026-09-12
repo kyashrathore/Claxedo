@@ -392,3 +392,17 @@ Result: **with these changes, local interception passes**: register `outboundHan
 The unmodified compatibility configuration failed with `ctx.exports is undefined`. Cloudflare documents the opt-in [enable_ctx_exports flag](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-ctxexports); the probe retains compatibility date `2025-04-01` and adds that flag. No production Worker configuration has changed yet.
 
 This supersedes the earlier local build blocker. It is **not deployed Cloudflare acceptance** and does not yet prove native secret injection from the binding authority, withdrawal, or the replacement of `/egress`. Those remain required before claiming the Cloudflare adapter complete.
+
+### Experiment log — 2026-09-13, item 3 deployed attempt
+
+The probe now requires a configured `PROBE_TOKEN`, bearer authentication, and POST before any sandbox operation. The authenticated local check passed unauthenticated rejection, four interception requests, and cleanup. `standard-1` supplies the disk capacity required by the production runtime image.
+
+Command from the Cloudflare Worker: `wrangler deploy --config feasibility/wrangler.toml` with the isolated Docker client configuration. Two attempts uploaded the Worker but failed during container image-layer upload with `use of closed network connection`. Both processes exited with failure; the second reused uploaded layers. No probe token was installed on the deployed Worker, so its sandbox operations remained disabled.
+
+Result: **not run on deployed Cloudflare: container image upload failed twice**. This is an environment failure, not a negative result about outbound interception. Cleanup: `wrangler delete --config feasibility/wrangler.toml --force` succeeded; `wrangler containers list --json` contained no matching probe application. The earlier local pass remains valid but does not establish deployed acceptance.
+
+### Experiment log — 2026-09-13, item 5
+
+Harness: real Cursor SDK 1.0.24, local `Agent.create` and `agent.send`, with an isolated directory and an explicit dummy API key. Command from `packages/agent-sdk-runtime`: `node scripts/cursor-endpoint-feasibility.mjs`.
+
+Result: **yes for endpoint routing using `CURSOR_BACKEND_URL`**. The real SDK sent `POST /auth/exchange_user_api_key` and `GET /v1/models` to the configured local endpoint, both with `Authorization: Bearer broker-probe-placeholder`. The auth-exchange body was `{}`. The local server deliberately returned 401, so this does not establish successful authentication, inference streaming, or end-to-end broker support. No real Cursor credential or vendor request was used. `CURSOR_API_ENDPOINT` was not the tested key; the installed SDK's authoritative implementation reads `CURSOR_BACKEND_URL`.

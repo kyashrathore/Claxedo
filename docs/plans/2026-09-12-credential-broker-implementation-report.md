@@ -223,3 +223,13 @@ Two initial probe failures changed the implementation requirements: a class fiel
 Changed files: `feasibility/outbound.ts`, `feasibility/check.mjs`, `feasibility/wrangler.toml`, `feasibility/README.md` under the Cloudflare Worker; design 002; this report. `git diff --check` passes.
 
 Next: secure and deploy an isolated probe, verify native interception on Cloudflare itself, then replace the old expiring-token proxy with the native handler at its authoritative registration owner. Test secret rotation and withdrawal through actual requests before declaring the adapter's capabilities.
+
+## Protected Cloudflare deployment attempt and Cursor routing (2026-09-13)
+
+Secured the isolated Cloudflare probe: missing token disables it, unauthenticated calls receive 401, and sandbox operations require POST on its two known paths. The token file is ignored. Added explicit `standard-1` sizing and documented deployed checks/cleanup. Server `bun run typecheck` passes. The authenticated local `node feasibility/check.mjs` passes, including rejection before its four real container requests and sandbox cleanup.
+
+Two `wrangler deploy --config feasibility/wrangler.toml` attempts failed during image upload with a closed network connection. Their processes exited; neither was treated as successful deployment. The temporary disabled Worker was deleted with `wrangler delete --config feasibility/wrangler.toml --force`; container listing showed no matching probe application. No production Worker was changed. Appendix E records this as not run on deployed Cloudflare.
+
+Added `packages/agent-sdk-runtime/scripts/cursor-endpoint-feasibility.mjs`. `node scripts/cursor-endpoint-feasibility.mjs` passes with the real Cursor SDK: its auth-exchange and model-catalog calls reach `CURSOR_BACKEND_URL` with the configured placeholder bearer header. Authentication is deliberately rejected; successful inference is not claimed. The first invocation lacked the SDK-required explicit model and failed before networking; the final experiment sets `model: { id: "auto" }` and asserts actual received requests.
+
+Changed files: the Cursor probe; Cloudflare `feasibility/outbound.ts`, `check.mjs`, `wrangler.toml`, `README.md`, `.gitignore`; design 002; this report. No real provider credential was used or exposed. The production native Cloudflare adapter remains gated on deployed acceptance; full provider-account integration remains dependent on the accounts lane.

@@ -5,17 +5,22 @@ export class Sandbox extends BaseSandbox {
   static {
     // The SDK registers handlers through an inherited setter; a class field shadows it.
     Object.assign(this, { outboundHandlers: {
-    probe: async (request: Request, _env: unknown, ctx: { params: { revision: number } }) =>
-      Response.json({ revision: ctx.params.revision, url: request.url, clientHeader: request.headers.get("x-probe") }),
+      probe: async (request: Request, _env: unknown, ctx: { params: { revision: number } }) =>
+        Response.json({ revision: ctx.params.revision, url: request.url, clientHeader: request.headers.get("x-probe") }),
     } })
   }
   interceptHttps = true
 }
 
 export default {
-  async fetch(request: Request, env: { Sandbox: Parameters<typeof getSandbox>[0] }) {
+  async fetch(request: Request, env: { Sandbox: Parameters<typeof getSandbox>[0]; PROBE_TOKEN: string }) {
+    if (!env.PROBE_TOKEN) return new Response("Probe disabled", { status: 503 })
+    if (request.headers.get("authorization") !== `Bearer ${env.PROBE_TOKEN}`) return new Response("Unauthorized", { status: 401 })
+    if (request.method !== "POST") return new Response("Method not allowed", { status: 405 })
+    const pathname = new URL(request.url).pathname
+    if (pathname !== "/" && pathname !== "/destroy") return new Response("Not found", { status: 404 })
     const sandbox = getSandbox(env.Sandbox, "broker-feasibility")
-    if (new URL(request.url).pathname === "/destroy") {
+    if (pathname === "/destroy") {
       await sandbox.destroy()
       return new Response("destroyed")
     }
