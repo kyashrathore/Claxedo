@@ -406,6 +406,17 @@ export async function syncEmbeddedWorkspaceRuntimes() {
   await Promise.allSettled([...hosts.values()].map((runtime) => configure(runtime)))
 }
 
+/**
+ * Re-push every live runtime's config on an interval. The snapshot carries
+ * broker placeholders that expire, so the push is what keeps the next turn's
+ * spawn on a valid one. Returns the stop.
+ */
+export function startEmbeddedWorkspaceRuntimeConfigRenewal(intervalMs: number) {
+  const timer = setInterval(() => { void syncEmbeddedWorkspaceRuntimes() }, intervalMs)
+  timer.unref()
+  return () => clearInterval(timer)
+}
+
 export function shutdownEmbeddedWorkspaceRuntimes(): Promise<void> {
   shutdownGeneration++
   // `disposeRuntime` registers each disposal in `retiring`, so the loop's

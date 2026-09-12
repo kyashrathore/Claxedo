@@ -42,6 +42,7 @@ import { createLocalControlPlaneServices } from "./local-services"
 import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
+  startEmbeddedWorkspaceRuntimeConfigRenewal,
   readEmbeddedWorkspaceSessionConfig,
   shutdownEmbeddedWorkspaceRuntimes,
   verifyEmbeddedRuntimeCredential,
@@ -50,6 +51,7 @@ import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { migrateCredentials } from "../credentials/operations/migrate"
+import { BROKER_RENEWAL_INTERVAL_MS, createLocalCredentialBroker } from "../credentials/broker"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
 import { getLocalUsageLimits } from "../deployments/local/server-usage-limits"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
@@ -152,10 +154,19 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       await services.projectionStore.sync_session_metas(workspace, sessions)
     },
   })
+  // The broker is a route on this same listener, so its origin is this server's.
+  const credentialBroker = createLocalCredentialBroker({
+    dataDir: dataDir(),
+    brokerOrigin: firstPartyMcpBaseUrl,
+  })
   configureAgentConfig({
     connectionProviders,
+    projectAuth: ({ workspaceId }) => credentialBroker.projectAuth(workspaceId ? { workspaceId } : {}),
     ...(options.harnessLaunch ? { harnessLaunch: options.harnessLaunch } : {}),
   })
+  // A placeholder expires; re-projecting on this interval and re-applying the
+  // snapshot is what puts the next one in front of the next turn's spawn.
+  const stopConfigRenewal = startEmbeddedWorkspaceRuntimeConfigRenewal(BROKER_RENEWAL_INTERVAL_MS)
 
   // Opened here so the first session-list request does not pay for migrations,
   // repair checks and statement preparation.
@@ -278,6 +289,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   }
   const { app, injectWebSocket } = createLocalApp({
     ...options,
+    egressBroker: credentialBroker.handler,
     services,
     usage,
     workspaceRelayProxy,
@@ -331,6 +343,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     })
     stopOperation = (async () => {
       try {
+        stopConfigRenewal()
         options.daemon?.lifecycle.stop()
         await shutdownEmbeddedWorkspaceRuntimes()
         await drainUsageEvents(usageEventTail, turnMeter)

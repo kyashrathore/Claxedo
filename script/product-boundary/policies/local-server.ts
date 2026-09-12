@@ -110,8 +110,15 @@ export const localServer: Policy = {
   // producer over HTTP or WebSocket. Measured 56 / 24; no new package edge.
   // +1 module: app/local-documents composes the shared repository/managed
   // document backend for unsigned desktop editing. No hosted adapter edge.
-  // Full closure measured at 57 modules / 24 packages.
-  ceilings: { modules: 57, packages: 24 },
+  // +1 module / +1 package: `credentials/broker.ts` and @claxedo/egress-broker,
+  // the loopback credential broker this composition mounts at `/bindings/*` and
+  // the authority behind it. The package is the broker's request policy,
+  // injection and runtime-token verification; it reaches only `jose` and
+  // `@hono/node-server`, both already in this closure. It belongs to this
+  // product because the desktop-local server is the process that holds the
+  // credential value and the harness never does.
+  // Full closure measured at 58 modules / 25 packages.
+  ceilings: { modules: 58, packages: 25 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

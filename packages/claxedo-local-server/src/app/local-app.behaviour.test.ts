@@ -10,6 +10,12 @@ import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import type { ClaxedoMcpClient } from "@claxedo/mcp/client"
 import type { McpClientInputs } from "@claxedo/mcp"
+import {
+  createTestBackend,
+  setBackendOverride,
+} from "@claxedo/server-core/credentials/backend-registry"
+import { putCredential, setActiveCredentials } from "@claxedo/server-core/credentials/registry"
+import { createLocalCredentialBroker } from "../credentials/broker"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 
@@ -39,6 +45,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  setBackendOverride(undefined)
   ClaxedoDB.close()
   for (const [key, value] of Object.entries(saved)) {
     if (value === undefined) delete process.env[key]
@@ -522,5 +529,86 @@ describe("local egress broker hosting", () => {
     })
     expect(response.status).toBe(403)
     expect(verifyToken).not.toHaveBeenCalled()
+  })
+})
+
+describe("local egress broker — the mounted authority", () => {
+  const upstreamValue = "sk-ant-api03-real-stored-value"
+
+  /** A real authority over a real registry row, mounted on a real local app. */
+  async function mounted() {
+    setBackendOverride(createTestBackend())
+    const credential = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      account_id: "acc-mounted",
+      secret: upstreamValue,
+    })
+    expect(setActiveCredentials([credential.id])).toMatchObject({ ok: true })
+    const local = createLocalCredentialBroker({ dataDir, brokerOrigin: "http://127.0.0.1" })
+    const projection = (await local.projectAuth({ workspaceId: "ws-mounted" }))["claude-sdk"]
+    return {
+      instance: app({ egressBroker: local.handler }),
+      projection,
+      bindingId: projection.baseUrl.slice("http://127.0.0.1/bindings/".length),
+    }
+  }
+
+  test("refuses a request that carries no runtime token", async () => {
+    const { instance, bindingId } = await mounted()
+    const response = await instance.request(`http://127.0.0.1/bindings/${bindingId}/v1/messages`, { method: "POST" })
+
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toEqual({ error: "runtime_token_required" })
+  })
+
+  test("refuses a valid token presented at a binding it does not name", async () => {
+    const { instance, projection } = await mounted()
+    const response = await instance.request("http://127.0.0.1/bindings/deadbeefdeadbeef/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": projection.placeholder },
+    })
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({ error: "binding_not_permitted" })
+  })
+
+  test("attaches the stored value at the vendor and streams the answer back", async () => {
+    const { instance, projection, bindingId } = await mounted()
+    const upstream: Request[] = []
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      upstream.push(new Request(url, init))
+      return new Response("data: hello\n\n", { headers: { "content-type": "text/event-stream" } })
+    }) as typeof fetch
+    try {
+      const response = await instance.request(`http://127.0.0.1/bindings/${bindingId}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": projection.placeholder, "content-type": "application/json" },
+        body: JSON.stringify({ model: "claude" }),
+      })
+
+      expect(response.status).toBe(200)
+      expect(await response.text()).toBe("data: hello\n\n")
+      expect(upstream[0]?.url).toBe("https://api.anthropic.com/v1/messages")
+      expect(upstream[0]?.headers.get("x-api-key")).toBe(upstreamValue)
+      expect(projection.placeholder).not.toContain(upstreamValue)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("refuses a non-loopback peer before the authority is consulted", async () => {
+    const { instance, projection, bindingId } = await mounted()
+    const response = await instance.request(`https://remote.example/bindings/${bindingId}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": projection.placeholder },
+    })
+
+    expect(response.status).toBe(403)
+    // The composition's own unsigned-local guard answers first; the broker
+    // mount's loopback check is the second of the two, never the only one.
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "unsigned_local_loopback_required" } })
   })
 })

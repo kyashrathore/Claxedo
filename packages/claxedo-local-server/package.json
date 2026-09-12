@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "@claxedo/agent-sdk-runtime": "workspace:*",
+    "@claxedo/egress-broker": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/mcp": "workspace:*",
     "@claxedo/opencode-server-adapter": "workspace:*",

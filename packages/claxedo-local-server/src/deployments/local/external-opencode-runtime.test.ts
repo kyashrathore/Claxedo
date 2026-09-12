@@ -190,7 +190,7 @@ describe("external OpenCode through the embedded WorkspaceRuntime", () => {
           workspace = body.worktree.path
         }
         await runtime.host.apply({
-          version: 3,
+          version: 4,
           mcp: {},
           auth: {},
           connections: [

@@ -145,7 +145,7 @@ describe("embedded workspace runtime", () => {
     let prompt: Promise<Response> | undefined
     try {
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
-      await first.host.apply({ version: 3, mcp: {}, auth: {}, connections: [{
+      await first.host.apply({ version: 4, mcp: {}, auth: {}, connections: [{
         connectionId: "held", providerKey: "held-producer", configRevision: 1, enabled: true, config: {},
       }], defaultHarness: { kind: "connection", connectionId: "held" } })
       const request = (pathname: string, body: unknown) => Promise.resolve(first.app.request(
