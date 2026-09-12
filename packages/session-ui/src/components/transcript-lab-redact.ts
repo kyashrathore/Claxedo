@@ -9,7 +9,9 @@ function escapeRegExp(value: string) {
  * and the dash-encoded project directory names under `~/.claude/projects` — which is what
  * the word boundaries catch.
  */
-export function redactMachineIdentity<T>(value: T, home: string, user: string): T {
+export function redactMachineIdentity<T>(value: T, home: string, user: string): T
+/** The walk below rebuilds unknown values, so the shape it preserves can only be declared above. */
+export function redactMachineIdentity(value: unknown, home: string, user: string): unknown {
   const homePattern = new RegExp(escapeRegExp(home), "g")
   const userPattern = user ? new RegExp(`\\b${escapeRegExp(user)}\\b`, "g") : undefined
 
@@ -29,5 +31,5 @@ export function redactMachineIdentity<T>(value: T, home: string, user: string): 
     return node
   }
 
-  return walk(value) as T
+  return walk(value)
 }

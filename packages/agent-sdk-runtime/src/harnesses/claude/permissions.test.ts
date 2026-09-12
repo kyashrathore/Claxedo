@@ -58,11 +58,11 @@ for (const decision of ["allow_always", "allow_once", "deny", "storage-failure"]
     else await driver().runTurn(turn("approved"))
     await driver().runTurn(turn("approved"))
     await driver().runTurn(turn("other"))
-    const permissions = (index: number) => (calls[index]!.options!.settings as { permissions: Record<string, unknown> }).permissions
+    const permissions = (index: number) => (calls[index].options!.settings as { permissions: Record<string, unknown> }).permissions
     expect(permissions(1).allow).toEqual(decision === "allow_always" ? ["Bash(printf approved-write *)"] : [])
-    expect(calls[1]!.options!.additionalDirectories).toEqual(decision === "allow_always" ? ["/tmp/approved"] : [])
+    expect(calls[1].options!.additionalDirectories).toEqual(decision === "allow_always" ? ["/tmp/approved"] : [])
     expect(permissions(2).allow).toEqual([])
-    expect(calls[2]!.options!.additionalDirectories).toEqual([])
+    expect(calls[2].options!.additionalDirectories).toEqual([])
     for (let i = 0; i < 3; i++) expect(permissions(i).deny).toEqual([...CLAUDE_DENY_FLOOR])
   })
 }

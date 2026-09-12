@@ -429,9 +429,9 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
             behavior: "allow",
             updatedInput: {
               ...toolInput,
-              answers: Object.fromEntries(questions.map((question, index) => [
-                text(asRecord(question)?.question)!,
-                answers[index]!.join(", "),
+              answers: Object.fromEntries(answers.map((answer, index) => [
+                text(asRecord(questions[index])?.question)!,
+                answer.join(", "),
               ])),
             },
           }
@@ -816,8 +816,10 @@ export function applyClaudePermissionUpdates(state: Record<string, unknown> | un
   let mode: string | undefined
   for (const update of updates) {
     if (update.type === "setMode") {
-      if (!isClaudeSdkPermissionMode(update.mode)) throw new Error(`Unsupported Claude permission mode ${update.mode}`)
-      mode = update.mode
+      // The update arrives as JSON from the Claude process, so its `PermissionMode` type is a claim.
+      const requested: string = update.mode
+      if (!isClaudeSdkPermissionMode(requested)) throw new Error(`Unsupported Claude permission mode ${requested}`)
+      mode = requested
     } else if (update.type === "addDirectories") {
       permissions.additionalDirectories = [...new Set([...permissions.additionalDirectories, ...update.directories])]
     } else if (update.type === "removeDirectories") {
