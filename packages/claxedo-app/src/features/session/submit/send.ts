@@ -4,7 +4,7 @@
 import { asRecord, readField } from "@/lib/record"
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
 import { dispatchPrompt } from "./dispatch"
-import { clearPendingPrompt, markPendingPromptSent, registerPendingPrompt } from "../store/pending-prompt-registry"
+import { clearPendingPrompt, hasPendingPrompt, markPendingPromptSent, registerPendingPrompt } from "../store/pending-prompt-registry"
 import { setPromptSessionStatus } from "./pending"
 import type {
   RollbackPromptDispatchContext,
@@ -115,15 +115,21 @@ export async function sendPromptRequest(input: SendPromptRequestContext) {
   await prepareLiveEventsBestEffort(input.prepareLiveEvents)
   if (controller.signal.aborted) return
   markPendingPromptSent(input.sessionID)
+  let claimedByStop = false
   try {
     await dispatchPrompt({
       client: input.client,
       payload: input.payload,
     })
   } finally {
+    claimedByStop = !hasPendingPrompt(input.sessionID)
     clearPendingPrompt(input.sessionID)
   }
-  setPromptSessionStatus({
+  // A prompt already on the wire keeps no abort handle, so Stop cannot reach
+  // `controller` — it claims this session's entry and writes idle itself.
+  // Re-asserting busy over that would put the control back on "stop" and arm a
+  // fresh escalation ladder for a turn the user has already cancelled.
+  if (!claimedByStop) setPromptSessionStatus({
     sessionID: input.sessionID,
     status: { type: "busy" },
     refreshDirectory: input.refreshDirectory,

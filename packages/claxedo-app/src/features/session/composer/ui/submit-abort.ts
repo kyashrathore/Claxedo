@@ -2,7 +2,7 @@ import type { Accessor } from "solid-js"
 import type { WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { setPromptSessionStatus, takePendingPrompt } from "../../submit/index"
-import { dispatchSessionRequestsEvent } from "../../store/session-status-dispatcher"
+import { dispatchSessionRequestsEvent, dispatchSessionTodoEvent } from "../../store/session-status-dispatcher"
 import type { PermissionRequest, QuestionRequest, SessionRequestsQueryData, SessionStatus } from "../../data/sync/queries"
 
 type SessionRequestState = SessionRequestsQueryData
@@ -86,16 +86,24 @@ export function createPromptAbort(input: {
 
     phCapture("prompt_aborted", { ...identityProps(), surface: "composer" })
 
+    // Stop's only feedback until the runtime answers, and the reconcile below
+    // is not a bound on that: `/session/status` can be held open or never
+    // answer at all, so a control that waits for it stays on "stop" through a
+    // cancel the user already made.
+    setPromptSessionStatus({ sessionID, status: { type: "idle" }, source: "optimistic" })
+    dispatchSessionTodoEvent({ event: { type: "session.todo", source: "optimistic", sessionID, todos: [] } })
+
     const queued = takePendingPrompt(sessionID)
     if (queued) {
       queued.abort.abort()
       queued.cleanup()
-      setPromptSessionStatus({ sessionID, status: { type: "idle" }, source: "optimistic" })
       return Promise.resolve()
     }
     const result = await client.session.abort({ sessionID, directory })
     if (!result.data) throw new Error("Stop returned no cancellation result")
     if (!result.data.ok) throw new Error(result.data.message)
+    // The turn is already cancelled; these reads only reconcile what it left
+    // behind, so one of them failing is not a Stop that failed.
     await Promise.all([
       client.session.status().then((x) => {
         setPromptSessionStatus({ sessionID, status: x.data?.[sessionID] ?? { type: "idle" }, source: "server" })
@@ -108,7 +116,7 @@ export function createPromptAbort(input: {
           } },
         })
       }),
-    ])
+    ]).catch(() => {})
   }
 }
 

@@ -7,10 +7,13 @@ import {
   takePendingPrompt,
 } from "../store/pending-prompt-registry"
 import {
+  SESSION_STATUS_TIMEOUTS,
   clearAllPromptSessionStatusTimeoutsForTest,
   dispatchSessionStatusEvent,
+  promptSessionStatusMeta,
   promptSessionStatusStage,
 } from "../store/session-status-dispatcher"
+import { setPromptSessionStatus } from "./pending"
 import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import type { PromptDispatchInput, PromptDispatchPayload } from "./types"
 import { queryClient } from "@/platform/query/query-client"
@@ -308,6 +311,39 @@ describe("sendPromptRequest abort coverage", () => {
     await pending
     expect(effects).toEqual(["abort-cleanup"])
     expect(hasPendingPrompt("ses_1")).toBe(false)
+  })
+
+  test("Stop taken while the prompt is on the wire is not undone by the dispatch settling", async () => {
+    vi.useFakeTimers()
+    let answerPrompt!: () => void
+    let promptStarted!: () => void
+    const started = new Promise<void>((resolve) => { promptStarted = resolve })
+    const onTheWire = new Promise<void>((resolve) => { answerPrompt = resolve })
+    const pending = sendPromptRequest({
+      sessionID: "ses_1",
+      payload,
+      client: { session: { promptAsync: async () => { promptStarted(); await onTheWire } } },
+      waitForWorktree: async () => true,
+      clearBoot: () => undefined,
+      clearCloudStartup: () => undefined,
+    })
+
+    await started
+    // Exactly what createPromptAbort does once the prompt is on the wire: the
+    // entry carries no handle to abort, so it claims the entry and writes the
+    // idle itself before asking the runtime to cancel.
+    expect(takePendingPrompt("ses_1")).toBeUndefined()
+    setPromptSessionStatus({ sessionID: "ses_1", status: { type: "idle" }, source: "optimistic" })
+
+    answerPrompt()
+    await pending
+
+    // No optimistic period was re-opened, so no escalation ladder can climb out
+    // of one: past the pending threshold there is still nothing to escalate.
+    await vi.advanceTimersByTimeAsync(SESSION_STATUS_TIMEOUTS.pending)
+    expect(promptSessionStatusStage("ses_1")).toBeUndefined()
+    expect(promptSessionStatusMeta("ses_1")).toBeUndefined()
+    expect(statusFor("ses_1")).toEqual({ type: "idle" })
   })
 })
 

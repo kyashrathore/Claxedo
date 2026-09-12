@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { createGoalAwareAbort, stopSessionInteraction } from "./submit-abort"
+import { queryClient } from "@/platform/query/query-client"
+import { shellDataKeys } from "@/platform/sync/keys"
+import { dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "../../store/session-status-dispatcher"
+import {
+  clearPendingPromptsForTest,
+  markPendingPromptSent,
+  registerPendingPrompt,
+  hasPendingPrompt,
+} from "../../store/pending-prompt-registry"
+import { createGoalAwareAbort, createPromptAbort, createSubmitAbort, stopSessionInteraction } from "./submit-abort"
 
 describe("goal-aware abort", () => {
   test("routes to the Goal Stop mutation while a Goal is active", async () => {
@@ -81,7 +90,6 @@ test("interaction Stop surfaces Goal failure after interrupting its turn", async
 
 describe("prompt Stop results", () => {
   test.each(["transport", "failed", "recovering"])("reports %s failure without clearing authoritative state", async (failure) => {
-    const { createSubmitAbort } = await import("./submit-abort")
     const toasts: Array<{ description: string }> = []
     let reads = 0
     const abort = createSubmitAbort({
@@ -109,7 +117,6 @@ describe("prompt Stop results", () => {
   })
 
   test("acknowledged Stop refreshes the server snapshot", async () => {
-    const { createPromptAbort } = await import("./submit-abort")
     const calls: string[] = []
     await createPromptAbort({
       sessionID: () => "stop-success",
@@ -124,5 +131,108 @@ describe("prompt Stop results", () => {
       }),
     })()
     expect(calls).toEqual(["abort", "status", "permissions", "questions"])
+  })
+})
+
+describe("prompt Stop feedback", () => {
+  const sessionSnapshot = (sessionID: string) => ({
+    status: queryClient.getQueryData(shellDataKeys.sessionId(sessionID, "status")),
+    todos: queryClient.getQueryData(shellDataKeys.sessionId(sessionID, "todo")),
+  })
+
+  const runningSession = (sessionID: string) => {
+    dispatchSessionStatusEvent({ event: { type: "session.status", source: "server", sessionID, status: { type: "busy" } } })
+    dispatchSessionTodoEvent({
+      event: { type: "session.todo", source: "server", sessionID, todos: [{ content: "run the build", status: "in_progress", priority: "high" }] },
+    })
+  }
+
+  test("reports the turn stopped before the abort answers", async () => {
+    const sessionID = "ses_stop_optimistic"
+    runningSession(sessionID)
+    let answerAbort = () => {}
+    const abort = createPromptAbort({
+      sessionID: () => sessionID,
+      defaultDirectory: "/repo",
+      clientForDirectory: () => ({
+        session: {
+          abort: () => new Promise((resolve) => {
+            answerAbort = () => resolve({ data: { ok: true as const, status: "already_idle" as const } })
+          }),
+          status: async () => ({ data: { [sessionID]: { type: "idle" as const } } }),
+        },
+        permission: { list: async () => ({ data: [] }) },
+        question: { list: async () => ({ data: [] }) },
+      }),
+    })
+    const stopped = abort()
+    expect(sessionSnapshot(sessionID)).toEqual({ status: { type: "idle" }, todos: [] })
+    answerAbort()
+    await stopped
+  })
+
+  test("a failed request refresh leaves the acknowledged Stop successful", async () => {
+    const sessionID = "ses_stop_refresh_failure"
+    runningSession(sessionID)
+    const abort = createPromptAbort({
+      sessionID: () => sessionID,
+      defaultDirectory: "/repo",
+      clientForDirectory: () => ({
+        session: {
+          abort: async () => ({ data: { ok: true as const, status: "already_idle" as const } }),
+          status: async () => ({ data: { [sessionID]: { type: "idle" as const } } }),
+        },
+        permission: { list: () => Promise.reject(new Error("permission list unavailable")) },
+        question: { list: async () => ({ data: [] }) },
+      }),
+    })
+    await expect(abort()).resolves.toBeUndefined()
+    expect(sessionSnapshot(sessionID)).toEqual({ status: { type: "idle" }, todos: [] })
+  })
+
+  test("a rejected abort reports the Stop as failed", async () => {
+    const abort = createPromptAbort({
+      sessionID: () => "ses_stop_rejected",
+      defaultDirectory: "/repo",
+      clientForDirectory: () => ({
+        session: {
+          abort: () => Promise.reject(new Error("Stop request failed")),
+          status: async () => ({ data: {} }),
+        },
+        permission: { list: async () => ({ data: [] }) },
+        question: { list: async () => ({ data: [] }) },
+      }),
+    })
+    await expect(abort()).rejects.toThrow("Stop request failed")
+  })
+
+  test("cancels a prompt still queued locally and asks the runtime for one already sent", async () => {
+    clearPendingPromptsForTest()
+    const calls: string[] = []
+    const promptAbort = (sessionID: string) => createPromptAbort({
+      sessionID: () => sessionID,
+      defaultDirectory: "/repo",
+      clientForDirectory: () => ({
+        session: {
+          abort: async () => { calls.push("runtime-abort"); return { data: { ok: true as const, status: "already_idle" as const } } },
+          status: async () => ({ data: {} }),
+        },
+        permission: { list: async () => ({ data: [] }) },
+        question: { list: async () => ({ data: [] }) },
+      }),
+    })
+
+    const controller = new AbortController()
+    registerPendingPrompt("ses_queued", { abort: controller, cleanup: () => calls.push("cleanup") })
+    await promptAbort("ses_queued")()
+    expect(calls).toEqual(["cleanup"])
+    expect(controller.signal.aborted).toBe(true)
+    expect(hasPendingPrompt("ses_queued")).toBe(false)
+
+    registerPendingPrompt("ses_sent", { abort: new AbortController(), cleanup: () => calls.push("cleanup") })
+    markPendingPromptSent("ses_sent")
+    await promptAbort("ses_sent")()
+    expect(calls).toEqual(["cleanup", "runtime-abort"])
+    expect(hasPendingPrompt("ses_sent")).toBe(false)
   })
 })

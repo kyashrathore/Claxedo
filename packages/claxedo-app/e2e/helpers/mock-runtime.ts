@@ -464,10 +464,8 @@ export type MockRuntimeOptions = {
    * responds" falsifiable instead of decorative: an immediately-200 abort leaves no
    * window in which the network hasn't answered yet, so an assertion made after the
    * click proves nothing about optimism. With the response held open, the submit
-   * control can only leave "stop" via the client-side write in `createPromptAbort`
-   * (`src/features/session/composer/ui/submit-abort.ts` — `setPromptSessionStatus
-   * ({status: idle, source: "server"})` runs before `client.session.abort()` is even
-   * called).
+   * control can only leave "stop" via the optimistic idle `createPromptAbort`
+   * dispatches before it calls the abort route.
    *
    * Release before the test ends so the page tears down cleanly.
    */
