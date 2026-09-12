@@ -145,6 +145,11 @@ export type AppShellLayoutProps = ParentProps<{
   onOpenMarketplace?: () => void
 
   /**
+   * Callback to open Tasks and Presets as an in-workbench tab.
+   */
+  onOpenTasks?: () => void
+
+  /**
    * Callback to create a new session. When no workspace is selected yet,
    * callers may pass `undefined` to create an unattached draft first.
    */
@@ -472,6 +477,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onNewSession={props.onNewSession}
           onNewTerminal={props.onNewTerminal}
           onOpenMarketplace={props.onOpenMarketplace}
+          onOpenTasks={props.onOpenTasks}
           onRemoveProject={props.onRemoveProject}
           onSettings={props.onSettings}
           onUsage={props.onUsage}

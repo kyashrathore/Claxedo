@@ -89,6 +89,7 @@ export function useAppShellRouteSync(input: {
           route: {
             ...input.params,
             marketplace: input.shellRouteKind() === "marketplace",
+            tasks: input.shellRouteKind() === "tasks",
           },
           surface,
           routeWorkspaceKey: input.routeId(),

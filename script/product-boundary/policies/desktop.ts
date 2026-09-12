@@ -418,7 +418,10 @@ export const desktopRendererUnsigned: Policy = {
   // reviews — the harness model-options loader, the page's query hook and
   // stylesheet in, the Connect-your-AI dialog and the scope pickers out.
   // No new package edge. Measured 1063 / 57.
-  ceilings: { modules: 1063, packages: 57 },
+  // +16 modules, +1 package (2026-09-12): the same Tasks and Presets owners
+  // app-local reviews, reaching the renderer through the shell's secondary port
+  // wiring. The new package edge is @claxedo/tasks. Measured 1079 / 58.
+  ceilings: { modules: 1079, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

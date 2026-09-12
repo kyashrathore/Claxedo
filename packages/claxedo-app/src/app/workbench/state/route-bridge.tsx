@@ -687,6 +687,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           workspaceBacking,
           sessionId: id,
           marketplace: routeKind === "marketplace",
+          tasks: routeKind === "tasks",
           pageId: pid,
           terminalId: tid,
           workspaceBrowse: routeKind === "workspace",

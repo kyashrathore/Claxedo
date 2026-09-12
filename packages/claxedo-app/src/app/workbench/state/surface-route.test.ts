@@ -3,6 +3,7 @@ import { focusedSurfaceRouteTarget, routeMatchesSurface, surfaceRoute } from "./
 import {
   marketplaceRoute,
   sessionRoute as canonicalSessionRoute,
+  tasksRoute,
   workspacePageRoute,
   workspaceRoute as canonicalWorkspaceRoute,
   workspaceSessionRoute,
@@ -350,6 +351,25 @@ describe("surface route mirroring", () => {
         },
       }),
     ).toBe(workspaceTerminalRoute("ws_main", "pty_new"))
+  })
+
+  test("mirrors tasks surfaces to the global tasks route", () => {
+    expect(
+      focusedSurfaceRouteTarget({
+        route: route("ws_main", { id: "ses_1" }),
+        routeWorkspaceKey: "ws_main",
+        activeRouteId: "ws_main",
+        surface: { id: "surface_1", type: "tasks", scope: "global" },
+      }),
+    ).toBe(tasksRoute())
+
+    expect(
+      focusedSurfaceRouteTarget({
+        route: { tasks: true },
+        activeRouteId: "ws_main",
+        surface: { id: "surface_1", type: "tasks", scope: "global" },
+      }),
+    ).toBeUndefined()
   })
 
   test("mirrors marketplace surfaces to the global marketplace route", () => {

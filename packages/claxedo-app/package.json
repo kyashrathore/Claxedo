@@ -100,6 +100,7 @@
     "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/service-contract": "workspace:*",
+    "@claxedo/tasks": "workspace:*",
     "@claxedo/usage-contract": "workspace:*",
     "@kobalte/core": "0.13.12",
     "@opencode-ai/session-ui": "workspace:*",

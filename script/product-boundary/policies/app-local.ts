@@ -333,7 +333,17 @@ export const appLocal: Policy = {
   //   − features/settings/ui/scope-selector.tsx — the workspace/harness
   //     pickers, gone with per-workspace model visibility.
   // No new package edge. Measured 1012 / 38.
-  ceilings: { modules: 1012, packages: 38 },
+  // +16 modules, +1 package (2026-09-12): Tasks and Presets. The optional
+  // @claxedo/tasks kit is the new package edge; the HLD makes both catalogs
+  // part of every build that renders the shell, so the surface is registered
+  // from app/integrations/secondary-feature-ports.ts (the first-party surface
+  // list is reached from the published local entry, whose closure must stay
+  // clear of hosted capability modules). Reviewed owners: the five
+  // app/integrations/tasks modules that bind the ports, and the eleven
+  // features/tasks modules behind them — app-ports, the catalog client and its
+  // queries, the filter/draft store, and the surface, its two views, the two
+  // dialogs, the detail panel and the start flow. Measured 1028 / 39.
+  ceilings: { modules: 1028, packages: 39 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

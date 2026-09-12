@@ -1,0 +1,62 @@
+import { createSignal } from "solid-js"
+import { Dialog } from "@opencode-ai/ui/dialog"
+import { TaskCreateDialog } from "@claxedo/tasks/solid"
+import { uuid } from "@/lib/uuid"
+import { useTasksAppPorts } from "../../app-ports"
+import { refusalOf, type TasksRefusal } from "../../data/tasks-api"
+import { useTasksClient, useTasksInvalidation, type TasksScope } from "../../data/queries"
+
+export type DialogCreateTaskProps = {
+  scope: () => TasksScope
+  projectId: string
+  parent?: { id: string; title: string; workspaceId: string | null }
+  onClose: () => void
+  onCreated?: (taskId: string) => void
+}
+
+export function DialogCreateTask(props: DialogCreateTaskProps) {
+  const projects = useTasksAppPorts().useProjects()
+  const client = useTasksClient()
+  const invalidate = useTasksInvalidation(props.scope)
+  const [draft, setDraft] = createSignal({
+    projectId: props.projectId,
+    title: "",
+    description: "",
+    workspaceId: props.parent?.workspaceId ?? null,
+    parentTaskId: props.parent?.id ?? null,
+  })
+  const [busy, setBusy] = createSignal(false)
+  const [refusal, setRefusal] = createSignal<TasksRefusal | undefined>()
+
+  const submit = async () => {
+    setBusy(true)
+    setRefusal(undefined)
+    try {
+      const response = await client().command({ clientRequestId: uuid(), command: { type: "task.create", input: draft() } })
+      await invalidate.everything()
+      if (props.parent) invalidate.task(props.parent.id)
+      if (response.result.type === "task.create") props.onCreated?.(response.result.task.id)
+      props.onClose()
+    } catch (error) {
+      setRefusal(refusalOf(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog title={props.parent ? "New subtask" : "New task"} fit>
+      <TaskCreateDialog
+        draft={draft()}
+        projects={projects()}
+        parentTitle={props.parent?.title}
+        busy={busy()}
+        error={refusal()?.message}
+        fieldErrors={refusal()?.fields}
+        onDraftChange={setDraft}
+        onSubmit={() => void submit()}
+        onCancel={() => props.onClose()}
+      />
+    </Dialog>
+  )
+}

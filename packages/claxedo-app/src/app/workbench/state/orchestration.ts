@@ -47,6 +47,7 @@ export type LayoutOrchestrationApi = {
   openPage: (pageId: string, title?: string, directory?: string, filePath?: string, opts?: { workspaceRouteId?: string }) => string
   openPagesIndex: (directory?: string, opts?: { workspaceRouteId?: string }) => string
   openMarketplace: () => string
+  openTasks: () => string
   /**
    * Close a content fully — drop the meta entry, remove from workbench, run
    * cleanup hooks (e.g. terminal owner/lifecycle teardown).
@@ -517,6 +518,26 @@ export function createLayoutOrchestration(input: {
           payload: {
             type: "marketplace",
             title: "Marketplace",
+          },
+        }
+      })
+    },
+
+    openTasks() {
+      // Tasks is a single global tab: the catalog spans every project the
+      // account can reach, so it is not scoped to a workspace.
+      const existing = meta.find((m) => m.type === "tasks")
+      return showOrCreate(existing, () => {
+        const id = newId("tasks")
+        return {
+          meta: {
+            id,
+            type: "tasks",
+            scope: "global",
+          },
+          payload: {
+            type: "tasks",
+            title: "Tasks",
           },
         }
       })

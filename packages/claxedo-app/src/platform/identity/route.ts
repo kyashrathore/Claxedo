@@ -5,6 +5,7 @@ import { opaqueWorkspaceRouteId } from "./workspace-route"
 export type ShellRoute =
   | { kind: "home" }
   | { kind: "marketplace" }
+  | { kind: "tasks" }
   | { kind: "session"; sessionId: string }
   | { kind: "workspace"; workspaceId: string }
   | { kind: "workspace-session"; workspaceId: string; sessionId?: string }
@@ -13,7 +14,7 @@ export type ShellRoute =
   | { kind: "legacy-directory"; directory: DirectoryRef; sessionId?: string; pageId?: string; terminalId?: string }
   | { kind: "unknown" }
 
-const RESERVED_ROOTS = new Set(["config", "login", "marketplace", "permissions", "s", "w"])
+const RESERVED_ROOTS = new Set(["config", "login", "marketplace", "permissions", "s", "tasks", "w"])
 
 function segment(input: string) {
   try {
@@ -52,6 +53,10 @@ export function workspaceRoute(workspaceId: string) {
 
 export function marketplaceRoute() {
   return "/marketplace"
+}
+
+export function tasksRoute() {
+  return "/tasks"
 }
 
 export function workspaceSessionRoute(workspaceId: string, sessionId?: string) {
@@ -102,6 +107,7 @@ export function parseShellRoute(pathname: string): ShellRoute {
   const parts = pathSegments(pathname)
   if (parts.length === 0) return { kind: "home" }
   if (parts.length === 1 && parts[0] === "marketplace") return { kind: "marketplace" }
+  if (parts.length === 1 && parts[0] === "tasks") return { kind: "tasks" }
   if (parts[0] === "s" && parts[1]) return { kind: "session", sessionId: segment(parts[1]) }
   if (parts[0] === "w" && parts[1]) {
     if (parts.length === 2) return { kind: "workspace", workspaceId: segment(parts[1]) }

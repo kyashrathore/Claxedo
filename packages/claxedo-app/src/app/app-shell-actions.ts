@@ -5,7 +5,7 @@ import { createClaxedoLayoutActions } from "./workbench/actions/index"
 import { useClaxedoEventsOptional } from "./integrations/claxedo-events"
 import { useCommand } from "@/app/providers/command"
 import { useLanguage } from "@/platform/i18n/provider"
-import { marketplaceRoute } from "@/platform/identity/route"
+import { marketplaceRoute, tasksRoute } from "@/platform/identity/route"
 import type { AppShellState } from "./app-shell-state"
 import { workspaceConnection } from "@/features/workspaces/data/workspace-connection"
 
@@ -14,6 +14,10 @@ export function useAppShellActions(input: { shell: AppShellState; params: Params
   const handleOpenMarketplace = () => {
     input.shell.state.layout.openMarketplace()
     input.navigate(marketplaceRoute())
+  }
+  const handleOpenTasks = () => {
+    input.shell.state.layout.openTasks()
+    input.navigate(tasksRoute())
   }
   const handleUsage = async () => {
     const returnFocus = document.querySelector<HTMLElement>("[data-testid='rail-account-trigger']")
@@ -81,6 +85,7 @@ export function useAppShellActions(input: { shell: AppShellState; params: Params
   return {
     ...actions,
     handleOpenMarketplace,
+    handleOpenTasks,
     handleUsage,
   }
 }

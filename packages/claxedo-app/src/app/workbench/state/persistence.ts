@@ -82,7 +82,7 @@ function validateContentPayload(input: unknown, type: ContentType): ContentPaylo
     const pageId = asString(input.pageId)
     return pageId === undefined ? undefined : { ...input, type, pageId }
   }
-  if (type === "pages-index" || type === "marketplace") return { ...input, type }
+  if (type === "pages-index" || type === "marketplace" || type === "tasks") return { ...input, type }
   if (type === "draft-session") {
     const draftId = asString(input.draftId)
     const providerDirectory = asString(input.providerDirectory)
