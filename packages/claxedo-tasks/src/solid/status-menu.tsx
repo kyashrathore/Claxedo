@@ -6,6 +6,10 @@ import { TASK_STATUS_LABELS } from "./view-model"
  * The status control, and the board's accessible alternative to dragging a
  * card between columns. A native select is the menu: it is reachable by
  * keyboard, announces the current value, and needs no drag to change it.
+ *
+ * The select shows the record, never the request: a native select keeps the
+ * value the user picked, so a refused change (a parent with open children)
+ * would otherwise display Done while the record still says In progress.
  */
 export function StatusMenu(props: {
   status: TaskStatus
@@ -23,6 +27,7 @@ export function StatusMenu(props: {
       value={props.status}
       onChange={(event) => {
         const next = event.currentTarget.value
+        event.currentTarget.value = props.status
         if (isTaskStatus(next)) props.onChange(next)
       }}
     >

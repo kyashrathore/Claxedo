@@ -31,6 +31,15 @@ function mount(tasks: readonly TaskSummary[]) {
 }
 
 describe("task board", () => {
+  test("a status change the record does not take leaves the menu showing the record", () => {
+    mount([summary("a", "doing")])
+    const menu = screen.getByTestId<HTMLSelectElement>("tasks-board-status-a")
+
+    fireEvent.change(menu, { target: { value: "done" } })
+
+    expect(menu.value).toBe("doing")
+  })
+
   test("every status has a column and cards land in theirs", () => {
     mount([summary("a", "todo"), summary("b", "needs_you")])
 
