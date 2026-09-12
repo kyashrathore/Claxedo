@@ -331,6 +331,16 @@ Each item is a live experiment with a written result in Appendix B.
 
 1. Daytona substitutes inside `x-api-key` (Claude API-key mode), not only
    `Authorization`.
+   **Result 2026-09-13: not run.** The `DAYTONA_API_KEY` in
+   `packages/claxedo-server/.env` is rejected by `app.daytona.io` with 401
+   `Invalid credentials` before any secret or sandbox is created (well
+   formed, so revoked or wrong org). The probe
+   (`scratchpad/daytona-feasibility/probe.ts`) needs no real secret: a
+   synthetic value allowlisted to `httpbin.org`, echoed back through
+   `x-api-key`, `Authorization`, a body echo, and a non-allowlisted host.
+   It reruns unchanged once a valid key is in that file. Daytona's docs and
+   the SDK typings claim substitution in any header on allowlisted hosts
+   with response rewriting; unconfirmed.
 2. A Vercel `transform` overwrites a header the client sent.
 3. Cloudflare 0.12.x outbound handlers intercept HTTPS from Bun and Node
    clients in our runtime image; `setOutboundByHost` changes a running
