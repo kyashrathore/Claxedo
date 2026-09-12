@@ -1,4 +1,7 @@
 import { describe, expect, test } from "vitest"
+import { execFileSync } from "node:child_process"
+import { mkdtemp, rm } from "node:fs/promises"
+import path from "node:path"
 import { exportSPKI, generateKeyPair } from "jose"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID } from "./first-party-mcp"
@@ -10,6 +13,39 @@ import {
 } from "./runtime-boot"
 
 describe("claxedo workspace-runtime boot policy", () => {
+  test("installs the clone placeholder as a GitHub-only authorization header before boot returns", async () => {
+    const directory = await mkdtemp(path.join(process.cwd(), ".broker-git-test-"))
+    const env = {
+      PATH: process.env.PATH,
+      HOME: directory,
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CONFIG_GLOBAL: path.join(directory, "gitconfig"),
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-git",
+      WORKSPACE_RUNTIME_DIRECTORY: directory,
+      CLAXEDO_GITHUB_CLONE_AUTH: "dtn_secret_clone",
+    }
+    const git = (args: string[]) => execFileSync("git", args, { env, cwd: directory, encoding: "utf8" }).trim()
+    try {
+      await claxedoWorkspaceRuntimeBootFromEnv(env)
+      expect(git(["config", "--get-urlmatch", "http.extraheader", "https://github.com/acme/private.git"]))
+        .toBe("Authorization: dtn_secret_clone")
+      expect(() => git(["config", "--get-urlmatch", "http.extraheader", "https://github.com.evil.test/acme/private.git"]))
+        .toThrow()
+      expect(() => git(["config", "--get-urlmatch", "http.extraheader", "http://github.com/acme/private.git"]))
+        .toThrow()
+      await claxedoWorkspaceRuntimeBootFromEnv({ ...env, CLAXEDO_GITHUB_CLONE_AUTH: "dtn_secret_rotated" })
+      expect(git(["config", "--get-all", "http.https://github.com/.extraheader"]))
+        .toBe("Authorization: dtn_secret_rotated")
+      await expect(claxedoWorkspaceRuntimeBootFromEnv({
+        ...env, CLAXEDO_GITHUB_CLONE_AUTH: "dtn_secret_clone\r\nX-Injected: value",
+      })).rejects.toThrow("Invalid GitHub clone authorization header")
+      await expect(claxedoWorkspaceRuntimeBootFromEnv({
+        ...env, GIT_CONFIG_GLOBAL: path.join(directory, "missing", "config"),
+      })).rejects.toThrow()
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
   test("launches the package bin with workspace-and-epoch scoped short-lived credentials", () => {
     expect(claxedoWorkspaceRuntimeLaunch({
       workspaceId: "ws_1",

@@ -1,6 +1,6 @@
 # Credential broker implementation report
 
-Date: 2026-09-12. Status: incomplete; paused at the explicit accounts-lane boundary.
+Date: 2026-09-12. Status: incomplete; independent work resumed on user instruction. The registry edit remains deferred to the accounts lane.
 Worktree: `/Users/yashvardhansingh/test/opencode-broker`.
 Branch: `feat/credential-broker`, created from `dev` at `67e155dd35` with user authorization.
 No push or PR. No accounts-lane files changed.
@@ -91,9 +91,31 @@ The authoritative design's Appendix E has not been filled with acceptance claims
 
 ## Remaining implementation
 
-- GitHub clone placeholder consumer, supervisor secret delivery, wake network policy, Daytona resume secret reconciliation, Cloudflare token renewal, and workspace-scoped credential network policy. Each needs its failing test before the fix.
+- Supervisor secret delivery, wake network policy, Daytona resume secret reconciliation, Cloudflare token renewal, and workspace-scoped credential network policy. Each needs its failing test before the fix.
 - All Appendix E feasibility experiments and their results in the design.
 - The `@claxedo/egress-broker` package, revisioned Binding contract, authenticated binding-id request path, injection/request policy/redirect/failure reporting, generic delivery adapter, Node control-plane hosting, and loopback hosting.
 - Live Cloudflare image/runtime verification and any required SDK behavior fixes discovered there.
 
 The hosted store and lease-key changes remain explicitly outside this round. The broker round is not complete.
+
+## GitHub clone placeholder consumer
+
+Completed after the user directed continuation on independent work. Both Claxedo host entrypoints call `claxedoWorkspaceRuntimeBootFromEnv`, which now configures `http.https://github.com/.extraheader` before returning server options. Git receives `Authorization: <placeholder>`; Daytona substitutes the complete Basic auth value supplied by `authenticatedGitHubCloneSource`. The global Git configuration lives in the runtime's home and replaces the previous header on subsequent boot. Configuration failure stops boot. No actual GitHub token is introduced into this path.
+
+Additional changed files:
+
+- `packages/claxedo-server/src/hosts/workspace-runtime/git-auth.ts`
+- `packages/claxedo-server/src/hosts/workspace-runtime/runtime-boot.ts`
+- `packages/claxedo-server/src/hosts/workspace-runtime/runtime-boot.test.ts`
+
+Validation:
+
+- In claxedo-server, `bun test src/hosts/workspace-runtime/runtime-boot.test.ts` failed before the implementation because the real Git URL-matched header was absent; passed after the fix.
+- `bun test src/hosts/workspace-runtime/runtime-boot.test.ts src/workspace/repository-clone.test.ts`: 26 pass, 0 fail. Real Git runs with an isolated home inside this worktree. Assertions cover GitHub HTTPS matching, rejection of HTTP and a lookalike hostname, replacement on repeat boot, malformed header rejection, and config-write failure blocking boot.
+- In claxedo-server, `bun run typecheck`: passed, zero errors.
+- At root, `bun run test:architecture-ratchets`: 13 pass, 0 fail; all 8 source policies and helpers pass; no baseline changes.
+- `git diff --check`: passed.
+
+This proves runtime header configuration. A private GitHub clone through a live Daytona edge remains unverified.
+
+Next: test and repair self-hosted supervisor secret delivery. Trace the existing runtime preparation and GitHub clone secret producers into the supervisor's `manager.ensure` call, then assert that the same secrets reach the driver without entering ordinary runtime env. This is needed so the clone and MCP consumers receive authority on self-hosted provisioning as well as hosted provisioning.
