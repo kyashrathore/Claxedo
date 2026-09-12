@@ -378,6 +378,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "최신 메시지로 스크롤",
   "session.tab.review": "검토",
   "session.tab.context": "컨텍스트",
+  "session.tab.subagent": "하위 에이전트",
+  "session.tab.closeSubagent": "하위 에이전트 닫기",
   "session.messages.loading": "메시지 로드 중...",
   "session.todo.title": "할 일",
   "session.todo.collapse": "접기",

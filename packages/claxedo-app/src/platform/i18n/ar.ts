@@ -378,6 +378,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "التمرير إلى أحدث رسالة",
   "session.tab.review": "مراجعة",
   "session.tab.context": "سياق",
+  "session.tab.subagent": "وكيل فرعي",
+  "session.tab.closeSubagent": "إغلاق الوكيل الفرعي",
   "session.messages.loading": "جارٍ تحميل الرسائل...",
   "session.todo.title": "المهام",
   "session.todo.collapse": "طي",

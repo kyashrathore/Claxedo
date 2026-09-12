@@ -390,6 +390,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "Zur letzten Nachricht scrollen",
   "session.tab.review": "Überprüfung",
   "session.tab.context": "Kontext",
+  "session.tab.subagent": "Subagent",
+  "session.tab.closeSubagent": "Subagent schließen",
   "session.messages.loading": "Lade Nachrichten...",
   "session.todo.title": "Aufgaben",
   "session.todo.collapse": "Einklappen",

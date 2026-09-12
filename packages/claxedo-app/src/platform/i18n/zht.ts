@@ -430,6 +430,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "捲動到最新訊息",
   "session.tab.review": "審查",
   "session.tab.context": "上下文",
+  "session.tab.subagent": "子代理",
+  "session.tab.closeSubagent": "關閉子代理",
   "session.messages.loading": "正在載入訊息...",
 
   "session.todo.title": "待辦事項",

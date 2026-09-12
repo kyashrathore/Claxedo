@@ -434,6 +434,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "Rull til siste melding",
   "session.tab.review": "Gjennomgang",
   "session.tab.context": "Kontekst",
+  "session.tab.subagent": "Underagent",
+  "session.tab.closeSubagent": "Lukk underagent",
 
 
   "session.messages.loading": "Laster meldinger...",

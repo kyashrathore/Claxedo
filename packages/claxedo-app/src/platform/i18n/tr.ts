@@ -438,6 +438,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "En son mesaja kaydır",
   "session.tab.review": "İnceleme",
   "session.tab.context": "Bağlam",
+  "session.tab.subagent": "Alt ajan",
+  "session.tab.closeSubagent": "Alt ajanı kapat",
 
 
   "session.messages.loading": "Mesajlar yükleniyor...",

@@ -429,6 +429,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "เลื่อนไปยังข้อความล่าสุด",
   "session.tab.review": "ตรวจสอบ",
   "session.tab.context": "บริบท",
+  "session.tab.subagent": "เอเจนต์ย่อย",
+  "session.tab.closeSubagent": "ปิดเอเจนต์ย่อย",
 
 
   "session.messages.loading": "กำลังโหลดข้อความ...",

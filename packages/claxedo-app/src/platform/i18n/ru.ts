@@ -434,6 +434,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "Прокрутить к последнему сообщению",
   "session.tab.review": "Обзор",
   "session.tab.context": "Контекст",
+  "session.tab.subagent": "Субагент",
+  "session.tab.closeSubagent": "Закрыть субагент",
   "session.messages.loading": "Загрузка сообщений...",
 
   "session.todo.title": "Задачи",

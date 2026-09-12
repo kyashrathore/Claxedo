@@ -433,6 +433,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "Pomjeri na najnoviju poruku",
   "session.tab.review": "Pregled",
   "session.tab.context": "Kontekst",
+  "session.tab.subagent": "Podagent",
+  "session.tab.closeSubagent": "Zatvori podagenta",
 
 
   "session.messages.loading": "Učitavanje poruka...",

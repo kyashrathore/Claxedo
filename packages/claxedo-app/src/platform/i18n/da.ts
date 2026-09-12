@@ -430,6 +430,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "Rul til seneste besked",
   "session.tab.review": "Gennemgang",
   "session.tab.context": "Kontekst",
+  "session.tab.subagent": "Underagent",
+  "session.tab.closeSubagent": "Luk underagent",
   "session.messages.loading": "Indlæser beskeder...",
 
   "session.todo.title": "Opgaver",
