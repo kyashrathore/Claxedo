@@ -20,7 +20,7 @@ import type {
   AgentMessagePage,
   AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { AgentMessagePageError, hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
+import { AgentMessagePageError, declaresAdapterCapability, hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
   isAgentRuntimeTurnConflictError,
@@ -51,7 +51,13 @@ import {
   parseSessionPromptBody,
   type SessionPromptBody,
 } from "../session/service"
-import { normalizeSessionConfigUpdate, normalizeSessionCreateConfig, normalizeSessionCreateBody } from "../session-config"
+import {
+  normalizeSessionConfigUpdate,
+  normalizeSessionCreateConfig,
+  normalizeSessionCreateBody,
+  sessionInstructionsByteLength,
+  SESSION_INSTRUCTIONS_MAX_BYTES,
+} from "../session-config"
 import { MAX_ACTIVE_CHILDREN_PER_PARENT, type ChildSessionHost } from "./session-children"
 import {
   narrowerPermissionLevel,
@@ -432,7 +438,7 @@ type Opts = {
   ) => Promise<RuntimeDirectory> | RuntimeDirectory
   listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSession[]>
   listSubagents?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string) => Promise<unknown[]> | unknown[]
-  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"] }) => Promise<{ id: string }>
+  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string }) => Promise<{ id: string }>
   /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
   childSessions?: ChildSessionHost
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
@@ -1283,6 +1289,12 @@ export function createSessionRoutes(opts: Opts) {
       const body = normalizeSessionCreateBody(wire)
       const guarded = await sessionOperationGuard(opts, c, "", "session_create")
       if (guarded) return guarded
+      if (body.instructions && sessionInstructionsByteLength(body.instructions) > SESSION_INSTRUCTIONS_MAX_BYTES) {
+        return c.json(errorBody(
+          "session_instructions_too_large",
+          `Session instructions must be at most ${SESSION_INSTRUCTIONS_MAX_BYTES} UTF-8 bytes`,
+        ), 400)
+      }
       const children = opts.childSessions
       if ((body.parentID || body.clientRequestId) && !children) {
         return c.json(errorBody("child_sessions_unsupported", "This runtime cannot create child sessions"), 501)
@@ -1325,6 +1337,12 @@ export function createSessionRoutes(opts: Opts) {
         })
         try {
           const adapter = await opts.resolveAdapter(c)
+          if (body.instructions && !declaresAdapterCapability(adapter, "session-instructions")) {
+            return c.json(errorBody(
+              "session_instructions_unsupported",
+              "This harness has no instruction channel for session instructions",
+            ), 501)
+          }
           if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
             adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
           }
@@ -1363,9 +1381,10 @@ export function createSessionRoutes(opts: Opts) {
             : inherited ?? body.permissionCeiling
           const childMode = await permissionModeUnderCeiling(c, adapter, directory, ceiling, body.permissionMode)
           if (childMode.refusal) return childMode.refusal
+          const createOptions = body.instructions ? { instructions: body.instructions } : {}
           let session = existing ?? (opts.createSession
-            ? await opts.createSession(c, directory, body.title, body.id, { ...(body.parentID ? { parentID: body.parentID } : {}), ...(ceiling ? { permissionCeiling: ceiling } : {}) })
-            : await adapter.createSession(directory, body.title, body.id))
+            ? await opts.createSession(c, directory, body.title, body.id, { ...(body.parentID ? { parentID: body.parentID } : {}), ...(ceiling ? { permissionCeiling: ceiling } : {}), ...createOptions })
+            : await adapter.createSession(directory, body.title, body.id, createOptions))
           if (Object.keys(config).length > 0) {
             try {
               if (opts.updateSessionConfig) {

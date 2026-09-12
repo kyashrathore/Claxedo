@@ -155,20 +155,19 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (!prev && !update.harness) return null
     const sameHarness = !update.harness || (update.harness.id === prev?.harness.id && update.harness.access === prev?.harness.access)
     const permissionCeiling = update.permissionCeiling ?? prev?.permissionCeiling
+    const permissionMode = harnessScopedField(update.permissionMode, prev?.permissionMode, sameHarness)
+    const permissionState = harnessScopedField(update.permissionState, prev?.permissionState, sameHarness)
+    const model = update.model === undefined ? prev?.model : update.model ?? undefined
+    const instructions = update.instructions === undefined ? prev?.instructions : update.instructions
     const next: SessionConfig = {
       harness: update.harness ?? prev!.harness,
       ...(permissionCeiling ? { permissionCeiling } : {}),
-      ...(update.permissionMode === undefined
-        ? prev?.permissionMode && sameHarness ? { permissionMode: prev.permissionMode } : {}
-        : update.permissionMode ? { permissionMode: update.permissionMode } : {}),
-      ...(update.permissionState === undefined
-        ? prev?.permissionState && sameHarness ? { permissionState: prev.permissionState } : {}
-        : update.permissionState ? { permissionState: update.permissionState } : {}),
-      ...(update.model === undefined
-        ? prev?.model ? { model: prev.model } : {}
-        : update.model ? { model: update.model } : {}),
+      ...(permissionMode ? { permissionMode } : {}),
+      ...(permissionState ? { permissionState } : {}),
+      ...(model ? { model } : {}),
       variant: update.variant === undefined ? prev?.variant ?? null : update.variant,
       agent: update.agent === undefined ? prev?.agent ?? null : update.agent,
+      ...(instructions ? { instructions } : {}),
       ...(update.handoff === undefined
         ? prev?.handoff !== undefined ? { handoff: prev.handoff } : {}
         : { handoff: update.handoff }),
@@ -810,6 +809,15 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       if (rows.size === 0) this.questions.delete(directory)
     }
   }
+}
+
+/**
+ * A config field the harness itself accepted. A harness change invalidates it,
+ * so the previous value only survives while the harness is unchanged.
+ */
+function harnessScopedField<T>(update: T | null | undefined, prev: T | undefined, sameHarness: boolean) {
+  if (update !== undefined) return update ?? undefined
+  return sameHarness ? prev : undefined
 }
 
 function terminalSubagentStatus(status: string | undefined) {

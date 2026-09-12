@@ -3,7 +3,7 @@ import type { SessionHarnessId } from "./harness-types"
 import type { AgentCapabilities } from "@claxedo/agent-runtime-contract"
 
 export type HarnessCapabilityTarget = SessionHarnessId
-export type AdapterCapability = "runtime-config"
+export type AdapterCapability = "runtime-config" | "session-instructions"
 
 export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSelection"> &
   Partial<Pick<AgentCapabilities, "modelSelection">> & {
@@ -105,11 +105,16 @@ export type RuntimeConfigurableAdapter = AdapterCapabilityProvider & {
   setAuth(keys: Record<string, string | undefined>): void
 }
 
-export function hasAdapterCapability(
-  adapter: unknown,
-  capability: AdapterCapability,
-): adapter is RuntimeConfigurableAdapter {
+export function declaresAdapterCapability(adapter: unknown, capability: AdapterCapability): boolean {
   if (!isRecord(adapter)) return false
   const list = adapter.adapterCapabilities
   return Array.isArray(list) && list.includes(capability)
+}
+
+/** Only `runtime-config` implies the setter pair, so only it narrows. */
+export function hasAdapterCapability(
+  adapter: unknown,
+  capability: "runtime-config",
+): adapter is RuntimeConfigurableAdapter {
+  return declaresAdapterCapability(adapter, capability)
 }

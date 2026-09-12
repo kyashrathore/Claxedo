@@ -14,6 +14,10 @@ import { rec as record, str } from "./json-value"
  * session a host-owned child of that parent; `clientRequestId` lets a retried
  * create resolve to the same session; `permissionCeiling` caps the session's
  * permission mode at a level, and `permissionMode` names the mode to start in.
+ *
+ * `instructions` is retained on the session and reaches the harness through its
+ * instruction channel on every turn, so it is never re-sent by a caller and
+ * never arrives as user text.
  */
 export type SessionCreateBody = {
   id?: string
@@ -23,6 +27,14 @@ export type SessionCreateBody = {
   clientRequestId?: string
   permissionCeiling?: AutoLevel
   permissionMode?: string
+  instructions?: string
+}
+
+/** UTF-8 bytes. The block is stored whole and prepended to every turn. */
+export const SESSION_INSTRUCTIONS_MAX_BYTES = 64 * 1024
+
+export function sessionInstructionsByteLength(instructions: string): number {
+  return new TextEncoder().encode(instructions).length
 }
 
 export function normalizeSessionCreateBody(input: unknown): SessionCreateBody {
@@ -36,6 +48,7 @@ export function normalizeSessionCreateBody(input: unknown): SessionCreateBody {
     ...(str(row.clientRequestId) ? { clientRequestId: str(row.clientRequestId) } : {}),
     ...(isAutoLevel(ceiling) ? { permissionCeiling: ceiling } : {}),
     ...(str(row.permissionMode) ? { permissionMode: str(row.permissionMode) } : {}),
+    ...(str(row.instructions) ? { instructions: str(row.instructions) } : {}),
   }
 }
 

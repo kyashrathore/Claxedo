@@ -21,13 +21,13 @@ import type {
   AgentTurnOutcome,
 } from "./index"
 import type { AgentHarnessAdapter } from "./adapter-contract"
-import { hasAdapterCapability } from "./capabilities"
+import { declaresAdapterCapability, hasAdapterCapability } from "./capabilities"
 import { buildSession, eventSessionId, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
 import { createRuntimeEventHub } from "./runtime-event-hub"
 import { deriveSessionTitle, extractPromptTitleText, hasConcreteSessionTitle } from "./session-title"
-import { DEFAULT_MODEL_ID, resolveSessionModel } from "./session-model"
+import { DEFAULT_MODEL_ID, resolveSessionModel, resolveTurnSystem } from "./session-model"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./runtime/turn-outcome"
 import { createTurnPublication } from "./runtime/turn-publication"
@@ -567,7 +567,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
           adapter.setModel(create.model.modelID === DEFAULT_MODEL_ID ? "" : create.model.modelID)
         }
-        const session = await adapter.createSession(create.directory, create.title, create.id)
+        if (create.instructions && !declaresAdapterCapability(adapter, "session-instructions")) {
+          throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "session_instructions", message: `Harness ${create.harness.id} has no instruction channel` })
+        }
+        const instructions = create.instructions ? { instructions: create.instructions } : {}
+        const session = await adapter.createSession(create.directory, create.title, create.id, instructions)
         // Provider creation establishes the local row; the runtime completes
         // its workspace binding below. An unexpected returned id that already
         // has a complete binding belongs to another execution scope.
@@ -590,6 +594,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ...(model ? { model } : {}),
           variant: create.variant ?? null,
           agent: create.agent ?? null,
+          ...instructions,
         }
         const persistedConfig = store.updateSessionConfig(session.id, config)
         if (!persistedConfig) throw new Error(`Session ${session.id} has no runtime config`)
@@ -642,6 +647,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
+        const system = resolveTurnSystem(config, turn.system)
         const prompt: PromptInput = {
           parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
           userMessageId,
@@ -650,7 +656,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           model: turn.model ?? resolveSessionModel(config),
           ...(turn.tools ? { tools: turn.tools } : {}),
           ...(turn.format ? { format: turn.format } : {}),
-          ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
+          ...(system ? { system } : {}),
           ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
           ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
           // The turn's author travels with the prompt as well as with the

@@ -32,3 +32,22 @@ export function defaultSessionModel(harness: SessionHarness): PromptModel {
 export function resolveSessionModel(config: SessionConfig): PromptModel {
   return config.model ?? defaultSessionModel(config.harness)
 }
+
+/**
+ * The instruction channel of one turn: the session's standing instructions,
+ * then a pending handoff transcript, then whatever this turn carries.
+ *
+ * Retained instructions lead because they say who the session is; the
+ * transcript and the turn's own block are what happened after that.
+ */
+export function resolveTurnSystem(
+  config: Pick<SessionConfig, "instructions" | "handoff"> | undefined,
+  turnSystem?: string,
+): string | undefined {
+  const blocks = [
+    config?.instructions,
+    config?.handoff?.pending ? config.handoff.transcript : undefined,
+    turnSystem,
+  ].filter((block): block is string => !!block)
+  return blocks.length ? blocks.join("\n\n") : undefined
+}

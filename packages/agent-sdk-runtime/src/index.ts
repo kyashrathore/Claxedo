@@ -123,7 +123,7 @@ export type {
   HarnessConnectionDescriptor,
   HarnessConnectionRef,
 } from "./connection-provider"
-export { defaultSessionModel, resolveSessionModel } from "./session-model"
+export { defaultSessionModel, resolveSessionModel, resolveTurnSystem } from "./session-model"
 export {
   createMemorySubagentAdmissionStore,
   createSubagentAdmissionBoundary,
@@ -206,6 +206,13 @@ export type SessionConfig = {
   model?: PromptModel
   variant?: string | null
   agent?: string | null
+  /**
+   * Standing instructions this session was created with. They reach the harness
+   * through its instruction channel at the head of every turn, so a session
+   * reopened after a restart keeps them without the caller resending anything,
+   * and nothing meant as instruction arrives as user text.
+   */
+  instructions?: string | null
   handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
 
@@ -226,13 +233,16 @@ export type SessionConfigUpdate = {
   model?: PromptModel | null
   variant?: string | null
   agent?: string | null
+  instructions?: string | null
   handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
 
 /** Config fields accepted from public session create/update requests.
  * Handoff and accepted permission state are runtime-owned; permission changes
- * must go through the adapter permission-mode or permission-reply operation. */
-export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff" | "permissionMode" | "permissionState" | "permissionCeiling">
+ * must go through the adapter permission-mode or permission-reply operation.
+ * Instructions are fixed at create so a later edit cannot rewrite what an
+ * already-running session was told. */
+export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff" | "permissionMode" | "permissionState" | "permissionCeiling" | "instructions">
 
 export type AgentRuntimeStreamEvent = RuntimeStreamEvent | CompatEvent
 export type RuntimeDirectory = string | undefined

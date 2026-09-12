@@ -2006,3 +2006,81 @@ test("late approval is not found without resolving a retired harness", async () 
   expect(result.status).toBe(404)
   expect(resolved).toBe(false)
 })
+
+describe("createSessionRoutes session instructions", () => {
+  function instructionRoutes(input: { instructionChannel: boolean }) {
+    const creates: Array<{ id?: string; options?: { instructions?: string } }> = []
+    let stored: string | undefined
+    const fixture: AgentHarnessAdapter = {
+      ...adapter(),
+      ...(input.instructionChannel ? { adapterCapabilities: ["session-instructions"] as const } : {}),
+      getSession: async () => null,
+      createSession: async (_directory, _title, id, options) => {
+        creates.push({ id, options })
+        stored = options?.instructions
+        return { id: id ?? "ses_instructions" }
+      },
+      getSessionConfig: async () => ({
+        harness: { id: "codex", access: "native" },
+        variant: null,
+        agent: null,
+        ...(stored ? { instructions: stored } : {}),
+      }),
+    }
+    const app = createSessionRoutes({
+      resolveAdapter: () => fixture,
+      resolveDirectory: () => "/workspace",
+      resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+    return { app, creates }
+  }
+
+  function create(app: ReturnType<typeof createSessionRoutes>, body: Record<string, unknown>) {
+    return app.request("http://localhost/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  }
+
+  test("carries the block to session creation and reads it back on the config", async () => {
+    const { app, creates } = instructionRoutes({ instructionChannel: true })
+    const created = await create(app, { id: "ses_instructions", instructions: "Answer only in haiku." })
+    expect(created.status).toBe(201)
+    expect(creates).toEqual([{ id: "ses_instructions", options: { instructions: "Answer only in haiku." } }])
+
+    const config = await app.request("http://localhost/session/ses_instructions/config")
+    expect(await config.json()).toMatchObject({ instructions: "Answer only in haiku." })
+  })
+
+  test("leaves the create options empty when no block was sent", async () => {
+    const { app, creates } = instructionRoutes({ instructionChannel: true })
+    expect((await create(app, { id: "ses_plain" })).status).toBe(201)
+    expect(creates).toEqual([{ id: "ses_plain", options: {} }])
+  })
+
+  test("refuses a block over the cap before the harness is asked to create anything", async () => {
+    const { app, creates } = instructionRoutes({ instructionChannel: true })
+    const response = await create(app, { id: "ses_big", instructions: "x".repeat(65_537) })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "session_instructions_too_large" } })
+    expect(creates).toEqual([])
+  })
+
+  test("measures the cap in UTF-8 bytes rather than code units", async () => {
+    const { app, creates } = instructionRoutes({ instructionChannel: true })
+    const response = await create(app, { id: "ses_utf8", instructions: "🙂".repeat(16_385) })
+    expect(response.status).toBe(400)
+    expect(creates).toEqual([])
+  })
+
+  test("refuses a harness with no instruction channel instead of dropping the block", async () => {
+    const { app, creates } = instructionRoutes({ instructionChannel: false })
+    const response = await create(app, { id: "ses_unsupported", instructions: "Answer only in haiku." })
+    expect(response.status).toBe(501)
+    expect(await response.json()).toMatchObject({ error: { code: "session_instructions_unsupported" } })
+    expect(creates).toEqual([])
+  })
+})

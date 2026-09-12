@@ -12,11 +12,14 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // no headroom, so the next feature must name an owner rather than append.
       // `runtime.ts` delegates the Goal surface to `runtime/goal-controller.ts`
       // and `harnesses/codex/driver.ts` delegates app-server login state to
-      // `harnesses/codex/process-auth.ts`.
-      "runtime.ts": 840,
+      // `harnesses/codex/process-auth.ts`. Reviewed 2026-09-12: retained session
+      // instructions compose in `session-model.ts` (`resolveTurnSystem`), and
+      // `runtime.ts` and `sdk-runtime-adapter.ts` only carry them to the create
+      // call and the turn.
+      "runtime.ts": 846,
       "harnesses/acp/index.ts": 844,
       "harnesses/codex/driver.ts": 651,
-      "harnesses/shared/sdk-runtime-adapter.ts": 875,
+      "harnesses/shared/sdk-runtime-adapter.ts": 876,
       "harnesses/pi/index.ts": 12,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {

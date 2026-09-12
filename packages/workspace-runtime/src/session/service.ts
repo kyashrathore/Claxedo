@@ -1,6 +1,6 @@
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/projections/client-presentation"
-import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
+import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError, resolveTurnSystem } from "@claxedo/agent-sdk-runtime"
 import { AgentRuntimeContractError, assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type {
   AgentMessage,
@@ -238,6 +238,7 @@ function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
   const defaultModel = config
     ? defaultSessionModel(config.harness)
     : { providerID: "anthropic", modelID: "claude-sonnet-4-6" }
+  const system = resolveTurnSystem(config, body.system)
   return {
     parts: body.parts ?? [],
     userMessageId,
@@ -249,18 +250,22 @@ function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
     },
     ...(body.tools ? { tools: body.tools } : {}),
     ...(body.format ? { format: body.format } : {}),
-    ...(body.system ? { system: body.system } : {}),
+    ...(system ? { system } : {}),
     ...(body.permissionMode ? { permissionMode: body.permissionMode } : {}),
     ...(body.variant !== undefined ? { variant: body.variant } : config?.variant ? { variant: config.variant } : {}),
   }
 }
 
+/**
+ * The config read is unconditional: a session's retained instructions live only
+ * there, so skipping it whenever the caller happened to name agent, model and
+ * variant would drop the instruction block the session was created with.
+ */
 async function promptForSession(
   adapter: AgentHarnessAdapter,
   binding: AgentExecutionBinding,
   body: SessionPromptBody,
 ) {
-  if (body.agent && body.model?.providerID && body.model?.modelID && body.variant !== undefined) return prompt(body)
   return prompt(body, await adapter.getSessionConfig(binding).catch(() => undefined))
 }
 

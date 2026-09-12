@@ -16,6 +16,7 @@ export type {
   AgentConfigOptions,
   AgentHandoffSessionOptions,
   AgentPreparedHandoffSession,
+  AgentSessionCreateOptions,
   PermissionDecision,
   ResolvedHarnessModel,
   SupportsAbort,
@@ -44,6 +45,7 @@ export {
   GoalCapabilityError,
   goalActionAvailable,
   goalCapabilities,
+  declaresAdapterCapability,
   hasAdapterCapability,
   requireGoalAction,
 } from "./capabilities"

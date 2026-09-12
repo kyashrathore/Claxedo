@@ -80,6 +80,16 @@ export type AgentHandoffSessionOptions = {
   system: string
 }
 
+export type AgentSessionCreateOptions = {
+  /**
+   * Standing instructions for the new session. Only an adapter declaring
+   * `session-instructions` may be given them: the rest have no instruction
+   * channel, and dropping the block would leave the session running under
+   * something its creator never chose.
+   */
+  instructions?: string
+}
+
 export type AgentPreparedHandoffSession = {
   id: string
   agentSessionId?: string
@@ -102,7 +112,7 @@ export interface AgentHarnessAdapterCore {
   readonly sessionConfigOwner?: "adapter" | "runtime"
 
   getSession(binding: AgentExecutionBinding): Promise<AgentSession | null>
-  createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string; agentSessionId?: string }>
+  createSession(directory: RuntimeDirectory, title?: string, id?: string, options?: AgentSessionCreateOptions): Promise<{ id: string; agentSessionId?: string }>
   /** Create a fresh provider-native thread behind an existing Claxedo session. */
   createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<AgentPreparedHandoffSession>
   /** Release the no-longer-authoritative source resources after a handoff commits. */

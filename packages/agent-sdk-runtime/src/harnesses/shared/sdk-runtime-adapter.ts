@@ -38,6 +38,7 @@ import type {
   AgentHarnessAdapterHealth,
   AgentHarnessAdapterHealthContext,
   AgentPermissionModeState,
+  AgentSessionCreateOptions,
   AgentTurnWriteContext,
 } from "../../adapter-contract"
 import { turnWriteFence } from "../../adapter-contract"
@@ -112,7 +113,7 @@ function missingStore(): SdkRuntimeStore {
 }
 
 export class SdkRuntimeAdapter implements AgentHarnessAdapter {
-  readonly adapterCapabilities = ["runtime-config"] as const
+  readonly adapterCapabilities = ["runtime-config", "session-instructions"] as const
   readonly commitsStreamEvents = true
   private store: SdkRuntimeStore
   private ownsStore = false
@@ -294,7 +295,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return this.store.getSession(sessionId) ?? null
   }
 
-  async createSession(directory: string, title?: string, sessionId: string = randomUUID()): Promise<{ id: string }> {
+  async createSession(directory: string, title?: string, sessionId: string = randomUUID(), options: AgentSessionCreateOptions = {}): Promise<{ id: string }> {
     const complete = this.producers.begin()
     try {
       directory = requireWorkspaceDirectory(directory)
@@ -303,6 +304,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         directory,
         title,
         model: this.currentModel,
+        ...(options.instructions ? { system: options.instructions } : {}),
         sessionId,
       })
       this.bindStoreSession({
@@ -320,6 +322,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         ...(nativeModel ? { model: nativeModel } : this.currentModel ? { model: { providerID: this.driver.type, modelID: this.currentModel } } : {}),
         variant: null,
         agent: null,
+        ...(options.instructions ? { instructions: options.instructions } : {}),
       })
       return { id: sessionId }
     } finally { complete() }

@@ -2325,6 +2325,22 @@ void describe("RuntimeStore", () => {
     assert.deepEqual(next.getSessionConfig("s1"), expectedConfig)
   })
 
+  void it("retains create-time instructions across reopen and through a harness change", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.updateSessionConfig("s1", { harness: { id: "codex", access: "native" }, instructions: "Answer only in haiku." })
+    assert.equal(first.getSessionConfig("s1")?.instructions, "Answer only in haiku.")
+
+    const reopened = new RuntimeStore(root)
+    assert.equal(reopened.getSessionConfig("s1")?.instructions, "Answer only in haiku.")
+    reopened.updateSessionConfig("s1", { harness: { id: "claude", access: "native" } })
+    assert.equal(reopened.getSessionConfig("s1")?.instructions, "Answer only in haiku.")
+    reopened.updateSessionConfig("s1", { instructions: null })
+    assert.equal(reopened.getSessionConfig("s1")?.instructions, undefined)
+    assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.instructions, undefined)
+  })
+
   void it("persists and clears a pending cross-harness handoff", () => {
     const root = tmp()
     const first = new RuntimeStore(root)

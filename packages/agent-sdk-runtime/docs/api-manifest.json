@@ -166,6 +166,7 @@
       "requireGoalAction",
       "requireGoalResource",
       "resolveSessionModel",
+      "resolveTurnSystem",
       "RUNTIME_GOAL_STATUSES",
       "safeAgentProcessDescriptor",
       "widestPermissionModeUnder"

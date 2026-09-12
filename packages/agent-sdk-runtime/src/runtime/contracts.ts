@@ -115,6 +115,8 @@ export type AgentRuntimeSessionCreateInput = {
   model?: PromptModel
   variant?: string | null
   agent?: string | null
+  /** Retained standing instructions; refused by a harness with no instruction channel. */
+  instructions?: string
   title?: string
 }
 
