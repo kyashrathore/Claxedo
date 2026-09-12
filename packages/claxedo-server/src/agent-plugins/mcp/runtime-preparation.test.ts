@@ -65,7 +65,7 @@ function oauthFetch(publicServer = false, multipleIssuers = false) {
 
 async function subject(input: {
   publicServer?: boolean
-  brokering?: "native" | "proxy" | "none"
+  brokering?: "native" | "none"
   connected?: boolean
   multipleIssuers?: boolean
 } = {}) {

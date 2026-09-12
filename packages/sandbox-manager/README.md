@@ -105,8 +105,8 @@ Per-provider mechanism (from each provider's official docs):
 | Docker, fetch | `none` | Plaintext env only. |
 
 **Fail-closed contract.** A brokered secret is never silently downgraded to
-readable env. `native` (transparent egress) and `proxy` (a caller-hosted broker) both keep the value out of the sandbox and provision normally;
-only a `none` driver makes the manager refuse to provision (`status:
+readable env. Only `native` keeps the value out of the sandbox and provisions
+normally; a `none` driver makes the manager refuse to provision (`status:
 "unavailable", error: "secret_brokering_unsupported"`) rather than expose or
 drop the credential. Brokered secret values are also never written to labels,
 never logged, and never captured in a driver snapshot.

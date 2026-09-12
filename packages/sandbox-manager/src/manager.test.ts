@@ -1060,17 +1060,15 @@ describe("sandbox manager", () => {
     expect(driver.ensureHost).not.toHaveBeenCalled()
   })
 
-  test("brokered secrets are passed through for both native and proxy drivers", async () => {
-    for (const brokering of ["native", "proxy"] as const) {
-      const driver = fakeDriver({ metadata: { secretBrokering: brokering } as never })
-      const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
-      const result = await manager.ensure("ws_1", {
-        homeRegion: "us-east",
-        secrets: [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"], header: "Authorization" }],
-      })
-      expect(result.status).toBe("ready")
-      expect(driver.ensureHost).toHaveBeenCalled()
-    }
+  test("brokered secrets are passed through for a native driver", async () => {
+    const driver = fakeDriver({ metadata: { secretBrokering: "native" } as never })
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+    const result = await manager.ensure("ws_1", {
+      homeRegion: "us-east",
+      secrets: [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"], header: "Authorization" }],
+    })
+    expect(result.status).toBe("ready")
+    expect(driver.ensureHost).toHaveBeenCalled()
   })
 
   test("brokered secrets reach the driver on its own channel, never in env or labels", async () => {

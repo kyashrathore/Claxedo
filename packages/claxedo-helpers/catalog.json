@@ -764,8 +764,7 @@
         "Byte-identical duplicate of base64Url() in host-access-authority.ts and 2 other files.",
         "4 copies of this exact implementation exist across the server package.",
         "Byte-identical duplicate of the same btoa-based base64Url() found in 3 other files.",
-        "Same capability as the other two but Node-only (Buffer) vs their Web-API btoa implementation.",
-        "Verbatim duplicate of sandbox-manager/drivers/cloudflare-egress.ts:14."
+        "Same capability as the other two but Node-only (Buffer) vs their Web-API btoa implementation."
       ]
     },
     {
@@ -1299,19 +1298,15 @@
       "category": "error",
       "description": "Builds a JSON error Response with an inline {error:{code,message}} shape, defaulting status to 503.",
       "generic": false,
-      "demand": 7,
+      "demand": 5,
       "distinctImpls": 6,
-      "files": 6,
+      "files": 4,
       "packages": [
-        "claxedo-server",
-        "sandbox-manager",
         "workspace-relay",
         "workspace-runtime"
       ],
       "movability": {
-        "relative-coupled": 1,
-        "pure": 5,
-        "module-coupled": 1
+        "pure": 5
       },
       "sites": [
         {
@@ -1328,16 +1323,6 @@
           "name": "error",
           "at": "packages/workspace-runtime/src/routes/git-source.ts:10",
           "loc": 4
-        },
-        {
-          "name": "egressError",
-          "at": "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/egress.ts:176",
-          "loc": 7
-        },
-        {
-          "name": "egressError",
-          "at": "packages/sandbox-manager/src/drivers/cloudflare-egress.ts:173",
-          "loc": 7
         },
         {
           "name": "jsonError",
@@ -2497,18 +2482,15 @@
       "category": "crypto",
       "description": "Compares two equal-length strings char-by-char via XOR accumulation to avoid timing leaks.",
       "generic": true,
-      "demand": 5,
+      "demand": 3,
       "distinctImpls": 4,
-      "files": 5,
+      "files": 3,
       "packages": [
         "claxedo-server",
-        "claxedo-server-core",
-        "sandbox-manager"
+        "claxedo-server-core"
       ],
       "movability": {
-        "pure": 3,
-        "portable-deps": 1,
-        "module-coupled": 1
+        "pure": 3
       },
       "sites": [
         {
@@ -2519,16 +2501,6 @@
         {
           "name": "timingSafeEqual",
           "at": "packages/claxedo-server/src/billing/standard-webhooks.ts:49",
-          "loc": 7
-        },
-        {
-          "name": "timingSafeEqual",
-          "at": "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/egress.ts:46",
-          "loc": 7
-        },
-        {
-          "name": "timingSafeEqual",
-          "at": "packages/sandbox-manager/src/drivers/cloudflare-egress.ts:43",
           "loc": 7
         },
         {
@@ -3464,29 +3436,17 @@
       "category": "crypto",
       "description": "Decodes a base64url string to a Uint8Array, throwing a domain-specific error on invalid format.",
       "generic": true,
-      "demand": 4,
+      "demand": 2,
       "distinctImpls": 3,
-      "files": 4,
+      "files": 2,
       "packages": [
         "claxedo-server",
-        "claxedo-server-core",
-        "sandbox-manager"
+        "claxedo-server-core"
       ],
       "movability": {
-        "pure": 3,
-        "module-coupled": 1
+        "pure": 2
       },
       "sites": [
-        {
-          "name": "b64urlDecode",
-          "at": "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/egress.ts:23",
-          "loc": 8
-        },
-        {
-          "name": "b64urlDecode",
-          "at": "packages/sandbox-manager/src/drivers/cloudflare-egress.ts:20",
-          "loc": 8
-        },
         {
           "name": "fromBase64",
           "at": "packages/claxedo-server-core/src/credentials/envelope.ts:128",
@@ -10333,39 +10293,6 @@
         }
       ],
       "notes": []
-    },
-    {
-      "slug": "base64url-encode-json-value",
-      "aliases": [],
-      "category": "crypto",
-      "description": "Serializes a value to JSON and base64url-encodes the UTF-8 bytes.",
-      "generic": true,
-      "demand": 2,
-      "distinctImpls": 1,
-      "files": 2,
-      "packages": [
-        "claxedo-server",
-        "sandbox-manager"
-      ],
-      "movability": {
-        "module-coupled": 2
-      },
-      "sites": [
-        {
-          "name": "encodeJson",
-          "at": "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/egress.ts:31",
-          "loc": 4
-        },
-        {
-          "name": "encodeJson",
-          "at": "packages/sandbox-manager/src/drivers/cloudflare-egress.ts:28",
-          "loc": 4
-        }
-      ],
-      "notes": [
-        "Verbatim duplicate of sandbox-manager's version.",
-        "Verbatim duplicate of claxedo-server's version."
-      ]
     },
     {
       "slug": "build-active-session-status-poll-query-options",
@@ -20018,39 +19945,6 @@
       ]
     },
     {
-      "slug": "handle-egress-proxy-http-request",
-      "aliases": [],
-      "category": "domain-specific",
-      "description": "Authenticates a bearer egress token and proxies the request to an HTTPS target header, else returns an error.",
-      "generic": false,
-      "demand": 2,
-      "distinctImpls": 1,
-      "files": 2,
-      "packages": [
-        "claxedo-server",
-        "sandbox-manager"
-      ],
-      "movability": {
-        "module-coupled": 2
-      },
-      "sites": [
-        {
-          "name": "handleEgressRequest",
-          "at": "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/egress.ts:122",
-          "loc": 54
-        },
-        {
-          "name": "handleEgressRequest",
-          "at": "packages/sandbox-manager/src/drivers/cloudflare-egress.ts:119",
-          "loc": 54
-        }
-      ],
-      "notes": [
-        "Verbatim duplicate of sandbox-manager's version.",
-        "Verbatim duplicate of claxedo-server's version."
-      ]
-    },
-    {
       "slug": "hash-string-sha256-hex-async",
       "aliases": [
         "hash-string-sha256-hex"
@@ -20113,39 +20007,6 @@
       ],
       "notes": [
         "Byte-for-byte duplicate of agent-color.ts tone \u2014 good candidate to share."
-      ]
-    },
-    {
-      "slug": "import-hmac-sha256-key",
-      "aliases": [],
-      "category": "crypto",
-      "description": "Imports a raw secret string as an HMAC-SHA256 CryptoKey usable for sign and verify.",
-      "generic": true,
-      "demand": 2,
-      "distinctImpls": 1,
-      "files": 2,
-      "packages": [
-        "claxedo-server",
-        "sandbox-manager"
-      ],
-      "movability": {
-        "pure": 2
-      },
-      "sites": [
-        {
-          "name": "hmacKey",
-          "at": "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/egress.ts:35",
-          "loc": 10
-        },
-        {
-          "name": "hmacKey",
-          "at": "packages/sandbox-manager/src/drivers/cloudflare-egress.ts:32",
-          "loc": 10
-        }
-      ],
-      "notes": [
-        "Verbatim duplicate of sandbox-manager's version.",
-        "Verbatim duplicate of claxedo-server's version."
       ]
     },
     {
@@ -21303,39 +21164,6 @@
         }
       ],
       "notes": []
-    },
-    {
-      "slug": "mint-hs256-jwt-egress-token",
-      "aliases": [],
-      "category": "crypto",
-      "description": "Mints a compact HS256 JWT embedding sandbox id, allowed hosts, and an expiry claim.",
-      "generic": false,
-      "demand": 2,
-      "distinctImpls": 1,
-      "files": 2,
-      "packages": [
-        "claxedo-server",
-        "sandbox-manager"
-      ],
-      "movability": {
-        "module-coupled": 2
-      },
-      "sites": [
-        {
-          "name": "mintEgressToken",
-          "at": "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/egress.ts:63",
-          "loc": 19
-        },
-        {
-          "name": "mintEgressToken",
-          "at": "packages/sandbox-manager/src/drivers/cloudflare-egress.ts:60",
-          "loc": 19
-        }
-      ],
-      "notes": [
-        "Verbatim duplicate of sandbox-manager's version.",
-        "Verbatim duplicate of claxedo-server's version."
-      ]
     },
     {
       "slug": "mock-router-passthrough-children",
@@ -29021,39 +28849,6 @@
       "notes": [
         "Sibling in workspace-authority.ts skips the length check and returns nothing on success.",
         "Unlike the D1 sibling, returns undefined instead of a canonical signature hash on success."
-      ]
-    },
-    {
-      "slug": "verify-hs256-jwt-egress-token",
-      "aliases": [],
-      "category": "crypto",
-      "description": "Verifies a compact HS256 JWT's signature and expiry, returning its claims or null if invalid/expired.",
-      "generic": false,
-      "demand": 2,
-      "distinctImpls": 1,
-      "files": 2,
-      "packages": [
-        "claxedo-server",
-        "sandbox-manager"
-      ],
-      "movability": {
-        "module-coupled": 2
-      },
-      "sites": [
-        {
-          "name": "verifyEgressToken",
-          "at": "packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/egress.ts:83",
-          "loc": 24
-        },
-        {
-          "name": "verifyEgressToken",
-          "at": "packages/sandbox-manager/src/drivers/cloudflare-egress.ts:80",
-          "loc": 24
-        }
-      ],
-      "notes": [
-        "Verbatim duplicate of sandbox-manager's version.",
-        "Verbatim duplicate of claxedo-server's version."
       ]
     },
     {

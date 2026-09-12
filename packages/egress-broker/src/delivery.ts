@@ -16,7 +16,7 @@ export function createGenericDeliveryAdapter(input: {
       const current = runtimes.get(identity.leaseId)
       return !!current && !withdrawnRuntimes.has(identity.leaseId) && sameRuntime(current, identity)
     },
-    reportFailure: input.reportFailure,
+    reportFailure: (failure) => input.reportFailure(failure),
   }
 
   function activateRuntime(identity: RuntimeIdentity) {
@@ -28,6 +28,33 @@ export function createGenericDeliveryAdapter(input: {
     }
     runtimes.set(identity.leaseId, Object.freeze({ ...identity }))
     withdrawnRuntimes.delete(identity.leaseId)
+    // The replaced generation's bindings and credential values stay resolvable
+    // otherwise, and `resolve` hands the broker the value before
+    // `currentRuntime` is consulted.
+    for (const [id, entry] of bindings) {
+      if (entry.binding.leaseId === identity.leaseId && !sameRuntime(entry.binding, identity)) bindings.delete(id)
+    }
+  }
+
+  /**
+   * Whether the broker could ever serve a request against this destination.
+   *
+   * It re-checks every one of these per request and answers 503 or 403, which
+   * is a binding that was accepted and then silently never works. Refusing at
+   * admission puts the failure where the binding is written.
+   */
+  function enforceableDestination(destination: Binding["destination"]) {
+    let origin: URL
+    try {
+      origin = new URL(destination.origin)
+    } catch {
+      return false
+    }
+    if (origin.protocol !== "https:" || origin.username || origin.password) return false
+    if (origin.pathname !== "/" || origin.search || origin.hash) return false
+    if (!destination.pathPrefixes.length || destination.pathPrefixes.some((prefix) => !prefix.startsWith("/"))) return false
+    // The broker matches against `Request.method`, which is upper-case.
+    return destination.methods.length > 0 && destination.methods.every((method) => method === method.toUpperCase())
   }
 
   function apply(binding: Binding, value: string) {
@@ -35,6 +62,7 @@ export function createGenericDeliveryAdapter(input: {
     if (!current || withdrawnRuntimes.has(binding.leaseId) || !sameRuntime(current, binding)) throw new Error("Runtime is not active")
     if (withdrawnBindings.has(binding.id)) throw new Error("Withdrawn binding cannot be reused")
     if (!/^[A-Za-z0-9_-]+$/.test(binding.id) || !value || binding.status !== "active") throw new Error("Invalid binding")
+    if (!enforceableDestination(binding.destination)) throw new Error("Invalid binding destination")
     const revision = revisions.get(binding.id) ?? 0
     if (!Number.isSafeInteger(binding.revision) || binding.revision <= revision) throw new Error("Binding revision is not newer")
     const existing = bindings.get(binding.id)?.binding

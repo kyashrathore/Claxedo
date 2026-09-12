@@ -72,10 +72,28 @@ test("authority failures are unavailable and never forward", async () => {
   expect(upstream).not.toHaveBeenCalled()
 })
 
-test("strips credential and cookie response headers", async () => {
-  const response = await forwardCredential(request(), { registrations: async () => [registration], fetch: (async () => new Response("ok", { headers: { Authorization: "Bearer first-secret", "Set-Cookie": "secret", "x-api-key": "secret" } })) })
+test("strips credential and cookie response headers without eating the rest", async () => {
+  const response = await forwardCredential(request(), { registrations: async () => [registration], fetch: (async () => new Response("ok", { headers: { Authorization: "Bearer first-secret", "Set-Cookie": "secret", "x-api-key": "secret", "content-type": "text/plain" } })) })
   for (const name of ["authorization", "set-cookie", "x-api-key"]) expect(response.headers.has(name)).toBe(false)
+  // Scrubbing is a named list, not a reset: a client that cannot read
+  // content-type cannot parse what it was sent.
+  expect(response.headers.get("content-type")).toBe("text/plain")
   expect(await response.text()).toBe("ok")
+})
+
+test("the upstream request keeps the original url the client asked for", async () => {
+  // Native brokering substitutes a header, never the destination: a rewritten
+  // path or host would send the credential somewhere the binding never allowed.
+  const forwarded: string[] = []
+  const upstream = vi.fn(async (input: Request) => {
+    forwarded.push(input.url)
+    return new Response("ok")
+  })
+  await forwardCredential(request(undefined, "https://api.vendor.test/v1/users/me?page=2"), {
+    registrations: async () => [registration],
+    fetch: upstream,
+  })
+  expect(forwarded).toEqual(["https://api.vendor.test/v1/users/me?page=2"])
 })
 
 test("registration validation rejects malformed and ambiguous input", () => {

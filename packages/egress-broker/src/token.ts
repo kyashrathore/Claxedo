@@ -3,6 +3,7 @@ import type { RuntimeIdentity } from "./binding.js"
 
 export type RuntimeTokenClaims = RuntimeIdentity & { bindingIds: string[]; exp: number }
 const audience = "claxedo-egress-broker"
+const MAX_TOKEN_LIFETIME_MS = 60 * 60 * 1000
 const issuer = "claxedo-runtime-authority"
 
 function hasRuntimeIdentityClaims(value: Record<string, unknown>): value is Record<string, unknown> & RuntimeIdentity {
@@ -20,6 +21,10 @@ export async function mintRuntimeToken(input: RuntimeIdentity & {
     throw new Error("Invalid runtime token scope")
   }
   if (!Number.isSafeInteger(input.expiresAt) || input.expiresAt <= now) throw new Error("Invalid runtime token expiry")
+  // The token is delegated authority over a credential the holder can never
+  // read; its lifetime is the window in which a leaked one is still usable.
+  // A caller asking for less keeps what it asked for.
+  if (input.expiresAt - now > MAX_TOKEN_LIFETIME_MS) throw new Error("Runtime token expiry exceeds one hour")
   const { expiresAt, ...claims } = input
   return new SignJWT(claims).setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setIssuer(issuer).setAudience(audience).setSubject(input.runtimeId)
@@ -36,7 +41,7 @@ export async function verifyRuntimeToken(token: string, key: Uint8Array, now = D
     return {
       userId: payload.userId, orgId: payload.orgId, workspaceId: payload.workspaceId,
       leaseId: payload.leaseId, leaseGeneration: payload.leaseGeneration, runtimeId: payload.runtimeId,
-      bindingIds: payload.bindingIds, exp: payload.exp!,
+      bindingIds: payload.bindingIds, exp: payload.exp,
     }
   } catch {
     return undefined
