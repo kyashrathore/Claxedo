@@ -12,6 +12,7 @@ import {
   type AgentSession,
   type SessionConfig,
   type SessionConfigRequestUpdate,
+  type SessionModelGroup,
 } from "@claxedo/agent-sdk-runtime"
 import {
   type AgentMessagePage,
@@ -127,7 +128,7 @@ export function SessionRoutes(
      * the host's session store learns about a create directly rather than from
      * the list-time adapter fan-out.
      */
-    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string }) => Promise<{ id: string }>
+    createSession?: (c: SessionRouteContext, directory: string, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string; group?: SessionModelGroup }) => Promise<{ id: string }>
     afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
     /**
      * Host-owned child sessions (`POST /session` with `parentID`). The host

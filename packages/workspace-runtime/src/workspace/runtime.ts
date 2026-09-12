@@ -1580,7 +1580,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             directory,
             title,
             id,
-            create?.instructions ? { instructions: create.instructions } : {},
+            {
+              ...(create?.instructions ? { instructions: create.instructions } : {}),
+              ...(create?.group ? { group: create.group } : {}),
+            },
           )
           const selectedHarness = requested
             ?? sessionConfigFor({ sessionId: session.id, directory })?.harness
@@ -1624,8 +1627,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             if (create?.permissionCeiling) store().updateSessionConfig(session.id, { permissionCeiling: create.permissionCeiling }, { directory })
             // Written here rather than left to the adapter: an adapter that
             // keeps its config in its own process leaves nothing for a reopened
-            // session to read the instructions back from.
+            // session to read the instructions or the group back from.
             if (create?.instructions) store().updateSessionConfig(session.id, { instructions: create.instructions }, { directory })
+            if (create?.group) store().updateSessionConfig(session.id, { group: create.group }, { directory })
             const persisted = store().getSession(session.id)
             if (!persisted) throw new Error(`Session ${session.id} was not persisted`)
             return persisted

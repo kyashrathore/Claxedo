@@ -2341,6 +2341,49 @@ void describe("RuntimeStore", () => {
     assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.instructions, undefined)
   })
 
+  void it("retains the create-time model group across reopen and through a harness change", () => {
+    const root = tmp()
+    const group = {
+      primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "opus" }, effort: "high" },
+      review: { harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5-codex" } },
+    } as const
+    const first = new RuntimeStore(root)
+    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.updateSessionConfig("s1", { harness: { id: "codex", access: "native" }, group })
+    assert.deepEqual(first.getSessionConfig("s1")?.group, group)
+
+    const reopened = new RuntimeStore(root)
+    assert.deepEqual(reopened.getSessionConfig("s1")?.group, group)
+    reopened.updateSessionConfig("s1", { harness: { id: "claude", access: "native" } })
+    assert.deepEqual(reopened.getSessionConfig("s1")?.group, group)
+    reopened.updateSessionConfig("s1", { group: null })
+    assert.equal(reopened.getSessionConfig("s1")?.group, undefined)
+    assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.group, undefined)
+  })
+
+  void it("writes the group of a config applied before the session row exists", () => {
+    const root = tmp()
+    const group = {
+      planning: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "opus" } },
+    } as const
+    const first = new RuntimeStore(root)
+    first.updateSessionConfig("s1", { harness: { id: "claude", access: "native" }, group }, { directory: "/work" })
+    assert.deepEqual(new RuntimeStore(root).getSessionConfig("s1")?.group, group)
+  })
+
+  void it("reads back no group when the stored row is not a valid group", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.updateSessionConfig("s1", {
+      harness: { id: "codex", access: "native" },
+      group: { primary: { harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5-codex" } } },
+    })
+    ;(store as unknown as { db: { prepare(sql: string): { run(...params: unknown[]): unknown } } })
+      .db.prepare("UPDATE session SET group_json = ? WHERE id = ?").run('{"archivist":{}}', "s1")
+    assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.group, undefined)
+  })
+
   void it("persists and clears a pending cross-harness handoff", () => {
     const root = tmp()
     const first = new RuntimeStore(root)

@@ -34,6 +34,7 @@ import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import { goalCapabilities } from "../../capabilities"
 import { resolvedMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { firstPartyMcpProvider, type FirstPartyMcpProvider } from "../../first-party-mcp"
+import { harnessEffortLevels } from "../../harness-effort"
 import { createLiveModelSource } from "../../live-model-source"
 import { DEFAULT_MODEL_ID } from "../../session-model"
 import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-options"
@@ -580,6 +581,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
 
   peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[] {
     return this.buildConfigOptions(this.modelSource.peek(directory), currentModel)
+  }
+
+  effortLevels(directory?: string) {
+    return harnessEffortLevels(this.modelSource.peek(directory))
   }
 
   /**

@@ -88,6 +88,12 @@ export type AgentSessionCreateOptions = {
    * something its creator never chose.
    */
   instructions?: string
+  /**
+   * The resolved model group the session runs under. Runtime metadata, not a
+   * harness input: it is retained so a later delegation resolves the same
+   * harness/model/effort the creator chose.
+   */
+  group?: import("./session-group").SessionModelGroup
 }
 
 export type AgentPreparedHandoffSession = {

@@ -159,6 +159,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     const permissionState = harnessScopedField(update.permissionState, prev?.permissionState, sameHarness)
     const model = update.model === undefined ? prev?.model : update.model ?? undefined
     const instructions = update.instructions === undefined ? prev?.instructions : update.instructions
+    const group = update.group === undefined ? prev?.group : update.group
     const next: SessionConfig = {
       harness: update.harness ?? prev!.harness,
       ...(permissionCeiling ? { permissionCeiling } : {}),
@@ -168,6 +169,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       variant: update.variant === undefined ? prev?.variant ?? null : update.variant,
       agent: update.agent === undefined ? prev?.agent ?? null : update.agent,
       ...(instructions ? { instructions } : {}),
+      ...(group ? { group } : {}),
       ...(update.handoff === undefined
         ? prev?.handoff !== undefined ? { handoff: prev.handoff } : {}
         : { handoff: update.handoff }),

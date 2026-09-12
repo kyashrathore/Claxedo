@@ -188,8 +188,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     this.driver.setAuth(keys)
   }
 
-  readHarnessCapabilities(): HarnessCapabilities {
-    return sdkHarnessCapabilities(this.driver)
+  readHarnessCapabilities(directory?: string): HarnessCapabilities {
+    return sdkHarnessCapabilities(this.driver, directory)
   }
 
   /** One resource per adapter: the driver it wraps never changes. */
@@ -323,6 +323,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         variant: null,
         agent: null,
         ...(options.instructions ? { instructions: options.instructions } : {}),
+        ...(options.group ? { group: options.group } : {}),
       })
       return { id: sessionId }
     } finally { complete() }

@@ -55,6 +55,7 @@ describe("AcpHarnessAdapter", () => {
       configOptions: true,
       subagents: false,
       goals: false,
+      effortLevels: { status: "unsupported", models: [] },
     })
   })
 

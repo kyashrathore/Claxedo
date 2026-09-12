@@ -14,6 +14,7 @@ import type {
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { Mcp } from "@opencode-ai/plugin"
@@ -343,6 +344,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
       configOptions: false,
       subagents: false,
       goals: false,
+      effortLevels: NO_HARNESS_EFFORT,
     })
   }
 

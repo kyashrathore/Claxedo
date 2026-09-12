@@ -1,4 +1,5 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
+import type { HarnessEffortLevels } from "./harness-effort"
 import type { SessionHarnessId } from "./harness-types"
 import type { AgentCapabilities } from "@claxedo/agent-runtime-contract"
 
@@ -22,13 +23,21 @@ export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSele
   subagents: boolean
   /** Runtime availability only. Detailed support is read from `SupportsGoals.goals`. */
   goals: boolean
+  /**
+   * Which effort levels this harness accepts, per model. Optional so an adapter
+   * defined outside this package still satisfies the type; `harnessCapabilities`
+   * requires it, so every adapter built through it reports one.
+   */
+  effortLevels?: HarnessEffortLevels
   }
 
 export type HarnessCapabilityContext = {
   sessionId?: string
 }
 
-export function harnessCapabilities(input: HarnessCapabilities): HarnessCapabilities {
+export function harnessCapabilities(
+  input: HarnessCapabilities & { effortLevels: HarnessEffortLevels },
+): HarnessCapabilities {
   return input
 }
 

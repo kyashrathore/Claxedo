@@ -8,6 +8,7 @@ import type {
   AgentRuntime,
   AgentRuntimeStreamEvent,
   AgentSession,
+  HarnessCapabilities,
   RuntimeDirectory,
   SessionConfig,
 } from "@claxedo/agent-sdk-runtime"
@@ -2232,5 +2233,153 @@ describe("createSessionRoutes session instructions", () => {
     model.release()
     await settled(() => turns.length > 0)
     expect(turns).toEqual([undefined])
+  })
+})
+
+describe("createSessionRoutes session model group", () => {
+  const GROUP = {
+    primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "claude-opus-4-1" }, effort: "high" },
+    review: { harness: { id: "codex", access: "native" }, model: { providerID: "openai", modelID: "gpt-5-codex" } },
+  }
+
+  function groupRoutes() {
+    const creates: Array<{ id?: string; options?: { group?: unknown } }> = []
+    let stored: SessionConfig["group"]
+    const fixture: AgentHarnessAdapter = {
+      ...adapter(),
+      adapterCapabilities: ["session-instructions"] as const,
+      getSession: async () => null,
+      createSession: async (_directory, _title, id, options) => {
+        creates.push({ id, options })
+        stored = options?.group
+        return { id: id ?? "ses_group" }
+      },
+      getSessionConfig: async () => ({
+        harness: { id: "codex", access: "native" },
+        variant: null,
+        agent: null,
+        ...(stored ? { group: stored } : {}),
+      }),
+    }
+    const app = createSessionRoutes({
+      resolveAdapter: () => fixture,
+      resolveDirectory: () => "/workspace",
+      resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+    return { app, creates }
+  }
+
+  function create(app: ReturnType<typeof createSessionRoutes>, body: Record<string, unknown>) {
+    return app.request("http://localhost/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+  }
+
+  test("retains the group at create and reads it back on the session config", async () => {
+    const { app, creates } = groupRoutes()
+    expect((await create(app, { id: "ses_group", group: GROUP })).status).toBe(201)
+    expect(creates).toEqual([{ id: "ses_group", options: { group: GROUP } }])
+
+    const config = await app.request("http://localhost/session/ses_group/config")
+    expect(await config.json()).toMatchObject({ group: GROUP })
+  })
+
+  test("leaves the create options empty when no group was sent", async () => {
+    const { app, creates } = groupRoutes()
+    expect((await create(app, { id: "ses_plain" })).status).toBe(201)
+    expect(creates).toEqual([{ id: "ses_plain", options: {} }])
+  })
+
+  test("refuses a malformed group by field before the harness is asked to create anything", async () => {
+    const { app, creates } = groupRoutes()
+    const response = await create(app, { id: "ses_bad", group: { archivist: GROUP.primary } })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: { code: "session_group_invalid", message: expect.stringContaining("group.archivist") },
+    })
+    expect(creates).toEqual([])
+  })
+
+  test("names the slot field a caller got wrong rather than dropping the slot", async () => {
+    const { app, creates } = groupRoutes()
+    const response = await create(app, { id: "ses_bad", group: { primary: { harness: "claude" } } })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({
+      error: { message: expect.stringContaining("group.primary.model") },
+    })
+    expect(creates).toEqual([])
+  })
+
+  test("refuses a PATCH that carries a group instead of changing what the session was created under", async () => {
+    const { app } = groupRoutes()
+    expect((await create(app, { id: "ses_group", group: GROUP })).status).toBe(201)
+
+    const patched = await app.request("http://localhost/session/ses_group/config", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ group: { primary: GROUP.review } }),
+    })
+    expect(patched.status).toBe(409)
+    expect(await patched.json()).toMatchObject({ error: { code: "session_group_immutable" } })
+
+    const config = await app.request("http://localhost/session/ses_group/config")
+    expect(await config.json()).toMatchObject({ group: GROUP })
+  })
+})
+
+describe("GET /session/capabilities effort levels", () => {
+  function capabilityRoutes(effortLevels: HarnessCapabilities["effortLevels"]) {
+    const fixture: AgentHarnessAdapter = {
+      ...adapter(),
+      readHarnessCapabilities: () => ({
+        harness: "codex",
+        abort: true,
+        reconnect: false,
+        replay: true,
+        permissions: true,
+        questions: true,
+        todos: true,
+        commands: true,
+        fork: false,
+        revert: false,
+        unrevert: false,
+        configOptions: false,
+        subagents: true,
+        goals: false,
+        ...(effortLevels ? { effortLevels } : {}),
+      }),
+    }
+    return createSessionRoutes({
+      resolveAdapter: () => fixture,
+      resolveDirectory: () => "/workspace",
+      resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+  }
+
+  test("reports each harness's own effort catalog on the global and per-session reads", async () => {
+    const resolved = { status: "resolved", models: [{ modelID: "gpt-5-codex", levels: ["low", "high"], default: "high" }] } as const
+    const app = capabilityRoutes(resolved)
+    expect(await (await app.request("http://localhost/session/capabilities")).json())
+      .toMatchObject({ harness: "codex", effortLevels: resolved })
+    expect(await (await app.request("http://localhost/session/ses_1/capabilities")).json())
+      .toMatchObject({ effortLevels: resolved })
+  })
+
+  test("carries an unsupported catalog through rather than omitting the field", async () => {
+    const app = capabilityRoutes({ status: "unsupported", models: [] })
+    expect(await (await app.request("http://localhost/session/capabilities")).json())
+      .toMatchObject({ effortLevels: { status: "unsupported", models: [] } })
+  })
+
+  test("an adapter that reports no catalog leaves the field absent rather than inventing one", async () => {
+    const app = capabilityRoutes(undefined)
+    expect(await (await app.request("http://localhost/session/capabilities")).json())
+      .not.toHaveProperty("effortLevels")
   })
 })

@@ -117,6 +117,8 @@ export type AgentRuntimeSessionCreateInput = {
   agent?: string | null
   /** Retained standing instructions; refused by a harness with no instruction channel. */
   instructions?: string
+  /** Retained resolved model group; runtime metadata, never sent to the harness. */
+  group?: import("../session-group").SessionModelGroup
   title?: string
 }
 

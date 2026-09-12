@@ -15,11 +15,14 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // `harnesses/codex/process-auth.ts`. Reviewed 2026-09-12: retained session
       // instructions compose in `session-model.ts` (`resolveTurnSystem`), and
       // `runtime.ts` and `sdk-runtime-adapter.ts` only carry them to the create
-      // call and the turn.
-      "runtime.ts": 846,
+      // call and the turn. Reviewed 2026-09-12: the effort catalog is owned by
+      // `harness-effort.ts` and the retained model group by `session-group.ts`;
+      // these three files only forward them to the driver, the create options
+      // and the config.
+      "runtime.ts": 849,
       "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 651,
-      "harnesses/shared/sdk-runtime-adapter.ts": 876,
+      "harnesses/codex/driver.ts": 656,
+      "harnesses/shared/sdk-runtime-adapter.ts": 877,
       "harnesses/pi/index.ts": 12,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {

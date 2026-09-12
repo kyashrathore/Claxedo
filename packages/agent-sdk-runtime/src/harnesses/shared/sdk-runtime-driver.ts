@@ -1,5 +1,6 @@
 import type { AgentEventRuntime, RawHarnessEvent, RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import type { GoalCapabilities } from "../../capabilities"
+import type { HarnessEffortLevels } from "../../harness-effort"
 import type {
   AgentConfigOption,
   PromptInput,
@@ -160,6 +161,12 @@ export type SdkRuntimeDriver = {
   readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
   configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]>
   peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[]
+  /**
+   * Accepted effort levels per model, from the catalog this driver has already
+   * resolved. Omitted by a driver with no effort control at all, which is what
+   * separates "this harness takes no effort" from "its catalog is still cold".
+   */
+  effortLevels?(directory?: string): HarnessEffortLevels
   permissionModes?(sessionId: string, directory: string): AgentPermissionModeState
   setPermissionMode?(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState>
 }

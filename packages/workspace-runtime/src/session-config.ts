@@ -1,11 +1,14 @@
 import {
   isAutoLevel,
   normalizeHarnessIdentity,
+  parseSessionModelGroup,
   type AutoLevel,
   type PromptModel,
   type SessionConfig,
   type SessionConfigRequestUpdate,
   type SessionHarness,
+  type SessionModelGroup,
+  type SessionModelGroupParse,
 } from "@claxedo/agent-sdk-runtime"
 import { rec as record, str } from "./json-value"
 
@@ -18,6 +21,11 @@ import { rec as record, str } from "./json-value"
  * `instructions` is retained on the session and reaches the harness through its
  * instruction channel on every turn, so it is never re-sent by a caller and
  * never arrives as user text.
+ *
+ * `group` is retained too, but never reaches the harness: it is the
+ * machine-readable form of the model group, read back by whoever later resolves
+ * a slot. Both are fixed at create, and `normalizeSessionConfigUpdate` accepts
+ * neither, so a PATCH cannot rewrite them.
  */
 export type SessionCreateBody = {
   id?: string
@@ -28,6 +36,7 @@ export type SessionCreateBody = {
   permissionCeiling?: AutoLevel
   permissionMode?: string
   instructions?: string
+  group?: SessionModelGroup
 }
 
 /** UTF-8 bytes. The block is stored whole and prepended to every turn. */
@@ -50,6 +59,17 @@ export function normalizeSessionCreateBody(input: unknown): SessionCreateBody {
     ...(str(row.permissionMode) ? { permissionMode: str(row.permissionMode) } : {}),
     ...(str(row.instructions) ? { instructions: str(row.instructions) } : {}),
   }
+}
+
+/**
+ * The create body's `group`, or `undefined` when the caller sent none. A
+ * malformed group is returned as the failing field rather than dropped: a
+ * session whose group silently lost a slot delegates to the wrong model later.
+ */
+export function sessionCreateGroup(input: unknown): SessionModelGroupParse | undefined {
+  const row = record(input) ?? {}
+  if (!("group" in row)) return undefined
+  return parseSessionModelGroup(row.group)
 }
 
 export function normalizeSessionHarness(input: unknown): SessionHarness | undefined {

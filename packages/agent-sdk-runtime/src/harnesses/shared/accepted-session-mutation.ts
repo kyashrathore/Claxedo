@@ -40,6 +40,9 @@ export function acceptedSessionConfig(
     ...(update.instructions === undefined
       ? current.instructions ? { instructions: current.instructions } : {}
       : update.instructions ? { instructions: update.instructions } : {}),
+    ...(update.group === undefined
+      ? current.group ? { group: current.group } : {}
+      : update.group ? { group: update.group } : {}),
     ...(update.handoff === undefined
       ? current.handoff !== undefined ? { handoff: current.handoff } : {}
       : { handoff: update.handoff }),

@@ -308,6 +308,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       variant: null,
       agent: null,
       ...(options.instructions ? { instructions: options.instructions } : {}),
+      ...(options.group ? { group: options.group } : {}),
     })
     log.info("createSession: local session stored", { id, agentSessionId })
     return { id }

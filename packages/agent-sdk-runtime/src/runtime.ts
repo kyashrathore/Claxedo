@@ -570,8 +570,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (create.instructions && !declaresAdapterCapability(adapter, "session-instructions")) {
           throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "session_instructions", message: `Harness ${create.harness.id} has no instruction channel` })
         }
-        const instructions = create.instructions ? { instructions: create.instructions } : {}
-        const session = await adapter.createSession(create.directory, create.title, create.id, instructions)
+        const retained = {
+          ...(create.instructions ? { instructions: create.instructions } : {}),
+          ...(create.group ? { group: create.group } : {}),
+        }
+        const session = await adapter.createSession(create.directory, create.title, create.id, retained)
         // Provider creation establishes the local row; the runtime completes
         // its workspace binding below. An unexpected returned id that already
         // has a complete binding belongs to another execution scope.
@@ -594,7 +597,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ...(model ? { model } : {}),
           variant: create.variant ?? null,
           agent: create.agent ?? null,
-          ...instructions,
+          ...retained,
         }
         const persistedConfig = store.updateSessionConfig(session.id, config)
         if (!persistedConfig) throw new Error(`Session ${session.id} has no runtime config`)

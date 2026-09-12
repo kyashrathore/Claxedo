@@ -11,6 +11,7 @@ import type {
   RuntimeDirectory,
   SessionConfig,
   SessionConfigRequestUpdate,
+  SessionModelGroup,
   HarnessCapabilities,
   AgentGoalMutationResult,
 } from "@claxedo/agent-sdk-runtime"
@@ -61,6 +62,7 @@ import {
   normalizeSessionConfigUpdate,
   normalizeSessionCreateConfig,
   normalizeSessionCreateBody,
+  sessionCreateGroup,
   sessionInstructionsByteLength,
   SESSION_INSTRUCTIONS_MAX_BYTES,
 } from "../session-config"
@@ -444,7 +446,7 @@ type Opts = {
   ) => Promise<RuntimeDirectory> | RuntimeDirectory
   listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSession[]>
   listSubagents?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string) => Promise<unknown[]> | unknown[]
-  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string }) => Promise<{ id: string }>
+  createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"]; instructions?: string; group?: SessionModelGroup }) => Promise<{ id: string }>
   /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
   childSessions?: ChildSessionHost
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
@@ -1316,6 +1318,11 @@ export function createSessionRoutes(opts: Opts) {
           `Session instructions must be at most ${SESSION_INSTRUCTIONS_MAX_BYTES} UTF-8 bytes`,
         ), 400)
       }
+      const group = sessionCreateGroup(wire)
+      if (group && "field" in group) {
+        return c.json(errorBody("session_group_invalid", `${group.field}: ${group.message}`), 400)
+      }
+      if (group) body.group = group.group
       const children = opts.childSessions
       if ((body.parentID || body.clientRequestId) && !children) {
         return c.json(errorBody("child_sessions_unsupported", "This runtime cannot create child sessions"), 501)
@@ -1402,7 +1409,10 @@ export function createSessionRoutes(opts: Opts) {
             : inherited ?? body.permissionCeiling
           const childMode = await permissionModeUnderCeiling(c, adapter, directory, ceiling, body.permissionMode)
           if (childMode.refusal) return childMode.refusal
-          const createOptions = body.instructions ? { instructions: body.instructions } : {}
+          const createOptions = {
+            ...(body.instructions ? { instructions: body.instructions } : {}),
+            ...(body.group ? { group: body.group } : {}),
+          }
           let session = existing ?? (opts.createSession
             ? await opts.createSession(c, directory, body.title, body.id, { ...(body.parentID ? { parentID: body.parentID } : {}), ...(ceiling ? { permissionCeiling: ceiling } : {}), ...createOptions })
             : await adapter.createSession(directory, body.title, body.id, createOptions))
@@ -1645,7 +1655,14 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const body = normalizeSessionConfigUpdate(await requestBody(c))
+      const wire = await requestBody(c)
+      if ("group" in wire) {
+        return c.json(errorBody(
+          "session_group_immutable",
+          "A session's model group is fixed at create and cannot be changed",
+        ), 409)
+      }
+      const body = normalizeSessionConfigUpdate(wire)
       const requestedHarness = opts.requestedSessionHarness?.(c)
       if (requestedHarness) body.harness = requestedHarness
       if (body.harness) {

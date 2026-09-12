@@ -163,6 +163,21 @@ export {
 } from "./harness-types"
 export { modelConfigOption } from "./sdk-model-options"
 export type { SdkModelEntry } from "./sdk-model-options"
+export { harnessEffortLevels, harnessEffortVerdict, NO_HARNESS_EFFORT } from "./harness-effort"
+export type { HarnessEffortLevels, HarnessEffortVerdict, HarnessModelEffort } from "./harness-effort"
+export {
+  isSessionGroupSlot,
+  parseSessionModelGroup,
+  parseStoredSessionModelGroup,
+  SESSION_GROUP_SLOTS,
+  sessionModelGroupJson,
+} from "./session-group"
+export type {
+  SessionGroupEntry,
+  SessionGroupSlot,
+  SessionModelGroup,
+  SessionModelGroupParse,
+} from "./session-group"
 export { createLiveModelSource } from "./live-model-source"
 export type { LiveModelSource } from "./live-model-source"
 export type {
@@ -214,6 +229,13 @@ export type SessionConfig = {
    * and nothing meant as instruction arrives as user text.
    */
   instructions?: string | null
+  /**
+   * The resolved model group this session was created under, machine-readable
+   * so a later reader — a delegation request naming a slot, say — resolves the
+   * same harness/model/effort the creator chose instead of re-parsing the
+   * instruction prose the group was also rendered into.
+   */
+  group?: import("./session-group").SessionModelGroup | null
   handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
 
@@ -235,15 +257,16 @@ export type SessionConfigUpdate = {
   variant?: string | null
   agent?: string | null
   instructions?: string | null
+  group?: import("./session-group").SessionModelGroup | null
   handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
 
 /** Config fields accepted from public session create/update requests.
  * Handoff and accepted permission state are runtime-owned; permission changes
  * must go through the adapter permission-mode or permission-reply operation.
- * Instructions are fixed at create so a later edit cannot rewrite what an
- * already-running session was told. */
-export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff" | "permissionMode" | "permissionState" | "permissionCeiling" | "instructions">
+ * Instructions and the model group are fixed at create so a later edit cannot
+ * rewrite what an already-running session was told or delegated under. */
+export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff" | "permissionMode" | "permissionState" | "permissionCeiling" | "instructions" | "group">
 
 export type AgentRuntimeStreamEvent = RuntimeStreamEvent | CompatEvent
 export type RuntimeDirectory = string | undefined

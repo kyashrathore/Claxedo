@@ -2,6 +2,7 @@ import type { AgentConfigOption } from "../../index"
 import type { AgentConfigOptions } from "../../adapter-contract"
 import { resolvedModelFromConfigOptions } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
+import { NO_HARNESS_EFFORT } from "../../harness-effort"
 import type { SdkRuntimeDriver } from "./sdk-runtime-driver"
 
 export function sdkConfigOptions(options: AgentConfigOption[]): AgentConfigOptions {
@@ -9,7 +10,7 @@ export function sdkConfigOptions(options: AgentConfigOption[]): AgentConfigOptio
   return { options, ...(resolvedModel ? { resolvedModel } : {}) }
 }
 
-export function sdkHarnessCapabilities(driver: SdkRuntimeDriver): HarnessCapabilities {
+export function sdkHarnessCapabilities(driver: SdkRuntimeDriver, directory?: string): HarnessCapabilities {
   return harnessCapabilities({
     harness: driver.type,
     modelSelection: { status: "optional" },
@@ -26,5 +27,6 @@ export function sdkHarnessCapabilities(driver: SdkRuntimeDriver): HarnessCapabil
     configOptions: true,
     subagents: driver.type !== "pi",
     goals: !!driver.goals || !!driver.nativeGoal,
+    effortLevels: driver.effortLevels?.(directory) ?? NO_HARNESS_EFFORT,
   })
 }
