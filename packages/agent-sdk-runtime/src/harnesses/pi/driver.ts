@@ -1,4 +1,4 @@
-import { piAuthProjection, retainPiAuth } from "./auth"
+import { retainPiAuth, type PiAuthEntries } from "./auth"
 import fs from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -20,6 +20,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
+import { assertNoProviderProjection } from "../../provider-projection"
 import { PiJsonLines, PiRpcProcess, type PiRpcMessage } from "./rpc-process"
 import { listPiCatalogModels } from "./catalog"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
@@ -43,8 +44,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
   readonly goals
   private evaluators = 0
   private readonly goalController
-  private auth: SdkRuntimeAuth = {}
-  private projectedAuth?: ReturnType<typeof piAuthProjection>
+  private projectedAuth?: PiAuthEntries
   private entries = new Map<string, Entry>()
   private models: SdkModelEntry[] = []
   private thinking: string[] = []
@@ -191,16 +191,14 @@ class PiRpcDriver implements SdkRuntimeDriver {
     this.authProfile = retainPiAuth(this.agentDir)
   }
   setAuth(keys: SdkRuntimeAuth) {
-    if (JSON.stringify(keys) === JSON.stringify(this.auth)) return
-    if (this.evaluators || [...this.entries.values()].some((entry) => entry.busy))
-      throw new Error("Cannot rotate Pi process credentials during an active turn")
-    this.auth = { ...keys }
-    this.closeProcesses()
-    this.models = []
+    assertNoProviderProjection("pi", keys)
   }
   async applyConfig(config: Record<string, unknown>) {
-    const auth = record(config.auth) ?? {}
-    const projected = piAuthProjection(auth)
+    assertNoProviderProjection("pi", config.auth)
+    // Nothing projects a Pi credential yet, so the managed profile is written
+    // empty: it replaces whatever an earlier build left behind and is scrubbed
+    // when the last adapter sharing it is disposed.
+    const projected: PiAuthEntries = {}
     if (JSON.stringify(projected) !== JSON.stringify(this.projectedAuth)) {
       if (this.evaluators || [...this.entries.values()].some((entry) => entry.busy))
         throw new Error("Cannot rotate Pi credentials during an active turn")
@@ -209,7 +207,6 @@ class PiRpcDriver implements SdkRuntimeDriver {
       this.projectedAuth = projected
       this.models = []
     }
-    this.setAuth({ anthropic: text(auth.anthropic), openai: text(auth.openai) })
   }
   createRuntime(threadId: string) {
     return createAgentEventRuntime({ harness: "pi", threadId, adapter: piRpcAdapter() })
@@ -219,8 +216,6 @@ class PiRpcDriver implements SdkRuntimeDriver {
     return {
       ...process.env,
       PI_CODING_AGENT_DIR: this.agentDir,
-      ANTHROPIC_API_KEY: this.auth.anthropic,
-      OPENAI_API_KEY: this.auth.openai,
     }
   }
   private async start(directory: string, args: string[]) {

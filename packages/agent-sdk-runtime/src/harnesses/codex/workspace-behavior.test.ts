@@ -340,38 +340,8 @@ describe("CodexHarnessAdapter", () => {
     expect(requests.filter((request) => request.method === "initialize")).toHaveLength(1)
   })
 
-  test("applies auth changed during startup before creating the Codex thread", async () => {
-    const fake = await makeFakeCodex({ initializeDelayMs: 50 })
-    const adapter = new CodexHarnessAdapter({
-      binary: fake.binary,
-      createStore: () => fakeCodexStore(),
-      storeRoot: path.join(fake.dir, "store"),
-    })
-
-    const creation = adapter.createSession(fake.dir)
-    await waitForLog(fake.log, (row) => row.method === "initialize")
-    await Promise.all([
-      creation,
-      adapter.applyConfig({ auth: { "codex-app-server": "sk-during-startup" } }),
-    ])
-    await adapter.dispose()
-
-    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
-      id?: number
-      method?: string
-      params?: Record<string, unknown>
-    })
-    expect(requests.filter((request) => request.method === "initialize")).toHaveLength(1)
-    expect(requests.find((request) => request.method === "account/login/start")?.params).toEqual({
-      type: "apiKey",
-      apiKey: "sk-during-startup",
-    })
-    expect(requests.findIndex((request) => request.method === "account/login/start"))
-      .toBeLessThan(requests.findIndex((request) => request.method === "thread/start"))
-  })
-
-  test("applies changed auth to the retained Codex app-server", async () => {
-    const fake = await makeFakeCodex({ loginDelayMs: 50 })
+  test("refuses a provider projection instead of logging the app-server into nothing", async () => {
+    const fake = await makeFakeCodex({})
     const adapter = new CodexHarnessAdapter({
       binary: fake.binary,
       createStore: () => fakeCodexStore(),
@@ -379,26 +349,22 @@ describe("CodexHarnessAdapter", () => {
     })
 
     await adapter.createSession(fake.dir)
-    let applied = false
-    const config = adapter.applyConfig({ auth: { "codex-app-server": "sk-live" } }).then(() => {
-      applied = true
-    })
-    await waitForLog(fake.log, (row) => row.method === "account/login/start")
-    expect(applied).toBe(false)
-    await config
-    await adapter.createSession(fake.dir)
+    await expect(adapter.applyConfig({
+      auth: {
+        "codex-app-server": {
+          baseUrl: "http://127.0.0.1:2595/bindings/9ab1",
+          placeholder: "signed-placeholder",
+          authMode: "bearer",
+          expiresAt: 1_800_000_000_000,
+        },
+      },
+    })).rejects.toThrow("provider projection not supported by this harness yet: codex")
     await adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
       method?: string
-      params?: Record<string, unknown>
     })
-    expect(requests.filter((request) => request.method === "initialize")).toHaveLength(1)
-    expect(requests.find((request) => request.method === "account/login/start")?.params).toEqual({
-      type: "apiKey",
-      apiKey: "sk-live",
-    })
-    expect(requests.filter((request) => request.method === "thread/start")).toHaveLength(2)
+    expect(requests.some((request) => request.method === "account/login/start")).toBe(false)
   })
 
   test("disposes an app-server whose startup is still pending", async () => {
@@ -544,7 +510,7 @@ describe("CodexHarnessAdapter", () => {
     expect(requests.find((request) => request.method === "turn/start")!.params?.effort).toBe("minimal")
   })
 
-  test("logs into Codex app-server with ChatGPT tokens and answers refresh requests", async () => {
+  test("answers the app-server refresh request from its own ChatGPT auth file", async () => {
     const fake = await makeFakeCodex({ requestRefresh: true })
     const refreshBodies: string[] = []
     const codexHome = path.join(fake.dir, "codex-home")
@@ -565,20 +531,15 @@ describe("CodexHarnessAdapter", () => {
       storeRoot: path.join(fake.dir, "store"),
     })
     adapter.setModel("gpt-5.5")
-    await adapter.applyConfig({
-      auth: {
-        "codex-app-server": JSON.stringify({
-          type: "codex_auth",
-          auth_mode: "chatgpt",
-          OPENAI_API_KEY: "sk-should-not-be-used",
-          tokens: {
-            access_token: "stale-access-token",
-            refresh_token: "stale-refresh-token",
-            account_id: "acct-1",
-          },
-        }),
+    fs.mkdirSync(codexHome, { recursive: true, mode: 0o700 })
+    fs.writeFileSync(path.join(codexHome, "auth.json"), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: {
+        access_token: "stale-access-token",
+        refresh_token: "stale-refresh-token",
+        account_id: "acct-1",
       },
-    })
+    }))
 
     const session = await adapter.createSession(fake.dir)
     for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {}
@@ -589,11 +550,6 @@ describe("CodexHarnessAdapter", () => {
       method?: string
       params?: Record<string, unknown>
       result?: Record<string, unknown>
-    })
-    expect(requests.find((request) => request.method === "account/login/start")?.params).toMatchObject({
-      type: "chatgptAuthTokens",
-      accessToken: "stale-access-token",
-      chatgptAccountId: "acct-1",
     })
     expect(refreshBodies[0]).toContain("refresh_token=stale-refresh-token")
     expect(requests.find((request) => request.id === 900 && request.result)?.result).toEqual({

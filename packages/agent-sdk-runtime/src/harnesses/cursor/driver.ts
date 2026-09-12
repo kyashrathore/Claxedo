@@ -36,8 +36,8 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTranscriptRegistrar,
   type SdkRuntimeTurnInput,
-  stringRecord,
 } from "../shared/sdk-runtime-adapter"
+import { assertNoProviderProjection } from "../../provider-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,
@@ -114,13 +114,22 @@ export function cursorTurnPrompt(delivery: PromptDelivery, system?: string): str
   return images.length ? { text, images } : text
 }
 
+/**
+ * Nothing projects a Cursor credential yet, so the key is the machine's own —
+ * the same ambient fallback every unprojected harness gets, and the variable
+ * `AGENT_HARNESS_DEFINITIONS` already names for this harness.
+ */
+function cursorApiKey() {
+  return process.env.CURSOR_API_KEY?.trim() || undefined
+}
+
 class CursorSdkDriver implements SdkRuntimeDriver {
   readonly type = "cursor" as const
   readonly interactions = { permissions: false, questions: false } as const
   private readonly goalStore = createNativeGoalStore()
   readonly nativeGoal: NonNullable<SdkRuntimeDriver["nativeGoal"]> = {
     capabilities: () => {
-      const available = !!this.auth.cursor
+      const available = !!cursorApiKey()
       return goalCapabilities({
         implemented: true,
         available,
@@ -142,7 +151,6 @@ class CursorSdkDriver implements SdkRuntimeDriver {
       return had
     },
   }
-  private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private firstPartyMcp: FirstPartyMcpProvider | undefined
   private currentPluginRoots: string[] = []
@@ -159,23 +167,13 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   ) {}
 
   setAuth(keys: SdkRuntimeAuth) {
-    const previous = this.auth.cursor
-    this.auth = {
-      ...this.auth,
-      ...(keys.cursor !== undefined ? { cursor: keys.cursor || undefined } : {}),
-    }
-    if (this.auth.cursor !== previous) this.modelSource.invalidate()
+    assertNoProviderProjection("cursor", keys)
   }
 
   applyConfig(config: Record<string, unknown>) {
-    const previous = this.auth.cursor
-    const auth = stringRecord(config.auth)
-    this.auth = {
-      cursor: auth?.["cursor-sdk"],
-    }
+    assertNoProviderProjection("cursor", config.auth)
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.firstPartyMcp = firstPartyMcpProvider(config)
-    if (this.auth.cursor !== previous) this.modelSource.invalidate()
     // Plugin roots are read by `Agent.create`, so a changed set only reaches
     // Cursor through a new agent — the live ones are disposed to force it.
     const nextPluginRoots = cursorPluginRoots(config.launch)
@@ -232,7 +230,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
         ...(model ? { model } : {}),
         ...(input.title ? { name: input.title } : {}),
         ...(Object.keys(this.currentMcp).length ? { mcpServers: cursorMcpServers(this.currentMcp) } : {}),
-        ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
+        ...(cursorApiKey() ? { apiKey: cursorApiKey() } : {}),
         local: {
           cwd: input.directory,
           ...cursorPluginLocalOptions(this.currentPluginRoots),
@@ -397,14 +395,14 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   }
 
   peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[] {
-    if (!this.auth.cursor) return []
+    if (!cursorApiKey()) return []
     const models = this.modelSource.peek(directory)
     if (models.length === 0) return []
     return [modelConfigOption(models, currentModel)]
   }
 
   private requireCursorSdkAuth() {
-    if (!this.auth.cursor) throw new Error(CURSOR_SDK_AUTH_ERROR)
+    if (!cursorApiKey()) throw new Error(CURSOR_SDK_AUTH_ERROR)
   }
 
   /**
@@ -431,7 +429,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     observation.update({ lifecycle: "ready" })
     try {
       const { Cursor } = await this.loadSdk()
-      const listed = await Cursor.models.list(this.auth.cursor ? { apiKey: this.auth.cursor } : undefined)
+      const listed = await Cursor.models.list(cursorApiKey() ? { apiKey: cursorApiKey() } : undefined)
       const models: SdkModelEntry[] = listed.map((model) => ({
         id: model.id,
         name: model.displayName,
@@ -457,14 +455,14 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     try {
       agent = agentSessionId.startsWith(CURSOR_PENDING_PREFIX)
         ? await Agent.create({
-            ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
+            ...(cursorApiKey() ? { apiKey: cursorApiKey() } : {}),
             local: {
               cwd: directory,
               ...cursorPluginLocalOptions(this.currentPluginRoots),
             },
           })
         : await Agent.resume(agentSessionId, {
-            ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
+            ...(cursorApiKey() ? { apiKey: cursorApiKey() } : {}),
             local: {
               cwd: directory,
               ...cursorPluginLocalOptions(this.currentPluginRoots),

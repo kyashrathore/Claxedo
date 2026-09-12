@@ -118,15 +118,23 @@
       "AGENT_HARNESS_KEYS",
       "AGENT_PROCESS_ATTRIBUTION_SCENARIOS",
       "AGENT_RUNTIME_TURN_CONFLICT_CODE",
+      "AUTO_LEVEL_ORDER",
       "AgentRuntimeGoalError",
       "AgentRuntimeTurnAdmissionError",
       "AgentRuntimeTurnConflictError",
-      "AUTO_LEVEL_ORDER",
+      "ConnectionProviderError",
+      "FIRST_TURN_ERROR_CLASSES",
+      "GOAL_ACTIONS",
+      "GOAL_OPTIONAL_FIELDS",
+      "GoalCapabilityError",
+      "PermissionCeilingError",
+      "ProviderProjectionUnsupportedError",
+      "RUNTIME_GOAL_STATUSES",
+      "assertNoProviderProjection",
       "chunk",
       "classifyFirstTurnError",
       "comparePermissionLevels",
       "connectionIdForHarness",
-      "ConnectionProviderError",
       "createAcpConnectionProvider",
       "createAgentRuntime",
       "createConnectionProviderRegistry",
@@ -134,13 +142,9 @@
       "createMemorySubagentAdmissionStore",
       "createSubagentAdmissionBoundary",
       "defaultSessionModel",
-      "FIRST_TURN_ERROR_CLASSES",
       "firstTurnErrorData",
-      "GOAL_ACTIONS",
-      "GOAL_OPTIONAL_FIELDS",
       "goalActionAvailable",
       "goalCapabilities",
-      "GoalCapabilityError",
       "harnessCapabilities",
       "harnessDefinition",
       "harnessKey",
@@ -160,13 +164,14 @@
       "normalizeHarnessIdentity",
       "observeAgentProcess",
       "permissionCeilingAdmits",
-      "PermissionCeilingError",
       "permissionModeLevel",
+      "providerProjection",
+      "providerProjectionKey",
+      "providerProjectionRecord",
       "recovering",
       "requireGoalAction",
       "requireGoalResource",
       "resolveSessionModel",
-      "RUNTIME_GOAL_STATUSES",
       "safeAgentProcessDescriptor",
       "widestPermissionModeUnder"
     ],
@@ -275,6 +280,31 @@
       "import": "@claxedo/agent-sdk-runtime/compat-events",
       "kind": "type",
       "purpose": "Claxedo client-presentation event bridge."
+    },
+    "providerProjection": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "Validate one provider projection: the broker base URL, placeholder, auth mode and expiry a harness receives in place of a credential."
+    },
+    "providerProjectionRecord": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "Validate a providerId-keyed map of provider projections, as the runtime config snapshot carries it."
+    },
+    "providerProjectionKey": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "Change identity for a held projection, so a renewed placeholder counts as a change."
+    },
+    "assertNoProviderProjection": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "Fail a harness that cannot yet read a projection instead of letting it run on ambient credentials."
+    },
+    "ProviderProjectionUnsupportedError": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "class",
+      "purpose": "Raised by a harness that has no projection support yet."
     }
   }
 }

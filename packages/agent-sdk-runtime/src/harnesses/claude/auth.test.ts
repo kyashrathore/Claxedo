@@ -1,71 +1,64 @@
 import { describe, expect, test } from "bun:test"
 import { claudeAuthEnv, claudeAuthValue } from "./auth"
+import type { ProviderProjection } from "../../provider-projection"
+
+const key: ProviderProjection = {
+  baseUrl: "http://127.0.0.1:2595/bindings/b1",
+  placeholder: "placeholder-key",
+  authMode: "api-key",
+  expiresAt: 1_800_000_000_000,
+}
+const bearer: ProviderProjection = { ...key, placeholder: "placeholder-token", authMode: "bearer" }
 
 describe("claudeAuthEnv", () => {
-  /**
-   * The onboarding cloud path for a Claude subscription is: the user runs
-   * `claude setup-token`, pastes the `sk-ant-oat01-…` it prints, and the app
-   * stores it through the API-key save path as `kind: "api_key"`.
-   *
-   * Nothing in that path tells this function what it is holding — the value
-   * arrives as a bare string. It is the `sk-ant-o` prefix ALONE that routes a
-   * setup-token to CLAUDE_CODE_OAUTH_TOKEN instead of ANTHROPIC_API_KEY, and
-   * Claude Code rejects a subscription token presented as an API key. So the
-   * whole feature rests on this one branch.
-   */
-  test("a pasted setup-token is presented as an OAuth token, not an API key", () => {
-    expect(claudeAuthEnv("sk-ant-oat01-abc123")).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-abc123" })
-  })
-
-  test("a real API key stays an API key", () => {
-    expect(claudeAuthEnv("sk-ant-api03-abc123")).toEqual({ ANTHROPIC_API_KEY: "sk-ant-api03-abc123" })
-  })
-
-  test("surrounding whitespace from a paste does not change which variable is used", () => {
-    // A token pasted out of a terminal usually arrives with a trailing newline.
-    expect(claudeAuthEnv("  sk-ant-oat01-abc123\n")).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat01-abc123" })
-  })
-
-  test("a discovered Keychain login is read from claudeAiOauth and nothing else", () => {
-    const secret = JSON.stringify({
-      type: "claude_code_oauth",
-      claudeAiOauth: { accessToken: "keychain-access" },
-      // The Keychain item also holds unrelated third-party MCP tokens. They
-      // must never reach a harness environment.
-      mcpOAuth: { "posthog-mcp": { accessToken: "unrelated-third-party" } },
+  test("an api-key projection sends the placeholder in the API-key variable", () => {
+    expect(claudeAuthEnv(key)).toEqual({
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:2595/bindings/b1",
+      ANTHROPIC_API_KEY: "placeholder-key",
+      ANTHROPIC_AUTH_TOKEN: undefined,
+      CLAUDE_CODE_OAUTH_TOKEN: undefined,
     })
-
-    const env = claudeAuthEnv(secret)
-    expect(env).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "keychain-access" })
-    expect(JSON.stringify(env)).not.toContain("unrelated-third-party")
   })
 
-  test("an explicit env-var shape wins over prefix sniffing", () => {
-    expect(claudeAuthEnv(JSON.stringify({ ANTHROPIC_API_KEY: "explicit-key" })))
-      .toEqual({ ANTHROPIC_API_KEY: "explicit-key" })
-    expect(claudeAuthEnv(JSON.stringify({ ANTHROPIC_AUTH_TOKEN: "explicit-token" })))
-      .toEqual({ ANTHROPIC_AUTH_TOKEN: "explicit-token" })
-    expect(claudeAuthEnv(JSON.stringify({ CLAUDE_CODE_OAUTH_TOKEN: "explicit-oauth" })))
-      .toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "explicit-oauth" })
+  test("a bearer projection sends the placeholder in the auth-token variable", () => {
+    expect(claudeAuthEnv(bearer)).toEqual({
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:2595/bindings/b1",
+      ANTHROPIC_API_KEY: undefined,
+      ANTHROPIC_AUTH_TOKEN: "placeholder-token",
+      CLAUDE_CODE_OAUTH_TOKEN: undefined,
+    })
   })
 
-  test("no credential sets no variables, so the CLI uses its own login", () => {
-    // The local case: an empty env means the spawned binary reads the machine's
-    // own Claude Code login exactly as it would in a terminal.
+  /**
+   * This row is spread over `process.env`. Without the explicit `undefined`s an
+   * operator's own key would survive the spread and be the value the CLI sends
+   * to the broker's base URL — the one outcome this path exists to stop.
+   */
+  test("credential variables inherited from the parent process are cleared", () => {
+    const parent = {
+      PATH: "/usr/bin",
+      ANTHROPIC_API_KEY: "operator-own-key",
+      CLAUDE_CODE_OAUTH_TOKEN: "operator-own-token",
+    }
+    const spawned: Record<string, string | undefined> = { ...parent, ...claudeAuthEnv(bearer) }
+    expect(spawned.ANTHROPIC_API_KEY).toBeUndefined()
+    expect(spawned.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(spawned.ANTHROPIC_AUTH_TOKEN).toBe("placeholder-token")
+  })
+
+  test("no projection sets no variables, so the CLI uses its own login", () => {
     expect(claudeAuthEnv(undefined)).toEqual({})
-    expect(claudeAuthEnv("")).toEqual({})
-    expect(claudeAuthEnv("   ")).toEqual({})
   })
 })
 
 describe("claudeAuthValue", () => {
   test("prefers the native SDK binding over a bare provider id", () => {
-    expect(claudeAuthValue({ "claude-sdk": "sdk", anthropic: "bare" })).toBe("sdk")
-    expect(claudeAuthValue({ anthropic: "bare" })).toBe("bare")
+    expect(claudeAuthValue({ "claude-sdk": key, anthropic: bearer })).toBe(key)
+    expect(claudeAuthValue({ anthropic: bearer })).toBe(bearer)
   })
 
   test("the native harness binding resolves independently", () => {
-    expect(claudeAuthValue({ "claude-sdk": "token" })).toBe("token")
+    expect(claudeAuthValue({ "claude-sdk": key })).toBe(key)
     expect(claudeAuthValue({})).toBeUndefined()
   })
 })

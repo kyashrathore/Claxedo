@@ -256,6 +256,8 @@ describe("Cursor SDK driver", () => {
   })
 
   test("does not serve the static catalog before Cursor SDK credentials exist", async () => {
+    const savedKey = process.env.CURSOR_API_KEY
+    delete process.env.CURSOR_API_KEY
     const driver = createCursorSdkDriver({
       lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }),
       pendingPermissions: new Map(),
@@ -263,10 +265,14 @@ describe("Cursor SDK driver", () => {
       bindSession() {},
     } as never)
 
-    expect(driver.peekConfigOptions("gpt-5.5")).toEqual([])
-    await expect(driver.configOptions("gpt-5.5")).rejects.toThrow(
-      "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
-    )
+    try {
+      expect(driver.peekConfigOptions("gpt-5.5")).toEqual([])
+      await expect(driver.configOptions("gpt-5.5")).rejects.toThrow(
+        "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
+      )
+    } finally {
+      if (savedKey !== undefined) process.env.CURSOR_API_KEY = savedKey
+    }
   })
 
   test("keeps an SDK-only local root inferred and action-ineligible", async () => {

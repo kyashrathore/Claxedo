@@ -6,6 +6,7 @@ export {
   from "./routes/config"
 export type {
   AppliedRuntimeSnapshot,
+  ProviderProjection,
   ConfigRouteOptions,
   RuntimeCommandItem,
   RuntimeConnectionDescriptor,

@@ -343,57 +343,52 @@ describe("agent config", () => {
 
   // ── getRuntimeConfigSnapshot ────────────────────────────────────────
 
-  test("snapshot includes v3 connections, explicit default, mcp, and no command side channel", async () => {
+  test("snapshot includes v4 connections, explicit default, mcp, and no command side channel", async () => {
     await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
       mcp: { "test-mcp": { type: "remote", url: "http://localhost:9000" } },
       defaultConnectionId: "conn-primary",
-      auth: { "codex-app-server": "sk-test" },
+      auth: {},
     })
     await mod.saveCommand("triage", "Triage $ARGUMENTS")
     const snap = await mod.getRuntimeConfigSnapshot()
-    expect(snap.version).toBe(3)
+    expect(snap.version).toBe(4)
     expect(snap.mcp["test-mcp"]).toBeDefined()
     expect(snap.connections).toEqual([trustedConnection()])
     expect(snap.defaultHarness).toEqual({ kind: "connection", connectionId: "conn-primary" })
-    expect(snap.auth["codex-app-server"]).toBe("sk-test")
     expect("commands" in snap).toBe(false)
     expect(await mod.listCommands()).toContainEqual({ name: "triage", content: "Triage $ARGUMENTS" })
   })
 
-  test("snapshot does not alias native provider auth into generic connection identities", async () => {
+  /**
+   * The producer holds no credential of its own any more. Everything in `auth`
+   * comes from the installed authority, which hands out broker endpoints and
+   * placeholders; a key typed into the user config file reaches no harness.
+   */
+  test("snapshot auth is exactly what the credential authority projects", async () => {
     await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
       mcp: {},
-      auth: {
-        openai: "sk-openai-managed",
-      },
+      auth: { openai: "sk-openai-typed-into-the-config-file" },
     })
-    const snap = await mod.getRuntimeConfigSnapshot()
-    expect(snap.auth.openai).toBe("sk-openai-managed")
-    expect(snap.auth["conn-primary"]).toBeUndefined()
+    const projection = {
+      baseUrl: "http://127.0.0.1:2595/bindings/61b4",
+      placeholder: "signed-placeholder",
+      authMode: "api-key" as const,
+      expiresAt: 1_800_000_000_000,
+    }
+    mod.configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": projection }) })
+
+    const snap = await mod.getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })
+
+    expect(snap.auth).toEqual({ "claude-sdk": projection })
+    expect(JSON.stringify(snap)).not.toContain("sk-openai-typed-into-the-config-file")
+    expect(normalizeRuntimeSnapshot(snap)?.auth).toEqual({ "claude-sdk": projection })
   })
 
-  test("snapshot preserves trusted native auth without selecting a harness", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {},
-      mcp: {},
-      auth: {
-        openai: JSON.stringify({
-          type: "oauth",
-          refresh: "refresh-openai",
-          access: "access-openai",
-          expires: 1_790_000_000_000,
-        }),
-      },
-    })
-    const snap = await mod.getRuntimeConfigSnapshot()
-    expect(snap.auth.openai).toBe(
-      JSON.stringify({
-        type: "oauth",
-        refresh: "refresh-openai",
-        access: "access-openai",
-        expires: 1_790_000_000_000,
-      }),
-    )
-    expect(snap.defaultHarness).toBeUndefined()
+  test("a composition with no authority sends no credentials at all", async () => {
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: { openai: "sk-ignored" } })
+    mod.configureAgentConfig({})
+
+    expect((await mod.getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })).auth).toEqual({})
   })
 
   test("snapshot remains unresolved when no harness is configured", async () => {
@@ -417,7 +412,7 @@ describe("agent config", () => {
     expect(normalizeRuntimeSnapshot(snap)?.harnessLaunch).toEqual(snap.harnessLaunch)
   })
 
-  test("snapshot emits only the clean v3 connection contract", async () => {
+  test("snapshot emits only the clean v4 connection contract", async () => {
     await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
       mcp: {},
       defaultConnectionId: "conn-primary",
@@ -425,14 +420,14 @@ describe("agent config", () => {
     })
     const snap = await mod.getRuntimeConfigSnapshot()
     expect(snap).toMatchObject({
-      version: 3,
+      version: 4,
       connections: [trustedConnection()],
       defaultHarness: { kind: "connection", connectionId: "conn-primary" },
     })
     expect("harnesses" in snap).toBe(false)
   })
 
-  test("shared cloud snapshot keeps the v3 contract without implicit selection", async () => {
+  test("shared cloud snapshot keeps the v4 contract without implicit selection", async () => {
     const project = path.join(root, "project")
     await fs.mkdir(project, { recursive: true })
     await mod.saveUserConfig({ version: 3, connections: {},
@@ -444,8 +439,9 @@ describe("agent config", () => {
       workspaceDir: project,
       workspaceId: "ws_1",
     })
-    expect(snap.version).toBe(3)
+    expect(snap.version).toBe(4)
     expect(snap.connections).toEqual([])
+    expect(snap.auth).toEqual({})
     expect(snap.defaultHarness).toBeUndefined()
   })
 
@@ -454,7 +450,7 @@ describe("agent config", () => {
   test("effective config retains its canonical version when no user MCP servers exist", async () => {
     await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
     const config = await mod.getEffectiveConfig()
-    expect(config).toEqual({ version: 3, mcp: {}, connections: [], auth: {} })
+    expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: {} })
   })
 
   test("effective config resolves stdio servers into the provider-neutral format", async () => {

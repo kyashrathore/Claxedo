@@ -13,7 +13,7 @@ const issuer = "test-management-issuer"
 const audience = "workspace-runtime-management"
 
 const validSnapshot: RuntimeSnapshot = {
-  version: 3,
+  version: 4,
   mcp: {},
   connections: [],
   defaultHarness: { kind: "native", harnessId: "codex" },

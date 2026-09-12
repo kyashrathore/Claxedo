@@ -166,6 +166,14 @@ export {
 } from "./harness-types"
 export { modelConfigOption } from "./sdk-model-options"
 export type { SdkModelEntry } from "./sdk-model-options"
+export {
+  assertNoProviderProjection,
+  providerProjection,
+  providerProjectionKey,
+  providerProjectionRecord,
+  ProviderProjectionUnsupportedError,
+} from "./provider-projection"
+export type { ProviderProjection } from "./provider-projection"
 export { createLiveModelSource } from "./live-model-source"
 export type { LiveModelSource } from "./live-model-source"
 export type {

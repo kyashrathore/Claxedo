@@ -44,8 +44,8 @@ import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hu
 import type { ProcessObserver } from "../managed-processes/process-observer"
 import { RuntimeStore, type QueuedPromptRecord } from "../store"
 import { assertTarget, withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
-import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot } from "../routes/config"
-import { num, parseRecord, rec, str } from "../json-value"
+import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot, type ProviderProjection } from "../routes/config"
+import { num, rec, str } from "../json-value"
 import { AgentRuntimeContractError, assertAgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { SessionRoutes } from "../routes/session"
@@ -221,9 +221,9 @@ type ActiveTurn = {
 }
 
 type RuntimeAuth = {
-  anthropic?: string
-  openai?: string
-  cursor?: string
+  anthropic?: ProviderProjection
+  openai?: ProviderProjection
+  cursor?: ProviderProjection
 }
 type AuthSlot = keyof RuntimeAuth
 
@@ -291,16 +291,11 @@ function selectionForRunner(runner: RuntimeRunner): RuntimeHarnessSelection {
   throw new WorkspaceHarnessUnavailableError(runner)
 }
 
-function authSlotValue(auth: Record<string, string>, slot: AuthSlot) {
+function authSlotValue(auth: Record<string, ProviderProjection>, slot: AuthSlot) {
   const candidates = AGENT_HARNESS_DEFINITIONS
     .filter((item) => item.authSlot === slot)
     .map((item) => auth[item.key])
   return candidates.find(Boolean) ?? auth[slot]
-}
-
-function runtimeAuthInput(auth: Record<string, string>, slot: AuthSlot) {
-  if (slot === "openai") return codexAuthInput(auth)
-  return authSlotValue(auth, slot)
 }
 
 function runtimeAuthForAdapter(nextAuth: RuntimeAuth) {
@@ -400,28 +395,6 @@ function runtimeConfigApplyError(input: unknown): RuntimeConfigApplyStatus["erro
     code: "runtime_snapshot_apply_failed",
     message: "Runtime config apply failed",
   }
-}
-
-function codexAuthInput(auth: Record<string, string>) {
-  return auth["codex-app-server"] ?? auth["openai"]
-}
-
-function codexAuthValue(input: string | undefined): Record<string, unknown> | undefined {
-  const value = parseRecord(input)
-  if (!value) return undefined
-  if (value.type === "codex_auth") return value
-  const tokens = rec(value.tokens)
-  const complete = str(value.auth_mode) !== undefined
-    && str(tokens?.access_token) !== undefined
-    && str(tokens?.refresh_token) !== undefined
-    && str(tokens?.account_id) !== undefined
-  return complete ? { ...value, type: "codex_auth" } : undefined
-}
-
-export function runtimeAuthKey(input: string | undefined) {
-  const value = codexAuthValue(input)
-  if (!value) return input || undefined
-  return str(value.OPENAI_API_KEY)
 }
 
 const defaultStoreFactory: WorkspaceRuntimeStoreFactory = ({ storeRoot }) => new RuntimeStore(storeRoot)
@@ -637,11 +610,11 @@ function mcpStatus(config: Record<string, unknown>) {
   return Object.fromEntries(Object.keys(config).map((name) => [name, { status: "disabled" }]))
 }
 
-function runtimeAuth(auth: Record<string, string>): RuntimeAuth {
+function runtimeAuth(auth: Record<string, ProviderProjection>): RuntimeAuth {
   return {
-    anthropic: runtimeAuthKey(runtimeAuthInput(auth, "anthropic")),
-    openai: runtimeAuthKey(runtimeAuthInput(auth, "openai")),
-    cursor: runtimeAuthKey(runtimeAuthInput(auth, "cursor")),
+    anthropic: authSlotValue(auth, "anthropic"),
+    openai: authSlotValue(auth, "openai"),
+    cursor: authSlotValue(auth, "cursor"),
   }
 }
 
@@ -715,7 +688,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   let adapter: AgentHarnessAdapter | undefined
   let currentMcp: Record<string, unknown> = {}
   let currentAuth: RuntimeAuth = {}
-  let currentAuthRaw: Record<string, string> = {}
+  let currentAuthRaw: Record<string, ProviderProjection> = {}
   let currentHarnessLaunch: Record<string, Record<string, unknown>> = {}
   let applyQueue = Promise.resolve()
   const storeFactory = resolveStoreFactory(options)
@@ -763,7 +736,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return runner
   }
 
-  function adapterConfigStamp(nextRunner: RuntimeRunner, auth: Record<string, string>, mcp: Record<string, unknown>, launch: Record<string, unknown>) {
+  function adapterConfigStamp(nextRunner: RuntimeRunner, auth: Record<string, ProviderProjection>, mcp: Record<string, unknown>, launch: Record<string, unknown>) {
     return `${adapterKey(nextRunner)}\n${JSON.stringify(auth)}\n${JSON.stringify(mcp)}\n${JSON.stringify(launch)}`
   }
 
@@ -806,24 +779,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   let appliedConnections = new Map<string, RuntimeConnectionDescriptor>()
 
   /**
-   * A managed VM receives connection secrets separately from descriptors in
-   * the authenticated runtime-config snapshot. `secretRefs` names the exact
-   * entries to materialize from that snapshot; an embedding host can override
-   * this with a vault-backed resolver. No descriptor value is ever treated as
-   * secret material and a missing reference fails closed.
+   * The runtime-config snapshot carries projections, never secret material, so
+   * a descriptor that names `secretRefs` has no source here and fails closed. An
+   * embedding host that can reach a vault supplies `resolveConnectionSecrets`
+   * instead; the desktop's embedded runtime does exactly that against the local
+   * credential registry.
    */
   const resolveSnapshotConnectionSecrets: ConnectionSecretResolver = async ({ descriptor }) => {
-    const secrets: Record<string, string> = {}
-    const references = Object.entries(descriptor.secretRefs ?? {}).sort(([a], [b]) => a.localeCompare(b))
-    for (const [name, reference] of references) {
-      const value = currentAuthRaw[reference]
-      if (!value) throw new WorkspaceHarnessUnavailableError({ id: descriptor.connectionId, access: "connection" })
-      secrets[name] = value
+    if (Object.keys(descriptor.secretRefs ?? {}).length > 0) {
+      throw new WorkspaceHarnessUnavailableError({ id: descriptor.connectionId, access: "connection" })
     }
-    return {
-      secrets,
-      secretLeaseGeneration: `runtime-config:${configApplyRevision}:${references.map(([name, reference]) => `${encodeURIComponent(name)}=${encodeURIComponent(reference)}`).join("&") || "none"}`,
-    }
+    return { secrets: {}, secretLeaseGeneration: `runtime-config:${configApplyRevision}:none` }
   }
 
   function resolveAppliedRunner(next: RuntimeRunner): RuntimeRunner {
@@ -1792,7 +1758,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     apply,
     applyHarnessLaunch(harnessLaunch: Record<string, Record<string, unknown>>) {
       return apply({
-        version: 3,
+        version: 4,
         mcp: currentMcp,
         connections: [...appliedConnections.values()],
         ...(runner ? { defaultHarness: selectionForRunner(runner) } : {}),

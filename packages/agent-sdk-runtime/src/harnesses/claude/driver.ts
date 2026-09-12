@@ -46,8 +46,8 @@ import {
   type SdkRuntimeDriver,
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
-  stringRecord,
 } from "../shared/sdk-runtime-adapter"
+import { providerProjectionKey, providerProjectionRecord } from "../../provider-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,
@@ -270,24 +270,27 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 
   setAuth(keys: SdkRuntimeAuth) {
-    const previous = this.auth.anthropic
+    const previous = providerProjectionKey(this.auth.anthropic)
     this.auth = {
       ...this.auth,
-      ...(keys.anthropic !== undefined ? { anthropic: keys.anthropic || undefined } : {}),
+      ...("anthropic" in keys ? { anthropic: keys.anthropic } : {}),
     }
-    if (this.auth.anthropic !== previous) this.modelSource.invalidate()
+    if (providerProjectionKey(this.auth.anthropic) !== previous) this.modelSource.invalidate()
   }
 
   applyConfig(config: Record<string, unknown>) {
-    const previous = this.auth.anthropic
-    const auth = stringRecord(config.auth)
+    const previous = providerProjectionKey(this.auth.anthropic)
+    const auth = providerProjectionRecord(config.auth)
+    if (config.auth !== undefined && !auth) {
+      throw new Error("claude harness received an auth map that is not provider projections")
+    }
     this.auth = {
       anthropic: claudeAuthValue(auth),
     }
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.firstPartyMcp = firstPartyMcpProvider(config)
     this.currentPlugins = claudePluginConfigs(config.launch)
-    if (this.auth.anthropic !== previous) this.modelSource.invalidate()
+    if (providerProjectionKey(this.auth.anthropic) !== previous) this.modelSource.invalidate()
     // Held, not applied here: the SDK takes `effort` as a per-query option, so
     // it is read when the next session is created rather than pushed at the
     // running one. `undefined` means "let the model decide", which is not the

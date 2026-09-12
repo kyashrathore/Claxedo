@@ -22,7 +22,6 @@ import {
   resolveUserMcp,
   type ResolvedMcpServer,
 } from "@claxedo/workspace-runtime/config"
-import { resolveSecretsForScope, resolveCredentialReferencesForScope } from "@claxedo/server-core/credentials/registry"
 import {
   createHarnessConnectionSchema,
   explicitDefaultHarness,
@@ -35,7 +34,7 @@ import type {
   HarnessConnectionRef,
 } from "@claxedo/agent-sdk-runtime"
 import { createAcpConnectionProvider, createConnectionProviderRegistry } from "@claxedo/agent-sdk-runtime"
-import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
+import type { ProviderProjection, RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 
 export type {
   ConnectionReadiness,
@@ -121,11 +120,12 @@ class UserAgentConfigLoadError extends Error {
 }
 
 export interface RuntimeConfigSnapshot {
-  version: 3
+  version: 4
   mcp: Record<string, ResolvedMcpServer>
   connections: HarnessConnectionDescriptor[]
   defaultHarness?: RuntimeHarnessSelection
-  auth: Record<string, string>
+  /** Broker endpoints and placeholders; the credential values stay with the authority. */
+  auth: Record<string, ProviderProjection>
   /** Opaque per-harness launch options contributed by the product composition. */
   harnessLaunch?: Record<string, Record<string, unknown>>
 }
@@ -146,6 +146,16 @@ export type AgentConfigOptions = {
    * a re-projection after activation reaches the next config push.
    */
   harnessLaunch?: () => Promise<Record<string, Record<string, unknown>>>
+  /**
+   * The credential authority that turns this host's active accounts into
+   * broker-backed projections. A composition that installs none sends no
+   * credentials, and every harness runs on whatever login its own machine holds.
+   */
+  projectAuth?: (input: {
+    scope: RuntimeConfigSecretScope
+    orgId?: string
+    workspaceId?: string
+  }) => Promise<Record<string, ProviderProjection>>
 }
 
 let agentConfigOptions: AgentConfigOptions = {}
@@ -523,25 +533,18 @@ export async function getRuntimeConfigSnapshot(
   }
   const scope = options.secretScope ?? "local"
   const mcp = await runtimeMcp(config, selected, scope)
-  // Merge trusted config auth with credential registry secrets (registry takes precedence).
-  const configAuth = options.secretScope === "shared" ? {} : config.auth ?? {}
-  let registryAuth: Record<string, string> = {}
-  try {
-    registryAuth = await resolveSecretsForScope(scope, options.orgId)
-  } catch {
-    // Registry may not be initialized yet during early startup
-  }
-  const auth = { ...configAuth, ...registryAuth }
-  const references = Object.values(config.connections).filter((connection) => connection.enabled)
-    .flatMap((connection) => Object.values(connection.secretRefs ?? {}))
-  // Descriptor references are credential IDs, never keys supplied through config.auth.
-  for (const reference of references) delete auth[reference]
-  Object.assign(auth, await resolveCredentialReferencesForScope(references, scope, options.orgId))
-  const codexAppServerAuth = auth.openai
-  if (!auth["codex-app-server"] && codexAppServerAuth) auth["codex-app-server"] = codexAppServerAuth
+  // A shared-scope sandbox reaches its credentials through its own provider's
+  // edge, which no authority here can mint; that adapter is the next slice.
+  const auth = scope === "shared"
+    ? {}
+    : await agentConfigOptions.projectAuth?.({
+      scope,
+      ...(options.orgId ? { orgId: options.orgId } : {}),
+      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    }) ?? {}
   const harnessLaunch = await agentConfigOptions.harnessLaunch?.()
   return {
-    version: 3,
+    version: 4,
     mcp,
     connections: Object.values(config.connections),
     ...(selected ? { defaultHarness: selected } : {}),

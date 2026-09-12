@@ -1,47 +1,11 @@
-import { asRecord } from "@claxedo/agent-runtime-contract"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 
-/**
- * Project registry credentials without giving Pi a second refresh-token owner.
- *
- * `codex-app-server` carries either a Codex OAuth bundle (JSON) or, when the
- * registry aliases the plain `openai` key into it, a bare API key. The bundle's
- * access token becomes Pi's `openai-codex` entry; a bare key is an OpenAI API
- * key, as the Codex harness reads it.
- */
-export function piAuthProjection(auth: Record<string, unknown>) {
-  const entries: Record<string, { type: "api_key"; key: string }> = {}
-  for (const provider of ["anthropic", "openai"] as const) {
-    const value = auth[provider]
-    if (typeof value === "string" && value) entries[provider] = { type: "api_key", key: value }
-  }
-  const source = auth["codex-app-server"]
-  if (typeof source === "string" && source) {
-    let value: unknown
-    try {
-      value = JSON.parse(source)
-    } catch {
-      entries.openai ??= { type: "api_key", key: source }
-      return entries
-    }
-    const row = asRecord(value)
-    if (!row) throw new Error("Invalid Pi Codex credential object")
-    const tokens = asRecord(row.tokens)
-    const oauth = asRecord(row.oauth)
-    const access = tokens?.access_token ?? row.access ?? oauth?.access
-    const expires = row.expires ?? oauth?.expires
-    if (typeof access === "string" && access) {
-      if (typeof expires === "number" && expires <= Date.now())
-        throw new Error("Pi Codex credential expired; refresh the connected credential")
-      entries["openai-codex"] = { type: "api_key", key: access }
-    }
-  }
-  return entries
-}
+/** One Pi `auth.json` row per provider. Nothing projects one yet, so the managed profile is written empty. */
+export type PiAuthEntries = Record<string, { type: "api_key"; key: string }>
 
-export async function writePiAuth(agentDir: string, entries: ReturnType<typeof piAuthProjection>) {
+export async function writePiAuth(agentDir: string, entries: PiAuthEntries) {
   await fs.mkdir(agentDir, { recursive: true, mode: 0o700 })
   const file = path.join(agentDir, "auth.json")
   const temporary = `${file}.${randomUUID()}.tmp`
@@ -72,7 +36,7 @@ export function retainPiAuth(agentDir: string) {
     return result
   }
   return {
-    write(entries: ReturnType<typeof piAuthProjection>) {
+    write(entries: PiAuthEntries) {
       if (released) return Promise.reject(new Error("Pi auth profile is disposed"))
       return enqueue(() => writePiAuth(directory, entries))
     },

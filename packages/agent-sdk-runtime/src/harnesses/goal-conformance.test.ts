@@ -98,6 +98,8 @@ async function claudeHarness(): Promise<ConformanceHarness> {
 }
 
 async function cursorHarness(): Promise<ConformanceHarness> {
+  // Claxedo projects no Cursor credential; the driver reads the machine's own.
+  process.env.CURSOR_API_KEY = "cursor-conformance-key"
   const makeRun = () => {
     let release = () => {}
     const cancelled = new Promise<void>((resolve) => { release = resolve })
@@ -126,7 +128,6 @@ async function cursorHarness(): Promise<ConformanceHarness> {
       }),
     }),
   })
-  adapter.setAuth({ cursor: "cursor-test-key" })
   const session = await adapter.createSession("/repo", undefined, "session-conformance")
   return {
     goals: adapter.goals!,

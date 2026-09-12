@@ -185,7 +185,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     this.currentModel = model
   }
 
-  setAuth(keys: { anthropic?: string; openai?: string; cursor?: string }) {
+  setAuth(keys: SdkRuntimeAuth) {
     this.driver.setAuth(keys)
   }
 

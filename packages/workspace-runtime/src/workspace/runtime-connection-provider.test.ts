@@ -78,7 +78,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     const app = new Hono()
     host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
     try {
-      await host.apply({ version: 3, mcp: {}, auth: {}, connections: [{
+      await host.apply({ version: 4, mcp: {}, auth: {}, connections: [{
         connectionId: "fixture-primary", providerKey: "fixture", configRevision: 1, enabled: true, config: {},
       }], defaultHarness: { kind: "connection", connectionId: "fixture-primary" } })
       const request = (id: string) => withWorkspaceTarget(target, () => app.request(
@@ -117,7 +117,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
       resolveConnectionSecrets: () => ({ secrets: { token: "runtime-only" }, secretLeaseGeneration: "lease-1" }),
     })
     await host.apply({
-      version: 3,
+      version: 4,
       mcp: {},
       connections: [{
         connectionId: "fixture-primary",
@@ -140,7 +140,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     roots.push(root)
     const host = createWorkspaceHost({ target: { workspaceId: "ws-1", directory: root }, storeRoot: join(root, "store") })
     await expect(host.apply({
-      version: 3,
+      version: 4,
       mcp: {},
       connections: [{
         connectionId: "acp-primary",
@@ -153,44 +153,6 @@ describe("WorkspaceRuntime generic connection selection", () => {
       defaultHarness: { kind: "connection", connectionId: "acp-primary" },
       auth: {},
     })).rejects.toBeInstanceOf(WorkspaceHarnessUnavailableError)
-    await host.dispose()
-  })
-
-  test("materializes VM connection secrets from the consent-filtered runtime snapshot", async () => {
-    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-provider-"))
-    roots.push(root)
-    let resolvedSecrets: Readonly<Record<string, string>> | undefined
-    const provider: ConnectionProvider<{ label: string }> = {
-      providerKey: "fixture",
-      validateConfig(input) { return input as { label: string } },
-      project(config) { return { label: config.label, readiness: "ready", capabilities } },
-      resolve({ descriptor, secrets }) {
-        resolvedSecrets = secrets
-        return { config: descriptor.config }
-      },
-      createAdapter: adapter,
-    }
-    const host = createWorkspaceHost({
-      target: { workspaceId: "ws-1", directory: root },
-      storeRoot: join(root, "store"),
-      connectionProviders: [provider],
-    })
-    await host.apply({
-      version: 3,
-      mcp: {},
-      connections: [{
-        connectionId: "fixture-primary",
-        providerKey: "fixture",
-        configRevision: 1,
-        enabled: true,
-        config: { label: "Fixture" },
-        secretRefs: { token: "credential:external-agent" },
-      }],
-      defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
-      auth: { "credential:external-agent": "vm-runtime-secret" },
-    })
-    expect(resolvedSecrets).toEqual({ token: "vm-runtime-secret" })
-    expect(JSON.stringify(host.detail())).not.toContain("vm-runtime-secret")
     await host.dispose()
   })
 
@@ -224,13 +186,15 @@ describe("WorkspaceRuntime generic connection selection", () => {
         }
       },
     }
+    let lease = "lease-one"
     const host = createWorkspaceHost({
       target: { workspaceId: "ws-1", directory: root },
       storeRoot: join(root, "store"),
       connectionProviders: [provider],
+      resolveConnectionSecrets: () => ({ secrets: { token: lease }, secretLeaseGeneration: lease }),
     })
-    const snapshot = (token: string) => ({
-      version: 3 as const,
+    const snapshot = () => ({
+      version: 4 as const,
       mcp: {},
       connections: [{
         connectionId: "fixture-primary",
@@ -241,12 +205,12 @@ describe("WorkspaceRuntime generic connection selection", () => {
         secretRefs: { token: "credential:fixture" },
       }],
       defaultHarness: { kind: "connection" as const, connectionId: "fixture-primary" },
-      auth: { "credential:fixture": token },
+      auth: {},
     })
     const app = new Hono()
     host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
 
-    await host.apply(snapshot("lease-one"))
+    await host.apply(snapshot())
     const request = (id: string) => withWorkspaceTarget(
       { workspaceId: "ws-1", directory: root },
       () => app.request(`http://runtime.test/session?directory=${encodeURIComponent(root)}&connectionId=fixture-primary`, {
@@ -258,7 +222,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     const first = await request("local-one")
     expect(first.status, await first.clone().text()).toBe(201)
 
-    await host.apply(snapshot("lease-two"))
+    lease = "lease-two"
     const second = await request("local-two")
     expect(second.status, await second.clone().text()).toBe(201)
     expect(createdWith).toEqual(["lease-one", "lease-two"])
@@ -268,7 +232,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
 
   test("leaves default selection unresolved when policy omits it", async () => {
     const host = createWorkspaceHost()
-    await host.apply({ version: 3, mcp: {}, connections: [], auth: {} })
+    await host.apply({ version: 4, mcp: {}, connections: [], auth: {} })
     expect(host.detail().harness).toBeUndefined()
     await host.dispose()
   })

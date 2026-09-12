@@ -1,8 +1,20 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import type { SdkRuntimeTurnInput } from "../shared/sdk-runtime-adapter"
 import { nativeGoalCommand } from "../shared/native-goal-store"
 import { createCursorSdkDriver } from "./driver"
+
+const savedCursorKey = { value: process.env.CURSOR_API_KEY }
+/**
+ * Claxedo projects no Cursor credential, so the driver reads the machine's own
+ * key and the Goal it advertises depends on one being resolvable. The last test
+ * here asserts the opposite state and clears it.
+ */
+beforeEach(() => { process.env.CURSOR_API_KEY = "cursor-test-key" })
+afterEach(() => {
+  if (savedCursorKey.value === undefined) delete process.env.CURSOR_API_KEY
+  else process.env.CURSOR_API_KEY = savedCursorKey.value
+})
 
 describe("Cursor native Goal lifecycle", () => {
   test("sends /goal through Agent.send and derives state only from the durable Run", async () => {
@@ -68,7 +80,6 @@ describe("Cursor native Goal lifecycle", () => {
       model: "auto",
     } as unknown as SdkRuntimeTurnInput
 
-    driver.setAuth({ cursor: "cursor-test-key" })
     await driver.nativeGoal!.run(input, "Ship when checks pass", (goal) => observed.push(goal))
 
     expect(nativeGoalCommand("Ship when checks pass")).toBe("/goal Ship when checks pass")
@@ -149,7 +160,6 @@ describe("Cursor native Goal lifecycle", () => {
       model: "auto",
     } as unknown as SdkRuntimeTurnInput
 
-    driver.setAuth({ cursor: "cursor-test-key" })
     await expect(driver.nativeGoal!.run(input, "Ship when checks pass", (goal) => observed.push(goal)))
       .rejects.toThrow("cursor-agent exited")
 
@@ -166,6 +176,7 @@ describe("Cursor native Goal lifecycle", () => {
   })
 
   test("reports the installed implementation unavailable without Cursor SDK credentials", async () => {
+    delete process.env.CURSOR_API_KEY
     const driver = createCursorSdkDriver({
       lifecycle: () => createSessionTurnLifecycle() as never,
       pendingPermissions: new Map(),

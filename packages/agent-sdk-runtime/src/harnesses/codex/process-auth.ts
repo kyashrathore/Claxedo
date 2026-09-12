@@ -1,4 +1,4 @@
-import { errorMessage, type JsonRecord, type SdkRuntimeAuth } from "../shared/sdk-runtime-adapter"
+import { errorMessage, type JsonRecord } from "../shared/sdk-runtime-adapter"
 import type { CodexAppServerProcess } from "./app-server-process"
 import { codexChatgptAuthTokens, sourceAuthValue, sourceCodexAuthValue } from "./auth-file"
 
@@ -12,7 +12,7 @@ import { codexChatgptAuthTokens, sourceAuthValue, sourceCodexAuthValue } from ".
  * replaced process from writing the new one's state.
  */
 export class CodexProcessAuth {
-  private keys: SdkRuntimeAuth = {}
+  private keys: { openai?: string } = {}
   private source: JsonRecord | undefined
   private revision = 0
   private syncedRevision = -1
@@ -27,16 +27,6 @@ export class CodexProcessAuth {
   }
   set codexAuth(value: JsonRecord | undefined) {
     this.source = value
-  }
-
-  /** True when the merge changed what the app-server would be told. */
-  mergeKeys(keys: SdkRuntimeAuth): boolean {
-    return this.reviseIfChanged(() => {
-      this.keys = {
-        ...this.keys,
-        ...(keys.openai !== undefined ? { openai: keys.openai || undefined } : {}),
-      }
-    })
   }
 
   /** True when the configured source changed what the app-server would be told. */

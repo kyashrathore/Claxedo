@@ -11,7 +11,7 @@ const managementAuth: WorkspaceRuntimeManagementAuth = {
 
 function snapshot() {
   return {
-    version: 3 as const,
+    version: 4 as const,
     mcp: {},
     connections: [{
       connectionId: "acp-primary",
@@ -29,7 +29,7 @@ function snapshot() {
   }
 }
 
-describe("runtime config v3", () => {
+describe("runtime config v4", () => {
   test("accepts the strict trusted descriptor and explicit selection", async () => {
     let applied: unknown
     const app = ConfigRoutes(async (value) => { applied = value }, {
@@ -80,9 +80,27 @@ describe("runtime config v3", () => {
     expect(normalizeRuntimeSnapshot({ ...snapshot(), runner: { type: "opencode" } })).toBeUndefined()
   })
 
-  test("rejects v1/v2 compatibility snapshots", () => {
+  test("rejects every earlier snapshot version, v3 included", () => {
     expect(normalizeRuntimeSnapshot({ version: 1, mcp: {}, auth: {}, runner: { type: "opencode" } })).toBeUndefined()
     expect(normalizeRuntimeSnapshot({ version: 2, mcp: {}, auth: {}, runners: [] })).toBeUndefined()
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), version: 3 })).toBeUndefined()
+  })
+
+  test("accepts provider projections in auth and rejects secret material of any shape", () => {
+    const projection = {
+      baseUrl: "http://127.0.0.1:2595/bindings/ab12",
+      placeholder: "signed-placeholder",
+      authMode: "api-key",
+      expiresAt: 1_800_000_000_000,
+    }
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { anthropic: projection } }))
+      .toMatchObject({ auth: { anthropic: projection } })
+    // The v3 channel: a bare string where a projection belongs is the plaintext
+    // push this version exists to remove, so it must not merely be dropped.
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { anthropic: "sk-ant-api03-real" } })).toBeUndefined()
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { anthropic: { ...projection, authMode: "basic" } } })).toBeUndefined()
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { anthropic: { ...projection, secret: "leak" } } })).toBeUndefined()
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: undefined })).toBeUndefined()
   })
 
   test("rejects duplicate identities and unknown descriptor fields", () => {

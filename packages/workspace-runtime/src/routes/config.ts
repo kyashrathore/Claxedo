@@ -1,7 +1,13 @@
 import { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
-import { isAgentHarnessId, type HarnessConnectionDescriptor, type SessionHarness } from "@claxedo/agent-sdk-runtime"
+import {
+  isAgentHarnessId,
+  providerProjectionRecord,
+  type HarnessConnectionDescriptor,
+  type ProviderProjection,
+  type SessionHarness,
+} from "@claxedo/agent-sdk-runtime"
 import { isRecord } from "@claxedo/helpers/guards"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
@@ -46,12 +52,19 @@ export type RuntimeCommandItem = {
   content: string
 }
 
+export type { ProviderProjection }
+
 export type RuntimeSnapshot = {
-  version: 3
+  version: 4
   mcp: Record<string, unknown>
   connections: RuntimeConnectionDescriptor[]
   defaultHarness?: RuntimeHarnessSelection
-  auth: Record<string, string>
+  /**
+   * What each provider's harness gets in place of a credential. The value stays
+   * with the authority that minted the binding; this carries only the broker
+   * endpoint and a placeholder scoped to it.
+   */
+  auth: Record<string, ProviderProjection>
   /**
    * Opaque per-harness launch options a containing product projects (Claxedo's
    * Agent Plugins module contributes plugin roots this way). Keyed by agent
@@ -167,11 +180,12 @@ const RUNTIME_SNAPSHOT_KEYS = new Set([
 export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot | undefined {
   if (
     !isRecord(input)
-    || input.version !== 3
+    || input.version !== 4
     || !isRecord(input.mcp)
     || !Array.isArray(input.connections)
-    || !stringRecord(input.auth)
   ) return undefined
+  const auth = providerProjectionRecord(input.auth)
+  if (!auth) return undefined
   // Unknown fields are rejected rather than silently dropped: a producer that
   // sends a field this runtime does not model would otherwise believe it took.
   if (Object.keys(input).some((key) => !RUNTIME_SNAPSHOT_KEYS.has(key))) return undefined
@@ -202,11 +216,11 @@ export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot
     }
   }
   return {
-    version: 3,
+    version: 4,
     mcp: input.mcp,
     connections,
     ...(defaultHarness ? { defaultHarness } : {}),
-    auth: input.auth,
+    auth,
     ...(Object.keys(harnessLaunch).length ? { harnessLaunch } : {}),
     ...(typeof input.workspaceHarnessEnabled === "boolean" ? { workspaceHarnessEnabled: input.workspaceHarnessEnabled } : {}),
     ...(commands ? { commands } : {}),

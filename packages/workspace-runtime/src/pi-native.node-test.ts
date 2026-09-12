@@ -51,7 +51,7 @@ void test(
         body: JSON.stringify(body),
       })
     try {
-      await runtime.host.apply({ version: 3, mcp: {}, connections: [], auth: {} })
+      await runtime.host.apply({ version: 4, mcp: {}, connections: [], auth: {} })
       const model = { providerID: "pi", modelID: "openai/gpt-4.1" }
       const created = await post("session?nativeHarness=pi", { model })
       assert.equal(created.status, 201, await created.clone().text())
@@ -144,11 +144,11 @@ void test(
       })
     let runtime = create()
     const snapshot = {
-      version: 3 as const,
+      version: 4 as const,
       defaultHarness: { kind: "native" as const, harnessId: "pi" as const },
       mcp: {},
       connections: [],
-      auth: { anthropic: "checkpoint-test-secret" },
+      auth: {},
     }
     const call = async (resource: string, body: object) => {
       const response = await runtime.app.request(
@@ -172,7 +172,7 @@ void test(
         parts: [{ type: "text", text: "Write proof.txt" }],
       })
       assert.equal(await fs.readFile(path.join(directory, "proof.txt"), "utf8"), "native machine tool")
-      assert.ok((await fs.readFile(path.join(agentDir, "auth.json"), "utf8")).includes("checkpoint-test-secret"))
+      assert.deepEqual(JSON.parse(await fs.readFile(path.join(agentDir, "auth.json"), "utf8")), {})
       const nativeFiles = await fs.readdir(path.join(agentDir, "sessions"))
       assert.equal(nativeFiles.filter((file) => file.endsWith(".jsonl")).length, 1)
       await call("checkpoint/freeze", { policy: "drain" })

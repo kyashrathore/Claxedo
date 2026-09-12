@@ -1,47 +1,29 @@
-import { asRecord } from "@claxedo/agent-runtime-contract"
-import { trimToUndefined } from "@claxedo/helpers/string"
+import type { ProviderProjection } from "../../provider-projection"
+
 export type ClaudeAuthEnv = {
-  ANTHROPIC_API_KEY?: string
-  ANTHROPIC_AUTH_TOKEN?: string
-  CLAUDE_CODE_OAUTH_TOKEN?: string
+  ANTHROPIC_BASE_URL?: string
+  ANTHROPIC_API_KEY?: string | undefined
+  ANTHROPIC_AUTH_TOKEN?: string | undefined
+  CLAUDE_CODE_OAUTH_TOKEN?: string | undefined
 }
 
-export function claudeAuthEnv(input: string | undefined): ClaudeAuthEnv {
-  const raw = trimToUndefined(input)
-  if (!raw) return {}
-
-  const parsed = json(raw)
-  const apiKey = trimToUndefined(parsed?.ANTHROPIC_API_KEY)
-    ?? trimToUndefined(parsed?.apiKey)
-    ?? trimToUndefined(parsed?.api_key)
-  if (apiKey) return { ANTHROPIC_API_KEY: apiKey }
-
-  const authToken = trimToUndefined(parsed?.ANTHROPIC_AUTH_TOKEN)
-  if (authToken) return { ANTHROPIC_AUTH_TOKEN: authToken }
-
-  const oauth = trimToUndefined(parsed?.CLAUDE_CODE_OAUTH_TOKEN)
-    ?? trimToUndefined(parsed?.accessToken)
-    ?? trimToUndefined(parsed?.access_token)
-    ?? trimToUndefined(asRecord(parsed?.claudeAiOauth)?.accessToken)
-    ?? trimToUndefined(asRecord(parsed?.claudeAiOauth)?.access_token)
-    ?? trimToUndefined(asRecord(parsed?.oauth)?.accessToken)
-    ?? trimToUndefined(asRecord(parsed?.oauth)?.access_token)
-    ?? trimToUndefined(asRecord(parsed?.oauth)?.access)
-  if (oauth) return { CLAUDE_CODE_OAUTH_TOKEN: oauth }
-
-  if (/^sk-ant-o/i.test(raw)) return { CLAUDE_CODE_OAUTH_TOKEN: raw }
-  return { ANTHROPIC_API_KEY: raw }
-}
-
-export function claudeAuthValue(auth: Record<string, string> | undefined) {
-  return auth?.["claude-sdk"] ?? auth?.anthropic ?? auth?.claude
-}
-
-function json(input: string) {
-  try {
-    const value = JSON.parse(input) as unknown
-    return asRecord(value)
-  } catch {
-    return undefined
+/**
+ * All three credential variables are written, the unused ones as `undefined`,
+ * because this row is spread over `process.env`: an operator's own
+ * `ANTHROPIC_API_KEY` would otherwise reach the harness alongside the broker's
+ * base URL and be the value the CLI actually sends. `harnessSpawnEnv` drops
+ * `undefined` entries, so writing them removes the inherited ones.
+ */
+export function claudeAuthEnv(projection: ProviderProjection | undefined): ClaudeAuthEnv {
+  if (!projection) return {}
+  return {
+    ANTHROPIC_BASE_URL: projection.baseUrl,
+    ANTHROPIC_API_KEY: projection.authMode === "api-key" ? projection.placeholder : undefined,
+    ANTHROPIC_AUTH_TOKEN: projection.authMode === "bearer" ? projection.placeholder : undefined,
+    CLAUDE_CODE_OAUTH_TOKEN: undefined,
   }
+}
+
+export function claudeAuthValue(auth: Record<string, ProviderProjection> | undefined) {
+  return auth?.["claude-sdk"] ?? auth?.anthropic ?? auth?.claude
 }

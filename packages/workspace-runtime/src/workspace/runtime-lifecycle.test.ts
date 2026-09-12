@@ -135,14 +135,16 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
     },
   }
   const snapshot = (name = "agent", revision = 1): RuntimeSnapshot => ({
-    version: 3, mcp: {}, auth: {},
+    version: 4, mcp: {}, auth: {},
     connections: ["primary", "secondary"].map((connectionId) => ({
       connectionId, providerKey: "fixture", configRevision: revision, enabled: true, config: { name },
     })),
     defaultHarness: { kind: "connection", connectionId: "primary" },
   })
+  let secretLease = "one"
+  const rotateSecretLease = (next: string) => { secretLease = next }
   function open() {
-    const host = createWorkspaceHost({ target, storeRoot, connectionProviders: [provider], storeFactory: ({ storeRoot }) => {
+    const host = createWorkspaceHost({ target, storeRoot, connectionProviders: [provider], resolveConnectionSecrets: () => ({ secrets: { token: secretLease }, secretLeaseGeneration: secretLease }), storeFactory: ({ storeRoot }) => {
       const store = new RuntimeStore(storeRoot)
       storeLifecycle.opened++
       const recover = store.recoverBusySessions.bind(store)
@@ -166,7 +168,7 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
       ))
     return { host, request }
   }
-  return { ...open(), open, snapshot, target, storeRoot, upstream, executions, disposed, resolvedDirectories, startedTurn, release, controls, configurations, storeLifecycle, creates: () => creates, adapters: () => adapters }
+  return { ...open(), open, snapshot, rotateSecretLease, target, storeRoot, upstream, executions, disposed, resolvedDirectories, startedTurn, release, controls, configurations, storeLifecycle, creates: () => creates, adapters: () => adapters }
 }
 
 describe("workspace runtime public lifecycle", () => {
@@ -275,11 +277,10 @@ describe("workspace runtime public lifecycle", () => {
     const f = await fixture({ runtimeConfig: true })
     const first = f.snapshot()
     first.connections[0].secretRefs = { token: "credential" }
-    first.auth = { credential: "one" }
     await f.host.apply(first)
     await f.request("/session", "POST", { id: "local" })
     expect((await f.request("/session/local/message", "POST", { parts: [{ type: "text", text: "first" }] })).status).toBe(200)
-    await f.host.apply({ ...first, auth: { credential: "two" } })
+    f.rotateSecretLease("two")
     const response = await f.request("/session/local/message", "POST", { parts: [{ type: "text", text: "second" }] })
     expect(response.status, await response.clone().text()).toBe(200)
     expect((await f.request("/session")).status).toBe(200)
@@ -335,13 +336,12 @@ describe("workspace runtime public lifecycle", () => {
     cleanups.push(f.release)
     const first = f.snapshot()
     first.connections[0].secretRefs = { token: "credential" }
-    first.auth = { credential: "one" }
     await f.host.apply(first)
     await f.request("/session", "POST", { id: "local" })
     const prompt = f.request("/session/local/message", "POST", { parts: [{ type: "text", text: "wait" }] })
     try {
       await f.startedTurn
-      await f.host.apply({ ...first, auth: { credential: "two" } })
+      f.rotateSecretLease("two")
       expect((await f.request("/session", "POST", { id: "new-generation" })).status).toBe(201)
       expect(f.disposed).not.toContain(1)
       const permission = await f.request("/session/local/permissions/pending", "POST", { response: "once" })
@@ -568,7 +568,7 @@ describe("workspace runtime public lifecycle", () => {
     expect(prompts).toEqual([])
 
     await host.apply({
-      version: 3, mcp: {}, auth: {}, connections: [],
+      version: 4, mcp: {}, auth: {}, connections: [],
       defaultHarness: { kind: "native", harnessId: "claude" },
     })
 

@@ -21,6 +21,7 @@ import type { RuntimeEventRoute, ChildProjectionTarget } from "./child-event-rou
 import type { AgentRuntimeStoreCore } from "./runtime-store"
 import type { RuntimeAppendSource } from "./turn-projection"
 import type { SessionTurnLifecycle } from "./turn-lifecycle"
+import type { ProviderProjection } from "../../provider-projection"
 
 export type SdkRuntimeRunnerType = NativeSdkHarnessId
 export type SdkRuntimeStore = AgentRuntimeStoreCore
@@ -72,7 +73,11 @@ export type ActiveTurn = {
   steer?: (input: PromptInput) => Promise<void>
 }
 
-export type SdkRuntimeAuth = { anthropic?: string; openai?: string; cursor?: string }
+export type SdkRuntimeAuth = {
+  anthropic?: ProviderProjection
+  openai?: ProviderProjection
+  cursor?: ProviderProjection
+}
 
 export type SdkRuntimeDriverHost = {
   lifecycle: () => SessionTurnLifecycle<ActiveTurn>

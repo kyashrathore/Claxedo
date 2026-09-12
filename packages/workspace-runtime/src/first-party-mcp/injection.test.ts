@@ -81,7 +81,7 @@ function fixture(input: { firstParty: boolean }) {
 describe("first-party MCP injection through the workspace runtime", () => {
   test("every applyConfig carries a provider whose entry names the session, the loopback endpoint and the live bearer", async () => {
     const f = fixture({ firstParty: true })
-    await f.host.apply({ version: 3, mcp: {}, auth: {}, connections: [], defaultHarness: { kind: "native", harnessId: "claude" } })
+    await f.host.apply({ version: 4, mcp: {}, auth: {}, connections: [], defaultHarness: { kind: "native", harnessId: "claude" } })
     expect((await f.createSession("session-a")).status).toBe(201)
     expect(f.configurations.length).toBeGreaterThan(0)
 
@@ -104,7 +104,7 @@ describe("first-party MCP injection through the workspace runtime", () => {
 
   test("the provider reads the bearer at launch time, so a rotation reaches the next session without a re-apply", async () => {
     const f = fixture({ firstParty: true })
-    await f.host.apply({ version: 3, mcp: {}, auth: {}, connections: [], defaultHarness: { kind: "native", harnessId: "claude" } })
+    await f.host.apply({ version: 4, mcp: {}, auth: {}, connections: [], defaultHarness: { kind: "native", harnessId: "claude" } })
     const provider = firstPartyMcpProvider(f.configurations.at(-1)!)!
     const before = provider.server("session-a").headers.Authorization
     f.issuer.rotate()
@@ -116,7 +116,7 @@ describe("first-party MCP injection through the workspace runtime", () => {
 
   test("a runtime composed without the launch option injects nothing and exposes no issuer", async () => {
     const f = fixture({ firstParty: false })
-    await f.host.apply({ version: 3, mcp: {}, auth: {}, connections: [], defaultHarness: { kind: "native", harnessId: "claude" } })
+    await f.host.apply({ version: 4, mcp: {}, auth: {}, connections: [], defaultHarness: { kind: "native", harnessId: "claude" } })
     expect((await f.createSession("session-a")).status).toBe(201)
     expect(f.configurations.every((config) => !(FIRST_PARTY_MCP_CONFIG_KEY in config))).toBe(true)
     expect(f.host.runtimeCredentialIssuer()).toBeUndefined()

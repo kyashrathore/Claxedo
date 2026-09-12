@@ -1,6 +1,7 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { SessionHarnessId } from "./harness-types"
 import type { AgentCapabilities } from "@claxedo/agent-runtime-contract"
+import type { ProviderProjection } from "./provider-projection"
 
 export type HarnessCapabilityTarget = SessionHarnessId
 export type AdapterCapability = "runtime-config"
@@ -102,7 +103,7 @@ export type AdapterCapabilityProvider = {
 
 export type RuntimeConfigurableAdapter = AdapterCapabilityProvider & {
   setModel(model: string): void
-  setAuth(keys: Record<string, string | undefined>): void
+  setAuth(keys: Record<string, ProviderProjection | undefined>): void
 }
 
 export function hasAdapterCapability(

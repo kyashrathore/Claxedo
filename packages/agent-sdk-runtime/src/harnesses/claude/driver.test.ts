@@ -4,6 +4,9 @@ import os from "os"
 import path from "path"
 import type { Query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
+import { SdkRuntimeAdapter } from "../shared/sdk-runtime-adapter"
+import { createMemoryRuntimeStore } from "../../stores/memory"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { removeTestTempDir } from "../shared/test-temp-dir"
 import type { ActiveTurn, SdkRuntimeDriverHost, SdkRuntimeTurnInput } from "../shared/sdk-runtime-driver"
 import type { ClaudeSdkDriverOptions } from "./driver"
@@ -555,3 +558,124 @@ async function promptedText(input: AsyncIterator<SDKUserMessage>) {
   const block = content?.find((part: { type: string }) => part.type === "text")
   return block?.type === "text" ? block.text : undefined
 }
+
+const brokerProjection = {
+  baseUrl: "http://127.0.0.1:2595/bindings/2f6c1b9a",
+  placeholder: "signed-runtime-placeholder",
+  authMode: "api-key" as const,
+  expiresAt: 1_800_000_000_000,
+}
+
+function turnHost() {
+  return {
+    lifecycle: () => createSessionTurnLifecycle(), pendingPermissions: new Map(), pendingQuestions: new Map(),
+    bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
+    getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
+    getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
+    updatePermissionState() {},
+  } as unknown as SdkRuntimeDriverHost
+}
+
+async function spawnEnvFor(projection: typeof brokerProjection | { authMode: "bearer" } & Omit<typeof brokerProjection, "authMode">) {
+  const calls: Parameters<NonNullable<ClaudeSdkDriverOptions["query"]>>[0][] = []
+  const driver = createClaudeSdkDriver(turnHost(), { query: probeQuery(calls), executable: () => "/fake/claude" })
+  void driver.applyConfig({ auth: { "claude-sdk": projection }, mcp: {} })
+  await driver.runTurn({
+    sessionId: "session-env",
+    getAgentSessionId: () => "claude-sdk:session-env",
+    input: { parts: [{ type: "text", text: "hi" }], assistantMessageId: "assistant-env", model: { providerID: "claude", modelID: "auto" } },
+    directory: "/repo", abort: new AbortController(), ingest() {}, associateChild() {},
+    observeSubagent: async () => ({ event: {} }), rebindAgentSession() {}, model: "",
+  } as unknown as SdkRuntimeTurnInput)
+  return calls.at(-1)!.options!.env as Record<string, string | undefined>
+}
+
+describe("Claude spawns against the broker, never a credential", () => {
+  test("the spawn env carries the base URL and the placeholder", async () => {
+    const env = await spawnEnvFor(brokerProjection)
+
+    expect(env.ANTHROPIC_BASE_URL).toBe(brokerProjection.baseUrl)
+    expect(env.ANTHROPIC_API_KEY).toBe(brokerProjection.placeholder)
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
+    expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+  })
+
+  test("an operator's own credentials in this process do not reach the spawned harness", async () => {
+    const saved = { key: process.env.ANTHROPIC_API_KEY, oauth: process.env.CLAUDE_CODE_OAUTH_TOKEN }
+    process.env.ANTHROPIC_API_KEY = "sk-ant-api03-operator-own"
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-operator-own"
+    try {
+      const env = await spawnEnvFor({ ...brokerProjection, authMode: "bearer" })
+
+      expect(env.ANTHROPIC_AUTH_TOKEN).toBe(brokerProjection.placeholder)
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined()
+      expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+      expect(JSON.stringify(env)).not.toContain("operator-own")
+    } finally {
+      if (saved.key === undefined) delete process.env.ANTHROPIC_API_KEY
+      else process.env.ANTHROPIC_API_KEY = saved.key
+      if (saved.oauth === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN
+      else process.env.CLAUDE_CODE_OAUTH_TOKEN = saved.oauth
+    }
+  })
+
+  test("an auth map that is not projections is refused rather than run on nothing", () => {
+    const driver = createClaudeSdkDriver(turnHost(), { query: probeQuery(), executable: () => "/fake/claude" })
+
+    expect(() => driver.applyConfig({ auth: { "claude-sdk": "sk-ant-api03-plaintext" }, mcp: {} }))
+      .toThrow("not provider projections")
+  })
+})
+
+/**
+ * The broker answers a withdrawn binding with 403 and the vendor answers a bad
+ * credential with 401. Either way the CLI exits on an API error, and the turn
+ * has to reach the session as a named failure — a turn that merely stops is the
+ * hang this path exists to prevent.
+ */
+describe("a 4xx from the broker base URL ends the turn", () => {
+  for (const failure of [
+    'Claude Code process exited with code 1: API Error: 403 {"error":"binding_unavailable"}',
+    "Claude Code process exited with code 1: API Error: 401 authentication_error",
+  ]) {
+    test(failure.slice(failure.indexOf("API Error")), async () => {
+      const store = createMemoryRuntimeStore()
+      const adapter = new SdkRuntimeAdapter({
+        store,
+        driver: (host) => createClaudeSdkDriver(host, {
+          executable: () => "/fake/claude",
+          query: () => Object.assign((async function* (): AsyncGenerator<never> { throw new Error(failure) })(), {
+            close() {},
+            supportedModels: async () => [],
+          }) as unknown as Query,
+        }),
+      })
+      void adapter.applyConfig({ auth: { "claude-sdk": brokerProjection }, mcp: {} })
+      const session = await adapter.createSession("/repo", undefined, "session-403")
+      const binding = {
+        workspaceId: "workspace",
+        directory: "/repo",
+        sessionId: session.id,
+        upstreamSessionId: store.getAgentSessionId(session.id)!,
+        connectionId: "native:claude",
+      } as AgentExecutionBinding
+
+      const events: Array<{ type: string; properties?: Record<string, unknown> }> = []
+      for await (const event of adapter.executeTurn(binding, {
+        parts: [{ type: "text", text: "Reply with OK" }],
+        agent: "build",
+        assistantMessageId: "assistant-403",
+        model: { providerID: "claude", modelID: "auto" },
+      })) events.push(event as { type: string })
+
+      expect(events.at(-1)).toMatchObject({
+        type: "session.error",
+        properties: { error: { data: { message: failure, firstTurnErrorClass: "credential" } } },
+      })
+      expect(store.getMessages(session.id).at(-1)).toMatchObject({
+        info: { error: { data: { message: failure, firstTurnErrorClass: "credential" } } },
+      })
+      await adapter.dispose()
+    })
+  }
+})

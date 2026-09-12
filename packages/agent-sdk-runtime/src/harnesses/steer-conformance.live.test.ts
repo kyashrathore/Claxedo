@@ -116,17 +116,13 @@ function cursorUnavailable(): string | undefined {
   return ambientKey("CURSOR_API_KEY") ? undefined : "Cursor has no API key: set CURSOR_API_KEY"
 }
 
-/** Pi reads its key from the process the adapter spawns, and its key comes from `setAuth`. */
+/** Pi reads its key from the environment of the process the adapter spawns. */
 function piHarness(directory: string): AgentHarnessFactory {
   return harnessFactory("pi", "native", (context) => {
     const adapter = new PiHarnessAdapter({
       store: context.store,
       eventHub: context.eventHub,
       agentDir: path.join(directory, ".pi-agent"),
-    })
-    adapter.setAuth({
-      ...(process.env.ANTHROPIC_API_KEY ? { anthropic: process.env.ANTHROPIC_API_KEY } : {}),
-      ...(process.env.OPENAI_API_KEY ? { openai: process.env.OPENAI_API_KEY } : {}),
     })
     return adapter
   })

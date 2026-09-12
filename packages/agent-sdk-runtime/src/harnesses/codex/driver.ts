@@ -30,8 +30,8 @@ import {
   type SdkRuntimeDriver,
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
-  stringRecord,
 } from "../shared/sdk-runtime-adapter"
+import { assertNoProviderProjection } from "../../provider-projection"
 import {
   CODEX_PERMISSION_MODES,
   CODEX_SETTINGS,
@@ -158,14 +158,14 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   setAuth(keys: SdkRuntimeAuth) {
-    if (this.auth.mergeKeys(keys)) this.modelSource.invalidate()
+    assertNoProviderProjection("codex", keys)
   }
 
   async applyConfig(config: Record<string, unknown>) {
     const nextPluginLaunch = codexPluginLaunch(config.launch)
     await this.applyPluginLaunch(nextPluginLaunch)
-    const auth = stringRecord(config.auth)
-    if (this.auth.replaceSource(auth?.["codex-app-server"] ?? auth?.openai)) this.modelSource.invalidate()
+    assertNoProviderProjection("codex", config.auth)
+    if (this.auth.replaceSource(undefined)) this.modelSource.invalidate()
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.firstPartyMcp = firstPartyMcpProvider(config)
     const proc = this.process ?? (this.processStartup ? await this.processStartup : null)

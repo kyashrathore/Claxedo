@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { piAuthProjection, retainPiAuth, writePiAuth } from "./auth"
+import { retainPiAuth, writePiAuth } from "./auth"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
 import { PiHarnessAdapter } from "./index"
 import { createMemoryRuntimeStore } from "../../stores/memory"
@@ -46,22 +46,20 @@ test("a profile reacquired during cleanup serializes its new credential write af
   }
 })
 
-test("a shared profile keeps credentials until its final adapter is disposed", async () => {
+test("a shared managed profile survives until its final adapter is disposed", async () => {
   const f = await installFakePiRpc()
   const create = () =>
     new PiHarnessAdapter({ binary: f.binary, agentDir: f.agentDir, store: createMemoryRuntimeStore() })
   const a = create()
   const b = create()
-  const config = { auth: { "codex-app-server": JSON.stringify({ tokens: { access_token: "shared-access" } }) } }
+  const config = { auth: {} }
   const file = path.join(f.agentDir, "auth.json")
   try {
     await Promise.all([a.applyConfig(config), b.applyConfig(config)])
     await a.dispose()
     await a.dispose()
     await b.applyConfig(config)
-    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({
-      "openai-codex": { type: "api_key", key: "shared-access" },
-    })
+    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({})
     await b.dispose()
     expect(
       await fs.access(file).then(
@@ -75,29 +73,7 @@ test("a shared profile keeps credentials until its final adapter is disposed", a
   }
 })
 
-test("registry projection keeps refresh secrets out of Pi and rejects expired/malformed credentials", () => {
-  expect(
-    piAuthProjection({
-      "codex-app-server": JSON.stringify({ tokens: { access_token: "access", refresh_token: "refresh" } }),
-      anthropic: "key",
-    }),
-  ).toEqual({ "openai-codex": { type: "api_key", key: "access" }, anthropic: { type: "api_key", key: "key" } })
-  expect(() => piAuthProjection({ "codex-app-server": "null" })).toThrow("credential object")
-  expect(() => piAuthProjection({ "codex-app-server": JSON.stringify({ access: "expired", expires: 1 }) })).toThrow(
-    "expired",
-  )
-})
-
-test("a bare API key aliased into codex-app-server is OpenAI auth, never a Codex OAuth entry", () => {
-  expect(piAuthProjection({ openai: "sk-registry", "codex-app-server": "sk-registry" })).toEqual({
-    openai: { type: "api_key", key: "sk-registry" },
-  })
-  expect(piAuthProjection({ "codex-app-server": "sk-config-only" })).toEqual({
-    openai: { type: "api_key", key: "sk-config-only" },
-  })
-})
-
-test("first empty registry sync revokes stale credentials; rotation replaces the private projection", async () => {
+test("the first sync revokes a stale profile left on disk", async () => {
   const f = await installFakePiRpc()
   await writePiAuth(f.agentDir, { openai: { type: "api_key", key: "stale" } })
   const adapter = new PiHarnessAdapter({
@@ -109,10 +85,17 @@ test("first empty registry sync revokes stale credentials; rotation replaces the
   try {
     await adapter.applyConfig({ auth: {} })
     expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({})
-    await adapter.applyConfig({ auth: { anthropic: "fresh" } })
-    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({ anthropic: { type: "api_key", key: "fresh" } })
     expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
-    await adapter.applyConfig({ auth: {} })
+    await expect(adapter.applyConfig({
+      auth: {
+        anthropic: {
+          baseUrl: "http://127.0.0.1:2595/bindings/7c2d",
+          placeholder: "signed-placeholder",
+          authMode: "bearer",
+          expiresAt: 1_800_000_000_000,
+        },
+      },
+    })).rejects.toThrow("provider projection not supported by this harness yet: pi")
     expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({})
   } finally {
     await adapter.dispose()
@@ -137,8 +120,8 @@ test("an explicit native profile overrides the store default and is scrubbed on 
   }
   const file = path.join(f.agentDir, "auth.json")
   try {
-    await adapter.applyConfig({ auth: { openai: "profile-key" } })
-    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({ openai: { type: "api_key", key: "profile-key" } })
+    await adapter.applyConfig({ auth: {} })
+    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({})
     await adapter.dispose()
     expect(
       await fs.access(file).then(
