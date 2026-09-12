@@ -86,7 +86,10 @@ export function createEgressBroker(options: BrokerOptions) {
       }
       const responseHeaders = new Headers(upstream.headers)
       stripTransportHeaders(responseHeaders)
-      for (const name of [injection.header, "authorization", "x-api-key", "set-cookie"]) responseHeaders.delete(name)
+      // `fetch` has already decoded the body, so forwarding the upstream's
+      // `content-encoding` labels plaintext as gzip and the client fails
+      // decoding it (`Z_DATA_ERROR: incorrect header check`).
+      for (const name of [injection.header, "authorization", "x-api-key", "set-cookie", "content-encoding"]) responseHeaders.delete(name)
       return new Response(upstream.body, { status: upstream.status, statusText: upstream.statusText, headers: responseHeaders })
     } catch {
       return brokerErrorResponse(503, "broker_authority_unavailable")

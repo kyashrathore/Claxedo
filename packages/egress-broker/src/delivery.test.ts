@@ -79,3 +79,34 @@ test("loopback transport delivers incremental chunks and cancels upstream on cli
     adapter.dispose()
   }
 })
+
+/**
+ * `fetch` decodes the upstream body before the broker ever sees it, so a
+ * forwarded `content-encoding` describes bytes that no longer exist. Anthropic
+ * compresses its responses, and a real client reading this through the loopback
+ * listener fails with `Z_DATA_ERROR: incorrect header check`.
+ */
+test("a decoded upstream body is not relabelled with the upstream's encoding", async () => {
+  const key = new Uint8Array(32).fill(13)
+  const adapter = createGenericDeliveryAdapter({ signingKey: key, reportFailure: async () => {} })
+  const broker = await listenLoopbackBroker({
+    authority: adapter.authority,
+    verifyToken: (token) => verifyRuntimeToken(token, key),
+    fetch: (async () => new Response('{"ok":true}', {
+      headers: { "content-type": "application/json", "content-encoding": "gzip" },
+    })) as typeof fetch,
+  })
+  try {
+    adapter.activateRuntime(binding)
+    adapter.apply(binding, "key-one")
+    const projection = await adapter.project(binding.id, broker.origin, Date.now() + 60_000)
+    const response = await fetch(`${projection.baseUrl}/v1/messages`, {
+      method: "POST", headers: { "x-api-key": projection.placeholder }, body: "prompt",
+    })
+    expect(response.headers.get("content-encoding")).toBeNull()
+    await expect(response.json()).resolves.toEqual({ ok: true })
+  } finally {
+    await broker.close()
+    adapter.dispose()
+  }
+})
