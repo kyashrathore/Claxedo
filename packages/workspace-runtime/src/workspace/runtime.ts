@@ -1576,9 +1576,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             directory,
             ...(requested ? { harness: requested } : {}),
           })
-          const session = await adapter.createSession(directory, title, id, {
-            ...(create?.instructions ? { instructions: create.instructions } : {}),
-          })
+          const session = await adapter.createSession(
+            directory,
+            title,
+            id,
+            create?.instructions ? { instructions: create.instructions } : {},
+          )
           const selectedHarness = requested
             ?? sessionConfigFor({ sessionId: session.id, directory })?.harness
             ?? currentRunner()
