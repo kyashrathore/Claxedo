@@ -1,4 +1,4 @@
-FROM docker.io/cloudflare/sandbox:0.8.9
+FROM docker.io/cloudflare/sandbox:0.12.9
 
 LABEL org.opencontainers.image.source="https://github.com/kyashrathore/Claxedo"
 

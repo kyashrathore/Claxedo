@@ -189,9 +189,9 @@
   "dependencies": {
     "@claxedo/helpers": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
-    "@daytona/sdk": "0.192.0",
-    "@vercel/sandbox": "1.10.2",
-    "modal": "0.7.5"
+    "@daytona/sdk": "0.211.2",
+    "@vercel/sandbox": "3.3.0",
+    "modal": "0.10.1"
   },
   "scripts": {
     "build": "tsx scripts/build.ts",

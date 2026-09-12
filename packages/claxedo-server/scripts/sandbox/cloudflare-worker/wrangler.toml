@@ -1,11 +1,7 @@
 name = "claxedo-sandbox-proxy"
 main = "src/index.ts"
-# HELD at 2025-04-01 deliberately (D3, 2026-07-27) — do not bulk-bump.
-# This Worker is the @cloudflare/sandbox container host, and its SDK is pinned
-# at 0.8.9 (0.12.4 is current). Container semantics are exactly what moved in
-# the gap — e.g. containers_pid_namespace defaults on at 2026-04-01 — so the
-# compatibility date and @cloudflare/sandbox SDK must still move together in a
-# separately supervised change with a real deployment behind it.
+# Container PID namespace semantics change at 2026-04-01. Advancing this date
+# requires a deployed runtime lifecycle check, independent of the SDK pin.
 #
 # Wrangler is pinned independently at 4.127.1. Its bundled Miniflare owns local
 # Container supervision; 4.50.0 repeatedly lost a healthy local container and
