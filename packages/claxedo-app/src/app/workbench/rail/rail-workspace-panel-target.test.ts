@@ -4,9 +4,17 @@ import { createRoot } from "solid-js"
 import type { ContentMeta } from "../state/types"
 import { useRailWorkspacePanelTarget } from "./rail-workspace-panel-target"
 import {
+  workspacePanelFullWidthNavigatorTarget,
   workspacePanelMatchesFocusedPane,
   workspacePanelTopLevelOpenTarget,
 } from "./workspace-panel-visual-state"
+
+const browserSurface = {
+  id: "browser",
+  kind: "browser",
+  browserId: "workspace-browser:/repo/main",
+  url: "http://localhost:6006",
+} as const
 
 describe("workspacePanelMatchesFocusedPane", () => {
   test("treats directory aliases in the same pane as one UI target", () => {
@@ -43,6 +51,7 @@ describe("workspacePanelTopLevelOpenTarget", () => {
     expect(workspacePanelTopLevelOpenTarget(
       { workspaceDir: "/repo/main", targetPaneId: "pane-original" },
       { workspaceDir: "/repo/main", targetPaneId: "pane-focused" },
+      undefined,
     )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-original", navigator: "files", focus: { kind: "review" } })
   })
 
@@ -50,13 +59,15 @@ describe("workspacePanelTopLevelOpenTarget", () => {
     expect(workspacePanelTopLevelOpenTarget(
       { workspaceDir: "/repo/old", targetPaneId: "pane-old" },
       { workspaceDir: "/repo/new", targetPaneId: "pane-new" },
+      undefined,
     )).toEqual({ workspaceDir: "/repo/new", targetPaneId: "pane-new", navigator: "files", focus: { kind: "review" } })
   })
 
-  test("preserves an already selected surface", () => {
+  test("keeps the navigator column the user opened", () => {
     expect(workspacePanelTopLevelOpenTarget(
       { workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes" },
       { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+      undefined,
     )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes", focus: { kind: "review" } })
   })
 
@@ -68,7 +79,43 @@ describe("workspacePanelTopLevelOpenTarget", () => {
         focus: { kind: "file", path: "src/pending.ts", intent: "tab", version: 1 },
       },
       { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+      undefined,
     )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "files" })
+  })
+
+  test("names neither navigator nor focus for a surface the user chose", () => {
+    expect(workspacePanelTopLevelOpenTarget(
+      { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+      { workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+      browserSurface,
+    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-1" })
+  })
+})
+
+describe("workspacePanelFullWidthNavigatorTarget", () => {
+  test("fills an empty column on a panel resting on Review", () => {
+    expect(workspacePanelFullWidthNavigatorTarget(
+      { open: true, workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+      undefined,
+    )).toEqual({ workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "changes" })
+  })
+
+  test("leaves a surface the user chose full-bleed", () => {
+    expect(workspacePanelFullWidthNavigatorTarget(
+      { open: true, workspaceDir: "/repo/main", targetPaneId: "pane-1" },
+      browserSurface,
+    )).toBeUndefined()
+  })
+
+  test("leaves an existing navigator column alone", () => {
+    expect(workspacePanelFullWidthNavigatorTarget(
+      { open: true, workspaceDir: "/repo/main", targetPaneId: "pane-1", navigator: "files" },
+      undefined,
+    )).toBeUndefined()
+  })
+
+  test("does nothing for a closed panel", () => {
+    expect(workspacePanelFullWidthNavigatorTarget({ open: false }, undefined)).toBeUndefined()
   })
 })
 

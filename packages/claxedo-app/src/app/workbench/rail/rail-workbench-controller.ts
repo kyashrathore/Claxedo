@@ -122,6 +122,7 @@ export function useRailWorkbenchController(input: {
     registerWorkspacePanelFloatingChrome: panelVisual.registerWorkspacePanelFloatingChrome,
     registerWorkspacePanelShell: panelVisual.registerWorkspacePanelShell,
     registerWorkspacePanelWorkbenchColumn: panelVisual.registerWorkspacePanelWorkbenchColumn,
+    seedWorkspacePanelNavigatorForFullWidth: panelVisual.seedWorkspacePanelNavigatorForFullWidth,
     selectSurface: headerSurfaces.selectSurface,
     switcherItems: headerSurfaces.switcherItems,
     toggleFocusedWorkspaceNavigator: panelVisual.toggleFocusedWorkspaceNavigator,

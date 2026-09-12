@@ -26,13 +26,13 @@ import { loadTerminalSessionPreview } from "../../../features/terminal/lib/termi
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { reviewRegionPolicy } from "../../review/review-region-policy"
 import { isWorkspaceReady, workspaceOffline } from "../../../features/workspaces/data/workspace-connection"
-import { reviewWorkspaceWorkingSetKey, type ReviewWorkspaceWorkingSetSnapshot } from "../review/review-workspace-working-set"
-import type { ReviewVcsDirectory } from "@/features/review/ui/review-vcs-cache"
+import type { ReviewWorkspaceWorkingSetSnapshot } from "../review/review-workspace-working-set"
 import { createPathHelpers } from "@/platform/files/path"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import { useSettings } from "@/platform/settings/provider"
 import { ReviewWorkspace } from "./workspace-panel-review-load"
+import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey } from "./workspace-panel-working-set"
 
 const PANEL_NAVIGATOR_TRANSITION = "transform 120ms cubic-bezier(0.2, 0, 0, 1), width 120ms cubic-bezier(0.2, 0, 0, 1)"
 
@@ -77,23 +77,6 @@ function isConsumedPanelFocus(value: WorkspacePanelFocus, consumed: ConsumedPane
     consumed.kind === value.kind &&
     consumed.target === panelFocusTarget(value)
 }
-/** The only review target this panel mounts today; see `reviewWorkspaceKey`. */
-export const PANEL_REVIEW_MODE = "uncommitted" as const
-
-/**
- * Identity of the retained working set for this panel's review target — the
- * one key the body's load/store and the rail's click-time prefetch resolve,
- * so a warm-up and the mounted surface can never disagree on the entry.
- */
-export function panelReviewWorkingSetKey(input: ReviewVcsDirectory) {
-  return reviewWorkspaceWorkingSetKey({
-    serverUrl: getClaxedoServerUrl(),
-    workspaceId: sessionWorkspaceRuntimeRef({ directory: input.directory })?.workspaceId,
-    workspaceDir: input.directory,
-    mode: PANEL_REVIEW_MODE,
-  })
-}
-
 /**
  * The file path the working set's active tab points at, if the active tab is
  * a file tab. The files navigator restores its selection from this on reopen;

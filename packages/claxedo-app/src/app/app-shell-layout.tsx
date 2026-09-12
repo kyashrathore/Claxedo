@@ -318,11 +318,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     const fullWidth = next.regions.workspacePanel.size.unit === "percent" &&
       next.regions.workspacePanel.size.value === 100
     shellLayout.dispatch("workspacePanelSize", fullWidth ? command : undefined)
-    // Full view has room for a navigator column; an unselected one leaves it empty.
-    const panel = claxedoState.workspacePanel.state()
-    if (fullWidth && panel.open && !panel.navigator) {
-      claxedoState.workspacePanel.retarget({ workspaceDir: panel.workspaceDir, targetPaneId: panel.targetPaneId, navigator: "changes" })
-    }
+    if (fullWidth) workbenchController.seedWorkspacePanelNavigatorForFullWidth()
     emitTerminalFit()
   }
   const toggleWorkspacePanel = (button: HTMLButtonElement) => {

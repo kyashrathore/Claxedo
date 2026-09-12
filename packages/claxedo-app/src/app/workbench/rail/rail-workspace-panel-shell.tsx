@@ -12,7 +12,8 @@ import { useSDK } from "@/features/review/app-ports"
 import { createReviewDiffClient, fetchReviewVcsDiffSummary } from "@/features/review/ui/review-vcs-load"
 import type { useClaxedoState } from "../state/index"
 import { WorkspacePanelHeader } from "./workbench-shell-header"
-import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey, WorkspacePanelBody } from "./workspace-panel-body"
+import { WorkspacePanelBody } from "./workspace-panel-body"
+import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey } from "./workspace-panel-working-set"
 import { warmWorkspacePanelReview } from "./workspace-panel-review-load"
 
 type RailWorkspacePanelState = ReturnType<typeof useClaxedoState>

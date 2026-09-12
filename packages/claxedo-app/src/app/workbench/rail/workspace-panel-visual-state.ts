@@ -6,8 +6,10 @@ import {
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import type { ClaxedoStateApi } from "../state/provider"
 import { isWorkspaceReady } from "../../../features/workspaces/data/workspace-connection"
+import type { ReviewWorkspaceTab } from "@/features/review/ui/review-workspace-tabs"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { createWorkspacePanelMotionState } from "./workspace-panel-motion-state"
+import { workspacePanelChosenSurface } from "./workspace-panel-working-set"
 
 export function workspacePanelMatchesFocusedPane(input: {
   open: boolean
@@ -32,24 +34,53 @@ export function workspacePanelTopLevelOpenTarget(
     focus?: unknown
   },
   target: WorkspacePanelPaneTarget,
+  chosenSurface: ReviewWorkspaceTab | undefined,
 ) {
-  return {
+  const paneTarget = {
     workspaceDir: target.workspaceDir,
     targetPaneId: panel.workspaceDir === target.workspaceDir
       ? panel.targetPaneId ?? target.targetPaneId
       : target.targetPaneId,
-    // A first top-level open has no prior surface to restore. Files is the
-    // useful workspace default and lets the shell begin loading the tree at
-    // the opening click; later closes/reopens preserve the user's selection.
+  }
+  // Naming neither navigator nor focus leaves both as the user left them, so
+  // the surface they picked comes back instead of being reopened underneath
+  // Files and Review.
+  if (chosenSurface) return paneTarget
+  return {
+    ...paneTarget,
+    // Files is the useful workspace default and lets the shell begin loading
+    // the tree at the opening click.
     navigator: panel.navigator ?? "files",
     // The physical top-level button means “open Workspace”, whose primary
     // surface is Review. Preserve every warm inner tab in the working set, but
-    // explicitly reactivate Review instead of restoring an arbitrary process
-    // or file tab from the last close.
+    // activate Review rather than an arbitrary tab from the last close.
     // A focus request still present here has not been consumed (consumption
     // clears it in WorkspacePanelBody). It represents a more recent explicit
     // file/process/context action and must win over the generic open button.
     ...(panel.focus ? {} : { focus: { kind: "review" as const } }),
+  }
+}
+
+/**
+ * Full view has room for a navigator column, and an unselected one leaves it
+ * empty. Returns the retarget that fills it, or nothing when the panel already
+ * has a column or is showing a surface the user chose — Browser and file tabs
+ * run full-bleed, so a column slides over what they came to look at.
+ */
+export function workspacePanelFullWidthNavigatorTarget(
+  panel: {
+    open: boolean
+    workspaceDir?: string
+    targetPaneId?: string
+    navigator?: "files" | "changes" | "processes"
+  },
+  chosenSurface: ReviewWorkspaceTab | undefined,
+) {
+  if (!panel.open || panel.navigator || chosenSurface) return undefined
+  return {
+    workspaceDir: panel.workspaceDir,
+    targetPaneId: panel.targetPaneId,
+    navigator: "changes" as const,
   }
 }
 
@@ -170,6 +201,11 @@ export function useWorkspacePanelVisualState(input: {
     return true
   }
 
+  const chosenSurface = (workspaceDir: string | undefined) => workspacePanelChosenSurface({
+    reviewWorkingSet: input.claxedoState.workspacePanel.reviewWorkingSet,
+    workspaceDir,
+  })
+
   const toggleFocusedWorkspaceNavigator = (navigator: "files" | "changes" | "processes") => {
     const opened = openFocusedWorkspacePanel({
       navigator: workspacePanelForFocusedTarget() && workspacePanelNavigator() === navigator ? null : navigator,
@@ -189,15 +225,22 @@ export function useWorkspacePanelVisualState(input: {
     const workspaceDir = target?.workspaceDir
     if (!workspaceDir) return
     motion.setVisualPhase(true, button)
-    // The panel state preserves the warm working set. The target carries a
-    // Review focus request so both a fresh remount and an interrupted reopen
-    // activate the panel's primary surface without discarding those tabs.
-    input.claxedoState.workspacePanel.open("review", workspacePanelTopLevelOpenTarget(panel, target))
+    input.claxedoState.workspacePanel.open(
+      "review",
+      workspacePanelTopLevelOpenTarget(panel, target, chosenSurface(workspaceDir)),
+    )
+  }
+
+  const seedWorkspacePanelNavigatorForFullWidth = () => {
+    const panel = input.claxedoState.workspacePanel.state()
+    const target = workspacePanelFullWidthNavigatorTarget(panel, chosenSurface(panel.workspaceDir))
+    if (target) input.claxedoState.workspacePanel.retarget(target)
   }
 
   return {
     focusedPanelTarget: input.focusedPanelTarget,
     hasWorkspacePanelTarget,
+    seedWorkspacePanelNavigatorForFullWidth,
     toggleFocusedWorkspaceNavigator,
     toggleFocusedWorkspaceReview,
     registerWorkspacePanelFloatingChrome: motion.registerFloatingChrome,
