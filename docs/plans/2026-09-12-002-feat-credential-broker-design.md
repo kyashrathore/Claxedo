@@ -14,7 +14,8 @@ It also introduces personal accounts. **An identity is a user.** Every user gets
 - **Unsigned local:** no hosted control plane is involved until the user signs in. Credentials saved unsigned live in the local registry on the laptop (SQLite metadata, the encrypted-file secret backend) and are bound through the loopback broker to local workspaces and Docker sandboxes on that laptop. Nothing leaves the machine. A harness with its own CLI login may also run on that login, as today.
 - **Signed in:** saved credentials live in the hosted control plane and are automatically eligible for cloud use. No separate cloud-consent toggle; the consent flag and its check are deleted. A signed desktop's local workspaces and Docker sandboxes use the same loopback broker, which pulls the bound credential's current revision from the hosted store (section 4). The local registry serves unsigned use only; a signed user's credentials are hosted, not copied down into it.
 - **Per-sandbox attachment:** resolve the credential selection when creating a sandbox. By default, include the user's eligible AI provider credentials. “Include” grants use through native binding or the gateway; it does not mean copying the original secret into the VM.
-- **Proposed setting:** project → sandbox credentials, with a per-user selection so one collaborator cannot choose another's personal accounts. Changes affect new sandboxes. Exact UI placement remains open; no new creation-time prompt is required.
+- **Selection:** a user's AI provider accounts are global across projects: the user adds accounts and marks one active per provider in Settings → Providers, and that choice follows the user into every sandbox they create. The per-project setting has one entry today, "attach my AI provider accounts on every sandbox creation", on by default. An admin binds a team account to a project; sandboxes for that project use it for any member with no active personal account for that provider. More per-project and per-sandbox-creation settings may come later; none is designed here.
+- **Resolution order at sandbox creation, per provider:** the user's active personal account, else the project's team binding, else the implicit tier (the harness's own CLI login, local only).
 - **Routing:** model credentials use verified native binding where supported and our credential gateway otherwise. Authenticated remote MCP retains the existing MCP gateway. Public MCP and local plugin execution do not automatically acquire a gateway hop.
 
 Hosted storage eligibility and attachment are separate: saving makes a credential available for selection; project settings determine whether a particular sandbox receives authority to use it. Vendor expiry/revocation can still prevent requests. These are operational conditions, not another consent workflow.
@@ -113,7 +114,7 @@ Three proposed records/responsibilities replace the raw-secret handoff:
 | Delivery adapter | Installs, rotates, and withdraws that authority through a provider edge or generic broker |
 | Projection | The endpoint, auth mode, and placeholder the harness receives |
 
-For signed-in use, hosted credential storage remains authoritative for credential bytes. The control plane resolves the user's project selection at sandbox creation and owns bindings. Drivers implement delivery mechanics. Harness adapters translate projections into their native configuration. Unsigned local use creates local bindings against the local registry and never touches the hosted control plane; it uploads nothing.
+For signed-in use, hosted credential storage remains authoritative for credential bytes. The control plane resolves the user's active accounts and the project's team bindings at sandbox creation and owns bindings. Drivers implement delivery mechanics. Harness adapters translate projections into their native configuration. Unsigned local use creates local bindings against the local registry and never touches the hosted control plane; it uploads nothing.
 
 A binding's **request policy** is part of the binding, not a follow-up: allowed methods and path prefixes per destination (a model binding allows the vendor's messages and responses paths; a GitHub binding the repository's paths; an MCP binding its one resource). The generic broker enforces it with 403; Vercel enforces it with rule matchers; Daytona and Cloudflare cannot express it, so on those drivers the egress allowlist is the only bound and the document says so per driver in Appendix C.
 
@@ -123,7 +124,7 @@ The credential gateway and the existing MCP gateway are **one service**: both re
 
 This is the proposed model-credential flow, using Daytona’s existing secret-substitution mechanism.
 
-1. Alice opens workspace W. When creating her sandbox, the control plane checks her access, resolves her project's credential selection (AI provider credentials included by default), and creates binding B for lease L for the selected Anthropic account.
+1. Alice opens workspace W. When creating her sandbox, the control plane checks her access, resolves her active Anthropic account (her personal one, else the project's team binding), and creates binding B for lease L.
 2. The Daytona adapter stores the real Anthropic key in Daytona’s secret system, restricted to `api.anthropic.com`, and attaches that secret to the sandbox at creation.
 3. Inside the sandbox, the mapped environment variable contains an opaque placeholder such as `dtn_secret_…`. The runtime configures Claude’s API-key slot with that placeholder, not the original key.
 4. Claude sends `POST https://api.anthropic.com/v1/messages` with `x-api-key: dtn_secret_…`.
@@ -161,7 +162,7 @@ Record the selected region/endpoints on the lease and preserve that placement th
 | Broker token expires | Renew delegated access without exposing the original key | A one-hour token can expire during a long turn; next-turn restart is insufficient |
 | Credential is withdrawn | Deny new requests without waiting for the sandbox to reconnect | Native propagation windows, consistent state reads, and in-flight behavior |
 | Sandbox wakes or is replaced | Reconcile current bindings before ready; reject the old lease generation | Every create/wake route must enforce this |
-| Project credential selection changes | Apply the selection to new sandboxes; do not silently replace authority in an existing sandbox | Explicit replacement/resume UX, if needed |
+| The user marks another account active, or an admin rebinds the project's team account | Applies to new sandboxes; an existing sandbox keeps its identity until destroyed | The Providers page names the sandboxes still on the old account |
 | Loopback broker on a signed desktop needs a value | Pull the binding's current revision from the hosted store, cache it in the local server process only, re-pull on a revision change pushed with the config | The local server process holds the value; the harness process never does. This is the local guarantee and the whole of it |
 | A wake or scheduled turn fires for a session | Runs in the session owner's sandbox with the owner's authority | This replaces the connections kit's rule that automation never spends a personal token; the kit's resolver takes the session owner as the subject |
 
@@ -190,7 +191,7 @@ Unsigned local use keeps the local registry and retains local harness authentica
 | Decision | Required answer |
 | --- | --- |
 | Identity and workspace behavior | **Decided:** identity is the user; one sandbox and checkout per `(workspace, user)`; sessions owner-driven. Remaining: the lease-key change across every table keyed by workspace alone |
-| Credential selection | Proposed project setting per user; AI providers included by default; apply on sandbox creation; exact UI placement remains open |
+| Credential selection | **Decided:** personal accounts global, active per provider in Settings; team accounts bound to a project by an admin; resolution order personal → team → implicit; the project setting is one default-on switch for now |
 | Broker lifecycle | Active-turn renewal, accepted bearer replay, refresh coordination, revocation timing, and recovery after partial failure |
 | Supported combinations | Real tests for each retained harness × auth mode × driver, including streaming, cancellation, native auth files, and policy enforcement |
 | Regional placement | Coordinate VM, relay, and gateway selection; measure backing-state latency and define cross-region failure behavior |
@@ -211,7 +212,7 @@ The v3 reader is deleted with the plaintext producer; runtimes receive projectio
 
 Completion requires a real turn using the intended vendor account, original credentials absent from isolated runtimes (env, `/proc/*/environ`, disk), cross-org and cross-lease token rejection, replay after withdrawal rejected, a 401 on a stale revision not failing the current one, a request outside policy refused with 403, a 3xx from the vendor returned as 502 without `Location`, two users on one workspace each in their own sandbox on their own account verified by the vendor-side account id, a wake running in the owner's sandbox, `~/.codex/auth.json` on the operator's machine byte-identical across a Codex turn, and no silent switch to ambient auth. Source searches supplement these checks; they cannot prove old snapshots or files are clean.
 
-This plan replaces design 001's delivery proposal and its "active account per provider" with per-project, per-user selection at sandbox creation. Design 001 is superseded in full except for its stress-test findings and live-test record, which remain the evidence for section 2.
+This plan replaces design 001's delivery proposal. Design 001 keeps the accounts model (add accounts, one active per provider, in Settings) and is revised to sequence the accounts work on top of this document.
 
 **Benefit:** agents can use selected network credentials without receiving their original values. **Cost:** trusted traffic handling, lifecycle coordination, and potentially multiple execution environments per workspace.
 

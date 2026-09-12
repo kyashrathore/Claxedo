@@ -1,77 +1,51 @@
 # Provider accounts: one provider, many logins, one active
 
-Status: proposed; not started
+Status: proposed; slice 1 not started
 Date: 2026-09-12
 Owner: Yash Rathore
-Decision 2026-09-12: the active account is chosen per provider in Settings,
-not per session. An earlier draft of this document proposed a per-session
-picker; that model is recorded under Non-goals.
-Superseded in part 2026-09-12 (night): how a chosen account reaches a
-harness (sections 2, 4, 6, Phase 3) is now decided by
-`2026-09-12-002-feat-credential-broker-design.md`, which replaces the
-plaintext push with edge brokering and adds the personal/team owner.
-Revised 2026-09-12, evening: Settings → Providers changed underneath this
-plan the same day (commit `85f1d007c8`). The three native harnesses now
-connect inline in an inset card with the server's methods, Claude's
-subscription token is one of those methods, and a login found on the
-machine is saved from its row. Sections 5 and 7 describe the accounts UI on
-that surface; the phase lists mark what already landed.
+Revision 4, 2026-09-12 (night). Delivery of a chosen account to a harness
+is decided by `2026-09-12-002-feat-credential-broker-design.md`; this
+document keeps the accounts model and sequences it on top of that one.
+The earlier per-session picker, the per-account `CODEX_HOME`, refresh
+write-back through the app-server, and the fanout "send the active row"
+are gone with the plaintext push they assumed. The Background, Prior art,
+stress test and live test sections are unchanged evidence.
 
 ## Summary
 
-Today Claxedo can remember several logins for the same provider (two ChatGPT
-accounts for Codex, two Anthropic logins for Claude) but only *uses* one of
-them: whichever sorts first in a preference order the user never sees. Adding
-a second login can silently change which one every session runs on.
+A provider can hold many accounts for one user: two ChatGPT logins, a
+Claude subscription token and an API key. The user marks one **active per
+provider** in Settings → Providers, and that choice is global: it follows
+the user into every sandbox they create, on every project. An admin can
+bind a **team account** to a project, used by any member who has no active
+personal account for that provider. With nothing bound, a harness runs on
+its own CLI login on the laptop, and Claxedo never imports that login as a
+row.
 
-This document makes the choice explicit and visible. Every stored login is an
-**account**. In **Settings → Providers**, each set-up harness lists its
-accounts, and one of them carries an **Active** mark with a **Make active**
-button on the others. Every session, in every workspace, runs on the active
-account for its provider. Switching takes effect at each session's next turn.
-Nothing else in the product changes for a user with one login per provider.
-
-The change is small. The database already stores multiple accounts per
-provider. The harness drivers already re-authenticate a running process when
-their configuration changes. What is missing is an explicit "active" flag,
-a button that sets it, and two hygiene fixes: refreshed tokens are written to
-the wrong place, and ambient environment variables can silently beat the
-account the user chose.
+Delivery is the broker doc's: the account's value never enters a sandbox;
+the harness gets a base URL and a placeholder. That is what makes a second
+Codex account safe at all, because the app-server no longer writes the
+account into `~/.codex/auth.json`.
 
 ## Goals
 
-1. A user with two or more logins for one provider chooses which one is in
-   use, from one place, with the result visible before and after.
-2. The choice is explicit and persisted. It never changes because of an
-   environment variable, a file on disk, or a newer login being added.
-3. Switching applies to running sessions at their next turn boundary without
-   restarting anything the user can see.
-4. Refreshed tokens are written back to where the credential came from, so a
-   restart does not resurrect a stale token.
-5. Works the same on the local machine and in a cloud sandbox, using the
-   existing credential scope and consent rules.
-6. A user with one login per provider sees no new UI.
+- Add a second (or third) account for Claude and Codex through the inline
+  Connect card that already exists, and see all of them listed.
+- One click makes an account the active one for that provider. New
+  sandboxes and the next local turn use it; running sandboxes keep the
+  identity they were created with.
+- Team accounts an admin binds to a project, used automatically.
+- The Providers page shows each account's last live check, usage windows,
+  expiry, and which sandboxes it is bound into.
 
 ## Non-goals
 
-- **Per-session accounts.** Two sessions in one workspace running on two
-  accounts of the same provider concurrently. Rejected for this iteration:
-  it needs one harness process per account, a routing key on every session,
-  and a picker in the composer. The active account is resolved in exactly
-  one function, so a later per-session override would be a change at that
-  one point plus the adapter key, not a redesign.
-- **Automatic failover** when an account hits a rate limit. The `rate-limit`
-  events it needs already exist in
-  `packages/agent-event-runtime/src/contracts/agent-runtime-event.ts`; no
-  policy ships here.
-- **An OAuth client for Anthropic.** The endpoints Claude Code uses are not a
-  published contract.
-- **User-defined provider instances** in the t3code sense (a slug plus a bag
-  of environment variables). Accounts here are real logins and keys.
-- Cursor and Pi. Pi projects credentials through its own path
-  (`pi-provider-projection.ts`); Cursor's driver has no explicit-auth path.
-  Both keep working on the active account and gain the account list only
-  when their drivers accept explicit auth.
+- Choosing an account per session, per turn, or per project for personal
+  accounts. Personal accounts are global. Per-project and per-sandbox-
+  creation settings beyond the one default-on switch are future work.
+- Failing over to another account when one hits a rate limit.
+- Importing the machine's own CLI logins as rows (findings 2 and 13 below).
+- Anything about how the value reaches the harness (the broker doc).
 
 ## Background: how it works today
 
@@ -196,279 +170,146 @@ Multiple rows, one winner, chosen by an invisible sort order.
 
 ## Proposed design
 
-### The concept
+### Rules
 
-An **account** is one row of `claxedo_provider_credential`. For each
-`(org, provider)` at most one row is **active**. The fanout sends the active
-row's secret and nothing else. The user sets which row is active from
-Settings → Providers. There is no other rule.
+1. **Personal accounts are global.** A row belongs to a user (`owner`), and
+   the user marks one row **active per provider**. The mark is on the
+   `ControlPlaneCredentials` contract (`setActiveCredential`), unique per
+   `(owner, provider)`: SQLite gets `is_active` with a partial unique index
+   on `(org_id, owner, provider_id) WHERE is_active = 1`; the replaced
+   hosted store enforces the same in its one write.
+2. **Team accounts are bound to a project by an admin.** A team row has an
+   empty owner. The project binding names one team row per provider.
+3. **Resolution at sandbox creation, per provider:** the creating user's
+   active personal row, else the project's team binding, else nothing (the
+   implicit tier, local only). The result is recorded on the lease and does
+   not change for that sandbox's life (broker doc, section 5).
+4. **Marking another account active applies to new sandboxes.** A running
+   sandbox keeps its account until destroyed. A local workspace's next turn
+   uses the new account, because local runtimes are rebound through the
+   loopback broker at the turn boundary and the operator is the only
+   identity on the laptop.
+5. **Deleting the active row leaves the provider with no active account.**
+   Nothing is promoted. The row in Settings says "choose an account"; a new
+   sandbox for that provider falls to the team binding, else the implicit
+   tier. Sandboxes already bound to the deleted row lose it (broker doc,
+   withdraw), and the session says so.
+6. **A saved row is active when it is the first for its provider.** A later
+   save never steals the mark. One-account users see no new UI.
+7. **Identity per row**, so the list is legible: Codex rows carry the
+   ChatGPT account id and email from the token claims; a pasted Claude
+   token or API key carries a fingerprint (hash prefix plus the last four
+   characters) and the user's label; a second paste is a second row, never
+   an overwrite.
 
-### 1. Storage: an explicit active flag, one per provider
+### Claude accounts
 
-Owner: `packages/claxedo-server-core/src/credentials/provider-credential.sql.ts`,
-a new migration under `platform/db/claxedo-migration/`, `credentials/registry.ts`.
+Unchanged from revision 3: a second Claude account is a `claude
+setup-token` pasted in the inline card (the `token` method landed
+2026-09-12). It lasts a year and nothing renews it; the row shows its
+expiry, and the live check (usage read) shows when it stops working. The
+option table and the token's documented properties are kept below in the
+stress-test section's evidence.
 
-- The active mark is an operation on the `ControlPlaneCredentials` contract
-  (`authority/control-plane-contract.ts`): `setActiveCredential(id, org)`,
-  and `is_active` on `CredentialMetadata`. Two adapters implement it: the
-  Node registry on SQLite, and the hosted Worker's envelope-encrypted KV
-  store (`claxedo-server/src/credentials/worker`), which never loads the
-  SQLite registry. Uniqueness lives in the adapter: SQLite gets the column
-  `is_active integer NOT NULL DEFAULT 0` and a partial unique index on
-  `(org_id, provider_id) WHERE is_active = 1`; the KV adapter clears and
-  sets inside its one write.
-- Migration backfill: for each `(org_id, provider_id)`, mark active the row
-  that `providerPreference` orders first among fanout-eligible rows. The
-  invisible rule runs exactly once, at migration, and becomes a visible mark.
-- `putCredential`: when a provider has no active row in the org, the row
-  being written becomes active. A later write never steals the mark. This
-  is the "one login per provider sees no new UI" guarantee.
-- `setActiveCredential(id, org)`: one transaction that clears the provider's
-  mark and sets it on `id`. Refuses a row that is not fanout-eligible
-  (`fanoutEligible`, `registry.ts:560`).
-- `deleteCredential` of the active row leaves the provider with **no active
-  account**. It does not promote another. The provider shows as needing a
-  choice in Settings and its harness reports "not connected" until the user
-  clicks. A running session must never move to a different account because
-  a row was deleted.
-- `preferredCredentialPerProvider` and `providerPreference` are deleted
-  after the migration ships. Nothing else may pick a winner.
+### Codex accounts
 
-Identity per login, so the list is legible:
+A second ChatGPT login through the existing OAuth flow, upserted by account
+id so it never wipes the provider's other rows. **Codex accounts cannot
+ship before the broker:** on today's delivery the app-server writes whatever
+it is logged in with into the operator's `~/.codex/auth.json` (finding 12),
+so every switch would rewrite that file. Slice 4 below waits for broker
+feasibility item 4 (a ChatGPT token used through a base URL the app-server
+never holds the token for).
 
-- Codex: unchanged. `account_id` is the ChatGPT account id from the token
-  claims; the label carries the email when the sync saw one.
-- Claude Code login sync: set `account_id` from the CLI's own account record
-  (`~/.claude.json` carries `oauthAccount.accountUuid` and `emailAddress`).
-  Evidence-based inference; verify the field names on a real install.
-  Without an id, two Claude logins cannot coexist as rows.
-- API keys: `account_id` is a stable fingerprint of the key (a hash prefix
-  plus the last four characters) and the user's label is the display name.
+### Settings → Providers
 
-### 2. Fanout: send the active row
+Each harness row keeps what it has: connect inline, "In use", Check. It
+gains:
 
-Owner: `credentials/registry.ts`, `agent-config/index.ts`.
+- an **accounts list** under the row: label, account id or email, last
+  check and usage windows, expiry, and the sandboxes the account is bound
+  into; the active one carries an **Active** tag, the others a **Make
+  active** button;
+- **Add account**, which opens the same inline card;
+- for admins, on a project's settings page, **Team account** per provider
+  and the one default-on switch "attach my AI provider accounts on every
+  sandbox creation".
 
-`resolveSecretsForScope` filters to `is_active = 1` instead of collapsing.
-The snapshot's `auth: Record<providerId, secret>` shape and `version: 3`
-are unchanged; no consumer changes.
+The "In use" line I landed on 2026-09-12 stays: on the laptop it names the
+account the next local turn runs on; for a cloud workspace it names the
+account each sandbox was created with.
 
-Scope and consent are unchanged and apply to the active row: for a sandbox
-(`scope: "shared"`), if the active account has not been consented for
-sharing, the sandbox receives no credential for that provider. The Settings
-row shows "not shared with sandboxes" on such an account so the user sees
-why a cloud session is unauthenticated, instead of the sandbox silently
-using a different account.
+## Sequencing
 
-### 3. Switching: apply at the next turn boundary
+Four slices, each usable on its own. Slices 1 and 2 need nothing from the
+broker doc; slices 3 and 4 are the broker doc's steps 3 to 6 seen from the
+accounts side.
 
-Owner: `packages/workspace-runtime/src/workspace/runtime.ts`.
+### Slice 1: accounts and the active mark, Claude, local
 
-Clicking **Make active** calls `POST /credentials/:id/activate`, the registry
-flips the mark, and the route calls `fanOutConfig` so every supervised
-sandbox and embedded runtime receives a new snapshot. Today no credential
-route fans out; only the MCP and connection routes do
-(`agent-config/fanout.ts`), so a saved key reaches a sandbox on its next
-restart. The activate, put and delete routes all gain the call. The
-workspace runtime's existing apply path then pushes the new `auth` into the
-adapter.
+- `owner` and `is_active` on the local registry; `setActiveCredential`;
+  identity per row; the first-save rule; deletion leaves no active.
+- The accounts list, Active, Make active, Add account on the Claude row.
+- Claude switches on today's delivery: the next local turn spawns with the
+  new account's token. No file is written, the operator's login is untouched.
 
-One change in that path: the wait for active turns at line 1318 today covers
-only ACP connections. It extends to native adapters. A Codex process that is
-mid-turn on account A finishes that turn, then `syncProcessAuth` logs it in
-as account B before the next turn starts. The Claude driver spawns a CLI per
-query with the auth in its environment, so a running turn keeps its process
-and the next turn picks up the new token with no driver change.
+Acceptance:
+- [ ] Two Claude rows (a setup-token and an API key) listed under the row
+      with distinct identities; Make active flips the tag; `GET
+      /credentials` shows exactly one active row for `claude-sdk`.
+- [ ] A local Claude turn after the switch runs on the new account,
+      verified by the live check's usage read matching that account.
+- [ ] Deleting the active row: the row reads "choose an account"; the next
+      turn runs on the machine login and the session names it as such.
+- [ ] Inserting two active rows for one `(owner, provider)` fails at the
+      database, asserted by a test.
+- [ ] `bun run test:architecture-ratchets` green; the affected packages'
+      own typecheck and tests green.
 
-No adapter re-keying. One adapter per harness, as today. No extra processes.
+### Slice 2: the hosted store
 
-Codex thread continuity across accounts: the thread rollout lives in the
-shared `CODEX_HOME/sessions`, so a thread started under A should resume
-under B. Verify with two real accounts before Phase 1 closes; if it does not,
-the session shows "restart this session to use the new account" rather than
-failing mid-turn.
+- Replace the one-row-per-provider KV adapter with a store that holds many
+  rows per provider, an owner per row, enumeration, and the active mark
+  (broker doc, step 3). No migration of existing rows.
+- Slice 1's UI works signed in against it.
 
-### 4. Codex driver: refresh writes back to its source
+Acceptance:
+- [ ] Slice 1's first two boxes pass on a signed deployment.
+- [ ] Two users in one org each hold their own active Claude account and
+      neither can list or activate the other's.
 
-Owner: `harnesses/codex/driver.ts`, `harnesses/codex/auth-file.ts`.
+### Slice 3: team accounts and sandbox binding
 
-Rule: **the registry is the source; the CLI's file is kept in step only for
-a login imported from it.**
+- Team rows (empty owner), the project's team binding, the default-on
+  switch, and the resolution order at sandbox creation; the identity
+  recorded on the lease (broker doc, steps 4 and 5).
+- The accounts list shows which sandboxes each account is bound into.
 
-- Auth supplied by the registry (`this.codexAuth` set from `applyConfig`):
-  the driver does not write `auth.json` itself. It emits the refreshed
-  bundle through the driver host; the workspace runtime forwards it to the
-  server, which calls `updateCredentialSecret` on the same row (same
-  `account_id`, so the row keeps its id and active mark). The authority's
-  existing `mirrorRenewedLocalTokens` (`authority/default-credentials.ts`)
-  then writes the renewed tokens into `~/.codex/auth.json` **only when the
-  row is `source: "local_only"`**, the marker for a login imported from that
-  file. This is deliberate and stays: the provider rotates refresh tokens,
-  and a file left behind would strand the user's own `codex` CLI. A pasted
-  or second account is `managed` and never touches the file.
-- No registry auth (the process is using the CLI's own login): unchanged,
-  the file is the source and the CLI refreshes it.
+Acceptance:
+- [ ] A member with no personal Claude account gets a sandbox bound to the
+      project's team account; a member with one gets their own; each is
+      verified by the vendor-side account id.
+- [ ] Marking another account active does not change a running sandbox;
+      the list names that sandbox as still on the old account.
 
-`CODEX_HOME` stays the user's `~/.codex`, so `config.toml`, skills and
-session rollouts are untouched. The `codexHome` option the factory never
-passes stays unused.
+### Slice 4: Codex accounts
 
-### 5. Claude: second accounts through `claude setup-token`
+- Gated on the broker doc's Appendix E item 4. Then: OAuth upsert by
+  account id, the accounts list on the Codex row, Make active, and the
+  app-server pointed at the broker or the provider's edge.
 
-Owner: `packages/claxedo-local-server/src/credentials/provider-auth/service.ts`.
+Acceptance:
+- [ ] Two ChatGPT accounts listed; Make active flips; the next new sandbox
+      and the next local turn run on the chosen one, verified by
+      `account/read` on the app-server reporting that account.
+- [ ] `~/.codex/auth.json` on the operator's machine is byte-identical
+      before and after every step above.
 
-Three ways to give the Claude CLI a second login were weighed:
+### Definition of done
 
-| Option | Refresh | Works in sandbox | Verdict |
-| --- | --- | --- | --- |
-| a. `claude setup-token` one-year token stored as an `oauth_token` credential | not needed | yes | **adopted** |
-| b. `CLAUDE_CONFIG_DIR` per account, CLI refreshes itself | by the CLI | no, needs files on disk | not adopted |
-| c. Our own OAuth client against Claude Code's endpoints | by us | yes | not adopted, unpublished contract |
-
-Landed 2026-09-12: the provider-auth service offers a `token` method for
-`anthropic` and `claude-sdk` ahead of the API-key method, carrying the
-command that mints it, and the inline connect card renders it with a
-copyable `claude setup-token` field. The pasted value is stored as
-`kind: "api_key"`; the driver reads the secret's shape and sends an
-`sk-ant-oat…` value as `CLAUDE_CODE_OAUTH_TOKEN` (`auth.ts:30`), and the
-verifier does the same. What Phase 2 adds is identity: the paste path
-writes an `account_id` fingerprint (a hash prefix plus the last four
-characters), so a second pasted token is a second row rather than an
-overwrite, and the row's label names it.
-
-What the docs say about the token
-(https://code.claude.com/docs/en/authentication#generate-a-long-lived-token):
-minted through the same browser flow as `/login`, lasts one year, printed
-once and saved nowhere, requires Pro, Max, Team or Enterprise, tied to the
-subscription of the person who ran the command, model requests only (no
-Remote Control, no claude.ai connectors), ignored in bare mode. Our driver
-does not pass `--bare`. Revocation is undocumented.
-
-The machine's own `claude login` remains an account too, refreshed by the
-CLI outside our control; its expiry is shown in the list.
-
-### 6. Environment hygiene
-
-Owner: `harnesses/shared/spawn-env.ts` and the two drivers' spawn sites.
-
-When an adapter has explicit auth, the spawn environment drops that
-provider's ambient variables before the driver adds its own:
-`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN` for
-Claude; `OPENAI_API_KEY` for Codex. Given the CLI precedence quoted above,
-this is the only way the active account is guaranteed to be the one used.
-When an adapter has no explicit auth the environment passes through as
-today, because that is the only way a user who relies on ambient variables
-is authenticated at all. The denylist shape stays: a stripped list is
-easier to audit than an allowlist that must anticipate every variable a
-harness legitimately reads.
-
-### 7. Settings → Providers
-
-Owner: `packages/claxedo-app/src/features/settings/ui/agents-section.tsx`,
-`provider-setup-row.tsx`, `provider-detect.ts`,
-`packages/claxedo-local-server/src/credentials/routes/credential.ts`.
-
-Today the Agents section renders one row per native harness (Claude, Codex,
-Cursor) with a single status (connected, detected, broken, missing). Connect
-opens an inset card in the row, named "Connect Codex", with the server's
-methods as a segmented control and one close control; a login the scan found
-on this machine is saved from the row with **Use this login**. Pi and
-OpenCode keep their per-provider rows in their own sections. A harness with
-one credential looks exactly like that.
-
-When a harness has two or more credentials across its bound provider ids,
-the row lists them under its status: each account shows its label, account
-id or email, health, expiry, and whether it is shared with sandboxes. The
-active one carries an **Active** tag; every other one has a **Make active**
-button. **Add account** opens the same inset card, so a second ChatGPT login
-or a second Claude token arrives through the flow the row already has. A
-harness whose active row was deleted shows "Choose an account" in place of
-its status, and its Connect button stays.
-
-Accounts do not touch Settings → Models: visibility is per provider/model
-pair and follows the pair whichever account runs it.
-
-New route: `POST /credentials/:id/activate`. `GET /credentials` already
-returns `account_id`, `label`, `health`, `expires_at`, `scope`; it adds
-`is_active`.
-
-Nothing changes in the composer or on the session screen.
-
-**Landed 2026-09-12 (commits `87e5a50236` and the live-check commit that
-follows it):** every harness row now says which credential it runs on and
-can ask the provider about it.
-
-- *In use.* `GET /credentials/effective` returns the rows the fanout would
-  send for a scope, one per provider and without secrets, read from the
-  same `selectCredentialsForScope` the fanout uses. The row reads "In use:
-  <label>" for a stored row or "In use: this computer's login" when the
-  fanout has nothing for that provider. A host that cannot enumerate its
-  store (the hosted KV adapter) answers 501 and the line is not shown.
-- *Check.* One verifier answers both tiers. A stored row is checked by
-  `POST /credentials/:id/verify`; the machine login is checked by the scan,
-  which probes what it finds with the same `verifyCredential`. For a
-  subscription token the probe is the vendor's usage read, the call each
-  CLI's own status screen makes: `GET chatgpt.com/backend-api/wham/usage`
-  for a ChatGPT login and `GET api.anthropic.com/api/oauth/usage` for a
-  Claude OAuth token (a pasted `claude setup-token` included). It spends no
-  quota and returns the plan's windows, which the row shows as "Working ·
-  Session 12% used · Weekly 40% used · Checked just now". API keys have no
-  usage read and keep the minimal completion (Anthropic, OpenAI) or the
-  key-introspection route (Cursor). A rejected row is written back as
-  `health: auth_failed`, `status: error`, and the fanout stops sending it,
-  so the row's "In use" line flips back to the machine login on the spot.
-
-### End-to-end flow after the change
-
-- A. In Settings → Providers, under the Codex row, the user clicks
-  **Make active** on the work account.
-  - A.1 `POST /credentials/<work id>/activate` → `setActiveCredential`
-    clears and sets the mark in one transaction.
-  - A.2 The server rebuilds the snapshot; `resolveSecretsForScope` returns
-    the work secret under `codex-app-server`.
-- B. Every workspace runtime receives the snapshot.
-  - B.1 A Codex adapter with a turn in flight waits for it to finish, then
-    `applyConfig` → `authRevision++` → `syncProcessAuth` →
-    `account/login/start` with the work tokens. Next turn runs as work.
-  - B.2 A Claude adapter records the new auth; the next query spawns with it.
-- C. The Settings row now shows work as Active. The session screen shows
-  nothing new.
-- D. On refresh, the Codex driver emits the new bundle; the server upserts
-  the work row. `~/.codex/auth.json` is untouched.
-- E. The user deletes the work row. Codex shows "Choose an account"; the
-  next Codex turn in any session fails with "no active account for Codex"
-  until the user clicks on the personal row.
-
-## Tradeoffs
-
-- **Global means global.** Switching changes every session in every
-  workspace at its next turn. That is the requested behaviour and it is the
-  simplest one to reason about, but a user who wants a work session and a
-  personal session side by side cannot have it.
-- **No silent promotion.** Deleting the active account stops that provider
-  until the user chooses again. One click, visible, and it never moves a
-  session to an account the user did not pick.
-- **Mid-turn switch is deferred, not immediate.** A long Codex turn keeps
-  the old account until it ends. The Settings row can show "switching after
-  the current turn" if it matters; not in scope for Phase 1.
-- **Claude second accounts are a paste, not a login.** One-time
-  `claude setup-token` per extra account. The per-directory alternative
-  auto-discovers but puts secret files on disk and does not fit sandboxes.
-- **Sandbox refresh write-back arrives in Phase 3.** Until then a shared
-  Codex account that refreshes inside a sandbox replays stale after a
-  restart, the same defect as today, now named.
-- **Migration runs the old rule once.** The backfill picks the same winner
-  the fanout picks today, so no user's account changes on upgrade.
-
-## Unverified assumptions and how to verify them
-
-| Assumption | How to verify |
-| --- | --- |
-| Codex app-server honours `account/login/start` over an ambient `OPENAI_API_KEY` | Spawn with both, call `account/read`, compare account id. Made moot by section 6 for our own spawns, but check once |
-| `account/login/start` on a live app-server between turns does not disturb existing threads | Two real accounts, one thread, switch between turns, continue the thread |
-| A Codex thread started under account A resumes under account B from the shared rollout | Same experiment, assert the thread id is unchanged and the response comes from B's account |
-| A `claude setup-token` token minted on a second subscription account runs a turn through our driver | Mint one on a second account, run a turn, record `expires_at` |
-| Claude Code's `~/.claude.json` carries a stable account id and email | Read it on a real install; if absent, derive the id from the token's `sub` claim if it is a JWT, else from a hash |
+All four slices' boxes ticked with the command and its output recorded next
+to each; `preferredCredentialPerProvider` and `providerPreference` deleted;
+this document rewritten in the present tense as the architecture note.
 
 ## Stress test (2026-09-12, evening)
 
@@ -624,121 +465,12 @@ pasted in Settings → Claude → Connect, the same four steps apply.
   shapes are pinned by tests against what the CLIs themselves send; the
   live run needs a real token on this machine.
 
-## Phases and acceptance criteria
-
-Each phase is a reviewable slice with its own gate.
-
-### Phase 1: active flag, Codex, local
-
-- `setActiveCredential` on the credentials contract, implemented by the
-  SQLite registry (column, partial unique index, migration with backfill)
-  and the Worker KV adapter; activate route; fanout, `getCredentialByProvider`
-  and the OpenCode bridge all on the active row; `preferredCredentialPerProvider`
-  and `providerPreference` deleted.
-- The implicit machine login as the default choice when no row is active;
-  `config.auth` documented as part of that tier.
-- A Claxedo-owned `CODEX_HOME` per stored Codex account, passed through the
-  factory's `codexHome`; the user's `~/.codex` is only ever used by the
-  implicit tier, and returning to it restarts the app-server.
-- The Codex OAuth callback upserts by account id instead of wiping the
-  provider; credential routes call `fanOutConfig`; the accounts list deletes
-  by id.
-- Native adapters wait for active turns before `applyConfig`.
-- Codex refresh writes back to the registry when the registry supplied auth.
-- Env strip for Codex.
-- The account list under the Codex row with Make active, Active tag, Choose
-  an account; Add account reusing the inset card.
-
-Acceptance:
-- [ ] Two ChatGPT accounts synced; Settings lists both under Codex with one
-      Active; Make active on the other flips the mark, `GET /credentials`
-      shows exactly one `is_active` row for the provider.
-- [ ] A session mid-turn on A finishes that turn on A; its next turn runs on
-      B (`account/read` on the process reports B).
-- [ ] Forcing a token refresh on the active account updates the row's secret
-      and leaves `~/.codex/auth.json` byte-identical.
-- [ ] Restarting the server replays the refreshed credential; the next turn
-      succeeds without re-login.
-- [ ] Deleting the active row: Settings shows Choose an account; the next
-      Codex turn fails with a named error; no turn runs on the other row.
-- [ ] Inserting two `is_active = 1` rows for one provider fails at the
-      database, asserted by a test.
-- [ ] Upgrade test: a database with several rows per provider and no mark
-      migrates to the same winner the old fanout returned.
-- [ ] `bun run test:architecture-ratchets` green; the affected packages' own
-      `scripts.typecheck` and test scripts green.
-Progress: the Providers page's "In use" line and the live check (section
-7, "Landed") are in; they are the surface the account list and Make active
-will extend. Nothing else in this phase has started.
-
-### Phase 2: Claude accounts
-
-- The paste path fingerprints a token or key into `account_id`; the Claude
-  keychain login is no longer imported as a row (finding 2) and appears only
-  as the implicit machine login; Make active marks both Claude bindings; env
-  strip for Claude; the account list under the Claude row. (The
-  provider-auth `token` method and its inline card landed 2026-09-12 in
-  `85f1d007c8`.)
-
-Acceptance:
-- [ ] Machine login plus one `setup-token` account listed under Claude; Make
-      active flips; the next turn's CLI reports the expected organisation.
-- [ ] With `ANTHROPIC_API_KEY` set in the server's environment, a turn on an
-      active OAuth account runs on the OAuth account.
-- [ ] The expiring machine login shows its expiry in the list before it fails.
-Progress:
-
-### Phase 3: sandbox parity
-
-- Refresh write-back over the workspace-runtime to control-plane channel;
-  consent rule on the active row proven on a cloud sandbox.
-
-Acceptance:
-- [ ] A shared-scope active Codex account refreshes inside a sandbox and the
-      control plane's row updates.
-- [ ] An active account without sharing consent yields no credential in the
-      sandbox snapshot (assert on the wire payload) and the Settings row
-      says so.
-Progress:
-
-### Definition of done
-
-- [ ] All three phases' boxes ticked, with the command and its output
-      recorded next to each.
-- [ ] `grep` finds no `preferredCredentialPerProvider`, no `providerPreference`.
-- [ ] The unverified-assumptions table has every row resolved.
-- [ ] This document rewritten in the present tense as the architecture note
-      for the feature; execution logs kept out of the PR.
-Progress:
-
-## Execution: parallelise with agents
-
-Phase 1 splits into three lanes with disjoint file ownership, run as `opus`
-subagents; the orchestrator reads each diff and re-runs its gate before
-accepting:
-
-1. **Registry lane**: schema, migration and backfill, `setActiveCredential`,
-   fanout, route, deletion of the old preference code, and their tests.
-2. **Runtime lane**: workspace-runtime turn-boundary deferral for native
-   adapters, Codex refresh write-back through the driver host,
-   `spawn-env.ts` strip, and their tests.
-3. **Settings lane**: account list in `ProviderSetupRow`, Make active, Choose
-   an account, the `is_active` field on the client type, and their tests.
-
-Lane 3 depends on lane 1's route shape only; publish the route contract as a
-one-file commit first. The two-real-accounts verification is one serial lane
-after merge, because it needs the user's own logins.
-
 ## Glossary
 
-- **Provider**: the company whose model is used (OpenAI, Anthropic).
-- **Harness**: the coding-agent program we run (Codex, Claude Code).
-- **Driver**: our code that starts and talks to a harness.
-- **Account / credential row**: one stored login or key. "Account" is the
-  user-facing word; "row" is the storage.
-- **Active**: the one account per provider whose secret is sent to harnesses.
-- **Fanout**: the step that hands secrets from the server to the place that
-  spawns harnesses.
-- **Snapshot**: the config document the server sends to a workspace runtime.
-- **Sandbox**: a cloud machine running a workspace runtime, which receives
-  secrets only over the snapshot and only with per-account consent.
+- **Account:** one stored credential row for a provider, with an identity.
+- **Active:** the one row per `(owner, provider)` a user's new sandboxes and
+  next local turn use.
+- **Team account:** a row with no owner, bound to a project by an admin.
+- **Implicit tier:** a harness with nothing bound uses its own CLI login on
+  the laptop. Never imported as a row.
+- **Binding, projection, broker:** see the broker doc.
