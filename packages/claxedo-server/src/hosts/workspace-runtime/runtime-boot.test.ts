@@ -42,6 +42,14 @@ describe("claxedo workspace-runtime boot policy", () => {
       await expect(claxedoWorkspaceRuntimeBootFromEnv({
         ...env, GIT_CONFIG_GLOBAL: path.join(directory, "missing", "config"),
       })).rejects.toThrow()
+      // Withdrawal: the header an earlier boot wrote outlives the restart, so a
+      // wake without the placeholder has to remove it rather than keep using a
+      // credential the control plane took away.
+      const { CLAXEDO_GITHUB_CLONE_AUTH: _withdrawn, ...withoutClone } = env
+      await claxedoWorkspaceRuntimeBootFromEnv(withoutClone)
+      expect(() => git(["config", "--get-all", "http.https://github.com/.extraheader"])).toThrow()
+      // Nothing to remove is the ordinary case, not a boot failure.
+      await expect(claxedoWorkspaceRuntimeBootFromEnv(withoutClone)).resolves.toBeDefined()
     } finally {
       await rm(directory, { recursive: true, force: true })
     }

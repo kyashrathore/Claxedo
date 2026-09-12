@@ -10,7 +10,7 @@
  * the public package.
  */
 import fs from "node:fs"
-import { startServer, waitForWorkspaceRuntimeServerPort } from "@claxedo/workspace-runtime"
+import { runWorkspaceRuntimeHost } from "./host-run"
 import { claxedoWorkspaceRuntimeBootFromEnv } from "./runtime-boot"
 
 if (process.argv[2] === "--version") {
@@ -18,11 +18,6 @@ if (process.argv[2] === "--version") {
   process.exit(0)
 }
 
-const boot = await claxedoWorkspaceRuntimeBootFromEnv()
 // This is Claxedo's runnable host process — it owns the process lifecycle, so
 // it opts in to signal/exit handling (the kit default is off).
-const server = startServer(boot.port, boot.options, { signals: true })
-
-console.log(
-  `[claxedo-workspace-runtime] listening on http://${boot.hostname}:${await waitForWorkspaceRuntimeServerPort(server, boot.port)} workspaceId=${boot.options.target?.workspaceId} directory=${boot.options.target?.directory}`,
-)
+await runWorkspaceRuntimeHost(() => claxedoWorkspaceRuntimeBootFromEnv())
