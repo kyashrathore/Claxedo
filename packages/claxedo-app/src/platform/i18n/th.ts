@@ -280,6 +280,8 @@ export const dict = {
   "prompt.attachment.remove": "เอาไฟล์แนบออก",
   "prompt.action.send": "ส่ง",
   "prompt.action.stop": "หยุด",
+  "prompt.action.queued": "อยู่ในคิว",
+  "prompt.action.readOnlyWorkspace": "เวิร์กสเปซแบบอ่านอย่างเดียว",
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} ใช้ไฟล์แนบนี้ไม่ได้",
   "prompt.toast.attachmentHarnessUnsupported.description":

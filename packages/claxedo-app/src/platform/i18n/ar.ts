@@ -261,6 +261,8 @@ export const dict = {
   "prompt.attachment.remove": "إزالة المرفق",
   "prompt.action.send": "إرسال",
   "prompt.action.stop": "توقف",
+  "prompt.action.queued": "في قائمة الانتظار",
+  "prompt.action.readOnlyWorkspace": "مساحة عمل للقراءة فقط",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} لا يمكنه استخدام هذا المرفق",
   "prompt.toast.attachmentHarnessUnsupported.description":
     "لا يوجد في {{harness}} مدخل مطالبة لـ {{mime}}، وهذه الجلسة لا تحتوي على مساحة عمل محلية لحفظ الملف.",

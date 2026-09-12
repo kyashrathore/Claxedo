@@ -261,6 +261,8 @@ export const dict = {
   "prompt.attachment.remove": "Remover anexo",
   "prompt.action.send": "Enviar",
   "prompt.action.stop": "Parar",
+  "prompt.action.queued": "Na fila",
+  "prompt.action.readOnlyWorkspace": "Workspace somente leitura",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} não consegue usar este anexo",
   "prompt.toast.attachmentHarnessUnsupported.description":
     "{{harness}} não tem uma entrada de prompt para {{mime}}, e esta sessão não tem um espaço de trabalho local para guardar o arquivo.",

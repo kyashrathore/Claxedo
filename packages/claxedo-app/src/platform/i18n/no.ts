@@ -283,6 +283,8 @@ export const dict = {
   "prompt.attachment.remove": "Fjern vedlegg",
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stopp",
+  "prompt.action.queued": "I kø",
+  "prompt.action.readOnlyWorkspace": "Skrivebeskyttet arbeidsområde",
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} kan ikke bruke dette vedlegget",
   "prompt.toast.attachmentHarnessUnsupported.description":

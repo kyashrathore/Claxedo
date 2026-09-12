@@ -280,6 +280,8 @@ export const dict = {
   "prompt.attachment.remove": "Удалить вложение",
   "prompt.action.send": "Отправить",
   "prompt.action.stop": "Остановить",
+  "prompt.action.queued": "В очереди",
+  "prompt.action.readOnlyWorkspace": "Рабочее пространство только для чтения",
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} не может использовать это вложение",
   "prompt.toast.attachmentHarnessUnsupported.description":

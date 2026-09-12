@@ -261,6 +261,8 @@ export const dict = {
   "prompt.attachment.remove": "添付ファイルを削除",
   "prompt.action.send": "送信",
   "prompt.action.stop": "停止",
+  "prompt.action.queued": "待機中",
+  "prompt.action.readOnlyWorkspace": "読み取り専用ワークスペース",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} はこの添付ファイルを扱えません",
   "prompt.toast.attachmentHarnessUnsupported.description":
     "{{harness}} には {{mime}} を渡す入力がなく、このセッションにはファイルを置くローカルワークスペースもありません。",

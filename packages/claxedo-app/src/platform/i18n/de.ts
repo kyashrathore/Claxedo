@@ -266,6 +266,8 @@ export const dict = {
   "prompt.attachment.remove": "Anhang entfernen",
   "prompt.action.send": "Senden",
   "prompt.action.stop": "Stopp",
+  "prompt.action.queued": "In Warteschlange",
+  "prompt.action.readOnlyWorkspace": "Schreibgeschützter Arbeitsbereich",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} kann diesen Anhang nicht verarbeiten",
   "prompt.toast.attachmentHarnessUnsupported.description":
     "{{harness}} hat keine Prompt-Eingabe für {{mime}}, und diese Sitzung hat keinen lokalen Arbeitsbereich, in dem die Datei bleiben könnte.",

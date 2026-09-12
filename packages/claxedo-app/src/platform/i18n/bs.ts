@@ -281,6 +281,8 @@ export const dict = {
   "prompt.attachment.remove": "Ukloni prilog",
   "prompt.action.send": "Pošalji",
   "prompt.action.stop": "Zaustavi",
+  "prompt.action.queued": "U redu čekanja",
+  "prompt.action.readOnlyWorkspace": "Radni prostor samo za čitanje",
 
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} ne može primiti ovaj prilog",
   "prompt.toast.attachmentHarnessUnsupported.description":

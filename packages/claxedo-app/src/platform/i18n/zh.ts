@@ -302,6 +302,8 @@ export const dict = {
   "prompt.attachment.remove": "移除附件",
   "prompt.action.send": "发送",
   "prompt.action.stop": "停止",
+  "prompt.action.queued": "已排队",
+  "prompt.action.readOnlyWorkspace": "只读工作区",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} 无法使用此附件",
   "prompt.toast.attachmentHarnessUnsupported.description":
     "{{harness}} 没有接收 {{mime}} 的提示输入，而此会话也没有可保存该文件的本地工作区。",

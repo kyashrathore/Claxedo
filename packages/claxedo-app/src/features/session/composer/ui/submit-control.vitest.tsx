@@ -49,6 +49,7 @@ function renderControl(input: {
         sendLabel="Send"
         stopLabel="Stop"
         readOnlyLabel="Read-only"
+        queuedLabel="Queued"
       />
     </DockShellForm>
   ))

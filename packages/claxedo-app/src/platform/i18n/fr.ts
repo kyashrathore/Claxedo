@@ -261,6 +261,8 @@ export const dict = {
   "prompt.attachment.remove": "Supprimer la pièce jointe",
   "prompt.action.send": "Envoyer",
   "prompt.action.stop": "Arrêter",
+  "prompt.action.queued": "En file d’attente",
+  "prompt.action.readOnlyWorkspace": "Espace de travail en lecture seule",
   "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} ne peut pas utiliser cette pièce jointe",
   "prompt.toast.attachmentHarnessUnsupported.description":
     "{{harness}} n'a pas d'entrée de prompt pour {{mime}}, et cette session n'a pas d'espace de travail local pour conserver le fichier.",

@@ -25,6 +25,7 @@ export function PromptSubmitControl(props: {
   sendLabel: string
   stopLabel: string
   readOnlyLabel: string
+  queuedLabel: string
 }) {
   // Actionable block reasons keep the button clickable but dimmed: a missing
   // model opens the model picker; other reasons flash the explanation, since
@@ -96,7 +97,7 @@ export function PromptSubmitControl(props: {
           role="status"
           aria-live="polite"
         >
-          <span>Queued</span>
+          <span>{props.queuedLabel}</span>
         </div>
       </Show>
       <SessionStatusStage

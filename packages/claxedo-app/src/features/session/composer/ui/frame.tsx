@@ -405,7 +405,8 @@ export const PromptInputFrame: Component<{
           readOnlyBlocked={props.roleSubmitBlocked}
           stopLabel={props.t("prompt.action.stop")}
           sendLabel={props.t("prompt.action.send")}
-          readOnlyLabel="Read-only workspace"
+          readOnlyLabel={props.t("prompt.action.readOnlyWorkspace")}
+          queuedLabel={props.t("prompt.action.queued")}
         />
       </div>
     </DockShellForm>
