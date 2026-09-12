@@ -1,6 +1,4 @@
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
+import { escapeRegExp } from "@claxedo/helpers/string"
 
 /**
  * The home directory has to go first: `/Users/<user>/x` only collapses to `~/x` while the
