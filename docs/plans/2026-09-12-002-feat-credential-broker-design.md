@@ -546,3 +546,66 @@ Result: **not run: SSH authentication rejected** with exit 255 and
 host-trust-only blocker. No integration, VM, or account was created. A registered
 SSH key/account access is needed to test personal/team behavior and live edits;
 the provider's documented commands are not counted as live evidence.
+
+### Claude API key and subscription token through the loopback broker, local — 2026-09-13
+
+Harness: real Claude Code 2.1.267 through the Claude Agent SDK 0.3.220, driven by
+the desktop-local server (`packages/claxedo-server`, `npm run dev`, port 2595) on
+a copy of the owner's registry holding one active `claude-sdk` subscription
+token. The vendor is the real `https://api.anthropic.com`.
+
+Commands, from `packages/claxedo-server`:
+
+```sh
+CLAXEDO_SERVER_PORT=2595 CLAXEDO_DATA_DIR=<registry copy> npm run dev
+curl "…/api/claxedo/credentials/effective"
+curl "…/api/workspace/resolve?directory=<git init'd scratch dir>&create=true"
+curl -X POST "…/api/claxedo/agent-config/harness?directory=…" \
+  -d '{"harness":{"kind":"native","harnessId":"claude"}}'
+curl -X POST "…/session?directory=…" -d '{}'
+curl -X POST "…/session/<id>/message?directory=…" \
+  -d '{"parts":[{"type":"text","text":"Reply with exactly the word OK and nothing else."}]}'
+```
+
+**Delivery: yes.** The spawned harness received
+`ANTHROPIC_BASE_URL=http://127.0.0.1:2595/bindings/90b5fe7b…` and
+`ANTHROPIC_AUTH_TOKEN=<sha256:fe3f3fb13db50792>`, and the request that arrived at
+`/bindings/90b5fe7b…/v1/messages` carried exactly that value as its bearer — the
+same hash, so the harness sent the placeholder and nothing else. The broker
+replaced it with the stored token and reached the vendor: the response body is
+Anthropic's own error envelope, not the broker's.
+
+**Vendor acceptance: not proven — the supplied credential is rejected by
+Anthropic.** The vendor answered `401 {"type":"error","error":{"type":
+"authentication_error","message":"OAuth access token is invalid."}}`. An
+independent request with the same stored value, sent directly to
+`api.anthropic.com` with and without `anthropic-beta: oauth-2025-04-20` and no
+broker in the path, returns the same 401. The token is stale, so a successful
+assistant reply through the broker remains unverified; every step up to the
+vendor's own decision is verified.
+
+**Failure attribution and withdrawal: yes.** That 401 was reported against the
+revision the request used and marked the row `auth_failed`; the retry resolved no
+binding and received `403 {"error":"binding_unavailable"}`. The turn ended in
+3.5 s with `firstTurnErrorClass: "credential"` and the message `Failed to
+authenticate. API Error: 403 {"error":"binding_unavailable"}` — a named session
+error, not a hang.
+
+**Value containment: yes.** A byte-scan of the stored token across the scratch
+workspace, `~/.claude` and the brokered config dir read 14,026 files and found no
+occurrence.
+
+**Blocker found and fixed during this run.** Claude Code prefers an account
+configured in its config dir over both `ANTHROPIC_API_KEY` and
+`ANTHROPIC_AUTH_TOKEN`. With the operator's `~/.claude` visible, the CLI sent its
+own OAuth bearer at every attempt and the placeholder was never used; against a
+config dir holding no account, both variables deliver it. A brokered turn now
+runs under a mirrored, account-free config dir. On a 401 the CLI still falls back
+to the credential in the operating system keychain, which no environment variable
+reaches — the "no silent switch to ambient auth" criterion is not met by
+configuration alone.
+
+**Open defect.** After the account is withdrawn, the next turn projects nothing
+and the harness silently runs on the operator's own machine login and succeeds.
+A selected-but-unusable account must fail the turn instead; the projection shape
+has no way to say "this provider is bound and unavailable" today.
