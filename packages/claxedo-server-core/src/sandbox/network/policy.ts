@@ -9,7 +9,7 @@ import { randomUUID } from "crypto"
 import { eq } from "drizzle-orm"
 import { ClaxedoDB } from "../../platform/db"
 import { ClaxedoNetworkPolicyTable } from "./policy.sql"
-import { CONTROL_PLANE_HOSTS, DEFAULT_ALLOWLIST, POLICY_KINDS, PROVIDER_TO_GROUP, flattenDefaultAllowlist, type NetworkPolicyEntry, type PolicyConstraints, type PolicyKind, type PolicyWrite } from "./types"
+import { CONTROL_PLANE_HOSTS, DEFAULT_ALLOWLIST, POLICY_KINDS, flattenDefaultAllowlist, type NetworkPolicyEntry, type PolicyConstraints, type PolicyKind, type PolicyWrite } from "./types"
 import { parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
@@ -260,61 +260,6 @@ export function syncMcpHosts(mcp: Record<string, { type?: string; url?: string }
       ensureHostForUrl(server.url, `mcp:${name}`)
     }
   }
-}
-
-// ── Auto-sync: credentials → group policies ─────────────────────────────
-
-function upsertAutoPolicy(target: string, kind: PolicyKind, source: string): void {
-  const existing = ClaxedoDB.use((db) =>
-    db.select().from(ClaxedoNetworkPolicyTable).all()
-      .find((row) => row.target === target && row.kind === kind),
-  )
-  if (existing) return
-
-  const ts = now()
-  ClaxedoDB.use((db) =>
-    db.insert(ClaxedoNetworkPolicyTable).values({
-      id: randomUUID(),
-      workspace_id: null,
-      harness: null,
-      target,
-      kind,
-      constraints_json: JSON.stringify({ auto: true, source }),
-      created_at: ts,
-      updated_at: ts,
-    }).run(),
-  )
-  log.info("Auto-added network policy", { target, kind, source })
-}
-
-function removeAutoEntries(target: string, kind: PolicyKind, source: string): void {
-  const rows = ClaxedoDB.use((db) =>
-    db.select().from(ClaxedoNetworkPolicyTable).all()
-      .filter((row) => row.target === target && row.kind === kind),
-  )
-  for (const row of rows) {
-    const c = parseConstraints(row.constraints_json)
-    if (!c.auto) continue
-    if (source && c.source !== source) continue
-    ClaxedoDB.use((db) =>
-      db.delete(ClaxedoNetworkPolicyTable).where(eq(ClaxedoNetworkPolicyTable.id, row.id)).run(),
-    )
-    log.info("Removed auto-created network policy", { target, kind, source, policyId: row.id })
-  }
-}
-
-/** Auto-add a group policy when credentials are stored for a provider. */
-export function ensurePresetForProvider(providerId: string): void {
-  const group = PROVIDER_TO_GROUP[providerId]
-  if (!group || !DEFAULT_ALLOWLIST[group]) return
-  upsertAutoPolicy(group, "group", `credential:${providerId}`)
-}
-
-/** Remove auto-created group policy when credentials are deleted. */
-export function removeAutoPresetForProvider(providerId: string): void {
-  const group = PROVIDER_TO_GROUP[providerId]
-  if (!group) return
-  removeAutoEntries(group, "group", `credential:${providerId}`)
 }
 
 /**

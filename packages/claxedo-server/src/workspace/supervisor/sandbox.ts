@@ -23,8 +23,7 @@ import { defaultSandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { listPolicies } from "@claxedo/server-core/sandbox/network/policy"
-import { resolveSandboxNetworkPolicy } from "../../sandbox/network/resolve"
+import { resolveWorkspaceSandboxNetworkPolicy } from "../../sandbox/network/workspace-policy"
 import { insertSnapshot } from "./prepared-image.sql"
 import { updateWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { projectEnv } from "@claxedo/server-core/workspace/store/index"
@@ -355,21 +354,19 @@ async function resolveSupervisorSandboxNetworkPolicy(
   driverId: SandboxDriverID,
   action: SandboxDecision,
 ) {
-  const rows = listPolicies(state.ws.id)
   const net =
     driverId === "docker"
       ? undefined
-      : rows.length > 0
-        ? await resolveSandboxNetworkPolicy(
-            rows.map((e) => ({ target: e.target, kind: e.kind })),
-            needWorkspaceSupervisorOptions().server_url,
-          )
-        : undefined
+      : await resolveWorkspaceSandboxNetworkPolicy({
+          workspaceId: state.ws.id,
+          org: state.ws.org_id,
+          serverUrl: needWorkspaceSupervisorOptions().server_url,
+        })
   log.info("Sandbox network policy resolved", {
     workspaceId: state.ws.id,
     driver: driverId,
     action: action.action,
-    policyCount: rows.length,
+    ruleCount: net?.rules?.length ?? 0,
     netMode: net?.mode ?? (driverId === "docker" ? `skipped-${driverId}` : "allow-all"),
   })
   return net

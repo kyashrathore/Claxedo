@@ -37,7 +37,6 @@ import {
   type SetActiveCredentialsResult,
 } from "./types"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { ensurePresetForProvider, removeAutoPresetForProvider } from "../sandbox/network/policy"
 import { credentialSecretInScope, type CredentialSecretScope } from "./secret-scope"
 
 export { SINGLE_TENANT_ORG } from "./provider-credential.sql"
@@ -257,9 +256,6 @@ export async function putCredential(
   }
 
   log.info("Credential stored", { id, org_id: orgId, provider_id: input.provider_id, kind: input.kind })
-
-  // Auto-add network preset so sandbox egress is allowed for this provider
-  ensurePresetForProvider(input.provider_id)
 
   return toMetadata(stored as CredentialRow)
 }
@@ -590,9 +586,6 @@ export async function deleteCredential(
 
   log.info("Credential deleted", { id, org_id: credentialOrg(org), provider_id: cred.provider_id })
 
-  // Remove auto-created network preset if no other creds need it
-  removeAutoPresetForProvider(cred.provider_id)
-
   return true
 }
 
@@ -642,9 +635,6 @@ export async function deleteCredentialsByProvider(
       .where(scope)
       .run(),
   )
-
-  // Remove auto-created network preset
-  removeAutoPresetForProvider(providerId)
 
   return creds.length
 }

@@ -19,14 +19,12 @@ export interface PolicyConstraints {
   ports?: number[]
   paths?: string[]
   enabled?: boolean
-  /** True if this entry was auto-created by the credential system. */
+  /** True if a configured outbound endpoint created this entry, not a user. */
   auto?: boolean
   /**
-   * What auto-created this entry (e.g. `credential:<providerId>`).
-   *
-   * Written by `upsertAutoPolicy` and read back when the same source is
-   * withdrawn; it was already persisted before being declared here, which is
-   * why the readers had to reach past this type to see it.
+   * The endpoint that created this entry — `repo:<url>` or `mcp:<name>`. The
+   * entry is withdrawn when that same source is, so the value has to match the
+   * one `ensureHostForUrl` wrote.
    */
   source?: string
 }
@@ -115,8 +113,10 @@ export const CONTROL_PLANE_HOSTS = [
 
 /**
  * Maps credential provider IDs to network group names.
- * When a credential is stored for a provider, the corresponding
- * group is auto-added to the network allowlist.
+ *
+ * Read when a restricted sandbox is resolved, against the credentials that
+ * sandbox is actually sent, so the agent inside it can reach the provider it
+ * was given auth for. Storing a credential grants nothing on its own.
  */
 export const PROVIDER_TO_GROUP: Record<string, string> = {
   "claude-sdk": "anthropic",

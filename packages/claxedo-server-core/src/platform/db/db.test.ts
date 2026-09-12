@@ -139,6 +139,32 @@ describe("migrations", () => {
     expect(hasTable(boot(), "claxedo_lazy_probe")).toBe(true)
   })
 
+  test("dropping the credential network grants spares user rows", () => {
+    const sqlite = boot()
+    // Unjournalling the entry is the only way to observe a migration that the
+    // boot under test has already applied against the finished schema.
+    sqlite
+      .prepare("DELETE FROM __claxedo_migrations WHERE name = ?")
+      .run("20260913000100_drop_credential_network_grants")
+    const plant = (id: string, target: string, kind: string, constraints: string) =>
+      sqlite
+        .prepare(
+          `INSERT INTO claxedo_network_policy (id, workspace_id, harness, target, kind, constraints_json, created_at, updated_at)
+           VALUES (?, NULL, NULL, ?, ?, ?, 1, 1)`,
+        )
+        .run(id, target, kind, constraints)
+    plant("granted", "openai", "group", JSON.stringify({ auto: true, source: "credential:openai" }))
+    plant("chosen", "openai", "group", "{}")
+    plant("mcp", "search.example.com", "host", JSON.stringify({ auto: true, source: "mcp:search" }))
+
+    const rebooted = reboot()
+
+    expect(rebooted.prepare("SELECT id FROM claxedo_network_policy ORDER BY id").all()).toEqual([
+      { id: "chosen" },
+      { id: "mcp" },
+    ])
+  })
+
   test("a pending migration whose SQL cannot be read fails the boot", () => {
     const journal = path.join(root, "journal")
     mkdirSync(path.join(journal, "20990101000000_broken", "migration.sql"), { recursive: true })

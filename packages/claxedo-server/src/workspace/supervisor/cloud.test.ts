@@ -320,6 +320,10 @@ vi.mock("../../sandbox/network/resolve", () => ({
   resolveSandboxNetworkPolicy: vi.fn(() => Promise.resolve(undefined)),
 }))
 
+vi.mock("@claxedo/server-core/credentials/registry", () => ({
+  selectCredentialsForScope: vi.fn(() => []),
+}))
+
 vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
   const status = (input: SandboxLeaseRow["status"]) => {
     if (input === "ready" || input === "stopped") return input
@@ -835,6 +839,24 @@ describe("workspace-supervisor", () => {
             cidrs: ["203.0.113.10/32"],
           },
         }),
+      )
+    })
+
+    test("opens the hosts of the providers the fanout sends to the sandbox", async () => {
+      const policy = await import("@claxedo/server-core/sandbox/network/policy")
+      const resolve = await import("../../sandbox/network/resolve")
+      const registry = await import("@claxedo/server-core/credentials/registry")
+      ;(policy.listPolicies as any).mockReturnValueOnce([{ target: "api.example.test", kind: "host" }])
+      ;(registry.selectCredentialsForScope as any).mockReturnValueOnce([{ provider_id: "claude-sdk" }])
+
+      await supervisor.ensureSupervisorSandbox("ws-daytona-credential-network")
+
+      expect(resolve.resolveSandboxNetworkPolicy).toHaveBeenCalledWith(
+        [
+          { target: "api.example.test", kind: "host" },
+          { target: "anthropic", kind: "group" },
+        ],
+        "http://localhost:3000",
       )
     })
 

@@ -279,6 +279,10 @@ Each is a fact about the code above, not a preference.
 9. **Egress auto-allow is org-wide.** Storing any credential adds a network
    policy row with no workspace id, opening that provider's host group for
    every workspace. (`claxedo-server-core/src/sandbox/network/policy.ts:279`)
+   FIXED: the save-time grant and its helpers are gone, a migration deletes
+   the rows it wrote, and a restricted sandbox now derives the provider hosts
+   at ensure time from the credentials the fanout sends it
+   (`claxedo-server/src/sandbox/network/workspace-policy.ts`), writing no row.
 10. **Consent is enforced only in the push.** The `shared` scope respects
     the row's consent flag; nothing else does.
 

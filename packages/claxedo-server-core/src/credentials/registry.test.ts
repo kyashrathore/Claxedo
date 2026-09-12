@@ -477,83 +477,37 @@ describe("credential registry", () => {
     expect(all["all-2"]).toBe("secret-2")
   })
 
-  // ── Auto-sync: credential → network policy ───────────────────────────
+  describe("network policy is not a credential side effect", () => {
+    test("storing a credential writes no policy row", async () => {
+      const { listPolicies } = await import("../sandbox/network/policy")
+      const before = listPolicies()
 
-  test("putCredential auto-creates network preset for known providers", async () => {
-    const { listPolicies } = await import("../sandbox/network/policy")
+      await putCredential({
+        provider_id: "claude-sdk",
+        kind: "api_key",
+        source: "managed",
+        secret: "sk-ant-no-grant",
+      })
 
-    await putCredential({
-      provider_id: "claude-sdk",
-      kind: "api_key",
-      source: "managed",
-      secret: "sk-ant-auto-test",
+      expect(listPolicies()).toEqual(before)
     })
 
-    const policies = listPolicies()
-    const anthropicPreset = policies.find(
-      (p) => p.target === "anthropic" && p.kind === "group",
-    )
-    expect(anthropicPreset).toBeTruthy()
-    expect(anthropicPreset!.constraints.auto).toBe(true)
-  })
+    test("deleting a credential removes no policy row", async () => {
+      const { createPolicy, listPolicies } = await import("../sandbox/network/policy")
+      createPolicy({ target: "api.no-withdraw.test", kind: "host" })
+      const cred = await putCredential({
+        provider_id: "codex-app-server",
+        kind: "api_key",
+        source: "managed",
+        secret: "sk-openai-no-withdraw",
+      })
+      const before = listPolicies()
 
-  test("putCredential is idempotent for network presets", async () => {
-    const { listPolicies } = await import("../sandbox/network/policy")
+      await deleteCredential(cred.id)
+      await deleteCredentialsByProvider("codex-app-server")
 
-    await putCredential({
-      provider_id: "claude-sdk",
-      kind: "api_key",
-      source: "managed",
-      secret: "sk-ant-auto-test-2",
+      expect(listPolicies()).toEqual(before)
     })
-
-    const policies = listPolicies()
-    const anthropicPresets = policies.filter(
-      (p) => p.target === "anthropic" && p.kind === "group",
-    )
-    // Should still be exactly one, not duplicated
-    expect(anthropicPresets.length).toBe(1)
-  })
-
-  test("deleteCredential removes auto-created network preset", async () => {
-    const { listPolicies } = await import("../sandbox/network/policy")
-
-    const cred = await putCredential({
-      provider_id: "codex-app-server",
-      kind: "api_key",
-      source: "managed",
-      secret: "sk-openai-delete-test",
-    })
-
-    // Preset should exist
-    let policies = listPolicies()
-    expect(policies.find((p) => p.target === "openai" && p.kind === "group")).toBeTruthy()
-
-    // Delete credential
-    await deleteCredential(cred.id)
-
-    // Auto-created preset should be removed
-    policies = listPolicies()
-    const openaiPresets = policies.filter(
-      (p) => p.target === "openai" && p.kind === "group" && p.constraints.auto,
-    )
-    expect(openaiPresets.length).toBe(0)
-  })
-
-  test("putCredential does not create preset for unknown providers", async () => {
-    const { listPolicies } = await import("../sandbox/network/policy")
-    const before = listPolicies().length
-
-    await putCredential({
-      provider_id: "some-unknown-provider",
-      kind: "api_key",
-      source: "managed",
-      secret: "sk-unknown",
-    })
-
-    const after = listPolicies().length
-    // No new policy should have been created
-    expect(after).toBe(before)
   })
 
   describe("the active account", () => {
