@@ -129,3 +129,18 @@ The third review (codex-gpt-6-astra-review3.md) judged eight closed, five partia
 | 15 remainder (comments claiming more than proven) | first commit above | the bridge port's comments state that deleted links pass without a grant and that delivery is at-most-once per readback |
 
 Gates at the round-3 tip: see the final section of this file once recorded. Still not proven here: packaged desktop, a deployed Worker (dry run only), a credentialed model turn, cloud placement (S5/S6), delegation with effort (S7); durable admission across a runtime restart still rests on the history readback rather than a runtime-owned journal.
+
+## Gates at the round-3 tip
+
+| Gate | Result |
+|---|---|
+| root `bun run test:architecture-ratchets` | product boundary holds (5 products, 8 policies); helpers ratchet passed |
+| root `bun run lint` | 3 errors, all in `packages/claxedo-app/perf-harness/**`, byte-identical on dev |
+| `packages/claxedo-tasks` `bun run test` / `typecheck` | 180 pass / clean |
+| `packages/claxedo-app` tasks vitest / architecture guards / `tsgo -b` | 50 pass / 259 pass / clean |
+| `packages/claxedo-server-core` `src/tasks-host` / `typecheck` | 25 pass / clean |
+| `packages/claxedo-server` tasks, dispatch, hosted-workerd, selection / `typecheck` | 205 pass / clean |
+| `packages/claxedo-local-server` tasks, execution allowlist, architecture / `typecheck` | 33 pass / clean |
+| `packages/workspace-runtime` `bun run test` / `typecheck` | 1036 pass, 1 fail (`generateNotifyScript > reports failed delivery…`, pre-existing on dev) / clean |
+| `packages/claxedo-desktop` `typecheck` | clean |
+| authority adapters (`src/authority`, `src/platform/auth`) | 99 pass server-core, 275 pass server |
