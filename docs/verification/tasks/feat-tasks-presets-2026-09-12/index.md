@@ -70,7 +70,7 @@ claxedo-server: `deployment-closures` (Better Auth locked closure 16 > 15), `gov
 
 ## Fix wave after the Codex review (same day)
 
-All fifteen findings in codex-gpt-6-astra-review.md were addressed; each fix carries a mutation-checked test.
+All fifteen findings in codex-gpt-6-astra-review.md were acted on in round 1; each fix carries a mutation-checked test. The re-review (codex-gpt-6-astra-rereview.md) judged seven closed and eight partial and added five findings; round 2 below addresses every one of those.
 
 | Finding | Commit | Outcome |
 |---|---|---|
@@ -93,3 +93,24 @@ All fifteen findings in codex-gpt-6-astra-review.md were addressed; each fix car
 Also found and fixed during the wave: the kit client dropped `currentTask` / `currentPreset` from stale-revision refusals, so every rebase path in the app was dead while its hand-built tests passed (`b69be7a7ac`); the Start flow now rebases once and retries, and the edit conflict paths are proven through the real transport (`a6d3815550`).
 
 Still not proven here: packaged desktop, deployed hosted Worker, a credentialed model turn, cloud placement (S5/S6), delegation with effort (S7).
+
+## Round 2 after the re-review (same day)
+
+Commits are named by subject because the branch history was rewritten for attribution after they landed.
+
+| Re-review item | Commit subject | Outcome |
+|---|---|---|
+| 1 remainder (transcript read without recheck) | `fix(tasks): link the session before handing the task over, and gate the slot on what is there to open` | the service re-authorizes the previous session immediately before calling the bridge; a deleted session is never offered as a transcript |
+| 2 remainder (unsigned local creation race) | same | per-origin lock around reserve/probe/create/recover; a create refused for a taken id is re-probed and compared by configuration |
+| 3 remainder (settlement, existing-link comparison) | same | preset revision re-read inside the settlement unit; an occupied origin answers only when session id, digest and workspace all match |
+| 7 remainder (link before handoff) | same | bridge split into `start` and `handoff`; the link commits between them; a retry after a crash between the two sends once |
+| 9 remainder / N3 (duplicate edit replay) | `fix(tasks): answer a duplicate command from its receipt inside the unit` | receipt lookup inside the serialized unit; a `stale_revision` loser with a committed receipt replays; cases on memory, SQLite and D1 |
+| 13 remainder (hosted Worker) | `feat(tasks): select Tasks for the hosted Worker at build time` | `[define]` rendered into the Wrangler config, one dynamic import inside the folded branch, staged control-plane migrations; measured ON 1165 modules / 25 Tasks / 41 migrations vs OFF 1085 / 0 / 40 under a real `wrangler deploy --dry-run` |
+| 14 remainder / N1 (admission marker on a refused turn) | `fix(runtime): free a prompt_async admission when the turn is refused before execution` | admission means accepted execution; the refusal is published as a session error with `session_configuration_unavailable`; a retry with the same message id executes once with the retained instructions |
+| 15 remainder / N5 (comments) | `chore(tasks): comments say only what the code cannot` | comment pass over every branch file; the authorization resolver comment now states human principals only |
+| N2 (deleted session blocks Start again) | `fix(tasks): link the session before handing the task over…` | liveness classified before authorization; a deleted session permits attempt+1 without a grant; deleted links stay visible so the next attempt is derived correctly |
+| N4 (unbounded auto-pagination) | `fix(tasks): stop following a list at a failed page and offer the retry that resumes it` | following stops at a failed page; Retry resumes it; bounded request counts asserted |
+| found on the way | `fix(tasks): tell a refused preset read apart from an empty catalog` | a refused first preset page no longer renders as "no presets" |
+| found on the way | `test(runtime): keep boundary and local build outputs out of the SDK-boundary walk` | the SDK-boundary guard no longer scans `dist-boundary` / `dist-local` bundles |
+
+Still not proven here: packaged desktop, a deployed hosted Worker (dry run only), a credentialed model turn, cloud placement (S5/S6), delegation with effort (S7), and `prompt_async` still answers 204 before the configuration read on the adapter path (the refusal is on the event stream).
