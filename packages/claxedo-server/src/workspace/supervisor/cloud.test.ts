@@ -788,6 +788,68 @@ describe("workspace-supervisor", () => {
       expect(JSON.stringify(result)).not.toContain("broker-only-credential")
     })
 
+    test("a wake that withdraws every brokered secret reaches the driver", async () => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-secrets-warm", {
+        homeRegion: "us-east",
+        secrets: [{ name: "CLAXEDO_GITHUB_CLONE_AUTH", value: "Basic old", hosts: ["github.com"], header: "Authorization" }],
+      })
+      mockDaytonaLaunch.mockClear()
+
+      // Same process, runtime already ready: the warm short-circuit used to
+      // answer from memory and the withdrawal never left the supervisor.
+      const result = await manager.ensure("ws-secrets-warm", { homeRegion: "us-east", secrets: [] })
+
+      expect(result.status).toBe("ready")
+      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+    })
+
+    test("a wake that names no bindings still answers from the warm runtime", async () => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-secrets-untouched", { homeRegion: "us-east" })
+      mockDaytonaLaunch.mockClear()
+
+      await manager.ensure("ws-secrets-untouched", { homeRegion: "us-east" })
+
+      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+    })
+
+    test("a recorded sandbox is reconciled through the driver before it is called ready", async () => {
+      leases.set("ws-recorded-bindings", {
+        ...lease("ws-recorded-bindings"),
+        status: "ready",
+        sandbox_id: "daytona-existing-sb",
+        driver_resource_id: "daytona-existing-sb",
+        url: "http://existing-runtime.test",
+      })
+      store.set("ws-recorded-bindings", { ...workspace("ws-recorded-bindings"), status: "ready" })
+
+      const result = await supervisor.createWorkspaceSupervisorSandboxManager().ensure("ws-recorded-bindings", {
+        homeRegion: "us-east",
+        secrets: [],
+      })
+
+      expect(result.status).toBe("ready")
+      // Reattaching the recorded url makes no driver call at all, so the
+      // withdrawal would have been served on the previous authority.
+      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+    })
+
+    test("the caller's network policy is passed through instead of being recomputed", async () => {
+      const resolve = await import("../../sandbox/network/resolve")
+      ;(resolve.resolveSandboxNetworkPolicy as any).mockClear()
+
+      await supervisor.createWorkspaceSupervisorSandboxManager().ensure("ws-caller-net", {
+        homeRegion: "us-east",
+        net: { mode: "restricted", hosts: ["api.caller.test"] },
+      })
+
+      expect(mockDaytonaLaunch).toHaveBeenCalledWith(
+        expect.objectContaining({ net: { mode: "restricted", hosts: ["api.caller.test"] } }),
+      )
+      expect(resolve.resolveSandboxNetworkPolicy).not.toHaveBeenCalled()
+    })
+
     test("refuses supplied secrets when the supervisor driver cannot broker them", async () => {
       driverId = "modal"
       const result = await supervisor.createWorkspaceSupervisorSandboxManager().ensure("ws-secrets-unsupported", {
