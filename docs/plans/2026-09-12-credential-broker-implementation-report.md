@@ -161,3 +161,23 @@ Changed files for the skeleton: `bun.lock`; `packages/egress-broker/package.json
 The broker is opt-in infrastructure, not an enabled end-to-end model-provider flow. Provisioning selection, harness configuration, renewal, and persistent hosted storage are not connected by this slice. No Appendix E live provider experiment is claimed. The accounts-lane boundary recorded earlier still applies.
 
 Next concrete task: reproduce Cloudflare's expired egress-token failure, trace token production through container configuration and outbound interception, and implement renewal at the authoritative lifecycle owner. Test an active runtime past expiry, renewal failure, and restart so protected egress does not silently stop after the current 15-minute token lifetime. This is required for long-running brokered sessions; successful initial injection alone is insufficient.
+
+## Cloudflare feasibility preparation and image manifest repair (2026-09-13)
+
+The old Worker mints a JWT once during ensure-runtime; `runtimeMcpServers` copies that value into harness configuration. Updating only the Worker environment cannot renew already materialized client authentication. Appendix C instead calls for native outbound interception and removal of `/egress`; no parallel renewal mechanism was added to preserve the obsolete end state.
+
+Preparing the real image exposed an independent packaging defect: `first-party-mcp.ts` imports `@claxedo/mcp`, but `hostBundlePackageRoots` omitted that host-owned package. The host metadata gate rejected its three external MCP SDK imports. Added the canonical package root so both builds and generated external dependency pins follow its declared graph. Updated the real graph assertion: the MCP package depends on workspace-runtime and therefore comes after it in topological order.
+
+Commands and outcomes:
+
+- `bun test scripts/sandbox/tests/build-sandbox-image.test.ts` from claxedo-server: failing regression before fix; 23 pass, 0 fail after fix.
+- `bun build-sandbox-image.ts --bundle-only --out=cloudflare-worker/.build` from scripts/sandbox: failed before fix on undeclared MCP SDK imports; passed after fix, build ID `30f6471c69`.
+- `bun run test:architecture-ratchets` from root: 13 pass, 0 fail; all source and helper policies pass without baseline changes.
+- `node --check feasibility/check.mjs`: pass.
+- Probe Worker dry-run bundle: pass. Local container build: failed on Docker Hub base-image metadata timeout. Exact commands and unmet acceptance criterion are recorded in design Appendix E.
+
+Changed files: `scripts/sandbox/build-sandbox-image.ts`, `scripts/sandbox/tests/build-sandbox-image.test.ts`, and `scripts/sandbox/cloudflare-worker/feasibility/{outbound.ts,wrangler.toml,check.mjs,README.md}` under claxedo-server; design 002 Appendix E; this report. The probe uses synthetic data and is local-only; it was not deployed.
+
+Next: recover the base-image fetch, run the four-request local probe and cleanup, then test the same behavior in an isolated deployed sandbox. Only verified native interception supports replacing the expiring `/egress` route. The long-running credential flow is not complete.
+
+Packaging fix commit: `0a526f2492 fix(sandbox): include first-party MCP in image dependency roots`. Server `bun run typecheck` passes after the probe uses the SDK's namespace parameter type. The first typecheck rejected a global Workers type unavailable to the server compilation and a `keepAlive` option absent from its ambient SDK declaration; the probe no longer supplies that unnecessary option.

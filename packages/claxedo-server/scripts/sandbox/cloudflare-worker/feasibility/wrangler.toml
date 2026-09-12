@@ -1,0 +1,14 @@
+name = "claxedo-broker-outbound-feasibility"
+main = "outbound.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat"]
+[[containers]]
+class_name = "Sandbox"
+image = "../Dockerfile"
+max_instances = 1
+[[durable_objects.bindings]]
+class_name = "Sandbox"
+name = "Sandbox"
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Sandbox"]

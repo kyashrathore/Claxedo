@@ -344,3 +344,15 @@ Each item is a live experiment with a written result in Appendix B.
    deployment mode (needed by 3.6).
 
 Each item is answered yes, no, or "with this change", with the command, the provider, the date, and the result. A "no" removes that harness or driver from step 6's scope rather than weakening the design.
+
+### Experiment log — 2026-09-13, item 3
+
+Provider: Cloudflare Sandbox 0.12.9, local Wrangler 4.127.1, production runtime Dockerfile and compatibility date `2025-04-01`.
+
+Commands (from `packages/claxedo-server/scripts/sandbox`, then its `cloudflare-worker` directory):
+
+- `bun build-sandbox-image.ts --bundle-only --out=cloudflare-worker/.build`: initially failed because the host's first-party MCP dependency was absent from the image manifest roots. After adding the canonical `claxedo-mcp` package root, passed; build ID `30f6471c69`.
+- `npx wrangler deploy --dry-run --containers-rollout=none --config feasibility/wrangler.toml --outdir .artifacts/outbound-feasibility`: passed Worker bundling only; no deployment.
+- `npx wrangler dev --config feasibility/wrangler.toml --port 8793`: failed building the image at `FROM docker.io/cloudflare/sandbox:0.12.9`, `DeadlineExceeded: context deadline exceeded` while fetching base-image metadata. Docker daemon was running; Wrangler OAuth authentication was available.
+
+Result: **not run: the current runtime container image could not be built because the base-image fetch timed out.** Neither Bun/Node HTTPS interception nor a live handler update is proven. The reproducible local probe is in `cloudflare-worker/feasibility/`; its check must pass before a deployed experiment, and a local pass must not be reported as deployed provider acceptance. The existing 15-minute JWT expiry remains unfixed; the design's native outbound replacement is still gated on this experiment.
