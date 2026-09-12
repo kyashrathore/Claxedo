@@ -59,6 +59,13 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
   return {
     listCredentials: async (org) => (await credentialRegistry()).listCredentials(org),
     effectiveCredentials: async (scope, org) => (await credentialRegistry()).selectCredentialsForScope(scope, org),
+    setActiveCredential: async (id, org) => {
+      const result = (await credentialRegistry()).setActiveCredential(id, org)
+      // The engine resolves auth from a store Claxedo does not otherwise write:
+      // without this the next embedded turn runs on the account just replaced.
+      if (result.ok) await syncOpenCodeCredentials(org)
+      return result
+    },
     getCredentialByProvider: async (providerId, kind, org) => (await credentialRegistry()).getCredentialByProvider(providerId, kind, org),
     getCredential: async (id, org) => (await credentialRegistry()).getCredential(id, org),
     resolveCredentialSecret: async (providerId, org) => (await credentialRegistry()).resolveSecret(providerId, undefined, org),

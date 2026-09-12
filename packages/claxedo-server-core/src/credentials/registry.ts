@@ -19,7 +19,7 @@
  * see another org's rows".
  */
 
-import { randomUUID } from "crypto"
+import { createHash, randomUUID } from "crypto"
 import { eq, and, desc, inArray, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../platform/db"
 import { ClaxedoProviderCredentialTable, SINGLE_TENANT_ORG } from "./provider-credential.sql"
@@ -34,6 +34,7 @@ import {
   type CredentialScope,
   type CredentialWrite,
   type CredentialStatus,
+  type SetActiveCredentialResult,
 } from "./types"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { ensurePresetForProvider, removeAutoPresetForProvider } from "../sandbox/network/policy"
@@ -61,6 +62,15 @@ function inOrg(org?: CredentialOrgScope | null) {
   return eq(ClaxedoProviderCredentialTable.org_id, credentialOrg(org))
 }
 
+/**
+ * Rows belonging to one owner. `coalesce` matches the active index's own
+ * expression, so a predicate and the uniqueness it relies on agree about which
+ * rows are the team's.
+ */
+function ownedBy(owner: string | null) {
+  return sql`coalesce(${ClaxedoProviderCredentialTable.owner}, '') = ${owner ?? ""}`
+}
+
 function now() {
   return Date.now()
 }
@@ -74,6 +84,25 @@ function safeRead<T>(label: string, fallback: T, read: () => T): T {
   }
 }
 
+/**
+ * The identity a pasted key carries when the provider gives none.
+ *
+ * The upsert key includes `account_id`, so an API key saved without one
+ * overwrote whatever was stored for that provider and kind: a user could hold
+ * exactly one, and a second paste silently destroyed the first. Hashing the
+ * secret makes two keys two rows and the same key idempotent. The trailing
+ * characters are the ones the provider's own dashboard shows, so the row is
+ * recognisable in the accounts list without ever revealing the key.
+ *
+ * OAuth and subscription rows carry the provider's account id already, and
+ * everything that is not harness auth (sandbox drivers, `integration:` and
+ * `channel:` secrets) has one row per provider by design.
+ */
+function pastedAccountId(input: CredentialWrite): string | undefined {
+  if (input.kind !== "api_key" || !fanoutEligibleAuth(input.kind, input.provider_id)) return undefined
+  return `fp_${createHash("sha256").update(input.secret).digest("hex").slice(0, 8)}…${input.secret.slice(-4)}`
+}
+
 /** Create or update a credential with its secret stored in the backend. */
 export async function putCredential(
   input: CredentialWrite,
@@ -85,6 +114,8 @@ export async function putCredential(
   if (!ok) {
     throw new Error("Secret backend unavailable — refusing to store credential")
   }
+
+  const accountId = input.account_id ?? pastedAccountId(input)
 
   // Check for existing credential for this org+provider+kind. The org
   // predicate is what stops org A's write from adopting (and then
@@ -101,7 +132,7 @@ export async function putCredential(
         ),
       )
       .all(),
-  ).find((credential) => (credential.account_id ?? undefined) === input.account_id)
+  ).find((credential) => (credential.account_id ?? undefined) === accountId)
   const scope = input.scope ?? existing?.scope ?? "local"
   if (scope === "shared" && !input.consent && !existing?.consent_json) {
     throw new Error("Shared credentials require explicit consent")
@@ -124,10 +155,13 @@ export async function putCredential(
           )
           .all(),
       )
-        .filter((credential) => (credential.account_id ?? undefined) === input.account_id)
+        .filter((credential) => (credential.account_id ?? undefined) === accountId)
     : []
 
   const id = existing?.id ?? randomUUID()
+  const replaced = replacing.filter((cred) => cred.id !== id)
+  const owner = existing?.owner ?? null
+
   const ref = await backend.put(id, input.secret)
 
   // Clean up old backend ref if updating
@@ -141,11 +175,12 @@ export async function putCredential(
   const row = {
     id,
     org_id: orgId,
+    owner,
     provider_id: input.provider_id,
     kind: input.kind,
     source: input.source,
     label: input.label ?? null,
-    account_id: input.account_id ?? null,
+    account_id: accountId ?? null,
     secure_ref: ref,
     status: "available" as const,
     health: null,
@@ -159,22 +194,46 @@ export async function putCredential(
     updated_at: ts,
   }
 
-  const replaced = replacing.filter((cred) => cred.id !== id)
-
-  ClaxedoDB.transaction((db) => {
+  /**
+   * The mark moves only when the provider would otherwise be left without an
+   * account: an existing active row keeps it, a replacement inherits it from
+   * the row it destroys, and a write that arrives while another account holds
+   * it never takes it. Switching accounts is `setActiveCredential`.
+   *
+   * Read inside the write's own transaction because the secret backend is
+   * awaited above: two logins imported together would both see an unmarked
+   * provider and both claim the mark, which the partial unique index then
+   * rejects — losing the import rather than the race.
+   */
+  const stored = ClaxedoDB.transaction((db) => {
     if (replaced.length > 0) {
       db.delete(ClaxedoProviderCredentialTable)
         .where(and(inOrg(orgId), inArray(ClaxedoProviderCredentialTable.id, replaced.map((cred) => cred.id))))
         .run()
     }
+    const held = db
+      .select()
+      .from(ClaxedoProviderCredentialTable)
+      .where(
+        and(
+          inOrg(orgId),
+          eq(ClaxedoProviderCredentialTable.provider_id, input.provider_id),
+          ownedBy(owner),
+          eq(ClaxedoProviderCredentialTable.is_active, true),
+        ),
+      )
+      .all()
+      .some((other) => other.id !== id)
+    const values = { ...row, is_active: fanoutEligibleAuth(input.kind, input.provider_id) && !held }
     if (existing) {
       db.update(ClaxedoProviderCredentialTable)
-        .set(row)
+        .set(values)
         .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, id)))
         .run()
     } else {
-      db.insert(ClaxedoProviderCredentialTable).values(row).run()
+      db.insert(ClaxedoProviderCredentialTable).values(values).run()
     }
+    return values
   })
 
   for (const cred of replaced) {
@@ -189,7 +248,7 @@ export async function putCredential(
   // Auto-add network preset so sandbox egress is allowed for this provider
   ensurePresetForProvider(input.provider_id)
 
-  return toMetadata(row as CredentialRow)
+  return toMetadata(stored as CredentialRow)
 }
 
 type CredentialRow = typeof ClaxedoProviderCredentialTable.$inferSelect
@@ -219,31 +278,56 @@ export function listCredentials(org: CredentialOrgScope = SINGLE_TENANT_ORG): Cr
  * Ordering for "the credential to use for this provider" when more than one
  * exists — a user with two ChatGPT accounts has two native Codex credentials.
  *
- * Write order (`updated_at` alone) is not a preference: importing an older
- * account last made every session resolve to the older, often already-revoked
- * token. Rank by likelihood of working instead — usable status, not known
- * expired, then the furthest-out expiry (no expiry sorts first: an API key
- * outlives any token), and only then most-recently-written as a tiebreak.
+ * The account the user marked active answers that question; it is the only
+ * choice a surface can show and the only one they can change. Below the mark
+ * the most recent write wins, which decides only between rows that never carry
+ * one: sandbox driver tokens and `integration:`/`channel:` secrets, of which a
+ * provider holds a single row per kind.
  */
-const providerPreference = [
-  sql`case when ${ClaxedoProviderCredentialTable.status} = 'available' then 0 else 1 end`,
-  sql`case when ${ClaxedoProviderCredentialTable.health} = 'expired' then 1 else 0 end`,
-  sql`coalesce(${ClaxedoProviderCredentialTable.expires_at}, 9223372036854775807) desc`,
+const activeFirst = [
+  desc(ClaxedoProviderCredentialTable.is_active),
   desc(ClaxedoProviderCredentialTable.updated_at),
 ]
 
-function listCredentialsByProviderPreference(org: CredentialOrgScope) {
-  return safeRead("credential preference list", [], () =>
-    ClaxedoDB.use((db) =>
-      db
-        .select()
-        .from(ClaxedoProviderCredentialTable)
-        .where(inOrg(org))
-        .orderBy(...providerPreference)
-        .all()
-        .map(toMetadata),
-    ),
-  )
+/**
+ * Mark one stored account as the one its provider runs on, clearing whatever
+ * held the mark for the same owner. Both halves are one transaction: between
+ * them the provider has no active account, and the partial unique index would
+ * reject the second write if they were separate statements and the first had
+ * not landed.
+ */
+export function setActiveCredential(
+  id: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): SetActiveCredentialResult {
+  const orgId = credentialOrg(org)
+  return ClaxedoDB.transaction((db) => {
+    const row = db
+      .select()
+      .from(ClaxedoProviderCredentialTable)
+      .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, id)))
+      .get()
+    if (!row) return { ok: false, reason: "not_found" }
+    if (!fanoutEligible(toMetadata(row))) return { ok: false, reason: "not_eligible" }
+
+    const ts = now()
+    db.update(ClaxedoProviderCredentialTable)
+      .set({ is_active: false, updated_at: ts })
+      .where(
+        and(
+          inOrg(orgId),
+          eq(ClaxedoProviderCredentialTable.provider_id, row.provider_id),
+          ownedBy(row.owner),
+          eq(ClaxedoProviderCredentialTable.is_active, true),
+        ),
+      )
+      .run()
+    db.update(ClaxedoProviderCredentialTable)
+      .set({ is_active: true, updated_at: ts })
+      .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, id)))
+      .run()
+    return { ok: true, credential: toMetadata({ ...row, is_active: true, updated_at: ts }) }
+  })
 }
 
 /**
@@ -275,7 +359,7 @@ export function getCredentialByProvider(
               )
             : and(inOrg(org), eq(ClaxedoProviderCredentialTable.provider_id, providerId)),
         )
-        .orderBy(...providerPreference)
+        .orderBy(...activeFirst)
         .get(),
     ),
   )
@@ -292,7 +376,7 @@ export function requireCredentialRegistryLookup(
       .select()
         .from(ClaxedoProviderCredentialTable)
         .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.provider_id, providerId)))
-        .orderBy(...providerPreference)
+        .orderBy(...activeFirst)
         .get(),
   )
   return row ? toMetadata(row) : undefined
@@ -557,17 +641,31 @@ const FANOUT_ELIGIBLE_KINDS = new Set<CredentialMetadata["kind"]>([
   "subscription_session",
 ])
 
-function fanoutEligible(cred: CredentialMetadata): boolean {
-  return FANOUT_ELIGIBLE_KINDS.has(cred.kind) && !cred.provider_id.includes(":")
+function fanoutEligibleAuth(kind: CredentialKind, providerId: string): boolean {
+  return FANOUT_ELIGIBLE_KINDS.has(kind) && !providerId.includes(":")
 }
 
-function preferredCredentialPerProvider(credentials: CredentialMetadata[]) {
-  const selected = new Set<string>()
-  return credentials.filter((credential) => {
-    if (selected.has(credential.provider_id)) return false
-    selected.add(credential.provider_id)
-    return true
-  })
+function fanoutEligible(cred: CredentialMetadata): boolean {
+  return fanoutEligibleAuth(cred.kind, cred.provider_id)
+}
+
+/**
+ * The accounts marked active in one org. The partial unique index makes this
+ * at most one row per (owner, provider), so every fanout reads one account per
+ * provider without ranking anything: a provider whose accounts are all unmarked
+ * sends nothing, and the harness runs on the login it holds on the machine.
+ */
+function activeCredentials(org: CredentialOrgScope): CredentialMetadata[] {
+  return safeRead("active credential list", [], () =>
+    ClaxedoDB.use((db) =>
+      db
+        .select()
+        .from(ClaxedoProviderCredentialTable)
+        .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.is_active, true)))
+        .all()
+        .map(toMetadata),
+    ),
+  )
 }
 
 /**
@@ -577,10 +675,8 @@ function preferredCredentialPerProvider(credentials: CredentialMetadata[]) {
 export async function resolveAllSecrets(
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<Record<string, string>> {
-  const creds = preferredCredentialPerProvider(
-    listCredentialsByProviderPreference(org)
-      .filter((c) => c.status === "available" && c.secure_ref && fanoutEligible(c)),
-  )
+  const creds = activeCredentials(org)
+    .filter((c) => c.status === "available" && c.secure_ref && fanoutEligible(c))
   const backend = getBackend()
   const result: Record<string, string> = {}
 
@@ -603,15 +699,17 @@ export async function resolveAllSecrets(
  * The rows the fanout sends for a scope, one per provider, without their
  * secrets. This is the only place the "which credential runs" question is
  * answered, so a surface that shows it reads the same selection.
+ *
+ * The scope filter runs after the mark, not instead of it: a user whose active
+ * account is not shared sends nothing into a sandbox even when another of their
+ * accounts would qualify, because silently running a sandbox on an account the
+ * user did not choose is the thing the mark exists to stop.
  */
 export function selectCredentialsForScope(
   scope: CredentialSecretScope = "local",
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): CredentialMetadata[] {
-  return preferredCredentialPerProvider(
-    listCredentialsByProviderPreference(org)
-      .filter((c) => fanoutEligible(c) && credentialAvailableForScope(c, scope)),
-  )
+  return activeCredentials(org).filter((c) => fanoutEligible(c) && credentialAvailableForScope(c, scope))
 }
 
 export async function resolveSecretsForScope(

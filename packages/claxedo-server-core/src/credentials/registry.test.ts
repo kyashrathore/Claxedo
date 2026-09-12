@@ -1,4 +1,5 @@
 import { describe, expect, test, beforeEach, afterAll } from "vitest"
+import { eq } from "drizzle-orm"
 import { realpathSync, mkdirSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
@@ -25,7 +26,10 @@ const {
   deleteCredential,
   deleteCredentialsByProvider,
   resolveAllSecrets,
+  selectCredentialsForScope,
+  setActiveCredential,
 } = await import("./registry")
+const { ClaxedoProviderCredentialTable } = await import("./provider-credential.sql")
 
 // Force DB initialization
 const { ClaxedoDB } = await import("../platform/db")
@@ -137,14 +141,13 @@ describe("credential registry", () => {
   })
 
   test("Pi credential mapping validates aliases, status, and credential kind", async () => {
-    const stale = await putCredential({
+    await putCredential({
       provider_id: "codex-app-server",
       kind: "api_key",
       source: "managed",
       secret: "wrong-kind",
     })
-    updateCredentialStatus(stale.id, "expired")
-    await putCredential({
+    const oauth = await putCredential({
       provider_id: "codex-app-server",
       kind: "oauth_token",
       source: "managed",
@@ -158,42 +161,95 @@ describe("credential registry", () => {
     })
 
     expect(piCredentialProviderIDs("openai-codex")).toEqual(["codex-app-server"])
+    // The API key saved first holds the mark, and an API key is not a Codex
+    // login however many other accounts the provider holds.
+    expect(piRegistryProviderConnected("openai-codex")).toBe(false)
+
+    setActiveCredential(oauth.id)
     expect(piRegistryCredentialProvider("openai-codex")).toBe("codex-app-server")
-    expect(piRegistryCredentialProvider("anthropic")).toBe("anthropic")
     expect(piRegistryProviderConnected("openai-codex")).toBe(true)
+
+    updateCredentialStatus(oauth.id, "expired")
+    expect(piRegistryProviderConnected("openai-codex")).toBe(false)
+
+    expect(piRegistryCredentialProvider("anthropic")).toBe("anthropic")
     expect(piRegistryProviderConnected("unknown")).toBe(false)
     await deleteCredentialsByProvider("codex-app-server")
     await deleteCredentialsByProvider("anthropic")
   })
 
-  test("putCredential updates existing credential for same provider+kind", async () => {
-    await putCredential({
+  test("re-saving the same key updates that account in place", async () => {
+    const first = await putCredential({
       provider_id: "update-test",
       kind: "api_key",
       source: "managed",
-      secret: "old-key",
+      label: "first label",
+      secret: "same-key",
     })
-
-    await putCredential({
+    const again = await putCredential({
       provider_id: "update-test",
       kind: "api_key",
       source: "managed",
-      secret: "new-key",
+      label: "second label",
+      secret: "same-key",
     })
 
-    const resolved = await resolveSecret("update-test")
-    expect(resolved).toBe("new-key")
-
-    // Only one credential for this provider
-    const all = listCredentials().filter((c) => c.provider_id === "update-test")
-    expect(all.length).toBe(1)
+    expect(again.id).toBe(first.id)
+    expect(again.label).toBe("second label")
+    expect(listCredentials().filter((c) => c.provider_id === "update-test")).toHaveLength(1)
+    await expect(resolveSecret("update-test")).resolves.toBe("same-key")
   })
 
-  test("putCredential keeps api key and oauth credentials mutually exclusive per provider", async () => {
+  test("a second pasted key is a second account, identified by a fingerprint of its own", async () => {
+    const first = await putCredential({
+      provider_id: "second-paste-test",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-first-aaaa",
+    })
+    const second = await putCredential({
+      provider_id: "second-paste-test",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-second-bbbb",
+    })
+
+    expect(second.id).not.toBe(first.id)
+    expect(first.account_id).toMatch(/^fp_[0-9a-f]{8}…aaaa$/)
+    expect(second.account_id).toMatch(/^fp_[0-9a-f]{8}…bbbb$/)
+    expect(listCredentials().filter((c) => c.provider_id === "second-paste-test")).toHaveLength(2)
+    // The first save took the mark and the second did not steal it.
+    expect(first.is_active).toBe(true)
+    expect(second.is_active).toBe(false)
+    await expect(resolveSecret("second-paste-test")).resolves.toBe("sk-first-aaaa")
+  })
+
+  test("a connection secret keeps its single row per provider rather than gaining a fingerprint", async () => {
+    const first = await putCredential({
+      provider_id: "integration:notion",
+      kind: "api_key",
+      source: "managed",
+      secret: "ntn-first",
+    })
+    const second = await putCredential({
+      provider_id: "integration:notion",
+      kind: "api_key",
+      source: "managed",
+      secret: "ntn-second",
+    })
+
+    expect(second.id).toBe(first.id)
+    expect(second.account_id).toBeNull()
+    expect(second.is_active).toBe(false)
+    await expect(resolveSecret("integration:notion")).resolves.toBe("ntn-second")
+  })
+
+  test("putCredential keeps api key and oauth credentials mutually exclusive per account", async () => {
     const oauth = await putCredential({
       provider_id: "exclusive-auth-test",
       kind: "oauth_token",
       source: "managed",
+      account_id: "acc_1",
       secret: JSON.stringify({ refresh: "old-refresh" }),
     })
 
@@ -201,14 +257,40 @@ describe("credential registry", () => {
       provider_id: "exclusive-auth-test",
       kind: "api_key",
       source: "managed",
+      account_id: "acc_1",
       secret: "new-api-key",
     })
 
     const all = listCredentials().filter((cred) => cred.provider_id === "exclusive-auth-test")
     expect(all.map((cred) => cred.kind)).toEqual(["api_key"])
     expect(api.id).not.toBe(oauth.id)
+    // The replacement inherits the mark: destroying the active row must not
+    // leave the provider with nothing to run on.
+    expect(api.is_active).toBe(true)
     expect(await resolveSecret("exclusive-auth-test")).toBe("new-api-key")
     expect(await backend.get(oauth.secure_ref!)).toBeNull()
+  })
+
+  test("a token and a key for different accounts of one provider both survive", async () => {
+    const token = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "oauth_token",
+      source: "managed",
+      label: "setup token",
+      secret: "sk-ant-oat01-token",
+    })
+    const key = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      label: "API key",
+      secret: "sk-ant-api03-key",
+    })
+
+    const rows = listCredentials().filter((cred) => cred.provider_id === "claude-sdk")
+    expect(rows.map((row) => row.id).sort()).toEqual([token.id, key.id].sort())
+    expect(rows.filter((row) => row.is_active).map((row) => row.id)).toEqual([token.id])
+    await deleteCredentialsByProvider("claude-sdk")
   })
 
   test("putCredential does not treat sandbox driver credentials as API or OAuth auth methods", async () => {
@@ -290,12 +372,12 @@ describe("credential registry", () => {
     expect(await resolveSecretById(cred.id)).toBe("verify-secret")
   })
 
-  test("clears stale verification health when a credential is replaced", async () => {
+  test("clears stale verification health when the same key is saved again", async () => {
     const cred = await putCredential({
       provider_id: "verify-reconnect-test",
       kind: "api_key",
       source: "managed",
-      secret: "old-secret",
+      secret: "same-secret",
     })
     updateCredentialHealth(cred.id, "auth_failed", 1234)
 
@@ -303,11 +385,33 @@ describe("credential registry", () => {
       provider_id: "verify-reconnect-test",
       kind: "api_key",
       source: "managed",
-      secret: "new-secret",
+      secret: "same-secret",
     })
 
+    expect(reconnected.id).toBe(cred.id)
     expect(reconnected).toMatchObject({ health: null, status: "available", last_validated_at: null })
     expect(getCredential(cred.id)).toMatchObject({ health: null, status: "available", last_validated_at: null })
+  })
+
+  test("a rejected account keeps its verdict when another key is added beside it", async () => {
+    const rejected = await putCredential({
+      provider_id: "verify-second-account-test",
+      kind: "api_key",
+      source: "managed",
+      secret: "rejected-secret",
+    })
+    updateCredentialHealth(rejected.id, "auth_failed", 1234)
+
+    const added = await putCredential({
+      provider_id: "verify-second-account-test",
+      kind: "api_key",
+      source: "managed",
+      secret: "added-secret",
+    })
+
+    expect(added.id).not.toBe(rejected.id)
+    expect(added).toMatchObject({ health: null, status: "available", last_validated_at: null })
+    expect(getCredential(rejected.id)).toMatchObject({ health: "auth_failed", status: "error" })
   })
 
   test("keeps lifecycle status updates from exposing stale provider health", async () => {
@@ -449,6 +553,121 @@ describe("credential registry", () => {
     const after = listPolicies().length
     // No new policy should have been created
     expect(after).toBe(before)
+  })
+
+  describe("the active account", () => {
+    async function twoAccounts(providerId: string) {
+      const first = await putCredential({
+        provider_id: providerId,
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_first",
+        label: "first",
+        secret: "first-secret",
+      })
+      const second = await putCredential({
+        provider_id: providerId,
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_second",
+        label: "second",
+        secret: "second-secret",
+      })
+      return { first, second }
+    }
+
+    test("the database refuses a second active row for one provider and owner", async () => {
+      const { second } = await twoAccounts("active-index")
+
+      expect(() =>
+        ClaxedoDB.use((db) =>
+          db
+            .update(ClaxedoProviderCredentialTable)
+            .set({ is_active: true })
+            .where(eq(ClaxedoProviderCredentialTable.id, second.id))
+            .run(),
+        ),
+      ).toThrow(/UNIQUE/i)
+    })
+
+    test("two accounts imported together leave exactly one marked", async () => {
+      const saved = await Promise.all(["acc_a", "acc_b"].map((account) => putCredential({
+        provider_id: "active-import",
+        kind: "oauth_token",
+        source: "local_only",
+        account_id: account,
+        secret: `${account}-secret`,
+      })))
+
+      expect(saved.filter((row) => row.is_active)).toHaveLength(1)
+      expect(listCredentials().filter((row) => row.provider_id === "active-import" && row.is_active))
+        .toHaveLength(1)
+    })
+
+    test("setActiveCredential moves the mark, and the fanout sends the account it moved to", async () => {
+      const { first, second } = await twoAccounts("active-switch")
+      expect(await resolveSecret("active-switch")).toBe("first-secret")
+
+      const result = setActiveCredential(second.id)
+
+      expect(result).toMatchObject({ ok: true, credential: { id: second.id, is_active: true } })
+      expect(getCredential(first.id)?.is_active).toBe(false)
+      expect(await resolveSecret("active-switch")).toBe("second-secret")
+      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-switch"))
+        .toMatchObject([{ id: second.id }])
+      expect(await resolveAllSecrets()).toMatchObject({ "active-switch": "second-secret" })
+    })
+
+    test("setActiveCredential refuses an id it cannot see and one that never reaches a harness", async () => {
+      const driver = await putCredential({
+        provider_id: "active-driver",
+        kind: "sandbox_driver",
+        source: "managed",
+        secret: "daytona-master-key",
+      })
+      const { first } = await twoAccounts("active-other-org")
+
+      expect(setActiveCredential(randomUUID())).toEqual({ ok: false, reason: "not_found" })
+      expect(setActiveCredential(first.id, "some-other-org")).toEqual({ ok: false, reason: "not_found" })
+      expect(setActiveCredential(driver.id)).toEqual({ ok: false, reason: "not_eligible" })
+      expect(getCredential(driver.id)?.is_active).toBe(false)
+    })
+
+    test("deleting the active account leaves the provider with none, and nothing is promoted", async () => {
+      const { first, second } = await twoAccounts("active-delete")
+
+      expect(await deleteCredential(first.id)).toBe(true)
+
+      expect(getCredential(second.id)?.is_active).toBe(false)
+      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-delete")).toEqual([])
+      expect(await resolveAllSecrets()).not.toHaveProperty("active-delete")
+    })
+
+    test("a shared sandbox gets the active account or nothing, never another account of the same provider", async () => {
+      await putCredential({
+        provider_id: "active-scope",
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_local",
+        secret: "local-secret",
+      })
+      const shared = await putCredential({
+        provider_id: "active-scope",
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_shared",
+        scope: "shared",
+        consent: { at: 1, surface: "scope_change" },
+        secret: "shared-secret",
+      })
+
+      expect(selectCredentialsForScope("shared").filter((row) => row.provider_id === "active-scope")).toEqual([])
+
+      setActiveCredential(shared.id)
+
+      expect(selectCredentialsForScope("shared").filter((row) => row.provider_id === "active-scope"))
+        .toMatchObject([{ id: shared.id }])
+    })
   })
 
   test("putCredential fails closed when backend is unavailable", async () => {

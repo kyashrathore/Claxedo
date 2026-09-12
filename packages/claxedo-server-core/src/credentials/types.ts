@@ -43,6 +43,18 @@ export interface CredentialMetadata {
    * registry always populates it (`__local__` for single-tenant self-host).
    */
   org_id?: string
+  /**
+   * The user whose account this is; null is the team/operator row. Optional
+   * for the same reason as `org_id`: the hosted Worker store holds one record
+   * per provider and has no owner dimension.
+   */
+  owner?: string | null
+  /**
+   * The one account per (org, owner, provider) a harness runs on. Optional
+   * because the hosted store's single record per provider is that account by
+   * construction; the SQLite registry always populates it.
+   */
+  is_active?: boolean
   provider_id: string
   kind: CredentialKind
   source: CredentialSource
@@ -61,6 +73,17 @@ export interface CredentialMetadata {
   created_at: number
   updated_at: number
 }
+
+/**
+ * The outcome of marking one stored account active.
+ *
+ * A refusal is not an error: the id can name a row in another tenant, or a
+ * credential that never fans out to a harness (a sandbox driver token, a
+ * connection secret), and each answers the caller with its own status code.
+ */
+export type SetActiveCredentialResult =
+  | { ok: true; credential: CredentialMetadata }
+  | { ok: false; reason: "not_found" | "not_eligible" }
 
 /** Input for creating or updating a credential. */
 export interface CredentialWrite {

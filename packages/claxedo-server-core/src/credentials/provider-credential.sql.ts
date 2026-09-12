@@ -1,4 +1,5 @@
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core"
+import { sql } from "drizzle-orm"
+import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core"
 import {
   CREDENTIAL_HEALTHS,
   CREDENTIAL_KINDS,
@@ -33,6 +34,13 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
      * is the wildcard by another name.
      */
     org_id: text().notNull().default(SINGLE_TENANT_ORG),
+    /**
+     * The user whose account this is. NULL is the team/operator row, and it is
+     * a value rather than an absence: a team account is shared by everyone in
+     * the org, so it has to sort alongside personal rows in the same uniqueness
+     * rule instead of escaping it.
+     */
+    owner: text(),
     provider_id: text().notNull(),
     kind: text({ enum: CREDENTIAL_KINDS }).notNull(),
     source: text({ enum: CREDENTIAL_SOURCES }).notNull(),
@@ -45,6 +53,8 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
     last_validated_at: integer(),
     scope: text({ enum: CREDENTIAL_SCOPES }).notNull().default("local"),
     consent_json: text(),
+    /** The account a harness runs on; at most one per (org_id, owner, provider_id). */
+    is_active: integer({ mode: "boolean" }).notNull().default(false),
     last_used_at: integer(),
     last_error: text(),
     created_at: integer().notNull(),
@@ -56,5 +66,14 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
     index("claxedo_provider_credential_updated_idx").on(table.updated_at),
     index("claxedo_provider_credential_org_idx").on(table.org_id),
     index("claxedo_provider_credential_org_provider_idx").on(table.org_id, table.provider_id),
+    /**
+     * SQLite treats NULLs as distinct in a unique index, so a bare `owner`
+     * column would let a provider hold any number of active TEAM rows while
+     * enforcing the rule only for personal ones. `coalesce` gives the team
+     * owner a value the index can collide on.
+     */
+    uniqueIndex("claxedo_provider_credential_active_idx")
+      .on(table.org_id, sql`coalesce(${table.owner}, '')`, table.provider_id)
+      .where(sql`${table.is_active} = 1`),
   ],
 )

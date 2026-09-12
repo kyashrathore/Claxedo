@@ -29,6 +29,7 @@ import type {
   CredentialScope,
   CredentialStatus,
   CredentialWrite,
+  SetActiveCredentialResult,
 } from "../credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/operations/discovery"
 
@@ -76,6 +77,13 @@ export type ControlPlaneCredentials = {
   listCredentials: (org?: string) => Promise<CredentialMetadata[]>
   /** The rows the fanout would send for a scope, one per provider, secrets withheld. */
   effectiveCredentials?: (scope: "local" | "shared", org?: string) => Promise<CredentialMetadata[]>
+  /**
+   * Mark one stored account as the one its provider runs on. Optional: a store
+   * that holds a single record per provider has no second account to choose
+   * between, and reports the operation as unsupported rather than pretending
+   * the choice was made.
+   */
+  setActiveCredential?: (id: string, org?: string) => Promise<SetActiveCredentialResult>
   getCredentialByProvider: (
     providerId: string,
     kind?: CredentialKind,
