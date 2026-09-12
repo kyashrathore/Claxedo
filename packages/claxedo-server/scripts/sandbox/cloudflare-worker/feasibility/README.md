@@ -21,3 +21,5 @@ node feasibility/check.mjs
 ```
 
 The check calls both Node and Bun inside one sandbox before and after `setOutboundByHost` updates the handler parameters. All four HTTPS calls must reach the Worker with the expected revision and dummy request header. The script destroys its sandbox even on failure. This is local container evidence, not a deployed Cloudflare result.
+
+Verified locally on 2026-09-13: all four requests and sandbox cleanup passed on SDK 0.12.9, with the current runtime image (host build ID `195438cb63`). Native outbound handlers require the probe's `enable_ctx_exports` flag at the retained compatibility date. Registration must invoke the SDK's inherited setter; a static class field with the same name does not populate its handler registry. Deployed acceptance remains pending.

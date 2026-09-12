@@ -382,3 +382,13 @@ Result: **yes for an OpenAI-compatible provider's base URL and placeholder trans
 
 - Daytona: `daytona sandbox list --limit 1 --format json` failed with `Unauthorized: Invalid credentials - run 'daytona login' to reauthenticate`. Item 1 is **not run: valid Daytona authentication is unavailable**. No login flow was started, and no sandbox or secret was created.
 - Vercel: `vercel whoami` and `vercel project ls --format json` succeeded. The current account's returned project list contained no Claxedo project, and this checkout has no `.vercel/project.json`. Item 2 is **not run: intended Vercel project/team is awaiting user input**. No sandbox was created in an unrelated project.
+
+### Experiment log — 2026-09-13, item 3 local result
+
+Command: from `packages/claxedo-server/scripts/sandbox/cloudflare-worker`, run `wrangler dev --config feasibility/wrangler.toml --port 8793` using the task-local Docker client configuration, then `node feasibility/check.mjs`.
+
+Result: **with these changes, local interception passes**: register `outboundHandlers` through the SDK's inherited setter (a static class field shadows it), and enable `enable_ctx_exports`. The actual production runtime image, built from host build ID `195438cb63` on Sandbox 0.12.9, completed four HTTPS requests: Node and Bun at revision 1, followed by both clients at revision 2 after `setOutboundByHost`. The synthetic handler received the expected URL and dummy header. The same sandbox remained running between revisions and was destroyed afterward (`GET /destroy` 200, SDK destroy success).
+
+The unmodified compatibility configuration failed with `ctx.exports is undefined`. Cloudflare documents the opt-in [enable_ctx_exports flag](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-ctxexports); the probe retains compatibility date `2025-04-01` and adds that flag. No production Worker configuration has changed yet.
+
+This supersedes the earlier local build blocker. It is **not deployed Cloudflare acceptance** and does not yet prove native secret injection from the binding authority, withdrawal, or the replacement of `/egress`. Those remain required before claiming the Cloudflare adapter complete.

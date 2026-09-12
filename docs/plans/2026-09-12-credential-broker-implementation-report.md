@@ -213,3 +213,13 @@ Validation:
 - Rebuilding through `wrangler dev --config feasibility/wrangler.toml --port 8793` with the task-local Docker client configuration: the actual Dockerfile's native runtime smoke passed under Node 24.18.0 (`[7/7] ... workspace-runtime-image-smoke.mjs`, done in 7.8 seconds). Image export was still running at this report entry; interception checks remain separate.
 
 Changed files: the image smoke, design 002's Daytona/Vercel access results, and this report. Daytona authentication needs renewal; the intended Vercel project/team is awaiting user input. Neither live substitution experiment is claimed.
+
+## Cloudflare local interception result (2026-09-13)
+
+`node feasibility/check.mjs` passed all four real container HTTPS calls and cleanup. Node and Bun reached the synthetic outbound handler at revision 1 and, without restarting the sandbox, revision 2. Worker logs confirm successful sandbox destruction. Server `bun run typecheck` passes. This is local workerd/Docker evidence using the production image, not a deployed provider claim.
+
+Two initial probe failures changed the implementation requirements: a class field shadows the SDK's handler-registration setter; and `ctx.exports` is disabled at compatibility date `2025-04-01`. The probe now invokes the setter and explicitly enables the documented `enable_ctx_exports` flag. A check run during hot reload repeated the earlier registration error; it was rerun only after the local server reported ready. The production Worker has not yet adopted these changes.
+
+Changed files: `feasibility/outbound.ts`, `feasibility/check.mjs`, `feasibility/wrangler.toml`, `feasibility/README.md` under the Cloudflare Worker; design 002; this report. `git diff --check` passes.
+
+Next: secure and deploy an isolated probe, verify native interception on Cloudflare itself, then replace the old expiring-token proxy with the native handler at its authoritative registration owner. Test secret rotation and withdrawal through actual requests before declaring the adapter's capabilities.

@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 const origin = "http://127.0.0.1:8793"
 try {
   const response = await fetch(origin, { signal: AbortSignal.timeout(240_000) })
-  assert.equal(response.status, 200)
+  assert.equal(response.status, 200, await response.clone().text())
   const results = await response.json()
   assert.equal(results.length, 4)
   for (const [index, result] of results.entries()) {

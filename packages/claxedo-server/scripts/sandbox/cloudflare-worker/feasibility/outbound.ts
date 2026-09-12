@@ -2,9 +2,12 @@ import { ContainerProxy, getSandbox, Sandbox as BaseSandbox } from "@cloudflare/
 export { ContainerProxy }
 
 export class Sandbox extends BaseSandbox {
-  static outboundHandlers = {
+  static {
+    // The SDK registers handlers through an inherited setter; a class field shadows it.
+    Object.assign(this, { outboundHandlers: {
     probe: async (request: Request, _env: unknown, ctx: { params: { revision: number } }) =>
       Response.json({ revision: ctx.params.revision, url: request.url, clientHeader: request.headers.get("x-probe") }),
+    } })
   }
   interceptHttps = true
 }
