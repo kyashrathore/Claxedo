@@ -178,8 +178,7 @@ export async function measureInPageSessionFirstFoldSwitch(
           }
         }
         const rendererReady = renderer === "diff" ? inlineDiffReady
-          : renderer === "markdown" ? !!timeline?.querySelector("[data-component='markdown'] table") &&
-            !timeline?.querySelector("[data-markdown-progressive='pending']")
+          : renderer === "markdown" ? !!timeline?.querySelector("[data-component='markdown'] table")
           : renderer === "code" ? !!timeline?.querySelector("[data-markdown-complete='true'] [data-component='markdown-code']")
           : renderer === "mermaid" && renderMermaid === false
             ? !!timeline?.querySelector("[data-mermaid-state='deferred'] [data-slot='mermaid-render-button']")
@@ -223,11 +222,8 @@ export async function measureInPageSessionFirstFoldSwitch(
               "[data-timeline-row-rich-ready='true'] [data-component='edit-content']",
             ).length,
             markdownTables: afterTimeline?.querySelectorAll("[data-component='markdown'] table").length,
-            progressiveMarkdown: Array.from(
-              afterTimeline?.querySelectorAll<HTMLElement>("[data-markdown-progressive]") ?? [],
-            ).map((node) => node.dataset.markdownProgressive),
             markdownRowHeights: Array.from(
-              afterTimeline?.querySelectorAll<HTMLElement>("[data-markdown-progressive]") ?? [],
+              afterTimeline?.querySelectorAll<HTMLElement>("[data-markdown-block]") ?? [],
             ).map((node) => node.closest<HTMLElement>("[data-index]")?.offsetHeight),
             highlightedCode: afterTimeline?.querySelectorAll("[data-markdown-complete='true'] [data-component='markdown-code']").length,
             renderedMermaid: afterTimeline?.querySelectorAll("[data-mermaid-state='rendered'] [data-slot='mermaid-diagram'] svg").length,

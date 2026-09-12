@@ -43,10 +43,6 @@ import { getCachedCodeHighlight, highlightCodeThroughCache } from "./markdown-co
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
 import { handleTranscriptLinkClick, transcriptLinkHref } from "./transcript-link"
-import {
-  disposeProgressiveMarkdown,
-  stageMarkdownCollections as stageCollections,
-} from "./markdown-progressive"
 import { parseMarkdownMeasured } from "./markdown-parse-timing"
 
 type RenderedBlock =
@@ -237,10 +233,6 @@ function disposeViewButtons(root: Element) {
 function disposeMarkdownControls(root: Element) {
   disposeCopyButtons(root)
   disposeViewButtons(root)
-}
-
-export function stageMarkdownCollections(root: HTMLElement) {
-  stageCollections(root, traceRenderer)
 }
 
 const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
@@ -910,7 +902,6 @@ export function Markdown(
     if (isServer) return
     if (!local.text) {
       disposeMarkdownControls(container)
-      Array.from(container.children).forEach(disposeProgressiveMarkdown)
       container.replaceChildren()
       delete container.dataset.markdownStage
       return
@@ -935,7 +926,6 @@ export function Markdown(
       // result arrives.
       if (!local.streaming && container.childElementCount > 0) return
       disposeMarkdownControls(container)
-      Array.from(container.children).forEach(disposeProgressiveMarkdown)
       container.replaceChildren()
       return
     }
@@ -956,7 +946,6 @@ export function Markdown(
       const child = container.lastElementChild
       if (!child) break
       disposeMarkdownControls(child)
-      disposeProgressiveMarkdown(child)
       child.remove()
     }
     container
@@ -1050,12 +1039,10 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
 
   if (!(current instanceof HTMLDivElement)) {
     container.appendChild(next)
-    stageMarkdownCollections(next)
     traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
     return
   }
 
-  disposeProgressiveMarkdown(current)
   morphdom(current, next, {
     onBeforeElUpdated: (fromEl, toEl) => {
       if (
@@ -1070,14 +1057,10 @@ function updateBlock(container: HTMLDivElement, index: number, block: RenderedBl
       return true
     },
     onBeforeNodeDiscarded: (node) => {
-      if (node instanceof Element) {
-        disposeMarkdownControls(node)
-        disposeProgressiveMarkdown(node)
-      }
+      if (node instanceof Element) disposeMarkdownControls(node)
       return true
     },
   })
-  stageMarkdownCollections(current)
   traceRenderer(`markdown.block.${block.mode}.chars-${block.raw.length}`, started)
 }
 
