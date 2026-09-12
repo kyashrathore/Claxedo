@@ -435,7 +435,7 @@ test.describe("core sidebar tree @core", () => {
     await seedProject(page, { dir: DIR, view: { group: "workspace" } })
     await openTree(page, DIR)
 
-    const header = page.locator(`[data-testid="workspace-header"][data-workspace-id="${PROJECT_ID}"]`)
+    const header = page.locator(`[data-testid="workspace-header"][data-workspace-id="${DIR}"]`)
     await expect(header).toBeVisible({ timeout: 15_000 })
     const caret = header.locator('[role="button"][aria-label*="workspace"]')
     await expect(caret).toHaveAttribute("aria-expanded", "true")
@@ -673,7 +673,7 @@ test.describe("core sidebar tree @core", () => {
     await page.getByRole("menuitemradio", { name: "Workspace" }).click()
 
     await expect(page.locator('[data-testid="workspace-project-header"]')).toBeVisible({ timeout: 10_000 })
-    await expect(page.locator(`[data-testid="workspace-header"][data-workspace-id="${PROJECT_ID}"]`)).toBeVisible({ timeout: 10_000 })
+    await expect(page.locator(`[data-testid="workspace-header"][data-workspace-id="${DIR}"]`)).toBeVisible({ timeout: 10_000 })
     await expect(page.locator('[data-testid="project-header"]')).toHaveCount(0)
 
     // The view-options menu stays open across radio selections (a multi-section
@@ -737,7 +737,7 @@ test.describe("core sidebar tree @core", () => {
 
     await page.reload()
     await page.waitForLoadState("domcontentloaded")
-    await expect(page.locator(`[data-testid="workspace-header"][data-workspace-id="${PROJECT_ID}"]`)).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator(`[data-testid="workspace-header"][data-workspace-id="${DIR}"]`)).toBeVisible({ timeout: 20_000 })
     await expect(page.locator('[data-testid="project-header"]')).toHaveCount(0)
   })
 
