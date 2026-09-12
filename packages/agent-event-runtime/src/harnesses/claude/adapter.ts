@@ -207,6 +207,16 @@ function toolInputEvents(tool: ClaudeBlockState, parsedInput: Record<string, unk
   }] satisfies AgentRuntimeEvent[]
 }
 
+/**
+ * Claude Code's Bash tool carries no numeric field for the exit status; a
+ * non-zero run's result text starts with the code, "Exit code 1\n…", whether
+ * or not the harness marked the result as an error.
+ */
+function exitCodeFromResultText(resultText: string) {
+  const match = /^Exit code (\d+)(?:\s|$)/.exec(resultText)
+  return match ? Number(match[1]) : undefined
+}
+
 function toolResultText(block: Record<string, unknown>) {
   const content = block.content
   if (typeof content === "string") return content
@@ -988,7 +998,9 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
           const events = toolResultBlocks(rawMessage).flatMap((result): AgentRuntimeEvent[] => {
             const tool = byToolId[result.toolCallId]
             if (!tool?.toolName) return []
+            const exitCode = toolKind(tool.toolName) === "command_execution" ? exitCodeFromResultText(result.text) : undefined
             const metadata = {
+              ...(exitCode === undefined ? {} : { exitCode }),
               claude: {
                 itemType: toolKind(tool.toolName),
                 ...(isTaskTool(tool.toolName) ? { subagent: agentResultMetadata(result.structured) } : {}),

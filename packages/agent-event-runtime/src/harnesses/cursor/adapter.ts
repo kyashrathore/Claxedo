@@ -366,6 +366,7 @@ function toolCompletedEvents(input: {
 }) {
   const ensured = ensureTool(input)
   if (isTodoTool(ensured.toolName)) return { state: ensured.state, events: ensured.events }
+  const exitCode = asFiniteNumber(asRecord(asRecord(input.result)?.value)?.exitCode)
   if (input.isError || isErrorResult(input.result)) {
     return {
       state: ensured.state,
@@ -377,6 +378,7 @@ function toolCompletedEvents(input: {
           error: errorMessage(input.result) ?? "Cursor tool failed",
           display: ensured.display,
           metadata: {
+            ...(exitCode === undefined ? {} : { exitCode }),
             cursor: {
               itemType: ensured.kind,
               ...(isTaskTool(ensured.toolName) ? { subagent: { transcript: "unavailable" } } : {}),
@@ -396,6 +398,7 @@ function toolCompletedEvents(input: {
         output: isTaskTool(ensured.toolName) ? taskOutput(input.result) : successfulOutput(input.result),
         display: ensured.display,
         metadata: {
+          ...(exitCode === undefined ? {} : { exitCode }),
           cursor: {
             itemType: ensured.kind,
             ...(isTaskTool(ensured.toolName) ? { subagent: taskMetadata(input.result) } : {}),

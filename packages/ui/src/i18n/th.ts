@@ -192,6 +192,7 @@ export const dict = {
   "ui.basicTool.action.searchTools": "ค้นหาเครื่องมือ",
   "ui.basicTool.action.listAgents": "แสดงรายการเอเจนต์",
   "ui.toolErrorCard.failed": "ล้มเหลว",
+  "ui.tool.shell.exit": "รหัสออก {{code}}",
   "ui.toolErrorCard.copyError": "คัดลอกข้อผิดพลาด",
   "ui.message.duration.seconds": "{{count}}วิ",
   "ui.message.duration.minutesSeconds": "{{minutes}}นาที {{seconds}}วิ",

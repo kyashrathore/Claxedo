@@ -23,6 +23,11 @@ const samples = [
     error: "bash Command failed: exit code 1: bun test --watch",
   },
   {
+    tool: "bash",
+    error: "Command not found: grep",
+    exitCode: 127,
+  },
+  {
     tool: "read",
     error:
       "read File not found: /Users/davidhill/Documents/Local/opencode/packages/ui/src/components/does-not-exist.tsx",
@@ -84,7 +89,7 @@ export const All = {
     return (
       <div style="display: flex; flex-direction: column; gap: 12px; max-width: 720px;">
         {samples.map((item) => (
-          <ToolErrorCard tool={item.tool} error={item.error} />
+          <ToolErrorCard tool={item.tool} error={item.error} exitCode={item.exitCode} />
         ))}
       </div>
     )

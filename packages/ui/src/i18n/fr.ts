@@ -191,6 +191,7 @@ export const dict = {
   "ui.basicTool.action.searchTools": "Rechercher des outils",
   "ui.basicTool.action.listAgents": "Lister les agents",
   "ui.toolErrorCard.failed": "Échoué",
+  "ui.tool.shell.exit": "code de sortie {{code}}",
   "ui.toolErrorCard.copyError": "Copier l'erreur",
   "ui.message.duration.seconds": "{{count}}s",
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",

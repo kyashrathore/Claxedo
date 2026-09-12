@@ -194,6 +194,7 @@ export const dict = {
   "ui.basicTool.action.searchTools": "搜索工具",
   "ui.basicTool.action.listAgents": "列出智能体",
   "ui.toolErrorCard.failed": "失败",
+  "ui.tool.shell.exit": "退出码 {{code}}",
   "ui.toolErrorCard.copyError": "复制错误",
   "ui.message.duration.seconds": "{{count}}秒",
   "ui.message.duration.minutesSeconds": "{{minutes}}分 {{seconds}}秒",

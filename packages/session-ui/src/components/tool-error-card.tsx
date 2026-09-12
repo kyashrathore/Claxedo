@@ -6,6 +6,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
+import { ToolExitCode } from "./basic-tool"
 
 export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   tool: string
@@ -16,6 +17,7 @@ export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "c
   onOpenChange?: (open: boolean) => void
   subtitle?: string
   href?: string
+  exitCode?: number
 }
 
 export function ToolErrorCard(props: ToolErrorCardProps) {
@@ -35,6 +37,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     "onOpenChange",
     "subtitle",
     "href",
+    "exitCode",
   ])
   const setOpen = (value: boolean) => {
     if (props.open === undefined) setState("open", value)
@@ -116,6 +119,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
                         {subtitle()}
                       </a>
                     </Show>
+                    <ToolExitCode code={split.exitCode} />
                   </div>
                 </div>
               </div>

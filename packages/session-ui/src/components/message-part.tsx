@@ -35,7 +35,7 @@ import { useData } from "../context"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type UiI18n, useI18n } from "@opencode-ai/ui/context/i18n"
-import { BasicTool, GenericTool } from "./basic-tool"
+import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
 import { groupParts, isHiddenTool, isPendingQuestion, sameGroups, type PartGroup, type PartRef } from "./part-groups"
 import { assistantMessageSettled, countFoldableGroups, foldedGroupKeys, turnFoldDecision } from "./turn-fold"
 import { TurnFoldRow } from "./turn-fold-row"
@@ -1607,6 +1607,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                   onOpenChange={props.onToolOpenChange ? handleToolOpenChange : undefined}
                   subtitle={taskSubtitle()}
                   href={taskHref()}
+                  exitCode={shellExitCode(partMetadata())}
                 />
               )
             }}
@@ -2190,6 +2191,7 @@ ToolRegistry.register({
               <Show when={displayCommand()}>
                 <ShellSubmessage text={displayCommand()} animate={sawPending && !open()} />
               </Show>
+              <ToolExitCode code={pending() ? undefined : shellExitCode(props.metadata)} />
             </div>
           </div>
         )}

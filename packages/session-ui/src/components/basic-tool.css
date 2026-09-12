@@ -200,6 +200,15 @@
     flex-shrink: 0;
   }
 
+  [data-slot="basic-tool-tool-exit"] {
+    flex-shrink: 0;
+    font-family: var(--font-family-sans);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-large);
+    color: var(--text-weak);
+  }
+
   /* Live elapsed while running (T6) — muted, tabular so ticks don't shift layout. */
   [data-slot="basic-tool-tool-elapsed"] {
     flex-shrink: 0;

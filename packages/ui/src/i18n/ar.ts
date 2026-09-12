@@ -191,6 +191,7 @@ export const dict = {
   "ui.basicTool.action.searchTools": "البحث عن الأدوات",
   "ui.basicTool.action.listAgents": "عرض الوكلاء",
   "ui.toolErrorCard.failed": "فشل",
+  "ui.tool.shell.exit": "رمز الخروج {{code}}",
   "ui.toolErrorCard.copyError": "نسخ الخطأ",
   "ui.message.duration.seconds": "{{count}}ث",
   "ui.message.duration.minutesSeconds": "{{minutes}}د {{seconds}}ث",

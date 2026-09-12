@@ -42,6 +42,22 @@ describe("claudeSdkAdapter", () => {
 
   }
 
+  test("a Bash result's leading exit code travels on the completion, error or not", () => {
+    const agent = runtime()
+    const events = (id: string, name: string, content: string, isError: boolean) => {
+      agent.ingest({ source: "claude.sdk.message", payload: { type: "assistant", message: { content: [{ type: "tool_use", id, name, input: { command: "grep needle haystack" } }] } } })
+      return agent.ingest({ source: "claude.sdk.message", payload: {
+        type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content, is_error: isError }] },
+      } }).events.filter((event) => event.type === "tool-output" || event.type === "tool-error")
+    }
+    expect(events("bash-no-match", "Bash", "Exit code 1\n", false))
+      .toMatchObject([{ type: "tool-output", toolCallId: "bash-no-match", metadata: { exitCode: 1 } }])
+    expect(events("bash-crash", "Bash", "Exit code 127\nzsh: command not found: grep", true))
+      .toMatchObject([{ type: "tool-error", toolCallId: "bash-crash", metadata: { exitCode: 127 } }])
+    expect(events("bash-ok", "Bash", "needle", false)[0]?.metadata).not.toHaveProperty("exitCode")
+    expect(events("read-1", "Read", "Exit code 1 appears in this file", false)[0]?.metadata).not.toHaveProperty("exitCode")
+  })
+
   test("preserves provider error explanation and recovery guidance", () => {
     const explanation = "API Error: This request was blocked. Try a new session or change your model."
     const events = runtime().ingest({

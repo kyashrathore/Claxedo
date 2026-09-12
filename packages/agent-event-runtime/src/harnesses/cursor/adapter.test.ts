@@ -149,11 +149,11 @@ describe("cursorSdkAdapter", () => {
     }).events.filter((event) => event.type === "tool-output" || event.type === "tool-error")
 
     expect(shellCompletion("shell-nonzero-success", { status: "success", value: { exitCode: 1, stdout: "", stderr: "1 fail" } }))
-      .toMatchObject([{ type: "tool-error", toolCallId: "shell-nonzero-success" }])
+      .toMatchObject([{ type: "tool-error", toolCallId: "shell-nonzero-success", metadata: { exitCode: 1 } }])
     expect(shellCompletion("shell-nonzero-error", { status: "error", value: { exitCode: 1, stdout: "", stderr: "1 fail" } }))
-      .toMatchObject([{ type: "tool-error", toolCallId: "shell-nonzero-error" }])
+      .toMatchObject([{ type: "tool-error", toolCallId: "shell-nonzero-error", metadata: { exitCode: 1 } }])
     expect(shellCompletion("shell-zero", { status: "success", value: { exitCode: 0, stdout: "passed", stderr: "" } }))
-      .toMatchObject([{ type: "tool-output", toolCallId: "shell-zero" }])
+      .toMatchObject([{ type: "tool-output", toolCallId: "shell-zero", metadata: { exitCode: 0 } }])
   })
 
   test("routes UpdateTodos and Task tools to first-class runtime events", () => {

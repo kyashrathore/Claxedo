@@ -190,6 +190,7 @@ export const dict = {
   "ui.basicTool.action.searchTools": "Søg efter værktøjer",
   "ui.basicTool.action.listAgents": "Vis agenter",
   "ui.toolErrorCard.failed": "Fejlede",
+  "ui.tool.shell.exit": "afslutningskode {{code}}",
   "ui.toolErrorCard.copyError": "Kopier fejl",
   "ui.message.duration.seconds": "{{count}}s",
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",

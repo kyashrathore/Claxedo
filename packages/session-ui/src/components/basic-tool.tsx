@@ -106,6 +106,23 @@ function scheduleFrameMount(fn: () => void) {
  * body on output it never got still passes a child — the `<Show>` itself — and the
  * presence of that child is what used to put a chevron on a row that opens nothing.
  */
+/** The exit status a shell completion carried, once the process ended; 0 is "ran clean". */
+export function shellExitCode(metadata: Record<string, unknown> | undefined): number | undefined {
+  const code = metadata?.exitCode
+  return typeof code === "number" && Number.isFinite(code) ? code : undefined
+}
+
+/** A non-zero exit beside the command, so "Ran" alone never reads as "succeeded". */
+export function ToolExitCode(props: { code: number | undefined }) {
+  const i18n = useI18n()
+  const failed = () => (props.code !== undefined && props.code !== 0 ? props.code : undefined)
+  return (
+    <Show when={failed()}>
+      {(code) => <span data-slot="basic-tool-tool-exit">{i18n.t("ui.tool.shell.exit", { code: code() })}</span>}
+    </Show>
+  )
+}
+
 export function hasRenderedContent(value: ResolvedChildren): boolean {
   if (Array.isArray(value)) return value.some(hasRenderedContent)
   if (value === null || value === undefined || typeof value === "boolean") return false

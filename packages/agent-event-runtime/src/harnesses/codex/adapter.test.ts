@@ -213,7 +213,7 @@ describe("codexAppServerAdapter", () => {
       type: "tool-error",
       toolCallId: "missing-binary",
       error: "zsh: command not found: grep",
-      metadata: { codex: { itemType: "command_execution", exitCode: 127 } },
+      metadata: { exitCode: 127, codex: { itemType: "command_execution" } },
     }))
 
     const passed = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
@@ -230,7 +230,7 @@ describe("codexAppServerAdapter", () => {
     expect(passed).toContainEqual(expect.objectContaining({
       type: "tool-output",
       toolCallId: "matched",
-      metadata: { codex: { itemType: "command_execution", exitCode: 0 } },
+      metadata: { exitCode: 0, codex: { itemType: "command_execution" } },
     }))
   })
 
@@ -265,7 +265,7 @@ describe("codexAppServerAdapter", () => {
       type: "tool-error",
       toolCallId: "proc-killed",
       error: "Process exited with code 137",
-      metadata: { codex: expect.objectContaining({ exitCode: 137 }) },
+      metadata: expect.objectContaining({ exitCode: 137 }),
     }))
     expect(failed.some((event) => event.type === "tool-output")).toBe(false)
 

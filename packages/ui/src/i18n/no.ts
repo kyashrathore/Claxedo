@@ -170,6 +170,7 @@ export const dict: Record<Keys, string> = {
   "ui.basicTool.action.searchTools": "Søk etter verktøy",
   "ui.basicTool.action.listAgents": "Vis agenter",
   "ui.toolErrorCard.failed": "Mislyktes",
+  "ui.tool.shell.exit": "avslutningskode {{code}}",
   "ui.toolErrorCard.copyError": "Kopier feil",
   "ui.message.duration.seconds": "{{count}}s",
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",

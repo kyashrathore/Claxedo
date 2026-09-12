@@ -1,11 +1,21 @@
 import { describe, expect, test } from "bun:test"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
-import { hasRenderedContent, humanizeTool, type GenericToolTitle, collapsePayload } from "./basic-tool"
+import { hasRenderedContent, humanizeTool, shellExitCode, type GenericToolTitle, collapsePayload } from "./basic-tool"
 
 // Outside a provider `useI18n()` yields the shipped English catalog, so these
 // assertions read the copy a user reads rather than a stand-in for it.
 const i18n = useI18n()
 const humanize = (tool: string, input?: Record<string, unknown>) => humanizeTool(tool, input, i18n)
+
+describe("shellExitCode", () => {
+  test("reads the completion's exit status and nothing that only looks like one", () => {
+    expect(shellExitCode({ exitCode: 127, codex: { itemType: "command_execution" } })).toBe(127)
+    expect(shellExitCode({ exitCode: 0 })).toBe(0)
+    expect(shellExitCode({ exitCode: "1" })).toBeUndefined()
+    expect(shellExitCode({ codex: { exitCode: 1 } })).toBeUndefined()
+    expect(shellExitCode(undefined)).toBeUndefined()
+  })
+})
 
 describe("humanizeTool", () => {
   const CASES: Array<[name: string, tool: string, input: Record<string, unknown>, expected: GenericToolTitle]> = [

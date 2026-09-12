@@ -197,6 +197,7 @@ export const dict = {
   "ui.basicTool.action.searchTools": "Araç ara",
   "ui.basicTool.action.listAgents": "Ajanları listele",
   "ui.toolErrorCard.failed": "Başarısız",
+  "ui.tool.shell.exit": "çıkış kodu {{code}}",
   "ui.toolErrorCard.copyError": "Hatayı kopyala",
   "ui.message.duration.seconds": "{{count}}sn",
   "ui.message.duration.minutesSeconds": "{{minutes}}dk {{seconds}}sn",

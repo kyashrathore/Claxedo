@@ -762,7 +762,7 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
             : commandStatus === "failed"
             ? { type: "tool-error" as const, toolCallId: id, error: text(output) ?? `Process exited with code ${exitCode}` }
             : { type: "tool-output" as const, toolCallId: id, output, ...(attachments.length ? { attachments } : {}) }
-          const completionMetadata = { codex: { itemType, ...(exitCode === undefined ? {} : { exitCode }) } }
+          const completionMetadata = { ...(exitCode === undefined ? {} : { exitCode }), codex: { itemType } }
           if (!existing) {
             const toolName = toolNameForItem(itemType, completedItem)
             const input = structuredInput(completedItem)
@@ -1141,15 +1141,16 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
 
         case "process/exited": {
           const id = text(row.processHandle) ?? context.createId("process")
+          const exitCode = asFiniteNumber(row.exitCode)
           return processExitEvents({
             state,
             toolCallId: id,
             row,
             metadata: {
+              ...(exitCode === undefined ? {} : { exitCode }),
               codex: {
                 method,
                 processHandle: id,
-                exitCode: row.exitCode,
                 stdoutCapReached: row.stdoutCapReached,
                 stderrCapReached: row.stderrCapReached,
               },

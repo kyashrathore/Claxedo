@@ -190,6 +190,7 @@ export const dict = {
   "ui.basicTool.action.searchTools": "ツールを検索",
   "ui.basicTool.action.listAgents": "エージェントを一覧表示",
   "ui.toolErrorCard.failed": "失敗",
+  "ui.tool.shell.exit": "終了コード {{code}}",
   "ui.toolErrorCard.copyError": "エラーをコピー",
   "ui.message.duration.seconds": "{{count}}秒",
   "ui.message.duration.minutesSeconds": "{{minutes}}分 {{seconds}}秒",

@@ -167,6 +167,7 @@ export const dict = {
   "ui.basicTool.action.searchTools": "도구 검색",
   "ui.basicTool.action.listAgents": "에이전트 목록",
   "ui.toolErrorCard.failed": "실패",
+  "ui.tool.shell.exit": "종료 코드 {{code}}",
   "ui.toolErrorCard.copyError": "오류 복사",
   "ui.message.duration.seconds": "{{count}}초",
   "ui.message.duration.minutesSeconds": "{{minutes}}분 {{seconds}}초",

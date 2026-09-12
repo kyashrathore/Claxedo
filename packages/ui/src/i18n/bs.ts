@@ -195,6 +195,7 @@ export const dict = {
   "ui.basicTool.action.searchTools": "Pretraga alata",
   "ui.basicTool.action.listAgents": "Lista agenata",
   "ui.toolErrorCard.failed": "Neuspješno",
+  "ui.tool.shell.exit": "izlazni kod {{code}}",
   "ui.toolErrorCard.copyError": "Kopiraj grešku",
   "ui.message.duration.seconds": "{{count}}s",
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",

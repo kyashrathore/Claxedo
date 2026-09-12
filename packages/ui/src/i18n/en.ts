@@ -160,6 +160,7 @@ export const dict: Record<string, string> = {
   "ui.subagent.status.unknown": "status unavailable",
 
   "ui.toolErrorCard.failed": "Failed",
+  "ui.tool.shell.exit": "exit {{code}}",
   "ui.toolErrorCard.copyError": "Copy error",
 
   "ui.common.file.one": "file",
