@@ -398,8 +398,13 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
     while (turn.delivery === "queue") {
       input.onDelivery?.("queue")
       settleAdmission()
-      await input.runtime.turns.whenIdle(input.sessionId)
-      turn = await start()
+      const handoff = await input.runtime.turns.whenIdle(input.sessionId)
+      try {
+        turn = await start()
+      } catch (error) {
+        handoff.abandon()
+        throw error
+      }
     }
     input.onDelivery?.(turn.delivery)
     settleAdmission()

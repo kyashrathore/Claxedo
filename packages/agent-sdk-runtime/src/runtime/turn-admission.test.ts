@@ -229,10 +229,14 @@ describe("handing an idle session to the prompts waiting for it", () => {
   function running(woken: string[]) {
     const turns = createTurnAdmissions({ acquireTurnLease: () => "lease", releaseTurnLease: () => {} })
     const claimed = turns.claim("ses", { turnId: "msg_first", assistantMessageId: "asst_first" })!
-    const wait = (name: string) => void turns.whenIdle("ses").then(() => woken.push(name))
+    const handoffs = new Map<string, { abandon: () => void }>()
+    const wait = (name: string) => void turns.whenIdle("ses").then((handoff) => {
+      handoffs.set(name, handoff)
+      woken.push(name)
+    })
     wait("a")
     wait("b")
-    return { turns, claimed, wait }
+    return { turns, claimed, wait, handoffs }
   }
 
   async function settle() {
@@ -248,6 +252,68 @@ describe("handing an idle session to the prompts waiting for it", () => {
     await settle()
 
     expect(woken).toEqual(["a"])
+  })
+
+  test("a woken prompt that cannot start hands the session to the next waiter", async () => {
+    const woken: string[] = []
+    const session = running(woken)
+
+    session.claimed.release()
+    await settle()
+    session.handoffs.get("a")!.abandon()
+    await settle()
+
+    expect(woken).toEqual(["a", "b"])
+  })
+
+  test("giving the session up after it was claimed hands nothing on", async () => {
+    const woken: string[] = []
+    const session = running(woken)
+
+    session.claimed.release()
+    await settle()
+    const next = session.turns.claim("ses", { turnId: "msg_a", assistantMessageId: "asst_a" })!
+    session.handoffs.get("a")!.abandon()
+    await settle()
+    expect(woken).toEqual(["a"])
+
+    next.release()
+    await settle()
+    expect(woken).toEqual(["a", "b"])
+  })
+
+  test("a session handed to a waiter is still busy to a prompt that arrives before it claims", async () => {
+    const woken: string[] = []
+    const session = running(woken)
+
+    session.claimed.release()
+    await settle()
+    session.wait("late")
+    await settle()
+    expect(woken).toEqual(["a"])
+
+    session.handoffs.get("a")!.abandon()
+    await settle()
+    session.handoffs.get("b")!.abandon()
+    await settle()
+    expect(woken).toEqual(["a", "b", "late"])
+  })
+
+  test("a session whose last waiter has run is idle again to the next prompt", async () => {
+    const woken: string[] = []
+    const session = running(woken)
+
+    session.claimed.release()
+    await settle()
+    session.turns.claim("ses", { turnId: "msg_a", assistantMessageId: "asst_a" })!.release()
+    await settle()
+    session.turns.claim("ses", { turnId: "msg_b", assistantMessageId: "asst_b" })!.release()
+    await settle()
+    expect(woken).toEqual(["a", "b"])
+
+    session.wait("late")
+    await settle()
+    expect(woken).toEqual(["a", "b", "late"])
   })
 
   test("a second cancellation does not wake a waiter the first one did not", async () => {

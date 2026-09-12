@@ -36,36 +36,49 @@ export function createTurnAdmissions(
 ) {
   const active = new Map<string, ActiveTurn>()
   const leases = new Map<string, string>()
-  const waiting = new Map<string, Array<() => void>>()
+  const waiting = new Map<string, Array<(token: object) => void>>()
+  const handed = new Map<string, object>()
 
   /**
    * Wake the waiter that has been waiting longest, and only that one: the turn
    * it claims through `turns.start` cannot be taken by a prompt queued after
    * it, so the prompts a session is holding run in the order they arrived.
+   * The session stays busy to later waiters until that waiter claims it or
+   * gives it up.
    */
   const handOff = (sessionId: string) => {
     if (active.has(sessionId)) return
     const queue = waiting.get(sessionId)
     const next = queue?.shift()
     if (queue?.length === 0) waiting.delete(sessionId)
-    next?.()
+    if (!next) return
+    const token = {}
+    handed.set(sessionId, token)
+    next(token)
   }
 
   return {
     /**
      * Resolves once this waiter owns the session's next turn, for a caller
-     * holding a prompt that waits for the running turn.
-     *
-     * A waiter that is woken and then never claims leaves the ones behind it
-     * waiting for the session's next turn to end.
+     * holding a prompt that waits for the running turn. A caller whose start
+     * then fails before it claims must `abandon`, which wakes the next waiter;
+     * once any claim has taken the session, `abandon` does nothing.
      */
-    whenIdle(sessionId: string) {
+    whenIdle(sessionId: string): Promise<{ abandon: () => void }> {
       const queue = waiting.get(sessionId)
-      if (!active.has(sessionId) && !queue?.length) return Promise.resolve()
-      return new Promise<void>((resolve) => {
+      if (!active.has(sessionId) && !handed.has(sessionId) && !queue?.length) {
+        return Promise.resolve({ abandon: () => {} })
+      }
+      return new Promise<object>((resolve) => {
         if (queue) queue.push(resolve)
         else waiting.set(sessionId, [resolve])
-      })
+      }).then((token) => ({
+        abandon: () => {
+          if (handed.get(sessionId) !== token) return
+          handed.delete(sessionId)
+          handOff(sessionId)
+        },
+      }))
     },
     active(sessionId: string) {
       return active.get(sessionId)
@@ -83,6 +96,7 @@ export function createTurnAdmissions(
         return undefined
       }
       leases.set(sessionId, leaseId)
+      handed.delete(sessionId)
       return {
         ...claimed,
         release: () => {
@@ -111,7 +125,8 @@ export function createTurnAdmissions(
     clear() {
       active.clear()
       leases.clear()
-      for (const waiters of waiting.values()) for (const resolve of waiters) resolve()
+      handed.clear()
+      for (const waiters of waiting.values()) for (const resolve of waiters) resolve({})
       waiting.clear()
     },
   }

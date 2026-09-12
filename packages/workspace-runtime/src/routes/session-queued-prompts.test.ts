@@ -61,7 +61,10 @@ function runtimeDouble(input: {
           },
         }
       },
-      whenIdle: async () => await (input.idle?.() ?? Promise.resolve()),
+      whenIdle: async () => {
+        await (input.idle?.() ?? Promise.resolve())
+        return { abandon: () => {} }
+      },
     },
     events: {
       subscribe: () => (async function* () {

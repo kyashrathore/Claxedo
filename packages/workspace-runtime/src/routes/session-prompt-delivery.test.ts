@@ -53,10 +53,14 @@ function runtimeDouble(input: {
   deliveries: PromptDelivery[]
   aborts?: Array<{ turnId?: string } | undefined>
   idle?: () => Promise<void>
+  refuse?: (attempt: number) => Error | undefined
+  abandons?: number[]
 }) {
   return {
     turns: {
       start: async (turn: AgentRuntimeTurnStartInput) => {
+        const refusal = input.refuse?.(input.starts.length + 1)
+        if (refusal) throw refusal
         input.starts.push(turn)
         const delivery = input.deliveries.shift() ?? "start"
         return {
@@ -74,7 +78,10 @@ function runtimeDouble(input: {
           },
         }
       },
-      whenIdle: async () => await (input.idle?.() ?? Promise.resolve()),
+      whenIdle: async () => {
+        await (input.idle?.() ?? Promise.resolve())
+        return { abandon: () => input.abandons?.push(input.starts.length) }
+      },
       abort: async (_sessionId: string, _directory: unknown, scope?: { turnId?: string }) => {
         input.aborts?.push(scope)
         return { ok: true, status: "cancelled" }
@@ -163,6 +170,29 @@ describe("how a prompt for a busy session is delivered", () => {
       await new Promise((resolve) => setTimeout(resolve, 5))
     }
     expect(starts.map((turn) => turn.messageId)).toEqual(["msg_queued", "msg_queued"])
+  })
+
+  test("a queued prompt whose start fails gives the session up for the next waiter", async () => {
+    const starts: AgentRuntimeTurnStartInput[] = []
+    const abandons: number[] = []
+    const runtime = runtimeDouble({
+      starts,
+      deliveries: ["queue"],
+      refuse: (attempt) => attempt === 2 ? new Error("the runtime has no adapter for this session") : undefined,
+      abandons,
+    })
+
+    const response = await routes(runtime).request("http://localhost/session/session_1/prompt_async", prompt({
+      messageID: "msg_queued",
+      parts: [{ type: "text", text: "then run the tests" }],
+      delivery: "queue",
+    }))
+
+    expect(await response.json()).toEqual({ delivery: "queue" })
+    for (let attempt = 0; attempt < 200 && abandons.length < 1; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(abandons).toEqual([1])
   })
 
   test("a queued prompt is persisted while it waits and dropped when its turn starts", async () => {

@@ -689,9 +689,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         return result
       },
-      /** Resolves when no turn holds this session, for a caller holding a queued prompt. */
-      async whenIdle(sessionId: string) {
-        await admissions.whenIdle(sessionId)
+      /** Resolves once the caller owns this session's next turn; a start that then fails must `abandon` it. */
+      whenIdle(sessionId: string) {
+        return admissions.whenIdle(sessionId)
       },
     }),
     goals: resource(goals.resource),
