@@ -377,3 +377,8 @@ Harness: pinned embedded OpenCode SDK `0.0.0-beta-18684`, Node 26.8.1, Claxedo w
 Command from `packages/workspace-runtime`: `node scripts/node-provider-feasibility.mjs` (using the current `dist` artifacts produced by the successful sandbox host build).
 
 Result: **yes for an OpenAI-compatible provider's base URL and placeholder transport**. The real SDK sent one request to `/v1/chat/completions` on the configured local endpoint with `Authorization: Bearer broker-placeholder` and model `proof`; its streamed response reached the workspace message snapshot. The keys are `provider.<id>.npm: "@ai-sdk/openai-compatible"`, `provider.<id>.options.baseURL`, and `provider.<id>.options.apiKey`, with the model declared under `provider.<id>.models`. This does not prove every vendor-specific SDK, a live paid-provider request, or automatic binding selection/configuration. The smoke uses an isolated database, workspace, and SDK test home and closes the host and endpoint afterward.
+
+### Access checks — 2026-09-13, items 1 and 2
+
+- Daytona: `daytona sandbox list --limit 1 --format json` failed with `Unauthorized: Invalid credentials - run 'daytona login' to reauthenticate`. Item 1 is **not run: valid Daytona authentication is unavailable**. No login flow was started, and no sandbox or secret was created.
+- Vercel: `vercel whoami` and `vercel project ls --format json` succeeded. The current account's returned project list contained no Claxedo project, and this checkout has no `.vercel/project.json`. Item 2 is **not run: intended Vercel project/team is awaiting user input**. No sandbox was created in an unrelated project.

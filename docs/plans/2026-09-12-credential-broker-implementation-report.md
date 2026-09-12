@@ -197,3 +197,19 @@ Added `packages/workspace-runtime/scripts/node-provider-feasibility.mjs`, an act
 Command from workspace-runtime: `node scripts/node-provider-feasibility.mjs`: pass; one actual provider HTTP request, Node 26.8.1, no provider mocks inside the SDK. The provider response itself is deterministic test data. Appendix E item 6 now records the verified OpenCode keys and explicit limits. No live model-vendor request or production binding configuration is claimed.
 
 Changed files: that new smoke script, design 002, and this report. `git diff --check`: pass. No production imports or dependency declarations changed.
+
+## Repair native runtime image smoke (2026-09-13)
+
+The first full Cloudflare image build installed its dependencies and booted the runtime, then failed the image smoke after 20 seconds. The smoke sent the former fake-harness `exec: printf ...` prompt to real Pi with no provider configuration. The production gate was not disabled or given a larger timeout.
+
+Updated `packages/claxedo-server/scripts/sandbox/workspace-runtime-image-smoke.mjs` to start a deterministic local provider, configure the real Pi process with its own isolated models file, request a native file write, and verify the file contents, returned tool message, streamed completion, and persisted history. Existing session create/update/list/delete assertions remain. The test owns and closes its local endpoint and runtime.
+
+Validation:
+
+- `bun test scripts/sandbox/tests/build-sandbox-image.test.ts` from claxedo-server: 23 pass, 0 fail.
+- `bun build-sandbox-image.ts --bundle-only --out=cloudflare-worker/.build` from scripts/sandbox: pass; new build ID `195438cb63`.
+- Root `bun run test:architecture-ratchets`: 13 pass, 0 fail; all source and helper policies pass unchanged.
+- A direct host-machine invocation of the standalone bundle failed before readiness because that image context's npm dependencies were not installed on the host (`jsonc-parser` missing). It is not counted as an acceptance pass.
+- Rebuilding through `wrangler dev --config feasibility/wrangler.toml --port 8793` with the task-local Docker client configuration: the actual Dockerfile's native runtime smoke passed under Node 24.18.0 (`[7/7] ... workspace-runtime-image-smoke.mjs`, done in 7.8 seconds). Image export was still running at this report entry; interception checks remain separate.
+
+Changed files: the image smoke, design 002's Daytona/Vercel access results, and this report. Daytona authentication needs renewal; the intended Vercel project/team is awaiting user input. Neither live substitution experiment is claimed.

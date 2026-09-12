@@ -1,13 +1,40 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { once } from "node:events"
-import { mkdtemp, rm } from "node:fs/promises"
+import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { createServer } from "node:net"
+import { createServer as createHttpServer } from "node:http"
 import path from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
 
 const directory = await mkdtemp(path.join(tmpdir(), "workspace-runtime-image-"))
+const marker = "claxedo-image-native-turn"
+const agentDir = path.join(directory, "pi-agent")
+await mkdir(agentDir)
+const providerRequests = []
+const provider = createHttpServer(async (request, response) => {
+  const chunks = []
+  for await (const chunk of request) chunks.push(chunk)
+  providerRequests.push(JSON.parse(Buffer.concat(chunks).toString()))
+  const tool = providerRequests.length === 1
+  const delta = tool ? {
+    role: "assistant", tool_calls: [{ index: 0, id: "image-write", type: "function",
+      function: { name: "write", arguments: JSON.stringify({ path: "native-proof.txt", content: marker }) } }],
+  } : { role: "assistant", content: marker }
+  response.writeHead(200, { "content-type": "text/event-stream" })
+  for (const chunk of [
+    { choices: [{ index: 0, delta, finish_reason: null }] },
+    { choices: [{ index: 0, delta: {}, finish_reason: tool ? "tool_calls" : "stop" }],
+      usage: { prompt_tokens: 2, completion_tokens: 3, total_tokens: 5 } },
+  ]) response.write(`data: ${JSON.stringify({ id: "image-proof", object: "chat.completion.chunk", created: 1, model: "proof", ...chunk })}\n\n`)
+  response.end("data: [DONE]\n\n")
+})
+await new Promise((resolve) => provider.listen(0, "127.0.0.1", resolve))
+await writeFile(path.join(agentDir, "models.json"), JSON.stringify({ providers: { proof: {
+  baseUrl: `http://127.0.0.1:${provider.address().port}/v1`, api: "openai-completions", apiKey: "image-proof-placeholder",
+  models: [{ id: "proof", reasoning: false, contextWindow: 32000, maxTokens: 1024 }],
+} } }))
 const probe = createServer()
 probe.listen(0, "127.0.0.1")
 await once(probe, "listening")
@@ -27,6 +54,7 @@ const runtime = spawn(process.argv[2] ? process.execPath : "workspace-runtime", 
     WORKSPACE_RUNTIME_STATE_DIR: path.join(directory, "state"),
     WORKSPACE_RUNTIME_STORE_DIR: path.join(directory, "store"),
     WORKSPACE_RUNTIME_NATIVE_HARNESS: "pi",
+    PI_CODING_AGENT_DIR: agentDir,
   },
 })
 let launchError
@@ -55,7 +83,7 @@ try {
   assert(ready, "workspace-runtime did not become ready")
   const id = `ses_image_${"w".repeat(200)}`
   const mutation = (method, body) => ({ method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
-  const created = await json("/session", mutation("POST", { id, title: "Image smoke" }))
+  const created = await json("/session", mutation("POST", { id, title: "Image smoke", model: { providerID: "pi", modelID: "proof/proof" } }))
   assert.equal(created.id, id)
   assert.equal(created.directory, directory)
   const config = await json(`/session/${id}/config`)
@@ -69,10 +97,9 @@ try {
   })
   assert(events.ok && events.body, `runtime event stream did not open: ${events.status}${events.ok ? "" : ` ${await events.text()}`}`)
   const reader = events.body.getReader()
-  const marker = "claxedo-image-native-turn"
   try {
     await json(`/session/${id}/message`, mutation("POST", {
-      messageID: "msg_image_smoke", parts: [{ id: "prt_image_smoke", type: "text", text: `exec: printf ${marker}` }],
+      messageID: "msg_image_smoke", parts: [{ id: "prt_image_smoke", type: "text", text: "Write the requested proof file, then report completion" }],
     }))
     const decoder = new TextDecoder()
     let received = ""
@@ -85,6 +112,9 @@ try {
     const history = await json(`/session/${id}/message?snapshot=1`)
     const assistant = history.messages.filter((message) => message.info.role === "assistant")
     assert.equal(assistant.flatMap((message) => message.parts).filter((part) => part.type === "text").map((part) => part.text).join(""), marker)
+    assert.equal(await readFile(path.join(directory, "native-proof.txt"), "utf8"), marker)
+    assert.equal(providerRequests.length, 2)
+    assert(providerRequests[1].messages.some((message) => message.role === "tool"), "native tool result did not reach provider")
     assert(history.maxEventOrdinal > 0, "history omitted the committed event ordinal")
   } finally {
     await reader.cancel()
@@ -101,5 +131,7 @@ try {
       await exited
     }
   }
+  provider.closeAllConnections()
+  await new Promise((resolve) => provider.close(resolve))
   await rm(directory, { recursive: true, force: true })
 }
