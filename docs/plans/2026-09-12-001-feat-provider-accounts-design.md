@@ -6,6 +6,10 @@ Owner: Yash Rathore
 Decision 2026-09-12: the active account is chosen per provider in Settings,
 not per session. An earlier draft of this document proposed a per-session
 picker; that model is recorded under Non-goals.
+Superseded in part 2026-09-12 (night): how a chosen account reaches a
+harness (sections 2, 4, 6, Phase 3) is now decided by
+`2026-09-12-002-feat-credential-broker-design.md`, which replaces the
+plaintext push with edge brokering and adds the personal/team owner.
 Revised 2026-09-12, evening: Settings → Providers changed underneath this
 plan the same day (commit `85f1d007c8`). The three native harnesses now
 connect inline in an inset card with the server's methods, Claude's
