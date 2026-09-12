@@ -3,7 +3,13 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import type { WorkspaceRuntimeClientOptions } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
-import { createTasksAuthorization, createTasksPrincipals, signedTasksAuthenticate } from "@claxedo/server-core/tasks-host/authorization"
+import {
+  createTasksAuthorization,
+  createTasksPrincipals,
+  signedTasksAuthenticate,
+  signedTasksRuntimePrincipal,
+  type TasksRuntimePrincipal,
+} from "@claxedo/server-core/tasks-host/authorization"
 import { createTasksCapabilities, randomTasksIds, systemTasksClock } from "@claxedo/server-core/tasks-host/host-ports"
 import { TASKS_ROUTE_PATH, createTasksRoutes } from "@claxedo/tasks/http"
 import type { TasksSessionBridgePort } from "@claxedo/tasks"
@@ -19,7 +25,12 @@ export type HostedTasksCompositionInput = {
   services: ControlPlaneServices
   database: D1Database
   authentication: RequestAuthenticationAdapter
-  bridge: TasksSessionBridgePort
+  /**
+   * Built here rather than passed in, because the bridge has to reserve each
+   * session as the person who started it and only this composition holds the
+   * registry that maps a Tasks actor back to that person.
+   */
+  bridge: (principal: TasksRuntimePrincipal) => TasksSessionBridgePort
   /** False on a deployment that composes no runtime able to hold a selected-only capability set. */
   cloudSelectedCapabilities: boolean
 }
@@ -68,7 +79,7 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
             signed: (request) =>
               signedOrError(request, { authentication: input.authentication, requireSigned: true }, input.services),
           }),
-          bridge: input.bridge,
+          bridge: input.bridge(signedTasksRuntimePrincipal(principals)),
           capabilities: createTasksCapabilities({
             placements: ["local", "cloud"],
             cloudSelectedCapabilities: input.cloudSelectedCapabilities,

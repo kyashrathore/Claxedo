@@ -13,6 +13,7 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 import { localControlPlaneAuth, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import type { SessionReference, TasksActor, TasksAuthorizationPort } from "@claxedo/tasks"
 import type { TasksAuthenticate, TasksAuthenticated } from "@claxedo/tasks/http"
 
@@ -36,6 +37,30 @@ export function createTasksPrincipals(): TasksPrincipals {
     authOf(actor) {
       return principals.get(actor)
     },
+  }
+}
+
+/**
+ * The canonical human a Tasks actor was minted from, for a host whose session
+ * authority records a creator.
+ *
+ * A Tasks actor's `ownerId` cannot answer this: it is the token subject, which
+ * on this deployment is an application USER id, while a session reservation is
+ * recorded against an ACTOR id. Both live on the principal the authentication
+ * adapter resolved, so the actor id is read from there rather than derived
+ * from a string the kit happens to carry.
+ *
+ * Undefined for any actor this registry did not mint and for a principal that
+ * is not a person — the caller reserves as its own service actor then, which
+ * is a different fact about the session, not a fallback identity for this one.
+ */
+export type TasksRuntimePrincipal = (actor: TasksActor) => Promise<PrivateSessionRuntimePrincipal | undefined>
+
+export function signedTasksRuntimePrincipal(principals: TasksPrincipals): TasksRuntimePrincipal {
+  return async (actor) => {
+    const principal = principals.authOf(actor)?.principal
+    if (!principal || principal.actorKind !== "human") return undefined
+    return { principalKind: "user", actorId: principal.actorId, actorKind: "human" }
   }
 }
 

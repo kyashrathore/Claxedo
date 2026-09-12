@@ -51,10 +51,12 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     services: base.plane.services,
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
-    bridge: createHostedTasksSessionBridge({
-      services: base.plane.services,
-      runtimeClient: hostedTasksRuntimeClient(base.plane.services),
-    }),
+    bridge: (principal) =>
+      createHostedTasksSessionBridge({
+        services: base.plane.services,
+        runtimeClient: hostedTasksRuntimeClient(base.plane.services),
+        principal,
+      }),
     cloudSelectedCapabilities: true,
   })
   return {

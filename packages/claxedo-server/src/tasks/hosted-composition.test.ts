@@ -13,7 +13,8 @@ import type { Hono } from "hono"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
-import type { TasksSessionBridgePort } from "@claxedo/tasks"
+import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
+import type { TasksRuntimePrincipal } from "@claxedo/server-core/tasks-host/authorization"
 
 import { createHostedCoreApp } from "../deployments/hosted-shared/hosted-core-app"
 import { STATIC_PRODUCT_DESCRIPTORS } from "../deployments/hosted-shared/deployment-profile"
@@ -98,17 +99,28 @@ function plane(): HostedControlPlane {
   } as unknown as HostedControlPlane
 }
 
-/** Start is Lane D's; this refuses it so nothing below can pass by reaching it. */
-const bridge: TasksSessionBridgePort = {
-  async sessionState(sessions) {
-    return sessions.map((session) => ({ session, state: "unavailable" as const }))
-  },
-  async preview() {
-    return { ok: false, error: { code: "unsupported", message: "Start is not exercised here" } }
-  },
-  async start() {
-    return { ok: false, error: { code: "unsupported", message: "Start is not exercised here" } }
-  },
+/**
+ * Start itself belongs to the session bridge, so this one refuses it and
+ * reports what the composition handed it instead: the resolver that says which
+ * canonical person the request's Tasks actor was minted from. That resolver is
+ * the composition's half of reserving a session as its starter, and a stub
+ * that ignored it would leave the seam untested on both sides.
+ */
+function reportingBridge(principal: TasksRuntimePrincipal): TasksSessionBridgePort {
+  const refuse = async (actor: TasksActor) => {
+    const resolved = await principal(actor)
+    return {
+      ok: false as const,
+      error: { code: "unsupported" as const, message: `principal ${resolved ? resolved.actorId : "absent"}` },
+    }
+  }
+  return {
+    async sessionState(sessions) {
+      return sessions.map((session) => ({ session, state: "unavailable" as const }))
+    },
+    preview: (command) => refuse(command.actor),
+    start: (command) => refuse(command.actor),
+  }
 }
 
 async function hostedApp() {
@@ -118,7 +130,7 @@ async function hostedApp() {
     services: base.services,
     database: await database(),
     authentication,
-    bridge,
+    bridge: reportingBridge,
     cloudSelectedCapabilities: true,
   })
   const app = createHostedCoreApp(base, {
@@ -148,6 +160,11 @@ async function hostedApp() {
 }
 
 const headers = (subject: string) => ({ authorization: `Bearer ${subject}`, "content-type": "application/json" })
+
+async function presetId(app: Hono, subject: string) {
+  const response = await app.request(`https://core.test${TASKS}/presets`, { headers: headers(subject) })
+  return ((await response.json()) as { items: [{ id: string }] }).items[0].id
+}
 
 async function command(app: Hono, subject: string, clientRequestId: string, body: Record<string, unknown>) {
   const response = await app.request(`https://core.test${TASKS}/commands`, {
@@ -233,6 +250,31 @@ describe("hosted Tasks composition", () => {
     const presets = await app.request(`https://core.test${TASKS}/presets`, { headers: headers("bob") })
     expect(presets.status).toBe(200)
     expect(await presets.json()).toMatchObject({ items: [] })
+  })
+
+  test("hands the session bridge the canonical person the caller's actor was minted from", async () => {
+    // The hosted session authority records a creator and grants read access
+    // only to that creator, a participant or a share, so a session reserved as
+    // the control plane's own service actor would be invisible to the person
+    // who started it.
+    const app = await hostedApp()
+    await command(app, "alice", "request-preset-1", PRESET)
+    const created = await command(app, "alice", "request-task-1", TASK)
+    const taskId = (created.body.result as { task: { id: string } }).task.id
+
+    const preview = await app.request(`https://core.test${TASKS}/tasks/${taskId}/start-preview`, {
+      method: "POST",
+      headers: headers("alice"),
+      body: JSON.stringify({
+        taskRevision: 1,
+        presetId: (await presetId(app, "alice")),
+        presetRevision: 1,
+        slot: "primary",
+        attempt: 1,
+        continueFromPrevious: false,
+      }),
+    })
+    expect(await preview.json()).toMatchObject({ error: { message: "principal actor:alice" } })
   })
 
   test("a repeated client request id replays the committed result instead of committing twice", async () => {
