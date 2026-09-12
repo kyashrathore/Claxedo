@@ -8,6 +8,7 @@ import {
 import type { SessionRequestsQueryData, Todo } from "../data/sync/queries"
 import { queryClient, removeExactQuery } from "@/platform/query/query-client"
 import { observeSessionStatusEvent } from "./session-status-telemetry"
+import { hasPendingPrompt } from "./pending-prompt-registry"
 import { isRecord, readField, readString } from "@/lib/record"
 
 const OPTIMISTIC_STATUS_REDISPATCH_MS = 8_000
@@ -117,9 +118,9 @@ export function subscribeSessionActivity(sessionID: string, listener: VoidFuncti
   return sessionNotifications.subscribeActivity(sessionID, listener)
 }
 
-// One contract for session-status writes (rubric C2):
+// One contract for session-status writes:
 //
-// * A server-source event ALWAYS clears optimistic timeout metadata
+// * A server-source event that lands ALWAYS clears optimistic timeout metadata
 //   for that session, regardless of phase.
 //
 // * An optimistic-source event with a non-idle status EXTENDS the
@@ -134,6 +135,19 @@ export function dispatchSessionStatusEvent(input: {
 }) {
   const status: SessionStatus =
     input.event.type === "session.status" ? input.event.status ?? { type: "idle" } : { type: "idle" }
+  // `prompt_async` answers only once the runtime has settled the turn's
+  // admission, so while a prompt for this session is still pending the runtime
+  // cannot have run that turn yet: an idle it reports — or an omission from
+  // `/session/status`, which reaches here as one — describes the state before
+  // the prompt and can never be that turn ending. Taking it would drop the
+  // Thinking row and reinstate it a round trip later, under the pointer. An
+  // error is an answer to the prompt, so it still lands.
+  if (
+    input.event.source === "server"
+    && input.event.type !== "session.error"
+    && status.type === "idle"
+    && hasPendingPrompt(input.event.sessionID)
+  ) return
   setSessionStatusQueryData(input.event.sessionID, status)
   if (input.event.source === "server" || input.event.type !== "session.status" || !input.event.status || input.event.status.type === "idle") {
     clearPromptSessionStatusTimeouts(input.event.sessionID)

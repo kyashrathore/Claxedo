@@ -4,7 +4,8 @@
 import { asRecord, readField } from "@/lib/record"
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
 import { dispatchPrompt } from "./dispatch"
-import { clearPendingPrompt, registerPendingPrompt, setPromptSessionStatus } from "./pending"
+import { clearPendingPrompt, markPendingPromptSent, registerPendingPrompt } from "../store/pending-prompt-registry"
+import { setPromptSessionStatus } from "./pending"
 import type {
   RollbackPromptDispatchContext,
   SendPromptRequestContext,
@@ -113,11 +114,15 @@ export async function sendPromptRequest(input: SendPromptRequestContext) {
   })
   await prepareLiveEventsBestEffort(input.prepareLiveEvents)
   if (controller.signal.aborted) return
-  clearPendingPrompt(input.sessionID)
-  await dispatchPrompt({
-    client: input.client,
-    payload: input.payload,
-  })
+  markPendingPromptSent(input.sessionID)
+  try {
+    await dispatchPrompt({
+      client: input.client,
+      payload: input.payload,
+    })
+  } finally {
+    clearPendingPrompt(input.sessionID)
+  }
   setPromptSessionStatus({
     sessionID: input.sessionID,
     status: { type: "busy" },

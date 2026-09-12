@@ -17,6 +17,12 @@ import {
   subscribePromptSessionStatusMeta,
 } from "./session-status-dispatcher"
 import {
+  clearPendingPromptsForTest,
+  markPendingPromptSent,
+  registerPendingPrompt,
+  takePendingPrompt,
+} from "./pending-prompt-registry"
+import {
   SESSION_STATUS_TELEMETRY_CONFIG,
   observeSessionStatusPoll,
   resetSessionStatusTelemetryForTest,
@@ -25,6 +31,7 @@ import {
 
 afterEach(() => {
   clearAllPromptSessionStatusTimeoutsForTest()
+  clearPendingPromptsForTest()
   queryClient.clear()
   resetSessionStatusTelemetryForTest()
 })
@@ -507,6 +514,91 @@ describe("session-status dispatcher", () => {
       event: { type: "session.status", source: "optimistic", sessionID: "ses_sub", status: { type: "busy" }, now },
     })
     expect(notified).toBe(afterUnsubscribe)
+  })
+})
+
+describe("server idle while a prompt is pending", () => {
+  const optimisticBusy = (sessionID: string, now = 5_000) => {
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "optimistic", sessionID, status: { type: "busy" }, now, deadline: now + 30_000 },
+    })
+  }
+
+  test("a session.idle cannot retire the optimistic busy of a prompt still on the wire", () => {
+    registerPendingPrompt("ses_pending", { abort: new AbortController(), cleanup: () => undefined })
+    optimisticBusy("ses_pending")
+    markPendingPromptSent("ses_pending")
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.idle", source: "server", sessionID: "ses_pending" },
+    })
+
+    expect(statusFor("ses_pending")).toEqual({ type: "busy" })
+    expect(promptSessionStatusMeta("ses_pending")).toEqual({
+      source: "optimistic",
+      started: 5_000,
+      deadline: 35_000,
+    })
+  })
+
+  test("a status read that omits the session is the same stale idle", () => {
+    registerPendingPrompt("ses_pending", { abort: new AbortController(), cleanup: () => undefined })
+    optimisticBusy("ses_pending")
+
+    applySessionStatusSseEvent({
+      event: { type: "session.status", properties: { sessionID: "ses_pending" } },
+    })
+
+    expect(statusFor("ses_pending")).toEqual({ type: "busy" })
+    expect(promptSessionStatusMeta("ses_pending")?.source).toBe("optimistic")
+  })
+
+  test("the same idle is authoritative once the prompt has been claimed", () => {
+    registerPendingPrompt("ses_pending", { abort: new AbortController(), cleanup: () => undefined })
+    optimisticBusy("ses_pending")
+    takePendingPrompt("ses_pending")
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.idle", source: "server", sessionID: "ses_pending" },
+    })
+
+    expect(statusFor("ses_pending")).toEqual({ type: "idle" })
+    expect(promptSessionStatusMeta("ses_pending")).toBeUndefined()
+  })
+
+  test("a server busy during a pending prompt still wins", () => {
+    registerPendingPrompt("ses_pending", { abort: new AbortController(), cleanup: () => undefined })
+    optimisticBusy("ses_pending")
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID: "ses_pending", status: { type: "busy" } },
+    })
+
+    expect(statusFor("ses_pending")).toEqual({ type: "busy" })
+    expect(promptSessionStatusMeta("ses_pending")).toBeUndefined()
+  })
+
+  test("a server session.error during a pending prompt still wins", () => {
+    registerPendingPrompt("ses_pending", { abort: new AbortController(), cleanup: () => undefined })
+    optimisticBusy("ses_pending")
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.error", source: "server", sessionID: "ses_pending" },
+    })
+
+    expect(statusFor("ses_pending")).toEqual({ type: "idle" })
+    expect(promptSessionStatusMeta("ses_pending")).toBeUndefined()
+  })
+
+  test("a pending prompt on another session does not shield this one", () => {
+    registerPendingPrompt("ses_other", { abort: new AbortController(), cleanup: () => undefined })
+    optimisticBusy("ses_pending")
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.idle", source: "server", sessionID: "ses_pending" },
+    })
+
+    expect(statusFor("ses_pending")).toEqual({ type: "idle" })
   })
 })
 

@@ -3,16 +3,17 @@
 // else should reach into this directory by named import rather than by path
 // into individual phase files.
 export * from "./types"
+export { setPromptSessionStatus } from "./pending"
 export {
   clearPendingPrompt,
   clearPendingPromptsForTest,
   hasPendingPrompt,
+  markPendingPromptSent,
   pendingPromptCount,
   registerPendingPrompt,
-  setPromptSessionStatus,
   takePendingPrompt,
   type PendingPrompt,
-} from "./pending"
+} from "../store/pending-prompt-registry"
 export { isPageCommentPath, preparePromptRequest, createPromptTimelineReconciliation } from "./prepare-request"
 export { dispatchPrompt } from "./dispatch"
 export {

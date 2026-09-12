@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { isPromptAdmissionConflict, rollbackPromptDispatch, sendPromptRequest, waitForPendingWorktree } from "./send"
-import { clearPendingPromptsForTest, hasPendingPrompt, registerPendingPrompt, takePendingPrompt } from "./pending"
+import {
+  clearPendingPromptsForTest,
+  hasPendingPrompt,
+  registerPendingPrompt,
+  takePendingPrompt,
+} from "../store/pending-prompt-registry"
 import {
   clearAllPromptSessionStatusTimeoutsForTest,
   dispatchSessionStatusEvent,
@@ -100,6 +105,48 @@ describe("sendPromptRequest", () => {
   })
 
 
+
+  test("a status read that lands mid-dispatch cannot drop the optimistic busy", async () => {
+    let answerPrompt!: () => void
+    let promptStarted!: () => void
+    const started = new Promise<void>((resolve) => { promptStarted = resolve })
+    const onTheWire = new Promise<void>((resolve) => { answerPrompt = resolve })
+    const pending = sendPromptRequest({
+      sessionID: "ses_1",
+      payload,
+      client: { session: { promptAsync: async () => { promptStarted(); await onTheWire } } },
+      waitForWorktree: async () => true,
+      clearBoot: () => undefined,
+      clearCloudStartup: () => undefined,
+    })
+
+    await started
+    dispatchSessionStatusEvent({
+      event: { type: "session.idle", source: "server", sessionID: "ses_1" },
+    })
+    expect(statusFor("ses_1")).toEqual({ type: "busy" })
+
+    answerPrompt()
+    await pending
+    expect(hasPendingPrompt("ses_1")).toBe(false)
+
+    dispatchSessionStatusEvent({
+      event: { type: "session.idle", source: "server", sessionID: "ses_1" },
+    })
+    expect(statusFor("ses_1")).toEqual({ type: "idle" })
+  })
+
+  test("a failed dispatch stops shielding the session from a server idle", async () => {
+    await expect(sendPromptRequest({
+      sessionID: "ses_1",
+      payload,
+      client: erroringClient,
+      waitForWorktree: async () => true,
+      clearBoot: () => undefined,
+      clearCloudStartup: () => undefined,
+    })).rejects.toThrow("network blip")
+    expect(hasPendingPrompt("ses_1")).toBe(false)
+  })
 
   test("prepares live events before dispatching prompt_async and reconciles after dispatch", async () => {
     const order: string[] = []
