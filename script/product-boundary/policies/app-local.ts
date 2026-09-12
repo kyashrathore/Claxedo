@@ -304,7 +304,19 @@ export const appLocal: Policy = {
   // pushed past the 800-line budget, and imports only what that file already
   // did. It took the slot session-bands held before the rail's ordering moved to
   // the server's `created_desc` list. No new package edge. Measured 1008 / 38.
-  ceilings: { modules: 1008, packages: 38 },
+  // +3 modules (2026-09-12), each a canonical owner split out so a policy
+  // becomes readable without importing the module that hosts it:
+  //   app/workbench/rail/workspace-panel-working-set.ts — the panel's
+  //     retained-surface identity, read by the top-level open and full-width
+  //     policies (from workspace-panel-body.tsx);
+  //   features/session/store/pending-prompt-registry.ts — the in-flight
+  //     prompt set, a leaf so the status dispatcher can read it without a
+  //     cycle through submit/ (from submit/pending.ts);
+  //   features/session/ui/timeline-link-open.ts — routes claxedo:open-link
+  //     from the transcript to a Browser tab, the OS opener or platform.openLink
+  //     (from message-timeline.tsx).
+  // No new package edge. Measured at a clean checkout: 1010 / 38.
+  ceilings: { modules: 1010, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

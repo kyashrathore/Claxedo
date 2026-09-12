@@ -408,7 +408,10 @@ export const desktopRendererUnsigned: Policy = {
   // pushed past the 800-line budget, and imports only what that file already
   // did. It took the slot session-bands held before the rail's ordering moved to
   // the server's `created_desc` list. No new package edge. Measured 1059 / 57.
-  ceilings: { modules: 1059, packages: 57 },
+  // +3 modules (2026-09-12): the same three owners app-local reviews —
+  // workspace-panel-working-set, pending-prompt-registry, timeline-link-open.
+  // No new package edge. Measured at a clean checkout: 1061 / 57.
+  ceilings: { modules: 1061, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
