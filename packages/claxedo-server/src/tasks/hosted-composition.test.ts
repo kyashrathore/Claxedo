@@ -131,7 +131,6 @@ async function hostedApp() {
     database: await database(),
     authentication,
     bridge: reportingBridge,
-    cloudSelectedCapabilities: true,
   })
   const app = createHostedCoreApp(base, {
     authentication,
@@ -202,14 +201,17 @@ describe("hosted Tasks composition", () => {
     expect((await app.request(`https://core.test${TASKS}/capabilities`)).status).toBe(401)
   })
 
-  test("answers its capabilities to a signed caller", async () => {
+  // The bridge refuses cloud placement on every host, so a preset naming one
+  // must be refused when it is saved rather than advertised and then refused
+  // at Start.
+  test("answers its capabilities to a signed caller, with no cloud placement", async () => {
     const app = await hostedApp()
     const response = await app.request(`https://core.test${TASKS}/capabilities`, { headers: headers("alice") })
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
       protocolVersion: 1,
-      placements: ["local", "cloud"],
-      cloudSelectedCapabilities: true,
+      placements: ["local"],
+      cloudSelectedCapabilities: false,
     })
   })
 

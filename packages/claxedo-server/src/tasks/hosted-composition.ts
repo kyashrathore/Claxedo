@@ -31,8 +31,6 @@ export type HostedTasksCompositionInput = {
    * registry that maps a Tasks actor back to that person.
    */
   bridge: (principal: TasksRuntimePrincipal) => TasksSessionBridgePort
-  /** False on a deployment that composes no runtime able to hold a selected-only capability set. */
-  cloudSelectedCapabilities: boolean
 }
 
 /**
@@ -80,10 +78,10 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
               signedOrError(request, { authentication: input.authentication, requireSigned: true }, input.services),
           }),
           bridge: input.bridge(signedTasksRuntimePrincipal(principals)),
-          capabilities: createTasksCapabilities({
-            placements: ["local", "cloud"],
-            cloudSelectedCapabilities: input.cloudSelectedCapabilities,
-          }),
+          // `resolveStart` in session-bridge-core refuses cloud placement on
+          // every host, so a preset naming one is refused when it is saved
+          // rather than saved and refused at Start.
+          capabilities: createTasksCapabilities({ placements: ["local"], cloudSelectedCapabilities: false }),
           clock: systemTasksClock(),
           ids: randomTasksIds(),
         }),

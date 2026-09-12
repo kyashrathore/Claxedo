@@ -44,9 +44,6 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
   })
-  // Tasks rides the same entry as Agent Plugins because it needs what only
-  // this composition has: a runtime that can hold a preset's selected-only
-  // capability set on a cloud root.
   const tasks = createHostedTasksComposition({
     services: base.plane.services,
     database: env.CONTROL_PLANE_DB,
@@ -57,7 +54,6 @@ export function composeBetterAuthD1AgentPluginsCandidate(
         runtimeClient: hostedTasksRuntimeClient(base.plane.services),
         principal,
       }),
-    cloudSelectedCapabilities: true,
   })
   return {
     ...base,
