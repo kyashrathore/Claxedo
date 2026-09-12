@@ -2555,7 +2555,7 @@ void it("persists Goal state across reopen and clears it with the session", () =
   assert.equal(store.getGoal("goal-session"), null)
 })
 
-describe("session ordering timestamps", () => {
+void describe("session ordering timestamps", () => {
   void it("recovery does not restamp the session the way a turn does", () => {
     const root = tmp()
     const store = new RuntimeStore(root)

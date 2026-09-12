@@ -265,7 +265,7 @@ async function installGitFixture(page: Page, seed: GitFixtureSeed): Promise<GitF
       if (index < 0) continue
       const [entry] = from.splice(index, 1)
       const kept = to.filter((existing) => existing.path !== path)
-      to.splice(0, to.length, ...kept, { ...entry!, status: status(entry!) })
+      to.splice(0, to.length, ...kept, { ...entry, status: status(entry) })
     }
   }
   const stage = (paths: string[]) =>
@@ -280,7 +280,7 @@ async function installGitFixture(page: Page, seed: GitFixtureSeed): Promise<GitF
     const created: GitCommitSummary = {
       hash,
       shortHash: hash.slice(0, 7),
-      subject: message.trim().split("\n")[0]!,
+      subject: message.trim().split("\n")[0],
       author: "E2E Author",
       date: new Date().toISOString(),
       refs: [`HEAD -> ${repo.branch}`],
@@ -922,9 +922,9 @@ test.describe("core source control @core", () => {
     await expandGraph(page)
     const rows = commitRows(page)
     await expect(rows).toHaveCount(SEEDED_GIT.commits.length + 1, { timeout: 15_000 })
-    await expect(rows.first()).toHaveAttribute("data-hash", git.commits()[0]!.hash)
+    await expect(rows.first()).toHaveAttribute("data-hash", git.commits()[0].hash)
     await expect(rows.first()).toContainText(subject)
-    await expect(rows.nth(1)).toHaveAttribute("data-hash", SEEDED_GIT.commits[0]!.hash)
+    await expect(rows.nth(1)).toHaveAttribute("data-hash", SEEDED_GIT.commits[0].hash)
     await expect(commitMessage(page)).toHaveValue("")
     await expect(commitButton(page)).toBeDisabled()
     expect(git.requests.filter((request) => request.route === "commit-staged").map((request) => request.body)).toEqual([
@@ -1051,7 +1051,7 @@ test.describe("core source control @core", () => {
     await expandGraph(page)
 
     const [second, first] = SEEDED_GIT.commits
-    const secondRow = commitRows(page).filter({ has: page.locator(`[data-hash="${second!.hash}"]`) }).or(commitRows(page).nth(0))
+    const secondRow = commitRows(page).filter({ has: page.locator(`[data-hash="${second.hash}"]`) }).or(commitRows(page).nth(0))
     await expect(secondRow).toHaveAttribute("aria-selected", "false")
     await secondRow.click()
 
@@ -1059,12 +1059,12 @@ test.describe("core source control @core", () => {
     await expect(secondRow).toHaveClass(/bg-surface-base-active/)
     await expect(commitRows(page).nth(1)).toHaveAttribute("aria-selected", "false")
     await expect(comparePill(page)).toHaveAttribute("data-review-mode", "to-from", { timeout: 15_000 })
-    await expect(comparePill(page)).toContainText(first!.shortHash)
-    await expect(comparePill(page)).toContainText(second!.shortHash)
+    await expect(comparePill(page)).toContainText(first.shortHash)
+    await expect(comparePill(page)).toContainText(second.shortHash)
 
     const group = compareGroup(page)
     await expect(group).toHaveAttribute("data-count", "1", { timeout: 15_000 })
-    await expect(group).toContainText(`${first!.shortHash} → ${second!.shortHash}`)
+    await expect(group).toContainText(`${first.shortHash} → ${second.shortHash}`)
     await expectRow(page, SECOND_COMMIT_FILE, "compare", "added", "A")
     await expect(changeRow(page, FIRST_COMMIT_FILE)).toHaveCount(0)
     await expect(panelShell(page).locator(`[data-component="session-review"] [data-review-file="${SECOND_COMMIT_FILE}"]`)).toBeVisible({ timeout: 15_000 })
@@ -1075,7 +1075,7 @@ test.describe("core source control @core", () => {
     await expect(commitRows(page).nth(1)).toHaveAttribute("aria-selected", "true", { timeout: 15_000 })
     await expect(secondRow).toHaveAttribute("aria-selected", "false")
     await expect(group).toHaveAttribute("data-count", "1", { timeout: 15_000 })
-    await expect(group).toContainText(`${EMPTY_TREE.slice(0, 7)} → ${first!.shortHash}`)
+    await expect(group).toContainText(`${EMPTY_TREE.slice(0, 7)} → ${first.shortHash}`)
     await expectRow(page, FIRST_COMMIT_FILE, "compare", "added", "A")
     await expect(changeRow(page, SECOND_COMMIT_FILE)).toHaveCount(0)
 
