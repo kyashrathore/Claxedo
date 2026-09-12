@@ -258,7 +258,7 @@ describe("single-tenant self-host still works end to end", () => {
     expect(ClaxedoDB.Path().startsWith(root)).toBe(true)
   })
 
-  test("list, read, overwrite, verify and delete all work with no org identity", async () => {
+  test("list, read, a second account, verify and delete all work with no org identity", async () => {
     const stored = await singleTenantApp.request("http://localhost/", {
       method: "PUT",
       body: JSON.stringify({ provider_id: "anthropic", kind: "api_key", secret: "sk-single-tenant" }),
@@ -272,14 +272,22 @@ describe("single-tenant self-host still works end to end", () => {
     const read = await singleTenantApp.request("http://localhost/anthropic")
     await expect(read.json()).resolves.toMatchObject({ credential: { id: cred.id } })
 
-    // Overwrite in place: same row, new secret — the upsert must still match.
+    // A second key is a second account, not an overwrite: both are listed, each
+    // resolves its own secret, and the first keeps the mark because a later save
+    // never takes it from a working account.
     const again = await singleTenantApp.request("http://localhost/", {
       method: "PUT",
       body: JSON.stringify({ provider_id: "anthropic", kind: "api_key", secret: "sk-single-tenant-2" }),
     })
-    const rewritten = ((await again.json()) as { credential: { id: string } }).credential
-    expect(rewritten.id).toBe(cred.id)
-    await expect(registry.resolveSecretById(cred.id, SINGLE_TENANT_ORG)).resolves.toBe("sk-single-tenant-2")
+    const second = ((await again.json()) as { credential: { id: string; is_active: boolean } }).credential
+    expect(second.id).not.toBe(cred.id)
+    expect(second.is_active).toBe(false)
+    expect(registry.getCredential(cred.id, SINGLE_TENANT_ORG)?.is_active).toBe(true)
+
+    const both = (await (await singleTenantApp.request("http://localhost/")).json()) as Listed
+    expect(both.credentials.map((item) => item.id).sort()).toEqual([cred.id, second.id].sort())
+    await expect(registry.resolveSecretById(cred.id, SINGLE_TENANT_ORG)).resolves.toBe("sk-single-tenant")
+    await expect(registry.resolveSecretById(second.id, SINGLE_TENANT_ORG)).resolves.toBe("sk-single-tenant-2")
 
     providerFetch.mockClear()
     const verified = await singleTenantApp.request(`http://localhost/${cred.id}/verify`, { method: "POST" })

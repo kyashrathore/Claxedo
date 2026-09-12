@@ -16,6 +16,7 @@ const {
   resolveAllSecrets,
   resolveSecret,
   resolveSecretsForScope,
+  setActiveCredential,
   updateCredentialHealth,
 } = await import("@claxedo/server-core/credentials/registry")
 const { ClaxedoDB } = await import("../platform/db")
@@ -108,36 +109,45 @@ describe("credential fanout fence", () => {
     expect((await resolveAllSecrets())["multi-account-fanout"]).toBe("healthy-token")
   })
 
-  test("scope filtering happens before provider preference without bypassing shared consent", async () => {
-    await putCredential({
+  // A sandbox runs on the account the user chose or on nothing at all. Falling
+  // through to another account of the same provider is what a shared scope must
+  // never do: the second account may not be consented for a sandbox, and even
+  // when it is, running someone's turns on a login they did not pick is the
+  // silent substitution the active mark exists to end.
+  test("a shared sandbox gets the active account or nothing, never another account of the same provider", async () => {
+    const local = await putCredential({
       provider_id: "multi-account-scope",
       kind: "oauth_token",
       source: "managed",
-      account_id: "preferred-local",
+      account_id: "active-local",
       secret: "local-token",
     })
-    await putCredential({
+    const shared = await putCredential({
       provider_id: "multi-account-scope",
       kind: "oauth_token",
       source: "managed",
-      account_id: "healthy-shared",
+      account_id: "consented-shared",
       expires_at: Date.now() + 60_000,
       scope: "shared",
       consent: { at: 1, surface: "scope_change" },
-      secret: "healthy-shared-token",
+      secret: "consented-shared-token",
     })
-    const expiredShared = await putCredential({
-      provider_id: "multi-account-scope",
-      kind: "oauth_token",
-      source: "managed",
-      account_id: "expired-shared",
-      scope: "shared",
-      consent: { at: 2, surface: "scope_change" },
-      secret: "expired-shared-token",
-    })
-    updateCredentialHealth(expiredShared.id, "expired", Date.now())
 
+    // The first save holds the mark, and it is local-only: the consented shared
+    // account beside it does not stand in for it.
     expect((await resolveSecretsForScope("local"))["multi-account-scope"]).toBe("local-token")
-    expect((await resolveSecretsForScope("shared"))["multi-account-scope"]).toBe("healthy-shared-token")
+    expect(await resolveSecretsForScope("shared")).not.toHaveProperty("multi-account-scope")
+
+    expect(setActiveCredential(shared.id)).toMatchObject({ ok: true })
+
+    expect((await resolveSecretsForScope("shared"))["multi-account-scope"]).toBe("consented-shared-token")
+    expect((await resolveSecretsForScope("local"))["multi-account-scope"]).toBe("consented-shared-token")
+
+    // Consent is not enough on its own: an expired active account sends nothing
+    // and the local-only one it replaced does not come back.
+    updateCredentialHealth(shared.id, "expired", Date.now())
+    expect(await resolveSecretsForScope("shared")).not.toHaveProperty("multi-account-scope")
+    expect(await resolveSecretsForScope("local")).not.toHaveProperty("multi-account-scope")
+    expect(local.id).not.toBe(shared.id)
   })
 })
