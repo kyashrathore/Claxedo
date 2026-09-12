@@ -27,6 +27,10 @@ export type MachineSessionCreate = {
   title?: string
   harness?: SessionHarness
   model?: { providerID: string; modelID: string }
+  /** Reasoning effort, under the runtime's own name for it. */
+  variant?: string
+  /** Retained on the session and reapplied by the runtime on every later turn. */
+  instructions?: string
 }
 export type MachineSessionDispatch = ReturnType<typeof createMachineSessionDispatch>
 
@@ -169,7 +173,13 @@ export function createMachineSessionDispatch(services: ControlPlaneServices, opt
       const response = await client.request(`/session${query}`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ ...(id ? { id } : {}), title: input.title, model: input.model }),
+        body: JSON.stringify({
+          ...(id ? { id } : {}),
+          title: input.title,
+          model: input.model,
+          ...(input.variant ? { variant: input.variant } : {}),
+          ...(input.instructions ? { instructions: input.instructions } : {}),
+        }),
       })
       if (!response.ok) throw await workspaceRuntimeRequestError("session creation", response)
       const session = await readJsonRecord(response)

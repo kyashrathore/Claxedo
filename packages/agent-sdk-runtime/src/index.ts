@@ -65,7 +65,7 @@ export type {
   PromptInput,
   PromptModel,
 } from "@claxedo/agent-runtime-contract"
-export { connectionIdForHarness } from "@claxedo/agent-runtime-contract"
+export { connectionIdForHarness, isAgentMessage } from "@claxedo/agent-runtime-contract"
 export { AgentRuntimeGoalError, isAgentRuntimeGoalError } from "./runtime"
 export { isRuntimeGoalStatus, RUNTIME_GOAL_STATUSES } from "@claxedo/agent-event-runtime"
 export type { RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-event-runtime"
@@ -124,6 +124,7 @@ export type {
   HarnessConnectionRef,
 } from "./connection-provider"
 export { defaultSessionModel, resolveSessionModel, resolveTurnSystem } from "./session-model"
+export { renderSessionHandoff } from "./session-handoff"
 export {
   createMemorySubagentAdmissionStore,
   createSubagentAdmissionBoundary,

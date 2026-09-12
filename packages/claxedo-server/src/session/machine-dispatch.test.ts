@@ -77,6 +77,29 @@ describe("machine session dispatch", () => {
       expect.objectContaining({ host: "workspace", workspaceID: "ws", tags: ["harness:pi"] }),
     )
   })
+  test("carries instructions and effort to the machine create", async () => {
+    const f = fixture()
+    const session = await f.runtime.create({
+      workspaceId: "ws",
+      harness: { id: "pi", access: "native" },
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+      variant: "high",
+      instructions: "Answer only in haiku.",
+    }, caller)
+    const [, init] = mock.request.mock.calls[0]
+    expect(JSON.parse(init.body)).toMatchObject({
+      id: session.id,
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+      variant: "high",
+      instructions: "Answer only in haiku.",
+    })
+  })
+  test("sends no instruction or effort field when the caller named neither", async () => {
+    const f = fixture()
+    await f.runtime.create({ workspaceId: "ws", harness: { id: "pi", access: "native" } }, caller)
+    const [, init] = mock.request.mock.calls[0]
+    expect(Object.keys(JSON.parse(init.body))).toEqual(["id"])
+  })
   test("refuses unresolved machine targets before admission", async () => {
     const f = fixture()
     await expect(f.runtime.create({ workspaceId: "missing" }, caller)).rejects.toMatchObject({ status: 404 })
