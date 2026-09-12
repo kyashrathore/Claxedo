@@ -64,7 +64,7 @@ Use the [acceptance evidence format](docs/plans/2026-09-08-007-feat-tasks-accept
 
 **Context/memory design and evidence:** pending; no implementation proof.
 
-**Tasks evidence index:** not created; all acceptance journeys remain NOT RUN.
+**Tasks evidence index:** [feat-tasks-presets-2026-09-12](docs/verification/tasks/feat-tasks-presets-2026-09-12/index.md). Local slice (S1 package, S2 stores/API, S3 UI, S4 local Start with retained instructions and restartable attempts) implemented and proven live on the unsigned local stack; the real model turn, cloud placement (S5/S6), delegation (S7), feature-off artifacts and the packaged/deployed lanes (S8) remain NOT RUN or GATING as the index states per journey.
 
 **Tasks/presets engineering gates:** G1 atomic stores and distinct authority; G2 canonical session settings/origin/replay; G3 isolated cloud allocation and lifecycle; G4 exact skill/plugin selection and credential enforcement; G5 qualified model-group delegation; G6 real artifact/E2E/computer-use evidence. See the [implementation plan](docs/plans/2026-09-08-006-feat-tasks-implementation-plan.md#5-remaining-implementation-gates). These do not substitute for context/memory gates from M2/M3.
 
