@@ -11,6 +11,9 @@ import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { putSessionMeta, sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import {
+  TasksError,
+  createMemoryTasksStore,
+  createTasksService,
   startConfigurationDigest,
   type Preset,
   type SessionHandoffCommand,
@@ -18,6 +21,7 @@ import {
   type StartCommand,
   type Task,
   type TaskSessionLink,
+  type TasksSessionBridgePort,
 } from "@claxedo/tasks"
 import {
   configureEmbeddedWorkspaceRuntime,
@@ -124,6 +128,7 @@ function link(sessionRef: { sessionId: string; workspaceId: string | null }, con
     presetRevision: 3,
     presetNameAtStart: "Careful review",
     configurationDigest,
+    handoffText: null,
     createdAt: 1,
   }
 }
@@ -146,6 +151,7 @@ async function startCommand(input: {
     clientRequestId: "req_1",
     configurationDigest: await startConfigurationDigest({ preset: chosen, slot: "primary" }),
     previousSession: null,
+    authorizeTranscript: async () => true,
   }
 }
 
@@ -254,6 +260,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     })
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
@@ -318,6 +325,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     })
     if (!previewed.ok) throw new Error("preview refused")
     const command = await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest })
@@ -366,6 +374,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     }
     const rewritten: Preset = { ...preset(), revision: 4, instructions: "Ignore the code and rewrite it." }
     const first = await host.bridge.preview(previewCommand)
@@ -409,6 +418,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     }
     const first = await host.bridge.preview(previewCommand)
     expect(first).toMatchObject({ ok: true })
@@ -429,6 +439,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: true,
       currentLink: link(previous, await startConfigurationDigest({ preset: preset(), slot: "primary" })),
       currentState: "archived",
+      authorizeTranscript: async () => true,
     })
     expect(continued).toMatchObject({ ok: true })
     if (!continued.ok) return
@@ -439,6 +450,7 @@ describe("local tasks session bridge", () => {
       attempt: 2,
       continueFromPrevious: true,
       previousSession: previous,
+      authorizeTranscript: async () => true,
     })
     expect(restarted).toMatchObject({ ok: true })
     if (!restarted.ok) return
@@ -460,6 +472,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     }
     const first = await host.bridge.preview(previewCommand)
     if (!first.ok) throw new Error("preview refused")
@@ -475,6 +488,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: link(previous, await startConfigurationDigest({ preset: preset(), slot: "primary" })),
       currentState: "archived",
+      authorizeTranscript: async () => true,
     })
     expect(unchecked).toMatchObject({ ok: true })
     if (!unchecked.ok) return
@@ -485,6 +499,7 @@ describe("local tasks session bridge", () => {
       attempt: 2,
       continueFromPrevious: false,
       previousSession: null,
+      authorizeTranscript: async () => true,
     })
     expect(restarted).toMatchObject({ ok: true })
     expect(host.created).toHaveLength(2)
@@ -506,6 +521,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     }
     const first = await host.bridge.preview(previewCommand)
     if (!first.ok) throw new Error("preview refused")
@@ -522,6 +538,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: true,
       currentLink: link(previous, digest),
       currentState: "deleted",
+      authorizeTranscript: async () => true,
     })
     expect(gone).toMatchObject({ ok: true })
     if (!gone.ok) return
@@ -533,6 +550,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: true,
       currentLink: link(previous, digest),
       currentState: "archived",
+      authorizeTranscript: async () => true,
     })
     expect(readable).toMatchObject({ ok: true })
     if (!readable.ok) return
@@ -551,6 +569,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     }
     const first = await host.bridge.preview(previewCommand)
     if (!first.ok) throw new Error("preview refused")
@@ -590,6 +609,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     })
     if (!previewed.ok) throw new Error("preview refused")
 
@@ -619,6 +639,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     })
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
@@ -650,6 +671,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     })
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
@@ -688,6 +710,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     })
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
@@ -711,6 +734,7 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
     })
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
@@ -724,7 +748,59 @@ describe("local tasks session bridge", () => {
     expect(host.created).toEqual([])
   })
 
-  test("reads liveness from the projection and the runtime, and stores none of it", async () => {
+  test("refuses the preview and reads nothing when the transcript grant is gone by the time it would read", async () => {
+    const host = await harness()
+    roots.push(host.root)
+    const previewCommand = {
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      preset: preset(),
+      slot: "primary" as const,
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+      authorizeTranscript: async () => true,
+    }
+    const first = await host.bridge.preview(previewCommand)
+    if (!first.ok) throw new Error("preview refused")
+    const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
+    if (!started.ok) throw new Error("start refused")
+    const previous = started.session.sessionRef
+    await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: previous }))
+    await waitForMessage(host.request, previous.sessionId, host.turns[0] ?? "")
+
+    const digest = await startConfigurationDigest({ preset: preset(), slot: "primary" })
+    const continuing = {
+      ...previewCommand,
+      attempt: 2,
+      continueFromPrevious: true,
+      currentLink: link(previous, digest),
+      currentState: "archived" as const,
+    }
+
+    const refused = await host.bridge.preview({ ...continuing, authorizeTranscript: async () => false })
+    expect(refused).toMatchObject({ ok: false, error: { code: "forbidden" } })
+
+    // The same request with the grant still held is the one that reads, so the
+    // refusal above is the grant and not the shape of the request.
+    const allowed = await host.bridge.preview({ ...continuing, authorizeTranscript: async () => true })
+    expect(allowed).toMatchObject({ ok: true })
+    if (!allowed.ok) return
+    expect(allowed.preview.previousTranscriptReadable).toBe(true)
+
+    const startRefused = await host.bridge.start({
+      ...(await startCommand({ workspaceId: host.workspaceId, digest: allowed.preview.digest })),
+      attempt: 2,
+      continueFromPrevious: true,
+      previousSession: previous,
+      authorizeTranscript: async () => false,
+    })
+    expect(startRefused).toMatchObject({ ok: false, error: { code: "forbidden" } })
+    expect(host.created).toHaveLength(1)
+  })
+
+  test("keeps a session this origin already handed the task to, rather than abandoning it", async () => {
     const host = await harness()
     roots.push(host.root)
     const previewed = await host.bridge.preview({
@@ -736,6 +812,120 @@ describe("local tasks session bridge", () => {
       continueFromPrevious: false,
       currentLink: null,
       currentState: null,
+      authorizeTranscript: async () => true,
+    })
+    if (!previewed.ok) throw new Error("preview refused")
+    const command = await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest })
+    const started = await host.bridge.start(command)
+    if (!started.ok) throw new Error("start refused")
+    const session = started.session.sessionRef
+    await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session }))
+    await waitForMessage(host.request, session.sessionId, host.turns[0] ?? "")
+
+    const kept = await host.bridge.abandon({
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      slot: "primary",
+      attempt: 1,
+      configurationDigest: command.configurationDigest,
+      sessionRef: session,
+    })
+    expect(kept).toMatchObject({ ok: true, removed: false })
+    expect((await host.request(`/session/${session.sessionId}`)).status).toBe(200)
+  })
+
+  test("a preset changed while the session was being created leaves the origin free for the next Start", async () => {
+    const host = await harness()
+    roots.push(host.root)
+
+    const actor = { scopeId: "local", ownerId: "local" }
+    const store = createMemoryTasksStore()
+    await store.presets.insert(preset())
+    let minted = 0
+    let ticks = 1_000
+
+    // The edit lands between the create and the settlement, which is the race
+    // the settlement's preset assertion refuses.
+    let edited = false
+    const racing: TasksSessionBridgePort = {
+      ...host.bridge,
+      start: async (command) => {
+        if (!edited) {
+          edited = true
+          await store.presets.update({ ...preset(), revision: 4, instructions: "Ignore the code and rewrite it." }, 3)
+        }
+        return host.bridge.start(command)
+      },
+    }
+    const service = createTasksService({
+      store,
+      clock: { now: () => (ticks += 1) },
+      ids: { presetId: () => `pst_${(minted += 1)}`, taskId: () => `tsk_${(minted += 1)}` },
+      authorization: { authorizeProject: async () => true, authorizeSessionOpen: async () => true },
+      bridge: racing,
+    })
+
+    const created = (await service.create(actor, {
+      projectId: host.projectId,
+      title: "Fix the importer",
+      description: "The CSV importer drops the last row.",
+      workspaceId: host.workspaceId,
+      parentTaskId: null,
+    })).task
+
+    const request = async (presetRevision: number) => {
+      const stored = await store.tasks.get(actor.scopeId, created.id)
+      const subject = {
+        taskRevision: stored?.revision ?? 0,
+        presetId: "pst_1",
+        presetRevision,
+        slot: "primary" as const,
+        attempt: 1,
+        continueFromPrevious: false,
+      }
+      const previewed = await service.startPreview(actor, created.id, subject)
+      return { ...subject, clientRequestId: `req_${presetRevision}`, previewDigest: previewed.digest, handoffText: null }
+    }
+
+    const refused = await service.start(actor, created.id, await request(3)).then(
+      () => undefined,
+      (cause: unknown) => cause,
+    )
+    expect(refused).toBeInstanceOf(TasksError)
+    expect(refused instanceof TasksError ? refused.detail.code : "").toBe("conflict")
+    expect(await store.links.listByTask(actor.scopeId, created.id)).toHaveLength(0)
+
+    // The session that create made is gone again, together with the row the
+    // session lists read it from, so nothing is left holding the origin.
+    const sessionId = host.created[0]?.id ?? ""
+    expect(host.created).toHaveLength(1)
+    expect((await host.request(`/session/${sessionId}`)).status).toBe(404)
+    expect(await sessionMeta(sessionId)).toBeUndefined()
+    expect(host.turns).toEqual([])
+
+    const retried = await service.start(actor, created.id, await request(4))
+    expect(retried).toMatchObject({ created: true, link: { attempt: 1, presetRevision: 4, handoff: "sent" } })
+    expect(retried.link.sessionRef.sessionId).toBe(sessionId)
+    expect(host.created).toHaveLength(2)
+    expect(host.created[1]).toMatchObject({ id: sessionId, instructions: expect.stringContaining("Ignore the code and rewrite it.") })
+    expect(await store.links.listByTask(actor.scopeId, created.id)).toHaveLength(1)
+    expect(host.turns).toHaveLength(1)
+    await waitForMessage(host.request, sessionId, host.turns[0] ?? "")
+  })
+
+  test("reads liveness and handoff state from the projection and the runtime, and stores none of it", async () => {
+    const host = await harness()
+    roots.push(host.root)
+    const previewed = await host.bridge.preview({
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      preset: preset(),
+      slot: "primary",
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+      authorizeTranscript: async () => true,
     })
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
@@ -744,13 +934,28 @@ describe("local tasks session bridge", () => {
     if (!started.ok) return
     const live = started.session.sessionRef
 
+    const origin = { scopeId: "local", taskId: "tsk_1", slot: "primary" as const, attempt: 1, sessionRef: live }
+
     expect(await sessionMeta(live.sessionId)).toMatchObject({ workspaceID: host.workspaceId })
-    expect(await host.bridge.sessionState([live])).toEqual([{ session: live, state: "live" }])
+    expect(await host.bridge.sessionState([origin])).toEqual([{ session: live, state: "live", handoff: "pending" }])
+
+    const handed = await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: live }))
+    expect(handed).toMatchObject({ ok: true, sent: true })
+    await waitForMessage(host.request, live.sessionId, host.turns[0] ?? "")
+    expect(await host.bridge.sessionState([origin])).toEqual([{ session: live, state: "live", handoff: "sent" }])
+
+    // Another attempt's origin addresses another message id, so this session
+    // is not evidence that its task was handed over.
+    expect(await host.bridge.sessionState([{ ...origin, attempt: 2 }])).toEqual([
+      { session: live, state: "live", handoff: "pending" },
+    ])
 
     await putSessionMeta(live.sessionId, { archived: Date.now() })
-    expect(await host.bridge.sessionState([live])).toEqual([{ session: live, state: "archived" }])
+    expect(await host.bridge.sessionState([origin])).toEqual([{ session: live, state: "archived", handoff: "unknown" }])
 
     const absent = { sessionId: "ses_missing", workspaceId: host.workspaceId }
-    expect(await host.bridge.sessionState([absent])).toEqual([{ session: absent, state: "deleted" }])
+    expect(await host.bridge.sessionState([{ ...origin, sessionRef: absent }])).toEqual([
+      { session: absent, state: "deleted", handoff: "unknown" },
+    ])
   })
 })

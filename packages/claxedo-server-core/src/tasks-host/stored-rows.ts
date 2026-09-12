@@ -67,6 +67,7 @@ export type StoredLinkColumns = {
   preset_revision: number
   preset_name_at_start: string
   configuration_digest: string
+  handoff_text: string | null
   created_at: number
 }
 
@@ -165,6 +166,7 @@ export function linkColumns(link: TaskSessionLink): StoredLinkColumns {
     preset_revision: link.presetRevision,
     preset_name_at_start: link.presetNameAtStart,
     configuration_digest: link.configurationDigest,
+    handoff_text: link.handoffText,
     created_at: link.createdAt,
   }
 }
@@ -190,6 +192,7 @@ export function linkOfColumns(row: StoredLinkColumns): TaskSessionLink {
     presetRevision: row.preset_revision,
     presetNameAtStart: row.preset_name_at_start,
     configurationDigest: row.configuration_digest,
+    handoffText: row.handoff_text,
     createdAt: row.created_at,
   }
 }

@@ -115,12 +115,13 @@ function reportingBridge(principal: TasksRuntimePrincipal): TasksSessionBridgePo
     }
   }
   return {
-    async sessionState(sessions) {
-      return sessions.map((session) => ({ session, state: "unavailable" as const }))
+    async sessionState(origins) {
+      return origins.map((origin) => ({ session: origin.sessionRef, state: "unavailable" as const, handoff: "unknown" as const }))
     },
     preview: (command) => refuse(command.actor),
     start: (command) => refuse(command.actor),
     handoff: (command) => refuse(command.actor),
+    abandon: (command) => refuse(command.actor),
   }
 }
 

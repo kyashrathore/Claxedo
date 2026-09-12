@@ -14,7 +14,7 @@
 import type { ConfigurationSlot, Preset, Task, TaskSessionLink } from "../contracts"
 import { TasksStoreConflict, type TasksCommandReceipt, type TasksStorePort } from "../ports/store"
 
-export const TASKS_STORE_CONFORMANCE_VERSION = 2 as const
+export const TASKS_STORE_CONFORMANCE_VERSION = 3 as const
 
 export const TASKS_STORE_CONFORMANCE_SCOPE = {
   cases: [
@@ -29,6 +29,7 @@ export const TASKS_STORE_CONFORMANCE_SCOPE = {
     "another_scope_can_neither_read_nor_mutate",
     "a_rolled_back_unit_leaves_the_unit_that_committed_beside_it_intact",
     "overlapping_units_cannot_both_bump_one_row_from_the_same_revision",
+    "a_preset_revision_assertion_is_a_predicate_of_the_unit_that_made_it",
   ],
   // NOT pinned:
   //
@@ -107,6 +108,7 @@ function linkRow(input: Partial<TaskSessionLink> & Pick<TaskSessionLink, "taskId
     presetRevision: input.presetRevision ?? 1,
     presetNameAtStart: input.presetNameAtStart ?? "Conformance preset",
     configurationDigest: input.configurationDigest ?? "c".repeat(64),
+    handoffText: input.handoffText ?? null,
     createdAt: input.createdAt ?? 2_000,
   }
 }
@@ -443,6 +445,65 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
       const stored = await store.tasks.get(CONFORMANCE_SCOPES.first, "task-contended")
       assertEqual(stored?.revision, 2, "the bump that won is not the stored revision")
       assert(stored?.title === "First" || stored?.title === "Second", `the stored row carries neither bump: ${String(stored?.title)}`)
+    }),
+
+    conformanceCase("a preset revision assertion is a predicate of the unit that made it", async () => {
+      const store = await start()
+      await store.presets.insert(preset({ id: "preset-pinned", revision: 1 }))
+
+      assertEqual(
+        await store.presets.assertRevision(CONFORMANCE_SCOPES.first, "preset-pinned", 1),
+        true,
+        "the assertion refused the revision the row is at",
+      )
+      assertEqual(
+        await store.presets.assertRevision(CONFORMANCE_SCOPES.first, "preset-pinned", 2),
+        false,
+        "the assertion accepted a revision the row is not at",
+      )
+      assertEqual(
+        await store.presets.assertRevision(CONFORMANCE_SCOPES.first, "preset-absent", 1),
+        false,
+        "the assertion accepted a preset that does not exist",
+      )
+      assertEqual(
+        await store.presets.assertRevision(CONFORMANCE_SCOPES.second, "preset-pinned", 1),
+        false,
+        "the assertion answered another scope from this one",
+      )
+
+      await store.transaction(async (tx) => {
+        assertEqual(
+          await tx.presets.assertRevision(CONFORMANCE_SCOPES.first, "preset-pinned", 1),
+          true,
+          "the assertion refused inside a unit the revision it accepted outside one",
+        )
+        await tx.tasks.insert(taskRow({ id: "task-settled" }))
+      })
+      assert(
+        (await store.tasks.get(CONFORMANCE_SCOPES.first, "task-settled")) !== undefined,
+        "the unit whose assertion held was refused",
+      )
+
+      await rollback(store, async (tx) => {
+        assertEqual(
+          await tx.presets.assertRevision(CONFORMANCE_SCOPES.first, "preset-pinned", 9),
+          false,
+          "the assertion accepted a revision no row is at",
+        )
+        await tx.tasks.insert(taskRow({ id: "task-stranded" }))
+        throw new ConformanceRollback("the preset moved")
+      })
+      assertEqual(
+        await store.tasks.get(CONFORMANCE_SCOPES.first, "task-stranded"),
+        undefined,
+        "the unit whose assertion missed kept its insert",
+      )
+      assertEqual(
+        (await store.presets.get(CONFORMANCE_SCOPES.first, "preset-pinned"))?.revision,
+        1,
+        "the assertion wrote to the row it only read",
+      )
     }),
   ]
 }

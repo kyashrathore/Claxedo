@@ -11,14 +11,18 @@ import {
   type ConfigurationSlot,
   type ModelConfiguration,
   type ModelReference,
+  type SessionAbandonCommand,
   type SessionHandoffCommand,
+  type SessionHandoffState,
   type SessionLiveness,
+  type SessionOrigin,
   type SessionReference,
   type StartBlocker,
   type StartCommand,
   type StartPreview,
   type StartPreviewCommand,
   type StartedSession,
+  type TranscriptGrant,
   type Task,
   type TasksActor,
   type TasksErrorDetail,
@@ -75,6 +79,17 @@ export type TasksSessionHost = {
     workspaceId: string
     title: string
   }): Promise<TasksSessionReservation>
+  /**
+   * Undo of `reserve`, for a session this host created under an origin the
+   * package then never linked. A host with no reservation table has neither.
+   */
+  release?(input: {
+    actor: TasksActor
+    operationId: string
+    sessionId: string
+    workspaceId: string
+    reason: string
+  }): Promise<void>
   /** Record the created session where this host's session lists read it from. */
   projectSessionMeta(input: {
     sessionId: string
@@ -82,12 +97,14 @@ export type TasksSessionHost = {
     title: string
     model: ModelReference
   }): Promise<void>
+  /** Remove what `projectSessionMeta` wrote, so an abandoned session leaves no row behind. */
+  forgetSessionMeta(sessionId: string): Promise<void>
 }
 
 export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBridgePort {
   return {
-    async sessionState(sessions) {
-      return sessionStates(host, sessions)
+    async sessionState(origins) {
+      return sessionStates(host, origins)
     },
 
     async preview(command) {
@@ -118,6 +135,10 @@ export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBr
     async handoff(command) {
       return sendFirstMessage(host, command)
     },
+
+    async abandon(command) {
+      return abandonSession(host, command)
+    },
   }
 }
 
@@ -134,22 +155,36 @@ type ResolvedStart = {
 
 type Refusal = { ok: false; error: TasksErrorDetail }
 
+/**
+ * Liveness, and for a live session whether this origin's first message reached
+ * it. A session nobody can read answers `unknown` rather than `pending`: the
+ * two differ by whether anything may be sent on the strength of the answer.
+ */
 async function sessionStates(
   host: TasksSessionHost,
-  sessions: readonly SessionReference[],
-): Promise<ReadonlyArray<{ session: SessionReference; state: SessionLiveness }>> {
-  if (sessions.length === 0) return []
-  const metas = await host.sessionMetas(sessions.map((session) => session.sessionId))
-  return Promise.all(sessions.map(async (session) => {
+  origins: readonly SessionOrigin[],
+): Promise<ReadonlyArray<{ session: SessionReference; state: SessionLiveness; handoff: SessionHandoffState }>> {
+  if (origins.length === 0) return []
+  const metas = await host.sessionMetas(origins.map((origin) => origin.sessionRef.sessionId))
+  return Promise.all(origins.map(async (origin) => {
+    const session = origin.sessionRef
+    const unread = (state: SessionLiveness) => ({ session, state, handoff: "unknown" as const })
     const meta = metas.get(session.sessionId)
-    if (!meta) return { session, state: "deleted" as const }
-    if (meta.archived) return { session, state: "archived" as const }
+    if (!meta) return unread("deleted")
+    if (meta.archived) return unread("archived")
     const target = await host.target(meta.workspaceID ?? session.workspaceId ?? "")
-    if (!target) return { session, state: "unavailable" as const }
+    if (!target) return unread("unavailable")
     const reachable = await target.request(`/session/${encodeURIComponent(session.sessionId)}`).catch(() => undefined)
-    if (!reachable) return { session, state: "unavailable" as const }
-    if (reachable.status === 404) return { session, state: "deleted" as const }
-    return { session, state: reachable.ok ? ("live" as const) : ("unavailable" as const) }
+    if (!reachable) return unread("unavailable")
+    if (reachable.status === 404) return unread("deleted")
+    if (!reachable.ok) return unread("unavailable")
+    const { messageId } = await originIds(origin)
+    const sent = await alreadySent(target, session.sessionId, messageId)
+    return {
+      session,
+      state: "live" as const,
+      handoff: sent === "unreadable" ? ("unknown" as const) : sent === "present" ? ("sent" as const) : ("pending" as const),
+    }
   }))
 }
 
@@ -239,23 +274,37 @@ async function readSessionConfiguration(
   }
 }
 
-/** The previous session's conversation, rendered by the runtime's own renderer. */
+/**
+ * The previous session's conversation, rendered by the runtime's own renderer.
+ *
+ * The grant is answered here rather than by the caller because resolving the
+ * session's workspace is itself an await: a grant the package held when it
+ * handed this session over can be gone by the time there is a runtime to read,
+ * and the read must not happen on the strength of the older answer.
+ */
 async function readHandoff(
   host: TasksSessionHost,
   fallback: TasksRuntimeTarget,
   previous: SessionReference | null,
-): Promise<Handoff | null> {
-  if (!previous) return null
+  authorize: TranscriptGrant,
+): Promise<{ ok: true; handoff: Handoff | null } | Refusal> {
+  if (!previous) return { ok: true, handoff: null }
   const target = previous.workspaceId && previous.workspaceId !== fallback.workspace.id
     ? await host.target(previous.workspaceId)
     : fallback
-  if (!target) return null
+  if (!target) return { ok: true, handoff: null }
+  if (!(await authorize())) {
+    return {
+      ok: false,
+      error: tasksErrorDetail("forbidden", `No access to session ${previous.sessionId}, so its transcript was not read`),
+    }
+  }
   const [messages, stored] = await Promise.all([
     readMessages(target, previous.sessionId),
     readSessionConfiguration(target, previous.sessionId),
   ])
-  if (!messages?.length || !stored) return null
-  return { session: previous, transcript: renderSessionHandoff(messages, stored.harness) }
+  if (!messages?.length || !stored) return { ok: true, handoff: null }
+  return { ok: true, handoff: { session: previous, transcript: renderSessionHandoff(messages, stored.harness) } }
 }
 
 /**
@@ -326,7 +375,12 @@ async function resolveStart(
   if (!("target" in choice)) blockers.push({ code: "source_unavailable", detail: choice.detail })
   const target = "target" in choice ? choice.target : null
 
-  const readable = target && blockers.length === 0 ? await readHandoff(host, target, previousSessionOf(command)) : null
+  let readable: Handoff | null = null
+  if (target && blockers.length === 0) {
+    const read = await readHandoff(host, target, previousSessionOf(command), command.authorizeTranscript)
+    if (!read.ok) return read
+    readable = read.handoff
+  }
   // Reading the transcript answers whether Continue can be offered; rendering
   // it into the instruction block is what selecting Continue does.
   const handoff = command.continueFromPrevious ? readable : null
@@ -554,6 +608,58 @@ async function sendFirstMessage(
   })
   if (!prompt.ok) return { ok: false, error: await runtimeRefusal("send the first message", prompt) }
   return { ok: true, sent: true }
+}
+
+/**
+ * A session this origin created and nobody linked, removed so the next Start
+ * may have the origin back.
+ *
+ * The history is read first for the same reason the handoff reads it: this
+ * origin's first message on the session means the task was handed over and the
+ * session is the user's, whatever the caller believes about the link. The
+ * reservation is released after the delete, so a host whose delete failed
+ * still holds the origin rather than freeing an id its session still answers.
+ */
+async function abandonSession(
+  host: TasksSessionHost,
+  command: SessionAbandonCommand,
+): Promise<TasksResult<{ removed: boolean }>> {
+  const target = await host.target(command.sessionRef.workspaceId ?? "")
+  if (!target) {
+    return {
+      ok: false,
+      error: tasksErrorDetail("unsupported", `Session ${command.sessionRef.sessionId} is not reachable from this host`),
+    }
+  }
+  const sessionId = command.sessionRef.sessionId
+  const { origin, messageId } = await originIds({
+    scopeId: command.actor.scopeId,
+    taskId: command.task.id,
+    slot: command.slot,
+    attempt: command.attempt,
+  })
+  const sent = await alreadySent(target, sessionId, messageId)
+  if (sent === "present") return { ok: true, removed: false }
+  if (sent === "unreadable") {
+    return {
+      ok: false,
+      error: tasksErrorDetail(
+        "conflict",
+        `The workspace runtime would not say whether session ${sessionId} had already been handed the task; it was kept`,
+      ),
+    }
+  }
+  const removed = await target.request(`/session/${encodeURIComponent(sessionId)}`, { method: "DELETE" })
+  if (!removed.ok) return { ok: false, error: await runtimeRefusal("delete this session", removed) }
+  await host.forgetSessionMeta(sessionId)
+  await host.release?.({
+    actor: command.actor,
+    operationId: `${origin}:${command.configurationDigest}`,
+    sessionId,
+    workspaceId: target.workspace.id,
+    reason: "The Tasks link this session was created for was never committed",
+  })
+  return { ok: true, removed: true }
 }
 
 /**

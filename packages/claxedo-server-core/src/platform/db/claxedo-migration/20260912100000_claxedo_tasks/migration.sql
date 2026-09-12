@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS `claxedo_task_session_link` (
 	`preset_revision` integer NOT NULL,
 	`preset_name_at_start` text NOT NULL,
 	`configuration_digest` text NOT NULL,
+	`handoff_text` text,
 	`created_at` integer NOT NULL,
 	PRIMARY KEY (`scope_id`, `task_id`, `slot`, `attempt`)
 );

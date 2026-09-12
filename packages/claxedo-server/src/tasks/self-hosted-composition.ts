@@ -9,7 +9,7 @@ import {
 import { createTasksCapabilities, randomTasksIds, systemTasksClock } from "@claxedo/server-core/tasks-host/host-ports"
 import { createSqliteTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
 import { createLocalTasksSessionBridge } from "@claxedo/local-server/tasks/session-bridge"
-import { createTasksSessionReserve } from "./session-bridge"
+import { createTasksSessionRelease, createTasksSessionReserve } from "./session-bridge"
 import { TASKS_ROUTE_PATH, createTasksRoutes } from "@claxedo/tasks/http"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
@@ -69,6 +69,10 @@ export function createSelfHostedTasksComposition(
           }),
           bridge: createLocalTasksSessionBridge({
             reserve: createTasksSessionReserve({
+              services: input.services,
+              principal: signedTasksRuntimePrincipal(principals),
+            }),
+            release: createTasksSessionRelease({
               services: input.services,
               principal: signedTasksRuntimePrincipal(principals),
             }),

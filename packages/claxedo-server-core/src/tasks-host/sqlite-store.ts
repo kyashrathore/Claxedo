@@ -114,6 +114,20 @@ function tasksOperations(use: Reader): TasksStoreOperations {
         )
         return written.length > 0
       },
+
+      // A unit here holds one WAL snapshot and promotes it at its first write,
+      // so the read is the predicate: nothing else can have moved the row
+      // behind a unit that goes on to commit.
+      async assertRevision(scopeId, presetId, revision) {
+        const row = use((db) =>
+          db
+            .select({ revision: ClaxedoTaskPresetTable.revision })
+            .from(ClaxedoTaskPresetTable)
+            .where(and(eq(ClaxedoTaskPresetTable.scope_id, scopeId), eq(ClaxedoTaskPresetTable.preset_id, presetId)))
+            .get(),
+        )
+        return row?.revision === revision
+      },
     },
 
     tasks: {

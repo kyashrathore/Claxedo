@@ -1,4 +1,4 @@
-import { putSessionMeta, sessionMetas } from "@claxedo/server-core/session/meta/index"
+import { deleteSessionMeta, putSessionMeta, sessionMetas } from "@claxedo/server-core/session/meta/index"
 import {
   chooseProjectWorkspace,
   createTasksSessionBridge,
@@ -17,11 +17,14 @@ export type LocalTasksSessionBridgeInput = {
    * no actors to record and supplies none.
    */
   reserve?: TasksSessionHost["reserve"]
+  /** The undo of that admission, so a host that reserves can also give an origin back. */
+  release?: TasksSessionHost["release"]
 }
 
 export function createLocalTasksSessionBridge(input: LocalTasksSessionBridgeInput = {}): TasksSessionBridgePort {
   return createTasksSessionBridge({
     ...(input.reserve ? { reserve: input.reserve } : {}),
+    ...(input.release ? { release: input.release } : {}),
 
     async target(workspaceId) {
       const workspace = await resolveWorkspace({ workspaceId })
@@ -46,6 +49,8 @@ export function createLocalTasksSessionBridge(input: LocalTasksSessionBridgeInpu
         title: input.title,
         model: input.model,
       }),
+
+    forgetSessionMeta: (sessionId) => deleteSessionMeta(sessionId),
   })
 }
 

@@ -60,6 +60,16 @@ export type PresetStoreOperations = {
    * adapter must have written nothing.
    */
   update(preset: Preset, expectedRevision: number): Promise<boolean>
+  /**
+   * Makes `revision` a predicate of the unit this runs in, writing nothing.
+   * False means the stored row is gone or has already moved; true means the
+   * unit commits only while it is still at that revision.
+   *
+   * A caller that acts on a preset it read but never writes has no other way
+   * to be arbitrated against a concurrent edit: inside a unit whose predicates
+   * are only decided at commit, a second `get` is the same read it already did.
+   */
+  assertRevision(scopeId: string, presetId: string, revision: number): Promise<boolean>
 }
 
 export type ChildCountFilter = {

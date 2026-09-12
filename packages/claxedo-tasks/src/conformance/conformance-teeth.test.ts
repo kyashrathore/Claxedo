@@ -72,6 +72,7 @@ function snapshotRollback(): TasksStorePort {
       list: (scopeId, ownerId, query) => live.presets.list(scopeId, ownerId, query),
       insert: (preset) => record((into) => into.presets.insert(preset), live.presets.insert(preset)),
       update: (preset, revision) => record((into) => into.presets.update(preset, revision), live.presets.update(preset, revision)),
+      assertRevision: (scopeId, presetId, revision) => live.presets.assertRevision(scopeId, presetId, revision),
     },
     tasks: {
       get: (scopeId, taskId) => live.tasks.get(scopeId, taskId),
@@ -213,13 +214,20 @@ const MUTANTS: readonly Mutant[] = [
     breaks: "lets two overlapping units bump one row from one revision",
     apply: REREADS_THE_REVISION,
   },
+  {
+    breaks: "accepts every preset revision it is asked to assert",
+    apply: everywhere((operations) => ({
+      ...operations,
+      presets: { ...operations.presets, assertRevision: async () => true },
+    })),
+  },
 ]
 
 describe("tasks store conformance", () => {
   const cases = tasksStoreConformance(async () => ({ store: createMemoryTasksStore() }))
 
   test("the pinned manifest lists exactly the cases the suite runs", () => {
-    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(2)
+    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(3)
     expect(cases.map((entry) => entry.name.replaceAll(/[^a-z]+/g, "_"))).toEqual([...TASKS_STORE_CONFORMANCE_SCOPE.cases])
   })
 

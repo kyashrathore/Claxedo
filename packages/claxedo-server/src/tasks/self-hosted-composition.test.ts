@@ -207,6 +207,35 @@ describe("signed self-hosted Tasks composition", () => {
     expect(reserveRuntimeSession).not.toHaveBeenCalled()
   })
 
+  test("hands the local bridge the undo of that reservation, so a session it admitted can be given back", async () => {
+    type Release = (input: unknown) => Promise<void>
+    const releaseOf = () => (bridgeInputs[bridgeInputs.length - 1] as { release?: Release }).release
+
+    const base = services()
+    const beginSessionCompensation = vi.fn(async () => ({}))
+    const completeSessionCompensation = vi.fn(async () => ({}))
+    createSelfHostedTasksComposition({
+      services: {
+        ...base,
+        authority: { ...base.authority, beginSessionCompensation, completeSessionCompensation },
+      } as unknown as ControlPlaneServices,
+    })
+    expect(typeof releaseOf()).toBe("function")
+
+    // The signed caller is the one the reservation recorded, so an actor this
+    // host cannot resolve releases nothing rather than releasing as the
+    // service actor.
+    await releaseOf()!({
+      actor: { scopeId: "org-unknown", ownerId: "nobody" },
+      operationId: "tasks.v1:org-unknown:tsk:primary:1:digest",
+      sessionId: "ses_tasks_test",
+      workspaceId: "ws-1",
+      reason: "never linked",
+    })
+    expect(beginSessionCompensation).not.toHaveBeenCalled()
+    expect(completeSessionCompensation).not.toHaveBeenCalled()
+  })
+
   test("a task written by one request is still there for the next composition", async () => {
     await command(app(), "alice", "request-durable", TASK)
 

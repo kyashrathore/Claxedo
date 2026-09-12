@@ -56,6 +56,7 @@ function commandsOver(store: TasksStorePort): TasksCommands {
       preview: () => Promise.reject(new Error(UNREACHED)),
       start: () => Promise.reject(new Error(UNREACHED)),
       handoff: () => Promise.reject(new Error(UNREACHED)),
+      abandon: () => Promise.reject(new Error(UNREACHED)),
     },
   })
 }

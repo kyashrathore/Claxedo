@@ -20,12 +20,15 @@ export type { HarnessDescriptor, TasksCapabilitiesPort, TasksHostCapabilities } 
 export type { TasksClockPort } from "./ports/clock"
 export type { TasksIdsPort } from "./ports/ids"
 export type {
+  SessionAbandonCommand,
   SessionHandoffCommand,
+  SessionOrigin,
   SessionStateReading,
   StartCommand,
   StartPreviewCommand,
   StartedSession,
   TasksSessionBridgePort,
+  TranscriptGrant,
 } from "./ports/session-bridge"
 export {
   TASKS_STORE_CONFLICTS,

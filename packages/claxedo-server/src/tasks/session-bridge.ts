@@ -54,6 +54,8 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
 
     reserve: createTasksSessionReserve(input),
 
+    release: createTasksSessionRelease(input),
+
     projectSessionMeta: (created) => input.services.projectionStore.put_session_meta(created.sessionId, {
       ws: created.target.workspace,
       host: "workspace",
@@ -61,7 +63,40 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
       title: created.title,
       model: created.model,
     }),
+
+    forgetSessionMeta: (sessionId) => input.services.projectionStore.delete_session_meta(sessionId),
   })
+}
+
+/**
+ * The reservation's own undo for an origin whose session was removed again:
+ * the registration state machine reaches `compensated` only through
+ * `compensation_pending`, and a compensated origin can never register a
+ * session, which is what keeps the deleted id from coming back as one.
+ */
+export function createTasksSessionRelease(
+  input: TasksSessionReserveInput,
+): NonNullable<TasksSessionHost["release"]> {
+  return async (released): Promise<void> => {
+    const authority = input.services.authority ?? undefined
+    if (!isComposedAuthorityPort<Pick<PrivateSessionAuthority, "beginSessionCompensation" | "completeSessionCompensation">>(
+      authority,
+      ["beginSessionCompensation", "completeSessionCompensation"],
+    )) {
+      return
+    }
+    const principal = input.principal ? await input.principal(released.actor) : CONTROL_PLANE_RUNTIME_ACTOR
+    if (!principal) return
+    const transition = {
+      ...principal,
+      operationId: released.operationId,
+      sessionId: released.sessionId,
+      workspaceId: released.workspaceId,
+      reason: released.reason,
+    }
+    await authority.beginSessionCompensation(transition)
+    await authority.completeSessionCompensation(transition)
+  }
 }
 
 export type TasksSessionReserveInput = {

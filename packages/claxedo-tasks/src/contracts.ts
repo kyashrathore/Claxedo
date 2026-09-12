@@ -142,11 +142,27 @@ export type TaskSessionLink = {
    * value, so the stored digest is compared rather than the request believed.
    */
   configurationDigest: string
+  /**
+   * The note the person starting the task wrote for this attempt, as the first
+   * message carries it. Stored because the link commits before the message is
+   * submitted: a handoff performed after a crash has no request to read it
+   * from, and sending the task without it would hand over a different message.
+   */
+  handoffText: string | null
   createdAt: number
 }
 
 export const SESSION_LIVENESS = ["live", "archived", "deleted", "unavailable"] as const
 export type SessionLiveness = (typeof SESSION_LIVENESS)[number]
+
+/**
+ * Whether this attempt's first message reached its session, as the host's
+ * history read answers it. `unknown` covers both a history the runtime would
+ * not return and a session there is nothing to read, which are the same answer
+ * to a reader: nobody can say, so nothing may be resent on the strength of it.
+ */
+export const SESSION_HANDOFF_STATES = ["sent", "pending", "unknown"] as const
+export type SessionHandoffState = (typeof SESSION_HANDOFF_STATES)[number]
 
 /**
  * A link as a task reader sees it. Preset provenance is the id, the revision
@@ -164,6 +180,7 @@ export type TaskSessionLinkView = {
   presetNameAtStart: string
   createdAt: number
   liveness: SessionLiveness
+  handoff: SessionHandoffState
 }
 
 export type InvalidFieldReason =
@@ -423,7 +440,11 @@ export function taskSummaryOf(task: Task): TaskSummary {
   return { ...rest, hasDescription: description.length > 0 }
 }
 
-export function linkView(link: TaskSessionLink, liveness: SessionLiveness): TaskSessionLinkView {
+export function linkView(
+  link: TaskSessionLink,
+  liveness: SessionLiveness,
+  handoff: SessionHandoffState,
+): TaskSessionLinkView {
   return {
     taskId: link.taskId,
     slot: link.slot,
@@ -435,5 +456,6 @@ export function linkView(link: TaskSessionLink, liveness: SessionLiveness): Task
     presetNameAtStart: link.presetNameAtStart,
     createdAt: link.createdAt,
     liveness,
+    handoff,
   }
 }

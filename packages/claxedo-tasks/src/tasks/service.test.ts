@@ -636,6 +636,7 @@ describe("tasks service", () => {
             presetRevision: preset.revision,
             presetNameAtStart: preset.name,
             configurationDigest: await startConfigurationDigest({ preset, slot: "primary" }),
+            handoffText: null,
             createdAt: 10,
           })
           return bridge.start(command)
@@ -653,7 +654,9 @@ describe("tasks service", () => {
     const rowBackedAuthorization = (): TasksAuthorizationPort => ({
       authorizeProject: (actor, projectId, access) => authorization.authorizeProject(actor, projectId, access),
       async authorizeSessionOpen(actor, session) {
-        const [reading] = await bridge.sessionState([session])
+        const [reading] = await bridge.sessionState([
+          { scopeId: actor.scopeId, taskId: "", slot: "primary", attempt: 1, sessionRef: session },
+        ])
         if (!reading || reading.state === "deleted") return false
         return authorization.authorizeSessionOpen(actor, session)
       },
@@ -723,7 +726,7 @@ describe("tasks service", () => {
       expect(bridge.starts).toHaveLength(1)
     })
 
-    test("a preset edited while the session was being created leaves no link naming the revision that never ran", async () => {
+    test("a preset edited while the session was being created leaves no link, and the session it made is given back", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
       const presets = createPresetsService({ store, clock: fakeClock(), ids: fakeIds(), capabilities: fakeCapabilities() })
       const editing: FakeBridge = {
@@ -743,6 +746,82 @@ describe("tasks service", () => {
 
       expect((await refusalOf(() => racing.start(ACTOR, task.id, start(task)))).code).toBe("conflict")
       expect((await store.links.listByTask(ACTOR.scopeId, task.id)).length).toBe(0)
+      expect(bridge.abandoned).toMatchObject([{ attempt: 1, slot: "primary", sessionRef: { sessionId: "session-1" } }])
+
+      // The origin is free, so the same attempt starts again under the preset
+      // that is now current instead of the user being told attempt 1 is taken.
+      const current = await store.presets.get(ACTOR.scopeId, preset.id)
+      expect(current?.revision).toBe(preset.revision + 1)
+      bridge.nextSession("session-2")
+      const retried = await tasks.start(ACTOR, task.id, start(task, { presetRevision: current?.revision ?? 0 }))
+      expect(retried).toMatchObject({
+        created: true,
+        link: { attempt: 1, sessionRef: { sessionId: "session-2" }, presetRevision: current?.revision },
+      })
+      expect((await store.links.listByTask(ACTOR.scopeId, task.id)).length).toBe(1)
+    })
+
+    test("a settlement refused by a link another client already committed leaves that client's session alone", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      const planting: FakeBridge = {
+        ...bridge,
+        start: async (command: Parameters<FakeBridge["start"]>[0]) => {
+          const started = await bridge.start(command)
+          if (!started.ok) return started
+          await store.links.insert({
+            scopeId: ACTOR.scopeId,
+            taskId: task.id,
+            slot: "primary",
+            attempt: 1,
+            sessionRef: started.session.sessionRef,
+            continuedFrom: null,
+            presetId: preset.id,
+            presetRevision: preset.revision,
+            presetNameAtStart: preset.name,
+            configurationDigest: "another-configuration",
+            handoffText: null,
+            createdAt: 10,
+          })
+          return started
+        },
+      }
+      const loser = createTasksService({ store, clock: fakeClock(), ids: fakeIds(), authorization, bridge: planting })
+
+      expect((await refusalOf(() => loser.start(ACTOR, task.id, start(task)))).code).toBe("conflict")
+      expect(bridge.abandoned).toHaveLength(0)
+      expect((await store.links.getCurrent(ACTOR.scopeId, task.id, "primary"))?.sessionRef.sessionId).toBe("session-1")
+    })
+
+    test("a grant revoked while the host resolves its target stops the transcript read inside the bridge", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      await tasks.start(ACTOR, task.id, start(task))
+      const linked = (await tasks.detail(ACTOR, task.id)).task
+      bridge.setState("session-1", "archived")
+
+      // The grant answers every read the service makes and is gone by the time
+      // the host has resolved the workspace it would read the transcript in.
+      let resolvingTarget = false
+      const revoked: TasksAuthorizationPort = {
+        authorizeProject: (actor, projectId, access) => authorization.authorizeProject(actor, projectId, access),
+        authorizeSessionOpen: async (actor, session) =>
+          resolvingTarget ? false : authorization.authorizeSessionOpen(actor, session),
+      }
+      const resolving: FakeBridge = {
+        ...bridge,
+        start: async (command: Parameters<FakeBridge["start"]>[0]) => {
+          resolvingTarget = true
+          await Promise.resolve()
+          return bridge.start(command)
+        },
+      }
+      const racing = createTasksService({ store, clock: fakeClock(), ids: fakeIds(), authorization: revoked, bridge: resolving })
+
+      const detail = await refusalOf(() =>
+        racing.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, attempt: 2, continueFromPrevious: true })),
+      )
+      expect(detail.code).toBe("forbidden")
+      expect(bridge.transcriptReads).toHaveLength(0)
+      expect((await store.links.listByTask(ACTOR.scopeId, task.id)).length).toBe(1)
     })
 
     test("an existing link answers this Start only when it names the same session, configuration and workspace", async () => {
@@ -761,6 +840,7 @@ describe("tasks service", () => {
             presetRevision: preset.revision,
             presetNameAtStart: preset.name,
             configurationDigest: digest,
+            handoffText: null,
             createdAt: 10,
             ...overrides,
           })
@@ -796,27 +876,47 @@ describe("tasks service", () => {
       const answered = await racing(same, {}).start(ACTOR, same.id, start(same))
       expect(answered.created).toBe(false)
       expect(answered.link.sessionRef).toEqual({ sessionId: "session-1", workspaceId: "workspace-1" })
+      // The link that answered is the one already stored, so this settlement
+      // writes nothing: the task keeps the revision the winner left it at.
+      expect((await store.tasks.get(ACTOR.scopeId, same.id))?.revision).toBe(same.revision)
+      expect(bridge.abandoned).toHaveLength(0)
     })
 
-    test("the link is committed before the task is handed over, and a retry sends that message once", async () => {
+    test("a link whose first message never landed reports pending, and one Start sends the text it was started with", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
       bridge.refuseHandoff("the workspace runtime would not say whether the task was already sent")
 
-      expect((await refusalOf(() => tasks.start(ACTOR, task.id, start(task)))).code).toBe("conflict")
+      const refused = await refusalOf(() =>
+        tasks.start(ACTOR, task.id, start(task, { handoffText: "Start at the failing import test." })),
+      )
+      expect(refused.code).toBe("conflict")
       expect((await store.links.getCurrent(ACTOR.scopeId, task.id, "primary"))?.sessionRef.sessionId).toBe("session-1")
       expect(bridge.delivered).toHaveLength(0)
 
+      // What the reader sees after the crash: a live session whose task was
+      // never handed to it, which is the state the recovery Start acts on.
+      const stranded = await tasks.detail(ACTOR, task.id)
+      expect(stranded.links).toMatchObject([{ attempt: 1, liveness: "live", handoff: "pending" }])
+
       bridge.refuseHandoff(null)
-      const linked = (await tasks.detail(ACTOR, task.id)).task
-      const retried = await tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision }))
-      expect(retried).toMatchObject({ created: false, link: { sessionRef: { sessionId: "session-1" } } })
+      const linked = stranded.task
+      const retried = await tasks.start(
+        ACTOR,
+        task.id,
+        start(task, { taskRevision: linked.revision, handoffText: "A different note." }),
+      )
+      expect(retried).toMatchObject({ created: false, link: { sessionRef: { sessionId: "session-1" }, handoff: "sent" } })
       expect(bridge.delivered).toHaveLength(1)
+      // The message is the one the link was committed with, not the one this
+      // request happened to carry.
+      expect(bridge.delivered[0]?.handoffText).toBe("Start at the failing import test.")
 
       const third = await tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision }))
-      expect(third.created).toBe(false)
+      expect(third).toMatchObject({ created: false, link: { handoff: "sent" } })
       expect(bridge.delivered).toHaveLength(1)
-      expect(bridge.handoffs).toHaveLength(3)
+      expect(bridge.handoffs).toHaveLength(2)
       expect(bridge.starts).toHaveLength(1)
+      expect((await tasks.detail(ACTOR, task.id)).links).toMatchObject([{ handoff: "sent" }])
     })
   })
 })

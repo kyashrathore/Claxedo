@@ -31,7 +31,7 @@ const MODEL = { providerID: "openai", modelID: "gpt-5" }
 
 type RuntimeCall = { path: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }
 
-function runtime() {
+function runtime(input: { refuseDelete?: boolean } = {}) {
   const calls: RuntimeCall[] = []
   const sessions = new Map<string, { instructions?: string; variant?: string; messages: Array<{ info: { id: string; role: string; sessionID: string }; parts: unknown[] }> }>()
   mock.request.mockImplementation(async (path: string, init?: RuntimeCall["init"]) => {
@@ -91,9 +91,13 @@ function runtime() {
     const read = /^\/session\/([^/]+)$/.exec(path)
     if (read) {
       const session = sessions.get(read[1])
-      return session
-        ? Response.json({ id: read[1], directory: "/workspace" })
-        : Response.json({ error: { code: "not_found" } }, { status: 404 })
+      if (!session) return Response.json({ error: { code: "not_found" } }, { status: 404 })
+      if (init?.method !== "DELETE") return Response.json({ id: read[1], directory: "/workspace" })
+      if (input.refuseDelete) {
+        return Response.json({ error: { message: "this session cannot be deleted" } }, { status: 409 })
+      }
+      sessions.delete(read[1])
+      return Response.json({ ok: true })
     }
     return Response.json({ error: { code: "unexpected", message: path } }, { status: 500 })
   })
@@ -106,6 +110,11 @@ function services(input: { meta?: Map<string, { workspaceID?: string; archived?:
   // unique, so a second operation claiming a reserved session is a 409 here
   // exactly as it is in D1.
   const reserved = new Map<string, string>()
+  const compensated = (state: "compensation_pending" | "compensated") =>
+    vi.fn(async (input: { operationId: string; sessionId: string; workspaceId: string }) => {
+      if (state === "compensated") reserved.delete(input.sessionId)
+      return { ...input, changed: true, state }
+    })
   const authority = {
     reserveRuntimeSession: vi.fn(async (_principal: unknown, intent: { operationId: string; sessionId: string; workspaceId: string }) => {
       const holder = reserved.get(intent.sessionId)
@@ -115,11 +124,16 @@ function services(input: { meta?: Map<string, { workspaceID?: string; archived?:
       reserved.set(intent.sessionId, intent.operationId)
       return { ...intent, changed: !holder, state: "reserved" as const }
     }),
+    beginSessionCompensation: compensated("compensation_pending"),
+    completeSessionCompensation: compensated("compensated"),
   }
   const projectionStore = {
     session_metas: vi.fn(async (ids: string[]) => new Map([...metas].filter(([id]) => ids.includes(id)))),
     put_session_meta: vi.fn(async (sessionId: string, row: { workspaceID?: string; archived?: number }) => {
       metas.set(sessionId, { ...metas.get(sessionId), ...row })
+    }),
+    delete_session_meta: vi.fn(async (sessionId: string) => {
+      metas.delete(sessionId)
     }),
   }
   return {
@@ -168,7 +182,17 @@ const actor = { scopeId: "org", ownerId: "owner" }
 const slot: ConfigurationSlot = "primary"
 
 function previewCommand() {
-  return { actor, task: task(), preset: preset(), slot, attempt: 1, continueFromPrevious: false, currentLink: null, currentState: null }
+  return {
+    actor,
+    task: task(),
+    preset: preset(),
+    slot,
+    attempt: 1,
+    continueFromPrevious: false,
+    currentLink: null,
+    currentState: null,
+    authorizeTranscript: async () => true,
+  }
 }
 
 async function startCommand(digest: string, chosen: Preset = preset()): Promise<StartCommand> {
@@ -183,6 +207,7 @@ async function startCommand(digest: string, chosen: Preset = preset()): Promise<
     clientRequestId: "req_1",
     configurationDigest: await startConfigurationDigest({ preset: chosen, slot }),
     previousSession: null,
+    authorizeTranscript: async () => true,
   }
 }
 
@@ -395,12 +420,13 @@ describe("hosted tasks session bridge", () => {
     if (!started.ok) return
     const session = started.session.sessionRef
 
+    const origin = { scopeId: "org", taskId: "tsk_1", slot, attempt: 1, sessionRef: session }
     composition.metas.delete(session.sessionId)
-    expect(await kit.sessionState([session])).toEqual([{ session, state: "deleted" }])
+    expect(await kit.sessionState([origin])).toEqual([{ session, state: "deleted", handoff: "unknown" }])
 
     const again = await kit.start(await startCommand(previewed.preview.digest))
     expect(again).toMatchObject({ ok: true })
-    expect(await kit.sessionState([session])).toEqual([{ session, state: "live" }])
+    expect(await kit.sessionState([origin])).toEqual([{ session, state: "live", handoff: "pending" }])
   })
 
   test("starts a task with no workspace preference in its project's workspace", async () => {
@@ -476,7 +502,75 @@ describe("hosted tasks session bridge", () => {
     expect(host.calls.some((call) => call.path.startsWith("/session?"))).toBe(false)
   })
 
-  test("reads liveness from the projection row and the runtime", async () => {
+  test("gives an unlinked session back and compensates the reservation that admitted it", async () => {
+    const host = runtime()
+    const composition = services()
+    const kit = bridge(composition)
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+    const started = await kit.start(await startCommand(previewed.preview.digest))
+    if (!started.ok) throw new Error("start refused")
+    const session = started.session.sessionRef
+
+    const abandoned = await kit.abandon({
+      actor,
+      task: task(),
+      slot,
+      attempt: 1,
+      configurationDigest: await startConfigurationDigest({ preset: preset(), slot }),
+      sessionRef: session,
+    })
+    expect(abandoned).toMatchObject({ ok: true, removed: true })
+    expect(host.sessions.has(session.sessionId)).toBe(false)
+    expect(composition.metas.has(session.sessionId)).toBe(false)
+
+    const transition = expect.objectContaining({
+      operationId: await operationIdOf(),
+      sessionId: session.sessionId,
+      workspaceId: "ws_cloud",
+    })
+    expect(composition.authority.beginSessionCompensation).toHaveBeenCalledWith(transition)
+    expect(composition.authority.completeSessionCompensation).toHaveBeenCalledWith(transition)
+
+    // The origin is free, so a Start under another configuration reserves it
+    // rather than colliding with the session that was taken back.
+    const rewritten: Preset = { ...preset(), revision: 3, instructions: "Ignore the code and rewrite it." }
+    const again = await kit.preview({ ...previewCommand(), preset: rewritten })
+    if (!again.ok) throw new Error("preview refused")
+    expect(await kit.start(await startCommand(again.preview.digest, rewritten))).toMatchObject({ ok: true })
+  })
+
+  test("keeps a session the task already reached, and keeps the reservation when the delete is refused", async () => {
+    const host = runtime({ refuseDelete: true })
+    const composition = services()
+    const kit = bridge(composition)
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+    const started = await kit.start(await startCommand(previewed.preview.digest))
+    if (!started.ok) throw new Error("start refused")
+    const session = started.session.sessionRef
+    const command = {
+      actor,
+      task: task(),
+      slot,
+      attempt: 1,
+      configurationDigest: await startConfigurationDigest({ preset: preset(), slot }),
+      sessionRef: session,
+    }
+
+    const refused = await kit.abandon(command)
+    expect(refused).toMatchObject({ ok: false, error: { code: "unsupported" } })
+    expect(host.sessions.has(session.sessionId)).toBe(true)
+    expect(composition.authority.beginSessionCompensation).not.toHaveBeenCalled()
+
+    expect(await kit.handoff(handoffCommand(session))).toMatchObject({ ok: true, sent: true })
+    const kept = await kit.abandon(command)
+    expect(kept).toMatchObject({ ok: true, removed: false })
+    expect(composition.authority.beginSessionCompensation).not.toHaveBeenCalled()
+    expect(composition.metas.has(session.sessionId)).toBe(true)
+  })
+
+  test("reads liveness and handoff state from the projection row and the runtime", async () => {
     const host = runtime()
     const live: SessionReference = { sessionId: "ses_live", workspaceId: "ws_cloud" }
     const archived: SessionReference = { sessionId: "ses_archived", workspaceId: "ws_cloud" }
@@ -489,10 +583,11 @@ describe("hosted tasks session bridge", () => {
       ]),
     })
 
-    expect(await bridge(composition).sessionState([live, archived, gone])).toEqual([
-      { session: live, state: "live" },
-      { session: archived, state: "archived" },
-      { session: gone, state: "deleted" },
+    const origin = (sessionRef: SessionReference) => ({ scopeId: "org", taskId: "tsk_1", slot, attempt: 1, sessionRef })
+    expect(await bridge(composition).sessionState([origin(live), origin(archived), origin(gone)])).toEqual([
+      { session: live, state: "live", handoff: "pending" },
+      { session: archived, state: "archived", handoff: "unknown" },
+      { session: gone, state: "deleted", handoff: "unknown" },
     ])
   })
 

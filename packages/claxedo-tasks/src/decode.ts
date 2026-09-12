@@ -1,4 +1,5 @@
 import {
+  SESSION_HANDOFF_STATES,
   SESSION_LIVENESS,
   START_BLOCKER_CODES,
   isConfigurationSlot,
@@ -11,6 +12,7 @@ import {
   type Preset,
   type PresetConfigurations,
   type PresetExecution,
+  type SessionHandoffState,
   type SessionLiveness,
   type SessionReference,
   type SkillReference,
@@ -137,6 +139,13 @@ function liveness(ctx: DecodeContext, value: unknown, path: string): SessionLive
   return known ?? "unavailable"
 }
 
+function handoffState(ctx: DecodeContext, value: unknown, path: string): SessionHandoffState {
+  const raw = ctx.read.string(value, path)
+  const known = SESSION_HANDOFF_STATES.find((candidate) => candidate === raw)
+  if (!known && raw !== undefined) ctx.fields.add(path, "unknown_value")
+  return known ?? "unknown"
+}
+
 function sessionReference(ctx: DecodeContext, value: unknown, path: string): SessionReference {
   const row = ctx.read.record(value, path)
   return {
@@ -212,6 +221,7 @@ function linkViewOf(ctx: DecodeContext, value: unknown, path: string): TaskSessi
     presetNameAtStart: ctx.read.string(row?.presetNameAtStart, `${path}.presetNameAtStart`) ?? "",
     createdAt: ctx.read.integer(row?.createdAt, `${path}.createdAt`) ?? 0,
     liveness: liveness(ctx, row?.liveness, `${path}.liveness`),
+    handoff: handoffState(ctx, row?.handoff, `${path}.handoff`),
   }
 }
 

@@ -194,6 +194,7 @@ async function startedSession() {
     continueFromPrevious: false,
     currentLink: null,
     currentState: null,
+    authorizeTranscript: async () => true,
   })
   if (!previewed.ok) throw new Error(`preview refused: ${JSON.stringify(previewed)}`)
   const started = await bridge.start({
@@ -207,6 +208,7 @@ async function startedSession() {
     clientRequestId: "req_off",
     configurationDigest: await startConfigurationDigest({ preset: preset(), slot: "primary" }),
     previousSession: null,
+    authorizeTranscript: async () => true,
   })
   if (!started.ok) throw new Error(`start refused: ${JSON.stringify(started)}`)
 

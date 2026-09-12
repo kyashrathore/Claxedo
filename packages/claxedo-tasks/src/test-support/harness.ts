@@ -1,9 +1,9 @@
 import type {
   ConfigurationSlot,
+  SessionHandoffState,
   ModelConfiguration,
   PresetDraft,
   SessionLiveness,
-  SessionReference,
   StartPreview,
   TasksActor,
   TasksErrorDetail,
@@ -14,7 +14,9 @@ import type { TasksAuthorizationPort } from "../ports/authorization"
 import type { TasksClockPort } from "../ports/clock"
 import type { TasksIdsPort } from "../ports/ids"
 import type {
+  SessionAbandonCommand,
   SessionHandoffCommand,
+  SessionOrigin,
   StartCommand,
   StartPreviewCommand,
   TasksSessionBridgePort,
@@ -98,6 +100,9 @@ export type FakeBridge = TasksSessionBridgePort & {
   readonly handoffs: readonly SessionHandoffCommand[]
   /** The handoffs that submitted a message, which is what must happen once. */
   readonly delivered: readonly SessionHandoffCommand[]
+  readonly abandoned: readonly SessionAbandonCommand[]
+  /** Every previous-session transcript this bridge was allowed to read. */
+  readonly transcriptReads: readonly string[]
 }
 
 export function fakeBridge(): FakeBridge {
@@ -106,7 +111,13 @@ export function fakeBridge(): FakeBridge {
   const previews: StartPreviewCommand[] = []
   const handoffs: SessionHandoffCommand[] = []
   const delivered: SessionHandoffCommand[] = []
+  const abandoned: SessionAbandonCommand[] = []
+  const transcriptReads: string[] = []
   const sent = new Set<string>()
+  // The real host derives the message id from the origin, so the same origin
+  // sent to the same session is the message that is already there.
+  const originKey = (input: { sessionId: string; taskId: string; slot: ConfigurationSlot; attempt: number }) =>
+    `${input.sessionId}:${input.taskId}:${input.slot}:${input.attempt}`
   let nextSessionId = "session-1"
   let refusal: string | null = null
   let handoffRefusal: string | null = null
@@ -132,15 +143,32 @@ export function fakeBridge(): FakeBridge {
   }
 
   return {
-    async sessionState(sessions: readonly SessionReference[]) {
-      return sessions.map((session) => ({ session, state: states.get(session.sessionId) ?? "live" }))
+    async sessionState(origins: readonly SessionOrigin[]) {
+      return origins.map((origin) => {
+        const state = states.get(origin.sessionRef.sessionId) ?? "live"
+        const handoff: SessionHandoffState = state !== "live"
+          ? "unknown"
+          : sent.has(originKey({ ...origin, sessionId: origin.sessionRef.sessionId }))
+            ? "sent"
+            : "pending"
+        return { session: origin.sessionRef, state, handoff }
+      })
     },
     async preview(command) {
       previews.push(command)
+      const readable = command.currentState !== null && command.currentState !== "deleted"
+      if (readable && !(await command.authorizeTranscript())) {
+        return { ok: false, error: { code: "forbidden", message: "The transcript grant was withdrawn" } }
+      }
+      if (readable) transcriptReads.push(command.currentLink?.sessionRef.sessionId ?? "")
       return { ok: true, preview: previewOf(command) }
     },
     async start(command) {
       starts.push(command)
+      if (command.previousSession && !(await command.authorizeTranscript())) {
+        return { ok: false, error: { code: "forbidden", message: "The transcript grant was withdrawn" } }
+      }
+      if (command.previousSession) transcriptReads.push(command.previousSession.sessionId)
       if (refusal !== null) return { ok: false, error: { code: "unsupported", message: refusal } }
       return {
         ok: true,
@@ -153,13 +181,28 @@ export function fakeBridge(): FakeBridge {
     async handoff(command) {
       handoffs.push(command)
       if (handoffRefusal !== null) return { ok: false, error: { code: "conflict", message: handoffRefusal } }
-      // The real host derives the message id from the origin, so the same
-      // origin sent to the same session is the message that is already there.
-      const origin = `${command.session.sessionId}:${command.task.id}:${command.slot}:${command.attempt}`
+      const origin = originKey({
+        sessionId: command.session.sessionId,
+        taskId: command.task.id,
+        slot: command.slot,
+        attempt: command.attempt,
+      })
       if (sent.has(origin)) return { ok: true, sent: false }
       sent.add(origin)
       delivered.push(command)
       return { ok: true, sent: true }
+    },
+    async abandon(command) {
+      abandoned.push(command)
+      const origin = originKey({
+        sessionId: command.sessionRef.sessionId,
+        taskId: command.task.id,
+        slot: command.slot,
+        attempt: command.attempt,
+      })
+      if (sent.has(origin)) return { ok: true, removed: false }
+      states.set(command.sessionRef.sessionId, "deleted")
+      return { ok: true, removed: true }
     },
     setState: (sessionId, state) => void states.set(sessionId, state),
     nextSession: (sessionId) => {
@@ -182,6 +225,12 @@ export function fakeBridge(): FakeBridge {
     },
     get delivered() {
       return delivered
+    },
+    get abandoned() {
+      return abandoned
+    },
+    get transcriptReads() {
+      return transcriptReads
     },
   }
 }

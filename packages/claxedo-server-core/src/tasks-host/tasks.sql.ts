@@ -72,6 +72,7 @@ export const ClaxedoTaskSessionLinkTable = sqliteTable(
     preset_revision: integer().notNull(),
     preset_name_at_start: text().notNull(),
     configuration_digest: text().notNull(),
+    handoff_text: text(),
     created_at: integer().notNull(),
   },
   (table) => [primaryKey({ columns: [table.scope_id, table.task_id, table.slot, table.attempt] })],

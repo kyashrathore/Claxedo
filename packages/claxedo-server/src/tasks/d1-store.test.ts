@@ -91,6 +91,7 @@ function linkRow(sessionId: string): TaskSessionLink {
     presetRevision: 1,
     presetNameAtStart: "Linked preset",
     configurationDigest: DIGEST,
+    handoffText: null,
     createdAt: 2_000,
   }
 }
@@ -120,6 +121,7 @@ function commandsOver(database: D1Database) {
     preview: () => Promise.reject(new Error(UNREACHABLE)),
     start: () => Promise.reject(new Error(UNREACHABLE)),
     handoff: () => Promise.reject(new Error(UNREACHABLE)),
+    abandon: () => Promise.reject(new Error(UNREACHABLE)),
   }
   return createTasksCommands({
     store: createD1TasksStore({ database }),
@@ -177,6 +179,57 @@ describe("D1 Tasks store units", () => {
     expect(await store.tasks.get(CONFORMANCE_SCOPES.first, "task-child")).toBeUndefined()
     const guards = await target.prepare("select count(*) as rows from task_write_guards").first<{ rows: number }>()
     expect(guards?.rows).toBe(0)
+  })
+
+  test("a preset revision asserted by a unit that writes nothing else still refuses the batch when it moves", async () => {
+    const target = await database()
+    const store = createD1TasksStore({ database: target })
+    await target
+      .prepare(
+        "insert into task_presets (scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations," +
+          " archived_at, created_at, updated_at) values (?, ?, 1, 'owner-a', 'Pinned', '', '{}', '{}', null, 1, 1)",
+      )
+      .bind(CONFORMANCE_SCOPES.first, "preset-pinned")
+      .run()
+
+    const refused = store.transaction(async (tx) => {
+      expect(await tx.presets.assertRevision(CONFORMANCE_SCOPES.first, "preset-pinned", 1)).toBe(true)
+      await tx.links.insert(linkRow("session-settling"))
+      // Another writer commits between this unit's assertion and its batch.
+      await target
+        .prepare("update task_presets set revision = 2 where scope_id = ? and preset_id = ?")
+        .bind(CONFORMANCE_SCOPES.first, "preset-pinned")
+        .run()
+    })
+
+    await expect(refused).rejects.toThrow(TasksStoreConflict)
+    expect(await store.links.getCurrent(CONFORMANCE_SCOPES.first, "task-linked", "primary")).toBeUndefined()
+    const guards = await target.prepare("select count(*) as rows from task_write_guards").first<{ rows: number }>()
+    expect(guards?.rows).toBe(0)
+  })
+
+  test("an assertion that holds is no write of its own", async () => {
+    const target = await database()
+    const store = createD1TasksStore({ database: target })
+    await target
+      .prepare(
+        "insert into task_presets (scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations," +
+          " archived_at, created_at, updated_at) values (?, ?, 1, 'owner-a', 'Pinned', '', '{}', '{}', null, 1, 1)",
+      )
+      .bind(CONFORMANCE_SCOPES.first, "preset-pinned")
+      .run()
+
+    await store.transaction(async (tx) => {
+      expect(await tx.presets.assertRevision(CONFORMANCE_SCOPES.first, "preset-pinned", 1)).toBe(true)
+      // The list read refuses inside a unit that has written rows, so it is
+      // also the check that the assertion wrote none.
+      expect((await tx.links.listByTask(CONFORMANCE_SCOPES.first, "task-linked")).length).toBe(0)
+    })
+    const stored = await target
+      .prepare("select revision from task_presets where scope_id = ? and preset_id = ?")
+      .bind(CONFORMANCE_SCOPES.first, "preset-pinned")
+      .first<{ revision: number }>()
+    expect(stored?.revision).toBe(1)
   })
 
   test("a unit reads the rows it has written but not yet committed", async () => {

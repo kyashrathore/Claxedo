@@ -59,7 +59,7 @@ const PRESET_COLUMNS =
 const TASK_COLUMNS =
   "scope_id, task_id, revision, project_id, workspace_id, parent_task_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
 const LINK_COLUMNS =
-  "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, created_at"
+  "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, handoff_text, created_at"
 const RECEIPT_COLUMNS = "scope_id, client_request_id, command_name, request_hash, result, created_at"
 
 function presetValues(preset: Preset): unknown[] {
@@ -113,6 +113,7 @@ function linkValues(link: TaskSessionLink): unknown[] {
     row.preset_revision,
     row.preset_name_at_start,
     row.configuration_digest,
+    row.handoff_text,
     row.created_at,
   ]
 }
@@ -358,6 +359,19 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           (overlay) => overlay.presets.set(key, preset),
           guard ? [guard.probe] : [],
         )
+        return true
+      },
+
+      async assertRevision(scopeId, presetId, revision) {
+        const pending = unit?.overlay.presets.get(overlayKey(scopeId, presetId))
+        if (pending) return pending.revision === revision
+        if ((await committedRevision("task_presets", "preset_id", scopeId, presetId)) !== revision) return false
+        // Outside a unit the read above is the whole answer. Inside one it is
+        // only the read this unit started from, so the predicate joins the
+        // batch: a row that moves before the batch runs refuses it there.
+        if (!unit) return true
+        const guard = revisionGuard(`preset ${presetId}`, "task_presets", "preset_id", scopeId, presetId, revision)
+        await commit(unit, [guard.statement], () => {}, [guard.probe])
         return true
       },
     },
