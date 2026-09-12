@@ -14,6 +14,17 @@ function tool_(id: string, name: string, input: Record<string, unknown> = {}): A
   } as AgentContentPart
 }
 
+function pending_(id: string, name: string): AgentContentPart {
+  return { ...tool_(id, name), state: { status: "running", input: {}, time: { start: 1 } } } as AgentContentPart
+}
+
+function errored(id: string, name: string): AgentContentPart {
+  return {
+    ...tool_(id, name),
+    state: { status: "error", input: {}, error: "denied", time: { start: 1, end: 2 } },
+  } as AgentContentPart
+}
+
 function text(id: string, value: string): AgentContentPart {
   return { id, sessionID: "ses_test", messageID: "a1", type: "text", text: value } as AgentContentPart
 }
@@ -72,8 +83,6 @@ describe("groupParts", () => {
 
 describe("work is named by exclusion", () => {
   test("a tool nobody thought to list still joins the run instead of breaking it", () => {
-    // Every one of these appears in the captured sessions between shell calls, and
-    // each used to flush the run and render as its own loud row.
     for (const tool of ["skill", "sendmessage", "toolsearch", "listagents", "mcp__plugin_posthog_posthog__exec"]) {
       expect(shape([tool_("p1", "bash"), tool_("p2", tool), tool_("p3", "bash")])).toEqual(["work:bash"])
     }
@@ -84,11 +93,30 @@ describe("work is named by exclusion", () => {
       .toEqual(["part", "part", "part"])
   })
 
+  test("a question nobody has answered renders nothing, so the run reads through it", () => {
+    const parts = [tool_("p1", "bash"), pending_("p2", "question"), tool_("p3", "bash")]
+    expect(shape(parts)).toEqual(["work:bash"])
+    const group = groups(parts)[0]
+    expect(group?.type === "work" && group.refs.map((ref) => ref.partID)).toEqual(["p1", "p3"])
+  })
+
   test("context, subagents and hidden tools keep their own handling", () => {
     expect(shape([tool_("p1", "bash"), tool_("p2", "read"), tool_("p3", "bash")]))
       .toEqual(["part", "context", "part"])
     expect(shape([tool_("p1", "bash"), tool_("p2", "agent"), tool_("p3", "agent")]))
       .toEqual(["part", "agents"])
+  })
+})
+
+describe("a spawn whose own tool call failed", () => {
+  test("is the failed call, not delegated work", () => {
+    expect(shape([errored("p1", "task")])).toEqual(["part"])
+    expect(shape([tool_("p1", "task"), errored("p2", "task")])).toEqual(["agents", "part"])
+  })
+
+  test("flushes the runs around it like any other standalone part", () => {
+    expect(shape([tool_("p1", "bash"), tool_("p2", "bash"), errored("p3", "task"), tool_("p4", "read")]))
+      .toEqual(["work:bash", "part", "context"])
   })
 })
 

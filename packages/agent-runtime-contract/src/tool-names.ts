@@ -18,7 +18,10 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   read_file: "read",
   write_file: "write",
   edit_file: "edit",
-  multiedit: "edit",
+  // `multiedit` has no entry: the `edit` renderer draws its diff from
+  // `metadata.filediff` or `input.oldString`/`newString`, and claude's `MultiEdit`
+  // sends neither — only `{file_path, edits: []}`. Aliased it renders an empty diff
+  // that claims nothing changed; unaliased the generic row at least dumps the input.
   ls: "list",
   askuserquestion: "question",
   web_search: "websearch",

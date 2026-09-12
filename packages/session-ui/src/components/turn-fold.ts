@@ -1,5 +1,5 @@
 import type { AgentAssistantMessage } from "@claxedo/agent-runtime-contract"
-import { isSubagentToolPart, type PartGroup, type PartRef } from "./part-groups"
+import { isStandaloneTool, isSubagentToolPart, type PartGroup, type PartRef } from "./part-groups"
 
 /**
  * Resolves a group member to the part it renders. A standalone group is foldable
@@ -63,13 +63,15 @@ export function finalTextPartID(groups: readonly PartGroup[], part: FoldablePart
  * Machinery — everything a turn did that is not the message it is addressing to
  * the user. A subagent spawn is not machinery: its card reports work the user
  * delegated and is usually the row they most want from the turn, so it stays
- * visible whether it landed in an agent group or alone.
+ * visible whether it landed in an agent group or alone. Neither is an answered
+ * question: it holds the words the reader typed, the one part of the turn they
+ * authored, so it stays up beside the prose.
  */
 export function isFoldableGroup(group: PartGroup, part: FoldablePartLookup, scope: FoldScope = {}): boolean {
   if (group.type === "agents") return false
   if (group.type !== "part") return true
   const resolved = part(group.ref)
-  if (resolved?.type === "tool") return !isSubagentToolPart(resolved)
+  if (resolved?.type === "tool") return !isSubagentToolPart(resolved) && !isStandaloneTool(resolved)
   if (scope.shape !== "final-message") return false
   if (resolved?.type === "reasoning") return true
   if (resolved?.type === "text") return group.ref.partID !== scope.finalTextPartID
@@ -137,9 +139,8 @@ export function turnFoldDecision(status: TurnFoldStatus): TurnFoldDecision {
  *
  * A running turn folding on its own hides its *completed* phases only — the last
  * foldable group is the live one and stays on screen so active work never disappears.
- * A reader who folds the turn themselves means all of it: leaving a card open under a
- * control that reads collapsed is the state they reported as wrong ("the tool call card
- * i have expanded and remain expaned even on turn folded").
+ * A reader who folds the turn themselves means all of it, expanded rows included: a
+ * row left open under a control that reads collapsed contradicts the control.
  */
 export function foldedGroupKeys(
   decision: TurnFoldDecision,

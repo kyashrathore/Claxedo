@@ -1,4 +1,5 @@
 import {
+  children,
   createEffect,
   createMemo,
   createSignal,
@@ -11,8 +12,10 @@ import {
   Switch,
   type Accessor,
   type JSX,
+  type ResolvedChildren,
 } from "solid-js"
 import { animate, type AnimationPlaybackControls } from "motion"
+import { canonicalToolName } from "@claxedo/agent-runtime-contract"
 import { useI18n, type UiI18n } from "@opencode-ai/ui/context/i18n"
 import { createStore } from "solid-js/store"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
@@ -98,6 +101,18 @@ function scheduleFrameMount(fn: () => void) {
   return () => cancelAnimationFrame(frame)
 }
 
+/**
+ * Whether resolved children amount to anything on screen. A renderer that gates its
+ * body on output it never got still passes a child — the `<Show>` itself — and the
+ * presence of that child is what used to put a chevron on a row that opens nothing.
+ */
+export function hasRenderedContent(value: ResolvedChildren): boolean {
+  if (Array.isArray(value)) return value.some(hasRenderedContent)
+  if (value === null || value === undefined || typeof value === "boolean") return false
+  if (typeof value === "string") return value.trim().length > 0
+  return true
+}
+
 export function BasicTool(props: BasicToolProps) {
   const [state, setState] = createStore({
     open: props.defaultOpen ?? false,
@@ -106,7 +121,13 @@ export function BasicTool(props: BasicToolProps) {
   const open = () => props.open ?? state.open
   const ready = () => state.ready
   const pending = () => props.status === "pending" || props.status === "running"
-  const hasChildren = () => (props.defer ? "children" in props : props.children)
+  /**
+   * Resolved once and reused by the body below, so asking what the row holds does not
+   * build it again. A deferred row is not built at all until it is opened — that is the
+   * whole point of `defer` — so until then the answer is only whether a child was passed.
+   */
+  const content = children(() => (props.defer && !ready() ? undefined : props.children))
+  const hasChildren = () => (props.defer && !ready() ? "children" in props : hasRenderedContent(content()))
 
   // Live elapsed: tick once a second only while the tool is running.
   const [nowMs, setNowMs] = createSignal(Date.now())
@@ -339,12 +360,12 @@ export function BasicTool(props: BasicToolProps) {
             overflow: initialOpen ? "visible" : "hidden",
           }}
         >
-          <Show when={!props.defer || ready()}>{props.children}</Show>
+          {content()}
         </div>
       </Show>
       <Show when={!props.animated && hasChildren() && !props.hideDetails}>
         <Collapsible.Content>
-          <Show when={!props.defer || ready()}>{props.children}</Show>
+          {content()}
         </Collapsible.Content>
       </Show>
     </Collapsible>
@@ -458,26 +479,22 @@ const INTENT_ICONS: Record<string, IconProps["name"]> = {
   mcp: "mcp",
 }
 
-function genericToolIcon(tool: string, input?: Record<string, unknown>): IconProps["name"] {
+export function genericToolIcon(tool: string, input?: Record<string, unknown>): IconProps["name"] {
   if (isMcpTool(tool, input)) return "mcp"
   const intent = input?.intent
   if (typeof intent === "string" && INTENT_ICONS[intent]) return INTENT_ICONS[intent]
   // Name fallbacks, for parts that reach the timeline without a classified
   // intent — the opencode native engine emits tool names with no ToolDisplay.
-  switch (tool.toLowerCase()) {
+  switch (canonicalToolName(tool)) {
     case "read":
-    case "read_file":
       return "glasses"
     case "bash":
-    case "command":
-    case "shell":
-    case "local_shell":
       return "terminal"
     case "webfetch":
+    // `web_fetch` has no alias: no harness that sends it also sends `webfetch`.
     case "web_fetch":
       return "window-cursor"
     case "websearch":
-    case "web_search":
       return "magnifying-glass"
     default:
       // A wrench, not `mcp`: the fallback covers every unrecognised tool, and
@@ -524,7 +541,7 @@ function sentenceCase(parts: string[]) {
     .map((word, index) => {
       if (isAcronym(word)) return word
       const lower = word.toLowerCase()
-      return index === 0 ? lower[0]!.toUpperCase() + lower.slice(1) : lower
+      return index === 0 ? lower[0].toUpperCase() + lower.slice(1) : lower
     })
     .join(" ")
 }
@@ -550,6 +567,15 @@ function actionPhrase(name: string, hasContext: boolean, i18n: UiI18n) {
   return sentenceCase(parts)
 }
 
+/**
+ * The action a tool name reads as, or nothing when the name yields none — a caller with
+ * its own fallback needs to know which it got, where `humanizeTool` has already chosen.
+ */
+export function toolActionPhrase(tool: string, i18n: UiI18n): string | undefined {
+  const mcp = mcpName(tool)
+  return actionPhrase(mcp?.name ?? tool, mcp !== undefined, i18n)
+}
+
 export type GenericToolTitle = {
   title: string
   subtitle?: string
@@ -568,7 +594,7 @@ export function humanizeTool(
 ): GenericToolTitle {
   const object = labelEntry(input)
   const mcp = mcpName(tool)
-  const action = actionPhrase(mcp?.name ?? tool, mcp !== undefined, i18n)
+  const action = toolActionPhrase(tool, i18n)
   if (!action) {
     return {
       title: i18n.t("ui.basicTool.called", { tool }).replaceAll("`", ""),

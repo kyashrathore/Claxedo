@@ -31,20 +31,12 @@ import type {
   AgentToolPart,
   AgentUserMessage,
 } from "@claxedo/agent-runtime-contract"
-import { useData, type SubagentView } from "../context"
+import { useData } from "../context"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type UiI18n, useI18n } from "@opencode-ai/ui/context/i18n"
 import { BasicTool, GenericTool } from "./basic-tool"
-import {
-  EDIT_TOOL_NAMES,
-  groupParts,
-  HIDDEN_TOOLS,
-  sameGroups,
-  WEB_TOOL_NAMES,
-  type PartGroup,
-  type PartRef,
-} from "./part-groups"
+import { groupParts, HIDDEN_TOOLS, isPendingQuestion, sameGroups, type PartGroup, type PartRef } from "./part-groups"
 import {
   assistantMessageSettled,
   countFoldableGroups,
@@ -55,6 +47,7 @@ import {
   type TurnShape,
 } from "./turn-fold"
 import { TurnFoldRow } from "./turn-fold-row"
+import { workGroupActiveLabel, workGroupIcon, workGroupSummary, workGroupTitle } from "./work-group-summary"
 import { SubagentChipRow } from "./subagent-chip"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
@@ -77,21 +70,18 @@ import { Icon as IconV2 } from "@opencode-ai/ui/v2/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { ButtonV2 } from "@opencode-ai/ui/v2/button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { formatDuration } from "./format-duration"
 import { stripShellWrapper } from "./shell-wrapper"
-import { AgentGlyph } from "./agent-glyph"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { patchFiles } from "./apply-patch-file"
 import { animate } from "motion"
 import { useLocation } from "@solidjs/router"
 import { attached, inline, kind, typeLabel } from "./message-file"
-import { readPartText, clampLabel } from "./message-part-text"
-import { SessionProgressIndicatorV2 } from "../v2/components/session-progress-indicator-v2"
+import { readPartText } from "./message-part-text"
 import { shouldRenderUserMarkdown } from "./user-message-markdown"
-import { dispatchSubagentOpen } from "./subagent-chip"
+import { handleTranscriptLinkClick, transcriptLinks } from "./transcript-link"
 
 async function writeClipboard(text: string): Promise<boolean> {
   const body = typeof document === "undefined" ? undefined : document.body
@@ -444,67 +434,6 @@ function agentTitle(i18n: UiI18n, type?: string) {
   return i18n.t("ui.tool.agent", { type })
 }
 
-const agentTones: Record<string, string> = {
-  ask: "var(--icon-agent-ask-base)",
-  build: "var(--icon-agent-build-base)",
-  docs: "var(--icon-agent-docs-base)",
-  plan: "var(--icon-agent-plan-base)",
-}
-
-const v2AgentTones: Record<string, string> = {
-  build: "var(--v2-agent-build-solid)",
-  explore: "var(--v2-agent-explore-solid)",
-  plan: "var(--v2-agent-plan-solid)",
-  review: "var(--v2-agent-review-solid)",
-  writer: "var(--v2-agent-writer-solid)",
-}
-
-const agentThemeColors: Record<string, string> = {
-  primary: "var(--text-interactive-base)",
-  secondary: "var(--text-base)",
-  accent: "var(--icon-info-base)",
-  success: "var(--icon-success-base)",
-  warning: "var(--icon-warning-base)",
-  error: "var(--icon-critical-base)",
-  info: "var(--icon-info-base)",
-}
-
-const v2AgentThemeColors: Record<string, string> = {
-  primary: "var(--v2-text-text-accent)",
-  secondary: "var(--v2-text-text-muted)",
-  accent: "var(--v2-icon-icon-accent)",
-  success: "var(--v2-state-fg-success)",
-  warning: "var(--v2-state-fg-warning)",
-  error: "var(--v2-state-fg-danger)",
-  info: "var(--v2-state-fg-info)",
-}
-
-const agentPalette = [
-  "var(--icon-agent-ask-base)",
-  "var(--icon-agent-build-base)",
-  "var(--icon-agent-docs-base)",
-  "var(--icon-agent-plan-base)",
-  "var(--syntax-info)",
-  "var(--syntax-success)",
-  "var(--syntax-warning)",
-  "var(--syntax-property)",
-  "var(--syntax-constant)",
-  "var(--text-diff-add-base)",
-  "var(--text-diff-delete-base)",
-  "var(--icon-warning-base)",
-]
-
-function tone(name: string) {
-  let hash = 0
-  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0
-  return agentPalette[hash % agentPalette.length]
-}
-
-function agentColor(value: string | undefined, themeColors: Record<string, string>): string | undefined {
-  if (!value) return undefined
-  return themeColors[value] ?? value
-}
-
 function newLayout() {
   return typeof document !== "undefined" && document.body.hasAttribute("data-new-layout")
 }
@@ -629,18 +558,6 @@ export function getToolInfo(
   }
 }
 
-function urls(text: string | undefined) {
-  if (!text) return []
-  const seen = new Set<string>()
-  return [...text.matchAll(/https?:\/\/[^\s<>"'`)\]]+/g)]
-    .map((item) => item[0].replace(/[),.;:!?]+$/g, ""))
-    .filter((item) => {
-      if (seen.has(item)) return false
-      seen.add(item)
-      return true
-    })
-}
-
 function sessionLink(
   id: string | undefined,
   path: string,
@@ -675,8 +592,7 @@ function index<T extends { id: string }>(items: readonly T[]) {
 export function renderable(part: AgentContentPart, showReasoningSummaries = true) {
   if (part.type === "tool") {
     if (HIDDEN_TOOLS.has(part.tool)) return false
-    if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
-    return true
+    return !isPendingQuestion(part)
   }
   if (part.type === "text") return !!part.text?.trim()
   if (part.type === "reasoning") return showReasoningSummaries && !!part.text?.trim()
@@ -935,7 +851,7 @@ function contextToolSummary(parts: AgentToolPart[]) {
 }
 
 function ExaOutput(props: { output?: string }) {
-  const links = createMemo(() => urls(props.output))
+  const links = createMemo(() => transcriptLinks(props.output))
 
   return (
     <Show when={links().length > 0}>
@@ -948,7 +864,10 @@ function ExaOutput(props: { output?: string }) {
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  handleTranscriptLinkClick(event)
+                }}
               >
                 {url}
               </a>
@@ -1124,111 +1043,8 @@ export function ContextToolGroup(props: {
   )
 }
 
-type WorkGroupCounts = { edited: number; commands: number; fetched: number; searched: number }
-
-function workGroupSummary(parts: AgentToolPart[]): WorkGroupCounts {
-  let edited = 0
-  let commands = 0
-  let fetched = 0
-  let searched = 0
-  for (const part of parts) {
-    // Accept both harness vocabularies (OpenCode `bash`/`edit`, Codex `command`/`edit_file`).
-    switch (part.tool) {
-      case "edit":
-      case "edit_file":
-      case "write":
-      case "write_file":
-      case "apply_patch":
-        edited += 1
-        break
-      case "bash":
-      case "command":
-      case "shell":
-      case "local_shell":
-        commands += 1
-        break
-      case "webfetch":
-        fetched += 1
-        break
-      case "websearch":
-      case "web_search":
-        searched += 1
-        break
-    }
-  }
-  return { edited, commands, fetched, searched }
-}
-
-function workGroupIcon(parts: AgentToolPart[]): IconProps["name"] {
-  if (parts.some((p) => EDIT_TOOL_NAMES.has(p.tool))) return "code-lines"
-  if (parts.some((p) => WEB_TOOL_NAMES.has(p.tool))) return "window-cursor"
-  return "terminal"
-}
-
-// Segmented summary: present-continuous while running, past tense when settled;
-// leading segment sentence-case, followers lowercase, joined with " · ".
-function workGroupSegments(counts: WorkGroupCounts, pending: boolean): string[] {
-  const segs: string[] = []
-  if (counts.edited > 0)
-    segs.push(pending ? "editing files" : `edited ${counts.edited} ${counts.edited === 1 ? "file" : "files"}`)
-  if (counts.commands > 0)
-    segs.push(pending ? "running commands" : `ran ${counts.commands} ${counts.commands === 1 ? "command" : "commands"}`)
-  if (counts.fetched > 0)
-    segs.push(pending ? "fetching pages" : `fetched ${counts.fetched} ${counts.fetched === 1 ? "page" : "pages"}`)
-  if (counts.searched > 0) segs.push(pending ? "searching the web" : "searched the web")
-  return segs
-}
-
-function workGroupTitle(counts: WorkGroupCounts, pending: boolean): string {
-  const segs = workGroupSegments(counts, pending)
-  if (segs.length === 0) return pending ? "Working" : "Worked"
-  return segs.map((seg, i) => (i === 0 ? seg.charAt(0).toUpperCase() + seg.slice(1) : seg)).join(" · ")
-}
-
 /**
- * "active" header kind: while a member is still running, the group header shows
- * that member's live summary instead of the settled aggregate — so a long run of tool
- * calls stays ONE row that keeps updating, rather than appending a row per call.
- */
-function workGroupActiveLabel(parts: AgentToolPart[]): string | undefined {
-  const active = parts.find((part) => part.state.status === "pending" || part.state.status === "running")
-  if (!active) return undefined
-  const input = (active.state.input ?? {})
-  const text = (key: string) => (typeof input[key] === "string" ? (input[key]) : undefined)
-
-  switch (active.tool) {
-    case "bash":
-    case "command":
-    case "shell":
-    case "local_shell": {
-      const command = text("command")
-      return command ? clampLabel(`Running ${stripShellWrapper(command)}`) : "Running command"
-    }
-    case "edit":
-    case "edit_file":
-    case "write":
-    case "write_file": {
-      const file = text("filePath") ?? text("path")
-      return file ? clampLabel(`Editing ${getFilename(file)}`) : "Editing files"
-    }
-    case "apply_patch":
-      return "Applying patch"
-    case "webfetch": {
-      const url = text("url")
-      return url ? clampLabel(`Fetching ${url}`) : "Fetching page"
-    }
-    case "websearch":
-    case "web_search": {
-      const query = text("query")
-      return query ? clampLabel(`Searching ${query}`) : "Searching the web"
-    }
-    default:
-      return clampLabel(`Running ${active.tool}`)
-  }
-}
-
-/**
- * WorkGroup — generalizes ContextToolGroup for bash/edit/write/apply_patch/web runs.
+ * WorkGroup — generalizes ContextToolGroup for a run of anything the agent did.
  * Collapsed by default; header = category icon + segmented summary + gated chevron.
  * Expanded body is a 224px scroll region with edge fades when it overflows; member rows
  * are passed in as children (the app renders them so per-part open state persists) and are
@@ -1242,6 +1058,7 @@ export function WorkGroup(props: {
   onSizeChange?: () => void
   children: JSX.Element
 }) {
+  const i18n = useI18n()
   const [localOpen, setLocalOpen] = createSignal(false)
   const [overflowing, setOverflowing] = createSignal(false)
   const open = () => props.open ?? localOpen()
@@ -1252,7 +1069,9 @@ export function WorkGroup(props: {
   const summary = createMemo(() => workGroupSummary(props.parts))
   const icon = createMemo(() => workGroupIcon(props.parts))
   // Live label while a member runs, settled aggregate once the run finishes.
-  const title = createMemo(() => workGroupActiveLabel(props.parts) ?? workGroupTitle(summary(), pending()))
+  const title = createMemo(
+    () => workGroupActiveLabel(props.parts, i18n) ?? workGroupTitle(summary(), pending(), i18n),
+  )
   const handleOpenChange = (value: boolean) => {
     if (props.open === undefined) setLocalOpen(value)
     props.onOpenChange?.(value)
@@ -1723,9 +1542,8 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     () => part().tool === "question" && (part().state.status === "pending" || part().state.status === "running"),
   )
 
-  /** The failure text of an errored tool call. A task renders its own failure, so it opts out. */
+  /** The failure text of an errored tool call. */
   const toolError = createMemo(() => {
-    if (part().tool === "task") return undefined
     const state = part().state
     return state.status === "error" ? state.error : undefined
   })
@@ -2056,6 +1874,7 @@ PART_MAPPING["file"] = function FilePartDisplay(props) {
             target="_blank"
             rel="noopener noreferrer"
             title={name()}
+            onClick={handleTranscriptLinkClick}
           >
             <FileIcon node={{ path: name(), type: "file" }} />
             <span data-slot="file-part-link-name">{name()}</span>
@@ -2259,7 +2078,10 @@ ToolRegistry.register({
                   href={url()}
                   target="_blank"
                   rel="noopener noreferrer"
-                  onClick={(event) => event.stopPropagation()}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    handleTranscriptLinkClick(event)
+                  }}
                 >
                   {url()}
                 </a>
@@ -2406,6 +2228,7 @@ ToolRegistry.register({
           href={localUrl()}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={handleTranscriptLinkClick}
         >
           <span data-slot="local-preview-icon">
             <Icon name="window-cursor" size="small" />

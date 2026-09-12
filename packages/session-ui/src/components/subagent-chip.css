@@ -1,4 +1,4 @@
-/* SubagentChip row (T12/T13) — parallel agents as glyph pills (D§3.8). */
+/* Delegated work as glyph pills, one per subagent. */
 [data-component="subagent-chip-row"] {
   display: flex;
   flex-wrap: wrap;
@@ -12,7 +12,7 @@
   align-items: center;
   gap: 6px;
   height: 28px;
-  max-width: 12rem;
+  max-width: 24rem;
   padding: 0 8px 0 6px;
   border-radius: var(--radius-pill);
   border: 0.5px solid var(--border-weak-base);
@@ -33,6 +33,17 @@
     font-size: var(--font-size-compact);
     font-weight: var(--font-weight-medium);
     text-transform: capitalize;
+  }
+
+  [data-slot="subagent-chip-summary"] {
+    min-width: 0;
+    flex-shrink: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    color: var(--text-weak);
   }
 
   [data-slot="subagent-chip-status"] {
@@ -60,22 +71,6 @@ span[data-component="subagent-chip"] {
     color: var(--text-base);
     border-color: var(--border-weak-base);
   }
-}
-
-[data-component="subagent-card-list"] {
-  display: grid;
-  gap: 6px;
-}
-
-.ui-task-tool-card[data-subagent-role="spawn"]:focus-visible {
-  outline: 2px solid var(--border-focus, var(--border-interactive-base));
-  outline-offset: 2px;
-}
-
-[data-slot="subagent-status"] {
-  flex-shrink: 0;
-  color: var(--text-weaker);
-  font-size: var(--font-size-small);
 }
 
 [data-slot="subagent-chip-overflow"] {

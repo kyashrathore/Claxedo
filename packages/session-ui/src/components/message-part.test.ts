@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readPartText } from "./message-part-text"
-import { dispatchSubagentOpen, subagentSubtitle } from "./subagent-chip"
+import { dispatchSubagentOpen, subagentChips, subagentSubtitle } from "./subagent-chip"
+import type { SubagentView } from "../context"
 
 describe("readPartText", () => {
   test("returns empty string when accum is undefined and part text is undefined", () => {
@@ -35,37 +36,43 @@ describe("cross-harness tool registry", () => {
     )
   })
 
-  /*
-   * The alias table moved to @claxedo/agent-runtime-contract so the projection, the
-   * grouping vocabularies and this registry share one spelling. `Agent -> task` is
-   * asserted there, against the function; this only pins that the registry consumes it
-   * rather than reintroducing a private copy.
-   */
-  test("U2: registers the shared aliases instead of its own table", async () => {
-    const source = await Bun.file(`${import.meta.dir}/message-part.tsx`).text()
-    expect(source).toContain("toolNameAliases()")
-    expect(source).not.toMatch(/const TOOL_NAME_ALIASES/)
-  })
-
   test("uses only authoritative subagent associations for task cards", async () => {
     const source = await Bun.file(`${import.meta.dir}/message-part.tsx`).text()
     expect(source).not.toContain("unbound-task")
     expect(source).not.toContain("props.metadata.sessionId")
   })
 
-  test("task cards use canonical subagent lifecycle even when the parent tool call errors", async () => {
-    const source = await Bun.file(`${import.meta.dir}/message-part.tsx`).text()
-    // One memo drives the generic error banner. A task opts out of it so a failing task
-    // still renders its own card, and the text is only read in the errored state.
-    expect(source).toContain('if (part().tool === "task") return undefined')
-    expect(source).toContain('return state.status === "error" ? state.error : undefined')
-    expect(source).toContain("<Match when={toolError()}>")
-  })
-
   test("uses only authoritative subagent associations for grouped chips", async () => {
     const source = await Bun.file(`${import.meta.dir}/subagent-chip.tsx`).text()
     expect(source).not.toContain("fallbackChip")
     expect(source).toContain("data.resolveSubagents?.(part.sessionID, part.callID)")
+  })
+
+  test("draws one chip per subagent, whatever resolved it", () => {
+    const view = (subagentKey: string, toolCallRole?: "spawn" | "interaction"): SubagentView => ({
+      parentSessionId: "parent-1",
+      subagentKey,
+      status: "running",
+      label: "Reviewer",
+      agentLabel: "code-reviewer",
+      description: "Review auth",
+      childSessionId: `child-${subagentKey}`,
+      transcriptKind: "messages",
+      resolution: "ready",
+      ambient: false,
+      ...(toolCallRole ? { toolCallRole } : {}),
+    })
+
+    expect(subagentChips([view("subagent-1", "spawn"), view("subagent-1", "spawn")]).map((chip) => chip.key))
+      .toEqual(["subagent-1"])
+    expect(subagentChips([view("subagent-1", "spawn"), view("subagent-2", "spawn")]).map((chip) => chip.key))
+      .toEqual(["subagent-1", "subagent-2"])
+    expect(subagentChips([view("subagent-1", "spawn"), view("subagent-1", "interaction")])[0]?.toolCallRole)
+      .toBe("spawn")
+  })
+
+  test("nothing resolved means no chips, so the row has nothing to draw", () => {
+    expect(subagentChips([])).toEqual([])
   })
 
   test("scopes interaction rows to the canonical parent timeline", async () => {

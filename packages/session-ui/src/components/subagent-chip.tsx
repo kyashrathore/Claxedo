@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, Show } from "solid-js"
 import type { AgentToolPart } from "@claxedo/agent-runtime-contract"
+import { useI18n, type UiI18n } from "@opencode-ai/ui/context/i18n"
 import { AgentGlyph } from "./agent-glyph"
 import { useData, type SubagentView } from "../context"
 import { clampLabel } from "./message-part-text"
@@ -22,15 +23,16 @@ export function subagentSubtitle(subagent: Pick<SubagentView, "description" | "m
 }
 
 /**
- * SubagentChip row (T12/T13) — when a turn spawns ≥2 subagents, they render as chips
- * instead of stacked cards (D§3.8): a deterministic glyph + agent name + status suffix,
- * first 3 shown, with the rest behind a toggle. Clicking a chip opens the child session.
+ * One row of delegated work: a deterministic glyph, the agent's name, the one line
+ * that says what it was asked to do, and its status. The first 3 show, the rest sit
+ * behind a toggle. Activating a chip opens the child session.
  */
 type ChipModel = {
   key: string
   childSessionId?: string
   name: string
   description?: string
+  mode?: SubagentView["mode"]
   status: SubagentView["status"]
   resolution: SubagentView["resolution"]
   toolCallRole?: SubagentView["toolCallRole"]
@@ -43,7 +45,7 @@ export function dispatchSubagentOpen(target: EventTarget | null, input: {
   subagentKey: string
   /** The agent's name, so the surface that opens the transcript can title it. */
   label?: string
-  /** The row's one-line summary, for that surface's header. Clamped like the card's. */
+  /** The row's one-line summary, for that surface's header. */
   description?: string
   interaction: boolean
   openable: boolean
@@ -67,11 +69,29 @@ function chipFromView(view: SubagentView): ChipModel {
     childSessionId: view.childSessionId,
     name: view.agentLabel || view.label,
     ...(view.description ? { description: view.description } : {}),
+    ...(view.mode ? { mode: view.mode } : {}),
     status: view.status,
     resolution: view.resolution,
     ...(view.toolCallRole ? { toolCallRole: view.toolCallRole } : {}),
     parentSessionId: view.parentSessionId,
   }
+}
+
+/**
+ * One chip per row. The same subagent resolves from more than one tool call in a
+ * turn — a parallel batch answers in a single message, and an interaction row
+ * points back at the spawn it messaged — and each resolution would otherwise
+ * draw the reader another agent that never existed. The spawn is the canonical
+ * resolution, so it wins the row.
+ */
+export function subagentChips(views: SubagentView[]) {
+  const chips = new Map<string, ChipModel>()
+  for (const view of views) {
+    const chip = chipFromView(view)
+    if (chips.get(chip.key)?.toolCallRole === "spawn") continue
+    chips.set(chip.key, chip)
+  }
+  return [...chips.values()]
 }
 
 /**
@@ -89,11 +109,19 @@ function scrollToCanonicalSpawn(chip: ChipModel) {
   return true
 }
 
-function statusLabel(status: ChipModel["status"]) {
-  if (status === "running" || status === "pending") return "working"
-  if (status === "completed") return "done"
-  if (status === "unknown") return "status unavailable"
-  return status
+const STATUS_KEYS: Record<SubagentView["status"], string> = {
+  pending: "ui.subagent.status.working",
+  running: "ui.subagent.status.working",
+  paused: "ui.subagent.status.paused",
+  interrupted: "ui.subagent.status.interrupted",
+  completed: "ui.subagent.status.done",
+  failed: "ui.subagent.status.failed",
+  killed: "ui.subagent.status.killed",
+  unknown: "ui.subagent.status.unknown",
+}
+
+function statusLabel(status: ChipModel["status"], i18n: UiI18n) {
+  return i18n.t(STATUS_KEYS[status])
 }
 
 export function SubagentChipRow(props: {
@@ -101,86 +129,95 @@ export function SubagentChipRow(props: {
   subagents?: SubagentView[]
 }) {
   const data = useData()
-  const chips = createMemo(() => {
-    if (props.subagents) return props.subagents.map(chipFromView)
-    return (props.parts ?? []).flatMap((part) =>
-      (data.resolveSubagents?.(part.sessionID, part.callID) ?? []).map(chipFromView)
-    )
-  })
+  const i18n = useI18n()
+  const chips = createMemo(() => subagentChips(
+    props.subagents
+      ?? (props.parts ?? []).flatMap((part) => data.resolveSubagents?.(part.sessionID, part.callID) ?? []),
+  ))
   const [expanded, setExpanded] = createSignal(false)
   const visible = createMemo(() => (expanded() ? chips() : chips().slice(0, 3)))
   const overflow = createMemo(() => Math.max(0, chips().length - 3))
 
   return (
-    <div data-component="subagent-chip-row">
-      <For each={visible()}>
-        {(chip) => {
-          const content = () => (
-            <>
-              <AgentGlyph seed={chip.childSessionId || chip.key} active={chip.status === "running"} size={14} />
-              <span data-slot="subagent-chip-name">{chip.name}</span>
-              <span data-slot="subagent-chip-status" aria-live="polite">{statusLabel(chip.status)}</span>
-            </>
-          )
-          const interaction = () => chip.toolCallRole === "interaction"
-          const openable = () => chip.resolution === "ready" && !!chip.childSessionId
-          const activate = (target: EventTarget | null) => {
-            if (interaction() && scrollToCanonicalSpawn(chip)) return
-            if (dispatchSubagentOpen(target, {
-              childSessionId: chip.childSessionId,
-              subagentKey: chip.key,
-              label: chip.name,
-              ...(chip.description ? { description: chip.description } : {}),
-              interaction: interaction(),
-              openable: openable(),
-            })) return
-            // No surface claimed the open — a standalone reader, where following
-            // the session's own route is the only way in.
-            if (chip.childSessionId) data.navigateToSession?.(chip.childSessionId)
-          }
-          return (
-            <Show
-              when={openable() || interaction()}
-              fallback={
-                <span
+    <Show when={chips().length > 0}>
+      <div data-component="subagent-chip-row">
+        <For each={visible()}>
+          {(chip) => {
+            const summary = () => subagentSubtitle({
+              description: chip.description ?? "",
+              ...(chip.mode ? { mode: chip.mode } : {}),
+              resolution: chip.resolution,
+            })
+            const content = () => (
+              <>
+                <AgentGlyph seed={chip.childSessionId || chip.key} active={chip.status === "running"} size={14} />
+                <span data-slot="subagent-chip-name">{chip.name}</span>
+                <Show when={summary()}>
+                  <span data-slot="subagent-chip-summary" title={chip.description || summary()}>{summary()}</span>
+                </Show>
+                <span data-slot="subagent-chip-status" aria-live="polite">{statusLabel(chip.status, i18n)}</span>
+              </>
+            )
+            const interaction = () => chip.toolCallRole === "interaction"
+            const openable = () => chip.resolution === "ready" && !!chip.childSessionId
+            const activate = (target: EventTarget | null) => {
+              if (interaction() && scrollToCanonicalSpawn(chip)) return
+              if (dispatchSubagentOpen(target, {
+                childSessionId: chip.childSessionId,
+                subagentKey: chip.key,
+                label: chip.name,
+                ...(chip.description ? { description: chip.description } : {}),
+                interaction: interaction(),
+                openable: openable(),
+              })) return
+              // No surface claimed the open — a standalone reader, where following
+              // the session's own route is the only way in.
+              if (chip.childSessionId) data.navigateToSession?.(chip.childSessionId)
+            }
+            return (
+              <Show
+                when={openable() || interaction()}
+                fallback={
+                  <span
+                    data-component="subagent-chip"
+                    data-subagent-key={chip.key}
+                    data-subagent-role={chip.toolCallRole ?? "ambient"}
+                    data-status={chip.status}
+                    aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}, transcript unavailable`}
+                  >
+                    {content()}
+                  </span>
+                }
+              >
+                <button
+                  type="button"
                   data-component="subagent-chip"
                   data-subagent-key={chip.key}
                   data-subagent-role={chip.toolCallRole ?? "ambient"}
                   data-status={chip.status}
-                  aria-label={`${chip.name}, ${statusLabel(chip.status)}, transcript unavailable`}
+                  aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}`}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    activate(event.currentTarget)
+                  }}
                 >
                   {content()}
-                </span>
-              }
-            >
-              <button
-                type="button"
-                data-component="subagent-chip"
-                data-subagent-key={chip.key}
-                data-subagent-role={chip.toolCallRole ?? "ambient"}
-                data-status={chip.status}
-                aria-label={`${chip.name}, ${statusLabel(chip.status)}`}
-                onClick={(event) => {
-                  event.stopPropagation()
-                  activate(event.currentTarget)
-                }}
-              >
-                {content()}
-              </button>
-            </Show>
-          )
-        }}
-      </For>
-      <Show when={overflow() > 0}>
-        <button
-          type="button"
-          data-slot="subagent-chip-overflow"
-          aria-expanded={expanded()}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded() ? "show fewer" : `and ${overflow()} other ${overflow() === 1 ? "agent" : "agents"}`}
-        </button>
-      </Show>
-    </div>
+                </button>
+              </Show>
+            )
+          }}
+        </For>
+        <Show when={overflow() > 0}>
+          <button
+            type="button"
+            data-slot="subagent-chip-overflow"
+            aria-expanded={expanded()}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            {expanded() ? "show fewer" : `and ${overflow()} other ${overflow() === 1 ? "agent" : "agents"}`}
+          </button>
+        </Show>
+      </div>
+    </Show>
   )
 }

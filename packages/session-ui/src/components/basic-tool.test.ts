@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
-import { humanizeTool, type GenericToolTitle, collapsePayload } from "./basic-tool"
+import { hasRenderedContent, humanizeTool, type GenericToolTitle, collapsePayload } from "./basic-tool"
 
 // Outside a provider `useI18n()` yields the shipped English catalog, so these
 // assertions read the copy a user reads rather than a stand-in for it.
@@ -101,5 +101,26 @@ describe("collapsePayload", () => {
 
   test("collapses each balanced run independently", () => {
     expect(collapsePayload('a {"x":1} b {"y":2} c')).toBe("a {…} b {…} c")
+  })
+})
+
+describe("hasRenderedContent", () => {
+  test("a child that resolved to nothing is not content", () => {
+    expect(hasRenderedContent(undefined)).toBe(false)
+    expect(hasRenderedContent(null)).toBe(false)
+    expect(hasRenderedContent(false)).toBe(false)
+    expect(hasRenderedContent("")).toBe(false)
+    expect(hasRenderedContent("   ")).toBe(false)
+  })
+
+  test("a list of children that all resolved to nothing is not content either", () => {
+    expect(hasRenderedContent([])).toBe(false)
+    expect(hasRenderedContent([undefined, null, false])).toBe(false)
+  })
+
+  test("anything that reaches the screen is content", () => {
+    expect(hasRenderedContent("output")).toBe(true)
+    expect(hasRenderedContent(0)).toBe(true)
+    expect(hasRenderedContent([undefined, "output"])).toBe(true)
   })
 })

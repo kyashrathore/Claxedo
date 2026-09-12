@@ -62,6 +62,15 @@ describe("isFoldableGroup", () => {
     expect(alone.groups.map((group) => isFoldableGroup(group, alone.part))).toEqual([true, false])
   })
 
+  test("an answered question stays visible and does not count toward the fold", () => {
+    const { groups, part } = turn([tool("p1", "bash"), tool("p2", "bash"), tool("p3", "question"), text("p4", "done")])
+    expect(groups.map((group) => group.type)).toEqual(["work", "part", "part"])
+    expect(groups.map((group) => isFoldableGroup(group, part))).toEqual([true, false, false])
+    expect(countFoldableGroups(groups, part)).toBe(1)
+    const decision = turnFoldDecision({ settled: true, foldableCount: countFoldableGroups(groups, part) })
+    expect(foldedGroupKeys(decision, groups, part).size).toBe(0)
+  })
+
   test("a turn whose only machinery is subagents does not fold at all", () => {
     const { groups, part } = turn([text("p0", "prose"), tool("p1", "bash"), tool("p2", "agent"), tool("p3", "agent")])
     const decision = turnFoldDecision({ settled: true, foldableCount: countFoldableGroups(groups, part) })

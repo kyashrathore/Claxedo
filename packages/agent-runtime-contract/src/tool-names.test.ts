@@ -15,10 +15,13 @@ describe("canonicalToolName", () => {
   test("folds the spellings that named the same tool differently", () => {
     expect(canonicalToolName("Agent")).toBe("task")
     expect(canonicalToolName("LS")).toBe("list")
-    expect(canonicalToolName("MultiEdit")).toBe("edit")
     expect(canonicalToolName("AskUserQuestion")).toBe("question")
     expect(canonicalToolName("local_shell")).toBe("bash")
     expect(canonicalToolName("read_file")).toBe("read")
+  })
+
+  test("keeps multiedit off the edit renderer, which cannot read an edits[] array", () => {
+    expect(canonicalToolName("MultiEdit")).toBe("multiedit")
   })
 
   test("leaves an unknown tool as its lowercase self", () => {

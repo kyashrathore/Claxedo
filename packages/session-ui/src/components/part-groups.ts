@@ -65,6 +65,20 @@ function producedImage(part: AgentToolPart) {
   return !!state.attachments?.some((file) => file.mime.startsWith("image/"))
 }
 
+export function isStandaloneTool(part: { type: string; tool?: string }): boolean {
+  return part.type === "tool" && !!part.tool && STANDALONE_TOOLS.has(canonicalToolName(part.tool))
+}
+
+/**
+ * A question renders nothing until it is answered, so until then it is not a row at
+ * all: it can neither break a run of machinery nor join one.
+ */
+export function isPendingQuestion(part: { type: string; tool?: string; state?: { status?: string } }): boolean {
+  if (!isStandaloneTool(part)) return false
+  const status = part.state?.status
+  return status === "pending" || status === "running"
+}
+
 export function isContextGroupTool(part: AgentContentPart): part is AgentToolPart {
   if (part.type !== "tool" || !CONTEXT_GROUP_TOOLS.has(canonicalToolName(part.tool))) return false
   return !producedImage(part)
@@ -72,18 +86,13 @@ export function isContextGroupTool(part: AgentContentPart): part is AgentToolPar
 
 /**
  * Work is everything the agent did that is not context-gathering, a subagent, hidden,
- * or addressed to the reader — named by exclusion rather than by a list of six tools.
- *
- * A list could only ever name the tools it knew: across three captured sessions,
- * `sendmessage`, `toolsearch`, `skill`, `listagents` and two MCP calls all fell outside
- * it, and each one broke a run of 355 shell calls into another loud standalone row.
- * That is the reported "command ran are not grouped properly" — the tools that split the
- * runs were the ones nobody had thought to add.
+ * or addressed to the reader — named by exclusion, because a list could only ever name
+ * the tools it knew, and every tool missing from it breaks a run into its own row.
  */
 export function isWorkGroupTool(part: AgentContentPart): part is AgentToolPart {
   if (part.type !== "tool") return false
   const tool = canonicalToolName(part.tool)
-  if (CONTEXT_GROUP_TOOLS.has(tool) || HIDDEN_TOOLS.has(tool) || STANDALONE_TOOLS.has(tool)) return false
+  if (CONTEXT_GROUP_TOOLS.has(tool) || HIDDEN_TOOLS.has(tool) || isStandaloneTool(part)) return false
   return !isSubagentToolPart(part)
 }
 
@@ -99,6 +108,15 @@ export function isSubagentToolPart(part: { type: string; tool?: string; state?: 
   return typeof input === "object" && input !== null && (input as { intent?: unknown }).intent === "task"
 }
 
+/**
+ * A spawn whose own tool call failed delegated nothing — no child session was ever
+ * bound, so the chip row it would join has nothing to draw. It is a failed tool call,
+ * and the error text is the only thing that reports what happened.
+ */
+function spawnFailed(part: AgentContentPart) {
+  return part.type === "tool" && part.state.status === "error"
+}
+
 function partRef(item: GroupablePart): PartRef {
   return { messageID: item.messageID, partID: item.part.id }
 }
@@ -110,11 +128,13 @@ function workGroupTool(slice: GroupablePart[]): WorkGroupTool {
 }
 
 /**
- * Consecutive context tools fold into a context group at any length; consecutive
- * work tools and consecutive subagent spawns fold only when the run has ≥2 members,
- * so a lone one keeps its own row. Any other part flushes all three runs.
+ * Consecutive context tools fold into a context group at any length, and consecutive
+ * subagent spawns into an agents group at any length; a run of work tools folds only
+ * when it has ≥2 members, so a lone one keeps its own row. Any other part flushes all
+ * three runs.
  */
-export function groupParts(parts: GroupablePart[]) {
+export function groupParts(input: GroupablePart[]) {
+  const parts = input.filter((item) => !isPendingQuestion(item.part))
   const result: PartGroup[] = []
   let contextStart = -1
   let workStart = -1
@@ -173,7 +193,7 @@ export function groupParts(parts: GroupablePart[]) {
   parts.forEach((item, index) => {
     const isContext = isContextGroupTool(item.part)
     const isWork = isWorkGroupTool(item.part)
-    const isTask = isSubagentToolPart(item.part)
+    const isTask = isSubagentToolPart(item.part) && !spawnFailed(item.part)
 
     if (isContext) {
       flushWork(index - 1)
