@@ -4,10 +4,12 @@ import {
   createTasksAuthorization,
   createTasksPrincipals,
   signedTasksAuthenticate,
+  signedTasksRuntimePrincipal,
 } from "@claxedo/server-core/tasks-host/authorization"
 import { createTasksCapabilities, randomTasksIds, systemTasksClock } from "@claxedo/server-core/tasks-host/host-ports"
 import { createSqliteTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
 import { createLocalTasksSessionBridge } from "@claxedo/local-server/tasks/session-bridge"
+import { createTasksSessionReserve } from "./session-bridge"
 import { TASKS_ROUTE_PATH, createTasksRoutes } from "@claxedo/tasks/http"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
@@ -34,7 +36,9 @@ export type SelfHostedTasksCompositionInput = {
  * preset catalog and refuse anyone who did not reach the box over loopback.
  *
  * The session bridge is the local one either way, because this box runs the
- * sessions it starts.
+ * sessions it starts. It still reserves each session for the signed person
+ * who started it: session access is granted to a creator actor, and a session
+ * created with no reservation is one its starter cannot open.
  */
 export function createSelfHostedTasksComposition(
   input: SelfHostedTasksCompositionInput,
@@ -63,7 +67,12 @@ export function createSelfHostedTasksComposition(
                 input.services,
               ),
           }),
-          bridge: createLocalTasksSessionBridge(),
+          bridge: createLocalTasksSessionBridge({
+            reserve: createTasksSessionReserve({
+              services: input.services,
+              principal: signedTasksRuntimePrincipal(principals),
+            }),
+          }),
           // `resolveStart` in session-bridge-core refuses cloud placement on
           // every host, so a preset naming one is refused when it is saved
           // rather than saved and refused at Start.

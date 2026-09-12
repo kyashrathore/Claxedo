@@ -16,6 +16,18 @@ import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platfo
 import type { ControlPlaneServices } from "../authority/services"
 import { createSelfHostedTasksComposition } from "./self-hosted-composition"
 
+const bridgeInputs = vi.hoisted(() => [] as unknown[])
+vi.mock("@claxedo/local-server/tasks/session-bridge", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@claxedo/local-server/tasks/session-bridge")>()
+  return {
+    ...original,
+    createLocalTasksSessionBridge: (input?: unknown) => {
+      bridgeInputs.push(input)
+      return original.createLocalTasksSessionBridge(input as Parameters<typeof original.createLocalTasksSessionBridge>[0])
+    },
+  }
+})
+
 const TASKS = "/api/claxedo/tasks"
 const ORIGIN = "http://box.example"
 const LOOPBACK = "http://127.0.0.1:4096"
@@ -165,6 +177,34 @@ describe("signed self-hosted Tasks composition", () => {
   test("refuses a bearer token the issuer does not recognise", async () => {
     const response = await app().request(`${ORIGIN}${TASKS}/capabilities`, { headers: headers("carol") })
     expect(response.status).toBe(401)
+  })
+
+  test("hands the local bridge a reservation bound to the signed caller, never the service actor", async () => {
+    const intent = {
+      actor: { scopeId: "org-unknown", ownerId: "nobody" },
+      operationId: "tasks.v1:org-unknown:tsk:primary:1:digest",
+      sessionId: "ses_tasks_test",
+      workspaceId: "ws-1",
+      title: "t",
+    }
+    type Reserve = (intent: unknown) => Promise<{ ok: boolean; error?: { code: string } }>
+    const reserveOf = () => (bridgeInputs[bridgeInputs.length - 1] as { reserve?: Reserve }).reserve
+
+    createSelfHostedTasksComposition({ services: services() })
+    expect(typeof reserveOf()).toBe("function")
+    const withoutRegistration = await reserveOf()!(intent)
+    expect(withoutRegistration.ok).toBe(false)
+    expect(withoutRegistration.error?.code).toBe("unsupported")
+
+    const base = services()
+    const reserveRuntimeSession = vi.fn()
+    createSelfHostedTasksComposition({
+      services: { ...base, authority: { ...base.authority, reserveRuntimeSession } } as ControlPlaneServices,
+    })
+    const withRegistration = await reserveOf()!(intent)
+    expect(withRegistration.ok).toBe(false)
+    expect(withRegistration.error?.code).toBe("forbidden")
+    expect(reserveRuntimeSession).not.toHaveBeenCalled()
   })
 
   test("a task written by one request is still there for the next composition", async () => {
