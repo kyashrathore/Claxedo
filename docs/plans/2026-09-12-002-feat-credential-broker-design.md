@@ -2,10 +2,22 @@
 
 Status: proposed; not implemented. Code checked at `47931bd727`.
 Owner: Yash Rathore. Date: 2026-09-12.
+No backward compatibility anywhere in this design: old snapshot versions, existing hosted credential rows, and the consent flag are removed, not migrated (owner decision, 2026-09-12).
+Provenance: rewritten by Codex (`gpt-6-astra`) from the committed draft after its review of that draft; product rules and decisions taken by the owner the same night; the draft's tables are kept as appendices.
 
 **Today, Claxedo gives agents the actual model credential. This proposal keeps it outside the agent’s environment and attaches it to network requests through a trusted broker or provider edge.**
 
-It also introduces personal accounts. That requires a second, larger change: deciding which user’s execution environment a workspace opens.
+It also introduces personal accounts. **An identity is a user.** Every user gets their own sandbox and working copy per workspace, isolated from every other user's; code moves between them only through the repository.
+
+### Agreed product rules
+
+- **Unsigned local:** no hosted control plane is involved until the user signs in. Credentials saved unsigned live in the local registry on the laptop (SQLite metadata, the encrypted-file secret backend) and are bound through the loopback broker to local workspaces and Docker sandboxes on that laptop. Nothing leaves the machine. A harness with its own CLI login may also run on that login, as today.
+- **Signed in:** saved credentials live in the hosted control plane and are automatically eligible for cloud use. No separate cloud-consent toggle; the consent flag and its check are deleted. A signed desktop's local workspaces and Docker sandboxes use the same loopback broker, which pulls the bound credential's current revision from the hosted store (section 4). The local registry serves unsigned use only; a signed user's credentials are hosted, not copied down into it.
+- **Per-sandbox attachment:** resolve the credential selection when creating a sandbox. By default, include the user's eligible AI provider credentials. “Include” grants use through native binding or the gateway; it does not mean copying the original secret into the VM.
+- **Proposed setting:** project → sandbox credentials, with a per-user selection so one collaborator cannot choose another's personal accounts. Changes affect new sandboxes. Exact UI placement remains open; no new creation-time prompt is required.
+- **Routing:** model credentials use verified native binding where supported and our credential gateway otherwise. Authenticated remote MCP retains the existing MCP gateway. Public MCP and local plugin execution do not automatically acquire a gateway hop.
+
+Hosted storage eligibility and attachment are separate: saving makes a credential available for selection; project settings determine whether a particular sandbox receives authority to use it. Vendor expiry/revocation can still prevent requests. These are operational conditions, not another consent workflow.
 
 ## 1. The pieces
 
@@ -22,11 +34,13 @@ When you open a workspace and send a prompt, these components cooperate:
 
 **Daytona + Claude** means Daytona supplies the machine and Claude supplies the agent. Their authentication mechanisms are separate.
 
-A **workspace** is the logical project location; a **lease** identifies its running environment; a **session** is a conversation inside it. Several sessions and background processes can share one runtime.
+A **workspace** is the logical project location; a **lease** identifies one user's running environment for it, keyed by `(workspace, user)`; a **session** is a conversation inside that environment and belongs to that user. Several of one user's sessions and background processes share one runtime; two users never do.
 
 ## 2. How credentials reach an agent today
 
 ### A. You save an account
+
+The following describes existing credential plumbing, not the agreed product flow above. Its local-save and cloud-consent behavior must not become requirements for the new design.
 
 The [credential route](../../packages/claxedo-local-server/src/credentials/routes/credential.ts) resolves your organization, accepts the credential, and records consent if you allow cloud use.
 
@@ -99,13 +113,17 @@ Three proposed records/responsibilities replace the raw-secret handoff:
 | Delivery adapter | Installs, rotates, and withdraws that authority through a provider edge or generic broker |
 | Projection | The endpoint, auth mode, and placeholder the harness receives |
 
-The registry remains authoritative for credential bytes. The control plane owns selection and bindings. Drivers implement delivery mechanics. Harness adapters translate projections into their native configuration.
+For signed-in use, hosted credential storage remains authoritative for credential bytes. The control plane resolves the user's project selection at sandbox creation and owns bindings. Drivers implement delivery mechanics. Harness adapters translate projections into their native configuration. Unsigned local use creates local bindings against the local registry and never touches the hosted control plane; it uploads nothing.
+
+A binding's **request policy** is part of the binding, not a follow-up: allowed methods and path prefixes per destination (a model binding allows the vendor's messages and responses paths; a GitHub binding the repository's paths; an MCP binding its one resource). The generic broker enforces it with 403; Vercel enforces it with rule matchers; Daytona and Cloudflare cannot express it, so on those drivers the egress allowlist is the only bound and the document says so per driver in Appendix C.
+
+The credential gateway and the existing MCP gateway are **one service**: both resolve `(user, org, lease, binding)` per request and attach a credential; they share code, state, and placement (section 3, Placement).
 
 ### One concrete request: Claude through Daytona
 
 This is the proposed model-credential flow, using Daytona’s existing secret-substitution mechanism.
 
-1. Alice opens workspace W. The control plane checks her access, selects an eligible account, and creates binding B for lease L.
+1. Alice opens workspace W. When creating her sandbox, the control plane checks her access, resolves her project's credential selection (AI provider credentials included by default), and creates binding B for lease L for the selected Anthropic account.
 2. The Daytona adapter stores the real Anthropic key in Daytona’s secret system, restricted to `api.anthropic.com`, and attaches that secret to the sandbox at creation.
 3. Inside the sandbox, the mapped environment variable contains an opaque placeholder such as `dtn_secret_…`. The runtime configures Claude’s API-key slot with that placeholder, not the original key.
 4. Claude sends `POST https://api.anthropic.com/v1/messages` with `x-api-key: dtn_secret_…`.
@@ -130,7 +148,7 @@ On the generic-broker path, the harness instead receives a broker URL and signed
 
 **Place or route the relay, credential gateway, and MCP gateway as close to the VM as practical.** Select them together with the sandbox’s region, and prefer the same region where supported. These are separate paths: model/MCP traffic need not pass through the relay.
 
-Native injection avoids our credential-gateway hop. Where our gateway is needed, choose a nearby instance. The MCP gateway currently lives in the control-plane Worker; its placement and backing-state reads must be evaluated together. A nearby handler that repeatedly calls a distant authority still incurs that latency.
+Native injection avoids our credential-gateway hop. Where our gateway is needed, choose a nearby instance. The MCP gateway currently lives in the control-plane Worker and becomes one service with the credential gateway; its placement and backing-state reads are evaluated once for both. A nearby handler that repeatedly calls a distant authority still incurs that latency.
 
 Record the selected region/endpoints on the lease and preserve that placement through wake/replacement. Cross-region operation should be an explicit, observable exception. Measure VM-to-relay and VM-to-gateway latency, including authorization/credential lookup and time to first streamed byte. Locality must preserve the same access and revocation checks; regional coordination and failure behavior remain design decisions.
 
@@ -143,7 +161,9 @@ Record the selected region/endpoints on the lease and preserve that placement th
 | Broker token expires | Renew delegated access without exposing the original key | A one-hour token can expire during a long turn; next-turn restart is insufficient |
 | Credential is withdrawn | Deny new requests without waiting for the sandbox to reconnect | Native propagation windows, consistent state reads, and in-flight behavior |
 | Sandbox wakes or is replaced | Reconcile current bindings before ready; reject the old lease generation | Every create/wake route must enforce this |
-| Account changes | Route future work to the appropriate fixed identity | What happens to existing sessions and files |
+| Project credential selection changes | Apply the selection to new sandboxes; do not silently replace authority in an existing sandbox | Explicit replacement/resume UX, if needed |
+| Loopback broker on a signed desktop needs a value | Pull the binding's current revision from the hosted store, cache it in the local server process only, re-pull on a revision change pushed with the config | The local server process holds the value; the harness process never does. This is the local guarantee and the whole of it |
+| A wake or scheduled turn fires for a session | Runs in the session owner's sandbox with the owner's authority | This replaces the connections kit's rule that automation never spends a personal token; the kit's resolver takes the session owner as the subject |
 
 A successful probe proves one request worked; it does not distinguish two valid keys or establish global edge convergence.
 
@@ -153,43 +173,173 @@ Refresh also needs one authoritative coordinator per credential. [Cloudflare KV 
 
 Suppose Alice starts work in a sandbox, then Bob changes its account. Alice’s next request—or a background process she left running—can spend Bob’s credentials.
 
-The proposal therefore fixes credential identity for a sandbox’s lifetime. Different identities receive different sandboxes.
+The proposal therefore fixes credential identity for a sandbox’s lifetime. Different identities receive different sandboxes and working copies; the user has confirmed this isolation goal. Collaborators exchange changes through Git rather than sharing a live writable checkout in this proposal.
 
 **Today the system has one lease and runtime slot per workspace.** Supporting multiple identities changes lease keys, runtime caches, session routing, relay targets, activity holds, checkpoints, and compute accounting.
 
-Two decisions remain central:
+Decided (owner, 2026-09-12):
 
-- **What constitutes an identity?** Sharing a model account does not imply sharing GitHub/MCP permissions. Identity must account for all delegated authority.
-- **How do files and sessions behave across sandboxes?** Existing checkpoint/restore preserves one runtime’s lineage; it does not merge concurrent edits. A shared writable volume can also let Alice modify code Bob executes with Bob’s authority.
+- **An identity is a user**, carrying all of that user's delegated authority: model accounts, GitHub, MCP, deploy tokens. The lease key becomes `(workspace_id, user_id)`; the supervisor's runtime map, session routing, the relay target, holds, checkpoints, and the usage ledger take the user alongside the workspace.
+- **Sandboxes are fully isolated.** Each user's sandbox has its own filesystem, cloned or restored for that user; checkpoint and restore stay one lineage per `(workspace, user)`; nothing is shared between two users' sandboxes; code moves through the repository.
+- **A session belongs to its owner's sandbox.** Only the owner drives it; other members may read it. A prompt from anyone else is refused, never attributed to the owner's authority. Moving a conversation to another user's sandbox is not supported.
 
-Locally, a loopback broker does not isolate same-user processes from credential files or ambient CLI logins. The local promise must either be narrower—no deliberate secret delivery—or include a real OS isolation boundary.
+Unsigned local use keeps the local registry and retains local harness authentication. A local process running as the operator can potentially read that operator's CLI login files. A loopback broker does not change this OS boundary; protecting those files from the agent would require separate OS isolation and is not implied by cloud credential brokering. What the loopback broker does guarantee, unsigned or signed: a credential saved in Claxedo is held by the local server process and never by the harness process or a Docker container.
 
 ## 6. What approval needs to settle
 
 | Decision | Required answer |
 | --- | --- |
-| Identity and workspace behavior | Which accounts/permissions define identity, how existing sessions survive switching, and how files/checkpoints are shared |
+| Identity and workspace behavior | **Decided:** identity is the user; one sandbox and checkout per `(workspace, user)`; sessions owner-driven. Remaining: the lease-key change across every table keyed by workspace alone |
+| Credential selection | Proposed project setting per user; AI providers included by default; apply on sandbox creation; exact UI placement remains open |
 | Broker lifecycle | Active-turn renewal, accepted bearer replay, refresh coordination, revocation timing, and recovery after partial failure |
 | Supported combinations | Real tests for each retained harness × auth mode × driver, including streaming, cancellation, native auth files, and policy enforcement |
 | Regional placement | Coordinate VM, relay, and gateway selection; measure backing-state latency and define cross-region failure behavior |
-| Local guarantee | Delivery hygiene or actual isolation from the operator’s credentials |
-| Migration | Explicit v3/v4 version handling, durable credential-change reconciliation, and draining old runtimes |
+| Local guarantee | **Decided:** unsigned local uses the local registry, nothing hosted; in both modes the value is held by the local server process only, never the harness or container; OS isolation from CLI logins is out of scope |
+| Migration | **Decided: none.** The v3 reader, the plaintext `auth` producer, the consent flag, the plaintext push from the local registry, the Docker auth copy, the Cloudflare `/egress` route, and the OpenCode SDK bridge are deleted in the change that lands their replacement; the hosted store is replaced by a many-rows-per-provider store with an owner, not migrated; running sandboxes are destroyed and recreated |
 
-The current v3 reader rejects unknown versions and fields. Sending v4 “alongside” raw v3 auth defeats confidentiality. Migrated runtimes must receive projections only, with no automatic plaintext fallback.
+The v3 reader is deleted with the plaintext producer; runtimes receive projections only, with no plaintext fallback.
 
 ## 7. Implementation order and completion
 
-1. Fix existing broker-channel contract defects in focused changes.
-2. Resolve the decisions required for the first slice and record live feasibility results.
-3. Complete one slice: Claude API key through Docker, then supported native edges. Exercise save → selection → turn → rotation → withdrawal → wake.
-4. Add other proven harness/auth/driver combinations and migrate GitHub/MCP without removing their existing authorization checks.
-5. Enable personal identities only after routing, persistence, and concurrent-user behavior are defined and tested.
-6. Drain old runtimes and remove superseded plaintext producers, auth copies, and readers.
+1. Fix the broker-channel defects in Appendix B in focused changes; upgrade the four sandbox SDKs and re-declare the catalog from Appendix A.
+2. Run the feasibility items in Appendix E and record each result there.
+3. Replace the hosted credential store: many rows per provider, an owner per row, enumeration, per-project selection per user. No migration of existing rows.
+4. Move the lease, supervisor map, session routing, relay target, holds, checkpoints, and usage ledger to `(workspace, user)`; sessions gain an owner.
+5. One slice end to end on a signed desktop: Claude API key through Docker via the loopback broker, then Daytona and Vercel native. Exercise save → selection → turn → rotation → withdrawal → wake, with the adversarial checks in the completion list.
+6. Add each further harness, auth mode, and driver as its Appendix E result allows; fold GitHub and MCP bindings onto the contract with the merged gateway.
+7. Delete every superseded path in the same change as its replacement: plaintext producer and v3 reader, consent flag, the plaintext push from the local registry, Docker auth copy, Cloudflare `/egress` route, OpenCode SDK bridge, Codex login RPC and its mirror into the CLI file.
 
-Completion requires a real turn using the intended vendor account, original credentials absent from isolated runtimes, cross-org/lease rejection, successful lifecycle tests, and no silent switch to ambient auth. Source searches supplement these checks; they cannot prove old snapshots or files are clean.
+Completion requires a real turn using the intended vendor account, original credentials absent from isolated runtimes (env, `/proc/*/environ`, disk), cross-org and cross-lease token rejection, replay after withdrawal rejected, a 401 on a stale revision not failing the current one, a request outside policy refused with 403, a 3xx from the vendor returned as 502 without `Location`, two users on one workspace each in their own sandbox on their own account verified by the vendor-side account id, a wake running in the owner's sandbox, `~/.codex/auth.json` on the operator's machine byte-identical across a Codex turn, and no silent switch to ambient auth. Source searches supplement these checks; they cannot prove old snapshots or files are clean.
 
-This plan retains design 001’s active-account concept but replaces its delivery proposal. Its older switching and delivery sections must be marked superseded when this design is finalized. Until then, both documents remain proposals.
+This plan replaces design 001's delivery proposal and its "active account per provider" with per-project, per-user selection at sandbox creation. Design 001 is superseded in full except for its stress-test findings and live-test record, which remain the evidence for section 2.
 
 **Benefit:** agents can use selected network credentials without receiving their original values. **Cost:** trusted traffic handling, lifecycle coordination, and potentially multiple execution environments per workspace.
 
 Evidence: source and existing tests inspected; historical experiments linked above. No live broker feasibility tests or production changes were made for this document.
+
+---
+
+## Appendix A. Sandbox providers and harnesses, checked against their docs 2026-09-12
+
+Checked against each provider's current documentation on 2026-09-12. The
+catalog (`sandbox-manager/src/driver-catalog.ts`) is the left column.
+
+| Driver | Catalog says | Provider today | SDK pinned → latest |
+| --- | --- | --- | --- |
+| daytona | native; hosts and CIDRs | Placeholder swapped in HTTPS headers to allowed hosts, responses scrubbed. `updateSecrets` on a running sandbox; a value change lands within about 15 seconds; a sandbox created with no secrets must restart to receive one. | 0.192.0 → 0.211.2 |
+| vercel | native; hosts | Header transform per domain, with matchers on path, method, query, headers; `forwardURL` to your own proxy with an OIDC token naming the sandbox; denied CIDR ranges; live policy updates. | 1.10.2 → 3.3.0 |
+| cloudflare | proxy, opt-in; no egress control | Outbound Workers since 0.8.0: host allow and deny lists evaluated before handlers, per-host handlers in the Worker, HTTPS intercepted with a per-sandbox CA, header injection in the handler. | 0.8.9 → 0.12.9 |
+| exe | none; none | Integrations: the secret is stored server-side and injected at the edge when the VM calls `<name>.int.exe.xyz`; HTTP proxy, GitHub, S3 signing, and an LLM integration that takes an Anthropic or OpenAI key or a **ChatGPT subscription** by device-code login. Attach per VM, per tag, or all. No egress allowlist. | driven over `/exec` |
+| modal | none; none | Secrets are still readable env. Sandbox Sidecars (alpha, allowlisted workspaces) run a proxy that holds the secret while the sandbox has `outbound_cidr_allowlist=[]`; `outbound_domain_allowlist` (beta); `updateNetworkPolicy` (alpha). | 0.7.5 → 0.10.1 |
+| box | none | Plaintext env inside a `docker run` command string; no secret or egress feature. | — |
+| docker | none | Plaintext `--env`; loopback only. | — |
+
+And what each harness accepts, verified from the installed binaries:
+
+| Harness | Base URL | Credential | Extra headers |
+| --- | --- | --- | --- |
+| Claude Code | `ANTHROPIC_BASE_URL` | `ANTHROPIC_API_KEY` (API key mode) or `ANTHROPIC_AUTH_TOKEN` / `CLAUDE_CODE_OAUTH_TOKEN` (bearer modes); `apiKeyHelper` | `ANTHROPIC_CUSTOM_HEADERS` |
+| Codex | `model_providers.<id>.base_url`; `chatgpt_base_url` for the subscription backend | `requires_openai_auth` decides whether a login is needed | `http_headers`, `env_http_headers` |
+| Cursor | `CURSOR_API_ENDPOINT` (CLI flag `--endpoint`; SDK support unverified) | `CURSOR_API_KEY` | — |
+| Pi | per-provider config; keys unverified | env | — |
+| OpenCode engine | per-provider `options.baseURL` in its config; unverified | its own auth store | — |
+
+## Appendix B. The ten defects in today's delivery paths
+
+Each is a fact about the code above, not a preference.
+
+1. **Every model credential is readable by the agent.** Claude and Pi put
+   it in the child env; Codex writes it to disk; the OpenCode bridge writes
+   it to the SDK store. On every driver, including the ones that could
+   broker it. (section 2.C)
+2. **A stored Codex account clobbers the operator's login.** The app-server
+   writes the explicit login into the user's own `~/.codex/auth.json` and
+   keeps it in memory across logout. (section 2.C; design 001, finding 12)
+3. **No personal accounts.** The snapshot has no user; the registry has no
+   owner. Two people in one org run on one account. (section 2.B, 2.D)
+4. **Refresh is in the wrong places.** Codex refreshes inside the
+   app-server; Claxedo's helper mirrors into the CLI file; Claude
+   subscription tokens are never refreshed. (section 2.B)
+5. **Brokering is used by two producers and honoured inconsistently.** The
+   clone token has no consumer on Daytona; the self-hosted supervisor sends
+   no secrets; resume on Daytona does not re-attach; the Cloudflare JWT
+   dies at 15 minutes with no refresh. (section 2.D)
+6. **A defect in the one working consumer.** The MCP producer stores
+   `Bearer <token>` and the consumer prefixes `Bearer ` again, so a Daytona
+   sandbox sends `Bearer Bearer …`. (`runtime-preparation.ts:301`,
+   `runtime-contribution.ts:174`)
+7. **The catalog is stale.** exe.dev and Cloudflare are marked `none` or
+   `proxy` while both broker natively; Modal's sidecar and domain allowlist
+   are unmodelled; every SDK pin is behind. (Appendix A)
+8. **Two paths exist only because of 7.** The Cloudflare proxy Worker and
+   the Docker auth copy are workarounds for capabilities the providers now
+   have or for a problem (local containers) the generic broker below solves
+   once.
+9. **Egress auto-allow is org-wide.** Storing any credential adds a network
+   policy row with no workspace id, opening that provider's host group for
+   every workspace. (`claxedo-server-core/src/sandbox/network/policy.ts:279`)
+10. **Consent is enforced only in the push.** The `shared` scope respects
+    the row's consent flag; nothing else does.
+
+## Appendix C. Delivery adapter per driver (draft; confirmed only by Appendix E results)
+
+| Driver | apply | rotate | withdraw | Projection |
+| --- | --- | --- | --- | --- |
+| daytona | `secret.create` per binding with `hosts`; referenced at sandbox create as the placeholder env var | `updateSecrets`; the adapter reports the documented ~15 s propagation and the control plane treats the revision as applied only after a verify probe through the sandbox succeeds | set the value to a revoked sentinel, then delete the secret | vendor host; placeholder = the env var's value |
+| vercel | policy union with `transform` rules, plus `match` on the vendor's paths (the policy-level equivalent of the broker's `allow`) | `update({networkPolicy})` with the new value | remove the rule | vendor host; any dummy |
+| cloudflare | `outboundByHost` handler reading the binding table; `allowedHosts` from the union of bindings and the network policy | table write; no sandbox call | table write | vendor host; any dummy |
+| exe | `integrations add` (LLM integration for model accounts, HTTP proxy for the rest) attached to the VM over `/exec` | `integrations edit` | `integrations detach` then delete | `https://<name>.int.exe.xyz`; any dummy |
+| modal | sidecar proxy from the binding table when the workspace is allowlisted; otherwise the generic broker | sidecar reads the table | table write | sidecar URL or broker URL |
+| box, docker | generic broker | table write | table write | broker URL |
+
+A sandbox created before its first account is connected (Daytona's restart
+case) is provisioned with a placeholder binding per provider the workspace
+may use, valueless, so the env var exists from boot and only ever changes
+value. The Docker auth-file copy and the Cloudflare `/egress` Worker route
+are deleted when their replacements land (5.3).
+
+## Appendix D. Findings from the review of the first draft (section numbers refer to that draft)
+
+From the Codex review of the first draft (2026-09-12, evening).
+
+| Finding | Where addressed |
+| --- | --- |
+| Runtime-wide per-user switching charges the wrong account; background processes make it worse | 3.1 (one identity per sandbox) |
+| Generic broker authentication unspecified: token transport, renewal, scope, replay | 3.3 |
+| Native updates propagate in seconds; "next request" is not a guarantee | 3.4, 3.5 (revisions, degraded state, probe) |
+| Host-only lookup cannot represent MCP bindings sharing a gateway host | 3.3 (binding id in the path; target header kept for MCP) |
+| Selection is not versioning; delayed updates and wakes can reinstall old values; a late 401 can fail a fresh key | 3.5, 3.3 failure reporting |
+| Phase 1 deleted plaintext before replacements existed; Pi, OpenCode, the SDK bridge unaddressed | Phase 1 feasibility, Phase 4 deletions, 5.3 tables |
+| Consent dropped from binding resolution | 3.6 |
+| "Rate limits are a follow-up" unacceptable for GitHub and deploy tokens | 3.3 policy |
+| Response scrubbing and redirect handling overstated | 3.3 rules, 3.8 |
+| Projection erased API-key versus bearer mode | 3.2 typed projection |
+| "Scheduled verifier" and "refresh exists" overstated | 3.7, 3.5 |
+| Hosted store holds one row per provider and cannot enumerate | Phase 4 migration |
+| "Only two drivers honour" brokering; Cloudflare 0.8.0 not 0.8.9; Vercel CIDRs | Part 2 corrected |
+| Ambient auth: `harnessSpawnEnv` strips internal variables, not provider keys | Phase 4 deletion of every plaintext producer, asserted by test |
+| Local boundary undefined | 3.3 (loopback broker authenticates with the same token; Docker reaches it via `host.docker.internal`, verified in Phase 2's gate) |
+
+## Appendix E. Feasibility items, each answered in writing before step 5
+
+Each item is a live experiment with a written result in Appendix B.
+
+1. Daytona substitutes inside `x-api-key` (Claude API-key mode), not only
+   `Authorization`.
+2. A Vercel `transform` overwrites a header the client sent.
+3. Cloudflare 0.12.x outbound handlers intercept HTTPS from Bun and Node
+   clients in our runtime image; `setOutboundByHost` changes a running
+   sandbox.
+4. Codex on a ChatGPT subscription through a proxy: `chatgpt_base_url` with
+   a dummy local login, or the `model_providers` form with
+   `requires_openai_auth=false`. exe.dev's LLM integration proves the shape
+   is possible; we need it to work with our app-server driver.
+5. Cursor's SDK honours `CURSOR_API_ENDPOINT` or an equivalent.
+6. Pi and the OpenCode engine: the config keys for per-provider base URL.
+7. exe.dev: team versus personal integrations; `integrations edit` swaps a
+   value without detaching.
+8. Modal sidecar allowlisting for our workspace.
+9. The signed user's subject reaches the sandbox provisioning call in every
+   deployment mode (needed by 3.6).
+
+Each item is answered yes, no, or "with this change", with the command, the provider, the date, and the result. A "no" removes that harness or driver from step 6's scope rather than weakening the design.
