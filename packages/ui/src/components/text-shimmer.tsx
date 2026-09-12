@@ -11,28 +11,49 @@ export const TextShimmer = (props: {
   const text = createMemo(() => props.text ?? "")
   const active = createMemo(() => props.active ?? true)
   const offset = createMemo(() => props.offset ?? 0)
-  const [run, setRun] = createSignal(active())
+  const [swept, setSwept] = createSignal(active())
+  const [lit, setLit] = createSignal(false)
   const swap = 220
+  let root: HTMLElement | undefined
   let timer: ReturnType<typeof setTimeout> | undefined
+  let frame: number | undefined
+
+  const cancelFrame = () => {
+    if (frame === undefined) return
+    cancelAnimationFrame(frame)
+    frame = undefined
+  }
 
   createEffect(() => {
     if (timer) {
       clearTimeout(timer)
       timer = undefined
     }
+    cancelFrame()
 
     if (active()) {
-      setRun(true)
+      setSwept(true)
+      frame = requestAnimationFrame(() => {
+        frame = undefined
+        // A node inserted this frame has no computed style yet, and rAF callbacks
+        // run before style recalc, so lighting it here would still paint straight
+        // at opacity 1. Reading a layout property computes the 0 the transition
+        // then animates from.
+        void root?.offsetWidth
+        setLit(true)
+      })
       return
     }
 
+    setLit(false)
     timer = setTimeout(() => {
       timer = undefined
-      setRun(false)
+      setSwept(false)
     }, swap)
   })
 
   onCleanup(() => {
+    cancelFrame()
     if (!timer) return
     clearTimeout(timer)
   })
@@ -40,8 +61,9 @@ export const TextShimmer = (props: {
   return (
     <Dynamic
       component={props.as ?? "span"}
+      ref={(el: HTMLElement) => (root = el)}
       data-component="text-shimmer"
-      data-active={active() ? "true" : "false"}
+      data-active={lit() ? "true" : "false"}
       class={props.class}
       aria-label={text()}
       style={{
@@ -53,13 +75,12 @@ export const TextShimmer = (props: {
         <span data-slot="text-shimmer-char-base" class="ui-text-shimmer-char-base" aria-hidden="true">
           {text()}
         </span>
-        {/* The swept copy exists only while it is sweeping. It carries a second full copy
-            of the text and a gradient clipped to those glyphs, and a transcript holds one
-            of these per tool row — 39 of 40 idle in a measured lab session — so mounting
-            it unconditionally duplicated text that never animated. `run` outlives `active`
-            by the swap, which is what keeps the fade-out. */}
-        <Show when={run()}>
-          <span data-slot="text-shimmer-char-shimmer" class="ui-text-shimmer-char-shimmer" data-run="true" aria-hidden="true">
+        {/* The swept copy carries a second full copy of the text and a gradient clipped to
+            those glyphs, and a transcript holds one of these per tool row — 39 of 40 idle
+            in a measured lab session — so it exists only while it is sweeping. It outlives
+            `active` by the swap so the fade-out has something to fade. */}
+        <Show when={swept()}>
+          <span data-slot="text-shimmer-char-shimmer" class="ui-text-shimmer-char-shimmer" aria-hidden="true">
             {text()}
           </span>
         </Show>

@@ -151,6 +151,14 @@ export const dict: Record<string, string> = {
   "ui.basicTool.action.sendMessage": "Send message",
   "ui.basicTool.action.searchTools": "Search tools",
   "ui.basicTool.action.listAgents": "List agents",
+  "ui.subagent.status.working": "working",
+  "ui.subagent.status.done": "done",
+  "ui.subagent.status.paused": "paused",
+  "ui.subagent.status.interrupted": "interrupted",
+  "ui.subagent.status.failed": "failed",
+  "ui.subagent.status.killed": "killed",
+  "ui.subagent.status.unknown": "status unavailable",
+
   "ui.toolErrorCard.failed": "Failed",
   "ui.toolErrorCard.copyError": "Copy error",
 
