@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js"
 import { CONFIGURATION_SLOTS, type Preset } from "../contracts"
+import { ListFailureNotice, type ListFailure } from "./list-failure"
 import { LoadMore, type MorePages } from "./load-more"
 import { PLACEMENT_LABELS, SLOT_LABELS } from "./view-model"
 
@@ -10,7 +11,9 @@ export type PresetListProps = {
   includeArchived: boolean
   onIncludeArchivedChange: (value: boolean) => void
   busyPresetId?: string
+  /** A refused command, which the user retries by repeating the command rather than through a control here. */
   error?: string
+  failure?: ListFailure
   more?: MorePages
   onSelect: (presetId: string) => void
   onCreate: () => void
@@ -38,8 +41,16 @@ export function PresetList(props: PresetListProps) {
         <span>Show archived presets</span>
       </label>
       <Show when={props.error}>{(message) => <p class="tsk-error" role="alert">{message()}</p>}</Show>
+      <ListFailureNotice failure={props.failure} testId="preset-list-retry" />
       <div class="tsk-surface tsk-scroll" aria-busy={props.loading ? "true" : "false"}>
-        <For each={props.presets} fallback={<p class="tsk-empty">No presets yet.</p>}>
+        <For
+          each={props.presets}
+          fallback={
+            <Show when={props.failure === undefined}>
+              <p class="tsk-empty">No presets yet.</p>
+            </Show>
+          }
+        >
           {(preset) => (
             <div class="tsk-row">
               <button

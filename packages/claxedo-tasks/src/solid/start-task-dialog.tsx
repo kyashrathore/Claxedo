@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js"
 import { CONFIGURATION_SLOTS, TASKS_BOUNDS, isConfigurationSlot, type Preset } from "../contracts"
+import { ListFailureNotice, type ListFailure } from "./list-failure"
 import { LoadMore, type MorePages } from "./load-more"
 import { PLACEMENT_LABELS, SLOT_LABELS, type StartDraft, type StartPreviewState } from "./view-model"
 
@@ -13,6 +14,8 @@ export type StartTaskDialogProps = {
   error?: string
   /** The chooser's own next page: a preset missing from an incomplete list cannot be chosen. */
   morePresets?: MorePages
+  /** A refused preset read. Start offers nothing while it stands: an unread catalog is not an empty one. */
+  presetsFailure?: ListFailure
   /** Rendered in place of the chooser while the user creates a preset inline. */
   inlinePresetEditor?: JSX.Element
   onDraftChange: (draft: StartDraft) => void
@@ -53,15 +56,18 @@ export function StartTaskDialog(props: StartTaskDialogProps) {
       </Show>
 
       <Show when={!props.inlinePresetEditor}>
+        <ListFailureNotice failure={props.presetsFailure} testId="start-task-presets-retry" />
         <Show
           when={props.presets.length > 0}
           fallback={
-            <div class="tsk-stack" data-testid="start-task-no-presets">
-              <p class="tsk-muted">A preset is required to start, and you have none yet. There is no default.</p>
-              <button type="button" class="tsk-button" data-variant="primary" data-testid="start-task-create-preset" onClick={() => props.onCreatePreset()}>
-                Create a preset
-              </button>
-            </div>
+            <Show when={props.presetsFailure === undefined}>
+              <div class="tsk-stack" data-testid="start-task-no-presets">
+                <p class="tsk-muted">A preset is required to start, and you have none yet. There is no default.</p>
+                <button type="button" class="tsk-button" data-variant="primary" data-testid="start-task-create-preset" onClick={() => props.onCreatePreset()}>
+                  Create a preset
+                </button>
+              </div>
+            </Show>
           }
         >
           <label class="tsk-field">

@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/solid-query"
 import { createEffect, createMemo, type Accessor } from "solid-js"
 import type { Page, Preset, Task, TaskSummary, TasksCapabilities, TaskSessionLinkView } from "@claxedo/tasks"
-import type { MorePages } from "@claxedo/tasks/solid"
+import type { ListFailure, MorePages } from "@claxedo/tasks/solid"
 import { useTasksAppPorts, type TasksScope } from "../app-ports"
 import { createTasksApi, refusalOf, tasksQueryKeys, type TaskListFilter } from "./tasks-api"
 
@@ -32,13 +32,16 @@ export function useTasksCapabilities(scope: Accessor<TasksScope>) {
  * size, which cannot tell a full last page from a truncated one.
  *
  * `error` and `moreError` partition the one query error: `error` is the failure
- * that left the list with nothing, `moreError` the failure of a page after the
- * first, which leaves what was already read intact.
+ * of the list read itself, `moreError` the failure of a page after the first,
+ * which leaves what was already read intact. Each has its own retry: `retry`
+ * runs the read again, `loadMore` resumes at the outstanding cursor.
  */
 export type PagedList<T> = {
   items: Accessor<readonly T[]>
   pending: Accessor<boolean>
   error: Accessor<unknown>
+  retrying: Accessor<boolean>
+  retry: () => void
   hasMore: Accessor<boolean>
   loadingMore: Accessor<boolean>
   moreError: Accessor<unknown>
@@ -66,12 +69,26 @@ function pagedList<T>(
   return {
     items,
     pending: () => query.isPending,
-    error: () => (query.isFetchNextPageError ? undefined : query.error),
+    // The query reports "no error" as `null`, which every caller here would
+    // otherwise have to read as a failure it can render.
+    error: () => (query.isFetchNextPageError ? undefined : (query.error ?? undefined)),
+    retrying: () => query.isFetching && !query.isFetchingNextPage,
+    retry: () => void query.refetch(),
     hasMore: () => query.hasNextPage,
     loadingMore: () => query.isFetchingNextPage,
-    moreError: () => (query.isFetchNextPageError ? query.error : undefined),
+    moreError: () => (query.isFetchNextPageError ? (query.error ?? undefined) : undefined),
     loadMore: () => void query.fetchNextPage(),
   }
+}
+
+/**
+ * The refusal a list read came back with, and the retry for it. A surface that
+ * renders this must not also render its empty state: the list was not read.
+ */
+export function listFailure(list: PagedList<unknown>): ListFailure | undefined {
+  const failure = list.error()
+  if (failure === undefined) return undefined
+  return { message: refusalOf(failure).message, onRetry: () => list.retry(), retrying: list.retrying() }
 }
 
 /** The next-page control for a list the user pages by hand. */
