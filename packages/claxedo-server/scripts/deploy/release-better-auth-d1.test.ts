@@ -34,6 +34,7 @@ import {
   verifyBootstrapGate,
   workerVersionHasLiveSyncRoom,
 } from "./release-better-auth-d1"
+import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR as STAGED } from "./worker-build-selection"
 
 const env = {
   CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
@@ -186,12 +187,12 @@ describe("single-artifact Better Auth D1 release", () => {
       browserBuildId,
     })
     expect(release.runtimeVariables).toContainEqual(["CLAXEDO_DEPLOYMENT_MODE", "hosted"])
-    const config = renderBetterAuthD1WranglerConfig({ staging: false, ...release })
+    const config = renderBetterAuthD1WranglerConfig({ staging: false, ...release, controlPlaneMigrationsDir: STAGED })
     expect(config).toContain('name = "claxedo-user-deployed-locked"')
     expect(config).toContain('main = "../src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"')
     expect(config).toContain('name = "LIVE_SYNC_ROOM"')
     expect(config).toContain('new_sqlite_classes = ["LiveSyncRoom"]')
-    const bridge = renderBetterAuthD1LiveSyncMigrationBridgeWranglerConfig({ staging: false, ...release })
+    const bridge = renderBetterAuthD1LiveSyncMigrationBridgeWranglerConfig({ staging: false, ...release, controlPlaneMigrationsDir: STAGED })
     expect(bridge).toContain(
       'main = "../src/deployments/hosted-workerd/better-auth-d1-live-sync-migration-bridge.cf.ts"',
     )
@@ -239,7 +240,7 @@ describe("single-artifact Better Auth D1 release", () => {
     expect(release.requiredSecrets).toContain("CLOUDFLARE_SANDBOX_API_TOKEN")
     expect(release.runtimeVariables).toContainEqual(["CLAXEDO_SANDBOX_DRIVER", "cloudflare"])
     expect(release.runtimeVariables).toContainEqual(["CLOUDFLARE_SANDBOX_WORKER_URL", "https://sandbox.claxedo.test"])
-    const config = renderBetterAuthD1WranglerConfig({ staging: false, ...release })
+    const config = renderBetterAuthD1WranglerConfig({ staging: false, ...release, controlPlaneMigrationsDir: STAGED })
     expect(config).toContain('CLAXEDO_SANDBOX_POSTURE = "full-hosted"')
     expect(config).toContain(
       'main = "../src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.full-hosted.cf.ts"',
@@ -261,7 +262,7 @@ describe("single-artifact Better Auth D1 release", () => {
     )
     const locked = betterAuthD1ReleaseInputs(fullHostedEnv, "production")
     expect(locked.sandbox).toBeUndefined()
-    expect(renderBetterAuthD1WranglerConfig({ staging: false, ...locked })).toContain('CLAXEDO_SANDBOX_POSTURE = "control-plane-only"')
+    expect(renderBetterAuthD1WranglerConfig({ staging: false, ...locked, controlPlaneMigrationsDir: STAGED })).toContain('CLAXEDO_SANDBOX_POSTURE = "control-plane-only"')
     expect(locked.runtimeVariables.some(([name]) => name === "CLAXEDO_SANDBOX_DRIVER")).toBe(false)
   })
 
@@ -400,13 +401,13 @@ describe("single-artifact Better Auth D1 release", () => {
 
   test("renders one selected resource-closed config with real account IDs", () => {
     const input = betterAuthD1ReleaseInputs(env, "staging")
-    const config = renderBetterAuthD1WranglerConfig({ staging: true, ...input })
+    const config = renderBetterAuthD1WranglerConfig({ staging: true, ...input, controlPlaneMigrationsDir: STAGED })
     expect(config).toContain('name = "claxedo-user-deployed-locked-staging"')
     expect(config).toContain(
       'binding = "AUTH_DB"\ndatabase_name = "claxedo-auth-staging"\ndatabase_id = "22222222-2222-2222-2222-222222222222"\nmigrations_dir = "../migrations/auth"',
     )
     expect(config).toContain(
-      'binding = "CONTROL_PLANE_DB"\ndatabase_name = "claxedo-control-plane-staging"\ndatabase_id = "44444444-4444-4444-4444-444444444444"\nmigrations_dir = "../migrations/control-plane"',
+      'binding = "CONTROL_PLANE_DB"\ndatabase_name = "claxedo-control-plane-staging"\ndatabase_id = "44444444-4444-4444-4444-444444444444"\nmigrations_dir = "migrations/control-plane"',
     )
     expect(config.match(/\[\[d1_databases\]\]/g)).toHaveLength(2)
     expect(config).toContain(`namespace_id = "${input.namespaceId}"`)

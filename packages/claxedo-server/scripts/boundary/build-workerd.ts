@@ -9,6 +9,7 @@ import {
 } from "../../../../script/product-boundary/normalize-build-manifest"
 import { certifiedHostedWorkerArtifact } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { renderHostedCoreWranglerConfig } from "../deploy/render-hosted-core-config"
+import { stageWorkerControlPlaneMigrations } from "../deploy/worker-build-selection"
 import {
   REPO_ROOT,
   SERVER_ROOT,
@@ -39,15 +40,17 @@ const PLACEHOLDER = {
 }
 
 const CONFIG_FILE = path.join(SERVER_ROOT, ".claxedo-workerd-boundary-wrangler.toml")
+const STAGED_MIGRATIONS = path.join(SERVER_ROOT, ".claxedo-workerd-boundary-migrations")
 const WRANGLER = path.join(SERVER_ROOT, "node_modules/.bin/wrangler")
 
-function boundaryWranglerConfig(target: WorkerdBoundaryTarget) {
+function boundaryWranglerConfig(target: WorkerdBoundaryTarget, controlPlaneMigrationsDir: string) {
   const artifact = certifiedHostedWorkerArtifact(target.artifactId, WORKERD_BOUNDARY_ENVIRONMENT)
   return renderHostedCoreWranglerConfig({
     artifactId: target.artifactId,
     deploymentId: PLACEHOLDER.deploymentId,
     authDatabase: PLACEHOLDER.authDatabase,
     controlPlaneDatabase: PLACEHOLDER.controlPlaneDatabase,
+    controlPlaneMigrationsDir,
     limiter: PLACEHOLDER.limiter,
     // The renderer rejects the pairing in either direction: only a
     // cutover-capable artifact carries the one user-deployed organization.
@@ -98,11 +101,15 @@ function buildManifest(target: WorkerdBoundaryTarget) {
 }
 
 function buildEveryCertifiedArtifact() {
+  // The gate bundles the selection the environment asks for, and the staged
+  // directory the config names is what a `d1 migrations apply` would read.
+  fs.rmSync(STAGED_MIGRATIONS, { recursive: true, force: true })
+  const staged = stageWorkerControlPlaneMigrations({ configDirectory: SERVER_ROOT, stageInto: STAGED_MIGRATIONS })
   for (const target of WORKERD_BOUNDARY_TARGETS) {
     fs.mkdirSync(target.outputDirectory, { recursive: true })
     // The renderer resolves `main` and `migrations_dir` from the package root,
     // so its config has to be written there.
-    const config = boundaryWranglerConfig(target)
+    const config = boundaryWranglerConfig(target, staged.migrationsDir)
     fs.writeFileSync(CONFIG_FILE, config)
     const result = spawnSync(
       WRANGLER,
@@ -131,7 +138,8 @@ function buildEveryCertifiedArtifact() {
       fs.writeFileSync(manifestFile, serializeBuildManifest(manifest))
     }
     console.log(
-      `[server-workerd] ${target.artifactId}: built ${manifest.modules.length} modules in ${manifest.chunks.length} chunk`,
+      `[server-workerd] ${target.artifactId}: built ${manifest.modules.length} modules in ${manifest.chunks.length} chunk` +
+        (staged.excluded.length > 0 ? `, migrations excluded: ${staged.excluded.join(", ")}` : ""),
     )
   }
   return 0
@@ -143,7 +151,9 @@ try {
   status = buildEveryCertifiedArtifact()
 } finally {
   // The rendered config lives at the package root only for the build; leaving
-  // one behind would put a placeholder-id Wrangler config beside the real ones.
+  // one behind would put a placeholder-id Wrangler config beside the real ones,
+  // and a staged migration copy beside the source directory.
   fs.rmSync(CONFIG_FILE, { force: true })
+  fs.rmSync(STAGED_MIGRATIONS, { recursive: true, force: true })
 }
 if (status !== 0) process.exit(status)

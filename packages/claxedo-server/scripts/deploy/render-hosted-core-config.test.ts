@@ -8,6 +8,7 @@ import {
   requireNonLegacyWorkerName,
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { renderHostedCoreWranglerConfig, requireUniqueRateLimitNamespaces } from "./render-hosted-core-config"
+import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR } from "./worker-build-selection"
 
 const packageRoot = path.resolve(import.meta.dirname, "../..")
 
@@ -16,6 +17,7 @@ const base = {
   deploymentId: "deployment-1",
   authDatabase: { name: "claxedo-auth-production", id: "auth-id" },
   controlPlaneDatabase: { name: "claxedo-core-production", id: "core-id" },
+  controlPlaneMigrationsDir: STAGED_CONTROL_PLANE_MIGRATIONS_DIR,
   limiter: {
     owner: "core",
     environment: "production" as const,

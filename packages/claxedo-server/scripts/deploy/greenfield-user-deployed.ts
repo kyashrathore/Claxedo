@@ -9,6 +9,7 @@ import {
   renderBetterAuthD1WranglerConfig,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
+import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR } from "./worker-build-selection"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 
@@ -130,6 +131,10 @@ export function greenfieldUserDeployedPreflight(
   const wranglerConfig = renderBetterAuthD1WranglerConfig({
     staging: environment === "staging",
     ...release,
+    // Preflight evidence only: this config is never handed to Wrangler, so it
+    // names the directory the release stages beside its own config rather than
+    // staging one here.
+    controlPlaneMigrationsDir: STAGED_CONTROL_PLANE_MIGRATIONS_DIR,
   })
   requireGreenfieldUserDeployedResourceClosure(wranglerConfig)
   const socialMethods = release.authConfiguration.methods.filter(

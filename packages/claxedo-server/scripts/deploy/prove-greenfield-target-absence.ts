@@ -11,6 +11,7 @@ import {
   renderBetterAuthD1WranglerConfig,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
+import { stageWorkerControlPlaneMigrations } from "./worker-build-selection"
 import { asRecord, numberField, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { d1Rows } from "./d1-json"
 
@@ -428,7 +429,15 @@ async function main() {
   const temporary = await mkdtemp(path.join(serverRoot, ".claxedo-greenfield-proof-"))
   try {
     const configPath = path.join(temporary, "wrangler.toml")
-    await writeFile(configPath, renderBetterAuthD1WranglerConfig({ staging: environment === "staging", ...release }))
+    const staged = stageWorkerControlPlaneMigrations({ configDirectory: temporary })
+    await writeFile(
+      configPath,
+      renderBetterAuthD1WranglerConfig({
+        staging: environment === "staging",
+        ...release,
+        controlPlaneMigrationsDir: staged.migrationsDir,
+      }),
+    )
     const outputs: Partial<Record<`${GreenfieldBinding}:${"schema" | "counts"}`, string>> = {}
     for (const command of greenfieldTargetAbsenceCommands(configPath)) {
       outputs[`${command.binding}:${command.kind}`] = await run(command)

@@ -6,7 +6,7 @@ Environment for the live rows: unsigned local stack started from the worktree. S
 
 | Journey | Automated | Visual / live | Result | Notes |
 |---|---|---|---|---|
-| T01 | app architecture guard; desktop renderer-config guard; self-hosted selection tests; local-server feature-off resume test; `verify:closure` emitted manifests both ways | none | PASS (four artifacts measured; packaged desktop and deployed hosted NOT RUN) | See "Build-time feature selection" below. |
+| T01 | app architecture guard; desktop renderer-config guard; self-hosted selection tests; local-server feature-off resume test; hosted Worker selection cases in `core-resource-closure.test.ts`; `verify:closure` emitted manifests both ways | none | PASS (six artifacts measured, hosted Worker included; packaged desktop and a DEPLOYED hosted Worker NOT RUN) | See "Build-time feature selection" below. |
 | T02 | package model/service/http tests; SQLite + D1 conformance | live create, reload, server restart | PASS (local) | Task `tsk_234d73b3…` survived app reload and a server restart at revision 3. |
 | T03 | conformance `stale revision` cases; app store 409 test | none | PASS (automated only) | Two-client live case not run. |
 | T04 | service reparent/child rules | live add subtask via Add button | PASS (local) | Enter in the subtask field did not submit in the Claude Browser pane; a vanilla control form failed identically under the pane's key injection while Playwright submitted both, so this is a harness artifact, not a defect. |
@@ -20,7 +20,7 @@ Environment for the live rows: unsigned local stack started from the worktree. S
 | T12 | persistence tests | live reload + restart, Open later | PASS (local) | Link row `primary / attempt 1 / Careful reviewer / live` read back from `claxedo_task_session_link`. Start-again after archive not run live. |
 | T13 | vitest | screenshots at 1024×768 only | PARTIAL | No dark/light or narrow pass. |
 | T14 | http negative tests; hosted composition 403/404 test | none | PASS (automated only) | |
-| T15 | Miniflare D1 conformance + migration ordering test | none | PASS (automated only) | No deployed Worker. |
+| T15 | Miniflare D1 conformance + migration ordering test; staged control-plane migration selection in `core-resource-closure.test.ts` | none | PASS (automated only) | The hosted Worker's `migrations_dir` now names a staged directory: measured, the on staging is the full source list and the off staging is that list without `0024_claxedo_tasks.sql`, with the source directory unchanged (its full list stays pinned in `control-plane-migrations.test.ts`). No migration was applied to a D1 database and no Worker was deployed, so the schema the off control plane ends up with is unverified. |
 | T16 | none | none | NOT RUN | Packaged desktop and deployed hosted not exercised. |
 | T17 | preset model/service/http tests; preset editor vitest | live create | PASS (local) | Preset `tpr_f8e66290…` persisted with harness/model/instructions; archive/restore not run live. |
 | T18 | preview tests; editor revalidation vitest | live preview | PASS (local) | Preview resolved the project's workspace after `e314940f35`; before it the preview was blocked "No reachable workspace" for a task with no explicit workspace. |
@@ -41,13 +41,16 @@ Measured, with the enabled build as the positive control in each case:
 | `@claxedo/server` self-hosted bundle | `bun run build:self-hosted-boundary` | 4445 modules, 19 `@claxedo/tasks` + 7 `tasks-host` modules, `claxedo_task_session_link` DDL present, 41 staged migrations | 4415 modules, 0 Tasks modules, DDL absent, 40 staged migrations |
 | desktop `claxedo-server` bundle | `bundleClaxedoServer(scripts/claxedo-server-boot.ts, …)` | 52 chunks, `claxedo-tasks` / `TASKS_ROUTE_PATH` / `claxedo_task_preset` / `claxedo_task_session_link` each in one chunk, 41 staged migrations | 49 chunks, none of those strings in any emitted file, 40 staged migrations |
 | `@claxedo/local-server` dist | `bun run scripts/build.ts` in `packages/claxedo-local-server` | 41 staged migrations incl. `20260912100000_claxedo_tasks` | 40, that migration excluded |
+| hosted Worker `…candidate-agent-plugins` | `bun run build:workerd-boundary` (real `wrangler deploy --dry-run`) | 1165 modules contributing bytes, 25 of them Tasks, `/api/claxedo/tasks` present, 41 staged control-plane migrations | 1085 modules, 0 Tasks modules, route path absent, 40 staged migrations |
+| hosted Worker `…agent-plugins-full-hosted` | same command, same run | 1635 modules contributing bytes, 25 of them Tasks | 1563 modules, 0 Tasks modules |
 
 The `app-local` and `server-self-hosted` policies in `script/product-boundary/policies/` carry the emitted rules and were cross-checked in both directions: the disabled manifest read against the enabled policy reports the missing required Tasks modules, and the enabled manifest read against the disabled policy reports the forbidden ones.
 
 What is NOT proven:
 
 - The desktop RENDERER has no artifact-level Tasks rule. `desktopRendererBoundaryManifestPlugin` records the base entry's STATIC closure, so a measured enabled build carries no Tasks module and no Tasks chunk either; a forbidden rule there would pass on both artifacts. The renderer source is `@claxedo/app`'s, so the cut is covered by `app-local`'s emitted manifest and the app guard. A desktop-specific emitted proof needs that plugin to record the renderer's dynamic closure.
-- The hosted Worker variant selection is UNCHANGED: no certified artifact was added or altered, and `certified-worker-artifacts.ts` is untouched. Hosted Tasks remains the hosted composition's own concern.
+- The hosted Worker is now selected the same way, with no new certified artifact id: the entry gates Tasks on `process.env.CLAXEDO_BUILD_TASKS`, both Worker config renderers emit that comparison into `[define]`, and `migrations_dir` names a directory staged by `script/migration-journal.ts`. Proven by the real Wrangler dry run above and by the emitted-artifact cases in `core-resource-closure.test.ts` (all four mutants — inverted entry gate, static import instead of the folded dynamic one, inverted `[define]`, inverted staging predicate — fail it). Each built entry was also booted in workerd with no bindings and answered its documented fail-closed code on both selections.
+- What that does NOT prove: no Worker was deployed, no `wrangler d1 migrations apply` was run against a D1 database, and no request reached `/api/claxedo/tasks` on a hosted deployment in either selection. `smoke:workerd-boundary` cannot currently confirm the whole set: the PLAIN candidate entry fails to boot in workerd with `TypeError: Class2 is not a constructor`, a pre-existing defect — that entry's emitted bundle is byte-identical (sha256 `76bc1e4c…`) with and without this change's config rendering.
 - No packaged desktop and no deployed hosted Worker were built or exercised (T16 stays NOT RUN).
 
 ## Defects found only by the live run
