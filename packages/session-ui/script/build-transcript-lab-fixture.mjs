@@ -1,8 +1,7 @@
 import { readFileSync, writeFileSync, statSync } from "node:fs"
 import { basename, dirname, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { canonicalToolName } from "@claxedo/agent-runtime-contract"
-import { reconstructQuestionAnswers } from "../src/components/question-result.ts"
+import { canonicalToolName, reconstructQuestionAnswers } from "@claxedo/agent-runtime-contract"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 /**
@@ -1153,6 +1152,7 @@ for (const source of sources) {
 {
   const { session, counters } = buildCatalog()
   sessions.push(session)
+  /** @type {Record<string, number>} */
   const tools = {}
   for (const list of Object.values(session.parts))
     for (const part of list) if (part.type === "tool") tools[part.tool] = (tools[part.tool] ?? 0) + 1
