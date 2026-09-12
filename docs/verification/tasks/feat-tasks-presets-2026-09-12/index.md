@@ -162,3 +162,20 @@ Commits by subject.
 Also fixed on the way: the `sideEffects` bundling defect above (`fix(tasks): drop the sideEffects hint that made Bun's split bundle discard the kit`), and the SDK-boundary guard scanning build outputs.
 
 Escalations added in this wave: OpenCode/Pi effort vocabulary needs an owner in the provider catalog; `refuseUnsupportedEffort` in `@claxedo/mcp` restates `harnessEffortVerdict` because that package may not import the SDK runtime (move `harness-effort.ts` to `@claxedo/agent-runtime-contract`); `createCloudWorkspace` requires org admin, so a plain member's cloud Start is refused (policy question); `prompt_async` still answers 204 for non-refusal admission errors on the runtime path.
+
+## Gates at the wave-4 tip (2026-09-13)
+
+| Gate | Result |
+|---|---|
+| root `bun run test:architecture-ratchets` | product boundary holds (5 products, 8 policies); helpers ratchet passed |
+| root `bun run lint` | 3 errors, all in `packages/claxedo-app/perf-harness/**`, byte-identical on dev |
+| `packages/claxedo-tasks` `bun run test` / `typecheck` | 184 pass / clean |
+| `packages/claxedo-mcp` `bun run test` / `typecheck` | 143 pass, 3 fail (`session_create` permission-ceiling and cloud-placement cases, present at the pre-wave tip `18910aa58b`; not touched by this branch) / clean |
+| `packages/claxedo-app` tasks vitest / architecture guards / `tsgo -b` | 50 pass / 259 pass / clean |
+| `packages/claxedo-server-core` tasks-host, agent-plugins, authority, auth / `typecheck` | 218 pass / clean |
+| `packages/claxedo-server` tasks, agent-plugins, workspace, sandbox, dispatch, hosted-workerd, selection, authority / `typecheck` | 966 pass / clean |
+| `packages/claxedo-local-server` tasks, agent-plugins, execution allowlist, architecture / `typecheck` | 123 pass / clean |
+| `packages/workspace-runtime` `bun run test` / `typecheck` | 1050 pass, 1 fail (`generateNotifyScript > reports failed delivery…`, pre-existing on dev) / clean |
+| `packages/agent-sdk-runtime` `typecheck` | clean |
+| `packages/claxedo-desktop` `typecheck` | clean |
+| `packages/claxedo-app` `verify:closure` (real build, marker control, emitted identity) | passes; `tasks-surface-*.css` emitted |
