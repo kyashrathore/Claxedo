@@ -647,7 +647,10 @@ function ensureHostInput(input: {
     workspaceRuntimePort: input.managerInput?.workspaceRuntimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT,
     env: input.managerInput?.env ?? {},
     // Brokered secrets ride their own channel — NEVER merged into labels or env.
-    ...(input.managerInput?.secrets?.length ? { secrets: input.managerInput.secrets } : {}),
+    // Presence of the key, not its length, is the signal: `[]` is the caller
+    // withdrawing every brokered secret, and dropping it would reach the driver
+    // as "preserve what you have".
+    ...(input.managerInput?.secrets ? { secrets: input.managerInput.secrets } : {}),
     source: input.managerInput?.source,
     exposure:
       input.managerInput?.exposure ??
