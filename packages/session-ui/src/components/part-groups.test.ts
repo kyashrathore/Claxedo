@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
-import { groupParts, isSubagentToolPart } from "./part-groups"
+import { groupParts, isHiddenTool, isSubagentToolPart } from "./part-groups"
 
 function tool_(id: string, name: string, input: Record<string, unknown> = {}): AgentContentPart {
   return {
@@ -204,5 +204,17 @@ describe("harness spellings", () => {
 
   test("consecutive spawns fold however the harness spells them", () => {
     expect(types([named("p1", "Agent"), named("p2", "spawn_agent")])).toEqual(["agents"])
+  })
+})
+
+describe("isHiddenTool", () => {
+  test("matches however the harness spells the tool", () => {
+    expect(isHiddenTool(tool_("p1", "todowrite"))).toBe(true)
+    expect(isHiddenTool(tool_("p2", "TodoWrite"))).toBe(true)
+  })
+
+  test("a tool that renders a row and a part that is not a tool are not hidden", () => {
+    expect(isHiddenTool(tool_("p1", "bash"))).toBe(false)
+    expect(isHiddenTool(text("p2", "todowrite"))).toBe(false)
   })
 })

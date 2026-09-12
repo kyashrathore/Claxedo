@@ -14,14 +14,13 @@ import { readableText } from "@opencode-ai/ui/utils/text"
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
-import { AssistantParts, Message, MessageDivider, PART_MAPPING, type UserActions } from "./message-part"
+import { AssistantParts, Message, MessageDivider, renderable, type UserActions } from "./message-part"
 import { Card } from "@opencode-ai/ui/card"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { Icon } from "@opencode-ai/ui/icon"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
-import type { TurnShape } from "./turn-fold"
 import { SessionRetry } from "./session-retry"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
@@ -95,25 +94,6 @@ function summaryDiff(value: AgentSnapshotFileDiff): value is SummaryDiff {
   return typeof value.file === "string"
 }
 
-const hidden = new Set(["todowrite"])
-
-function partState(part: AgentContentPart, showReasoningSummaries: boolean): "visible" | undefined {
-  if (part.type === "tool") {
-    if (hidden.has(part.tool)) return undefined
-    if (part.tool === "question" && (part.state.status === "pending" || part.state.status === "running")) {
-      return undefined
-    }
-    return "visible"
-  }
-  if (part.type === "text") return part.text?.trim() ? "visible" : undefined
-  if (part.type === "reasoning") {
-    if (showReasoningSummaries && part.text?.trim()) return "visible"
-    return undefined
-  }
-  if (PART_MAPPING[part.type]) return "visible"
-  return undefined
-}
-
 function clean(value: string) {
   return value
     .replace(/`([^`]+)`/g, "$1")
@@ -171,8 +151,6 @@ export function SessionTurn(
      * live group visible. Defaults to the app's `timelineFoldWhileRunning` default.
      */
     foldRunningTurn?: boolean
-    /** Defaults to `interleaved`, the only shape the harnesses currently support. */
-    turnShape?: TurnShape
     active?: boolean
     status?: AgentRuntimeStatus
     onUserInteracted?: () => void
@@ -369,9 +347,7 @@ export function SessionTurn(
     const show = showReasoningSummaries()
     for (const message of assistantMessages()) {
       for (const part of list(data.store.part?.[message.id], emptyParts)) {
-        if (partState(part, show) === "visible") {
-          visible++
-        }
+        if (renderable(part, show)) visible++
         if (part.type === "reasoning" && part.text) {
           const h = heading(part.text)
           if (h) reason = h
@@ -431,7 +407,6 @@ export function SessionTurn(
                     editToolDefaultOpen={props.editToolDefaultOpen}
                     foldSettledTurn={props.foldSettledTurn}
                     foldRunningTurn={props.foldRunningTurn}
-                    turnShape={props.turnShape}
                     turnInterrupted={interrupted()}
                     turnErrored={!!error()}
                   />

@@ -15,9 +15,9 @@ import {
   countFoldableGroups,
   foldedGroupKeys,
   groupParts,
+  isHiddenTool,
   isSubagentToolPart,
   turnFoldDecision,
-  HIDDEN_TOOLS,
   type PartRef,
 } from "@/ui/session-kit"
 import {
@@ -120,24 +120,19 @@ export namespace Timeline {
     const visibleAssistantPartRefs = visibleAssistantMessageIDs
       ? assistantPartRefs.filter((ref) => visibleAssistantMessageIDs.has(ref.messageID))
       : assistantPartRefs
-    const assistantItems =
+    // A run of tools cannot span the interruption row: grouping the refs whole merges the
+    // runs either side into one group, which the fold counts as one where the turn draws two.
+    const groupSegments = (refs: typeof assistantPartRefs) =>
       interrupted && !compaction
         ? [
-            ...groupParts(visibleAssistantPartRefs.filter((ref) => ref.messageIndex <= interruptedMessageIndex)).map(
-              (group) => ({
-                type: "part" as const,
-                group,
-              }),
-            ),
-            { type: "interrupted" as const },
-            ...groupParts(visibleAssistantPartRefs.filter((ref) => ref.messageIndex > interruptedMessageIndex)).map(
-              (group) => ({
-                type: "part" as const,
-                group,
-              }),
-            ),
+            groupParts(refs.filter((ref) => ref.messageIndex <= interruptedMessageIndex)),
+            groupParts(refs.filter((ref) => ref.messageIndex > interruptedMessageIndex)),
           ]
-        : groupParts(visibleAssistantPartRefs).map((group) => ({ type: "part" as const, group }))
+        : [groupParts(refs)]
+    const assistantItems = groupSegments(visibleAssistantPartRefs).flatMap((segment, index) => [
+      ...(index > 0 ? [{ type: "interrupted" as const }] : []),
+      ...segment.map((group) => ({ type: "part" as const, group })),
+    ])
     if (previousUserMessage) rows.push(TimelineRow.TurnGap({ userMessageID: userMessage.id }))
 
     if (comments.length > 0)
@@ -174,7 +169,10 @@ export namespace Timeline {
 
     const partByID = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part] as const))
     const partOfRef = (ref: PartRef) => partByID.get(ref.partID)
-    const foldableCount = countFoldableGroups(groupParts(assistantPartRefs), partOfRef)
+    const foldableCount = groupSegments(assistantPartRefs).reduce(
+      (count, segment) => count + countFoldableGroups(segment, partOfRef),
+      0,
+    )
     const completedTimes = assistantMessages
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")
@@ -491,7 +489,7 @@ function lastKnownPartActivity(parts: Part[]): number | undefined {
 
 function renderablePart(part: Part, showReasoning = true) {
   if (part.type === "tool") {
-    if (HIDDEN_TOOLS.has(part.tool)) return false
+    if (isHiddenTool(part)) return false
     if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
     return true
   }

@@ -120,7 +120,7 @@ type LabState = {
   machinery: "shipped" | "thinking" | "expanded" | "prose"
   rowGap: number
   proseLeadIn: number
-  turnFold: "off" | "tools" | "narration"
+  turnFold: "off" | "tools"
   liveTurn: "settled" | "running"
   toolOutput: "shipped" | "boxed" | "scrollbar"
   errorCard: "shipped" | "hairline" | "quiet"
@@ -531,15 +531,13 @@ const LEVERS: Lever[] = [
     key: "turnFold",
     group: "Density",
     label: "Turn fold",
-    finding:
-      "Only tool rows count as machinery, so narration text and reasoning survive the fold and strand above the answer.",
+    finding: "Only tool rows count as machinery, so narration text and reasoning stay visible under the fold.",
     origin: "turn-fold.ts isFoldableGroup",
     control: {
       kind: "segment",
       options: [
         { value: "off", label: "no fold" },
         { value: "tools", label: "tools only" },
-        { value: "narration", label: "+ narration" },
       ],
     },
     css: () => "",
@@ -1454,7 +1452,6 @@ function TranscriptLab() {
                       showReasoningSummaries={effective().machinery === "thinking"}
                       foldSettledTurn={effective().turnFold !== "off"}
                       foldRunningTurn={effective().turnFold !== "off"}
-                      turnShape={effective().turnFold === "narration" ? "final-message" : "interleaved"}
                       shellToolDefaultOpen={effective().machinery === "expanded"}
                       editToolDefaultOpen={effective().machinery === "expanded"}
                       classes={{

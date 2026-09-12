@@ -1,5 +1,6 @@
 import { asRecord } from "@claxedo/helpers/guards"
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
+import { isSubagentSpawnToolName } from "@claxedo/agent-runtime-contract"
 import type { AgentPresentationMessage as Message, AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 import type { ConversationEventFrame } from "./conversation-event"
 export type { AgentPresentationMessage as Message } from "@claxedo/agent-runtime-contract"
@@ -405,7 +406,7 @@ function assistantTurnIndex(
 }
 
 function assistantTaskStep(message: UIMessage | undefined) {
-  return message?.parts.some((part) => part.type === "tool-call" && part.name === "task") === true
+  return message?.parts.some((part) => part.type === "tool-call" && isSubagentSpawnToolName(part.name)) === true
 }
 
 function removeMessage(chat: ConversationChatHandle, messageID: string | undefined) {

@@ -5,8 +5,11 @@ export type PartRef = {
   partID: string
 }
 
-/** Category discriminator for a work group: drives icon + summary priority. */
-export type WorkGroupTool = "bash" | "edit" | "write" | "apply_patch" | "webfetch" | "websearch"
+/**
+ * How a run of work rows is categorised for group identity. Nothing renders from it:
+ * `work-group-summary.ts` derives both the icon and the summary from the member parts.
+ */
+export type WorkGroupTool = "bash" | "edit" | "webfetch"
 
 export type PartGroup =
   | {
@@ -53,11 +56,16 @@ export const WEB_TOOL_NAMES = new Set(["webfetch", "websearch"])
 
 export const HIDDEN_TOOLS = new Set(["todowrite"])
 
+/** A tool whose call renders no row, in whichever spelling the harness sent. */
+export function isHiddenTool(part: { type: string; tool?: string }): boolean {
+  return part.type === "tool" && !!part.tool && HIDDEN_TOOLS.has(canonicalToolName(part.tool))
+}
+
 /**
- * A context group renders its members as compact trigger-only rows (ContextToolGroup
- * builds them from `contextToolTrigger`, bypassing the tool's own renderer), so anything
- * a call produced beyond its title is dropped. A read that returned an image therefore
- * stays standalone — the thumbnail is the whole point of the row.
+ * A context group is collapsed until a reader opens it, and it summarises its members as
+ * a count of files read. An image is the one thing a read returns that a count cannot
+ * stand in for, so a read that returned one stays a standalone row where its thumbnail
+ * is on screen.
  */
 function producedImage(part: AgentToolPart) {
   const state = part.state
@@ -91,8 +99,7 @@ export function isContextGroupTool(part: AgentContentPart): part is AgentToolPar
  */
 export function isWorkGroupTool(part: AgentContentPart): part is AgentToolPart {
   if (part.type !== "tool") return false
-  const tool = canonicalToolName(part.tool)
-  if (CONTEXT_GROUP_TOOLS.has(tool) || HIDDEN_TOOLS.has(tool) || isStandaloneTool(part)) return false
+  if (CONTEXT_GROUP_TOOLS.has(canonicalToolName(part.tool)) || isHiddenTool(part) || isStandaloneTool(part)) return false
   return !isSubagentToolPart(part)
 }
 
@@ -184,8 +191,7 @@ export function groupParts(input: GroupablePart[]) {
       taskStart = -1
       return
     }
-    // Every spawn is a chip, a lone one included: two shapes for one thing made
-    // the same delegated work read as two different kinds of event down a turn.
+    // A lone spawn makes an agents group too: the chip row is the only shape that draws one.
     result.push({ key: `agents:${first.part.id}`, type: "agents", refs: slice.map(partRef) })
     taskStart = -1
   }

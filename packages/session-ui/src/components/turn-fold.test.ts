@@ -5,7 +5,6 @@ import {
   assistantMessageSettled,
   countFoldableGroups,
   foldedGroupKeys,
-  finalTextPartID,
   isFoldableGroup,
   turnFoldDecision,
 } from "./turn-fold"
@@ -203,7 +202,7 @@ describe("assistantMessageSettled", () => {
   })
 })
 
-describe("final-message shape", () => {
+describe("narration", () => {
   function reasoning(id: string, value: string): AgentContentPart {
     return { id, sessionID: "ses_test", messageID: "a1", type: "reasoning", text: value, time: { start: 1 } } as AgentContentPart
   }
@@ -220,12 +219,7 @@ describe("final-message shape", () => {
       text("t2", "Here is the answer."),
     ])
 
-  test("finalTextPartID picks the last text group, not the longest or the first", () => {
-    const { groups, part } = narratedTurn()
-    expect(finalTextPartID(groups, part)).toBe("t2")
-  })
-
-  test("interleaved keeps every text and reasoning row outside the fold", () => {
+  test("every text and reasoning row stays outside the fold", () => {
     const { groups, part } = narratedTurn()
     const outside = groups.filter((group) => !isFoldableGroup(group, part))
     expect(outside.map((group) => (group.type === "part" ? group.ref.partID : group.type))).toEqual([
@@ -236,28 +230,10 @@ describe("final-message shape", () => {
     ])
   })
 
-  test("final-message folds narration and reasoning, leaving only the answer", () => {
-    const { groups, part } = narratedTurn()
-    const scope = { shape: "final-message" as const, finalTextPartID: finalTextPartID(groups, part) }
-    const outside = groups.filter((group) => !isFoldableGroup(group, part, scope))
-    expect(outside.map((group) => (group.type === "part" ? group.ref.partID : group.type))).toEqual(["t2"])
-    expect(countFoldableGroups(groups, part, scope)).toBe(groups.length - 1)
-  })
-
-  test("a turn whose last text is missing folds every text row", () => {
-    const { groups, part } = turn([text("t0", "narration"), tool("p1", "bash"), tool("p2", "bash")])
-    const scope = { shape: "final-message" as const, finalTextPartID: undefined }
-    expect(groups.filter((group) => !isFoldableGroup(group, part, scope))).toEqual([])
-  })
-
-  test("foldedGroupKeys hides the narration rows the interleaved shape leaves visible", () => {
+  test("folding a narrated turn hides its tool runs and nothing else", () => {
     const { groups, part } = narratedTurn()
     const decision = turnFoldDecision({ settled: true, foldableCount: countFoldableGroups(groups, part) })
-    const interleaved = foldedGroupKeys(decision, groups, part)
-    const scope = { shape: "final-message" as const, finalTextPartID: finalTextPartID(groups, part) }
-    const finalMessage = foldedGroupKeys(decision, groups, part, scope)
-    expect(finalMessage.size).toBeGreaterThan(interleaved.size)
-    expect([...finalMessage].some((key) => key.includes("t0"))).toBe(true)
-    expect([...finalMessage].some((key) => key.includes("t2"))).toBe(false)
+    const folded = foldedGroupKeys(decision, groups, part)
+    expect([...folded]).toEqual(["work:p1", "work:p3"])
   })
 })

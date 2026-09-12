@@ -25,61 +25,28 @@ export function assistantMessageSettled(message: AgentAssistantMessage) {
 }
 
 /**
- * What the fold is allowed to treat as machinery.
- *
- * `interleaved` is the only shape any harness currently earns. Every adapter feeds one
- * projection (agent-event-runtime client-presentation), which splits a new text or
- * reasoning part after every tool call, and no harness marks which text part is the
- * answer: `AgentAssistantMessage.finish` is never set natively, `AgentStepFinishPart` is
- * never emitted, and `{type:"finish"}` is turn-scoped. So narration and answer are
- * indistinguishable in the data.
- *
- * `final-message` applies the stand-in rule "the turn's last text part is the answer".
- * It is a preview, not a fact, and it is known to misfire: Codex emits plan markdown as
- * a text part, Claude emits local_command_output as a text part, Claude's non-streaming
- * path emits tools before that message's text while Cursor emits text before its tools,
- * and ACP splits one turn across many assistant messages. Making this correct needs an
- * adapter-set flag on the last text delta before `finish`, not a better guess here.
- */
-export type TurnShape = "final-message" | "interleaved"
-
-export type FoldScope = {
-  shape?: TurnShape
-  /** Ignored unless `shape` is `final-message`. */
-  finalTextPartID?: string
-}
-
-/** The stand-in for a marker the harnesses do not provide. See `TurnShape`. */
-export function finalTextPartID(groups: readonly PartGroup[], part: FoldablePartLookup) {
-  let id: string | undefined
-  for (const group of groups) {
-    if (group.type !== "part") continue
-    if (part(group.ref)?.type === "text") id = group.ref.partID
-  }
-  return id
-}
-
-/**
  * Machinery — everything a turn did that is not the message it is addressing to
  * the user. A subagent spawn is not machinery: its card reports work the user
  * delegated and is usually the row they most want from the turn, so it stays
  * visible whether it landed in an agent group or alone. Neither is an answered
  * question: it holds the words the reader typed, the one part of the turn they
  * authored, so it stays up beside the prose.
+ *
+ * Text and reasoning never fold. No harness marks which text part is the answer —
+ * `AgentAssistantMessage.finish` is never set natively and `AgentStepFinishPart` is
+ * never emitted — so narration and answer are indistinguishable here, and guessing
+ * from position hides answers that arrived before the turn's last tool call.
  */
-export function isFoldableGroup(group: PartGroup, part: FoldablePartLookup, scope: FoldScope = {}): boolean {
+export function isFoldableGroup(group: PartGroup, part: FoldablePartLookup): boolean {
   if (group.type === "agents") return false
   if (group.type !== "part") return true
   const resolved = part(group.ref)
   if (resolved?.type === "tool") return !isSubagentToolPart(resolved) && !isStandaloneTool(resolved)
-  if (scope.shape !== "final-message") return false
-  if (resolved?.type === "reasoning") return true
-  if (resolved?.type === "text") return group.ref.partID !== scope.finalTextPartID
   return false
 }
 
-export function countFoldableGroups(groups: readonly PartGroup[], part: FoldablePartLookup, scope: FoldScope = {}) {
-  return groups.reduce((count, group) => (isFoldableGroup(group, part, scope) ? count + 1 : count), 0)
+export function countFoldableGroups(groups: readonly PartGroup[], part: FoldablePartLookup) {
+  return groups.reduce((count, group) => (isFoldableGroup(group, part) ? count + 1 : count), 0)
 }
 
 export type TurnFoldStatus = {
@@ -146,10 +113,9 @@ export function foldedGroupKeys(
   decision: TurnFoldDecision,
   groups: readonly PartGroup[],
   part: FoldablePartLookup,
-  scope: FoldScope = {},
 ): ReadonlySet<string> {
   if (!decision.folded) return NO_KEYS
-  const foldable = groups.filter((group) => isFoldableGroup(group, part, scope))
+  const foldable = groups.filter((group) => isFoldableGroup(group, part))
   const live = decision.canFoldRunning && !decision.explicit ? foldable.at(-1)?.key : undefined
   return new Set(foldable.filter((group) => group.key !== live).map((group) => group.key))
 }

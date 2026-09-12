@@ -36,16 +36,8 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type UiI18n, useI18n } from "@opencode-ai/ui/context/i18n"
 import { BasicTool, GenericTool } from "./basic-tool"
-import { groupParts, HIDDEN_TOOLS, isPendingQuestion, sameGroups, type PartGroup, type PartRef } from "./part-groups"
-import {
-  assistantMessageSettled,
-  countFoldableGroups,
-  foldedGroupKeys,
-  turnFoldDecision,
-  finalTextPartID,
-  type FoldScope,
-  type TurnShape,
-} from "./turn-fold"
+import { groupParts, isHiddenTool, isPendingQuestion, sameGroups, type PartGroup, type PartRef } from "./part-groups"
+import { assistantMessageSettled, countFoldableGroups, foldedGroupKeys, turnFoldDecision } from "./turn-fold"
 import { TurnFoldRow } from "./turn-fold-row"
 import { workGroupActiveLabel, workGroupIcon, workGroupSummary, workGroupTitle } from "./work-group-summary"
 import { SubagentChipRow } from "./subagent-chip"
@@ -591,7 +583,7 @@ function index<T extends { id: string }>(items: readonly T[]) {
 
 export function renderable(part: AgentContentPart, showReasoningSummaries = true) {
   if (part.type === "tool") {
-    if (HIDDEN_TOOLS.has(part.tool)) return false
+    if (isHiddenTool(part)) return false
     return !isPendingQuestion(part)
   }
   if (part.type === "text") return !!part.text?.trim()
@@ -756,8 +748,6 @@ export function AssistantParts(
     foldSettledTurn?: boolean
     /** Folds a running turn's completed phases behind "Working for Xs", keeping the live group. */
     foldRunningTurn?: boolean
-    /** Defaults to `interleaved`, the only shape the harnesses currently support. */
-    turnShape?: TurnShape
     turnInterrupted?: boolean
     turnErrored?: boolean
   },
@@ -793,16 +783,9 @@ export function AssistantParts(
   const partOf = (ref: PartRef) => part().get(ref.messageID)?.get(ref.partID)
   const [foldChoice, setFoldChoice] = createSignal<boolean | undefined>(undefined)
   const settled = createMemo(() => props.messages.some(assistantMessageSettled))
-  /* Mid-turn the latest text is not yet known to be the last, so narration only folds
-     once the turn has settled. */
-  const foldScope = createMemo<FoldScope>(() =>
-    props.turnShape === "final-message" && settled()
-      ? { shape: "final-message", finalTextPartID: finalTextPartID(grouped(), partOf) }
-      : {},
-  )
   const fold = createMemo(() =>
     turnFoldDecision({
-      foldableCount: countFoldableGroups(grouped(), partOf, foldScope()),
+      foldableCount: countFoldableGroups(grouped(), partOf),
       settled: settled(),
       interrupted: props.turnInterrupted,
       errored: props.turnErrored,
@@ -812,7 +795,7 @@ export function AssistantParts(
       userChoice: foldChoice(),
     }),
   )
-  const folded = createMemo(() => foldedGroupKeys(fold(), grouped(), partOf, foldScope()))
+  const folded = createMemo(() => foldedGroupKeys(fold(), grouped(), partOf))
   const visibleGroups = createMemo(() => {
     const keys = folded()
     return keys.size === 0 ? grouped() : grouped().filter((group) => !keys.has(group.key))
@@ -1438,8 +1421,6 @@ export interface ToolProps {
   toolCallId?: string
   sessionID?: string
   output?: string
-  /** Files the call produced. A `read` of an image lands here; text output stays in `output`. */
-  attachments?: AgentFilePart[]
   status?: string
   startedAt?: number
   hideDetails?: boolean
@@ -1638,7 +1619,6 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               sessionID={part().sessionID}
               metadata={partMetadata()}
               output={toolOutput()}
-              attachments={toolAttachments()}
               status={part().state.status}
               startedAt={toolStartedAt()}
               hideDetails={props.hideDetails}
@@ -1649,6 +1629,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               virtualizeDiff={props.virtualizeDiff}
               onContentRendered={props.onContentRendered}
             />
+            <ToolAttachments attachments={toolAttachments()} />
           </Match>
         </Switch>
       </div>
@@ -1841,6 +1822,63 @@ function useImagePreview() {
   return (url: string, alt?: string) => void dialog.show(() => <ImagePreview src={url} alt={alt} />)
 }
 
+function ToolImageStrip(props: { images: AgentFilePart[] }) {
+  const data = useData()
+  const openImagePreview = useImagePreview()
+  return (
+    <For each={props.images}>
+      {(image) => {
+        const name = () => image.filename ?? getFilename(image.url) ?? image.url
+        /* A file left on disk is named rather than carried: only the host can turn its
+           path into a url this page may fetch, and dropped bytes have no url at all. */
+        const src = createMemo(() => {
+          const location = image.location
+          if (!location) return image.url
+          if (location.kind === "unretained") return undefined
+          return data.fileUrl?.(location.path)
+        })
+        return (
+          <div data-component="tool-image" class="ui-tool-image">
+            <Show when={src()} fallback={<ToolImageUnavailable name={name()} location={image.location} />}>
+              {(url) => {
+                const [failed, setFailed] = createSignal(false)
+                return (
+                  <Show when={!failed()} fallback={<ToolImageUnavailable name={name()} location={image.location} />}>
+                    <img
+                      data-slot="tool-image-thumbnail"
+                      src={url()}
+                      alt={name()}
+                      onError={() => setFailed(true)}
+                      onClick={() => openImagePreview(url(), name())}
+                    />
+                  </Show>
+                )
+              }}
+            </Show>
+          </div>
+        )
+      }}
+    </For>
+  )
+}
+
+/**
+ * The images a tool call produced. Every adapter harvests an image block from any tool
+ * result — a screenshot from an MCP server as readily as a `read` of a png — so this
+ * hangs off the tool row itself rather than off the one renderer that can expect them.
+ *
+ * The strip is a separate component so that a row with no images asks for neither the
+ * dialog nor the data context, and `useDialog` throws where there is no provider.
+ */
+export function ToolAttachments(props: { attachments?: AgentFilePart[] }) {
+  const images = createMemo(() => (props.attachments ?? []).filter((file) => file.mime.startsWith("image/")))
+  return (
+    <Show when={images().length > 0}>
+      <ToolImageStrip images={images()} />
+    </Show>
+  )
+}
+
 function ToolImageUnavailable(props: { name: string; location?: AgentFileLocation }) {
   return (
     <div data-slot="tool-image-unavailable" class="ui-tool-image-unavailable">
@@ -1902,7 +1940,6 @@ ToolRegistry.register({
   render(props) {
     const data = useData()
     const i18n = useI18n()
-    const openImagePreview = useImagePreview()
     // The registered name, not props.tool: an alias (`read_file`) renders here too.
     const info = createMemo(() => getToolInfo("read", props.input))
     const loaded = createMemo(() => {
@@ -1911,7 +1948,6 @@ ToolRegistry.register({
       if (!value || !Array.isArray(value)) return []
       return value.filter((p): p is string => typeof p === "string")
     })
-    const images = createMemo(() => (props.attachments ?? []).filter((file) => file.mime.startsWith("image/")))
     return (
       <>
         <BasicTool
@@ -1919,45 +1955,6 @@ ToolRegistry.register({
           icon={info().icon}
           trigger={{ title: info().title, subtitle: info().subtitle ?? "", args: info().args }}
         />
-        <For each={images()}>
-          {(image) => {
-            const name = () => image.filename ?? getFilename(image.url) ?? image.url
-            /* A file left on disk carries only a path; `file://` is not fetchable from a
-               page, so it renders only once the host resolves the path to a real url. */
-            const src = createMemo(() => {
-              const location = image.location
-              if (!location) return image.url
-              if (location.kind === "unretained") return undefined
-              return data.fileUrl?.(location.path)
-            })
-            return (
-              <div data-component="tool-image" class="ui-tool-image">
-                <Show
-                  when={src()}
-                  fallback={<ToolImageUnavailable name={name()} location={image.location} />}
-                >
-                  {(url) => {
-                    const [failed, setFailed] = createSignal(false)
-                    return (
-                      <Show
-                        when={!failed()}
-                        fallback={<ToolImageUnavailable name={name()} location={image.location} />}
-                      >
-                        <img
-                          data-slot="tool-image-thumbnail"
-                          src={url()}
-                          alt={name()}
-                          onError={() => setFailed(true)}
-                          onClick={() => openImagePreview(url(), name())}
-                        />
-                      </Show>
-                    )
-                  }}
-                </Show>
-              </div>
-            )
-          }}
-        </For>
         <For each={loaded()}>
           {(filepath) => (
             <div data-component="tool-loaded-file" class="ui-tool-loaded-file">
