@@ -67,6 +67,28 @@ export namespace Timeline {
     return visible
   }
 
+  /**
+   * How many of a turn's groups the fold would hide, over whatever messages the
+   * caller holds. Unsegmented, so an interrupted turn — whose rows either side
+   * of the interruption cannot share a group — counts one lower here than the
+   * turn renders; and reasoning parts count as the default hides them, where
+   * showing them splits a run into more groups. Both make this a floor, which
+   * is the safe direction for a caller deciding whether a fold exists at all.
+   */
+  export function turnFoldableGroupCount(input: {
+    assistantMessages: AssistantMessage[]
+    getMessageParts: (messageID: string) => Part[]
+    showReasoning?: boolean
+  }) {
+    const refs = input.assistantMessages.flatMap((message, messageIndex) =>
+      input.getMessageParts(message.id)
+        .filter((part) => renderablePart(part, input.showReasoning ?? false))
+        .map((part) => ({ messageID: message.id, messageIndex, part })),
+    )
+    const partByID = new Map(refs.map((ref) => [ref.part.id, ref.part] as const))
+    return countFoldableGroups(groupParts(refs), (ref) => partByID.get(ref.partID))
+  }
+
   export function constructMessageRows(
     userMessage: UserMessage,
     getMessageParts: (messageID: string) => Part[],
@@ -80,6 +102,7 @@ export namespace Timeline {
     foldWhileRunning = true,
     lastTurn?: SessionTurnOutcome,
     visibleAssistantMessageIDs?: ReadonlySet<string>,
+    priorFoldableCount: (userMessageID: string) => number | undefined = () => undefined,
   ) {
     const rows: TimelineRow.TimelineRow[] = []
 
@@ -170,10 +193,16 @@ export namespace Timeline {
 
     const partByID = new Map(assistantPartRefs.map((ref) => [ref.part.id, ref.part] as const))
     const partOfRef = (ref: PartRef) => partByID.get(ref.partID)
-    const foldableCount = groupSegments(assistantPartRefs).reduce(
+    const liveFoldableCount = groupSegments(assistantPartRefs).reduce(
       (count, segment) => count + countFoldableGroups(segment, partOfRef),
       0,
     )
+    // A switched-to session is seeded with two messages — the turn's owning user
+    // message and its tail assistant message — and the messages holding the rest
+    // of its groups arrive 900ms later. Counting only what is here folds the turn
+    // on that later pass, taking away rows the reader has already been given, so
+    // a count the caller already knows for this turn stands until they arrive.
+    const foldableCount = Math.max(liveFoldableCount, priorFoldableCount(userMessage.id) ?? 0)
     const completedTimes = assistantMessages
       .map((message) => message.time.completed)
       .filter((value): value is number => typeof value === "number")

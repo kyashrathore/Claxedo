@@ -58,6 +58,28 @@ export function resolveSessionTitle(input: SessionTitleCandidates) {
   return stableSessionTitle(undefined, { ...input, sessionKey: "display" })?.title
 }
 
+export type LatchedSessionTitle = { sessionKey: string; title: string }
+
+/**
+ * A header resolves its title from whichever of several sources answers first,
+ * and any of them can go absent for a frame while a session switch settles.
+ * Once one has named the session that name stands until another names it
+ * differently, so the header never falls back to what it shows before a title
+ * exists. Only another session key drops the name; the identical title returns
+ * the same value so a repaint needs an actual change.
+ */
+export function latchSessionTitle(
+  previous: LatchedSessionTitle | undefined,
+  input: { sessionKey: string | undefined; title: string | undefined },
+): LatchedSessionTitle | undefined {
+  if (!input.sessionKey) return undefined
+  const prior = previous?.sessionKey === input.sessionKey ? previous : undefined
+  const title = normalizedTitle(input.title)
+  if (!title) return prior
+  if (prior?.title === title) return prior
+  return { sessionKey: input.sessionKey, title }
+}
+
 function stableTitle(
   sessionKey: string,
   title: string,

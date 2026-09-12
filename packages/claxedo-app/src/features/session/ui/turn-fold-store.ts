@@ -1,12 +1,11 @@
 import { createStore } from "solid-js/store"
 
 /**
- * Per-turn fold state, keyed by session in a module-level Map (max 16 sessions)
- * so it survives pane remount and session switching, like `timelineCache` in
- * message-timeline.tsx.
+ * The reader's own fold choices, per turn, kept for 16 sessions so they survive
+ * pane remount and session switching.
  *
- * `undefined` means "auto": the fold heuristic in message-timeline.data.ts
- * decides; an explicit `true`/`false` from the user always wins.
+ * `undefined` leaves a turn on auto, where the row builder decides from the
+ * turn's own state; an explicit choice always beats that decision.
  */
 type FoldState = Record<string, boolean | undefined>
 

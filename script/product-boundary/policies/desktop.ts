@@ -418,7 +418,9 @@ export const desktopRendererUnsigned: Policy = {
   // reviews — the harness model-options loader, the page's query hook and
   // stylesheet in, the Connect-your-AI dialog and the scope pickers out.
   // No new package edge. Measured 1063 / 57.
-  ceilings: { modules: 1063, packages: 57 },
+  // +1 module (2026-09-12): the same timeline-mount-cache owner app-local
+  // reviews. No new package edge. Measured 1064 / 57.
+  ceilings: { modules: 1064, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

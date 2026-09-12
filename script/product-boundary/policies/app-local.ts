@@ -333,7 +333,14 @@ export const appLocal: Policy = {
   //   − features/settings/ui/scope-selector.tsx — the workspace/harness
   //     pickers, gone with per-workspace model visibility.
   // No new package edge. Measured 1012 / 38.
-  ceilings: { modules: 1012, packages: 38 },
+  // +1 module (2026-09-12): features/session/ui/timeline-mount-cache.ts, what a
+  // session's first paint knows about its turns — the measurement/open-state
+  // snapshot lifted out of message-timeline.tsx at its size budget, plus the
+  // per-turn foldable count it now resolves so a switch cannot re-fold rows
+  // under the reader. It reaches the prefetched page and the view key through
+  // owners the rail and the session controller already put in this closure.
+  // No new package edge. Measured 1013 / 38.
+  ceilings: { modules: 1013, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -19,7 +19,7 @@ import {
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { useMutation } from "@tanstack/solid-query"
-import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
+import { createVirtualizer, defaultRangeExtractor, elementScroll } from "@tanstack/solid-virtual"
 import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import { Button } from "@opencode-ai/ui/button"
@@ -69,6 +69,7 @@ import { useSettings } from "@/platform/settings/provider"
 import { useSDK } from "@/features/session/app-ports"
 import { messageAgentColor } from "@/features/session/ui/agent-color"
 import { sessionTitle } from "@/features/session/data/session-title"
+import { latchSessionTitle, type LatchedSessionTitle } from "@/features/session/lib/session-title-sync"
 import { createActivePaneProjection } from "../store/active-pane-projection"
 import { createTimelineWorkingStatus } from "./timeline-working-status"
 import { MessageComment, Timeline } from "./message-timeline.data"
@@ -102,6 +103,7 @@ import {
   scheduleConnectedMeasure,
   timelineRowFrameStyle,
 } from "./timeline-virtualization"
+import { readTimelineMountSnapshot, writeTimelineMountSnapshot } from "./timeline-mount-cache"
 import { createTurnFoldStore } from "./turn-fold-store"
 import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
@@ -165,8 +167,6 @@ function rowOfTag<Tag extends TimelineRow.TimelineRow["_tag"]>(
 
 const timelineFallbackItemSize = 60
 const timelineInitialEstimatedItemSize = 180
-type TimelineCache = { measurements: VirtualItem[]; toolOpen: Record<string, boolean | undefined>; groupOpen: Record<string, boolean | undefined> }
-const timelineCache = new Map<string, TimelineCache>()
 
 const taskDescription = (part: PartType, sessionID: string) => {
   if (part.type !== "tool" || !isSubagentToolPart(part)) return undefined
@@ -222,7 +222,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const language = useLanguage()
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
-  const cached = timelineCache.get(ownerSessionKey)
+  const cached = readTimelineMountSnapshot(ownerSessionKey)
   const initialMeasurements = cached?.measurements
   const warmMeasurements = !!initialMeasurements?.length
   const boundColdFinalTurn = !warmMeasurements && props.status().type === "idle"
@@ -451,8 +451,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (!id) return undefined
     return directorySession(id)
   })
-  const titleValue = createActivePaneProjection<string | undefined>({ active: props.active, read: props.title, initial: undefined })
-  const titleLabel = createMemo(() => sessionTitle(titleValue()))
+  const titleSource = createActivePaneProjection<string | undefined>({ active: props.active, read: props.title, initial: undefined })
+  const latchedTitle = createMemo<LatchedSessionTitle | undefined>((previous) => latchSessionTitle(previous, { sessionKey: sessionKey(), title: titleSource() }))
+  const titleLabel = createMemo(() => sessionTitle(latchedTitle()?.title))
   const parentID = createMemo(() => props.parentID)
   const parent = createMemo(() => {
     const id = parentID()
@@ -491,7 +492,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     if (value) return value
     return language.t("command.session.new")
   })
-  const showHeader = createMemo(() => !props.hideTitle?.() && !!(titleValue() || parentID()))
+  const showHeader = createMemo(() => !props.hideTitle?.() && !!(latchedTitle() || parentID()))
 
   // Per-message inputs are equality-gated so a streaming part event (which
   // produces a new conversation snapshot + a new assistantMessagesByParent Map
@@ -549,6 +550,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
             settings.general.timelineFoldWhileRunning(),
             lastTurnOutcome(),
             visibleAssistantMessageIDs(),
+            (userMessageID) => cached?.turnFoldableCounts?.[userMessageID],
           )
 
           return TimelineRow.reuse(previous, rows)
@@ -664,7 +666,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   let cancelFirstFoldReveal: (() => void) | undefined
   const prepareScrollOverscan = () => {
     if (!initialTurnExpanded()) setInitialTurnExpanded(true)
-    if (renderOverscan() < 6) setRenderOverscan(6)
+    if (renderOverscan() < 6) setRenderOverscan(6) // 6 rows: a flick leaves 0 blank px at 1400px/frame and 802 at 5600, where 12 rows still leaves 443 and takes the worst renderer task from 16ms to 31ms (perf-harness transcript-flick)
   }
   const prepareInteractionScroll = () => {
     const plan = timelineInteractionPlan({
@@ -899,19 +901,17 @@ export function MessageTimeline(props: MessageTimelineProps) {
     })
   }
 
-  let measuredSessionKey = sessionKey()
+  let measuredSessionKey = sessionKey(), renderedRows: TimelineRow.TimelineRow[] = []
   createEffect(() => {
     const key = sessionKey()
-    timelineRows().length
+    renderedRows = timelineRows()
     if (measuredSessionKey !== key) (measuredSessionKey = key), virtualizer.measure()
     maybeAnchorBottom()
   })
 
   onCleanup(() => {
-    timelineCache.delete(ownerSessionKey)
-    timelineCache.set(ownerSessionKey, { measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen }, groupOpen: { ...groupOpen } })
+    writeTimelineMountSnapshot(ownerSessionKey, { measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen }, groupOpen: { ...groupOpen }, rows: renderedRows })
     turnFold.persist()
-    while (timelineCache.size > 64) timelineCache.delete(timelineCache.keys().next().value!) // remounting without a snapshot re-estimates heights and visibly shifts; 16 thrashed
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
     cancelFirstFoldReveal?.()
     resizeAnchor.dispose()

@@ -102,6 +102,24 @@ export function getSessionPrefetch(directory: SessionPrefetchDirectory, sessionI
   return queryClient.getQueryData<SessionPrefetchMeta>(prefetchMetaKey(directory, sessionID))
 }
 
+/**
+ * Every cached prefetch that still carries its page, with the scope that
+ * addresses it. A reader holding some other spelling of a session's identity
+ * resolves it against these rather than against a second copy of the page.
+ */
+export function sessionPrefetchPages() {
+  return queryClient
+    .getQueryCache()
+    .findAll({ queryKey: ["shell", "session"] })
+    .flatMap((query) => {
+      const info = prefetchQueryInfo(query.queryKey)
+      if (info?.type !== "meta" || !info.directory) return []
+      const meta = queryClient.getQueryData<SessionPrefetchMeta>(query.queryKey)
+      if (!meta?.page) return []
+      return [{ sessionID: info.sessionID, directory: info.directory, info: meta }]
+    })
+}
+
 export function getSessionPrefetchPromise(directory: SessionPrefetchDirectory, sessionID: string) {
   const query = queryClient
     .getQueryCache()

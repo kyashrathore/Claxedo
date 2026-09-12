@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  latchSessionTitle,
   provisionalSessionTitle,
   stableSessionTitle,
 } from "./session-title-sync"
@@ -242,5 +243,39 @@ describe("session title sync", () => {
       title: "New Session",
       source: "placeholder",
     })
+  })
+})
+
+describe("latchSessionTitle", () => {
+  const load = (title: string | undefined, previous?: ReturnType<typeof latchSessionTitle>) =>
+    latchSessionTitle(previous, { sessionKey: "session:ses_1", title })
+
+  test("a title that has been shown survives a source that goes back to loading", () => {
+    expect(load(undefined)).toBeUndefined()
+
+    const shown = load("Fix rail")
+    expect(shown).toEqual({ sessionKey: "session:ses_1", title: "Fix rail" })
+    expect(load(undefined, shown)).toBe(shown)
+    expect(load("   ", shown)).toBe(shown)
+  })
+
+  test("another source replacing the title is not a regression", () => {
+    const shown = load("Fix rail")
+    expect(load("Fix the rail sidebar", shown)).toEqual({
+      sessionKey: "session:ses_1",
+      title: "Fix the rail sidebar",
+    })
+  })
+
+  test("the same title does not mint a new value for the header to repaint", () => {
+    const shown = load("Fix rail")
+    expect(load("Fix rail", shown)).toBe(shown)
+    expect(load(" Fix  rail ", shown)).toBe(shown)
+  })
+
+  test("a different session never inherits the latched title", () => {
+    const shown = load("Fix rail")
+    expect(latchSessionTitle(shown, { sessionKey: "session:ses_2", title: undefined })).toBeUndefined()
+    expect(latchSessionTitle(shown, { sessionKey: undefined, title: undefined })).toBeUndefined()
   })
 })
