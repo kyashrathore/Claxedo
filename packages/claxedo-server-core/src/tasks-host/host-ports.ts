@@ -19,10 +19,11 @@ export function randomTasksIds(): TasksIdsPort {
 }
 
 /**
- * The effort vocabulary a saved preset may name. Whether the model a slot
- * ends up running honours one of them is per model and per harness, and the
- * session bridge answers that at preview; this list only keeps a preset from
- * storing a word the runtime's `variant` field could never mean.
+ * The effort vocabulary a saved preset may name. It keeps a preset from
+ * storing a word the runtime's `variant` field could never mean, and nothing
+ * further: preview validates model availability and not effort, so an effort
+ * this list admits and the chosen model does not honour is refused by the
+ * runtime when the session is created.
  */
 const TASKS_EFFORT_LEVELS: readonly string[] = ["low", "medium", "high", "xhigh", "max"]
 

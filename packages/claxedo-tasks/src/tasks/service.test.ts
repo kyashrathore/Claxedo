@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test"
+import { createTasksCommands } from "../commands"
 import type { Preset, StartRequest, Task } from "../contracts"
 import { createPresetsService } from "../presets/service"
+import { startConfigurationDigest } from "../start"
 import { createMemoryTasksStore } from "../stores/memory"
 import {
   ACTOR,
@@ -11,12 +13,14 @@ import {
   fakeClock,
   fakeIds,
   fieldReasons,
+  presetDraft,
+  primaryConfiguration,
   refusalOf,
   slotted,
   type FakeAuthorization,
   type FakeBridge,
 } from "../test-support/harness"
-import type { TasksStorePort } from "../ports/store"
+import type { TasksStoreOperations, TasksStorePort } from "../ports/store"
 import { createTasksService, type TasksService } from "./service"
 
 const PROJECT = "project-alpha"
@@ -107,6 +111,49 @@ describe("tasks service", () => {
       await tasks.setStatus(ACTOR, { taskId: root.id, revision: closedRoot.revision, status: "done" })
       expect(done.status).toBe("done")
       expect((await refusalOf(() => tasks.create(ACTOR, draft({ parentTaskId: root.id })))).code).toBe("conflict")
+    })
+
+    // The parent guard reads one revision; a store whose reads are not one
+    // snapshot can hand a later read a parent that has since gone Done, and
+    // committing against that revision would carry the guard's evidence away.
+    test("a child is refused when its parent goes done after the guard read it", async () => {
+      const root = (await tasks.create(ACTOR, draft())).task
+      let closed = false
+      const closing = (operations: TasksStoreOperations): TasksStoreOperations => ({
+        ...operations,
+        tasks: {
+          ...operations.tasks,
+          async get(scopeId, taskId) {
+            const found = await operations.tasks.get(scopeId, taskId)
+            if (!closed && taskId === root.id && found) {
+              closed = true
+              await operations.tasks.update({ ...found, revision: found.revision + 1, status: "done" }, found.revision)
+            }
+            return found
+          },
+        },
+      })
+      const racing: TasksStorePort = {
+        ...closing(store),
+        transaction: (work) => store.transaction((operations) => work(closing(operations))),
+      }
+      const commands = createTasksCommands({
+        store: racing,
+        clock: fakeClock(),
+        ids: { presetId: () => "preset-child", taskId: () => "task-child" },
+        capabilities: fakeCapabilities(),
+        authorization,
+        bridge,
+      })
+
+      const detail = await refusalOf(() =>
+        commands.execute(ACTOR, {
+          clientRequestId: "child-1",
+          command: { type: "task.create", input: draft({ parentTaskId: root.id }) },
+        }),
+      )
+      expect(detail.code).toBe("stale_revision")
+      expect((await tasks.children(ACTOR, root.id, { cursor: null, limit: 50, includeArchived: true })).items).toHaveLength(0)
     })
   })
 
@@ -367,16 +414,109 @@ describe("tasks service", () => {
     test("re-requesting the live attempt returns the same session without starting another", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
       const first = await tasks.start(ACTOR, task.id, start(task))
-      const again = await tasks.start(ACTOR, task.id, start(task))
+      const linked = (await tasks.detail(ACTOR, task.id)).task
+      const again = await tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision }))
       expect(again.created).toBe(false)
       expect(again.link.sessionRef).toEqual(first.link.sessionRef)
       expect(bridge.starts).toHaveLength(1)
     })
 
+    test("the link insertion advances the task, so an edit that missed the link cannot commit", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      await tasks.start(ACTOR, task.id, start(task))
+
+      expect((await tasks.detail(ACTOR, task.id)).task.revision).toBe(task.revision + 1)
+      const stale = await refusalOf(() =>
+        tasks.edit(ACTOR, { taskId: task.id, revision: task.revision, title: "Renamed", description: "", workspaceId: null }),
+      )
+      expect(stale.code).toBe("stale_revision")
+    })
+
+    test("a task whose workspace changed while the session was being created does not acquire it", async () => {
+      const task = (await tasks.create(ACTOR, draft({ workspaceId: "workspace-one" }))).task
+      const moving = {
+        ...bridge,
+        start: async (command: Parameters<FakeBridge["start"]>[0]) => {
+          await tasks.edit(ACTOR, {
+            taskId: task.id,
+            revision: task.revision,
+            title: task.title,
+            description: task.description,
+            workspaceId: "workspace-two",
+          })
+          return bridge.start(command)
+        },
+      }
+      const racing = createTasksService({ store, clock: fakeClock(), ids: fakeIds(), authorization, bridge: moving })
+
+      expect((await refusalOf(() => racing.start(ACTOR, task.id, start(task)))).code).toBe("conflict")
+      expect((await store.links.listByTask(ACTOR.scopeId, task.id)).length).toBe(0)
+      expect((await tasks.detail(ACTOR, task.id)).task.workspaceId).toBe("workspace-two")
+    })
+
+    test("a session the actor may not open is hidden from detail and refuses Start, Continue and preview alike", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      await tasks.start(ACTOR, task.id, start(task))
+      const linked = (await tasks.detail(ACTOR, task.id)).task
+
+      authorization.denySession("session-1")
+      expect((await tasks.detail(ACTOR, task.id)).links).toHaveLength(0)
+
+      const restart = await refusalOf(() => tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision })))
+      expect(restart.code).toBe("forbidden")
+
+      bridge.setState("session-1", "archived")
+      const continued = await refusalOf(() =>
+        tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, attempt: 2, continueFromPrevious: true })),
+      )
+      expect(continued.code).toBe("forbidden")
+
+      const previewed = await refusalOf(() =>
+        tasks.startPreview(ACTOR, task.id, {
+          taskRevision: linked.revision,
+          presetId: preset.id,
+          presetRevision: preset.revision,
+          slot: "primary",
+          attempt: 2,
+          continueFromPrevious: true,
+        }),
+      )
+      expect(previewed.code).toBe("forbidden")
+      expect(bridge.starts).toHaveLength(1)
+      expect(bridge.previews).toHaveLength(0)
+    })
+
+    test("a live slot re-requested with another configuration is refused, not answered with its session", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      await tasks.start(ACTOR, task.id, start(task))
+      const linked = (await tasks.detail(ACTOR, task.id)).task
+
+      const other = await createPresetsService({
+        store,
+        clock: fakeClock(),
+        ids: { presetId: () => "preset-other", taskId: () => "task-other" },
+        capabilities: fakeCapabilities(),
+      }).create(
+        ACTOR,
+        presetDraft({
+          name: "Other preset",
+          configurations: { primary: primaryConfiguration({ model: { providerID: "anthropic", modelID: "claude-opus" } }) },
+        }),
+      )
+
+      const detail = await refusalOf(() =>
+        tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, presetId: other.id, presetRevision: other.revision })),
+      )
+      expect(detail.code).toBe("conflict")
+      expect(bridge.starts).toHaveLength(1)
+      expect((await store.links.getCurrent(ACTOR.scopeId, task.id, "primary"))?.presetId).toBe(preset.id)
+    })
+
     test("the next attempt is refused while the current session is live", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
       await tasks.start(ACTOR, task.id, start(task))
-      const detail = await refusalOf(() => tasks.start(ACTOR, task.id, start(task, { attempt: 2 })))
+      const linked = (await tasks.detail(ACTOR, task.id)).task
+      const detail = await refusalOf(() => tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, attempt: 2 })))
       expect(detail.code).toBe("conflict")
       expect(bridge.starts).toHaveLength(1)
     })
@@ -384,12 +524,19 @@ describe("tasks service", () => {
     test("a start again is accepted once the owner reports the session archived", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
       await tasks.start(ACTOR, task.id, start(task))
+      const linked = (await tasks.detail(ACTOR, task.id)).task
       bridge.setState("session-1", "archived")
       bridge.nextSession("session-2")
 
-      expect((await refusalOf(() => tasks.start(ACTOR, task.id, start(task, { attempt: 1 })))).code).toBe("conflict")
+      expect(
+        (await refusalOf(() => tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, attempt: 1 })))).code,
+      ).toBe("conflict")
 
-      const again = await tasks.start(ACTOR, task.id, start(task, { attempt: 2, continueFromPrevious: true }))
+      const again = await tasks.start(
+        ACTOR,
+        task.id,
+        start(task, { taskRevision: linked.revision, attempt: 2, continueFromPrevious: true }),
+      )
       expect(again.created).toBe(true)
       expect(again.link.attempt).toBe(2)
       expect(again.link.continuedFrom?.sessionId).toBe("session-1")
@@ -404,8 +551,9 @@ describe("tasks service", () => {
     test("two slots of one task hold separate sessions", async () => {
       const task = (await tasks.create(ACTOR, draft())).task
       await tasks.start(ACTOR, task.id, start(task))
+      const linked = (await tasks.detail(ACTOR, task.id)).task
       bridge.nextSession("session-review")
-      const review = await tasks.start(ACTOR, task.id, start(task, { slot: "review" }))
+      const review = await tasks.start(ACTOR, task.id, start(task, { taskRevision: linked.revision, slot: "review" }))
       expect(review.link.sessionRef.sessionId).toBe("session-review")
       expect((await tasks.detail(ACTOR, task.id)).links).toHaveLength(2)
     })
@@ -463,6 +611,7 @@ describe("tasks service", () => {
             presetId: preset.id,
             presetRevision: preset.revision,
             presetNameAtStart: preset.name,
+            configurationDigest: await startConfigurationDigest({ preset, slot: "primary" }),
             createdAt: 10,
           })
           return bridge.start(command)

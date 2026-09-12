@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -10,7 +10,7 @@ import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxe
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { putSessionMeta, sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
-import type { Preset, StartCommand, Task, TaskSessionLink } from "@claxedo/tasks"
+import { startConfigurationDigest, type Preset, type StartCommand, type Task, type TaskSessionLink } from "@claxedo/tasks"
 import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
@@ -104,7 +104,7 @@ function task(input: { workspaceId: string | null; projectId?: string }): Task {
   }
 }
 
-function link(sessionRef: { sessionId: string; workspaceId: string | null }): TaskSessionLink {
+function link(sessionRef: { sessionId: string; workspaceId: string | null }, configurationDigest: string): TaskSessionLink {
   return {
     scopeId: "local",
     taskId: "tsk_1",
@@ -115,21 +115,29 @@ function link(sessionRef: { sessionId: string; workspaceId: string | null }): Ta
     presetId: "pst_1",
     presetRevision: 3,
     presetNameAtStart: "Careful review",
+    configurationDigest,
     createdAt: 1,
   }
 }
 
-function startCommand(input: { workspaceId: string | null; projectId?: string; digest: string }): StartCommand {
+async function startCommand(input: {
+  workspaceId: string | null
+  projectId?: string
+  digest: string
+  preset?: Preset
+}): Promise<StartCommand> {
+  const chosen = input.preset ?? preset()
   return {
     actor: { scopeId: "local", ownerId: "local" },
     task: task(input),
-    preset: preset(),
+    preset: chosen,
     slot: "primary",
     attempt: 1,
     previewDigest: input.digest,
     handoffText: null,
     continueFromPrevious: false,
     clientRequestId: "req_1",
+    configurationDigest: await startConfigurationDigest({ preset: chosen, slot: "primary" }),
     previousSession: null,
   }
 }
@@ -234,7 +242,7 @@ describe("local tasks session bridge", () => {
       configuration: { harness: { id: CONNECTION_ID, access: "connection" }, model: MODEL, effort: "high" },
     })
 
-    const command = startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest })
+    const command = await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest })
     const started = await host.bridge.start(command)
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
@@ -279,7 +287,7 @@ describe("local tasks session bridge", () => {
     const first = await host.bridge.preview(previewCommand)
     expect(first).toMatchObject({ ok: true })
     if (!first.ok) return
-    const started = await host.bridge.start(startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
+    const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
     const previous = started.session.sessionRef
@@ -289,7 +297,7 @@ describe("local tasks session bridge", () => {
       ...previewCommand,
       attempt: 2,
       continueFromPrevious: true,
-      currentLink: link(previous),
+      currentLink: link(previous, await startConfigurationDigest({ preset: preset(), slot: "primary" })),
       currentState: "archived",
     })
     expect(continued).toMatchObject({ ok: true })
@@ -297,7 +305,7 @@ describe("local tasks session bridge", () => {
     expect(continued.preview.previousTranscriptReadable).toBe(true)
 
     const restarted = await host.bridge.start({
-      ...startCommand({ workspaceId: host.workspaceId, digest: continued.preview.digest }),
+      ...(await startCommand({ workspaceId: host.workspaceId, digest: continued.preview.digest })),
       attempt: 2,
       continueFromPrevious: true,
       previousSession: previous,
@@ -308,6 +316,116 @@ describe("local tasks session bridge", () => {
     expect(restarted.session.sessionRef.sessionId).not.toBe(previous.sessionId)
     expect(host.created[1]?.instructions).toContain("<session-handoff")
     expect(host.created[1]?.instructions).toContain("Fix the importer")
+  })
+
+  test("reports the previous transcript as readable before Continue is chosen, and carries it only once it is", async () => {
+    const host = await harness()
+    roots.push(host.root)
+    const previewCommand = {
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      preset: preset(),
+      slot: "primary" as const,
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+    }
+    const first = await host.bridge.preview(previewCommand)
+    if (!first.ok) throw new Error("preview refused")
+    const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
+    if (!started.ok) throw new Error("start refused")
+    const previous = started.session.sessionRef
+    await waitForMessage(host.request, previous.sessionId, host.turns[0] ?? "")
+
+    const unchecked = await host.bridge.preview({
+      ...previewCommand,
+      attempt: 2,
+      continueFromPrevious: false,
+      currentLink: link(previous, await startConfigurationDigest({ preset: preset(), slot: "primary" })),
+      currentState: "archived",
+    })
+    expect(unchecked).toMatchObject({ ok: true })
+    if (!unchecked.ok) return
+    expect(unchecked.preview.previousTranscriptReadable).toBe(true)
+
+    const restarted = await host.bridge.start({
+      ...(await startCommand({ workspaceId: host.workspaceId, digest: unchecked.preview.digest })),
+      attempt: 2,
+      continueFromPrevious: false,
+      previousSession: null,
+    })
+    expect(restarted).toMatchObject({ ok: true })
+    expect(host.created).toHaveLength(2)
+    expect(host.created[1]?.instructions).not.toContain("<session-handoff")
+  })
+
+  test("refuses to adopt the attempt's session for another configuration and leaves its instructions alone", async () => {
+    const host = await harness()
+    roots.push(host.root)
+    const previewCommand = {
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      preset: preset(),
+      slot: "primary" as const,
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+    }
+    const first = await host.bridge.preview(previewCommand)
+    if (!first.ok) throw new Error("preview refused")
+    const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
+    if (!started.ok) throw new Error("start refused")
+    const sessionId = started.session.sessionRef.sessionId
+
+    const rewritten: Preset = { ...preset(), revision: 4, instructions: "Ignore the code and rewrite it." }
+    const second = await host.bridge.preview({ ...previewCommand, preset: rewritten })
+    if (!second.ok) throw new Error("preview refused")
+    const refused = await host.bridge.start(
+      await startCommand({ workspaceId: host.workspaceId, digest: second.preview.digest, preset: rewritten }),
+    )
+
+    expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
+    expect(host.created).toHaveLength(1)
+    const config: unknown = await (await host.request(`/session/${sessionId}/config`)).json()
+    expect(config).toMatchObject({ instructions: expect.stringContaining("Read before you write.") })
+    expect(JSON.stringify(config)).not.toContain("Ignore the code")
+  })
+
+  test("reserves the origin and the configuration before the create when a signed host supplies one", async () => {
+    const host = await harness()
+    roots.push(host.root)
+    const createdWhenReserved: number[] = []
+    const reserve = vi.fn(async () => {
+      createdWhenReserved.push(host.created.length)
+      return { ok: true as const, headers: {} }
+    })
+    const signed = createLocalTasksSessionBridge({ reserve })
+    const previewed = await signed.preview({
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      preset: preset(),
+      slot: "primary",
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+    })
+    if (!previewed.ok) throw new Error("preview refused")
+
+    const started = await signed.start(await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest }))
+    expect(started).toMatchObject({ ok: true })
+    if (!started.ok) return
+    expect(reserve).toHaveBeenCalledWith({
+      actor: { scopeId: "local", ownerId: "local" },
+      operationId: `tasks.v1:local:tsk_1:primary:1:${await startConfigurationDigest({ preset: preset(), slot: "primary" })}`,
+      sessionId: started.session.sessionRef.sessionId,
+      workspaceId: host.workspaceId,
+      title: "Fix the importer",
+    })
+    expect(createdWhenReserved).toEqual([0])
+    expect(host.created).toHaveLength(1)
   })
 
   test("starts a task with no workspace preference in its project's own workspace", async () => {
@@ -327,7 +445,7 @@ describe("local tasks session bridge", () => {
     if (!previewed.ok) return
     expect(previewed.preview.available).toBe(true)
 
-    const started = await host.bridge.start(startCommand({
+    const started = await host.bridge.start(await startCommand({
       workspaceId: null,
       projectId: host.projectId,
       digest: previewed.preview.digest,
@@ -362,7 +480,7 @@ describe("local tasks session bridge", () => {
       detail: expect.stringContaining("prj_ambiguous has 2 workspaces"),
     }])
 
-    const started = await host.bridge.start(startCommand({
+    const started = await host.bridge.start(await startCommand({
       workspaceId: null,
       projectId: "prj_ambiguous",
       digest: previewed.preview.digest,
@@ -374,7 +492,7 @@ describe("local tasks session bridge", () => {
   test("refuses a start whose preview digest no longer describes the configuration", async () => {
     const host = await harness()
     roots.push(host.root)
-    const refused = await host.bridge.start(startCommand({ workspaceId: host.workspaceId, digest: "stale" }))
+    const refused = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: "stale" }))
     expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
     expect(host.created).toEqual([])
   })
@@ -420,7 +538,7 @@ describe("local tasks session bridge", () => {
     expect(previewed.preview.blockers).toEqual([{ code: "placement_unsupported", detail: expect.any(String) }])
 
     const started = await host.bridge.start({
-      ...startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest }),
+      ...(await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest })),
       preset: cloud,
     })
     expect(started).toMatchObject({ ok: false, error: { code: "unsupported" } })
@@ -442,7 +560,7 @@ describe("local tasks session bridge", () => {
     })
     expect(previewed).toMatchObject({ ok: true })
     if (!previewed.ok) return
-    const started = await host.bridge.start(startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest }))
+    const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest }))
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
     const live = started.session.sessionRef

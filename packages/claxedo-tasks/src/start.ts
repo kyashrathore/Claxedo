@@ -211,3 +211,24 @@ export function startDigest(input: StartDigestInput): Promise<string> {
     instructions: input.instructions,
   })
 }
+
+/**
+ * Which configuration a slot's session runs, as one comparable value: the
+ * resolved model settings and the preset's own instruction block.
+ *
+ * A continued session's transcript is deliberately outside it. The digest
+ * names an origin's reservation and travels on the stored link, and a Continue
+ * that lost its response has to recover its own reservation on a retry — a
+ * digest that moved with the rendered transcript would refuse that retry
+ * instead, while still failing to distinguish two presets.
+ */
+export async function startConfigurationDigest(input: { preset: Preset; slot: ConfigurationSlot }): Promise<string> {
+  const composed = startInstructions({ preset: input.preset, slot: input.slot, handoffTranscript: null })
+  return hashRequest({
+    placement: input.preset.execution.placement,
+    harness: composed.configuration.harness,
+    model: composed.configuration.model,
+    effort: composed.configuration.effort,
+    instructions: composed.text,
+  })
+}

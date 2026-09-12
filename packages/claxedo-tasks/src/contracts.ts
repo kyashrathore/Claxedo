@@ -132,6 +132,13 @@ export type TaskSessionLink = {
   presetId: string
   presetRevision: number
   presetNameAtStart: string
+  /**
+   * The configuration this session was created with, as `startConfigurationDigest`
+   * renders it. A slot re-requested under a different configuration must not be
+   * answered with this session, and the host reserves the origin under this
+   * value, so the stored digest is compared rather than the request believed.
+   */
+  configurationDigest: string
   createdAt: number
 }
 

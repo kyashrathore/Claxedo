@@ -66,13 +66,15 @@ export type TasksSessionHost = {
   ): Promise<ReadonlyMap<string, { workspaceID?: string; archived?: number }>>
   /**
    * Admission this host requires before a session may be created under an
-   * origin. The actor comes with it because a hosted reservation records the
-   * creator, and a session created for anyone but the person who started it is
-   * one they cannot open.
+   * origin. `operationId` is the origin and the configuration digest, so a
+   * second configuration reaching the same session id collides here instead of
+   * adopting the session the first one created. The actor comes with it because
+   * a hosted reservation records the creator, and a session created for anyone
+   * but the person who started it is one they cannot open.
    */
   reserve?(input: {
     actor: TasksActor
-    origin: string
+    operationId: string
     sessionId: string
     workspaceId: string
     title: string
@@ -203,13 +205,38 @@ async function readMessages(target: TasksRuntimeTarget, sessionId: string): Prom
   return Array.isArray(body) ? body.filter(isAgentMessage) : null
 }
 
-async function readHarness(target: TasksRuntimeTarget, sessionId: string): Promise<SessionHarness | null> {
+/**
+ * What the runtime says a session runs, or null when it does not answer. The
+ * model is optional because a session may leave the harness's own selection in
+ * place, and the harness alone is what rendering its transcript needs.
+ */
+type SessionConfiguration = {
+  harness: SessionHarness
+  model: ModelReference | null
+  effort: string | null
+  instructions: string
+}
+
+async function readSessionConfiguration(
+  target: TasksRuntimeTarget,
+  sessionId: string,
+): Promise<SessionConfiguration | null> {
   const response = await target.request(`/session/${encodeURIComponent(sessionId)}/config`).catch(() => undefined)
   if (!response?.ok) return null
-  const harness = asRecord(asRecord(await response.json().catch(() => undefined))?.harness)
+  const body = asRecord(await response.json().catch(() => undefined))
+  const harness = asRecord(body?.harness)
   const id = typeof harness?.id === "string" ? harness.id : undefined
   const access = harness?.access === "native" || harness?.access === "connection" ? harness.access : undefined
-  return id && access ? { id, access } : null
+  if (!id || !access) return null
+  const model = asRecord(body?.model)
+  const providerID = typeof model?.providerID === "string" ? model.providerID : undefined
+  const modelID = typeof model?.modelID === "string" ? model.modelID : undefined
+  return {
+    harness: { id, access },
+    model: providerID && modelID ? { providerID, modelID } : null,
+    effort: typeof body?.variant === "string" ? body.variant : null,
+    instructions: typeof body?.instructions === "string" ? body.instructions : "",
+  }
 }
 
 /** The previous session's conversation, rendered by the runtime's own renderer. */
@@ -223,17 +250,23 @@ async function readHandoff(
     ? await host.target(previous.workspaceId)
     : fallback
   if (!target) return null
-  const [messages, harness] = await Promise.all([
+  const [messages, stored] = await Promise.all([
     readMessages(target, previous.sessionId),
-    readHarness(target, previous.sessionId),
+    readSessionConfiguration(target, previous.sessionId),
   ])
-  if (!messages?.length || !harness) return null
-  return { session: previous, transcript: renderSessionHandoff(messages, harness) }
+  if (!messages?.length || !stored) return null
+  return { session: previous, transcript: renderSessionHandoff(messages, stored.harness) }
 }
 
+/**
+ * The session a Continue would carry over. A preview names the slot's current
+ * session whatever the checkbox says, because the checkbox is what the answer
+ * is for: a dialog can only offer Continue once this host has read that
+ * transcript, and the kit has already authorized the link it came on.
+ */
 function previousSessionOf(command: StartPreviewCommand | StartCommand): SessionReference | null {
   if ("previousSession" in command) return command.previousSession
-  return command.continueFromPrevious ? (command.currentLink?.sessionRef ?? null) : null
+  return command.currentLink?.sessionRef ?? null
 }
 
 async function startTarget(host: TasksSessionHost, task: Task): Promise<TasksTargetChoice> {
@@ -287,7 +320,10 @@ async function resolveStart(
   if (!("target" in choice)) blockers.push({ code: "source_unavailable", detail: choice.detail })
   const target = "target" in choice ? choice.target : null
 
-  const handoff = target && blockers.length === 0 ? await readHandoff(host, target, previousSessionOf(command)) : null
+  const readable = target && blockers.length === 0 ? await readHandoff(host, target, previousSessionOf(command)) : null
+  // Reading the transcript answers whether Continue can be offered; rendering
+  // it into the instruction block is what selecting Continue does.
+  const handoff = command.continueFromPrevious ? readable : null
   let composed
   try {
     composed = startInstructions({
@@ -336,7 +372,7 @@ async function resolveStart(
       currentSession: currentLink
         ? { sessionRef: currentLink.sessionRef, liveness: currentState ?? "unavailable" }
         : null,
-      previousTranscriptReadable: handoff !== null,
+      previousTranscriptReadable: readable !== null,
       destinationDescription: destination(target, composed.instructionsBytesDropped, composed.transcriptBytesDropped),
     },
   }
@@ -370,10 +406,14 @@ async function startSession(
   const hash = (await hashRequest(origin)).slice(0, 32)
   const sessionId = `ses_tasks_${hash}`
   const messageId = `msg_tasks_${hash}`
+  // The reservation carries the configuration the ids do not: a host that
+  // admits one operation per origin then refuses a second configuration
+  // claiming the same session instead of letting it adopt the first one.
+  const operationId = `${origin}:${command.configurationDigest}`
 
   const reserved = await host.reserve?.({
     actor: command.actor,
-    origin,
+    operationId,
     sessionId,
     workspaceId: target.workspace.id,
     title: command.task.title,
@@ -382,7 +422,10 @@ async function startSession(
 
   const existing = await target.request(`/session/${encodeURIComponent(sessionId)}`).catch(() => undefined)
   if (!existing) return { ok: false, error: tasksErrorDetail("unsupported", "The workspace runtime is unreachable") }
-  if (existing.status !== 200) {
+  if (existing.status === 200) {
+    const recovered = await recoverSession(host, target, sessionId, command, resolved)
+    if (!recovered.ok) return recovered
+  } else {
     const created = await target.request(`/session?${tasksHarnessQuery(resolved.configuration.harness)}`, {
       method: "POST",
       headers: { "content-type": "application/json", ...reserved?.headers },
@@ -403,7 +446,17 @@ async function startSession(
     })
   }
 
-  if (!(await alreadySent(target, sessionId, messageId))) {
+  const sent = await alreadySent(target, sessionId, messageId)
+  if (sent === "unreadable") {
+    return {
+      ok: false,
+      error: tasksErrorDetail(
+        "conflict",
+        "The workspace runtime would not say whether this task was already handed to the session; it was not sent again",
+      ),
+    }
+  }
+  if (sent === "absent") {
     const prompt = await target.request(`/session/${encodeURIComponent(sessionId)}/prompt_async`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -425,13 +478,75 @@ async function startSession(
 }
 
 /**
+ * A session this origin already created, taken back over. Two things have to
+ * hold before it may answer this Start: it must be running the configuration
+ * this Start resolved, and the session lists this host reads liveness from
+ * must know about it.
+ */
+async function recoverSession(
+  host: TasksSessionHost,
+  target: TasksRuntimeTarget,
+  sessionId: string,
+  command: StartCommand,
+  resolved: ResolvedStart,
+): Promise<{ ok: true } | Refusal> {
+  const stored = await readSessionConfiguration(target, sessionId)
+  if (!stored) {
+    return {
+      ok: false,
+      error: tasksErrorDetail(
+        "conflict",
+        `The workspace runtime would not say what session ${sessionId} is configured to run, so this Start did not adopt it`,
+      ),
+    }
+  }
+  if (!sameConfiguration(stored, resolved)) {
+    return {
+      ok: false,
+      error: tasksErrorDetail(
+        "conflict",
+        `Session ${sessionId} is already running another configuration for this attempt; start the next attempt instead`,
+      ),
+    }
+  }
+  // Metadata is written by the create this Start skipped. Left missing, the
+  // session lists read the attempt as deleted and admit another one while
+  // this session is still running.
+  const metas = await host.sessionMetas([sessionId])
+  if (!metas.has(sessionId)) {
+    await host.projectSessionMeta({
+      sessionId,
+      target,
+      title: command.task.title,
+      model: resolved.configuration.model,
+    })
+  }
+  return { ok: true }
+}
+
+function sameConfiguration(stored: SessionConfiguration, resolved: ResolvedStart): boolean {
+  return stored.harness.id === resolved.configuration.harness.id
+    && stored.harness.access === resolved.configuration.harness.access
+    && stored.model?.providerID === resolved.configuration.model.providerID
+    && stored.model?.modelID === resolved.configuration.model.modelID
+    && stored.effort === (resolved.configuration.effort ?? null)
+    && stored.instructions === resolved.instructions
+}
+
+/**
  * Whether this origin's first message is already on the session. The runtime
  * does not deduplicate by `messageID`, so a retry that skipped this read would
- * send the task a second time.
+ * send the task a second time — and a history it would not return is not the
+ * same answer as a history without the message.
  */
-async function alreadySent(target: TasksRuntimeTarget, sessionId: string, messageId: string): Promise<boolean> {
+async function alreadySent(
+  target: TasksRuntimeTarget,
+  sessionId: string,
+  messageId: string,
+): Promise<"present" | "absent" | "unreadable"> {
   const messages = await readMessages(target, sessionId)
-  return !!messages?.some((message) => message.info.id === messageId)
+  if (!messages) return "unreadable"
+  return messages.some((message) => message.info.id === messageId) ? "present" : "absent"
 }
 
 async function runtimeRefusal(operation: string, response: Response): Promise<TasksErrorDetail> {

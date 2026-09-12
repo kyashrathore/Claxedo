@@ -30,6 +30,7 @@ import type { TasksClockPort } from "../ports/clock"
 import type { TasksIdsPort } from "../ports/ids"
 import type { TasksSessionBridgePort } from "../ports/session-bridge"
 import type { TasksStorePort } from "../ports/store"
+import { startConfigurationDigest } from "../start"
 import { validateReparent, validateTaskDraft, validateTaskEdit } from "./model"
 
 export type TasksServiceDeps = {
@@ -94,10 +95,14 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
   /**
    * A child mutation moves the parent too: its Done guard reads the child set,
    * so the parent's revision has to move for a concurrent parent edit to lose.
+   *
+   * The snapshot is the caller's, never a fresh read. The guard that admitted
+   * the mutation ran against one parent revision, and a store whose reads are
+   * not one snapshot can answer a second read with a parent that has since
+   * gone Done; committing against that newer revision would discard the
+   * evidence the guard was built on.
    */
-  const touchParent = async (parentTaskId: string | null, scopeId: string): Promise<Task | null> => {
-    if (parentTaskId === null) return null
-    const parent = await deps.store.tasks.get(scopeId, parentTaskId)
+  const touchParent = async (parent: Task | null): Promise<Task | null> => {
     if (!parent) return null
     const next: Task = {
       ...parent,
@@ -107,6 +112,10 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     }
     return write(next, parent.revision)
   }
+
+  /** The parent of a mutation no parent guard applies to, for its child-set bump alone. */
+  const parentSnapshot = async (parentTaskId: string | null, scopeId: string): Promise<Task | null> =>
+    parentTaskId === null ? null : ((await deps.store.tasks.get(scopeId, parentTaskId)) ?? null)
 
   const requireOpenParent = async (actor: TasksActor, parentTaskId: string, projectId: string): Promise<Task> => {
     const parent = await deps.store.tasks.get(actor.scopeId, parentTaskId)
@@ -145,6 +154,13 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     return visible.map((link) => linkView(link, states.get(link.sessionRef.sessionId) ?? "unavailable"))
   }
 
+  /**
+   * The slot's session, once this actor is allowed to open it. Every use of it
+   * is privileged — it decides which attempt is admissible, it is returned as
+   * the answer to an idempotent Start, its transcript is what a readability
+   * probe reads and what Continue copies — so an actor the session authority
+   * refuses here is refused the slot rather than served from it.
+   */
   const currentSlotState = async (
     actor: TasksActor,
     taskId: string,
@@ -152,6 +168,9 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
   ): Promise<{ link: TaskSessionLink | null; state: SessionLiveness | null }> => {
     const link = await deps.store.links.getCurrent(actor.scopeId, taskId, slot)
     if (!link) return { link: null, state: null }
+    if (!(await deps.authorization.authorizeSessionOpen(actor, link.sessionRef))) {
+      refuse("forbidden", `No access to the session slot ${slot} holds`)
+    }
     const states = await livenessOf([link.sessionRef])
     return { link, state: states.get(link.sessionRef.sessionId) ?? "unavailable" }
   }
@@ -180,7 +199,12 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     actor: TasksActor,
     taskId: string,
     request: { taskRevision: number; presetId: string; presetRevision: number; slot: ConfigurationSlot; attempt: number },
-  ): Promise<{ task: Task; preset: Preset; current: { link: TaskSessionLink | null; state: SessionLiveness | null } }> => {
+  ): Promise<{
+    task: Task
+    preset: Preset
+    current: { link: TaskSessionLink | null; state: SessionLiveness | null }
+    configurationDigest: string
+  }> => {
     const task = open(atRevision(await load(actor, taskId, "write"), request.taskRevision))
     const preset = await deps.store.presets.get(actor.scopeId, request.presetId)
     if (!preset || preset.ownerId !== actor.ownerId) refuse("not_found", `Preset ${request.presetId} was not found`)
@@ -193,7 +217,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     }
     const current = await currentSlotState(actor, taskId, request.slot)
     checkAttempt(request.attempt, current)
-    return { task, preset, current }
+    return { task, preset, current, configurationDigest: await startConfigurationDigest({ preset, slot: request.slot }) }
   }
 
   return {
@@ -243,7 +267,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         updatedAt: now,
       }
       await deps.store.tasks.insert(task)
-      return { task, parent: await touchParent(task.parentTaskId, actor.scopeId) }
+      return { task, parent: await touchParent(parent) }
     },
 
     async edit(actor, input) {
@@ -281,14 +305,16 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         })
         if (unfinished > 0) refuse("conflict", `Task ${current.id} has ${unfinished} unfinished children`)
       }
-      if (current.parentTaskId !== null && current.status === "done" && input.status !== "done") {
-        await requireOpenParent(actor, current.parentTaskId, current.projectId)
-      }
+      const parent = current.parentTaskId === null
+        ? null
+        : current.status === "done" && input.status !== "done"
+          ? await requireOpenParent(actor, current.parentTaskId, current.projectId)
+          : await parentSnapshot(current.parentTaskId, actor.scopeId)
       const task = await write(
         { ...current, revision: current.revision + 1, status: input.status, updatedAt: deps.clock.now() },
         input.revision,
       )
-      return { task, parent: await touchParent(task.parentTaskId, actor.scopeId) }
+      return { task, parent: await touchParent(parent) }
     },
 
     async reparent(actor, input) {
@@ -312,6 +338,9 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       }
       const nextParent =
         input.parentTaskId === null ? null : await requireOpenParent(actor, input.parentTaskId, input.projectId)
+      const formerParent = current.parentTaskId !== null && current.parentTaskId !== input.parentTaskId
+        ? await parentSnapshot(current.parentTaskId, actor.scopeId)
+        : null
       const task = await write(
         {
           ...current,
@@ -323,10 +352,8 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         },
         input.revision,
       )
-      if (current.parentTaskId !== null && current.parentTaskId !== input.parentTaskId) {
-        await touchParent(current.parentTaskId, actor.scopeId)
-      }
-      return { task, parent: await touchParent(task.parentTaskId, actor.scopeId) }
+      await touchParent(formerParent)
+      return { task, parent: await touchParent(nextParent) }
     },
 
     async archive(actor, input) {
@@ -336,20 +363,22 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         excludeStatus: null,
       })
       if (living > 0) refuse("conflict", `Task ${current.id} has ${living} children that are not archived`)
+      const parent = await parentSnapshot(current.parentTaskId, actor.scopeId)
       const now = deps.clock.now()
       const task = await write({ ...current, revision: current.revision + 1, archivedAt: now, updatedAt: now }, input.revision)
-      return { task, parent: await touchParent(task.parentTaskId, actor.scopeId) }
+      return { task, parent: await touchParent(parent) }
     },
 
     async restore(actor, input) {
       const current = atRevision(await load(actor, input.taskId, "write"), input.revision)
       if (current.archivedAt === null) refuse("conflict", `Task ${current.id} is not archived`)
-      if (current.parentTaskId !== null) await requireOpenParent(actor, current.parentTaskId, current.projectId)
+      const parent =
+        current.parentTaskId === null ? null : await requireOpenParent(actor, current.parentTaskId, current.projectId)
       const task = await write(
         { ...current, revision: current.revision + 1, archivedAt: null, updatedAt: deps.clock.now() },
         input.revision,
       )
-      return { task, parent: await touchParent(task.parentTaskId, actor.scopeId) }
+      return { task, parent: await touchParent(parent) }
     },
 
     async startPreview(actor, taskId, request) {
@@ -369,12 +398,20 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     },
 
     async start(actor, taskId, request) {
-      const { task, preset, current } = await startSubject(actor, taskId, request)
+      const { task, preset, current, configurationDigest } = await startSubject(actor, taskId, request)
 
       // Attempt `current` while the session is live is the idempotent
       // re-request: the slot already holds that session, so nothing is created
-      // and no first message is resent.
+      // and no first message is resent. A request that resolved to another
+      // configuration is not that re-request, and answering it with this
+      // session would report the other preset as the one running.
       if (current.link && current.state === "live" && request.attempt === current.link.attempt) {
+        if (current.link.configurationDigest !== configurationDigest) {
+          refuse(
+            "conflict",
+            `Slot ${request.slot} attempt ${request.attempt} is running a different configuration; start the next attempt instead`,
+          )
+        }
         return { link: linkView(current.link, "live"), created: false }
       }
 
@@ -389,6 +426,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         handoffText: request.handoffText,
         continueFromPrevious: request.continueFromPrevious,
         clientRequestId: request.clientRequestId,
+        configurationDigest,
         previousSession: continued,
       })
       if (!started.ok) throw new TasksError(started.error)
@@ -403,22 +441,29 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         presetId: preset.id,
         presetRevision: preset.revision,
         presetNameAtStart: preset.name,
+        configurationDigest,
         createdAt: deps.clock.now(),
       }
 
-      // The session exists by now, so the link is saved against a re-read of
-      // the task and a re-checked authority: a task archived, moved or
-      // revoked during provisioning must not acquire a session.
+      // The session exists by now, so the link commits under live authority and
+      // against the revision that authorized this Start. That one predicate is
+      // the whole condition — a revision names an immutable row, so a task
+      // archived, moved or re-attempted meanwhile fails here — and the write
+      // carries it rather than a re-read, because a store that decides nothing
+      // until commit decides it there. Advancing the revision is also what
+      // makes an edit that read the task before the link existed fail its own
+      // compare-and-set.
       const settled = await deps.store.transaction(async (tx): Promise<{ link: TaskSessionLink; created: boolean }> => {
-        const reread = await tx.tasks.get(actor.scopeId, task.id)
-        if (!reread || reread.archivedAt !== null || reread.projectId !== task.projectId) {
+        await authorize(actor, task.projectId, "write")
+        const inserted = await tx.links.insert(link)
+        if (inserted.status === "exists") {
+          if (inserted.link.sessionRef.sessionId === link.sessionRef.sessionId) return { link: inserted.link, created: false }
+          return refuse("conflict", `Slot ${request.slot} attempt ${request.attempt} already holds another session`)
+        }
+        if (!(await tx.tasks.update({ ...task, revision: task.revision + 1, updatedAt: deps.clock.now() }, task.revision))) {
           refuse("conflict", `Task ${task.id} changed while its session was being created`)
         }
-        await authorize(actor, reread.projectId, "write")
-        const inserted = await tx.links.insert(link)
-        if (inserted.status === "inserted") return { link, created: true }
-        if (inserted.link.sessionRef.sessionId === link.sessionRef.sessionId) return { link: inserted.link, created: false }
-        return refuse("conflict", `Slot ${request.slot} attempt ${request.attempt} already holds another session`)
+        return { link, created: true }
       })
 
       const states = await livenessOf([settled.link.sessionRef])

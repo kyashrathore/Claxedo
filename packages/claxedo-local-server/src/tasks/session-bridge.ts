@@ -3,17 +3,30 @@ import {
   chooseProjectWorkspace,
   createTasksSessionBridge,
   type TasksRuntimeTarget,
+  type TasksSessionHost,
 } from "@claxedo/server-core/tasks-host/session-bridge-core"
 import { createWorkspaceRuntimeClient } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import { listWorkspaces, resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { TasksSessionBridgePort } from "@claxedo/tasks"
 
+export type LocalTasksSessionBridgeInput = {
+  /**
+   * Admission a signed self-host requires before a create. Its sessions are
+   * granted to a creator actor, so a session reserved for nobody is one the
+   * member who pressed Start cannot open. The unsigned single-user posture has
+   * no actors to record and supplies none.
+   */
+  reserve?: TasksSessionHost["reserve"]
+}
+
 /**
  * Tasks' half of Start on a local host: the embedded workspace runtime this
  * process serves, and the session projection it lists sessions from.
  */
-export function createLocalTasksSessionBridge(): TasksSessionBridgePort {
+export function createLocalTasksSessionBridge(input: LocalTasksSessionBridgeInput = {}): TasksSessionBridgePort {
   return createTasksSessionBridge({
+    ...(input.reserve ? { reserve: input.reserve } : {}),
+
     async target(workspaceId) {
       const workspace = await resolveWorkspace({ workspaceId })
       return workspace && workspace.kind !== "cloud" ? embeddedTarget(workspace) : null

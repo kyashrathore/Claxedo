@@ -27,7 +27,10 @@ export type {
   TasksSessionBridgePort,
 } from "./ports/session-bridge"
 export {
+  TASKS_STORE_CONFLICTS,
+  TasksStoreConflict,
   joinedTransaction,
+  serializedTransactions,
   type ChildCountFilter,
   type LinkInsertOutcome,
   type LinkStoreOperations,
@@ -35,6 +38,7 @@ export {
   type ReceiptStoreOperations,
   type TaskStoreOperations,
   type TasksCommandReceipt,
+  type TasksStoreConflictKind,
   type TasksStoreOperations,
   type TasksStorePort,
 } from "./ports/store"
@@ -47,6 +51,7 @@ export { createTasksCommands, type TasksCommands, type TasksCommandsDeps } from 
 
 export {
   START_ORIGIN_PREFIX,
+  startConfigurationDigest,
   startDigest,
   startFirstMessage,
   startInstructions,

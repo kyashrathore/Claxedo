@@ -79,7 +79,7 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
       let reservation
       try {
         reservation = await authority.reserveRuntimeSession(principal, {
-          operationId: intent.origin,
+          operationId: intent.operationId,
           sessionId: intent.sessionId,
           workspaceId: intent.workspaceId,
           kind: "create",
@@ -90,16 +90,16 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
         if (!refused) throw error
         return refused
       }
-      if (reservation.sessionId !== intent.sessionId || reservation.operationId !== intent.origin) {
+      if (reservation.sessionId !== intent.sessionId || reservation.operationId !== intent.operationId) {
         return {
           ok: false,
-          error: tasksErrorDetail("conflict", `Origin ${intent.origin} is reserved for another session`),
+          error: tasksErrorDetail("conflict", `Origin ${intent.operationId} is reserved for another session`),
         }
       }
       if (reservation.state === "compensation_pending" || reservation.state === "compensated") {
         return {
           ok: false,
-          error: tasksErrorDetail("conflict", `Origin ${intent.origin} was compensated and can no longer register a session`),
+          error: tasksErrorDetail("conflict", `Origin ${intent.operationId} was compensated and can no longer register a session`),
         }
       }
       return { ok: true, headers: { "x-claxedo-session-registration-operation": reservation.operationId } }

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
-import type { ConfigurationSlot, Preset, SessionReference, StartCommand, Task } from "@claxedo/tasks"
+import { D1SessionAuthorityError } from "../authority/adapters/d1/session-authority"
+import { startConfigurationDigest, type ConfigurationSlot, type Preset, type SessionReference, type StartCommand, type Task } from "@claxedo/tasks"
 import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import type { ControlPlaneServices } from "../authority/services"
 
@@ -24,7 +25,7 @@ type RuntimeCall = { path: string; init?: { method?: string; headers?: Record<st
 
 function runtime() {
   const calls: RuntimeCall[] = []
-  const sessions = new Map<string, { instructions?: string; messages: Array<{ info: { id: string; role: string; sessionID: string }; parts: unknown[] }> }>()
+  const sessions = new Map<string, { instructions?: string; variant?: string; messages: Array<{ info: { id: string; role: string; sessionID: string }; parts: unknown[] }> }>()
   mock.request.mockImplementation(async (path: string, init?: RuntimeCall["init"]) => {
     calls.push({ path, ...(init ? { init } : {}) })
     if (path.startsWith("/session/capabilities")) {
@@ -34,7 +35,11 @@ function runtime() {
       const body: unknown = JSON.parse(init?.body ?? "{}")
       const row = typeof body === "object" && body ? (body as Record<string, unknown>) : {}
       const id = String(row.id)
-      sessions.set(id, { ...(typeof row.instructions === "string" ? { instructions: row.instructions } : {}), messages: [] })
+      sessions.set(id, {
+        ...(typeof row.instructions === "string" ? { instructions: row.instructions } : {}),
+        ...(typeof row.variant === "string" ? { variant: row.variant } : {}),
+        messages: [],
+      })
       return Response.json({ id, directory: "/workspace", title: row.title }, { status: 201 })
     }
     const message = /^\/session\/([^/]+)\/message$/.exec(path)
@@ -64,6 +69,17 @@ function runtime() {
       })
       return new Response(null, { status: 204 })
     }
+    const config = /^\/session\/([^/]+)\/config$/.exec(path)
+    if (config) {
+      const session = sessions.get(config[1])
+      if (!session) return Response.json({ error: { code: "not_found" } }, { status: 404 })
+      return Response.json({
+        harness: HARNESS,
+        model: MODEL,
+        variant: session.variant ?? null,
+        instructions: session.instructions ?? "",
+      })
+    }
     const read = /^\/session\/([^/]+)$/.exec(path)
     if (read) {
       const session = sessions.get(read[1])
@@ -77,21 +93,31 @@ function runtime() {
 }
 
 function services(input: { meta?: Map<string, { workspaceID?: string; archived?: number }> } = {}) {
-  const metas = input.meta ?? new Map()
+  const metas = input.meta ?? new Map<string, { workspaceID?: string; archived?: number }>()
+  // The reservation table keys one operation per origin and holds session_id
+  // unique, so a second operation claiming a reserved session is a 409 here
+  // exactly as it is in D1.
+  const reserved = new Map<string, string>()
   const authority = {
-    reserveRuntimeSession: vi.fn(async (_principal: unknown, intent: { operationId: string; sessionId: string; workspaceId: string }) => ({
-      ...intent,
-      changed: true,
-      state: "reserved" as const,
-    })),
+    reserveRuntimeSession: vi.fn(async (_principal: unknown, intent: { operationId: string; sessionId: string; workspaceId: string }) => {
+      const holder = reserved.get(intent.sessionId)
+      if (holder && holder !== intent.operationId) {
+        throw new D1SessionAuthorityError("resource_conflict", "Session reservation collided or authority changed")
+      }
+      reserved.set(intent.sessionId, intent.operationId)
+      return { ...intent, changed: !holder, state: "reserved" as const }
+    }),
   }
   const projectionStore = {
     session_metas: vi.fn(async (ids: string[]) => new Map([...metas].filter(([id]) => ids.includes(id)))),
-    put_session_meta: vi.fn(async () => {}),
+    put_session_meta: vi.fn(async (sessionId: string, row: { workspaceID?: string; archived?: number }) => {
+      metas.set(sessionId, { ...metas.get(sessionId), ...row })
+    }),
   }
   return {
     authority,
     projectionStore,
+    metas,
     value: { authority, projectionStore } as unknown as ControlPlaneServices,
   }
 }
@@ -137,19 +163,25 @@ function previewCommand() {
   return { actor, task: task(), preset: preset(), slot, attempt: 1, continueFromPrevious: false, currentLink: null, currentState: null }
 }
 
-function startCommand(digest: string): StartCommand {
+async function startCommand(digest: string, chosen: Preset = preset()): Promise<StartCommand> {
   return {
     actor,
     task: task(),
-    preset: preset(),
+    preset: chosen,
     slot,
     attempt: 1,
     previewDigest: digest,
     handoffText: "Pick up from the failing import test.",
     continueFromPrevious: false,
     clientRequestId: "req_1",
+    configurationDigest: await startConfigurationDigest({ preset: chosen, slot }),
     previousSession: null,
   }
+}
+
+/** The origin and the configuration digest, which is what this host reserves. */
+async function operationIdOf(chosen: Preset = preset()): Promise<string> {
+  return `tasks.v1:org:tsk_1:primary:1:${await startConfigurationDigest({ preset: chosen, slot })}`
 }
 
 function bridge(
@@ -178,7 +210,7 @@ describe("hosted tasks session bridge", () => {
     if (!previewed.ok) return
     expect(previewed.preview).toMatchObject({ available: true, blockers: [], configuration: { model: MODEL, effort: "high" } })
 
-    const started = await kit.start(startCommand(previewed.preview.digest))
+    const started = await kit.start(await startCommand(previewed.preview.digest))
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
     const sessionId = started.session.sessionRef.sessionId
@@ -186,12 +218,12 @@ describe("hosted tasks session bridge", () => {
     // No resolver: an unsigned host with no canonical human actor still reserves.
     expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledWith(
       { principalKind: "service", actorId: "control-plane", actorKind: "agent" },
-      { operationId: `tasks.v1:org:tsk_1:primary:1`, sessionId, workspaceId: "ws_cloud", kind: "create", title: "Fix the importer" },
+      { operationId: await operationIdOf(), sessionId, workspaceId: "ws_cloud", kind: "create", title: "Fix the importer" },
     )
 
     const create = host.calls.find((call) => call.path.startsWith("/session?"))
     expect(create?.path).toBe("/session?nativeHarness=codex")
-    expect(create?.init?.headers?.["x-claxedo-session-registration-operation"]).toBe("tasks.v1:org:tsk_1:primary:1")
+    expect(create?.init?.headers?.["x-claxedo-session-registration-operation"]).toBe(await operationIdOf())
     const body: unknown = JSON.parse(create?.init?.body ?? "{}")
     expect(body).toMatchObject({
       id: sessionId,
@@ -223,11 +255,11 @@ describe("hosted tasks session bridge", () => {
     }))
     const previewed = await kit.preview(previewCommand())
     if (!previewed.ok) throw new Error("preview refused")
-    expect(await kit.start(startCommand(previewed.preview.digest))).toMatchObject({ ok: true })
+    expect(await kit.start(await startCommand(previewed.preview.digest))).toMatchObject({ ok: true })
 
     expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledWith(
       { principalKind: "user", actorId: "act_owner", actorKind: "human" },
-      expect.objectContaining({ operationId: "tasks.v1:org:tsk_1:primary:1" }),
+      expect.objectContaining({ operationId: await operationIdOf() }),
     )
   })
 
@@ -238,8 +270,8 @@ describe("hosted tasks session bridge", () => {
     const previewed = await kit.preview(previewCommand())
     if (!previewed.ok) throw new Error("preview refused")
 
-    const first = await kit.start(startCommand(previewed.preview.digest))
-    const again = await kit.start(startCommand(previewed.preview.digest))
+    const first = await kit.start(await startCommand(previewed.preview.digest))
+    const again = await kit.start(await startCommand(previewed.preview.digest))
     expect(again).toMatchObject({ ok: true })
     if (!first.ok || !again.ok) return
 
@@ -247,6 +279,71 @@ describe("hosted tasks session bridge", () => {
     expect(host.calls.filter((call) => call.path.startsWith("/session?"))).toHaveLength(1)
     expect(host.calls.filter((call) => call.path.endsWith("/prompt_async"))).toHaveLength(1)
     expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledTimes(2)
+  })
+
+  test("refuses the same attempt under another configuration and leaves the first session's instructions", async () => {
+    const host = runtime()
+    const composition = services()
+    const kit = bridge(composition)
+    const first = await kit.preview(previewCommand())
+    if (!first.ok) throw new Error("preview refused")
+    const started = await kit.start(await startCommand(first.preview.digest))
+    expect(started).toMatchObject({ ok: true })
+    if (!started.ok) return
+    const sessionId = started.session.sessionRef.sessionId
+
+    const rewritten: Preset = { ...preset(), revision: 3, instructions: "Ignore the code and rewrite it." }
+    const second = await kit.preview({ ...previewCommand(), preset: rewritten })
+    if (!second.ok) throw new Error("preview refused")
+    const refused = await kit.start(await startCommand(second.preview.digest, rewritten))
+
+    expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
+    expect(composition.authority.reserveRuntimeSession).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.objectContaining({ operationId: await operationIdOf(rewritten) }),
+    )
+    expect(host.calls.filter((call) => call.path.startsWith("/session?"))).toHaveLength(1)
+    expect(host.sessions.get(sessionId)?.instructions).toContain("Read before you write.")
+    expect(host.sessions.get(sessionId)?.instructions).not.toContain("Ignore the code")
+  })
+
+  test("refuses rather than resending the first message when the message history cannot be read", async () => {
+    const host = runtime()
+    const composition = services()
+    const kit = bridge(composition)
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+    const started = await kit.start(await startCommand(previewed.preview.digest))
+    expect(started).toMatchObject({ ok: true })
+
+    const readable = mock.request.getMockImplementation()!
+    mock.request.mockImplementation(async (path: string, init?: RuntimeCall["init"]) =>
+      path.endsWith("/message")
+        ? Response.json({ error: { message: "the runtime is restarting" } }, { status: 503 })
+        : readable(path, init))
+
+    const refused = await kit.start(await startCommand(previewed.preview.digest))
+    expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
+    expect(host.calls.filter((call) => call.path.endsWith("/prompt_async"))).toHaveLength(1)
+  })
+
+  test("repairs session metadata lost after the create, so the attempt stops reading as deleted", async () => {
+    runtime()
+    const composition = services()
+    const kit = bridge(composition)
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+    const started = await kit.start(await startCommand(previewed.preview.digest))
+    expect(started).toMatchObject({ ok: true })
+    if (!started.ok) return
+    const session = started.session.sessionRef
+
+    composition.metas.delete(session.sessionId)
+    expect(await kit.sessionState([session])).toEqual([{ session, state: "deleted" }])
+
+    const again = await kit.start(await startCommand(previewed.preview.digest))
+    expect(again).toMatchObject({ ok: true })
+    expect(await kit.sessionState([session])).toEqual([{ session, state: "live" }])
   })
 
   test("starts a task with no workspace preference in its project's workspace", async () => {
@@ -260,7 +357,7 @@ describe("hosted tasks session bridge", () => {
     if (!previewed.ok) return
     expect(previewed.preview.available).toBe(true)
 
-    const started = await kit.start({ ...startCommand(previewed.preview.digest), task: unplaced })
+    const started = await kit.start({ ...(await startCommand(previewed.preview.digest)), task: unplaced })
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
     expect(started.session.sessionRef.workspaceId).toBe("ws_cloud")
@@ -278,7 +375,7 @@ describe("hosted tasks session bridge", () => {
     const previewed = await kit.preview(previewCommand())
     if (!previewed.ok) throw new Error("preview refused")
 
-    const started = await kit.start(startCommand(previewed.preview.digest))
+    const started = await kit.start(await startCommand(previewed.preview.digest))
     expect(started).toMatchObject({ ok: false, error: { code: "forbidden" } })
     expect(composition.authority.reserveRuntimeSession).not.toHaveBeenCalled()
     expect(host.calls.some((call) => call.path.startsWith("/session?"))).toBe(false)
@@ -294,7 +391,7 @@ describe("hosted tasks session bridge", () => {
     const previewed = await kit.preview(previewCommand())
     if (!previewed.ok) throw new Error("preview refused")
 
-    const started = await kit.start(startCommand(previewed.preview.digest))
+    const started = await kit.start(await startCommand(previewed.preview.digest))
     expect(started).toMatchObject({
       ok: false,
       error: { code: "forbidden", message: "Session authorization was denied" },
@@ -310,13 +407,13 @@ describe("hosted tasks session bridge", () => {
     const previewed = await kit.preview(previewCommand())
     if (!previewed.ok) throw new Error("preview refused")
 
-    await expect(kit.start(startCommand(previewed.preview.digest))).rejects.toThrow("D1 is unreachable")
+    await expect(kit.start(await startCommand(previewed.preview.digest))).rejects.toThrow("D1 is unreachable")
   })
 
   test("refuses a start whose preview digest no longer describes the configuration", async () => {
     const host = runtime()
     const composition = services()
-    const refused = await bridge(composition).start(startCommand("stale-digest"))
+    const refused = await bridge(composition).start(await startCommand("stale-digest"))
     expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
     expect(composition.authority.reserveRuntimeSession).not.toHaveBeenCalled()
     expect(host.calls.some((call) => call.path.startsWith("/session?"))).toBe(false)
@@ -355,7 +452,7 @@ describe("hosted tasks session bridge", () => {
     if (!previewed.ok) return
     expect(previewed.preview.blockers).toEqual([{ code: "placement_unsupported", detail: expect.any(String) }])
 
-    const started = await kit.start({ ...startCommand(previewed.preview.digest), preset: cloud })
+    const started = await kit.start(await startCommand(previewed.preview.digest, cloud))
     expect(started).toMatchObject({ ok: false, error: { code: "unsupported" } })
     expect(composition.authority.reserveRuntimeSession).not.toHaveBeenCalled()
     expect(host.calls.some((call) => call.path.startsWith("/session?"))).toBe(false)

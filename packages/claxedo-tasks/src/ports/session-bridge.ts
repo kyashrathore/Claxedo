@@ -36,6 +36,8 @@ export type StartCommand = {
   handoffText: string | null
   continueFromPrevious: boolean
   clientRequestId: string
+  /** `startConfigurationDigest` of this preset and slot; the host reserves the origin under it. */
+  configurationDigest: string
   /** The slot's previous session, when Continue was chosen; null starts from task text alone. */
   previousSession: SessionReference | null
 }
@@ -48,9 +50,12 @@ export type StartedSession = {
 /**
  * The host's half of Start. Liveness is read here on every request and never
  * stored by Tasks; `preview` has no side effects; `start` reserves the origin
- * `(scope, taskId, slot, attempt)`, creates the ordinary session with the
- * resolved configuration and instructions, and performs the first handoff.
- * The package supplies validated, authorized records and persists the link.
+ * `(scope, taskId, slot, attempt)` under the configuration digest, creates the
+ * ordinary session with the resolved configuration and instructions, and
+ * performs the first handoff. The package supplies validated records and
+ * persists the link; `currentLink` and `previousSession` reach this port only
+ * after the authorization port admitted that session, which is what lets
+ * `preview` read the previous transcript to answer whether it is readable.
  */
 export type TasksSessionBridgePort = {
   sessionState(sessions: readonly SessionReference[]): Promise<readonly SessionStateReading[]>
