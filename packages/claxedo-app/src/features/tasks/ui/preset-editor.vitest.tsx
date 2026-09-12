@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
-import { createSignal } from "solid-js"
+import { createEffect, createSignal } from "solid-js"
 import type { HarnessReference } from "@claxedo/tasks"
 import {
   PresetEditor,
@@ -72,6 +72,47 @@ function mount(initial?: Partial<PresetEditorDraft>) {
 }
 
 describe("preset editor", () => {
+  test("a configuration editor that reads selection state in its body is not remounted by its own selection", () => {
+    const [selection, setSelection] = createSignal<HarnessReference | null>(null)
+    let mounts = 0
+    let effectRuns = 0
+    function TrackingEditor(props: ConfigurationEditorProps) {
+      mounts += 1
+      const initial = selection()
+      createEffect(() => {
+        effectRuns += 1
+        if (effectRuns > 8) throw new Error(`selection effect re-ran ${effectRuns} times`)
+        const harness = selection()
+        if (harness) props.onChange({ harness, model: null, effort: null })
+      })
+      return (
+        <button type="button" data-testid="tracking-pick" onClick={() => setSelection(CLAUDE)}>
+          {initial?.id ?? "none"}
+        </button>
+      )
+    }
+    const [draft, updateDraft] = createSignal(emptyPresetEditorDraft())
+    render(() => (
+      <PresetEditor
+        editorKey="new"
+        draft={draft()}
+        onDraftChange={updateDraft}
+        placements={["local"]}
+        catalog={() => catalog}
+        configurationEditor={TrackingEditor}
+        submitLabel="Create preset"
+        onSubmit={() => {}}
+        onCancel={() => {}}
+      />
+    ))
+
+    fireEvent.click(screen.getByTestId("tracking-pick"))
+
+    expect(draft().configurations.primary?.harness).toEqual(CLAUDE)
+    expect(mounts).toBe(1)
+    expect(effectRuns).toBe(2)
+  })
+
   test("a harness change clears the model and effort the previous harness resolved", () => {
     mount()
 

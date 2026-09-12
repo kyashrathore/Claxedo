@@ -1,4 +1,5 @@
-import { For, Show, createSignal } from "solid-js"
+import { For, Show, createSignal, untrack } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import {
   CONFIGURATION_SLOTS,
   PRESET_PLACEMENTS,
@@ -211,20 +212,15 @@ function SlotEditor(props: {
   const entry = () => props.draft.configurations[props.slot] ?? EMPTY_CONFIGURATION
   return (
     <div class="tsk-stack" data-testid={`preset-editor-configuration-${props.slot}`}>
-      {props.editor({
-        editorKey: props.editorKey,
-        slot: props.slot,
-        get configuration() {
-          return entry()
-        },
-        get disabled() {
-          return props.busy === true
-        },
-        get placement() {
-          return props.draft.placement
-        },
-        onChange: (next) => props.onChange(rebaseConfiguration(entry(), next)),
-      })}
+      <Dynamic
+        component={props.editor}
+        editorKey={props.editorKey}
+        slot={props.slot}
+        configuration={entry()}
+        disabled={props.busy === true}
+        placement={props.draft.placement}
+        onChange={(next) => untrack(() => props.onChange(rebaseConfiguration(entry(), next)))}
+      />
       <Show when={props.fieldError(`configurations.${props.slot}.model`)}>
         {(message) => (
           <span class="tsk-error" data-testid={`preset-editor-error-${props.slot}-model`}>
