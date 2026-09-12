@@ -1185,6 +1185,25 @@ function translateSystemMessage(
   state: ClaudeSdkAdapterState,
   event: { source: string; method?: string; payload: unknown },
 ): HarnessEventAdapterResult<ClaudeSdkAdapterState> | AgentRuntimeEvent[] {
+  // Claude Code 2.1.267 sends this after each model turn; the pinned SDK types
+  // (0.3.220) predate it, so it is read off the raw message. It summarises a
+  // turn already projected in full.
+  if (text(rawMessage.subtype) === "post_turn_summary") {
+    const summary = text(rawMessage.summary)
+    return summary
+      ? [{
+          type: "diagnostic",
+          diagnostic: runtimeDiagnostic({
+            code: "claude_sdk.post_turn_summary",
+            message: summary,
+            severity: "info",
+            source: event.source,
+            method: event.method,
+            raw: event.payload,
+          }),
+        } satisfies AgentRuntimeEvent]
+      : []
+  }
   switch (message.subtype) {
     case "task_progress": {
       return {
