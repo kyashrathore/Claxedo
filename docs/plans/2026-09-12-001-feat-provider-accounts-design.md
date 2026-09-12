@@ -262,14 +262,18 @@ Acceptance (checked 2026-09-13 against the branch's server on a copy of the desk
       distinct fingerprint identities; the migration backfilled the real
       token as active; `POST /credentials/activate` flips it and `GET
       /credentials/effective` follows; one active row per `claude-sdk`.
-- [x] A local Claude turn on the real token answered "OK" in 4 s; after
-      activating the placeholder the next turn never answered (170 s cut);
-      after activating the token again the next turn answered "OK" in
-      4 s. The usage read on the real token returned `rate_capped` (429 from
-      Anthropic's usage endpoint), so windows were not shown. Finding: Claude
-      Code with an invalid API key hangs rather than failing; the broker
-      design's "the session names the failure" needs a harness-side
-      timeout or a pre-flight check to hold.
+- [ ] A local Claude turn after the switch runs on the new account. **Not
+      proven.** On 2026-09-13 the switch flipped "In use" both ways and the
+      turns behaved differently ("OK" in 4 s on the stored token, no answer
+      in 170 s on the placeholder, "OK" in 4 s again), but the broker slice's
+      live proof then showed Claude Code prefers the account in its config
+      dir over `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`, so which account
+      answered is unknown; and the stored value was a short-lived access
+      token that Anthropic rejected by 03:00. The broker slice isolates the
+      config dir for a brokered turn, which is the only reliable way to run
+      on a selected account. Re-run with a real `claude setup-token` through
+      the broker. Finding kept: Claude Code with an invalid key hangs rather
+      than failing, and on 401 falls back to the OS keychain.
 - [ ] Deleting the active row: the row reads "choose an account"; the next
       turn runs on the machine login and the session names it as such.
       (Not run: the owner's machine Claude login is expired.)
