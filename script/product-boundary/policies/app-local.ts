@@ -321,7 +321,19 @@ export const appLocal: Policy = {
   // the conversation-scoped policy for subagent tabs, split out of
   // review-workspace.tsx at its 800-line budget; imports only what that file
   // already did. No new package edge. Measured at a clean checkout: 1011 / 38.
-  ceilings: { modules: 1011, packages: 38 },
+  // +3 −2 modules (2026-09-12), Settings → Models rebuilt around the harness:
+  //   + features/session/harness/harness-model-options.ts — the loader that
+  //     reads a harness's reported model list over the composer's options
+  //     transport; owned by the session harness feature, reached eagerly
+  //     through the settings ports in app/integrations/secondary-feature-ports.ts;
+  //   + features/settings/harness-models.ts and settings/ui/models.css — the
+  //     page's query hook and its two reveals, behind the lazy Settings dialog;
+  //   − app/dialogs/connect-ai.tsx — the Connect-your-AI dialog, replaced by
+  //     the Agents rows connecting in place;
+  //   − features/settings/ui/scope-selector.tsx — the workspace/harness
+  //     pickers, gone with per-workspace model visibility.
+  // No new package edge. Measured 1012 / 38.
+  ceilings: { modules: 1012, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

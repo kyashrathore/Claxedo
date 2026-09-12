@@ -70,6 +70,12 @@ function stored(workspaceKey: string) {
   return raw ? JSON.parse(raw) : undefined
 }
 
+function storedVisibility() {
+  const target = Persist.global("model-visibility")
+  const raw = localStorage.getItem(`${target.storage}:${target.key}`)
+  return raw ? JSON.parse(raw) : undefined
+}
+
 /** Mounts the store for one (workspace, harness) and hands the API to the test. */
 function mount(input: { workspaceKey: string; harness: () => string; nativeHarness?: () => string | undefined }) {
   let api: ReturnType<typeof useModels> | undefined
@@ -135,7 +141,7 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe("the model store is per (server, workspace, harness)", () => {
-  test("visibility, variant and recent are keyed by harness inside one workspace bucket", async () => {
+  test("variant and recent are keyed by harness inside one workspace bucket; visibility is app-wide", async () => {
     const workspace = nextWorkspaceKey("ws")
     const [harness, setHarness] = createSignal("opencode")
     const models = mount({ workspaceKey: workspace, harness })
@@ -144,23 +150,21 @@ describe("the model store is per (server, workspace, harness)", () => {
     models().variant.set(OPUS, "thinking")
     models().recent.push(OPUS)
 
-    await waitFor(() => expect(stored(workspace)?.user?.opencode).toBeTruthy())
+    await waitFor(() => expect(storedVisibility()?.entries).toEqual({ "anthropic:opus": "hide" }))
     expect(models().visible(OPUS)).toBe(false)
     expect(models().variant.get(OPUS)).toBe("thinking")
     expect(models().recent.list()).toEqual([OPUS])
 
     setHarness("claude-sdk")
 
-    // The same provider/model pair under another harness is a different offer.
+    // The variant and the recent were chosen under OpenCode; the hide is not a
+    // per-harness choice and follows the pair.
     expect(models().visible(OPUS)).toBe(false)
     expect(models().variant.get(OPUS)).toBeUndefined()
     expect(models().recent.list()).toEqual([])
 
-    models().setVisibility(OPUS, true)
-    await waitFor(() => expect(stored(workspace)?.user?.["claude-sdk"]).toBeTruthy())
-    expect(stored(workspace).user.opencode).toEqual([{ ...OPUS, visibility: "hide" }])
-    expect(stored(workspace).user["claude-sdk"]).toEqual([{ ...OPUS, visibility: "show" }])
-    expect(stored(workspace).recent).toEqual([{ ...OPUS, harness: "opencode" }])
+    await waitFor(() => expect(stored(workspace)?.recent).toEqual([{ ...OPUS, harness: "opencode" }]))
+    expect(stored(workspace).user).toBeUndefined()
   })
 
   // Settings and a pane's composer are routinely open on the same workspace at
@@ -170,11 +174,12 @@ describe("the model store is per (server, workspace, harness)", () => {
     const workspace = nextWorkspaceKey("ws")
     const [pane, settings] = mountPair(workspace)
 
+    settings().setVisibility(OPUS, false)
     expect(pane().visible(OPUS)).toBe(false)
     settings().setVisibility(OPUS, true)
 
     expect(pane().visible(OPUS)).toBe(true)
-    await waitFor(() => expect(stored(workspace)?.user?.opencode).toEqual([{ ...OPUS, visibility: "show" }]))
+    await waitFor(() => expect(storedVisibility()?.entries).toEqual({ "anthropic:opus": "show" }))
 
     pane().variant.set(OPUS, "thinking")
     expect(settings().variant.get(OPUS)).toBe("thinking")
@@ -184,15 +189,18 @@ describe("the model store is per (server, workspace, harness)", () => {
     const one = nextWorkspaceKey("ws")
     const two = nextWorkspaceKey("ws")
     const first = mount({ workspaceKey: one, harness: () => "opencode" })
+    first().variant.set(OPUS, "thinking")
     first().setVisibility(OPUS, false)
-    await waitFor(() => expect(stored(one)?.user?.opencode).toBeTruthy())
+    await waitFor(() => expect(stored(one)?.variant?.opencode).toBeTruthy())
     cleanup()
 
     const second = mount({ workspaceKey: two, harness: () => "opencode" })
-    second().setVisibility(OPUS, true)
-    await waitFor(() => expect(stored(two)?.user?.opencode).toBeTruthy())
-    expect(stored(one).user.opencode).toEqual([{ ...OPUS, visibility: "hide" }])
-    expect(stored(two).user.opencode).toEqual([{ ...OPUS, visibility: "show" }])
+    second().variant.set(OPUS, "max")
+    await waitFor(() => expect(stored(two)?.variant?.opencode).toBeTruthy())
+    expect(stored(one).variant.opencode).toEqual({ "anthropic/opus": "thinking" })
+    expect(stored(two).variant.opencode).toEqual({ "anthropic/opus": "max" })
+    // A hidden model is hidden in every workspace.
+    expect(second().visible(OPUS)).toBe(false)
   })
 
   test("the store reads the catalog of the harness it is shown for, not an OpenCode-only list", () => {

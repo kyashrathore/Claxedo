@@ -414,7 +414,11 @@ export const desktopRendererUnsigned: Policy = {
   // No new package edge. Measured at a clean checkout: 1061 / 57.
   // +1 module (2026-09-12): the same review-workspace-subagent-tabs owner
   // app-local reviews. No new package edge. Measured at a clean checkout: 1062 / 57.
-  ceilings: { modules: 1062, packages: 57 },
+  // +3 −2 modules (2026-09-12): the same Settings → Models rebuild app-local
+  // reviews — the harness model-options loader, the page's query hook and
+  // stylesheet in, the Connect-your-AI dialog and the scope pickers out.
+  // No new package edge. Measured 1063 / 57.
+  ceilings: { modules: 1063, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

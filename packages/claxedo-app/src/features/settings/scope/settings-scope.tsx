@@ -1,14 +1,9 @@
-import { createContext, createMemo, createSignal, useContext, type Accessor, type ParentProps } from "solid-js"
+import { createContext, createMemo, useContext, type Accessor, type ParentProps } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { NATIVE_HARNESS_IDS, harnessSelectionKey, isCatalogHarnessId, nativeHarness, connectionHarness, type HarnessSelection, type NativeHarnessId } from "@/platform/identity/harness-selection"
+import { NATIVE_HARNESS_IDS, harnessSelectionKey, nativeHarness, connectionHarness, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { harnessDisplayLabel } from "@/ui/harness-display"
 import { getClaxedoServerUrl } from "@/platform/api/api"
-import {
-  readWorkspaceHarnessDefault,
-  useEnabledAcpHarnesses,
-  useSDK,
-  useShellQueryOptions,
-} from "@/features/settings/app-ports"
+import { useEnabledAcpHarnesses, useSDK, useShellQueryOptions } from "@/features/settings/app-ports"
 import {
   resolveSettingsWorkspace,
   settingsWorkspaceOptions,
@@ -17,6 +12,8 @@ import {
 
 export type SettingsHarnessOption = {
   id: string
+  /** A DOM-safe name for the harness: its id, or `connection:<id>` for an ACP connection. */
+  slug: string
   label: string
   selection: HarnessSelection
 }
@@ -26,14 +23,10 @@ export type SettingsScope = {
   workspaces: Accessor<SettingsWorkspaceOption[]>
   /** Whether the catalog has answered yet. */
   loading: Accessor<boolean>
+  /** The workspace in view, else the catalog's first: the machine every read here asks. */
   workspace: Accessor<SettingsWorkspaceOption | undefined>
-  selectWorkspace: (key: string) => void
-  /** The harnesses offerable for the selected workspace. */
+  /** Every harness offerable on this server: the built-in five plus enabled ACP connections. */
   harnesses: Accessor<SettingsHarnessOption[]>
-  harness: Accessor<string>
-  harnessSelection: Accessor<HarnessSelection | undefined>
-  nativeHarness: Accessor<NativeHarnessId | undefined>
-  selectHarness: (id: string) => void
   /** The scope string catalog and provider-auth reads are keyed by. */
   scopeRef: Accessor<string | undefined>
   /** The persistence bucket for the selected workspace's model store. */
@@ -59,13 +52,11 @@ function focusedWorkspace() {
 }
 
 /**
- * Settings' (workspace, harness) pair.
+ * The machine Settings asks and the harnesses it lists.
  *
- * The catalog reads, the provider-auth writes and the dialogs these surfaces
- * open all carry `scopeRef` and the harness, so this is the only place the
- * question "which machine, which harness" is answered. Providers takes the
- * answer as it resolves — the workspace in view, the harness that workspace
- * remembers; Models lets the pickers override it.
+ * Catalog reads and provider-auth writes carry `scopeRef`, so this is the one
+ * place "which machine" is answered: the workspace in view, else the first the
+ * catalog knows. Nothing here is a user choice; the surfaces list every harness.
  */
 export function SettingsScopeProvider(props: ParentProps) {
   const queryOptions = useShellQueryOptions()
@@ -73,57 +64,25 @@ export function SettingsScopeProvider(props: ParentProps) {
   const focused = focusedWorkspace()
   const acp = useEnabledAcpHarnesses()
 
-  const [selectedWorkspace, setSelectedWorkspace] = createSignal<string | undefined>()
-  const [selectedHarness, setSelectedHarness] = createSignal<string | undefined>()
-
   const workspaces = createMemo(() => settingsWorkspaceOptions(catalog.data ?? []))
-  const workspace = createMemo(() =>
-    resolveSettingsWorkspace({ options: workspaces(), selected: selectedWorkspace(), focused }))
+  const workspace = createMemo(() => resolveSettingsWorkspace({ options: workspaces(), focused }))
 
   const harnesses = createMemo<SettingsHarnessOption[]>(() => [
     ...NATIVE_HARNESS_IDS.map((id) => {
       const selection = nativeHarness(id)
-      return { id: harnessSelectionKey(selection), label: harnessDisplayLabel(id), selection }
+      return { id: harnessSelectionKey(selection), slug: id, label: harnessDisplayLabel(id), selection }
     }),
     ...acp().map((row) => {
       const selection = connectionHarness(row.key)
-      return { id: harnessSelectionKey(selection), label: row.label, selection }
+      return { id: harnessSelectionKey(selection), slug: `connection:${row.key}`, label: row.label, selection }
     }),
   ])
-  const selectedOption = createMemo(() => {
-    const selected = selectedHarness()
-    const explicit = harnesses().find((option) => option.id === selected)
-    if (explicit) return explicit
-    const current = workspace()
-    const remembered = current
-      ? readWorkspaceHarnessDefault({ serverUrl: getClaxedoServerUrl(), workspaceKey: current.key })
-      : undefined
-    // A remembered harness that is no longer offered stays unselected: pointing
-    // these surfaces at a different harness would write credentials somewhere
-    // the workspace never chose.
-    if (remembered) return harnesses().find((option) => option.id === harnessSelectionKey(remembered))
-    // With nothing remembered the question is unanswered, not answered blank,
-    // and both surfaces plus the picker naming them would render empty. A
-    // catalog harness is the one with a provider list to show.
-    const offered = harnesses()
-    return offered.find((option) => option.selection.kind === "native" && isCatalogHarnessId(option.selection.harnessId))
-      ?? offered[0]
-  })
-  const harnessSelection = () => selectedOption()?.selection
 
   const value: SettingsScope = {
     workspaces,
     loading: () => catalog.isPending,
     workspace,
-    selectWorkspace: setSelectedWorkspace,
     harnesses,
-    harness: () => selectedOption()?.id ?? "",
-    harnessSelection,
-    nativeHarness: () => {
-      const selection = harnessSelection()
-      return selection?.kind === "native" ? selection.harnessId : undefined
-    },
-    selectHarness: setSelectedHarness,
     scopeRef: () => workspace()?.scope,
     workspaceKey: () => workspace()?.key ?? "",
     serverUrl: () => getClaxedoServerUrl(),

@@ -1,4 +1,5 @@
 import { Button } from "@opencode-ai/ui/button"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { createSignal, Show, type Component } from "solid-js"
@@ -24,20 +25,23 @@ export const ProviderSetupRow: Component<{
   /** The workspace-or-directory scope those credentials belong to. */
   scope?: string
   note?: string
-  /**
-   * Connect through the harness's own flow instead of the inline API-key form —
-   * a machine login is not a key this row could take.
-   */
-  onConnect?: () => void
+  /** Saves the login a scan found on this machine; offered while the row reads detected. */
+  onUseLogin?: () => void | Promise<void>
   onConnected?: () => void | Promise<void>
 }> = (props) => {
   const language = useLanguage()
   const [expanded, setExpanded] = createSignal(false)
+  const [usingLogin, setUsingLogin] = createSignal(false)
   const connected = () => props.status === "connected"
   const showStatus = () => props.status !== "missing"
-  const toggle = () => {
-    if (props.onConnect) return props.onConnect()
-    setExpanded((value) => !value)
+  const toggle = () => setExpanded((value) => !value)
+  const useLogin = async () => {
+    setUsingLogin(true)
+    try {
+      await props.onUseLogin?.()
+    } finally {
+      setUsingLogin(false)
+    }
   }
 
   return (
@@ -67,23 +71,49 @@ export const ProviderSetupRow: Component<{
           <Show when={showStatus()}>
             <Tag>{providerSetupStatusLabel(props.status, language)}</Tag>
           </Show>
-          <Show when={!connected()}>
-            <Button size="large" variant="ghost" onClick={toggle}>
-              {expanded() ? language.t("common.cancel") : language.t("common.connect")}
+          <Show when={!connected() && props.status === "detected" && props.onUseLogin}>
+            <Button size="large" variant="primary" disabled={usingLogin()} data-action="settings-provider-use-login" onClick={() => void useLogin()}>
+              {language.t("settings.providers.agents.useLogin")}
             </Button>
+          </Show>
+          <Show when={!connected() && !expanded()}>
+            <Button size="large" variant="ghost" onClick={toggle}>
+              {language.t("common.connect")}
+            </Button>
+          </Show>
+          <Show when={expanded()}>
+            <span class="text-12-regular text-text-interactive-base">{language.t("settings.providers.connect.open")}</span>
           </Show>
         </div>
       </div>
       <Show when={expanded() && !connected()}>
-        <div class="border-t border-border-weak-base pb-4 pt-4">
-          <ProviderConnectForm
-            provider={props.providerId}
-            harness={props.harness}
-            workspaceScope={props.scope}
-            hideHeading
-            onConnected={props.onConnected}
-            onDone={() => setExpanded(false)}
-          />
+        <div
+          class="mb-3 ml-8 overflow-hidden rounded-md border border-border-weak-base bg-background-stronger"
+          data-component="provider-connect-card"
+          onKeyDown={(event) => {
+            if (event.key !== "Escape") return
+            event.preventDefault()
+            setExpanded(false)
+          }}
+        >
+          <div class="flex items-start justify-between gap-3 border-b border-border-weak-base py-3 pl-4 pr-3">
+            <div class="flex flex-col gap-0.5">
+              <span class="text-14-medium text-text-strong">{language.t("settings.providers.connect.title", { provider: props.name })}</span>
+              <span class="text-12-regular text-text-weak">{language.t("settings.providers.connect.subtitle", { provider: props.name })}</span>
+            </div>
+            <IconButton icon="close" variant="ghost" aria-label={language.t("common.close")} data-action="provider-connect-close" onClick={() => setExpanded(false)} />
+          </div>
+          <div class="p-4">
+            <ProviderConnectForm
+              provider={props.providerId}
+              harness={props.harness}
+              workspaceScope={props.scope}
+              hideHeading
+              methodPicker="segmented"
+              onConnected={props.onConnected}
+              onDone={() => setExpanded(false)}
+            />
+          </div>
         </div>
       </Show>
     </div>

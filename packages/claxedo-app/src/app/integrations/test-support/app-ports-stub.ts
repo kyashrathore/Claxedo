@@ -129,10 +129,11 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   useGlobalSDK: lazy("@/app/providers/global-sdk/provider", "useGlobalSDK"),
   useShellQueryOptions: lazy("@/app/integrations/sync/query-options", "useShellQueryOptions"),
   DialogConnectProvider: lazy("@/app/dialogs/connect-provider", "DialogConnectProvider"),
-  DialogAIConnect: lazy("@/app/dialogs/connect-ai", "DialogAIConnect"),
   DialogSelectProvider: lazy("@/app/dialogs/select-provider", "DialogSelectProvider"),
   DialogCustomProvider: lazy("@/app/dialogs/custom-provider", "DialogCustomProvider"),
   discoverAIConnections: lazy("@/features/onboarding/ai-connect-api", "discoverAIConnections"),
+  saveDiscoveredAIConnections: lazy("@/features/onboarding/ai-connect-api", "saveDiscoveredAIConnections"),
+  useServerIsLocal: () => () => () => true,
   groupDiscoveryItems: lazy("@/features/onboarding/ai-connect-state", "groupDiscoveryItems"),
   localHarnessStatuses: lazy("@/features/onboarding/ai-connect-state", "localHarnessStatuses"),
   localHarnessChecks: lazy("@/features/onboarding/ai-connect-state", "localHarnessChecks"),
@@ -140,7 +141,7 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   getTerminalCommands: lazy("@/features/terminal/core/terminal-commands", "getTerminalCommands"),
   saveTerminalCommands: lazy("@/features/terminal/core/terminal-commands", "saveTerminalCommands"),
   defaultTerminalCommands: lazy("@/features/terminal/core/terminal-commands", "defaultTerminalCommands"),
-  useModels: lazy("@/features/session/providers/models", "useModels"),
+  useModelVisibility: lazy("@/features/session/providers/models", "useModelVisibility"),
   formatKeybind: lazy("@/app/providers/command", "formatKeybind"),
   parseKeybind: lazy("@/app/providers/command", "parseKeybind"),
   useCommand: lazy("@/app/providers/command", "useCommand"),
@@ -150,7 +151,6 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   useSandboxOnboardingFunnel: () => () => ({ emit: () => {} }),
   useSDK: lazy("@/app/providers/sdk/sdk", "useSDK"),
   useEnabledAcpHarnesses: () => () => () => [],
-  readWorkspaceHarnessDefault: () => () => undefined,
 }
 
 const documentsThunks: Thunks<DocumentsAppPorts> = {

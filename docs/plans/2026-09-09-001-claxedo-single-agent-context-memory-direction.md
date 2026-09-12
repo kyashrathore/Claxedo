@@ -3,6 +3,7 @@ title: "Claxedo — One Agent, Scoped Context and Memory"
 type: decision
 status: accepted-direction-technical-design-pending
 date: 2026-09-09
+updated: 2026-09-12
 supersedes: docs/plans/2026-09-08-002-feat-company-prd-design-plan.md
 ---
 
@@ -12,7 +13,7 @@ supersedes: docs/plans/2026-09-08-002-feat-company-prd-design-plan.md
 
 The user addresses one agent, **@claxedo**, from any supported surface. Useful specialization comes from the current request, authorized context, skills, execution environment and accumulated memory. Users do not create or select named bots, profession profiles or a roster of employees.
 
-This replaces the multiple-profile direction. Do not rename profiles to personas, assistants or context bundles and retain the same mandatory setup. There is no profile catalog, profile assignment, profile-owned memory, profile credential or profile-specific execution identity to implement.
+This replaces the multiple-profile direction. The later scoped preset decision permits reusable names for execution settings: local/cloud, harness/model/effort, instructions and selected cloud capabilities. These presets can become a foundation for future bots, but this delivery adds no bot identity, profile assignment, profile-owned memory or credentials. Do not turn presets into mandatory setup for all conversational work.
 
 One agent identity can serve many independent sessions and concurrent invocations. It does not mean one global conversation, one mutable memory blob, one process or shared unrestricted credentials. Harness/model selection remains an existing execution setting; changing it does not create another agent identity.
 
@@ -20,7 +21,7 @@ One agent identity can serve many independent sessions and concurrent invocation
 
 A user asks @claxedo in the app, a coding session or an integrated conversation. The originating surface supplies its verified actor and conversation context. Relevant authorized knowledge is selected without asking the user which bot owns it. An ambiguous target or missing authority is surfaced rather than guessed.
 
-Work can begin in a conversation. Durable tasks provide objectives, plans, subtasks and activity when work needs tracking across sessions. A board is a view of that work, not a prerequisite for asking the agent a question. The existing task-first Code surface remains a useful entrypoint alongside conversational work.
+Work can begin in a conversation. Durable tasks provide a title, description, subtasks, manual status and a link to the session where the work happens. A board is a view of that work, not a prerequisite for asking the agent a question. The existing task-first Code surface remains a useful entrypoint alongside conversational work.
 
 A user can teach a correction, inspect what was retained, change it or ask that it be forgotten. The system explains the scope and source of a memory. Users should not need to recreate an agent or move knowledge between employees to correct its behavior.
 
@@ -32,7 +33,7 @@ A recurring responsibility later combines a standing instruction, trigger, autho
 |---|---|---|
 | Agent identity | The consistent @claxedo entrypoint | A global transcript or all users' permissions |
 | Conversation/session | Current discussion and its participants | Automatic publication of everything learned |
-| Task | Durable objective, plan, progress and activity | General company knowledge or a required agent assignment |
+| Task | Durable description, subtasks, manual status and session reference | General company knowledge or a required agent assignment |
 | Invocation | Exact admitted input, effective execution settings and result evidence | A permanently evolving identity |
 | Context assembly | Selection of authorized instructions, sources, memory and tools for this invocation | Grants that bypass the underlying resource authority |
 | Memory | Durable, attributable, correctable knowledge with explicit scope | Transient task status or a dump of all conversations |
@@ -55,13 +56,15 @@ These are accepted design requirements, not a claim that the memory engine or al
 
 ## 5. Effect on the existing Tasks work
 
-Keep the reusable Tasks package, current host ports, build exclusion, durable commands, plans, subtasks, activity and exact invocation recovery. Remove the Profile record/table, profile APIs/editor/filter, assignment commands and Assign & start flow. Start uses the existing host's effective execution defaults with optional advanced controls and a frozen per-run snapshot. There is no named preset store in Tasks.
+The latest September 12 scope has two features: preset creation and task creation. Presets contain placement, model configurations, optional instructions and cloud capability selection. Tasks retain descriptions, one-level subtasks, manual status and links to ordinary sessions. Remove agent planning/acceptance, activity/comments and Tasks-owned Run records, APIs, drivers and UI.
 
-The Tasks HLD/LLD and implementation plan now describe that reduced foundation. Their U5 is host context/configuration resolution, not a memory service hidden inside Tasks. Task input assembly contributes task/plan evidence to the eventual shared context system; it must not become a competing personal/company memory owner.
+Start task chooses a preset and configuration. Existing session/workspace owners resolve settings, allocate local or isolated cloud placement, create the session and retain its resolved instructions/capabilities. Tasks stores navigation/provenance links; preset edits do not reconfigure existing sessions. Multiple root links are allowed through fixed configuration slots. Planning and execution configuration labels do not establish an automatic workflow.
 
-The earlier project-required rule remains specific to the initial Code Tasks slice. It is not a rule for every @claxedo interaction: analytics, research or support work may have other authorized targets. Generalizing durable tasks across those targets needs an explicit contract extension, not a fake code project.
+Local presets inherit the host's current skill/plugin configuration. Selected-only cloud presets require isolated runtime/configuration and credential scope, verified through real concurrent sessions. Presets never grant access beyond host authority and do not create new memory scopes.
 
-The 42 existing Tasks journeys remain a foundation checklist; revised J13/J14 test direct invocation and stable settings instead of profile CRUD. They do not establish cross-session learning or availability from every surface. The context/memory technical design must add its own journeys for personal/shared isolation, corrections, contradictory knowledge, deduplication, deletion, retrieval failure and cross-surface continuity before the overall product goal can be complete.
+The HLD/LLD and S1–S8 implementation plan describe this bounded feature. Reusable preset contracts remain separate from task records inside the current optional package. A future named-bot product can compose that configuration; its identity, triggers and memory decisions need their own explicit design.
+
+The project-required rule is specific to the initial Code Tasks slice, not every @claxedo interaction. The T01–T24 acceptance catalog validates presets/tasks, session linking and cloud/group behavior; it does not establish the scoped learning system. Context/memory still needs its own isolation, correction, conflict, deduplication, deletion, retrieval-failure and cross-surface journeys.
 
 ## 6. Documents and next work
 

@@ -3,6 +3,7 @@ import {
   discoverAIConnections,
   groupDiscoveryItems,
   localHarnessStatuses,
+  type AIDiscoveryRow,
   type LocalHarnessCheck,
   type LocalHarnessStatus,
 } from "@/features/settings/app-ports"
@@ -39,11 +40,20 @@ export function agentSetupStatus(
   return { status: "detected", detail: row.detail }
 }
 
-/** One scan of this machine, reduced to the two inputs `agentSetupStatus` reads. */
-export async function runProviderDetect() {
+export type ProviderDetectResult = {
+  stored: ReadonlySet<string>
+  agents: LocalHarnessStatus[]
+  /** The scan's id and rows, kept so a row can save the login it found without a second scan. */
+  discoveryId: string
+  rows: AIDiscoveryRow[]
+}
+
+/** One scan of this machine: the status inputs `agentSetupStatus` reads, plus the scan itself. */
+export async function runProviderDetect(): Promise<ProviderDetectResult> {
   const [discovery, stored] = await Promise.all([
     discoverAIConnections({}),
     listStoredCredentialProviders(),
   ])
-  return { stored, agents: localHarnessStatuses(groupDiscoveryItems(discovery.items)) }
+  const rows = groupDiscoveryItems(discovery.items)
+  return { stored, agents: localHarnessStatuses(rows), discoveryId: discovery.discoveryId, rows }
 }

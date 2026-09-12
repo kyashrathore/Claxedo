@@ -109,7 +109,9 @@ export type ClaxedoProviderList = {
 }
 
 export type ClaxedoProviderAuthMethod = {
-  type: "oauth" | "api"
+  type: "oauth" | "api" | "token"
+  /** For `token`: the terminal command that prints the token to paste. */
+  command?: string
   // Optional because the auth catalog does not always name a method, and the
   // connect form already renders `label ?? ""` — the DTO was the only place
   // claiming it was guaranteed.

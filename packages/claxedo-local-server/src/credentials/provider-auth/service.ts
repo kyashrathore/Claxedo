@@ -24,8 +24,10 @@ export type ProviderAuthPrompt =
     }
 
 export type ProviderAuthMethod = {
-  type: "oauth" | "api"
+  type: "oauth" | "api" | "token"
   label: string
+  /** For `token`: the terminal command that prints the token to paste. */
+  command?: string
   prompts?: ProviderAuthPrompt[]
 }
 
@@ -107,8 +109,14 @@ const DEFAULT_PENDING_TTL_MS = 15 * 60 * 1000
 
 export function providerAuthMethods(): ProviderAuthMethods {
   return {
-    anthropic: [{ type: "api", label: "API Key" }],
-    "claude-sdk": [{ type: "api", label: "API Key" }],
+    anthropic: [
+      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
+      { type: "api", label: "API Key" },
+    ],
+    "claude-sdk": [
+      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
+      { type: "api", label: "API Key" },
+    ],
     "codex-app-server": [
       { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
       { type: "api", label: "API Key" },

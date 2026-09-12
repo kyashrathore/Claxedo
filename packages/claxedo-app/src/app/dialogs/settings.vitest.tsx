@@ -39,7 +39,6 @@ vi.mock("@/features/settings/app-ports", () => ({
   }),
   useSDK: () => { throw new Error("no workspace SDK scope") },
   useEnabledAcpHarnesses: () => () => [],
-  readWorkspaceHarnessDefault: () => undefined,
 }))
 vi.mock("@opencode-ai/ui/context/dialog", () => ({ useDialog: () => ({ close: vi.fn() }) }))
 vi.mock("@/platform/i18n/provider", () => ({ useLanguage: () => ({ t: (key: string) => key }) }))
@@ -51,9 +50,6 @@ vi.mock("@/features/settings/ui/terminals", () => ({ SettingsTerminals: () => <d
 vi.mock("@/features/settings/ui/connections", () => ({ SettingsConnections: () => <div>Connections content</div> }))
 vi.mock("@/features/settings/ui/sandbox-section", () => ({ SandboxSettingsSection: () => <div>Sandbox content</div> }))
 vi.mock("@/features/settings/ui/org-team-section", () => ({ OrgTeamSettingsSection: () => <div>Orgs content</div> }))
-vi.mock("@/features/session/providers/models", () => ({
-  ModelsProvider: (props: { children: JSX.Element }) => <div>{props.children}</div>,
-}))
 vi.mock("@/features/onboarding", () => ({
   RemoteAccessSurface: () => <div>Devices content</div>,
   useRemoteAccessController: () => ({

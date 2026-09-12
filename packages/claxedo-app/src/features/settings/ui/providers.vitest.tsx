@@ -79,8 +79,9 @@ vi.mock("@/features/settings/app-ports", async () => {
       { key: "opencode", label: "External OpenCode" },
       { key: "pi", label: "External Pi" },
     ],
-    readWorkspaceHarnessDefault: () => state.rememberedHarness,
-    DialogAIConnect: () => <div data-testid="ai-connect-dialog" />,
+    saveDiscoveredAIConnections: async () => [],
+    useServerIsLocal: () => () => true,
+    useGlobalSDK: () => ({ url: "http://127.0.0.1:2593" }),
     DialogCustomProvider: (props: { scope?: string }) => (
       <div data-testid="custom-provider-dialog" data-scope={props.scope ?? ""} />
     ),
@@ -413,13 +414,19 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(["anthropic", "openai", "cursor"].map(agentStatus)).toEqual(["", "", ""])
   })
 
-  test("Connect opens the AI-connect flow declared as a Settings port, not an inline key form", async () => {
+  test("Connect opens an inset card in the row, named for the harness, that its own close button dismisses", async () => {
     mount()
     await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
     fireEvent.click(within(agentRow("cursor")).getByRole("button", { name: "common.connect" }))
-    expect(state.dialogs).toHaveLength(1)
-    render(state.dialogs[0])
-    expect(screen.getByTestId("ai-connect-dialog")).toBeInTheDocument()
-    expect(screen.queryByTestId("provider-connect-form")).toBeNull()
+    const card = agentRow("cursor").querySelector('[data-component="provider-connect-card"]')
+    expect(card).not.toBeNull()
+    expect(card?.textContent).toContain("settings.providers.connect.title:Cursor")
+    expect(within(agentRow("cursor")).getByTestId("provider-connect-form")).toBeInTheDocument()
+    // While open, the row offers no second Connect and no dialog is involved.
+    expect(within(agentRow("cursor")).queryByRole("button", { name: "common.connect" })).toBeNull()
+    expect(state.dialogs).toHaveLength(0)
+    fireEvent.click(within(agentRow("cursor")).getByRole("button", { name: "common.close" }))
+    expect(agentRow("cursor").querySelector('[data-component="provider-connect-card"]')).toBeNull()
+    expect(within(agentRow("cursor")).getByRole("button", { name: "common.connect" })).toBeInTheDocument()
   })
 })

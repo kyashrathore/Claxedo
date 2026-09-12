@@ -72,8 +72,11 @@ describe("control-plane provider auth", () => {
     const res = await app.request("/provider/auth")
 
     expect(res.status).toBe(200)
-    const body = await res.json() as Record<string, Array<{ type: string; label: string }>>
-    expect(body["claude-sdk"]).toEqual([{ type: "api", label: "API Key" }])
+    const body = await res.json() as Record<string, Array<{ type: string; label: string; command?: string }>>
+    expect(body["claude-sdk"]).toEqual([
+      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
+      { type: "api", label: "API Key" },
+    ])
     expect(body["codex-app-server"].map((item) => item.type)).toEqual(["oauth", "api"])
     expect(body["cursor-sdk"]).toEqual([{ type: "api", label: "API Key" }])
   })

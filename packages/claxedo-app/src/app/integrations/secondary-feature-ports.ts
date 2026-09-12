@@ -8,6 +8,7 @@ import { configureSettingsAppPorts } from "@/features/settings/app-ports"
 import { configureOnboardingAppPorts } from "@/features/onboarding/app-ports"
 import { configureReviewAppPorts } from "@/features/review/app-ports"
 import * as SDK from "@/app/providers/sdk/sdk"
+import { useServer } from "@/app/connection/server"
 import * as GlobalSDK from "@/app/providers/global-sdk/provider"
 import * as Command from "@/app/providers/command"
 import * as FileContext from "@/app/providers/file"
@@ -25,18 +26,15 @@ import * as AIConnectState from "@/features/onboarding/ai-connect-state"
 import * as TerminalAgents from "@/features/terminal/core/terminal-agents"
 import * as TerminalCommands from "@/features/terminal/core/terminal-commands"
 import * as SessionModels from "@/features/session/providers/models"
+import * as HarnessModelOptions from "@/features/session/harness/harness-model-options"
 import * as LinkModule from "@/app/controls/link"
 import * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
 import * as Prompt from "@/features/session/providers/prompt"
 import * as PanePreferences from "@/features/session/preferences/pane"
-import * as DraftDefaults from "@/features/session/harness/draft-defaults"
 import { DialogConnectIntegration, useOnboardingFunnel } from "./feature-ports"
 
 const DialogConnectProvider = lazyDialog(() =>
   import("@/app/dialogs/connect-provider").then((module) => ({ default: module.DialogConnectProvider })),
-)
-const DialogAIConnect = lazyDialog(() =>
-  import("@/app/dialogs/connect-ai").then((module) => ({ default: module.DialogAIConnect })),
 )
 const DialogSelectProvider = lazyDialog(() =>
   import("@/app/dialogs/select-provider").then((module) => ({ default: module.DialogSelectProvider })),
@@ -76,10 +74,11 @@ configureSettingsAppPorts({
   useGlobalSDK: GlobalSDK.useGlobalSDK,
   useShellQueryOptions: QueryOptions.useShellQueryOptions,
   DialogConnectProvider,
-  DialogAIConnect,
   DialogSelectProvider,
   DialogCustomProvider,
   discoverAIConnections: AIConnectApi.discoverAIConnections,
+  saveDiscoveredAIConnections: AIConnectApi.saveDiscoveredAIConnections,
+  useServerIsLocal: () => useServer().isLocal,
   groupDiscoveryItems: AIConnectState.groupDiscoveryItems,
   localHarnessStatuses: AIConnectState.localHarnessStatuses,
   localHarnessChecks: AIConnectState.localHarnessChecks,
@@ -87,7 +86,9 @@ configureSettingsAppPorts({
   getTerminalCommands: TerminalCommands.getTerminalCommands,
   saveTerminalCommands: TerminalCommands.saveTerminalCommands,
   defaultTerminalCommands: TerminalCommands.defaultTerminalCommands,
-  useModels: SessionModels.useModels,
+  useModelVisibility: SessionModels.useModelVisibility,
+  loadHarnessModelOptions: HarnessModelOptions.loadHarnessModelOptions,
+  groupHarnessModels: HarnessModelOptions.groupHarnessModels,
   formatKeybind: Command.formatKeybind,
   parseKeybind: Command.parseKeybind,
   useCommand: Command.useCommand,
@@ -106,7 +107,6 @@ configureSettingsAppPorts({
         : []
     }
   },
-  readWorkspaceHarnessDefault: (input) => DraftDefaults.createDraftDefaultPreferences(localStorage).read(input)?.harness,
 })
 
 configureOnboardingAppPorts({

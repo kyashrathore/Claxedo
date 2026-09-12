@@ -1,12 +1,23 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-09-05
+Last updated: 2026-09-12
 
 This directory keeps active plans and concise dated references that still help
 explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
+
+- [Provider accounts: one provider, many logins, one active](./2026-09-12-001-feat-provider-accounts-design.md) — proposed; not started.
+  - One explicit active account per provider, set in Settings → Providers
+    with a Make active button; every session inherits it at its next turn.
+    `is_active` column with a partial unique index replaces the invisible
+    preference order; snapshot shape unchanged; Codex refresh writes back to
+    the registry instead of `~/.codex/auth.json`; Claude second accounts via
+    `claude setup-token`; provider env stripped because the CLI ranks an
+    ambient API key above the OAuth token. Prior art: Orca, t3code
+    `ProviderInstanceId`, the CLIs themselves. Per-session accounts are a
+    recorded non-goal.
 
 - [Claxedo mobile (Expo)](./2026-09-07-004-feat-claxedo-mobile-expo-app-plan.md) — proposed; not started.
   - Thin Expo 57 / RN 0.86 app for the attention loop only: card list, last

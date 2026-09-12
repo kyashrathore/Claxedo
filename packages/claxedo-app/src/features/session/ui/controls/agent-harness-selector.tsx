@@ -6,7 +6,7 @@ import { type PickerItem, type PickerState } from "@/features/session/ui/model/s
 import { HarnessModelPicker } from "@/features/session/composer/ui/harness-model-picker"
 import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
 import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
-import { HARNESS_DISPLAY_NAMES, catalogHarnessId, harnessDisplayLabel, harnessSelectionId, isCatalogHarness, isNativeHarness, type HarnessType } from "@/features/session/harness/profile"
+import { HARNESS_DISPLAY_NAMES, catalogHarnessId, harnessDisplayLabel, harnessModelPickerProvider, harnessSelectionId, isCatalogHarness, isNativeHarness, type HarnessType } from "@/features/session/harness/profile"
 import { harnessUsesManagedDefaultModel } from "@/features/session/harness/selection"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
@@ -31,23 +31,6 @@ const BUILTIN_HARNESS_OPTIONS: HarnessType[] = NATIVE_HARNESS_IDS.map(nativeHarn
 
 function label(input: string) {
   return HARNESS_DISPLAY_NAMES[input] ?? harnessDisplayLabel(input)
-}
-
-function nativePickerProvider(harness: HarnessType, item: { id: string; providerID?: string }) {
-  const harnessId = item.providerID ?? harnessSelectionId(harness)
-  if (!isNativeHarness(harness, "pi")) {
-    return { id: harnessId, name: label(harnessId) }
-  }
-  const slash = item.id.indexOf("/")
-  const provider = slash > 0 ? item.id.slice(0, slash) : harnessId
-  return {
-    id: harnessId,
-    name: provider
-      .split(/[-_]/)
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" "),
-  }
 }
 
 function harnessOptionGroup(input: HarnessType) {
@@ -340,13 +323,24 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         ) ?? true
       )
     }
-    return selection().models.map((item) => ({
-      id: item.id,
-      name: item.name,
-      ...(item.description ? { description: item.description } : {}),
-      provider: nativePickerProvider(currentHarness, item),
-      ...(typeof item.connected === "boolean" ? { connected: item.connected } : {}),
-    }))
+    const providerModel = props.providerModel?.()
+    const selectedId = selection().selectedModel
+    return selection().models.flatMap((item) => {
+      const provider = harnessModelPickerProvider(currentHarness, item)
+      // The selected model stays listed even when hidden in Settings: a trigger
+      // that cannot find its own value has nothing to show.
+      const hidden = item.id !== selectedId
+        && providerModel !== undefined
+        && !providerModel.visible({ providerID: provider.id, modelID: item.id }, catalogProviders.default())
+      if (hidden) return []
+      return [{
+        id: item.id,
+        name: item.name,
+        ...(item.description ? { description: item.description } : {}),
+        provider,
+        ...(typeof item.connected === "boolean" ? { connected: item.connected } : {}),
+      }]
+    })
   })
   const picked = createMemo(() => {
     const selected = selection().selectedModelKey

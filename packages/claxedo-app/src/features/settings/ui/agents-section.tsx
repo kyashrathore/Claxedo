@@ -1,9 +1,15 @@
 import { Button } from "@opencode-ai/ui/button"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createSignal, For, onMount, type Component } from "solid-js"
-import { DialogAIConnect, localHarnessChecks, type LocalHarnessStatus } from "@/features/settings/app-ports"
-import { agentSetupStatus, listStoredCredentialProviders, runProviderDetect } from "@/features/settings/provider-detect"
+import {
+  localHarnessChecks,
+  saveDiscoveredAIConnections,
+  useGlobalSDK,
+  useServerIsLocal,
+  type LocalHarnessCheck,
+  type LocalHarnessStatus,
+} from "@/features/settings/app-ports"
+import { agentSetupStatus, listStoredCredentialProviders, runProviderDetect, type ProviderDetectResult } from "@/features/settings/provider-detect"
 import { SettingsList } from "@/features/settings/ui/list"
 import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -16,6 +22,17 @@ const AGENT_ICON: Record<string, string> = {
 }
 
 /**
+ * The provider id a pasted credential is stored under for each harness: the
+ * one its native SDK driver resolves auth by, so a key connected here is the
+ * key the next turn runs with.
+ */
+const AGENT_CONNECT_PROVIDER: Record<string, string> = {
+  claude: "claude-sdk",
+  codex: "codex-app-server",
+  cursor: "cursor-sdk",
+}
+
+/**
  * The agent logins on the machine this app runs on.
  *
  * Machine-wide, so it sits outside the workspace/harness scope the catalog
@@ -24,10 +41,12 @@ const AGENT_ICON: Record<string, string> = {
  */
 export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promise<void> }> = (props) => {
   const language = useLanguage()
-  const dialog = useDialog()
+  const globalSDK = useGlobalSDK()
+  const serverIsLocal = useServerIsLocal()
   const [detecting, setDetecting] = createSignal(false)
   const [stored, setStored] = createSignal<ReadonlySet<string>>(new Set<string>())
   const [discovered, setDiscovered] = createSignal<readonly LocalHarnessStatus[]>([])
+  const [discovery, setDiscovery] = createSignal<Pick<ProviderDetectResult, "discoveryId" | "rows">>()
 
   const readStored = async () => {
     setStored(await listStoredCredentialProviders())
@@ -37,32 +56,54 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     void readStored().catch(() => undefined)
   })
 
+  const fail = (err: unknown) => {
+    showToast({
+      title: language.t("common.requestFailed"),
+      description: err instanceof Error ? err.message : String(err),
+    })
+  }
+
   const detect = async () => {
     setDetecting(true)
     try {
       const result = await runProviderDetect()
       setStored(result.stored)
       setDiscovered(result.agents)
+      setDiscovery({ discoveryId: result.discoveryId, rows: result.rows })
       await props.onConnected?.()
     } catch (err: unknown) {
-      showToast({
-        title: language.t("common.requestFailed"),
-        description: err instanceof Error ? err.message : String(err),
-      })
+      fail(err)
     } finally {
       setDetecting(false)
     }
   }
 
-  const connect = () => {
-    void dialog.show(() => (
-      <DialogAIConnect
-        onConnected={async () => {
-          await readStored()
-          await props.onConnected?.()
-        }}
-      />
-    ))
+  /** The login the last scan found for this harness, when it is not stored yet. */
+  const discoveredRow = (check: LocalHarnessCheck) =>
+    discovery()?.rows.find((row) =>
+      !row.alreadyConnected
+      && row.probe?.state !== "broken"
+      && row.providerIds.some((id) => (check.providerIds as readonly string[]).includes(id)))
+
+  const useLogin = async (check: LocalHarnessCheck) => {
+    const current = discovery()
+    const row = discoveredRow(check)
+    if (!current || !row) return
+    try {
+      await saveDiscoveredAIConnections({
+        serverUrl: globalSDK.url,
+        discoveryId: current.discoveryId,
+        items: row.providerIds.map((providerId) => ({
+          providerId,
+          ...(row.accountId ? { accountId: row.accountId } : {}),
+          scope: serverIsLocal() ? "local" : "shared",
+        })),
+      })
+      await readStored()
+      await props.onConnected?.()
+    } catch (err: unknown) {
+      fail(err)
+    }
   }
 
   return (
@@ -94,10 +135,14 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
                 name={check.label}
                 status={status().status}
                 detail={status().detail}
-                providerId={check.providerIds[0]}
+                providerId={AGENT_CONNECT_PROVIDER[check.id] ?? check.providerIds[0]}
                 harness={check.id}
                 note={language.t("settings.providers.agents.sharedCredential")}
-                onConnect={connect}
+                onUseLogin={discoveredRow(check) ? () => useLogin(check) : undefined}
+                onConnected={async () => {
+                  await readStored()
+                  await props.onConnected?.()
+                }}
               />
             )
           }}

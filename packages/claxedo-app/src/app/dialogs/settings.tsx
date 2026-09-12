@@ -22,40 +22,7 @@ import { useServer } from "@/app/connection/server"
 import { useNavigate } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
-import { SettingsScopeProvider, useSettingsScope } from "@/features/settings/scope/settings-scope"
-import { ModelsProvider } from "@/features/session/providers/models"
-import type { ParentProps } from "solid-js"
-
-/**
- * The model store these settings edit.
- *
- * Visibility and variants belong to (server, workspace, harness), so Settings
- * reads the store of the pair the scope selector names — the same store a pane
- * open on that workspace reads, so an edit here is an edit there.
- *
- * `ModelsProvider` binds its (server, workspace) once, at mount, so the subtree
- * is keyed on the pair: it waits for the catalog to name a workspace, and it
- * rebinds when the selector picks another.
- */
-function SettingsModelsScope(props: ParentProps) {
-  const scope = useSettingsScope()
-  const boundWorkspace = createMemo(() => scope.workspaceKey() || undefined)
-  return (
-    <Show keyed when={boundWorkspace()}>
-      {(workspaceKey) => (
-        <ModelsProvider
-          workspaceKey={() => workspaceKey}
-          harness={scope.harness}
-          nativeHarness={scope.nativeHarness}
-          serverUrl={scope.serverUrl}
-          scope={scope.scopeRef}
-        >
-          {props.children}
-        </ModelsProvider>
-      )}
-    </Show>
-  )
-}
+import { SettingsScopeProvider } from "@/features/settings/scope/settings-scope"
 
 export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   const language = useLanguage()
@@ -239,9 +206,7 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
               <SettingsProviders />
             </Tabs.Content>
             <Tabs.Content value="models" class="no-scrollbar">
-              <SettingsModelsScope>
-                <SettingsModels />
-              </SettingsModelsScope>
+              <SettingsModels />
             </Tabs.Content>
             <Show when={productUi().settingsConnections}>
               <Tabs.Content value="connections" class="no-scrollbar">

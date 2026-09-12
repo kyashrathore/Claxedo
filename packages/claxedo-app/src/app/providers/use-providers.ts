@@ -89,7 +89,7 @@ export function useProviderAuth(harnessType: HarnessInput, scope?: ScopeInput) {
       harnessType: harness(),
       request: authFetch,
     }),
-    enabled: hasManagedProviderCredentials(harness()),
+    enabled: !!harness(),
   }))
 }
 

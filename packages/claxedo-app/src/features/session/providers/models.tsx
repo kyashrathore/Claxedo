@@ -8,7 +8,6 @@ import { Persist, persisted } from "@/platform/persistence/persist"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 
 type Visibility = "show" | "hide"
-type User = ModelKey & { visibility: Visibility; favorite?: boolean }
 /** A recent choice always names the harness it was made under. */
 export type RecentModel = ModelKey & { harness: string }
 
@@ -16,14 +15,11 @@ export type RecentModel = ModelKey & { harness: string }
  * What one (server, workspace) remembers about models.
  *
  * The bucket is the workspace; the harness is a key INSIDE it, because two
- * harnesses in the same workspace do not share a model namespace: hiding
- * `anthropic/claude-opus-4` under OpenCode says nothing about the same pair
- * offered by `claude-sdk`, and a variant chosen for one is meaningless for the
- * other.
+ * harnesses in the same workspace do not share a model namespace: a variant
+ * chosen for `anthropic/claude-opus-4` under OpenCode is meaningless for the
+ * same pair offered by `claude-sdk`.
  */
 export type ModelStoreRecord = {
-  /** Visibility overrides per harness. */
-  user: Record<string, User[]>
   /** Recent models, newest first, each carrying the harness it was chosen under. */
   recent: RecentModel[]
   /** Variant per harness, then per `providerID/modelID`. */
@@ -32,23 +28,29 @@ export type ModelStoreRecord = {
 
 const RECENT_LIMIT = 5
 const STORE_KEY = "model"
+const VISIBILITY_KEY = "model-visibility"
+
+/**
+ * Which models the user hid or showed, keyed `providerID:modelID`. One answer
+ * for the whole app: a model hidden in Settings is hidden in every workspace
+ * and under every harness that offers that provider/model pair.
+ */
+export type ModelVisibilityRecord = { entries: Record<string, Visibility> }
+
+export function decodeModelVisibilityRecord(value: unknown): ModelVisibilityRecord {
+  const entries = asRecord(asRecord(value)?.entries)
+  if (!entries) return { entries: {} }
+  return {
+    entries: Object.fromEntries(
+      Object.entries(entries).filter((entry): entry is [string, Visibility] => entry[1] === "show" || entry[1] === "hide"),
+    ),
+  }
+}
 /**
  * The single global store this one replaces. `persisted` moves it into the
  * first (server, workspace) bucket that reads it and removes it on the way, so
  * the global entry exists for exactly one read.
  */
-
-function visibilityRows(value: unknown): User[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((item: unknown) => {
-    const row = asRecord(item)
-    const providerID = readString(row, "providerID")
-    const modelID = readString(row, "modelID")
-    if (!providerID || !modelID) return []
-    if (row?.visibility !== "show" && row?.visibility !== "hide") return []
-    return [{ providerID, modelID, visibility: row.visibility }]
-  })
-}
 
 function variantMap(value: unknown): Record<string, string | undefined> {
   const row = asRecord(value)
@@ -60,14 +62,12 @@ function variantMap(value: unknown): Record<string, string | undefined> {
 
 /** Validates the workspace-owned, harness-keyed preference record. */
 export function decodeModelStoreRecord(value: unknown): ModelStoreRecord {
-  const empty: ModelStoreRecord = { user: {}, recent: [], variant: {} }
+  const empty: ModelStoreRecord = { recent: [], variant: {} }
   const row = asRecord(value)
   if (!row) return empty
+  // The pre-workspace global record carried its preferences as a flat array
+  // under `user`; it is rejected whole rather than partially adopted.
   if (Array.isArray(row.user)) return empty
-  const userRow = asRecord(row.user)
-  const user = userRow
-    ? Object.fromEntries(Object.entries(userRow).map(([harness, rows]) => [harness, visibilityRows(rows)]))
-    : {}
   const variantRow = asRecord(row.variant)
   const variant = variantRow
     ? Object.fromEntries(Object.entries(variantRow).map(([harness, map]) => [harness, variantMap(map)]))
@@ -82,7 +82,7 @@ export function decodeModelStoreRecord(value: unknown): ModelStoreRecord {
       return [{ providerID, modelID, harness }]
     })
     : []
-  return { user, recent, variant }
+  return { recent, variant }
 }
 
 /**
@@ -112,7 +112,11 @@ export function resolveModelVisibility(input: {
 }) {
   if (input.user === "hide") return false
   if (input.user === "show") return true
-  return input.defaults[input.model.providerID] === input.model.modelID
+  // A provider with a catalog default is the models.dev registry, where only
+  // the default is offered until the user enables more. A harness that reports
+  // its own list has no defaults, and that list is already the offer.
+  const fallback = input.defaults[input.model.providerID]
+  return fallback === undefined || fallback === input.model.modelID
 }
 
 export type ModelsScope = {
@@ -139,16 +143,24 @@ function createModelStoreRecord(target: ReturnType<typeof Persist.serverWorkspac
       migrate: decodeModelStoreRecord,
     },
     createStore<ModelStoreRecord>({
-      user: {},
       recent: [],
       variant: {},
     }),
   )
 }
 
+function createModelVisibilityRecord() {
+  return persisted(
+    { ...Persist.global(VISIBILITY_KEY), migrate: decodeModelVisibilityRecord },
+    createStore<ModelVisibilityRecord>({ entries: {} }),
+  )
+}
+
 export type ModelStoreRegistry = {
   /** The one record for this (server, workspace), created on first ask. */
   record: (serverUrl: string, workspaceKey: string) => ReturnType<typeof createModelStoreRecord>
+  /** The one visibility record for the app, created on first ask. */
+  visibility: () => ReturnType<typeof createModelVisibilityRecord>
 }
 
 /**
@@ -162,8 +174,9 @@ export type ModelStoreRegistry = {
  * dialog.
  *
  * The harness is deliberately NOT part of the key: it keys the maps INSIDE the
- * record, which is what lets one workspace's harnesses keep separate visibility,
- * variants and recents in one document.
+ * record, which is what lets one workspace's harnesses keep separate variants
+ * and recents in one document. Visibility is not in the record at all; it is
+ * one app-wide document, because a hidden model is hidden everywhere.
  */
 export const { use: useModelStoreRegistry, provider: ModelStoreRegistryProvider } =
   createSimpleContext<ModelStoreRegistry, Record<string, unknown>>({
@@ -172,7 +185,14 @@ export const { use: useModelStoreRegistry, provider: ModelStoreRegistryProvider 
     init: (): ModelStoreRegistry => {
       const owner = getOwner()
       const records = new Map<string, ReturnType<typeof createModelStoreRecord>>()
+      let visibility: ReturnType<typeof createModelVisibilityRecord> | undefined
       return {
+        visibility() {
+          visibility ??= owner
+            ? runWithOwner(owner, () => createModelVisibilityRecord())!
+            : createRoot(() => createModelVisibilityRecord())
+          return visibility
+        },
         record(serverUrl, workspaceKey) {
           // Keyed by the persistence TARGET rather than by the raw arguments:
           // two callers can name one document with differently-spelled server
@@ -199,7 +219,9 @@ const modelsContextInput = {
   init: (input: ModelsScope) => {
     const providers = useProviders(() => input.nativeHarness?.() ?? "", input.scope ?? (() => undefined))
 
-    const [store, setStore, _, ready] = useModelStoreRegistry().record(input.serverUrl(), input.workspaceKey())
+    const registry = useModelStoreRegistry()
+    const [store, setStore, _, ready] = registry.record(input.serverUrl(), input.workspaceKey())
+    const [visibilityStore, setVisibilityStore] = registry.visibility()
 
     const harness = () => input.harness()
 
@@ -213,12 +235,6 @@ const modelsContextInput = {
       ),
     )
 
-    const visibility = createMemo(() => {
-      const map = new Map<string, Visibility>()
-      for (const item of store.user[harness()] ?? []) map.set(`${item.providerID}:${item.modelID}`, item.visibility)
-      return map
-    })
-
     const list = createMemo(() =>
       available().map((m) => ({
         ...m,
@@ -229,30 +245,16 @@ const modelsContextInput = {
 
     const find = (key: ModelKey) => list().find((m) => m.id === key.modelID && m.provider.id === key.providerID)
 
-    function update(model: ModelKey, state: Visibility) {
-      const current = store.user[harness()]
-      if (!current) {
-        setStore("user", harness(), [{ ...model, visibility: state }])
-        return
-      }
-      const index = current.findIndex((x) => x.modelID === model.modelID && x.providerID === model.providerID)
-      if (index >= 0) {
-        setStore("user", harness(), index, (entry) => ({ ...entry, visibility: state }))
-        return
-      }
-      setStore("user", harness(), current.length, { ...model, visibility: state })
-    }
-
     const visible = (model: ModelKey, defaults: Record<string, string> = providers.default()) => {
       return resolveModelVisibility({
         model,
         defaults,
-        user: visibility().get(modelKey(model)),
+        user: visibilityStore.entries[modelKey(model)],
       })
     }
 
     const setVisibility = (model: ModelKey, state: boolean) => {
-      update(model, state ? "show" : "hide")
+      setVisibilityStore("entries", modelKey(model), state ? "show" : "hide")
     }
 
     /** Recent is per user, filtered to the harness the entries were chosen under. */
@@ -316,3 +318,15 @@ const modelsContextInput = {
 }
 export const { use: useModels, provider: ModelsProvider } =
   createSimpleContext<ReturnType<typeof modelsContextInput.init>, ModelsScope>(modelsContextInput)
+
+/** The visibility answer alone, for surfaces that edit it without a workspace's model store. */
+export function useModelVisibility() {
+  const [store, setStore] = useModelStoreRegistry().visibility()
+  return {
+    visible: (model: ModelKey, defaults: Record<string, string> = {}) =>
+      resolveModelVisibility({ model, defaults, user: store.entries[modelKey(model)] }),
+    setVisibility: (model: ModelKey, state: boolean) => {
+      setStore("entries", modelKey(model), state ? "show" : "hide")
+    },
+  }
+}

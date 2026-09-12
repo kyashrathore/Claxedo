@@ -82,6 +82,27 @@ export function isNativeSdkHarness(type: HarnessType) {
   return type.kind === "native" && ["claude", "codex", "cursor"].includes(type.harnessId)
 }
 
+/**
+ * The provider row a harness-reported model is shown under. Every harness but
+ * Pi is its own provider; Pi reports `vendor/model` ids and keeps its own id as
+ * the key while labelling the group by vendor.
+ */
+export function harnessModelPickerProvider(harness: HarnessType, item: { id: string; providerID?: string }) {
+  const harnessId = item.providerID ?? harnessSelectionId(harness)
+  const label = HARNESS_DISPLAY_NAMES[harnessId] ?? harnessDisplayLabel(harnessId)
+  if (!isNativeHarness(harness, "pi")) return { id: harnessId, name: label }
+  const slash = item.id.indexOf("/")
+  const provider = slash > 0 ? item.id.slice(0, slash) : harnessId
+  return {
+    id: harnessId,
+    name: provider
+      .split(/[-_]/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" "),
+  }
+}
+
 export function isNativeHarness(type: HarnessType, id: NativeHarnessId): boolean {
   return type.kind === "native" && type.harnessId === id
 }

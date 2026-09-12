@@ -773,6 +773,31 @@ describe("AgentHarnessSelector — native Pi models", () => {
 
 })
 
+describe("AgentHarnessSelector — native harness model visibility", () => {
+  test("hides a reported model the user hid in Settings, but never the selected one", () => {
+    harnessType = { kind: "native", harnessId: "claude" }
+    models = [{ id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }, { id: "legacy", name: "Legacy" }]
+    selectedModel = "legacy"
+    const visible = vi.fn((model: { providerID: string; modelID: string }) => model.modelID === "opus")
+
+    const { container } = render(() => (
+      <TestAgentHarnessSelector
+        providerModel={() => ({
+          list: () => [],
+          current: () => undefined,
+          visible,
+          set: () => undefined,
+        })}
+      />
+    ))
+
+    expect(container.querySelector("[data-testid='model-option-opus']")).not.toBeNull()
+    expect(container.querySelector("[data-testid='model-option-sonnet']")).toBeNull()
+    expect(container.querySelector("[data-testid='model-option-legacy']")).not.toBeNull()
+    expect(visible).toHaveBeenCalledWith({ providerID: "claude", modelID: "sonnet" }, {})
+  })
+})
+
 describe("AgentHarnessSelector — OpenCode provider catalog", () => {
   test("applies provider visibility preferences to the authoritative OpenCode catalog", () => {
     harnessType = { kind: "native", harnessId: "opencode" }

@@ -14,7 +14,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
-import { createMemo, Match, Show, Switch } from "solid-js"
+import { createMemo, For, Match, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Link } from "@/app/controls/link"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
@@ -41,6 +41,12 @@ export type ProviderConnectFormProps = {
   onDone?: () => void
   /** Hides the provider name row when the surface already shows a title. */
   hideHeading?: boolean
+  /**
+   * How several methods are offered: a list the user picks from once, or a
+   * segmented control that stays on screen so the choice can be changed. The
+   * segmented form starts on the first method; OAuth waits for a click.
+   */
+  methodPicker?: "list" | "segmented"
 }
 
 function useProviderConnectForm(props: ProviderConnectFormProps) {
@@ -69,7 +75,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     : providerAuthQuery.data?.[props.provider] ?? fallback())
   const apiMethodIndex = createMemo(() => methods().findIndex((item) => item.type === "api"))
   const [store, setStore] = createStore({
-    methodIndex: methods().length === 1 ? 0 : undefined as number | undefined,
+    methodIndex: undefined as number | undefined,
     authorization: undefined as ProviderAuthAuthorization | undefined,
     state: undefined as "pending" | "auto" | "code" | "error" | undefined,
     value: "",
@@ -77,9 +83,21 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     error: undefined as string | undefined,
     saving: false,
   })
-  const selected = createMemo(() => store.methodIndex === undefined ? undefined : methods().at(store.methodIndex))
+  // A single method needs no choice; a segmented picker starts on the first.
+  const selected = createMemo(() => {
+    const list = methods()
+    if (store.methodIndex !== undefined) return list.at(store.methodIndex)
+    if (list.length === 1 || props.methodPicker === "segmented") return list[0]
+    return undefined
+  })
+  const selectedIndex = () => store.methodIndex ?? (selected() ? methods().indexOf(selected()!) : undefined)
+  const pickMethod = (index: number) => {
+    setStore({ methodIndex: index, authorization: undefined, state: undefined, error: undefined, value: "", code: "" })
+  }
   const methodLabel = (value?: { type?: string; label?: string }) =>
     value?.type === "api" ? language.t("provider.connect.method.apiKey") : value?.label ?? ""
+  /** Both a key and a subscription token are pasted; the stored secret's shape tells them apart. */
+  const pastes = () => selected()?.type === "api" || selected()?.type === "token"
 
   // Every catalog entry for this harness, on whichever machine cached it: the
   // credential is stored centrally, so a machine that already answered for this
@@ -190,6 +208,9 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     apiMethodIndex,
     selected,
     methodLabel,
+    pastes,
+    selectedIndex,
+    pickMethod,
     store,
     setStore,
     codexBundleRequired,
@@ -211,17 +232,48 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
           <span class="text-14-medium text-text-strong">{form.provider().name}</span>
         </div>
       </Show>
+      <Show when={props.methodPicker === "segmented" && form.methods().length > 1}>
+        <div style={{ display: "inline-flex", padding: "2px", "border-radius": "8px", gap: "2px" }} class="bg-surface-raised-base" role="tablist" data-component="provider-connect-methods">
+          <For each={form.methods()}>
+            {(item, index) => (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={form.selectedIndex() === index()}
+                data-action="provider-connect-method"
+                class="text-13-medium h-7 px-3 rounded-md border"
+                classList={{
+                  "bg-surface-raised-stronger-non-alpha border-border-strong-base text-text-strong": form.selectedIndex() === index(),
+                  "border-transparent text-text-base hover:text-text-strong": form.selectedIndex() !== index(),
+                }}
+                onClick={() => form.pickMethod(index())}
+              >
+                {form.methodLabel(item)}
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
       <Switch>
-        <Match when={form.selected()?.type === "api" || form.apiMethodIndex() === 0}>
-          <form onSubmit={form.saveApiKey} class="flex flex-col items-start gap-4">
+        <Match when={form.pastes() || form.apiMethodIndex() === 0}>
+          <form onSubmit={form.saveApiKey} class="flex flex-col items-start gap-4" data-method={form.selected()?.type ?? "api"}>
             <div class="text-14-regular text-text-base">
-              {language.t("provider.connect.apiKey.description", { provider: form.provider().name })}
+              {form.selected()?.type === "token"
+                ? language.t("provider.connect.token.description", { provider: form.provider().name })
+                : language.t("provider.connect.apiKey.description", { provider: form.provider().name })}
             </div>
+            <Show when={form.selected()?.type === "token" ? form.selected()?.command : undefined}>
+              {(command) => <TextField label={language.t("provider.connect.token.command")} value={command()} readOnly copyable />}
+            </Show>
             <TextField
               autofocus
               type="text"
-              label={language.t("provider.connect.apiKey.label", { provider: form.provider().name })}
-              placeholder={language.t("provider.connect.apiKey.placeholder")}
+              label={form.selected()?.type === "token"
+                ? language.t("provider.connect.token.label", { provider: form.provider().name })
+                : language.t("provider.connect.apiKey.label", { provider: form.provider().name })}
+              placeholder={form.selected()?.type === "token"
+                ? language.t("provider.connect.token.placeholder")
+                : language.t("provider.connect.apiKey.placeholder")}
               name="apiKey"
               value={store.value}
               onChange={(value) => setStore("value", value)}
@@ -293,6 +345,19 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
         </Match>
         <Match when={store.state === "error"}>
           <div class="text-14-regular text-icon-critical-base">{store.error}</div>
+        </Match>
+        <Match when={props.methodPicker === "segmented" && form.selected()?.type === "oauth"}>
+          <div class="flex flex-col items-start gap-4">
+            <p class="text-14-regular text-text-base max-w-md text-pretty">
+              {language.t("provider.connect.oauth.description", { method: form.selected()?.label ?? "", provider: form.provider().name })}
+            </p>
+            <div class="flex items-center gap-3">
+              <Button class="w-auto" type="button" size="large" variant="primary" disabled={store.saving} data-action="provider-connect-oauth-start" onClick={() => void form.startOAuth(form.selectedIndex() ?? 0)}>
+                {language.t("provider.connect.oauth.start")}
+              </Button>
+              <span class="text-12-regular text-text-weak">{language.t("provider.connect.oauth.hint")}</span>
+            </div>
+          </div>
         </Match>
         <Match when={form.codexBundleRequired()}>
           <div class="flex flex-col items-start gap-4">

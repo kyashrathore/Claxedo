@@ -1,8 +1,8 @@
-/** Models is the surface that still asks which (workspace, harness) it edits. */
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library"
+/** Models lists every harness's models for the workspace in view and edits one app-wide visibility answer. */
+import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { connectionHarness, harnessSelectionKey, nativeHarness, type HarnessSelection } from "@/platform/identity/harness-selection"
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
 
 type CatalogProject = {
   id: string
@@ -18,31 +18,45 @@ const LOCAL_PROJECT: CatalogProject = {
   workspaces: { "/repo": { workspaceId: "ws_local", kind: "local", workspace_name: "main", directory: "/repo" } },
 }
 
-const CLOUD_PROJECT: CatalogProject = {
-  id: "proj_cloud",
-  name: "acme/api",
-  worktree: "workspace:ws_cloud",
-  workspaces: {
-    "workspace:ws_cloud": { workspaceId: "ws_cloud", kind: "cloud", workspace_name: "sandbox", directory: "/workspace" },
-  },
-}
-
 const clients = new Set<QueryClient>()
 
 const state = vi.hoisted(() => ({
   /** Every (scope, harness) pair the page asked a catalog for, in order. */
   requests: [] as Array<{ scope?: string; harness: string }>,
-  catalogs: {} as Record<string, string[]>,
-  /** The harness the workspace's draft-default record remembers, if any. */
-  rememberedHarness: undefined as HarnessSelection | undefined,
   projects: [] as CatalogProject[],
+  /** What each non-catalog harness reports through its options endpoint. */
+  harnessModels: {} as Record<string, Array<{ id: string; name: string }>>,
+  optionRequests: [] as Array<{ directory: string; harness: string }>,
+  setVisibility: [] as Array<[{ providerID: string; modelID: string }, boolean]>,
+  /** Model keys the visibility record hides. */
+  hidden: new Set<string>(),
+  /** A harness whose options endpoint fails, and how. */
+  failing: undefined as { harness: string; message: string } | undefined,
 }))
 
 vi.mock("@/features/settings/app-ports", async () => {
   const { useProviders } = await import("@/app/providers/use-providers")
+  const { groupHarnessModels } = await import("@/features/session/harness/harness-model-options")
+  const { harnessSelectionId } = await import("@/features/session/harness/profile")
   return {
     useProviders,
-    useModels: () => ({ visible: () => true, setVisibility: () => undefined }),
+    useModelVisibility: () => ({
+      // The store's rule: a hide wins; otherwise a provider with a catalog
+      // default offers only that default.
+      visible: (key: { providerID: string; modelID: string }, defaults: Record<string, string> = {}) =>
+        !state.hidden.has(`${key.providerID}:${key.modelID}`)
+        && (defaults[key.providerID] === undefined || defaults[key.providerID] === key.modelID),
+      setVisibility: (key: { providerID: string; modelID: string }, checked: boolean) => {
+        state.setVisibility.push([key, checked])
+      },
+    }),
+    groupHarnessModels,
+    loadHarnessModelOptions: async (input: { scope: { directory?: string }; harness: HarnessSelection }) => {
+      const harness = harnessSelectionId(input.harness)
+      state.optionRequests.push({ directory: input.scope.directory ?? "", harness })
+      if (state.failing?.harness === harness) throw new Error(state.failing.message)
+      return state.harnessModels[harness] ?? []
+    },
     useShellQueryOptions: () => ({
       projects: () => ({
         queryKey: ["models-vitest", "projects", state.projects.map((project) => project.id).join(",")],
@@ -53,7 +67,6 @@ vi.mock("@/features/settings/app-ports", async () => {
       throw new Error("no workspace SDK scope")
     },
     useEnabledAcpHarnesses: () => () => [{ key: "team-agent", label: "Team Agent" }],
-    readWorkspaceHarnessDefault: () => state.rememberedHarness,
   }
 })
 
@@ -68,11 +81,13 @@ vi.mock("@/app/integrations/sync/query-options", () => ({
       queryKey: ["providers", scope, harness],
       queryFn: async () => {
         state.requests.push({ scope: scope ?? undefined, harness })
-        const ids = state.catalogs[`${scope ?? ""}|${harness}`] ?? []
         return {
-          all: new Map(ids.map((id) => [id, { id, name: id, models: {}, source: "api" }])),
-          connected: [] as string[],
-          default: {},
+          all: new Map([
+            ["anthropic", { id: "anthropic", name: "Anthropic", models: { opus: { id: "opus", name: "Opus" }, sonnet: { id: "sonnet", name: "Sonnet" } }, source: "api" }],
+            ["openai", { id: "openai", name: "OpenAI", models: { gpt: { id: "gpt", name: "GPT" } }, source: "api" }],
+          ]),
+          connected: ["anthropic", "openai"],
+          default: { anthropic: "opus", openai: "gpt" },
         }
       },
     }),
@@ -91,24 +106,6 @@ vi.mock("@/platform/api/api", async (importOriginal) => ({
   getClaxedoServerUrl: () => "http://127.0.0.1:2593",
 }))
 
-// The pickers are the surface under test, so they render as native selects whose
-// current value the test can read directly.
-vi.mock("@opencode-ai/ui/select", () => ({
-  Select: (props: {
-    "data-action"?: string
-    options: Array<Record<string, string>>
-    current?: Record<string, string>
-    value: (option: Record<string, string>) => string
-  }) => (
-    <select data-testid={props["data-action"]} value={props.current ? props.value(props.current) : ""}>
-      <option value="" disabled />
-      {props.options.map((option) => (
-        <option value={props.value(option)}>{props.value(option)}</option>
-      ))}
-    </select>
-  ),
-}))
-
 const { SettingsScopeProvider } = await import("@/features/settings/scope/settings-scope")
 const { SettingsModels } = await import("./models")
 
@@ -124,24 +121,30 @@ function mount() {
   ))
 }
 
-function harnessPicker() {
-  return screen.getByTestId("settings-scope-harness")
+function section(slug: string) {
+  return document.querySelector<HTMLElement>(`[data-component="models-section-${slug}"]`)
 }
 
-/** Reads issued after the workspace catalog answered; the page fires one before it. */
-function scopedRequests() {
-  return state.requests.filter((request) => request.scope)
+function enabledRows(slug: string) {
+  return [...(section(slug)?.querySelectorAll<HTMLElement>('[data-component="models-enabled-row"]') ?? [])].map((row) => row.textContent?.trim() ?? "")
+}
+
+function browseRows(slug: string) {
+  return [...(section(slug)?.querySelectorAll<HTMLElement>('[data-component="models-browse-row"]') ?? [])].map((row) => row.textContent?.trim() ?? "")
+}
+
+function chips(slug: string) {
+  return [...(section(slug)?.querySelectorAll<HTMLButtonElement>('[data-component="models-provider-chip"]') ?? [])]
 }
 
 beforeEach(() => {
   state.requests.length = 0
-  state.rememberedHarness = nativeHarness("pi")
-  state.projects = [LOCAL_PROJECT, CLOUD_PROJECT]
-  state.catalogs = {
-    "workspace:ws_local|pi": ["anthropic"],
-    "workspace:ws_local|opencode": ["external-backend"],
-    "workspace:ws_cloud|pi": ["cloud-backend"],
-  }
+  state.optionRequests.length = 0
+  state.setVisibility.length = 0
+  state.harnessModels = {}
+  state.hidden = new Set()
+  state.failing = undefined
+  state.projects = [LOCAL_PROJECT]
 })
 
 afterEach(() => {
@@ -150,33 +153,56 @@ afterEach(() => {
   clients.clear()
 })
 
-describe("Settings → Models names the (workspace, harness) it edits", () => {
-  test("the workspace picker is hidden when the catalog offers a single workspace", async () => {
-    state.projects = [LOCAL_PROJECT]
+describe("Settings → Models", () => {
+  test("each harness is its own section; enabled models come first, the provider inline only where a harness has several", async () => {
+    state.harnessModels.claude = [{ id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }]
     mount()
-    await waitFor(() => expect(scopedRequests()).not.toHaveLength(0))
-    expect(screen.queryByTestId("settings-scope-workspace")).toBeNull()
-    expect(scopedRequests().every((request) => request.scope === "workspace:ws_local")).toBe(true)
+    await waitFor(() => expect(enabledRows("claude")).toEqual(["OpusOpus", "SonnetSonnet"]))
+    await waitFor(() => expect(enabledRows("opencode")).toEqual(["Anthropic ·OpusOpus", "OpenAI ·GPTGPT"]))
+    for (const slug of ["claude", "codex", "cursor", "pi", "opencode", "connection:team-agent"]) expect(section(slug)).not.toBeNull()
+    expect(document.querySelector('[data-component="settings-scope-selector"]')).toBeNull()
+    expect(section("claude")?.textContent).toContain("settings.models.enabled.count:2")
   })
 
-  test("the workspace picker appears once the catalog offers a choice", async () => {
+  test("a single-list harness offers its hidden models under the enabled ones, and switching one on moves it up", async () => {
+    state.harnessModels.claude = [{ id: "opus", name: "Opus" }, { id: "sonnet", name: "Sonnet" }]
+    state.hidden.add("claude:sonnet")
     mount()
-    await waitFor(() => expect(screen.getByTestId("settings-scope-workspace")).toHaveValue("/repo"))
-    expect(document.querySelector('[data-component="settings-scope-selector"]')).not.toBeNull()
+    await waitFor(() => expect(enabledRows("claude")).toEqual(["OpusOpus"]))
+    expect(browseRows("claude")).toEqual(["SonnetSonnet"])
+    expect(chips("claude")).toEqual([])
+    const toggle = section("claude")?.querySelector<HTMLInputElement>('[data-component="models-browse-row"] input[type="checkbox"]')
+    toggle!.click()
+    await waitFor(() => expect(state.setVisibility).toEqual([[{ providerID: "claude", modelID: "sonnet" }, true]]))
   })
 
-  test("a workspace that remembers no harness still names one, so the page does not render blank", async () => {
-    state.rememberedHarness = undefined
+  test("a single-list harness with many hidden models shows ten and asks for a search beyond them", async () => {
+    state.harnessModels.codex = Array.from({ length: 12 }, (_, index) => ({ id: `gpt-${index}`, name: `GPT ${String(index).padStart(2, "0")}` }))
+    for (let index = 1; index < 12; index += 1) state.hidden.add(`codex:gpt-${index}`)
     mount()
-    await waitFor(() => expect(screen.getByTestId("settings-scope-workspace")).toHaveValue("/repo"))
-    expect(harnessPicker()).toHaveValue(encodeURIComponent(harnessSelectionKey(nativeHarness("opencode"))))
-    expect(scopedRequests()).toEqual([{ scope: "workspace:ws_local", harness: "opencode" }])
+    await waitFor(() => expect(enabledRows("codex")).toEqual(["GPT 00GPT 00"]))
+    expect(browseRows("codex")).toHaveLength(10)
+    expect(section("codex")?.textContent).toContain("settings.models.providerSearch.hint:10|11")
+    expect(state.optionRequests).toContainEqual({ directory: "/repo", harness: "codex" })
   })
 
-  test("an unavailable remembered connection stays unselected instead of substituting a native harness", async () => {
-    state.rememberedHarness = connectionHarness("removed-connection")
+  test("a harness with several providers asks for a provider first, then searches inside it", async () => {
     mount()
-    await waitFor(() => expect(screen.getByTestId("settings-scope-workspace")).toHaveValue("/repo"))
-    expect(harnessPicker()).toHaveValue("")
+    await waitFor(() => expect(chips("opencode").map((chip) => chip.dataset.provider)).toEqual(["anthropic", "openai"]))
+    const search = section("opencode")?.querySelector<HTMLInputElement>('[data-action="settings-models-provider-search"] input, input[data-action="settings-models-provider-search"]')
+    expect(search).not.toBeNull()
+    fireEvent.input(search!, { target: { value: "open" } })
+    await waitFor(() => expect(chips("opencode").map((chip) => chip.dataset.provider)).toEqual(["openai"]))
+    chips("opencode")[0].click()
+    await waitFor(() => expect(section("opencode")?.querySelector('[data-component="models-pinned-provider"]')).not.toBeNull())
+    expect(browseRows("opencode")).toEqual(["GPTGPT"])
+    expect(state.requests).toEqual([{ scope: "workspace:ws_local", harness: "opencode" }])
+  })
+
+  test("a harness that reports nothing, or fails, says so in its own section", async () => {
+    state.failing = { harness: "pi", message: "Unsupported Pi version 0.85.1" }
+    mount()
+    await waitFor(() => expect(section("cursor")?.textContent).toContain("settings.models.harness.empty:Cursor|main"))
+    await waitFor(() => expect(section("pi")?.textContent).toContain("Unsupported Pi version 0.85.1"))
   })
 })

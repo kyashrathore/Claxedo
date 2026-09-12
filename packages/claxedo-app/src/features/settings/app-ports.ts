@@ -2,22 +2,23 @@ import type * as Providers from "@/app/providers/use-providers"
 import type * as GlobalSDK from "@/app/providers/global-sdk/provider"
 import type * as QueryOptions from "@/app/integrations/sync/query-options"
 import type * as ConnectProvider from "@/app/dialogs/connect-provider"
-import type * as ConnectAI from "@/app/dialogs/connect-ai"
 import type * as SelectProvider from "@/app/dialogs/select-provider"
 import type * as CustomProvider from "@/app/dialogs/custom-provider"
+import type { Accessor } from "solid-js"
 import type * as AIConnectApi from "@/features/onboarding/ai-connect-api"
 import type * as AIConnectState from "@/features/onboarding/ai-connect-state"
 import type * as TerminalAgents from "@/features/terminal/core/terminal-agents"
 import type * as TerminalCommands from "@/features/terminal/core/terminal-commands"
 import type * as Models from "@/features/session/providers/models"
+import type * as HarnessModelOptions from "@/features/session/harness/harness-model-options"
 import type * as Command from "@/app/providers/command"
 import type * as ConnectIntegration from "@/app/dialogs/connect-integration"
 import type * as ProviderConnectFormModule from "@/app/dialogs/provider-connect-form"
 import type * as LinkModule from "@/app/controls/link"
 import type * as SDK from "@/app/providers/sdk/sdk"
-import type { HarnessSelection } from "@/platform/identity/harness-selection"
 
 export type LocalHarnessStatus = AIConnectState.LocalHarnessStatus
+export type AIDiscoveryRow = AIConnectState.AIDiscoveryRow
 export type LocalHarnessCheck = (typeof AIConnectState.localHarnessChecks)[number]
 export type TerminalAgentId = TerminalAgents.TerminalAgentId
 export type TerminalCustomCommand = TerminalCommands.CustomCommand
@@ -27,10 +28,12 @@ export type SettingsAppPorts = {
   useGlobalSDK: typeof GlobalSDK.useGlobalSDK
   useShellQueryOptions: typeof QueryOptions.useShellQueryOptions
   DialogConnectProvider: typeof ConnectProvider.DialogConnectProvider
-  DialogAIConnect: typeof ConnectAI.DialogAIConnect
   DialogSelectProvider: typeof SelectProvider.DialogSelectProvider
   DialogCustomProvider: typeof CustomProvider.DialogCustomProvider
   discoverAIConnections: typeof AIConnectApi.discoverAIConnections
+  saveDiscoveredAIConnections: typeof AIConnectApi.saveDiscoveredAIConnections
+  /** Whether the server in view is this machine, which decides the scope a saved login gets. */
+  useServerIsLocal: () => Accessor<boolean>
   groupDiscoveryItems: typeof AIConnectState.groupDiscoveryItems
   localHarnessStatuses: typeof AIConnectState.localHarnessStatuses
   /** The harness rows the Agents section lists, in the order onboarding declares them. */
@@ -40,7 +43,10 @@ export type SettingsAppPorts = {
   getTerminalCommands: typeof TerminalCommands.getTerminalCommands
   saveTerminalCommands: typeof TerminalCommands.saveTerminalCommands
   defaultTerminalCommands: typeof TerminalCommands.defaultTerminalCommands
-  useModels: typeof Models.useModels
+  useModelVisibility: typeof Models.useModelVisibility
+  /** The models a harness reports for a workspace, over the composer's own transport. */
+  loadHarnessModelOptions: typeof HarnessModelOptions.loadHarnessModelOptions
+  groupHarnessModels: typeof HarnessModelOptions.groupHarnessModels
   formatKeybind: typeof Command.formatKeybind
   parseKeybind: typeof Command.parseKeybind
   useCommand: typeof Command.useCommand
@@ -54,7 +60,6 @@ export type SettingsAppPorts = {
   /** The operator ACP connections the picker offers alongside the built-in harnesses. */
   useEnabledAcpHarnesses: () => () => Array<{ key: string; label: string }>
   /** The harness a workspace was last used with, from its draft-default record. */
-  readWorkspaceHarnessDefault: (input: { serverUrl: string; workspaceKey: string }) => HarnessSelection | undefined
 }
 
 let ports: SettingsAppPorts | undefined
@@ -82,10 +87,11 @@ export const useProviders = bind((ports) => ports.useProviders)
 export const useGlobalSDK = bind((ports) => ports.useGlobalSDK)
 export const useShellQueryOptions = bind((ports) => ports.useShellQueryOptions)
 export const DialogConnectProvider = bind((ports) => ports.DialogConnectProvider)
-export const DialogAIConnect = bind((ports) => ports.DialogAIConnect)
 export const DialogSelectProvider = bind((ports) => ports.DialogSelectProvider)
 export const DialogCustomProvider = bind((ports) => ports.DialogCustomProvider)
 export const discoverAIConnections = bind((ports) => ports.discoverAIConnections)
+export const saveDiscoveredAIConnections = bind((ports) => ports.saveDiscoveredAIConnections)
+export const useServerIsLocal = bind((ports) => ports.useServerIsLocal)
 export const groupDiscoveryItems = bind((ports) => ports.groupDiscoveryItems)
 export const localHarnessStatuses = bind((ports) => ports.localHarnessStatuses)
 
@@ -101,7 +107,9 @@ export function terminalAgents() {
 export const getTerminalCommands = bind((ports) => ports.getTerminalCommands)
 export const saveTerminalCommands = bind((ports) => ports.saveTerminalCommands)
 export const defaultTerminalCommands = bind((ports) => ports.defaultTerminalCommands)
-export const useModels = bind((ports) => ports.useModels)
+export const useModelVisibility = bind((ports) => ports.useModelVisibility)
+export const loadHarnessModelOptions = bind((ports) => ports.loadHarnessModelOptions)
+export const groupHarnessModels = bind((ports) => ports.groupHarnessModels)
 export const formatKeybind = bind((ports) => ports.formatKeybind)
 export const parseKeybind = bind((ports) => ports.parseKeybind)
 export const useCommand = bind((ports) => ports.useCommand)
@@ -111,4 +119,3 @@ export const Link = bind((ports) => ports.Link)
 export const useSandboxOnboardingFunnel = bind((ports) => ports.useSandboxOnboardingFunnel)
 export const useSDK = bind((ports) => ports.useSDK)
 export const useEnabledAcpHarnesses = bind((ports) => ports.useEnabledAcpHarnesses)
-export const readWorkspaceHarnessDefault = bind((ports) => ports.readWorkspaceHarnessDefault)
