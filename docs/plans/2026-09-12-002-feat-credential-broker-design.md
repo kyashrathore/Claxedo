@@ -486,3 +486,32 @@ succeeded; the local dev process was stopped after verified cleanup.
 This supersedes the pending local production-handler acceptance item. It does
 not establish deployed Container interception or deployed KV propagation delay;
 the previous Container image-upload blocker remains.
+
+### Signed runtime preparation context and withdrawal delivery — 2026-09-13
+
+Appendix E item 9 is partially repaired at the hosted route boundary. Initial
+cloud creation, cloud connection/wake, and user-hosted connection now pass
+`{ workspaceId, userId: auth.user.subject }` to preparation and provisioning.
+The shared hook contract requires this context and forwards no bearer/session
+token. Existing Agent Plugins composition continues its canonical snapshot
+policy; this change does not select personal provider accounts or change leases.
+
+The trace also found a withdrawal bug upstream of the newly verified native
+adapter: preparation omitted an empty authoritative secret set, and connection
+ensure filtered it out. Preparation now returns the complete set, including
+`[]`; creation and wake preserve that explicit empty set through `ensure`.
+
+Commands from claxedo-server: `node node_modules/vitest/vitest.mjs run
+src/routes/hosted/workspace.test.ts
+src/connections/hosted-connection-info.agent-plugins.test.ts
+src/agent-plugins/mcp/runtime-preparation.test.ts
+src/agent-plugins/signed-composio.miniflare.test.ts`: **54 pass, 0 fail**.
+Failing tests first demonstrated three withdrawal failures, two connection
+subject failures, and one creation subject failure. The Miniflare fixture now
+retains the producer's complete Authorization header rather than stripping Bearer.
+
+This proves the three hosted HTTP lifecycle paths and the callback boundary,
+not signed identity inside every driver's provisioning request or per-user lease
+isolation. Provider selection, authoritative binding storage, unsigned-local
+identity policy, and per-user leases remain unimplemented; Appendix E item 9
+is not an overall pass.

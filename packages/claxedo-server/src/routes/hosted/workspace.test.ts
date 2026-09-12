@@ -784,8 +784,10 @@ describe("hosted cloud workspace create (POST /create)", () => {
     // follows a ready lease — to executionCtx.waitUntil.
     const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
     const ensure = vi.fn(async () => ({ status: "ready", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
+    const preparation = { secrets: [] }
+    const prepareRuntime = vi.fn(async () => preparation)
     const provisionRuntime = vi.fn(async () => undefined)
-    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager, options: { provisionRuntime } })
+    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager, options: { prepareRuntime, provisionRuntime } })
     const waitUntil = vi.fn()
     const res = await app.fetch(
       post("/create", { workspaceName: "Held open", repoUrl: "https://github.com/a/b" }),
@@ -797,7 +799,9 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(waitUntil).toHaveBeenCalledTimes(1)
     await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
     expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ homeRegion: "us-east" }))
-    expect(provisionRuntime).toHaveBeenCalledWith(body.workspaceId, undefined)
+    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId, userId: "user_1" })
+    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId, userId: "user_1" }, preparation)
+    expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ secrets: [] }))
   })
 
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {

@@ -89,14 +89,14 @@ No Appendix E experiment has run. Provider credentials and live environments hav
 
 The authoritative design's Appendix E has not been filled with acceptance claims. Resume by running each available experiment and recording its actual command and result there.
 
-## Remaining implementation
+## Remaining implementation (updated 2026-09-13)
 
-- Supervisor secret delivery, wake network policy, Daytona resume secret reconciliation, Cloudflare token renewal, and workspace-scoped credential network policy. Each needs its failing test before the fix.
-- All Appendix E feasibility experiments and their results in the design.
-- The `@claxedo/egress-broker` package, revisioned Binding contract, authenticated binding-id request path, injection/request policy/redirect/failure reporting, generic delivery adapter, Node control-plane hosting, and loopback hosting.
-- Live Cloudflare image/runtime verification and any required SDK behavior fixes discovered there.
-
-The hosted store and lease-key changes remain explicitly outside this round. The broker round is not complete.
+- The workspace-less credential network grant is blocked by the explicit accounts-lane ownership restriction documented above.
+- Deployed Cloudflare Container acceptance is blocked by image upload. Native injection, rotation and withdrawal are now verified through local workerd/Docker against an isolated HTTPS upstream.
+- Daytona needs working authentication; Vercel awaits the intended project/team; exe.dev integration behavior remains unverified after the host-trust gate; Modal lacks configured authentication/allowlisting. Appendix E records exact evidence, not inferred provider outcomes.
+- Signed subject now reaches the three hosted lifecycle hooks. It does not yet reach per-user provider selection or per-user leases in every deployment mode.
+- The generic broker and Node/loopback hosting exist and have focused tests plus live Codex subscription evidence. Production binding composition, storage, selection, renewal, and full harness projections are incomplete.
+- Hosted store and lease-key changes remain explicitly excluded by the objective file pending accounts-lane coordination. The complete design is not implemented.
 
 ## GitHub clone placeholder consumer
 
@@ -350,3 +350,53 @@ Final acceptance-slice gates: root `bun run test:architecture-ratchets` passed
 `git diff --check` passed. Next: trace signed-user identity across runtime
 preparation/provisioning and add route-level proof for Appendix E item 9,
 without modifying accounts-owned contracts.
+
+## Signed lifecycle context and authoritative withdrawal — 2026-09-13
+
+The connection trace found two concrete gaps. Verified subject was available at
+both connection handlers but dropped by the workspace-only preparation hook.
+Separately, the MCP preparer omitted an empty secret set and cloud wake filtered
+empty arrays, preventing withdrawal from reaching native drivers.
+
+`WorkspaceRuntimeContext` now carries the verified subject and workspace id to
+both preparation and provisioning. Initial cloud creation (including its
+waitUntil chain), cloud connect/wake and user-hosted connect all pass it.
+The Agent Plugins composition retains its existing snapshot selection; no
+account selection or lease key is synthesized. The preparer emits its complete
+secret list, including empty, and create/wake deliver that explicit empty list.
+
+Failing tests first:
+
+- Preparation/connection suite: 9 pass / 3 fail for omitted empty sets and missing withdrawal forwarding.
+- Connection context suite: 4 pass / 2 fail for lost subject in cloud and user-hosted hooks.
+- Hosted workspace route suite: 36 pass / 1 fail for lost subject in initial creation.
+
+Final command from claxedo-server: `node node_modules/vitest/vitest.mjs run
+src/routes/hosted/workspace.test.ts
+src/connections/hosted-connection-info.agent-plugins.test.ts
+src/agent-plugins/mcp/runtime-preparation.test.ts
+src/agent-plugins/signed-composio.miniflare.test.ts`: 54 pass / 0 fail.
+The Miniflare fixture was corrected to pass the complete produced Authorization
+header; it previously stripped Bearer despite the consumer's whole-header
+contract. An initial edit command used the wrong working-directory-relative
+path, changed nothing, and was corrected before the failing-test run.
+
+Changed files: `src/workspace/route-support.ts`,
+`src/connections/hosted-connection-info.ts`,
+`src/connections/user-hosted-connection.ts`,
+`src/connections/hosted-connection-info.agent-plugins.test.ts`,
+`src/routes/hosted/workspace.ts`, `src/routes/hosted/workspace.test.ts`,
+`src/agent-plugins/hosted-composition.ts`,
+`src/agent-plugins/mcp/runtime-preparation.ts`,
+`src/agent-plugins/mcp/runtime-preparation.test.ts`, and
+`src/agent-plugins/signed-composio.miniflare.test.ts` under claxedo-server;
+design 002 and this report.
+
+Remaining: Appendix E item 9 is partial, because the callback boundary is not
+a per-user binding store or lease. No accounts-owned contract was edited.
+
+Final gates: server `bun run typecheck` passed; root
+`bun run test:architecture-ratchets` passed 13 tests and all five product/eight
+source policies plus helper ratchet without baseline changes; `git diff --check`
+passed. The first typecheck exposed the initial-create call sites, which were
+then covered by a failing route test and updated.

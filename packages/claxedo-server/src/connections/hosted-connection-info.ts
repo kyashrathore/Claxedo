@@ -96,9 +96,10 @@ export async function hostedConnectionInfo(
     },
   })
 
+  const runtimeContext = { workspaceId, userId: auth.user.subject }
   let preparation
   try {
-    preparation = await options.prepareRuntime?.(workspaceId)
+    preparation = await options.prepareRuntime?.(runtimeContext)
   } catch (cause) {
     return {
       error: apiError("runtime_prepare_failed", cause instanceof Error ? cause.message : "Runtime preparation failed"),
@@ -114,7 +115,7 @@ export async function hostedConnectionInfo(
         : { kind: "empty" },
       extraHosts: options.sandboxEgressExtraHosts,
     }),
-    ...(preparation?.secrets?.length ? { secrets: preparation.secrets } : {}),
+    ...(preparation?.secrets !== undefined ? { secrets: preparation.secrets } : {}),
   })
   captureWorkspaceTelemetry({
     services,
@@ -175,7 +176,7 @@ export async function hostedConnectionInfo(
   // Build-selected runtime contributions materialize their authoritative
   // state here; failure prevents token minting instead of exposing a partial VM.
   try {
-    await options.provisionRuntime?.(workspaceId, preparation)
+    await options.provisionRuntime?.(runtimeContext, preparation)
   } catch (cause) {
     return {
       error: apiError("runtime_provision_failed", cause instanceof Error ? cause.message : "Runtime provisioning failed"),

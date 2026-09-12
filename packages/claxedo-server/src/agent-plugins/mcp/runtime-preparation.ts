@@ -315,7 +315,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
       kind: "agent-plugins-mcp-runtime",
       plan: { revision: snapshot.revision, mcpServers },
     }
-    return { ...(secrets.length ? { secrets } : {}), state }
+    return { secrets, state }
   }
   return { forSnapshot }
 }

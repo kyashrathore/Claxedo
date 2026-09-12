@@ -84,12 +84,13 @@ describe("Agent Plugins cloud readiness gate", () => {
       secrets: [{ name: "CLAXEDO_MCP_A", value: "Bearer gateway-token", hosts: ["mcp-a.example"], header: "Authorization" }],
       state: { kind: "test-plan" },
     }
+    const prepareRuntime = vi.fn(async () => { order.push("prepare"); return preparation })
     const provisionRuntime = vi.fn(async () => { order.push("plugins") })
     const result = await hostedConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
       runtimeAccessTokenSigner: signer,
-      prepareRuntime: async () => { order.push("prepare"); return preparation },
+      prepareRuntime,
       provisionRuntime,
     }, auth, "ws_1", "https://control.test")
 
@@ -99,8 +100,21 @@ describe("Agent Plugins cloud readiness gate", () => {
       net: expect.objectContaining({ mode: "restricted", hosts: expect.arrayContaining(["relay.test", "control.test"]) }),
       secrets: preparation.secrets,
     })
-    expect(provisionRuntime).toHaveBeenCalledWith("ws_1", preparation)
+    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_1", userId: "user_1" })
+    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_1", userId: "user_1" }, preparation)
     expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
+  })
+
+  test("forwards explicit withdrawal to ensure after credentials disappear", async () => {
+    const { services, signer } = subject([])
+    const options = {
+      relayUrl: "wss://relay.test",
+      runtimeAccessTokenSigner: signer,
+      prepareRuntime: async () => ({ secrets: [] }),
+    }
+    const result = await hostedConnectionInfo(services, options, auth, "ws_1", "https://control.test")
+    expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
+    expect(services.sandbox.sandboxManager!.ensure).toHaveBeenCalledWith("ws_1", expect.objectContaining({ secrets: [] }))
   })
 
   test("a failed plugin apply denies handoff and never mints a runtime token", async () => {
@@ -174,17 +188,19 @@ describe("Agent Plugins user-hosted readiness gate", () => {
     const order: string[] = []
     const { services, signer } = userHostedSubject(order)
     const preparation = { state: { kind: "test-plan" } }
+    const prepareRuntime = vi.fn(async () => { order.push("prepare"); return preparation })
     const provisionRuntime = vi.fn(async () => { order.push("plugins") })
     const result = await userHostedConnectionInfo(services, {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
       runtimeAccessTokenSigner: signer,
-      prepareRuntime: async () => { order.push("prepare"); return preparation },
+      prepareRuntime,
       provisionRuntime,
     }, auth, "ws_local")
 
     expect(order).toEqual(["prepare", "plugins", "token"])
-    expect(provisionRuntime).toHaveBeenCalledWith("ws_local", preparation)
+    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local", userId: "user_1" })
+    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local", userId: "user_1" }, preparation)
     expect(result).toMatchObject({
       connection: { access: "user-hosted", backing: "local-worktree", runtimeAccessToken: "runtime-token" },
     })
