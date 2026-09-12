@@ -12,6 +12,8 @@ const scope: McpGatewayTokenScope = {
   pluginInstanceId: "collection:docs",
   serverName: "docs",
   integrationId: "mcp-docs",
+  artifactDigest: `sha256:${"d".repeat(64)}`,
+  execution: "default",
 }
 
 async function setup(overrides: {

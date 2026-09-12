@@ -6,6 +6,7 @@ import {
   runtimeAccessTokenAlgorithm,
 } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
+import { isArtifactDigest, type ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 
 export const MCP_GATEWAY_TOKEN_AUDIENCE = "agent-plugins-mcp-gateway" as const
 const DEFAULT_TTL_SECONDS = 30 * 60
@@ -20,6 +21,15 @@ export type McpGatewayTokenScope = Readonly<{
   pluginInstanceId: string
   serverName: string
   integrationId: string
+  /** The retained artifact whose declared server this credential reaches. */
+  artifactDigest: ArtifactDigest
+  /**
+   * Which configuration issued it. A `selected` credential belongs to a root
+   * that named its own capability set, so its authority is the user's
+   * entitlement to the retained artifact rather than the project's everyday
+   * activation — which the selection deliberately does not follow.
+   */
+  execution: "default" | "selected"
 }>
 
 function pem(value: string | undefined) {
@@ -45,6 +55,10 @@ function claims(payload: Record<string, unknown>): McpGatewayTokenScope | undefi
   }
   const harnessId = read("harness_id")
   if (harnessId !== "opencode" && harnessId !== "claude" && harnessId !== "codex" && harnessId !== "cursor") return undefined
+  const execution = read("execution")
+  if (execution !== "default" && execution !== "selected") return undefined
+  const artifactDigest = read("artifact_digest")
+  if (!isArtifactDigest(artifactDigest)) return undefined
   const userId = read("user_id")
   const orgId = read("org_id")
   const projectId = read("project_id")
@@ -55,7 +69,18 @@ function claims(payload: Record<string, unknown>): McpGatewayTokenScope | undefi
   if (!userId || !orgId || !projectId || !workspaceId || !pluginInstanceId || !serverName || !integrationId) {
     return undefined
   }
-  return { userId, orgId, projectId, workspaceId, harnessId, pluginInstanceId, serverName, integrationId }
+  return {
+    userId,
+    orgId,
+    projectId,
+    workspaceId,
+    harnessId,
+    pluginInstanceId,
+    serverName,
+    integrationId,
+    artifactDigest,
+    execution,
+  }
 }
 
 /** Audience-bound runtime credential; its value is delivered only through SandboxBrokeredSecret. */
@@ -79,6 +104,8 @@ export async function mintMcpGatewayToken(
     plugin_instance_id: scope.pluginInstanceId,
     server_name: scope.serverName,
     integration_id: scope.integrationId,
+    artifact_digest: scope.artifactDigest,
+    execution: scope.execution,
   })
     .setProtectedHeader({ alg })
     .setIssuer(runtimeAccessTokenIssuer)

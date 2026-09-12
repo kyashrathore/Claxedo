@@ -67,6 +67,7 @@ export function composeBetterAuthD1AgentPluginsCandidate(
       services: base.plane.services,
       database: env.CONTROL_PLANE_DB,
       authentication: base.options.authentication,
+      selectedCapabilities: feature.selectedCapabilities,
     }) ?? []
   return {
     ...base,

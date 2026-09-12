@@ -2,6 +2,15 @@ import type { AgentPluginHarnessId } from "../runtime/harness-registry"
 
 export type ArtifactDigest = `sha256:${string}`
 
+/**
+ * The only shape a retained artifact is ever named by. Every boundary that
+ * reads a digest off the wire, out of a row or out of a token claim narrows
+ * through this, so none of them can disagree about what counts as one.
+ */
+export function isArtifactDigest(value: unknown): value is ArtifactDigest {
+  return typeof value === "string" && /^sha256:[a-f0-9]{64}$/.test(value)
+}
+
 export type ActivationIdentity = {
   pluginInstanceId: string
   harnessId: AgentPluginHarnessId

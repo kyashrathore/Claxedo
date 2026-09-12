@@ -13,7 +13,7 @@ import {
 import { createTasksCapabilities, randomTasksIds, systemTasksClock } from "@claxedo/server-core/tasks-host/host-ports"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { TASKS_ROUTE_PATH, createTasksRoutes } from "@claxedo/tasks/http"
-import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
+import type { TasksActor, TasksHostCapabilities, TasksSessionBridgePort } from "@claxedo/tasks"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
 import { createD1TasksStore } from "./d1-store"
@@ -33,6 +33,14 @@ export type HostedTasksCompositionInput = {
    * actor back to that person.
    */
   bridge: (principal: TasksRuntimePrincipal, auth: TasksSignedAuth) => TasksSessionBridgePort
+  /**
+   * Whether this deployment can project a cloud root's selected capability
+   * set. It is the build's Agent Plugins wiring, not a runtime flag: an
+   * artifact built without the feature has nothing to project onto, so a
+   * preset naming cloud placement is refused when it is saved rather than
+   * saved and refused at every Start.
+   */
+  cloudSelectedCapabilities?: boolean
 }
 
 /** The signed request a Tasks actor was minted from, for authority calls that act as the caller. */
@@ -68,6 +76,12 @@ export function hostedTasksRuntimeClient(services: ControlPlaneServices): Worksp
 export function createHostedTasksComposition(input: HostedTasksCompositionInput): HostedTasksComposition {
   const authority = requireAuthority(input.services)
   const principals = createTasksPrincipals()
+  // The same reading the workspace routes make before they will create a
+  // cloud workspace at all: without a sandbox manager this deployment has no
+  // isolated root to allocate.
+  const placements: TasksHostCapabilities["placements"] = input.services.sandbox.sandboxManager
+    ? ["local", "cloud"]
+    : ["local"]
   return {
     routeContributions: [
       {
@@ -83,14 +97,14 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
               signedOrError(request, { authentication: input.authentication, requireSigned: true }, input.services),
           }),
           bridge: input.bridge(signedTasksRuntimePrincipal(principals), (actor) => principals.authOf(actor)),
-          // The same reading the workspace routes make before they will create
-          // a cloud workspace at all. Without a sandbox manager this
-          // deployment has no isolated root to allocate, so a preset naming
-          // cloud placement is refused when it is saved rather than saved and
-          // refused at every Start.
           capabilities: createTasksCapabilities({
-            placements: input.services.sandbox.sandboxManager ? ["local", "cloud"] : ["local"],
-            cloudSelectedCapabilities: false,
+            placements,
+            // A root's own machine is half of the promise; the other half is
+            // the Agent Plugins wiring that gives it its own capability set,
+            // which an artifact built without that feature does not have. A
+            // preset naming cloud placement is refused when it is saved rather
+            // than saved and refused at every Start.
+            cloudSelectedCapabilities: placements.includes("cloud") && input.cloudSelectedCapabilities === true,
           }),
           clock: systemTasksClock(),
           ids: randomTasksIds(),

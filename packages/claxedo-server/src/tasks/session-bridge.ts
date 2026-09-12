@@ -3,6 +3,7 @@ import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/
 import {
   chooseProjectWorkspace,
   createTasksSessionBridge,
+  type TasksCloudOrigin,
   type TasksCloudTargetChoice,
   type TasksRuntimeTarget,
   type TasksSessionHost,
@@ -19,6 +20,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   startOriginId,
   tasksErrorDetail,
+  type StartBlocker,
   type TasksActor,
   type TasksErrorDetail,
   type TasksSessionBridgePort,
@@ -26,6 +28,7 @@ import {
 import { isComposedAuthorityPort } from "../authority/composed-authority"
 import type { ControlPlaneServices } from "../authority/services"
 import { allocateOriginCloudWorkspace } from "../workspace/origin-cloud-workspace"
+import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 
 export type HostedTasksSessionBridgeInput = {
   services: ControlPlaneServices
@@ -51,6 +54,28 @@ export type HostedTasksSessionBridgeInput = {
    * selects the workspace row as the caller's own actor.
    */
   auth?: (actor: TasksActor) => SignedControlPlaneAuth | undefined
+  /**
+   * Projects a cloud root's capability set onto the workspace it will run in,
+   * and resolves only once the runtime has acknowledged that exact selection.
+   *
+   * A deployment that cannot do it names nothing here and its cloud Starts are
+   * blocked: a root started without the projection would run on whatever the
+   * project's defaults put in that sandbox, which is the one outcome the
+   * selection exists to prevent.
+   */
+  selectedCapabilities?: {
+    /**
+     * Resolves the selection and the credentials its servers need. Runs before
+     * the sandbox exists, because a brokered credential reaches a runtime only
+     * through the create that carries it.
+     */
+    prepare(input: {
+      workspaceId: string
+      capabilities: TasksCloudOrigin["capabilities"]
+    }): Promise<WorkspaceRuntimePreparation>
+    /** Projects it, and resolves only once the runtime acknowledged that exact selection. */
+    apply(input: { workspaceId: string; preparation: WorkspaceRuntimePreparation }): Promise<void>
+  }
 }
 
 export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeInput): TasksSessionBridgePort {
@@ -102,8 +127,22 @@ function createTasksCloudTarget(
   input: HostedTasksSessionBridgeInput,
 ): NonNullable<TasksSessionHost["cloudTarget"]> {
   return async (origin): Promise<TasksCloudTargetChoice> => {
+    const port = input.selectedCapabilities
     const auth = input.auth?.(origin.actor)
-    const allocated = await allocateOriginCloudWorkspace({
+    let projected: (() => Promise<void>) | undefined
+    // Resolving the capability set inside the allocation is what orders these
+    // two refusals: a deployment with no driver never reaches it and says so,
+    // and one that has a driver but cannot project a selection stops before a
+    // sandbox exists rather than after paying for one.
+    const allocate = () => allocateOriginCloudWorkspace({
+      prepare: async (workspace) => {
+        if (!port) {
+          throw new Error("this control plane cannot project a selected capability set into a cloud root")
+        }
+        const preparation = await port.prepare({ workspaceId: workspace.id, capabilities: origin.capabilities })
+        projected = () => port.apply({ workspaceId: workspace.id, preparation })
+        return preparation.secrets ?? []
+      },
       services: input.services,
       originKey: startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),
       projectId: origin.task.projectId,
@@ -127,7 +166,19 @@ function createTasksCloudTarget(
         await requireAuthority(input.services).deleteWorkspace(auth, { workspaceId: workspace.id })
       },
     })
+    let allocated
+    try {
+      allocated = await allocate()
+    } catch (error) {
+      return { blocker: capabilityBlocker(origin, error) }
+    }
     if ("code" in allocated) return { blocker: { code: allocated.code, detail: allocated.detail } }
+    try {
+      if (!projected) throw new Error("the capability set for this root was never resolved")
+      await projected()
+    } catch (error) {
+      return { blocker: capabilityBlocker(origin, error) }
+    }
     const target = dispatchTarget(allocated.workspace, input.runtimeClient)
     return target ? { target } : {
       blocker: {
@@ -135,6 +186,13 @@ function createTasksCloudTarget(
         detail: `Cloud root ${allocated.workspace.id} is not reachable from this control plane`,
       },
     }
+  }
+}
+
+function capabilityBlocker(origin: TasksCloudOrigin, error: unknown): StartBlocker {
+  return {
+    code: "capability_unavailable",
+    detail: `The capability set for ${origin.task.id} (${origin.slot}, attempt ${origin.attempt}) could not be applied: ${error instanceof Error ? error.message : String(error)}`,
   }
 }
 

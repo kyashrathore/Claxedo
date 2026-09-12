@@ -1,3 +1,4 @@
+import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { ensureHostForRepo } from "@claxedo/server-core/sandbox/network/policy"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -54,6 +55,15 @@ export type OriginCloudWorkspaceInput = {
    * the same key re-admits against a row it must match exactly.
    */
   discard(workspace: Workspace): Promise<void>
+  /**
+   * Credentials this root's own configuration needs, resolved once the
+   * workspace id exists and before the sandbox is created.
+   *
+   * They ride the driver's brokered-secret channel, which only `ensure`
+   * reaches, so a caller that resolved them after readiness would have a
+   * runtime that can never be given them.
+   */
+  prepare?(workspace: Workspace): Promise<readonly SandboxBrokeredSecret[]>
 }
 
 /**
@@ -102,11 +112,13 @@ export async function allocateOriginCloudWorkspace(
   }
   ensureHostForRepo(repoUrl)
 
+  const secrets = (await input.prepare?.(workspace)) ?? []
   const ready = await awaitSandboxReady(sandboxManager, workspace, {
     homeRegion: input.services.defaultHomeRegion ?? "us-east",
     projectId: input.projectId,
     repoUrl,
     env: (await projectEnv(input.projectId)) ?? {},
+    secrets,
   })
   if (ready.status === "ready") return { workspace }
   if (ready.status === "provisioning") {
@@ -181,7 +193,13 @@ type SandboxLifecycle = NonNullable<ControlPlaneServices["sandbox"]["sandboxMana
 async function awaitSandboxReady(
   sandboxManager: SandboxLifecycle,
   workspace: Workspace,
-  run: { homeRegion: string; projectId: string; repoUrl: string; env: Record<string, string> },
+  run: {
+    homeRegion: string
+    projectId: string
+    repoUrl: string
+    env: Record<string, string>
+    secrets: readonly SandboxBrokeredSecret[]
+  },
 ) {
   const deadline = Date.now() + READY_DEADLINE_MS
   for (;;) {
@@ -190,6 +208,7 @@ async function awaitSandboxReady(
       labels: { projectId: run.projectId },
       workspaceRoot: workspace.remote_directory ?? WORKSPACE_DIR,
       ...(Object.keys(run.env).length ? { env: run.env } : {}),
+      ...(run.secrets.length ? { secrets: [...run.secrets] } : {}),
       source: { kind: "git", repoUrl: run.repoUrl, ...(workspace.git_branch ? { branch: workspace.git_branch } : {}) },
     })
     if (result.status !== "provisioning") return result

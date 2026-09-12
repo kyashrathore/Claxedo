@@ -3,10 +3,15 @@ import { digestPluginTree, inspectPluginTree } from "@claxedo/server-core/agent-
 import { decodePluginTreeBase64 } from "@claxedo/server-core/agent-plugins/artifacts/codec"
 import type { AgentPluginArtifactStore, RetainedAgentPluginArtifact } from "@claxedo/server-core/agent-plugins/artifacts/types"
 import {
+  AGENT_PLUGINS_APPLY_VERSION_DEFAULT,
+  AGENT_PLUGINS_APPLY_VERSION_SELECTED,
   AGENT_PLUGINS_RUNTIME_APPLY_PATH,
   type AgentPluginRuntimeApplyRequest,
   type AgentPluginRuntimeApplyResponse,
+  type AgentPluginRuntimeSelectedSelection,
 } from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
+import type { AgentPluginSelectedContribution } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
+import { isArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import { isAgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { boundedJsonBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "@claxedo/workspace-runtime/http"
@@ -15,18 +20,22 @@ import { codexAgentPluginAdapter } from "./adapters/codex"
 import { cursorAgentPluginAdapter } from "./adapters/cursor"
 import { openCodeAgentPluginAdapter } from "./adapters/opencode"
 import type { RuntimeMcpServerProjection } from "./adapters/types"
+import { clearActiveGeneration } from "./generation"
 import {
   AgentPluginMaterializationError,
   agentPluginHarnessLaunch,
   materializeAgentPluginGeneration,
   readMaterializedAgentPluginGeneration,
+  type AgentPluginMaterializationExecution,
 } from "./materialize"
 import { isRecord } from "../../platform/json"
 
 const MAX_APPLY_BODY_BYTES = 64 * 1024 * 1024
 const MAX_PLUGIN_COUNT = 128
-const DIGEST = /^sha256:[a-f0-9]{64}$/
 const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,127}$/
+const SELECTION_HASH = /^[a-f0-9]{64}$/
+const SKILL_NAME = /^(?!.*--)[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/
+const MAX_SELECTED_SKILLS = 256
 
 function badRequest(message: string) {
   return { error: { code: "agent_plugins_runtime_request_invalid", message } }
@@ -36,23 +45,36 @@ type RuntimeSelection = AgentPluginRuntimeApplyRequest["selections"][number]
 type RuntimeArtifact = AgentPluginRuntimeApplyRequest["artifacts"][number]
 type RuntimeMcpServer = AgentPluginRuntimeApplyRequest["mcpServers"][number]
 
-function digest(value: unknown): value is RuntimeSelection["artifactDigest"] {
-  return typeof value === "string" && DIGEST.test(value)
+function contribution(value: unknown): value is AgentPluginSelectedContribution {
+  if (!isRecord(value)) return false
+  if (value.kind === "plugin") return true
+  return value.kind === "skills"
+    && Array.isArray(value.skills)
+    && value.skills.length <= MAX_SELECTED_SKILLS
+    && value.skills.every((name) => typeof name === "string" && name.length <= 64 && SKILL_NAME.test(name))
 }
 
 function selection(value: unknown): value is RuntimeSelection {
   return isRecord(value)
     && typeof value.pluginInstanceId === "string"
     && Boolean(value.pluginInstanceId)
-    && digest(value.artifactDigest)
+    && isArtifactDigest(value.artifactDigest)
     && Array.isArray(value.harnessIds)
     && value.harnessIds.length > 0
     && value.harnessIds.every(isAgentPluginHarnessId)
 }
 
+function selectedSelection(value: unknown): value is AgentPluginRuntimeSelectedSelection {
+  return isRecord(value) && contribution(value.contribution) && selection(value)
+}
+
+function defaultSelection(value: unknown): value is RuntimeSelection {
+  return isRecord(value) && value.contribution === undefined && selection(value)
+}
+
 function artifact(value: unknown): value is RuntimeArtifact {
   return isRecord(value)
-    && digest(value.digest)
+    && isArtifactDigest(value.digest)
     && typeof value.tree === "string"
 }
 
@@ -65,7 +87,7 @@ function mcpServer(value: unknown): value is RuntimeMcpServer {
   if (!isRecord(value)
     || typeof value.pluginInstanceId !== "string"
     || !value.pluginInstanceId
-    || !digest(value.artifactDigest)
+    || !isArtifactDigest(value.artifactDigest)
     || !isAgentPluginHarnessId(value.harnessId)
     || typeof value.serverName !== "string"
     || !value.serverName) return false
@@ -76,10 +98,17 @@ function mcpServer(value: unknown): value is RuntimeMcpServer {
     && SECRET_NAME.test(value.brokeredSecretName)
 }
 
-/** The one validator every apply surface shares: the VM route and the signed desktop pull. */
+/**
+ * The one validator every apply surface shares: the VM route and the signed
+ * desktop pull.
+ *
+ * A version this runtime does not implement is rejected here rather than
+ * treated as the nearest version it does: a selected execution arriving at a
+ * runtime that cannot project one must fail, because falling back would run
+ * the root on the project's defaults under the name of a selection.
+ */
 export function parseAgentPluginRuntimeApplyRequest(input: unknown): AgentPluginRuntimeApplyRequest | undefined {
   if (!isRecord(input)
-    || input.version !== 1
     || !isRecord(input.identity)
     || input.identity.mode !== "signed"
     || typeof input.identity.userId !== "string"
@@ -90,25 +119,48 @@ export function parseAgentPluginRuntimeApplyRequest(input: unknown): AgentPlugin
     || !Number.isSafeInteger(input.revision)
     || input.revision < 0
     || !Array.isArray(input.selections)
-    || !input.selections.every(selection)
     || !Array.isArray(input.artifacts)
     || !input.artifacts.every(artifact)
     || !Array.isArray(input.mcpServers)
     || !input.mcpServers.every(mcpServer)
     || input.selections.length > MAX_PLUGIN_COUNT
     || input.artifacts.length > MAX_PLUGIN_COUNT) return undefined
-  return {
-    version: 1,
+  const common = {
     identity: {
-      mode: "signed",
+      mode: "signed" as const,
       userId: input.identity.userId,
       projectId: input.identity.projectId,
     },
     revision: input.revision,
-    selections: input.selections,
     artifacts: input.artifacts,
     mcpServers: input.mcpServers,
   }
+  if (input.version === AGENT_PLUGINS_APPLY_VERSION_SELECTED) {
+    if (!isRecord(input.execution)
+      || input.execution.mode !== "selected"
+      || typeof input.execution.selectionHash !== "string"
+      || !SELECTION_HASH.test(input.execution.selectionHash)
+      || !input.selections.every(selectedSelection)) return undefined
+    return {
+      ...common,
+      version: AGENT_PLUGINS_APPLY_VERSION_SELECTED,
+      execution: { mode: "selected", selectionHash: input.execution.selectionHash },
+      selections: input.selections,
+    }
+  }
+  if (input.version !== AGENT_PLUGINS_APPLY_VERSION_DEFAULT) return undefined
+  if (input.execution !== undefined && !(isRecord(input.execution) && input.execution.mode === "default")) return undefined
+  if (!input.selections.every(defaultSelection)) return undefined
+  return {
+    ...common,
+    version: AGENT_PLUGINS_APPLY_VERSION_DEFAULT,
+    execution: { mode: "default" },
+    selections: input.selections,
+  }
+}
+
+function executionKey(execution: AgentPluginMaterializationExecution) {
+  return execution.mode === "selected" ? `selected:${execution.selectionHash}` : "default"
 }
 
 function cloudflareEgressHosts(value: string) {
@@ -221,12 +273,25 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
           || [...selectedDigests].some((digest) => !deliveredDigests.has(digest))) {
           return c.json(badRequest("Delivered artifacts must exactly match the selected snapshot"), 400)
         }
+        const execution: AgentPluginMaterializationExecution = body.execution.mode === "selected"
+          ? { mode: "selected", selectionHash: body.execution.selectionHash }
+          : { mode: "default" }
+        const acknowledged = execution.mode === "selected" ? { selectionHash: execution.selectionHash } : {}
         apply = apply.then(async () => {
           const active = await readMaterializedAgentPluginGeneration(runtimeRoot)
           if (active?.revision === body.revision) {
-            const harnessLaunch = await agentPluginHarnessLaunch(active)
-            await context.applyHarnessLaunch(harnessLaunch)
-            return { ok: true, generationId: active.generationId, revision: active.revision, harnessLaunch }
+            // An activation revision does not change when a root asks for a
+            // different capability set, so it alone cannot say whether the
+            // active generation is the projection this request describes.
+            if (executionKey(active.execution) === executionKey(execution)) {
+              const harnessLaunch = await agentPluginHarnessLaunch(active)
+              await context.applyHarnessLaunch(harnessLaunch)
+              return { ok: true, generationId: active.generationId, revision: active.revision, ...acknowledged, harnessLaunch }
+            }
+            // The materializer refuses to advance onto an equal revision, and
+            // this is the existing way past that: withdraw the pointer, then
+            // project the new selection as a fresh generation.
+            await clearActiveGeneration(runtimeRoot)
           }
           if (active && body.revision < active.revision) {
             throw new AgentPluginMaterializationError(
@@ -238,6 +303,7 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
             runtimeRoot,
             identity: body.identity,
             revision: body.revision,
+            execution,
             selections: body.selections,
             artifacts: await runtimeArtifactStore(body.artifacts),
             mcpServers: runtimeMcpServers(body.mcpServers, input.env ?? process.env),
@@ -250,7 +316,7 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
           })
           const harnessLaunch = await agentPluginHarnessLaunch(generation)
           await context.applyHarnessLaunch(harnessLaunch)
-          return { ok: true, generationId: generation.generationId, revision: generation.revision, harnessLaunch }
+          return { ok: true, generationId: generation.generationId, revision: generation.revision, ...acknowledged, harnessLaunch }
         })
         try {
           return c.json(await apply)

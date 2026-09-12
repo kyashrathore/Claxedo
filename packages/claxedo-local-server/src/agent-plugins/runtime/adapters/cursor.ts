@@ -47,12 +47,22 @@ export function cursorAgentPluginAdapter(input: { userHomeDirectory?: string } =
   return {
     harnessId: "cursor",
     projectEmpty: true,
-    async project({ plugins, mcpServers = [] }) {
+    async project({ plugins, mcpServers = [], selected = false }) {
       await fs.mkdir(localRoot, { recursive: true })
       const existingNames = await fs.readdir(localRoot)
       const existingManaged = new Set<string>()
       for (const name of existingNames) {
         if (await ownedDirectory(localRoot, name)) existingManaged.add(name)
+      }
+      // Cursor loads every child of this directory. Under default activation
+      // the user's own plugins are theirs to keep; under a selection they are
+      // capabilities nobody chose, and removing them is not this adapter's
+      // call either.
+      const foreign = existingNames.filter((name) => !existingManaged.has(name) && !name.startsWith("."))
+      if (selected && foreign.length) {
+        throw new Error(
+          `Cursor loads ${foreign.join(", ")} from ${localRoot}; an exact capability set cannot be projected onto it`,
+        )
       }
 
       const desired = new Map(plugins.map((plugin) => [managedName(plugin), plugin] as const))

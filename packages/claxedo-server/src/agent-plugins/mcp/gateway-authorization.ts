@@ -15,6 +15,35 @@ export type RuntimeActivationReader = {
   }): Promise<SignedActivationSnapshot>
 }
 
+/**
+ * The artifact this credential is still allowed to reach.
+ *
+ * A default credential follows the project's everyday activation, and stops
+ * working the moment that activation turns the plugin off. A selected
+ * credential belongs to a root whose capability set was chosen against the
+ * user's entitlements rather than those defaults, so its authority is the
+ * retained pin the selection resolved: withdrawing that pin, or losing the
+ * membership and project access the snapshot read above rechecks, is what
+ * revokes it.
+ */
+function authorizedDigest(scope: McpGatewayTokenScope, snapshot: SignedActivationSnapshot) {
+  if (scope.execution === "selected") {
+    const entitled = snapshot.pins.user ?? snapshot.pins.organization ?? snapshot.pins.claxedo
+    return entitled === scope.artifactDigest ? entitled : undefined
+  }
+  const effective = resolveEffectiveActivation({
+    mode: "signed",
+    pluginInstanceId: snapshot.pluginInstanceId,
+    harnessId: snapshot.harnessId,
+    projectOverride: snapshot.projectOverride,
+    userDefault: snapshot.userDefault,
+    organizationDefault: snapshot.organizationDefault,
+    claxedoDefault: snapshot.claxedoDefault,
+    pins: snapshot.pins,
+  })
+  return effective.effective && effective.status === "ready" ? effective.artifactDigest : undefined
+}
+
 /** Resolves the exact currently effective retained server for one runtime credential. */
 export function hostedMcpGatewayAuthorization(input: {
   activations: RuntimeActivationReader
@@ -36,18 +65,9 @@ export function hostedMcpGatewayAuthorization(input: {
     } catch {
       return undefined
     }
-    const effective = resolveEffectiveActivation({
-      mode: "signed",
-      pluginInstanceId: snapshot.pluginInstanceId,
-      harnessId: snapshot.harnessId,
-      projectOverride: snapshot.projectOverride,
-      userDefault: snapshot.userDefault,
-      organizationDefault: snapshot.organizationDefault,
-      claxedoDefault: snapshot.claxedoDefault,
-      pins: snapshot.pins,
-    })
-    if (!effective.effective || effective.status !== "ready") return undefined
-    const artifact = await input.artifacts.get(effective.artifactDigest)
+    const digest = authorizedDigest(scope, snapshot)
+    if (!digest) return undefined
+    const artifact = await input.artifacts.get(digest)
     if (!artifact || artifact.plugin.mcp.status !== "valid") return undefined
     const server = artifact.plugin.mcp.servers.find((candidate) => candidate.name === scope.serverName)
     if (!server || server.type !== "streamable-http" || await mcpOAuthIntegrationId({

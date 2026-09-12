@@ -173,12 +173,29 @@ function services(sandboxManager: SandboxManager | undefined) {
   }
 }
 
-function bridge(composition: ReturnType<typeof services>) {
+/**
+ * A deployment that can project a capability set. What it projects is the
+ * Agent Plugins module's subject; here it only has to exist, because a host
+ * that cannot project one refuses cloud placement before it allocates
+ * anything.
+ */
+function selectedCapabilities() {
+  return {
+    prepare: vi.fn(async () => ({})),
+    apply: vi.fn(async () => undefined),
+  }
+}
+
+function bridge(
+  composition: ReturnType<typeof services>,
+  port: ReturnType<typeof selectedCapabilities> | null = selectedCapabilities(),
+) {
   return createHostedTasksSessionBridge({
     services: composition.value,
     runtimeClient: {},
     principal: async () => ({ principalKind: "user", actorId: "act_owner", actorKind: "human" }),
     auth: () => ({ user: { subject: "owner" } }) as unknown as SignedControlPlaneAuth,
+    ...(port ? { selectedCapabilities: port } : {}),
   })
 }
 
@@ -380,5 +397,57 @@ describe("hosted tasks cloud roots", () => {
     const root = await rootOf("tsk_one")
     expect(root?.project_id).toBe(root?.id)
     expect((await getProjectWorkspace(PROJECT))?.id).toBe(PROJECT)
+  })
+
+  test("hands the root's own credentials to its sandbox and refuses a start the runtime did not acknowledge", async () => {
+    runtime()
+    const { driver } = fakeDriver()
+    const brokered: unknown[] = []
+    const recording: SandboxDriver = {
+      ...driver,
+      metadata: { ...driver.metadata, secretBrokering: "native" },
+      ensureHost: async (input) => {
+        brokered.push(input.secrets)
+        return driver.ensureHost(input)
+      },
+    }
+    const sandboxManager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: recording })
+    const composition = services(sandboxManager)
+    const port = {
+      prepare: vi.fn(async () => ({ secrets: [{ name: "CLAXEDO_MCP_X", value: "Bearer x", hosts: ["mcp-x.example"], header: "Authorization" }] })),
+      apply: vi.fn(async () => {
+        throw new Error("Agent Plugins runtime did not acknowledge the selected capability set")
+      }),
+    }
+
+    const previewed = await bridge(composition, port).preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.available).toBe(false)
+    expect(previewed.preview.blockers).toEqual([
+      { code: "capability_unavailable", detail: expect.stringContaining("did not acknowledge the selected capability set") },
+    ])
+
+    // The credentials the selection resolved travel on the create itself,
+    // which is the only channel a brokering driver reads them from.
+    expect(port.prepare).toHaveBeenCalledWith({
+      workspaceId: (await rootOf("tsk_one"))?.id,
+      capabilities: { mode: "selected", plugins: [], skills: [] },
+    })
+    expect(brokered).toEqual([[{ name: "CLAXEDO_MCP_X", value: "Bearer x", hosts: ["mcp-x.example"], header: "Authorization" }]])
+  })
+
+  test("refuses a cloud root on a deployment that cannot project a capability set, before any sandbox exists", async () => {
+    runtime()
+    const { driver, ensured } = fakeDriver()
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver }))
+
+    const previewed = await bridge(composition, null).preview(previewCommand("tsk_one"))
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.blockers).toEqual([
+      { code: "capability_unavailable", detail: expect.stringContaining("cannot project a selected capability set") },
+    ])
+    expect(ensured).toEqual([])
   })
 })

@@ -65,6 +65,18 @@ export type HostedAgentPluginsComposition = {
   integrationRoutes: Hono
   prepareRuntime: (workspaceId: string) => Promise<WorkspaceRuntimePreparation>
   provisionRuntime: (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => Promise<void>
+  /**
+   * One root's own capability set, for a caller that allocates its own
+   * workspace: the same preparation and apply the workspace routes run, over
+   * an explicit selection instead of the project's activation defaults.
+   */
+  selectedCapabilities: {
+    prepare(input: {
+      workspaceId: string
+      capabilities: { plugins: readonly { sourceId: string; pluginName: string }[]; skills: readonly { sourceId: string; skillName: string }[] }
+    }): Promise<WorkspaceRuntimePreparation>
+    apply(input: { workspaceId: string; preparation: WorkspaceRuntimePreparation }): Promise<void>
+  }
 }
 
 function required(value: string | undefined, name: string) {
@@ -292,6 +304,20 @@ export function createHostedAgentPluginsComposition(input: {
     if (!(await cloudWorkspace(workspaceId))) return
     await provisioner.provision(workspaceId, agentPluginMcpRuntimePlan(preparation))
   }
+  const selectedCapabilities: HostedAgentPluginsComposition["selectedCapabilities"] = {
+    async prepare({ workspaceId, capabilities }) {
+      // The same cloud-VM rail as `prepareRuntime`: a workspace the control
+      // plane does not host has no projection to push, and a caller asking for
+      // one here is asking for a promise this rail cannot keep.
+      if (!(await cloudWorkspace(workspaceId))) {
+        throw new Error(`Workspace ${workspaceId} is not a cloud root this control plane provisions`)
+      }
+      return preparer.forSnapshot(await activations.runtimeSnapshot(workspaceId), { selection: capabilities })
+    },
+    async apply({ workspaceId, preparation }) {
+      await provisioner.provision(workspaceId, agentPluginMcpRuntimePlan(preparation))
+    },
+  }
 
   const gateway = HostedMcpGatewayRoutes({
     env,
@@ -350,6 +376,7 @@ export function createHostedAgentPluginsComposition(input: {
     integrationRoutes,
     prepareRuntime,
     provisionRuntime,
+    selectedCapabilities,
   }
 }
 

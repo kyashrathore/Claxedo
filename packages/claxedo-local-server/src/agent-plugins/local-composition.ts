@@ -184,6 +184,7 @@ export function createLocalAgentPluginsComposition(
       runtimeRoot: signedRuntimeRoot,
       identity: input.identity,
       revision: input.revision,
+      execution: input.execution,
       selections: input.selections,
       artifacts: await runtimeArtifactStore(input.artifacts),
       mcpServers: runtimeMcpServers(input.mcpServers, secrets),

@@ -34,7 +34,19 @@ async function ownedCache(root: string) {
   }
 }
 
-async function updateCodexPluginConfig(codexHome: string, generationRoot: string, pluginNames: string[]) {
+/**
+ * Codex loads every `[plugins.*]` table in its config, not only the ones this
+ * module wrote, so an entry outside the managed block is a capability the
+ * selection did not ask for and this adapter has no right to delete.
+ */
+const CODEX_FOREIGN_CONFIG = /^\s*\[(?:plugins|marketplaces)\./m
+
+async function updateCodexPluginConfig(
+  codexHome: string,
+  generationRoot: string,
+  pluginNames: string[],
+  selected = false,
+) {
   const configFile = path.join(codexHome, "config.toml")
   const current = await fs.readFile(configFile, "utf8").catch((error: NodeJS.ErrnoException) => {
     if (error.code === "ENOENT") return ""
@@ -48,6 +60,11 @@ async function updateCodexPluginConfig(codexHome: string, generationRoot: string
   const before = start === -1 ? current : current.slice(0, start)
   const after = start === -1 ? "" : current.slice(end + CONFIG_END.length)
   const unmanaged = `${before.trimEnd()}${after}`.trim()
+  if (selected && CODEX_FOREIGN_CONFIG.test(unmanaged)) {
+    throw new Error(
+      `Codex config ${configFile} declares plugins this selection did not choose; an exact capability set cannot be projected onto it`,
+    )
+  }
   const managed = pluginNames.length ? [
     CONFIG_START,
     `[marketplaces.${MARKETPLACE}]`,
@@ -135,7 +152,7 @@ export function codexAgentPluginAdapter(input: { codexHome?: string } = {}): Age
   return {
     harnessId: "codex",
     projectEmpty: true,
-    async project({ generationRoot, plugins, mcpServers = [] }) {
+    async project({ generationRoot, plugins, mcpServers = [], selected = false }) {
       const viewRoot = path.join(generationRoot, "harnesses", "codex", "plugins")
       await fs.mkdir(viewRoot, { recursive: true })
       const manifestDirectory = path.join(generationRoot, ".agents", "plugins")
@@ -209,6 +226,7 @@ export function codexAgentPluginAdapter(input: { codexHome?: string } = {}): Age
         codexHome,
         generationRoot,
         codexPlugins.map((plugin) => plugin.plugin.plugin.manifest.name),
+        selected,
       )
       const configFile = path.join(generationRoot, "harnesses", "codex", "launch.json")
       await fs.mkdir(path.dirname(configFile), { recursive: true })

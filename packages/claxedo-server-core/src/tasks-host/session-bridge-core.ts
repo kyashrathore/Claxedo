@@ -19,6 +19,7 @@ import {
   type ConfigurationSlot,
   type ModelConfiguration,
   type ModelReference,
+  type PresetExecution,
   type SessionAbandonCommand,
   type SessionHandoffCommand,
   type SessionHandoffState,
@@ -70,6 +71,13 @@ export type TasksCloudOrigin = {
   task: Task
   slot: ConfigurationSlot
   attempt: number
+  /**
+   * The capability set this root runs, from the preset being started. The host
+   * projects it onto the allocated workspace; it is carried here rather than
+   * re-read from the preset later because a preset edited mid-Start must not
+   * change what the reserved configuration already resolved.
+   */
+  capabilities: Extract<PresetExecution, { placement: "cloud" }>["capabilities"]
 }
 
 export type TasksSessionReservation =
@@ -403,6 +411,7 @@ function previousSessionOf(command: StartPreviewCommand | StartCommand): Session
 async function cloudTarget(
   host: TasksSessionHost,
   command: StartPreviewCommand | StartCommand,
+  capabilities: Extract<PresetExecution, { placement: "cloud" }>["capabilities"],
 ): Promise<TasksCloudTargetChoice> {
   if (!host.cloudTarget) {
     return {
@@ -417,6 +426,7 @@ async function cloudTarget(
     task: command.task,
     slot: command.slot,
     attempt: command.attempt,
+    capabilities,
   })
 }
 
@@ -459,9 +469,10 @@ async function resolveStart(
   host: TasksSessionHost,
   command: StartPreviewCommand | StartCommand,
 ): Promise<ResolvedStart | Refusal> {
-  const placement = command.preset.execution.placement
-  const choice = placement === "cloud"
-    ? await cloudTarget(host, command)
+  const execution = command.preset.execution
+  const placement = execution.placement
+  const choice = execution.placement === "cloud"
+    ? await cloudTarget(host, command, execution.capabilities)
     : await startTarget(host, command.task)
   const blockers: StartBlocker[] = []
   if (!("target" in choice)) {

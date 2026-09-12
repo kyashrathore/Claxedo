@@ -4,7 +4,10 @@ import {
   hostedTasksRuntimeClient,
   type HostedTasksCompositionInput,
 } from "../../tasks/hosted-composition"
-import { createHostedTasksSessionBridge } from "../../tasks/session-bridge"
+import {
+  createHostedTasksSessionBridge,
+  type HostedTasksSessionBridgeInput,
+} from "../../tasks/session-bridge"
 
 /**
  * The only edge from a Worker entry into Tasks.
@@ -16,16 +19,20 @@ import { createHostedTasksSessionBridge } from "../../tasks/session-bridge"
  * artifact with the gate still present and reading correctly.
  */
 export function hostedTasksRouteContributions(
-  input: Omit<HostedTasksCompositionInput, "bridge">,
+  input: Omit<HostedTasksCompositionInput, "bridge" | "cloudSelectedCapabilities"> & {
+    selectedCapabilities?: NonNullable<HostedTasksSessionBridgeInput["selectedCapabilities"]>
+  },
 ): readonly ControlPlaneRouteContribution[] {
   return createHostedTasksComposition({
     ...input,
+    cloudSelectedCapabilities: Boolean(input.selectedCapabilities),
     bridge: (principal, auth) =>
       createHostedTasksSessionBridge({
         services: input.services,
         runtimeClient: hostedTasksRuntimeClient(input.services),
         principal,
         auth,
+        ...(input.selectedCapabilities ? { selectedCapabilities: input.selectedCapabilities } : {}),
       }),
   }).routeContributions
 }

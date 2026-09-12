@@ -3,7 +3,10 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { RequestTiming } from "../request-timing"
 import { encodePluginTreeBase64 } from "@claxedo/server-core/agent-plugins/artifacts/codec"
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
-import type { AgentPluginRuntimeApplyRequest } from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
+import {
+  AGENT_PLUGINS_APPLY_VERSION_DEFAULT,
+  type AgentPluginRuntimeApplyRequest,
+} from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
 import type { WorkspaceRuntimePreparation } from "../../workspace/route-support"
 import { agentPluginMcpRuntimePlan } from "../mcp/runtime-preparation"
 import { desiredAgentPluginSelections, type SignedAgentPluginRuntimeSnapshot } from "./provision"
@@ -65,7 +68,8 @@ export function createHostedAgentPluginSelfRuntime(input: {
     const plan = agentPluginMcpRuntimePlan(preparation)
     const secrets = preparation.secrets ?? []
     return {
-      version: 1,
+      version: AGENT_PLUGINS_APPLY_VERSION_DEFAULT,
+      execution: { mode: "default" },
       identity: { mode: "signed", userId: snapshot.identity.userId, projectId: snapshot.identity.projectId },
       revision: snapshot.revision,
       selections,

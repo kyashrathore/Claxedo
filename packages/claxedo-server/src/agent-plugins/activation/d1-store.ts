@@ -9,7 +9,7 @@ import {
   type SignedKnownPlugin,
   type UpdateSignedArtifactPin,
 } from "@claxedo/server-core/agent-plugins/activation/store"
-import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
+import { isArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import {
   isAgentPluginHarnessId,
   type AgentPluginHarnessId,
@@ -28,7 +28,6 @@ export const AGENT_PLUGIN_ALL_PROJECTS_SCOPE = "all-projects"
 export const AGENT_PLUGIN_DESKTOP_WORKSPACE = "desktop"
 
 const CLAXEDO_SCOPE_KEY = "claxedo"
-const ARTIFACT_DIGEST = /^sha256:[a-f0-9]{64}$/
 
 /**
  * The authority capabilities this store consumes. Signed methods resolve the
@@ -206,10 +205,6 @@ function roleRank(value: unknown) {
 function enabled(value: unknown) {
   if (value !== 0 && value !== 1) invalid("activation choice")
   return value === 1
-}
-
-function isArtifactDigest(value: unknown): value is ArtifactDigest {
-  return typeof value === "string" && ARTIFACT_DIGEST.test(value)
 }
 
 function artifactPin(row: PinRow | null): AgentPluginArtifactPin | undefined {
