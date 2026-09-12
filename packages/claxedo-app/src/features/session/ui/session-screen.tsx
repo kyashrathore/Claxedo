@@ -125,9 +125,10 @@ import { trackSessionOpen } from "@/features/session/ui/session-open-perf"
 /**
  * `readOnly` is for a surface that embeds someone else's session — the workspace
  * panel showing a subagent's transcript beside the turn that spawned it. The
- * embedding surface owns the chrome, and the reader is reading, not driving: no
- * composer, no title bar, and no route back to the parent, which would navigate
- * the pane out from under the transcript they opened.
+ * embedding surface owns the chrome, so there is no title bar. The composer
+ * region stays mounted and carries the flag: it holds the permission and
+ * question docks, and this is the only surface that shows that session's
+ * blocking requests.
  */
 export default function SessionPage(props: {
   presentation: Accessor<PanePresentation>
@@ -1470,7 +1471,7 @@ export default function SessionPage(props: {
             </Switch>
           </div>
 
-          <Show when={!gate.open && !newSession() && !readOnly()}>
+          <Show when={!gate.open && !newSession()}>
             <Suspense
               fallback={
                 <div
@@ -1488,6 +1489,7 @@ export default function SessionPage(props: {
               presentation={props.presentation()}
               sessionID={sessionID()}
               parentID={info()?.parentID}
+              readOnly={readOnly}
               onNavigateParent={navigateParent}
               mode={composerModes.current()}
               system={contentIntentDefaults()?.system}

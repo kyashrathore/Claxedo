@@ -112,6 +112,13 @@ export function SessionComposerRegion(props: {
   sessionID?: string
   sessionDirectory?: string
   parentID?: string
+  /**
+   * A surface that embeds someone else's session. The reader gets no prompt
+   * and no route to the parent — that would navigate the pane out from under
+   * the transcript they opened — while the permission and question docks stay,
+   * this being the only surface that shows that session's blocking requests.
+   */
+  readOnly?: () => boolean
   onNavigateParent: () => void
   mode: ComposerMode
   sessionRef?: () => SessionRef | undefined
@@ -164,7 +171,9 @@ export function SessionComposerRegion(props: {
   const info = createMemo(() => directorySessions(sessionDirectory()).find((session) => session.id === sessionID()))
   const parentID = createMemo(() => props.parentID ?? info()?.parentID)
   const child = createMemo(() => !!parentID())
-  const showComposer = createMemo(() => !props.state.blocked() || child())
+  const readOnly = createMemo(() => props.readOnly?.() === true)
+  const promptable = createMemo(() => !child() && !readOnly() && !props.state.blocked())
+  const showComposer = createMemo(() => child() || promptable())
 
   const [store, setStore] = createStore({
     ready: false,
@@ -215,11 +224,6 @@ export function SessionComposerRegion(props: {
   const rolled = createMemo(() => (props.revert?.items.length ? props.revert : undefined))
   const floating = () => props.presentation === "floating"
   const lift = createMemo(() => (floating() ? 0 : rolled() ? 18 : 36 * value()))
-
-  const openParent = () => {
-    if (!parentID()) return
-    props.onNavigateParent()
-  }
 
   return (
     <div
@@ -389,7 +393,7 @@ export function SessionComposerRegion(props: {
               <Show
                 when={child()}
                 fallback={
-                  <Show when={!props.state.blocked()}>
+                  <Show when={promptable()}>
                     <PromptInput
                       mode={props.mode}
                       harnessSubmitController={promptHarnessControllers.submit}
@@ -433,11 +437,11 @@ export function SessionComposerRegion(props: {
                   class="w-full rounded-[var(--radius-2xl)] border border-border-weak-base bg-background-base p-3 text-16-regular text-text-weak"
                 >
                   <span>{language.t("session.child.promptDisabled")} </span>
-                  <Show when={parentID()}>
+                  <Show when={!readOnly()}>
                     <button
                       type="button"
                       class="text-text-base transition-colors hover:text-text-strong"
-                      onClick={openParent}
+                      onClick={() => props.onNavigateParent()}
                     >
                       {language.t("session.child.backToParent")}
                     </button>
