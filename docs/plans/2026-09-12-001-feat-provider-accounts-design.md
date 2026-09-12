@@ -257,18 +257,26 @@ accounts side.
 - Claude switches on today's delivery: the next local turn spawns with the
   new account's token. No file is written, the operator's login is untouched.
 
-Acceptance:
-- [ ] Two Claude rows (a setup-token and an API key) listed under the row
-      with distinct identities; Make active flips the tag; `GET
-      /credentials` shows exactly one active row for `claude-sdk`.
-- [ ] A local Claude turn after the switch runs on the new account,
-      verified by the live check's usage read matching that account.
+Acceptance (checked 2026-09-13 against the branch's server on a copy of the desktop app's registry, which held the owner's real Claude token; commands and outputs in the session transcript):
+- [x] Two Claude rows (the real token and a placeholder API key) with
+      distinct fingerprint identities; the migration backfilled the real
+      token as active; `POST /credentials/activate` flips it and `GET
+      /credentials/effective` follows; one active row per `claude-sdk`.
+- [x] A local Claude turn on the real token answered "OK" in 4 s; after
+      activating the placeholder the next turn never answered (170 s cut);
+      after activating the token again the next turn answered "OK" in
+      4 s. The usage read on the real token returned `rate_capped` (429 from
+      Anthropic's usage endpoint), so windows were not shown. Finding: Claude
+      Code with an invalid API key hangs rather than failing; the broker
+      design's "the session names the failure" needs a harness-side
+      timeout or a pre-flight check to hold.
 - [ ] Deleting the active row: the row reads "choose an account"; the next
       turn runs on the machine login and the session names it as such.
-- [ ] Inserting two active rows for one `(owner, provider)` fails at the
-      database, asserted by a test.
-- [ ] `bun run test:architecture-ratchets` green; the affected packages'
-      own typecheck and tests green.
+      (Not run: the owner's machine Claude login is expired.)
+- [x] Inserting two active rows for one `(owner, provider)` fails at the
+      database, asserted by a test (`registry.test.ts`).
+- [x] `bun run test:architecture-ratchets` green; the affected packages'
+      own typecheck and tests green (rerun by the reviewer on `896ddc4b64`).
 
 ### Slice 2: the hosted store
 
