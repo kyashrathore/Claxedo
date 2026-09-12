@@ -4,6 +4,7 @@ import os from "os"
 import path from "path"
 import type { Query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
+import { brokeredClaudeConfigDir } from "./config-dir"
 import { SdkRuntimeAdapter } from "../shared/sdk-runtime-adapter"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
@@ -678,4 +679,75 @@ describe("a 4xx from the broker base URL ends the turn", () => {
       await adapter.dispose()
     })
   }
+})
+
+describe("a brokered turn withholds the operator's Claude account", () => {
+  function configDirs() {
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "claude-config-"))
+    const source = path.join(base, "home")
+    fs.mkdirSync(path.join(source, "plugins"), { recursive: true })
+    fs.writeFileSync(path.join(source, "settings.json"), '{"model":"opus"}')
+    fs.writeFileSync(path.join(source, "CLAUDE.md"), "operator memory")
+    fs.writeFileSync(path.join(source, ".claude.json"), '{"oauthAccount":{"emailAddress":"operator@example.test"}}')
+    fs.writeFileSync(path.join(source, ".credentials.json"), '{"claudeAiOauth":{"accessToken":"operator-own-token"}}')
+    return { base, source, root: path.join(base, "brokered") }
+  }
+
+  test("the mirrored config dir carries configuration and no account", () => {
+    const dirs = configDirs()
+    try {
+      const root = brokeredClaudeConfigDir({ root: dirs.root, source: dirs.source })
+
+      expect(fs.readdirSync(root).sort()).toEqual(["CLAUDE.md", "plugins", "settings.json"])
+      expect(fs.readFileSync(path.join(root, "settings.json"), "utf8")).toBe('{"model":"opus"}')
+      expect(fs.existsSync(path.join(root, ".claude.json"))).toBe(false)
+      expect(fs.existsSync(path.join(root, ".credentials.json"))).toBe(false)
+    } finally {
+      fs.rmSync(dirs.base, { recursive: true, force: true })
+    }
+  })
+
+  test("state Claude Code wrote into the dir survives, a stale mirror does not", () => {
+    const dirs = configDirs()
+    try {
+      brokeredClaudeConfigDir({ root: dirs.root, source: dirs.source })
+      fs.writeFileSync(path.join(dirs.root, ".claude.json"), '{"projects":{}}')
+      fs.rmSync(path.join(dirs.source, "CLAUDE.md"))
+
+      const root = brokeredClaudeConfigDir({ root: dirs.root, source: dirs.source })
+
+      expect(fs.readFileSync(path.join(root, ".claude.json"), "utf8")).toBe('{"projects":{}}')
+      expect(fs.existsSync(path.join(root, "CLAUDE.md"))).toBe(false)
+    } finally {
+      fs.rmSync(dirs.base, { recursive: true, force: true })
+    }
+  })
+
+  test("the spawn env points at it only while a projection is held", async () => {
+    const dirs = configDirs()
+    try {
+      const calls: Parameters<NonNullable<ClaudeSdkDriverOptions["query"]>>[0][] = []
+      const driver = createClaudeSdkDriver(turnHost(), {
+        query: probeQuery(calls),
+        executable: () => "/fake/claude",
+        brokeredConfigDir: { root: dirs.root, source: dirs.source },
+      })
+      const turn = () => driver.runTurn({
+        sessionId: "session-config", getAgentSessionId: () => "claude-sdk:session-config",
+        input: { parts: [{ type: "text", text: "hi" }], assistantMessageId: "assistant-config", model: { providerID: "claude", modelID: "auto" } },
+        directory: "/repo", abort: new AbortController(), ingest() {}, associateChild() {},
+        observeSubagent: async () => ({ event: {} }), rebindAgentSession() {}, model: "",
+      } as unknown as SdkRuntimeTurnInput)
+
+      void driver.applyConfig({ auth: { "claude-sdk": brokerProjection }, mcp: {} })
+      await turn()
+      expect((calls.at(-1)!.options!.env as Record<string, string>).CLAUDE_CONFIG_DIR).toBe(dirs.root)
+
+      void driver.applyConfig({ auth: {}, mcp: {} })
+      await turn()
+      expect((calls.at(-1)!.options!.env as Record<string, string>).CLAUDE_CONFIG_DIR).toBeUndefined()
+    } finally {
+      fs.rmSync(dirs.base, { recursive: true, force: true })
+    }
+  })
 })

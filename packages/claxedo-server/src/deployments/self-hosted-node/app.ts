@@ -140,6 +140,11 @@ import { createControlPlaneChannels, mountControlPlaneChannels } from "../../cha
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
 import { getLocalUsageLimits } from "@claxedo/local-server/self-hosted-execution"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
+import {
+  BROKER_RENEWAL_INTERVAL_MS,
+  createLocalCredentialBroker,
+  startEmbeddedWorkspaceRuntimeConfigRenewal,
+} from "@claxedo/local-server/self-hosted-execution"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { createLocalDocumentsBackend } from "@claxedo/server-core/documents/backends/local/backend"
 import { setDocumentChangedSink } from "@claxedo/server-core/documents/backend"
@@ -1589,10 +1594,22 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         .map((workspace) => ensureEmbeddedWorkspaceRuntime(workspace, { config: "skip" })),
     )
   }
-  // The per-harness launch projection is the one other agent-config option;
-  // this deployment does not contribute it. The former `workspaceAuthority`
-  // input went with the retired agent-extensions hydration.
-  configureAgentConfig({ connectionProviders })
+  // The credential authority for this box: the value stays in this process and
+  // each harness receives a broker endpoint on this same listener. The
+  // per-harness launch projection is the one other agent-config option; this
+  // deployment does not contribute it.
+  const credentialBroker = options.egressBroker
+    ? undefined
+    : createLocalCredentialBroker({ dataDir: dataDir(), brokerOrigin: `http://127.0.0.1:${port}` })
+  configureAgentConfig({
+    connectionProviders,
+    ...(credentialBroker
+      ? { projectAuth: ({ workspaceId }) => credentialBroker.projectAuth(workspaceId ? { workspaceId } : {}) }
+      : {}),
+  })
+  // A placeholder expires; re-projecting on this interval and re-applying the
+  // snapshot is what puts the next one in front of the next turn's spawn.
+  const stopConfigRenewal = startEmbeddedWorkspaceRuntimeConfigRenewal(BROKER_RENEWAL_INTERVAL_MS)
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),
@@ -1612,7 +1629,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
 
   let localSessionProjectionReady: Promise<void> | undefined
   const built = createSelfHostedApp(services, {
-    egressBroker: options.egressBroker,
+    egressBroker: options.egressBroker ?? credentialBroker?.handler,
     usageRevisionStore,
     usageSourceCoverage,
     usageSourceCoverageReady: usageCoverageReady,
@@ -1651,6 +1668,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   })
   built.injectWebSocket(server)
   const stopServer = async () => {
+    stopConfigRenewal()
     server.close()
     await built.dispose()
     await shutdownControlPlaneRuntime()

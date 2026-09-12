@@ -57,6 +57,7 @@ import {
 } from "../shared/prompt-attachments"
 import { interruptGoalTurn } from "../shared/goal-stop-order"
 import { claudeAuthEnv, claudeAuthValue } from "./auth"
+import { brokeredClaudeConfigDir } from "./config-dir"
 import { requireClaudeExecutable } from "./executable"
 import { createClaudeTurnInput, type ClaudeTurnInput } from "./turn-input"
 import { harnessSpawnEnv } from "../shared/spawn-env"
@@ -206,6 +207,8 @@ export function claudePluginConfigs(input: unknown): SdkPluginConfig[] {
 export type ClaudeSdkDriverOptions = {
   query?: typeof query
   executable?: () => string
+  /** Where the account-free config dir a brokered turn runs under is built. */
+  brokeredConfigDir?: { root: string; source?: string }
 }
 
 export function createClaudeSdkDriver(
@@ -267,6 +270,28 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
 
   async setPermissionMode(sessionId: string, modeId: string) {
     return this.permissionSelection.set(sessionId, modeId)
+  }
+
+  /**
+   * A brokered turn also withholds the operator's Claude Code account: the CLI
+   * prefers a configured account over the placeholder, so leaving one visible
+   * means the projection is never sent. Without a projection nothing is
+   * withheld and the harness runs on that account exactly as before.
+   */
+  private spawnEnv(extra: Record<string, string> = {}) {
+    const projection = this.auth.anthropic
+    return claudeSpawnEnv({
+      ...process.env,
+      ...claudeAuthEnv(projection),
+      ...(projection
+        ? {
+          CLAUDE_CONFIG_DIR: this.driverOptions.brokeredConfigDir
+            ? brokeredClaudeConfigDir(this.driverOptions.brokeredConfigDir)
+            : brokeredClaudeConfigDir(),
+        }
+        : {}),
+      ...extra,
+    })
   }
 
   setAuth(keys: SdkRuntimeAuth) {
@@ -362,7 +387,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         tools: [],
         maxTurns: 1,
         canUseTool: async () => ({ behavior: "deny", message: "Clearing the session Goal does not execute tools" }),
-        env: claudeSpawnEnv({ ...process.env, ...claudeAuthEnv(this.auth.anthropic) }),
+        env: this.spawnEnv(),
         spawnClaudeCodeProcess: (options) => spawnObservedClaudeCodeProcess({
           options, observer: this.host.processObserver, role: "harness", sessionId,
         }),
@@ -574,9 +599,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           : { resume: input.getAgentSessionId() }),
         ...this.mcpServersFor(input.sessionId),
         ...(this.currentPlugins.length ? { plugins: this.currentPlugins } : {}),
-        env: claudeSpawnEnv({
-          ...process.env,
-          ...claudeAuthEnv(this.auth.anthropic),
+        env: this.spawnEnv({
           CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
           CLAUDE_CODE_ENABLE_TODO_TOOLS: "1",
           CLAUDE_CODE_ENABLE_TASKS: "1",
@@ -677,11 +700,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         cwd: directory ?? process.cwd(),
         pathToClaudeCodeExecutable: (this.driverOptions.executable ?? requireClaudeExecutable)(),
         abortController: abort,
-        env: claudeSpawnEnv({
-          ...process.env,
-          ...claudeAuthEnv(this.auth.anthropic),
-          CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
-        }),
+        env: this.spawnEnv({ CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0" }),
         spawnClaudeCodeProcess: (options) => spawnObservedClaudeCodeProcess({
           options,
           observer: this.host.processObserver,

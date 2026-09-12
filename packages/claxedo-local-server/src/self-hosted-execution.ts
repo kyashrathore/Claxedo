@@ -26,8 +26,12 @@ export {
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimes,
   connectEmbeddedWorkspacePty,
+  startEmbeddedWorkspaceRuntimeConfigRenewal,
   verifyEmbeddedRuntimeCredential,
 } from "./deployments/local/embedded-workspace-runtime"
+
+// ── Local credential authority ──────────────────────────────────────────────
+export { BROKER_RENEWAL_INTERVAL_MS, createLocalCredentialBroker } from "./credentials/broker"
 
 // ── Local route surface ─────────────────────────────────────────────────────
 export { AgentConfigRoutes } from "./agent-config/routes/index"
