@@ -318,6 +318,29 @@ function subagentScenario(input: SubagentHarnessCase) {
   }
 }
 
+/**
+ * The chip a subagent row renders as, and — separately — the same chip as an
+ * activatable control. An unopenable subagent draws a `<span>`, so the tag is the
+ * assertion that separates "shown" from "can be opened".
+ */
+function subagentChip(page: Page, subagentKey: string) {
+  const within = (tag: string) =>
+    `[data-component="subagent-chip-row"] ${tag}[data-component="subagent-chip"][data-subagent-key="${subagentKey}"]`
+  return { chip: page.locator(within("")), openControl: page.locator(within("button")) }
+}
+
+/** The workspace-panel tab a chip opens, addressed by the child session it holds. */
+function subagentTab(page: Page, childSessionId: string) {
+  return page.locator(
+    `[data-slot="workspace-tab"][data-workspace-tab-kind="subagent"][data-workspace-tab-id="subagent:${childSessionId}"]`,
+  )
+}
+
+/** The one panel body the user is looking at; retained bodies are marked inert. */
+function workspacePanelBody(page: Page) {
+  return page.locator('[data-testid="workspace-panel-body"]:not([data-panel-body-inert="true"])')
+}
+
 function subagentTaskEnvelope(input: {
   sessionId: string
   assistantId: string
@@ -408,7 +431,7 @@ async function revealTurn(page: Page) {
   // unmounting group triggers mid-expansion. Converge instead of clicking once.
   const fold = page.locator('[data-component="turn-fold"] button').first()
   const toolDom = page.locator(
-    '[data-component="tool-part-wrapper"], [data-component="work-group-trigger"], [data-component="context-tool-group-trigger"], [data-component="task-tool-card"]',
+    '[data-component="tool-part-wrapper"], [data-component="work-group-trigger"], [data-component="context-tool-group-trigger"], [data-component="subagent-chip-row"]',
   ).first()
   const foldOpen = async () => {
     if ((await fold.count().catch(() => 0)) === 0) return
@@ -865,39 +888,52 @@ test.describe("core harness rendering matrix @core", () => {
         primed.assistantInfo,
       )
 
-      const card = page.locator(
-        `[data-component="task-tool-card"][data-subagent-key="${scenario.subagentKey}"]`,
-      )
-      await expect(card).toBeVisible({ timeout: 45_000 })
-      await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Working")
-      if (input.mode === "background") {
-        await expect(card.locator('[data-slot="basic-tool-tool-subtitle"]')).toContainText(
-          "Background · continues independently",
-        )
-      }
+      const { chip, openControl } = subagentChip(page, scenario.subagentKey)
+      await expect(chip).toBeVisible({ timeout: 45_000 })
+      await expect(chip).toHaveAttribute("data-status", "running")
+      await expect(chip).toHaveAttribute("data-subagent-role", "spawn")
+      await expect(chip.locator('[data-slot="subagent-chip-status"]')).toHaveText("working")
 
       completeSubagent(primed.mock, primed.dir, primed.sessionId, scenario.subagentKey)
-      await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed", { timeout: 20_000 })
+      await expect(chip).toHaveAttribute("data-status", "completed", { timeout: 20_000 })
+      await expect(chip.locator('[data-slot="subagent-chip-status"]')).toHaveText("done")
 
-      const anchor = card.locator("xpath=ancestor::a[1]")
       if (!input.openable) {
-        await expect(card.locator('[data-slot="basic-tool-tool-subtitle"]')).toContainText("Transcript unavailable")
-        await expect(anchor).toHaveCount(0)
-        await expect(card.locator('[data-component="task-tool-action"]')).toHaveCount(0)
+        await expect(chip).toHaveAttribute("aria-label", /, transcript unavailable$/)
+        await expect(openControl).toHaveCount(0)
         return
       }
 
-      await expect(anchor).toHaveCount(1)
-      await expect(card.locator('[data-component="task-tool-action"]')).toHaveCount(1)
+      await expect(openControl).toHaveCount(1)
+      // The tab is titled by the chip that opened it, so the chip's own name is the
+      // expected label rather than a literal repeated from the fixture. Read as
+      // `textContent`: the chip capitalises its name in CSS and the tab does not,
+      // so `innerText` would compare the two surfaces' text-transform instead.
+      const chipName = (await chip.locator('[data-slot="subagent-chip-name"]').textContent())!.trim()
       const closeWorkspacePanel = page.getByRole("button", { name: "Close workspace panel", exact: true })
       if (await closeWorkspacePanel.isVisible().catch(() => false)) await closeWorkspacePanel.click()
-      await anchor.click()
-      await expect(page.getByText(`child transcript for ${input.name}`, { exact: true })).toBeVisible({ timeout: 30_000 })
+      await openControl.click()
+
+      await expect(page.locator('[data-testid="workspace-panel-shell"]')).toHaveAttribute("data-open", "true", {
+        timeout: 30_000,
+      })
+      const tab = subagentTab(page, scenario.childSessionId!)
+      await expect(tab).toBeVisible({ timeout: 30_000 })
+      await expect(tab).toHaveAttribute("data-selected", "true")
+      await expect(tab).toContainText(chipName)
+
+      const panel = workspacePanelBody(page)
+      await expect(panel.locator(`[data-session-timeline-session-id="${scenario.childSessionId}"]`)).toBeVisible({
+        timeout: 30_000,
+      })
+      await expect(panel.getByText(`child transcript for ${input.name}`, { exact: true })).toBeVisible({
+        timeout: 30_000,
+      })
       await expectAssistantReplyVisible(page, `ack 1: matrix probe ${input.harness}`)
     })
   }
 
-  test("subagents — narrow child surface is read-only and returns focus to its spawn card", async ({ page }) => {
+  test("subagents — below the md boundary the child transcript still docks in the panel, read-only", async ({ page }) => {
     test.slow()
     await page.setViewportSize({ width: 700, height: 900 })
     const input = subagentHarnessCases.find((item) => item.name === "Canonical live transcript fixture")!
@@ -915,29 +951,34 @@ test.describe("core harness rendering matrix @core", () => {
       primed.assistantInfo,
     )
 
-    const card = page.locator(
-      `[data-component="task-tool-card"][data-subagent-key="${scenario.subagentKey}"]`,
-    )
-    const anchor = card.locator("xpath=ancestor::a[1]")
-    await expect(anchor).toHaveCount(1)
-    await anchor.focus()
+    const { chip, openControl } = subagentChip(page, scenario.subagentKey)
+    await expect(openControl).toHaveCount(1, { timeout: 45_000 })
+    await openControl.focus()
     await page.keyboard.press("Enter")
 
-    const childHeading = page.locator(`[data-session-timeline-session-id="${scenario.childSessionId}"] [data-subagent-child-heading]`)
-    await expect(childHeading).toBeVisible({ timeout: 30_000 })
-    await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
-    await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
-    const backToParent = page.getByRole("button", { name: "Back to main session.", exact: true })
-    await expect(backToParent).toBeVisible()
-    await backToParent.click()
-    await expect(card).toBeVisible({ timeout: 30_000 })
-    await expect(anchor).toBeFocused()
-    await expectAssistantReplyVisible(page, "ack 1: matrix probe opencode")
+    const shell = page.locator('[data-testid="workspace-panel-shell"]')
+    await expect(shell).toHaveAttribute("data-open", "true", { timeout: 30_000 })
+    await expect(subagentTab(page, scenario.childSessionId!)).toBeVisible({ timeout: 30_000 })
+
+    const panel = workspacePanelBody(page)
+    await expect(panel.locator(`[data-session-timeline-session-id="${scenario.childSessionId}"]`)).toBeVisible({
+      timeout: 30_000,
+    })
+    await expect(panel.getByText(`child transcript for ${input.name}`, { exact: true })).toBeVisible()
+    // Read-only: the docked child builds no composer at all, so this width owns no
+    // prompt surface of its own and the parent pane keeps the page's only one.
+    await expect(panel.locator(SELECTORS.submitControl)).toHaveCount(0)
+    await expect(panel.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
+
+    // The panel is a column beside the pane, not a route: the chip that opened it
+    // is still mounted and still holds the keyboard.
+    await expect(chip).toBeVisible()
+    await expect(openControl).toBeFocused()
   })
 
-  test("subagents — bare Pi capability emits no synthetic task card", async ({ page }) => {
+  test("subagents — bare Pi capability emits no subagent chip row", async ({ page }) => {
     const { mock } = await primeHarness(page, "pi")
-    await expect(page.locator('[data-component="task-tool-card"]')).toHaveCount(0)
+    await expect(page.locator('[data-component="subagent-chip-row"]')).toHaveCount(0)
     expect(mock.requests.badResponses).toEqual([])
   })
 

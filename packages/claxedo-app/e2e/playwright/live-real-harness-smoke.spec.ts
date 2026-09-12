@@ -1602,7 +1602,8 @@ test.describe("live real-harness smoke @live", () => {
       await page.locator(SELECTORS.submitControl).last().click()
       await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
       const parentUrl = page.url()
-      const card = page.locator('[data-component="task-tool-card"]').last()
+      const chipRow = page.locator('[data-component="subagent-chip-row"]').last()
+      const chip = chipRow.locator('[data-component="subagent-chip"]').last()
       if (delegation === "claxedo-mcp") {
         await expectAssistantReplyVisible(page, parentMarker, { spec: "live-real-harness-smoke", scenario: `${harness}-mcp-parent`, timeout: 90_000 })
         const inventory = await (await fetch(`${BACKEND_URL}/api/claxedo/session`)).json() as { sessions: Array<{ sessionID: string; directory: string; parentID?: string }> }
@@ -1621,32 +1622,37 @@ test.describe("live real-harness smoke @live", () => {
         expect(readback[0]?.config.harness.id).toBe(harness === "claude" ? "codex" : "claude")
         await expect(page.getByRole("navigation", { name: "Projects and sessions" })
           .getByRole("button", { name: /^Reply with exactly LIVE-CHILD-/ })).toHaveCount(0)
-        if (!(await card.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
+        if (!(await chip.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
       }
-      await expect(card).toBeVisible({ timeout: 90_000 })
-      await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed", { timeout: 90_000 })
+      await expect(chip).toBeVisible({ timeout: 90_000 })
+      await expect(chip).toHaveAttribute("data-status", "completed", { timeout: 90_000 })
+      await expect(chip.locator('[data-slot="subagent-chip-status"]')).toHaveText("done")
       await expectAssistantReplyVisible(page, parentMarker)
-      if (!(await card.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
-      await expect(card).toBeVisible()
-      const childLink = card.locator("xpath=ancestor::a[1]")
-      await expect(childLink).toHaveCount(1)
-      const childHref = await childLink.getAttribute("href")
-      expect(childHref).toMatch(/^\/s\//)
-      await childLink.click()
-      await expect(page.locator("[data-subagent-child-heading]")).toBeVisible({ timeout: 30_000 })
+      if (!(await chip.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
+      await expect(chip).toBeVisible()
+      const openControl = chipRow.locator('button[data-component="subagent-chip"]').last()
+      await expect(openControl).toHaveCount(1)
+      await openControl.click()
+      const tab = page.locator('[data-slot="workspace-tab"][data-workspace-tab-kind="subagent"]')
+      await expect(tab).toHaveCount(1, { timeout: 30_000 })
+      // The chip carries no child session id of its own; the tab it opens is where
+      // the id becomes readable, and it is what the permalink below is built from.
+      const childSessionId = (await tab.getAttribute("data-workspace-tab-id"))!.replace(/^subagent:/, "")
+      const panel = page.locator('[data-testid="workspace-panel-body"]:not([data-panel-body-inert="true"])')
+      await expect(panel.locator(`[data-session-timeline-session-id="${childSessionId}"]`)).toBeVisible({ timeout: 30_000 })
+      await expect(panel.locator(SELECTORS.submitControl)).toHaveCount(0)
       await expectAssistantReplyVisible(page, childMarker, { spec: "live-real-harness-smoke", scenario: `${harness}-subagent-child` })
-      await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
-      // The card opens a split pane without changing the parent URL. Exercise
-      // the child's public permalink before reloading its transcript.
-      await page.goto(new URL(childHref!, parentUrl).toString())
+      // The chip docks the transcript in the workspace panel without changing the
+      // parent URL. Exercise the child's public permalink before reloading it.
+      await page.goto(new URL(`/s/${childSessionId}`, parentUrl).toString())
       await expectAssistantReplyVisible(page, childMarker, undefined, "read-only-child")
       await page.reload({ waitUntil: "domcontentloaded" })
       await expectAssistantReplyVisible(page, childMarker, undefined, "read-only-child")
       await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
       await page.goto(parentUrl)
       await expectAssistantReplyVisible(page, parentMarker)
-      if (!(await card.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
-      await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed")
+      if (!(await chip.isVisible())) await page.getByRole("button", { name: /^Worked for/ }).click()
+      await expect(chip).toHaveAttribute("data-status", "completed")
     })
     }
 

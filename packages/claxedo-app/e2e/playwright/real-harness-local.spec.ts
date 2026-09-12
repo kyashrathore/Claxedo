@@ -580,27 +580,36 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
       })
       .toBe(true)
     await expect(page.getByText("Could not save session config", { exact: true })).toHaveCount(0)
-    const card = page.locator('[data-component="task-tool-card"]').last()
-    await expect(card, `${harness.id} never rendered its native delegation as a subagent card`).toBeVisible({
+    const chipRow = page.locator('[data-component="subagent-chip-row"]').last()
+    const chip = chipRow.locator('[data-component="subagent-chip"]').last()
+    await expect(chip, `${harness.id} never rendered its native delegation as a subagent chip`).toBeVisible({
       timeout: 60_000,
     })
-    await expect(card.locator('[data-slot="subagent-status"]')).toHaveText(/Pending|Working|Completed/, { timeout: 30_000 })
+    await expect(chip.locator('[data-slot="subagent-chip-status"]')).toHaveText(/working|done/, { timeout: 30_000 })
     await demoBeat(page)
-    await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed", {
-      timeout: 90_000,
-    })
+    await expect(chip).toHaveAttribute("data-status", "completed", { timeout: 90_000 })
+    await expect(chip.locator('[data-slot="subagent-chip-status"]')).toHaveText("done")
     await expect(page.locator(SELECTORS.userMessageContent).filter({ hasText: marker })).toBeVisible()
     await demoBeat(page)
 
-    const anchor = card.locator("xpath=ancestor::a[1]")
+    const openControl = chipRow.locator('button[data-component="subagent-chip"]').last()
     if (!harness.openable) {
-      await expect(card.locator('[data-slot="basic-tool-tool-subtitle"]')).toContainText("Transcript unavailable")
-      await expect(anchor).toHaveCount(0)
+      await expect(chip).toHaveAttribute("aria-label", /, transcript unavailable$/)
+      await expect(openControl).toHaveCount(0)
     } else {
-      await expect(anchor, `${harness.id} completed without an openable child transcript`).toHaveCount(1)
-      await anchor.click()
-      await expect(page.locator("[data-subagent-child-heading]")).toBeVisible({ timeout: 30_000 })
-      await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
+      await expect(openControl, `${harness.id} completed without an openable child transcript`).toHaveCount(1)
+      await openControl.click()
+      const tab = page.locator('[data-slot="workspace-tab"][data-workspace-tab-kind="subagent"]')
+      await expect(tab).toHaveCount(1, { timeout: 30_000 })
+      await expect(tab).toHaveAttribute("data-selected", "true")
+      const childSessionId = (await tab.getAttribute("data-workspace-tab-id"))!.replace(/^subagent:/, "")
+      const panel = page.locator('[data-testid="workspace-panel-body"]:not([data-panel-body-inert="true"])')
+      await expect(panel.locator(`[data-session-timeline-session-id="${childSessionId}"]`)).toBeVisible({
+        timeout: 30_000,
+      })
+      // The docked child is read-only: it builds no composer, so the page's only
+      // submit control stays the parent pane's.
+      await expect(panel.locator(SELECTORS.submitControl)).toHaveCount(0)
       await expectAssistantReplyVisible(page, "ok", {
         spec: "real-harness-local",
         scenario: `${harness.id}-subagent-child`,
@@ -1614,7 +1623,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     const history = await response.json() as Array<{ parts: Array<{ type: string; tool?: string; state?: { status: string; error?: string } }> }>
     const tool = history.flatMap((message) => message.parts).find((part) => part.type === "tool" && part.tool === "subagent")
     expect(tool?.state).toMatchObject({ status: "error", error: expect.stringContaining("Tool subagent not found") })
-    await expect(page.locator('[data-component="task-tool-card"]')).toHaveCount(0)
+    await expect(page.locator('[data-component="subagent-chip-row"]')).toHaveCount(0)
   })
 
   test("Pi Goal runs through slash and + entry paths with continuation and lifecycle controls", async ({ page }) => {

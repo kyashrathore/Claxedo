@@ -294,7 +294,7 @@ export async function expectAssistantReplyVisible(
   const locator = await domTruth(page, text, resolved.timeout)
   await thinkingRowGone(page)
   if (composer === "read-only-child") {
-    await expect(page.locator("[data-subagent-child-heading]")).toBeVisible()
+    await expect(page.locator('h1[data-slot="session-title-child"]')).toBeVisible()
     await expect(page.getByText("Subagent sessions cannot be prompted.", { exact: true })).toBeVisible()
     await expect(page.locator(SELECTORS.submitControl)).toHaveCount(0)
   } else {
