@@ -37,7 +37,7 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
   const [busy, setBusy] = createSignal(false)
   const [startError, setStartError] = createSignal<string | undefined>()
 
-  const selectedPreset = createMemo(() => (presets.data ?? []).find((preset) => preset.id === draft().presetId))
+  const selectedPreset = createMemo(() => presets.items().find((preset) => preset.id === draft().presetId))
 
   const previewInput = createMemo(() => {
     const preset = selectedPreset()
@@ -67,17 +67,19 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
 
   const previewState = (): StartPreviewState => {
     if (!previewInput()) return { status: "idle" }
-    if (preview.loading) return { status: "loading" }
     const failure = preview.error
     if (failure) return { status: "error", message: refusalOf(failure).message }
     const resolved: StartPreview | undefined = preview.latest
-    return resolved ? { status: "ready", preview: resolved } : { status: "loading" }
+    if (!resolved) return { status: "loading" }
+    return { status: "ready", preview: resolved, refreshing: preview.loading }
   }
 
   const start = async () => {
     const input = previewInput()
     const resolved = preview.latest
-    if (!input || !resolved) return
+    // `latest` outlives its input while a re-preview is in flight, and the
+    // digest the host accepts belongs to the input that produced it.
+    if (!input || !resolved || preview.loading) return
     setBusy(true)
     setStartError(undefined)
     try {
@@ -107,7 +109,7 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
     <StartTaskDialog
       taskTitle={props.task.title}
       attempt={props.attempt}
-      presets={presets.data ?? []}
+      presets={presets.items()}
       draft={draft()}
       preview={previewState()}
       busy={busy()}

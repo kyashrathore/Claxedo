@@ -1,6 +1,7 @@
 import "./tasks.css"
 
 export { TaskStatusChip, StatusMenu } from "./status-menu"
+export { LoadMore, type MorePages } from "./load-more"
 export { TaskList, type TaskListProps } from "./task-list"
 export { TaskBoard, type TaskBoardProps } from "./task-board"
 export { TaskDetail, type TaskDetailEdit, type TaskDetailProps } from "./task-detail"

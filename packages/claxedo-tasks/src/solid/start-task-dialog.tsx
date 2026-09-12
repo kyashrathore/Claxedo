@@ -27,9 +27,14 @@ export function StartTaskDialog(props: StartTaskDialogProps) {
   const patch = (input: Partial<StartDraft>) => props.onDraftChange({ ...props.draft, ...input })
   const selected = () => props.presets.find((preset) => preset.id === props.draft.presetId)
   const slots = () => CONFIGURATION_SLOTS.filter((slot) => selected()?.configurations[slot])
-  const preview = () => (props.preview.status === "ready" ? props.preview.preview : undefined)
+  const resolved = () => (props.preview.status === "ready" ? props.preview : undefined)
+  const preview = () => resolved()?.preview
   const canStart = () =>
-    props.busy !== true && !!selected() && preview()?.available === true && preview()?.slot === props.draft.slot
+    props.busy !== true &&
+    !!selected() &&
+    resolved()?.refreshing !== true &&
+    preview()?.available === true &&
+    preview()?.slot === props.draft.slot
 
   return (
     <section class="tsk tsk-stack" data-testid="start-task-dialog" aria-label={`Start ${props.taskTitle}`}>
@@ -147,8 +152,8 @@ function StartPreviewPanel(props: { preview: StartPreviewState; attempt: number 
       <Show when={props.preview.status === "idle"}>
         <span class="tsk-muted">Choose a preset to see where this will run.</span>
       </Show>
-      <Show when={props.preview.status === "loading"}>
-        <span class="tsk-muted">Resolving settings…</span>
+      <Show when={props.preview.status === "loading" || (props.preview.status === "ready" && props.preview.refreshing === true)}>
+        <span class="tsk-muted" data-testid="start-task-preview-resolving">Resolving settings…</span>
       </Show>
       <Show when={props.preview.status === "error" ? props.preview : undefined}>
         {(failed) => (

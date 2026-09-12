@@ -85,13 +85,16 @@ describe("start task dialog", () => {
     expect(onStart).not.toHaveBeenCalled()
   })
 
-  test("Continue from previous session appears only when the host says the transcript is readable", () => {
-    mount({ preview: { status: "ready", preview: preview() } })
-    expect(screen.queryByTestId("start-task-continue")).toBeNull()
+  test("a preview whose input has changed keeps its panel and refuses Start", () => {
+    const { onStart } = mount({
+      preview: { status: "ready", preview: preview({ previousTranscriptReadable: true }), refreshing: true },
+    })
 
-    cleanup()
-    mount({ preview: { status: "ready", preview: preview({ previousTranscriptReadable: true }) } })
     expect(screen.getByTestId("start-task-continue")).toBeTruthy()
+    expect(screen.getByTestId("start-task-preview-resolving")).toBeTruthy()
+    expect(screen.getByTestId("start-task-submit")).toBeDisabled()
+    fireEvent.click(screen.getByTestId("start-task-submit"))
+    expect(onStart).not.toHaveBeenCalled()
   })
 
   test("with no presets saved there is no default: the dialog offers to create one", () => {

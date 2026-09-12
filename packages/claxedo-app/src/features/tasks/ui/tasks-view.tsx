@@ -41,7 +41,8 @@ export function TasksView(props: TasksViewProps) {
     }
   })
   const tasks = useTaskList(props.scope, filter)
-  const visible = createMemo(() => props.store.visibleTasks(tasks.data ?? []))
+  const visible = createMemo(() => props.store.visibleTasks(tasks.items()))
+  const morePages = () => (tasks.hasMore() ? { onLoadMore: tasks.loadMore, loading: tasks.loadingMore() } : undefined)
   const roots = createMemo(() => visible().filter((task) => task.parentTaskId === null))
   const childrenOf = (taskId: string) => visible().filter((task) => task.parentTaskId === taskId)
 
@@ -148,14 +149,15 @@ export function TasksView(props: TasksViewProps) {
         </button>
       </div>
 
-      <Show when={tasks.error}>{(error) => <p class="tsk-error" role="alert">{refusalOf(error()).message}</p>}</Show>
+      <Show when={tasks.error()}>{(error) => <p class="tsk-error" role="alert">{refusalOf(error()).message}</p>}</Show>
 
       <Show
         when={props.store.state.view === "board"}
         fallback={
           <TaskList
             tasks={roots()}
-            loading={tasks.isPending}
+            loading={tasks.pending()}
+            more={morePages()}
             selectedTaskId={props.store.state.selectedTaskId}
             showChildren={props.store.state.showChildren}
             childrenOf={childrenOf}
@@ -167,6 +169,7 @@ export function TasksView(props: TasksViewProps) {
       >
         <TaskBoard
           tasks={visible()}
+          more={morePages()}
           selectedTaskId={props.store.state.selectedTaskId}
           busyTaskId={busyTaskId()}
           onSelect={(taskId) => props.store.selectTask(taskId)}

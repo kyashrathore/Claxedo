@@ -75,14 +75,31 @@ export function PresetConfigurationEditor(props: ConfigurationEditorProps) {
   return (
     <Show when={controller} fallback={<p class="tsk-error">The model selector is unavailable in this build.</p>}>
       {(selection) => (
-        <div data-testid={`preset-configuration-${props.slot}`}>
-          <AgentHarnessSelector
-            harnessController={selection()}
-            draftId={`preset-editor:${props.editorKey}:${props.slot}`}
-            directory={catalogDirectory()}
-            active={!props.disabled}
-          />
-        </div>
+        // The selector hydrates its harness and model catalogs from a worktree
+        // and stays empty without one, which it then reports as a failed load.
+        // With no project registered there is nothing to read, and saying so is
+        // the only answer that names what the user has to do.
+        <Show
+          when={catalogDirectory()}
+          fallback={
+            <p class="tsk-muted" data-testid={`preset-configuration-catalog-${props.slot}`}>
+              {projects.isPending
+                ? "Loading projects…"
+                : "Add a project first: harness and model choices are read from a project's checkout."}
+            </p>
+          }
+        >
+          {(directory) => (
+            <div data-testid={`preset-configuration-${props.slot}`}>
+              <AgentHarnessSelector
+                harnessController={selection()}
+                draftId={`preset-editor:${props.editorKey}:${props.slot}`}
+                directory={directory()}
+                active={!props.disabled}
+              />
+            </div>
+          )}
+        </Show>
       )}
     </Show>
   )

@@ -106,7 +106,13 @@ export type StartDraft = {
 export type StartPreviewState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; preview: StartPreview }
+  /**
+   * `refreshing` is a resolved preview whose input has since changed — toggling
+   * Continue changes the digest. The panel keeps showing the resolved settings
+   * so the controls that produced the change stay on screen, and Start waits,
+   * because the digest it would send belongs to the previous input.
+   */
+  | { status: "ready"; preview: StartPreview; refreshing?: boolean }
   | { status: "error"; message: string }
 
 export type { ModelConfiguration, PluginReference, PresetDraft, SkillReference, TaskDraft }

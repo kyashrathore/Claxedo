@@ -77,14 +77,14 @@ export function PresetsView(props: PresetsViewProps) {
         when={props.store.state.presetDraft}
         fallback={
           <PresetList
-            presets={presets.data ?? []}
-            loading={presets.isPending}
+            presets={presets.items()}
+            loading={presets.pending()}
             includeArchived={includeArchived()}
             onIncludeArchivedChange={showArchived}
             selectedPresetId={props.store.state.selectedPresetId}
-            error={presets.error ? refusalOf(presets.error).message : props.store.state.presetRefusal?.message}
+            error={presets.error() ? refusalOf(presets.error()).message : props.store.state.presetRefusal?.message}
             onSelect={(presetId) => {
-              const preset = (presets.data ?? []).find((entry) => entry.id === presetId)
+              const preset = presets.items().find((entry) => entry.id === presetId)
               props.store.selectPreset(presetId)
               if (preset) props.store.openPresetDraft(presetEditorDraftOf(preset), preset)
             }}

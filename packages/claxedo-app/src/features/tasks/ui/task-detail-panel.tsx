@@ -53,7 +53,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
           <TaskDetail
             view={{
               task: current(),
-              children: children.data ?? [],
+              children: children.items(),
               groups: groups(),
               // Every slot the host has ever linked, plus Primary, which is
               // always offerable. Slots a preset does not configure are refused
@@ -116,7 +116,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             }
             subtasks={
               <TaskSubtasks
-                items={children.data ?? []}
+                items={children.items()}
                 canAdd={current().parentTaskId === null && current().status !== "done" && current().archivedAt === null}
                 addDisabledReason={
                   current().parentTaskId === null

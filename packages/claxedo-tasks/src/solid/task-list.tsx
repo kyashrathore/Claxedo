@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js"
 import type { TaskStatus, TaskSummary } from "../contracts"
+import { LoadMore, type MorePages } from "./load-more"
 import { TaskStatusChip, StatusMenu } from "./status-menu"
 
 export type TaskListProps = {
@@ -9,6 +10,8 @@ export type TaskListProps = {
   emptyLabel?: string
   showChildren?: boolean
   childrenOf?: (taskId: string) => readonly TaskSummary[]
+  /** Set while the server holds a further page of this list. */
+  more?: MorePages
   onSelect: (taskId: string) => void
   onStatusChange?: (input: { taskId: string; revision: number; status: TaskStatus }) => void
   busyTaskId?: string
@@ -16,41 +19,45 @@ export type TaskListProps = {
 
 export function TaskList(props: TaskListProps) {
   return (
-    <div class="tsk tsk-surface tsk-scroll" data-testid="tasks-list" role="list" aria-busy={props.loading ? "true" : "false"}>
-      <Show
-        when={props.tasks.length > 0}
-        fallback={<p class="tsk-empty">{props.emptyLabel ?? "No tasks yet."}</p>}
-      >
-        <For each={props.tasks}>
-          {(task) => (
-            <>
-              <TaskRow
-                task={task}
-                depth={0}
-                selected={props.selectedTaskId === task.id}
-                busy={props.busyTaskId === task.id}
-                onSelect={props.onSelect}
-                onStatusChange={props.onStatusChange}
-              />
-              <Show when={props.showChildren}>
-                <For each={props.childrenOf?.(task.id) ?? []}>
-                  {(child) => (
-                    <TaskRow
-                      task={child}
-                      depth={1}
-                      selected={props.selectedTaskId === child.id}
-                      busy={props.busyTaskId === child.id}
-                      onSelect={props.onSelect}
-                      onStatusChange={props.onStatusChange}
-                    />
-                  )}
-                </For>
-              </Show>
-            </>
-          )}
-        </For>
-      </Show>
-    </div>
+    <>
+      {/* The control sits outside `role="list"`, which only admits list items. */}
+      <div class="tsk tsk-surface tsk-scroll" data-testid="tasks-list" role="list" aria-busy={props.loading ? "true" : "false"}>
+        <Show
+          when={props.tasks.length > 0}
+          fallback={<p class="tsk-empty">{props.emptyLabel ?? "No tasks yet."}</p>}
+        >
+          <For each={props.tasks}>
+            {(task) => (
+              <>
+                <TaskRow
+                  task={task}
+                  depth={0}
+                  selected={props.selectedTaskId === task.id}
+                  busy={props.busyTaskId === task.id}
+                  onSelect={props.onSelect}
+                  onStatusChange={props.onStatusChange}
+                />
+                <Show when={props.showChildren}>
+                  <For each={props.childrenOf?.(task.id) ?? []}>
+                    {(child) => (
+                      <TaskRow
+                        task={child}
+                        depth={1}
+                        selected={props.selectedTaskId === child.id}
+                        busy={props.busyTaskId === child.id}
+                        onSelect={props.onSelect}
+                        onStatusChange={props.onStatusChange}
+                      />
+                    )}
+                  </For>
+                </Show>
+              </>
+            )}
+          </For>
+        </Show>
+      </div>
+      <LoadMore more={props.more} testId="tasks-list-load-more" />
+    </>
   )
 }
 
