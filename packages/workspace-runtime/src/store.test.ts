@@ -130,6 +130,84 @@ void describe("RuntimeStore", () => {
     assert.equal(typeof reconstructed.acquireTurnLease("ses_durable_turn"), "string")
   })
 
+  void it("queued prompts survive a runtime restart with their payload and requester", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    const queued = first.queuePrompt({
+      sessionId: "ses_queue",
+      messageId: "msg_queued",
+      parts: [{ type: "text", text: "then run the tests" }],
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+      tools: { bash: false },
+      format: { type: "json_schema", name: "report" },
+      system: "be brief",
+      variant: "thinking",
+      permissionMode: "ask",
+      delivery: "queue",
+      actor: { actorId: "actor_1", actorKind: "human" },
+      author: { id: "pub_1", name: "Yash", avatarUrl: "https://avatars.example/y.png", kind: "human" },
+    })
+    const second = first.queuePrompt({
+      sessionId: "ses_queue",
+      parts: [{ type: "text", text: "and open a PR" }],
+      delivery: "queue",
+    })
+    assert.deepEqual([queued.seq, second.seq], [1, 2])
+
+    const restarted = new RuntimeStore(root)
+    restarted.recoverBusySessions()
+    const rows = restarted.listQueuedPrompts()
+    assert.deepEqual(rows.map((row) => row.seq), [1, 2])
+    assert.deepEqual(rows[0], {
+      sessionId: "ses_queue",
+      seq: 1,
+      messageId: "msg_queued",
+      parts: [{ type: "text", text: "then run the tests" }],
+      agent: "build",
+      model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+      tools: { bash: false },
+      format: { type: "json_schema", name: "report" },
+      system: "be brief",
+      variant: "thinking",
+      permissionMode: "ask",
+      delivery: "queue",
+      actor: { actorId: "actor_1", actorKind: "human" },
+      author: { id: "pub_1", name: "Yash", avatarUrl: "https://avatars.example/y.png", kind: "human" },
+      queuedAt: rows[0].queuedAt,
+    })
+    assert.deepEqual(rows[1], {
+      sessionId: "ses_queue",
+      seq: 2,
+      parts: [{ type: "text", text: "and open a PR" }],
+      delivery: "queue",
+      queuedAt: rows[1].queuedAt,
+    })
+
+    restarted.deleteQueuedPrompt("ses_queue", 1)
+    assert.deepEqual(restarted.listQueuedPrompts().map((row) => row.seq), [2])
+    assert.deepEqual(new RuntimeStore(root).listQueuedPrompts().map((row) => row.seq), [2])
+  })
+
+  void it("deleting a session forgets the prompts queued for it", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "ses_gone", directory: "/workspace", agentSessionId: "agent_gone" })
+    store.queuePrompt({
+      sessionId: "ses_gone",
+      parts: [{ type: "text", text: "never runs" }],
+      delivery: "queue",
+    })
+    store.queuePrompt({
+      sessionId: "ses_kept",
+      parts: [{ type: "text", text: "still runs" }],
+      delivery: "queue",
+    })
+
+    store.deleteSession("ses_gone")
+    assert.deepEqual(store.listQueuedPrompts().map((row) => row.sessionId), ["ses_kept"])
+  })
+
   void it("creates new session storage with harness columns instead of runner columns", () => {
     const store = new RuntimeStore(tmp())
     const columns = sessionColumns(store)

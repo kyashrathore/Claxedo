@@ -1,15 +1,18 @@
 import { HTTPException } from "hono/http-exception"
 import { createSessionRoutes, type SessionRouteContext } from "./session-core"
-import { createChildSessionHost, type ChildWakeAuthor, type PendingChildWake } from "./session-children"
+import { createChildSessionHost, type PendingChildWake } from "./session-children"
+import { createQueuedPromptHost, type QueuedPromptStore } from "./session-queued-prompts"
 import { isAgentRuntimeTurnConflictError, type SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime"
 import { runRuntimePromptTurn, runSessionPromptTurn } from "../session/service"
 import {
   type AgentRuntime,
   type AgentMessage,
+  type AgentMessageAuthor,
   type AgentPermission,
   type AgentQuestion,
   type SessionHarness,
   type AgentSession,
+  type PromptDelivery,
   type SessionConfig,
   type SessionConfigRequestUpdate,
 } from "@claxedo/agent-sdk-runtime"
@@ -139,6 +142,12 @@ export function SessionRoutes(
       secret: () => string
       pendingWakes: () => PendingChildWake[] | Promise<PendingChildWake[]>
     }
+    /**
+     * Host-owned durable queue for prompts admitted while a turn was running.
+     * The rows outlive the request that is holding one, so a restart re-issues
+     * it instead of dropping it.
+     */
+    queuedPrompts?: () => QueuedPromptStore | undefined
     listSubagents?: (input: {
       directory: string
       parentSessionId: string
@@ -236,48 +245,61 @@ export function SessionRoutes(
         getMessages: (sessionId, directory) => options.getMessages!({ directory, sessionId }),
         publishRuntime: eventHub.publishRuntime,
         subscribeGlobal: eventHub.subscribeGlobal,
-        startTurn: (input) => startWakeTurn(input),
+        startTurn: ({ parentSessionId, ...rest }) => startHostTurn({ sessionId: parentSessionId, ...rest }),
       })
     : undefined
 
+  const queuedPrompts = options?.queuedPrompts
+    ? createQueuedPromptHost({ store: options.queuedPrompts, startTurn: (input) => startHostTurn(input) })
+    : undefined
+
   /**
-   * A completion wake is a runtime-originated turn on the parent, driven by
-   * the same turn runners the prompt routes use. It carries no control-plane
-   * turn lease: the runtime that owns the parent is the one waking it.
+   * A turn the runtime starts for itself — a completion wake on a parent, a
+   * prompt recovered from the durable queue — driven by the same turn runners
+   * the prompt routes use. It carries no control-plane turn lease: the runtime
+   * that owns the session is the one starting the turn.
+   *
+   * `runSessionPromptTurn` has no queue: an adapter-only host starts the turn
+   * it is handed, so that branch reports `start` itself.
    */
-  async function startWakeTurn(input: {
-    parentSessionId: string
+  async function startHostTurn(input: {
+    sessionId: string
     directory: string
     body: SessionPromptBody
-    author: ChildWakeAuthor
-    onSettled: () => void
+    author?: AgentMessageAuthor
+    actor?: { actorId: string; actorKind: "human" | "agent" }
+    onDelivery?: (delivery: PromptDelivery) => void
+    onSettled?: () => void
   }): Promise<"started" | "busy"> {
-    const adapter = await getAdapter({ sessionId: input.parentSessionId, directory: input.directory })
-    const runtime = await options?.resolveRuntime?.({ sessionId: input.parentSessionId, directory: input.directory })
+    const adapter = await getAdapter({ sessionId: input.sessionId, directory: input.directory })
+    const runtime = await options?.resolveRuntime?.({ sessionId: input.sessionId, directory: input.directory })
     const publishGlobal = (event: CompatEnvelope) => eventHub.publishGlobal(event)
     const publishStatus = (event: RuntimeSessionBusEvent) => workspaceRuntimeBus.publish(event)
-    const scope = () => options?.createActiveTurnScope?.({ adapter, directory: input.directory, sessionId: input.parentSessionId })
+    const scope = () => options?.createActiveTurnScope?.({ adapter, directory: input.directory, sessionId: input.sessionId })
     return await new Promise<"started" | "busy">((resolve) => {
       const run = runtime
         ? runRuntimePromptTurn({
             runtime,
-            sessionId: input.parentSessionId,
+            sessionId: input.sessionId,
             directory: input.directory,
             body: input.body,
             publishGlobal,
             publishStatus,
             createActiveTurnScope: scope,
-            author: input.author,
+            ...(input.author ? { author: input.author } : {}),
+            ...(input.actor ? { actor: input.actor } : {}),
+            ...(input.onDelivery ? { onDelivery: input.onDelivery } : {}),
             onAdmissionSettled: (error) => resolve(isAgentRuntimeTurnConflictError(error) ? "busy" : "started"),
           })
         : (async () => {
-            const binding = await options?.resolveExecutionBinding?.({ adapter, directory: input.directory, sessionId: input.parentSessionId })
-            if (!binding) throw new Error(`Session ${input.parentSessionId} has no complete execution binding`)
+            const binding = await options?.resolveExecutionBinding?.({ adapter, directory: input.directory, sessionId: input.sessionId })
+            if (!binding) throw new Error(`Session ${input.sessionId} has no complete execution binding`)
             resolve("started")
+            input.onDelivery?.("start")
             return runSessionPromptTurn({
               adapter,
               binding,
-              sessionId: input.parentSessionId,
+              sessionId: input.sessionId,
               directory: input.directory,
               body: input.body,
               publishGlobal,
@@ -287,14 +309,14 @@ export function SessionRoutes(
             })
           })()
       run
-        .then(() => input.onSettled(), (error: unknown) => {
+        .then(() => input.onSettled?.(), (error: unknown) => {
           if (isAgentRuntimeTurnConflictError(error)) {
             resolve("busy")
             return
           }
-          console.error(`child session wake for ${input.parentSessionId} failed`, error)
+          console.error(`runtime-started turn for ${input.sessionId} failed`, error)
           resolve("started")
-          input.onSettled()
+          input.onSettled?.()
         })
     })
   }
@@ -340,6 +362,7 @@ export function SessionRoutes(
       ? (c, directory, title, id, create) => options.createSession!(c, requiredDirectory(directory), title, id, create)
       : undefined,
     childSessions,
+    queuedPrompts,
     afterCreateSession: options?.afterCreateSession
       ? (_c, directory, session) => options.afterCreateSession!({
           directory: requiredDirectory(directory),

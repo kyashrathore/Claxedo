@@ -54,6 +54,7 @@ import {
 } from "../session/service"
 import { normalizeSessionConfigUpdate, normalizeSessionCreateConfig, normalizeSessionCreateBody } from "../session-config"
 import { MAX_ACTIVE_CHILDREN_PER_PARENT, type ChildSessionHost } from "./session-children"
+import type { QueuedPromptHost } from "./session-queued-prompts"
 import {
   narrowerPermissionLevel,
   permissionCeilingAdmits,
@@ -436,6 +437,8 @@ type Opts = {
   createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"] }) => Promise<{ id: string }>
   /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
   childSessions?: ChildSessionHost
+  /** Durable prompts waiting for a running turn, re-issued after a restart. */
+  queuedPrompts?: QueuedPromptHost
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
   /** Workspace inventory, unfiltered by caller-supplied session IDs; routes validate ownership. */
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
@@ -1225,10 +1228,11 @@ export function createSessionRoutes(opts: Opts) {
     sensitive: sensitiveSessionBusEvent,
   })
   sessionEventSource.open({ mode: "unmanaged-local", connectionId: "local-replay" })
-  // Wakes left pending by a previous process are re-offered on the first
-  // request, once the host has a store and adapters to deliver them with.
+  // Wakes and queued prompts left by a previous process are re-issued on the
+  // first request, once the host has a store and adapters to deliver them with.
   app.use("*", async (_c, next) => {
     void opts.childSessions?.recover()
+    void opts.queuedPrompts?.recover()
     await next()
   })
   app
@@ -2092,6 +2096,24 @@ export function createSessionRoutes(opts: Opts) {
       })
       let settleAdmission: ((error?: unknown) => void) | undefined
       let deliveredAs: PromptDelivery | undefined
+      // A queued prompt waits inside this request, so it would die with the
+      // process. The durable row outlives it and is dropped again the moment
+      // the prompt becomes a turn.
+      let queued: { release: () => void } | undefined
+      const observeDelivery = (delivery: PromptDelivery) => {
+        deliveredAs = delivery
+        if (delivery === "queue") {
+          queued ??= opts.queuedPrompts?.queue({
+            sessionId: id,
+            body,
+            ...(access.actor ? { actor: access.actor } : {}),
+            ...(access.author ? { author: access.author } : {}),
+          })
+          return
+        }
+        queued?.release()
+        queued = undefined
+      }
       const admission = runtime
         ? new Promise<unknown>((resolve) => {
             settleAdmission = resolve
@@ -2120,7 +2142,7 @@ export function createSessionRoutes(opts: Opts) {
                 ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
                 streamErrorMessage: streamTurnErrorMessage,
                 onAdmissionSettled: settleAdmission,
-                onDelivery: (delivery) => { deliveredAs = delivery },
+                onDelivery: observeDelivery,
                 actor: access.actor,
                 author: access.author,
               })
@@ -2154,6 +2176,10 @@ export function createSessionRoutes(opts: Opts) {
           // disclosure instead of being flattened to the literal "Stream error".
           opts.publishGlobal(withDir(compatScope(directory, id), sessionError(streamTurnErrorMessage(error), id)))
         } finally {
+          // Reached only once this request is done waiting: a prompt still
+          // queued when the process dies keeps its row and is re-issued.
+          queued?.release()
+          queued = undefined
           const leaseLost = turnAdmission.lease?.lost() ?? false
           if (!leaseLost) {
             await flushDocumentsAfterTurn(opts, id)

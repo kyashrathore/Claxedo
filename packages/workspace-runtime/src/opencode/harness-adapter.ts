@@ -283,6 +283,8 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   private readonly workspaceID: string
   private readonly directory: string
   private readonly configs = new Map<string, SessionConfig>()
+  /** Sessions whose turn this adapter is streaming, by the scope that turn runs in. */
+  private readonly streaming = new Map<string, WorkspaceScope>()
 
   /**
    * The launch document `applyConfig` last accepted, and the single-flight
@@ -419,6 +421,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
       await runtime.events.ready()
       await runtime.sessions.switchAgent(scope, id, input.agent)
       await runtime.sessions.switchModel(scope, id, input.model)
+      this.streaming.set(id, scope)
       await runtime.sessions.prompt(scope, id, prompt(input))
       while (true) {
         const event = await queue.next()
@@ -429,7 +432,33 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
     } catch (error) {
       yield { type: "error", error: errorMessage(error), harness: "opencode" }
     } finally {
+      this.streaming.delete(id)
       unsubscribe()
+    }
+  }
+
+  /**
+   * Hand a prompt to the turn this adapter is streaming.
+   *
+   * The engine's inbox is what decides: a `steer` item is promoted at the
+   * running execution's next step boundary — so the events stay on the
+   * subscription `turn` already holds — while a `queue` item waits for the
+   * idle boundary, which that subscription has ended by. Only the delivery
+   * the engine recorded is reported as steered; a prompt it queued is declined
+   * so the runtime holds it and starts it as a turn whose events are streamed.
+   */
+  async steerTurn(binding: AgentExecutionBinding, input: PromptInput) {
+    const scope = this.streaming.get(binding.sessionId)
+    if (!scope) {
+      return { ok: false as const, status: "no_active_turn" as const, message: `Session ${binding.sessionId} has no running turn` }
+    }
+    try {
+      const runtime = await this.engine()
+      const admitted = await runtime.sessions.prompt(scope, binding.sessionId, prompt(input))
+      if (admitted.delivery === "steer") return { ok: true as const }
+      return { ok: false as const, status: "declined" as const, message: "OpenCode queued this prompt behind the running turn" }
+    } catch (error) {
+      return { ok: false as const, status: "failed" as const, message: errorMessage(error) }
     }
   }
 

@@ -1,8 +1,27 @@
-import { describe, expect, test } from "bun:test"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterEach, describe, expect, test } from "bun:test"
 import { createSessionRoutes } from "./session-core"
+import { createQueuedPromptHost, type QueuedPromptHost } from "./session-queued-prompts"
 import type { AgentRuntime, AgentRuntimeTurnStartInput, PromptDelivery } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { sessionIdle } from "../compat-events"
+import { RuntimeStore } from "../store"
+
+const roots: string[] = []
+const stores: RuntimeStore[] = []
+
+afterEach(() => {
+  for (const store of stores.splice(0)) store.close()
+  while (roots.length > 0) rmSync(roots.pop()!, { recursive: true, force: true })
+})
+
+function storeRoot() {
+  const root = mkdtempSync(join(tmpdir(), "wr-prompt-delivery-"))
+  roots.push(root)
+  return root
+}
 
 function adapter(): AgentHarnessAdapter {
   return {
@@ -70,14 +89,37 @@ function runtimeDouble(input: {
   } as unknown as AgentRuntime
 }
 
-function routes(runtime: AgentRuntime) {
+function routes(runtime: AgentRuntime, queuedPrompts?: QueuedPromptHost) {
   return createSessionRoutes({
     resolveAdapter: () => adapter(),
     resolveRuntime: () => runtime,
     resolveDirectory: () => undefined,
     sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: () => {},
+    ...(queuedPrompts ? { queuedPrompts } : {}),
   })
+}
+
+/** The durable queue the host lends the routes, on a real store. */
+function durableQueue() {
+  const store = new RuntimeStore(storeRoot())
+  stores.push(store)
+  const recoveries: string[] = []
+  return {
+    store,
+    recoveries,
+    host: createQueuedPromptHost({
+      store: () => ({
+        queuePrompt: (input) => store.queuePrompt(input),
+        deleteQueuedPrompt: (sessionId: string, seq: number) => store.deleteQueuedPrompt(sessionId, seq),
+        listQueuedPrompts: () => store.listQueuedPrompts(),
+        sessionDirectory: () => "/workspace",
+      }),
+      startTurn: async (input) => {
+        recoveries.push(input.sessionId)
+      },
+    }),
+  }
 }
 
 function prompt(body: Record<string, unknown>) {
@@ -121,6 +163,57 @@ describe("how a prompt for a busy session is delivered", () => {
       await new Promise((resolve) => setTimeout(resolve, 5))
     }
     expect(starts.map((turn) => turn.messageId)).toEqual(["msg_queued", "msg_queued"])
+  })
+
+  test("a queued prompt is persisted while it waits and dropped when its turn starts", async () => {
+    const queue = durableQueue()
+    const starts: AgentRuntimeTurnStartInput[] = []
+    let release!: () => void
+    const idle = new Promise<void>((resolve) => { release = resolve })
+    const response = await routes(
+      runtimeDouble({ starts, deliveries: ["queue", "start"], idle: () => idle }),
+      queue.host,
+    ).request("http://localhost/session/session_1/prompt_async", prompt({
+      messageID: "msg_durable",
+      parts: [{ type: "text", text: "then run the tests" }],
+      agent: "build",
+      model: { providerID: "test", modelID: "fixture" },
+      delivery: "queue",
+    }))
+
+    expect(await response.json()).toEqual({ delivery: "queue" })
+    expect(queue.store.listQueuedPrompts()).toEqual([{
+      sessionId: "session_1",
+      seq: 1,
+      messageId: "msg_durable",
+      parts: [{ type: "text", text: "then run the tests" }],
+      agent: "build",
+      model: { providerID: "test", modelID: "fixture" },
+      delivery: "queue",
+      queuedAt: queue.store.listQueuedPrompts()[0].queuedAt,
+    }])
+
+    release()
+    for (let attempt = 0; attempt < 200 && queue.store.listQueuedPrompts().length > 0; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(starts).toHaveLength(2)
+    expect(queue.store.listQueuedPrompts()).toEqual([])
+    expect(queue.recoveries).toEqual([])
+  })
+
+  test("a prompt that starts straight away is never persisted", async () => {
+    const queue = durableQueue()
+    const starts: AgentRuntimeTurnStartInput[] = []
+    await routes(runtimeDouble({ starts, deliveries: ["start"] }), queue.host)
+      .request("http://localhost/session/session_1/prompt_async", prompt({
+        messageID: "msg_immediate",
+        parts: [{ type: "text", text: "start the work" }],
+        delivery: "queue",
+      }))
+
+    expect(starts).toHaveLength(1)
+    expect(queue.store.listQueuedPrompts()).toEqual([])
   })
 
   test("a prompt that asked nothing about delivery keeps the empty acknowledgement", async () => {

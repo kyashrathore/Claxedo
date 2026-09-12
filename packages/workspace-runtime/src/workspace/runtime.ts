@@ -42,13 +42,14 @@ import { workspaceCapabilities } from "../capabilities"
 import { runGit } from "../git"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import type { ProcessObserver } from "../managed-processes/process-observer"
-import { RuntimeStore } from "../store"
+import { RuntimeStore, type QueuedPromptRecord } from "../store"
 import { assertTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
 import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot } from "../routes/config"
 import { num, parseRecord, rec, str } from "../json-value"
 import { AgentRuntimeContractError, assertAgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { SessionRoutes } from "../routes/session"
+import type { QueuedPromptStore } from "../routes/session-queued-prompts"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
 import {
   mountWorkspaceAgentHooks,
@@ -108,6 +109,14 @@ export type WorkspaceRuntimeStore =
     /** Per-store secret keyed material; child ids derived from `clientRequestId` need it. */
     runtimeSecret?: (name: string) => string
     listPendingSubagentWakes?: () => Array<{ parentSessionId: string; subagentKey: string; childSessionId: string; directory: string }>
+    /**
+     * Durable prompts waiting for a running turn. All three are optional
+     * together: a store that cannot persist them leaves the queue in the
+     * request that holds it, which is what it was before.
+     */
+    queuePrompt?: (input: Omit<QueuedPromptRecord, "seq" | "queuedAt">) => QueuedPromptRecord
+    deleteQueuedPrompt?: (sessionId: string, seq: number) => void
+    listQueuedPrompts?: () => QueuedPromptRecord[]
     bindSession(input: {
       sessionId: string
       workspaceId?: string
@@ -1090,6 +1099,25 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   }
 
   /**
+   * The host store, narrowed to the durable queued-prompt rows plus the
+   * session row that owns a queued prompt's directory. A store without them
+   * leaves the queue where it already was: in the request holding the prompt.
+   */
+  function queuedPromptStore(): QueuedPromptStore | undefined {
+    const target = store()
+    const queuePrompt = target.queuePrompt
+    const deleteQueuedPrompt = target.deleteQueuedPrompt
+    const listQueuedPrompts = target.listQueuedPrompts
+    if (!queuePrompt || !deleteQueuedPrompt || !listQueuedPrompts) return undefined
+    return {
+      queuePrompt: (input) => queuePrompt.call(store(), input),
+      deleteQueuedPrompt: (sessionId, seq) => deleteQueuedPrompt.call(store(), sessionId, seq),
+      listQueuedPrompts: () => listQueuedPrompts.call(store()),
+      sessionDirectory: (sessionId) => store().getSession(sessionId)?.directory,
+    }
+  }
+
+  /**
    * The host store, narrowed to the two subagent-admission methods. Both are
    * optional on {@link WorkspaceRuntimeStore} because a host may back the
    * runtime with any store shape; one that cannot persist subagents fails the
@@ -1647,6 +1675,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           },
           pendingWakes: () => store().listPendingSubagentWakes?.() ?? [],
         },
+        queuedPrompts: () => queuedPromptStore(),
         listPermissions: (c, directory) => listPermissions(c.req.query("sessionId"), directory),
         listQuestions: (_c, directory) => listQuestions(directory),
         createActiveTurnScope: (input) => createActiveTurnScope(input),

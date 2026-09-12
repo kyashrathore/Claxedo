@@ -25,10 +25,12 @@ import {
 import type {
   AdmittedSubagentObservation,
   AgentMessage,
+  AgentMessageAuthor,
   AgentPermission,
   AgentQuestion,
   AgentTurnOutcome,
   PromptFormat,
+  PromptInput,
   SessionConfig,
   SessionConfigUpdate,
   SessionHarness,
@@ -244,6 +246,97 @@ export type RuntimeStoreTurnStartOutput = {
   createdAt: number
   agentSessionId?: string
   events: CompatEvent[]
+}
+
+/**
+ * A prompt admitted for a session that was already running a turn, waiting for
+ * that turn to end.
+ *
+ * The waiting itself happens in the request that submitted the prompt, so this
+ * row is the only thing that carries it across a restart. `seq` orders the
+ * prompts one session is holding, and the requester travels with the payload
+ * because the recovered turn has to run as whoever sent it.
+ */
+export type QueuedPromptRecord = {
+  sessionId: string
+  seq: number
+  messageId?: string
+  parts: PromptInput["parts"]
+  agent?: string
+  model?: { providerID?: string; modelID?: string }
+  tools?: Record<string, boolean>
+  format?: PromptFormat
+  system?: string
+  variant?: string
+  permissionMode?: string
+  delivery: "steer" | "queue"
+  actor?: { actorId: string; actorKind: "human" | "agent" }
+  author?: AgentMessageAuthor
+  queuedAt: number
+}
+
+type QueuedPromptRow = {
+  session_id: string
+  seq: number
+  message_id: string | null
+  parts_json: string
+  agent: string | null
+  model_provider_id: string | null
+  model_id: string | null
+  tools_json: string | null
+  format_json: string | null
+  system: string | null
+  variant: string | null
+  permission_mode: string | null
+  delivery: string
+  actor_id: string | null
+  actor_kind: string | null
+  author_id: string | null
+  author_name: string | null
+  author_avatar_url: string | null
+  author_kind: string | null
+  queued_at: number
+}
+
+function actorKind(input: string | null): "human" | "agent" | undefined {
+  return input === "human" || input === "agent" ? input : undefined
+}
+
+function queuedPrompt(row: QueuedPromptRow): QueuedPromptRecord {
+  const parts: QueuedPromptRecord["parts"] = JSON.parse(row.parts_json)
+  const tools: Record<string, boolean> | undefined = row.tools_json === null ? undefined : JSON.parse(row.tools_json)
+  const format: PromptFormat | undefined = row.format_json === null ? undefined : JSON.parse(row.format_json)
+  const kind = actorKind(row.actor_kind)
+  const authorKind = actorKind(row.author_kind)
+  return {
+    sessionId: row.session_id,
+    seq: row.seq,
+    ...(row.message_id === null ? {} : { messageId: row.message_id }),
+    parts,
+    ...(row.agent === null ? {} : { agent: row.agent }),
+    ...(row.model_provider_id === null && row.model_id === null ? {} : {
+      model: {
+        ...(row.model_provider_id === null ? {} : { providerID: row.model_provider_id }),
+        ...(row.model_id === null ? {} : { modelID: row.model_id }),
+      },
+    }),
+    ...(tools === undefined ? {} : { tools }),
+    ...(format === undefined ? {} : { format }),
+    ...(row.system === null ? {} : { system: row.system }),
+    ...(row.variant === null ? {} : { variant: row.variant }),
+    ...(row.permission_mode === null ? {} : { permissionMode: row.permission_mode }),
+    delivery: row.delivery === "steer" ? "steer" : "queue",
+    ...(row.actor_id === null || kind === undefined ? {} : { actor: { actorId: row.actor_id, actorKind: kind } }),
+    ...(row.author_id === null || row.author_name === null || authorKind === undefined ? {} : {
+      author: {
+        id: row.author_id,
+        name: row.author_name,
+        ...(row.author_avatar_url === null ? {} : { avatarUrl: row.author_avatar_url }),
+        kind: authorKind,
+      },
+    }),
+    queuedAt: row.queued_at,
+  }
 }
 
 export type WorkspaceWorktreeRecord = {
@@ -687,6 +780,31 @@ export class RuntimeStore {
         session_id TEXT PRIMARY KEY,
         lease_id TEXT NOT NULL,
         acquired_at INTEGER NOT NULL
+      )
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS queued_prompt (
+        session_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        message_id TEXT,
+        parts_json TEXT NOT NULL,
+        agent TEXT,
+        model_provider_id TEXT,
+        model_id TEXT,
+        tools_json TEXT,
+        format_json TEXT,
+        system TEXT,
+        variant TEXT,
+        permission_mode TEXT,
+        delivery TEXT NOT NULL,
+        actor_id TEXT,
+        actor_kind TEXT,
+        author_id TEXT,
+        author_name TEXT,
+        author_avatar_url TEXT,
+        author_kind TEXT,
+        queued_at INTEGER NOT NULL,
+        PRIMARY KEY (session_id, seq)
       )
     `)
     this.db.exec(`
@@ -1482,6 +1600,108 @@ export class RuntimeStore {
     this.normalizeRecoveringTools()
   }
 
+  /**
+   * Persist a prompt waiting for this session's running turn to end.
+   *
+   * The lease and busy-session recovery above deliberately do not touch these
+   * rows: a turn from the previous runtime cannot be resumed, but a prompt that
+   * never reached one still has to run.
+   */
+  queuePrompt(input: Omit<QueuedPromptRecord, "seq" | "queuedAt">): QueuedPromptRecord {
+    const seq = requireRow(
+      this.db
+        .prepare<{ seq: number }>("SELECT COALESCE(MAX(seq), 0) + 1 AS seq FROM queued_prompt WHERE session_id = ?")
+        .get(input.sessionId),
+      "queued prompt seq",
+    ).seq
+    const record: QueuedPromptRecord = { ...input, seq, queuedAt: Date.now() }
+    this.db
+      .prepare(
+        `
+      INSERT INTO queued_prompt (
+        session_id,
+        seq,
+        message_id,
+        parts_json,
+        agent,
+        model_provider_id,
+        model_id,
+        tools_json,
+        format_json,
+        system,
+        variant,
+        permission_mode,
+        delivery,
+        actor_id,
+        actor_kind,
+        author_id,
+        author_name,
+        author_avatar_url,
+        author_kind,
+        queued_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      )
+      .run(
+        record.sessionId,
+        record.seq,
+        record.messageId ?? null,
+        JSON.stringify(record.parts),
+        record.agent ?? null,
+        record.model?.providerID ?? null,
+        record.model?.modelID ?? null,
+        record.tools === undefined ? null : JSON.stringify(record.tools),
+        record.format === undefined ? null : JSON.stringify(record.format),
+        record.system ?? null,
+        record.variant ?? null,
+        record.permissionMode ?? null,
+        record.delivery,
+        record.actor?.actorId ?? null,
+        record.actor?.actorKind ?? null,
+        record.author?.id ?? null,
+        record.author?.name ?? null,
+        record.author?.avatarUrl ?? null,
+        record.author?.kind ?? null,
+        record.queuedAt,
+      )
+    return record
+  }
+
+  deleteQueuedPrompt(sessionId: string, seq: number) {
+    this.db.prepare("DELETE FROM queued_prompt WHERE session_id = ? AND seq = ?").run(sessionId, seq)
+  }
+
+  listQueuedPrompts(): QueuedPromptRecord[] {
+    return this.db
+      .prepare<QueuedPromptRow>(`
+      SELECT
+        session_id,
+        seq,
+        message_id,
+        parts_json,
+        agent,
+        model_provider_id,
+        model_id,
+        tools_json,
+        format_json,
+        system,
+        variant,
+        permission_mode,
+        delivery,
+        actor_id,
+        actor_kind,
+        author_id,
+        author_name,
+        author_avatar_url,
+        author_kind,
+        queued_at
+      FROM queued_prompt
+      ORDER BY queued_at, session_id, seq
+    `)
+      .all()
+      .map(queuedPrompt)
+  }
+
   putWorktree(record: WorkspaceWorktreeRecord) {
     this.db
       .prepare(
@@ -2071,6 +2291,7 @@ export class RuntimeStore {
     this.db.prepare("DELETE FROM session_subagent_correlation WHERE parent_session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_subagent_tool_call WHERE parent_session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_subagent WHERE parent_session_id = ?").run(id)
+    this.db.prepare("DELETE FROM queued_prompt WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM journal_checkpoint WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM pending_question WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM pending_permission WHERE session_id = ?").run(id)

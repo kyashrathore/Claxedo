@@ -15,8 +15,12 @@ function binding(directory: string, sessionId: string): AgentExecutionBinding {
   return { workspaceId: "ws_1", directory, sessionId, connectionId: "native:opencode", upstreamSessionId: sessionId }
 }
 
-function runtime(options: { lifecycle?: "cold" | "ready" } = {}) {
+function runtime(options: { lifecycle?: "cold" | "ready"; execution?: "auto" | "manual" } = {}) {
   const listeners = new Set<(event: ProjectedEvent) => void>()
+  const emit = (event: ProjectedEvent) => {
+    for (const listener of Array.from(listeners)) listener(event)
+  }
+  const running = new Set<string>()
   const sessions = {
     list: mock(async (scope: { directory: string }) => ({
       sessions: [{ id: "ses_1", title: "SDK", directory: scope.directory, createdAt: 1, updatedAt: 2 }],
@@ -39,26 +43,38 @@ function runtime(options: { lifecycle?: "cold" | "ready" } = {}) {
     remove: mock(async () => {}),
     switchAgent: mock(async () => {}),
     switchModel: mock(async () => {}),
-    prompt: mock(async (scope: { directory: string }, sessionID: string) => {
-      queueMicrotask(() => {
-        for (const listener of listeners) {
-          listener({
-            id: "evt_1",
-            type: "session.text.delta",
-            directory: scope.directory,
-            hintOnly: true,
-            data: { sessionID, assistantMessageID: "msg_a", ordinal: 0, delta: "hello" },
-          })
-          listener({
-            id: "evt_2",
-            type: "session.execution.succeeded",
-            durable: { aggregateID: sessionID, seq: 2 },
-            hintOnly: false,
-            data: { sessionID },
+    // A prompt for a session whose execution is already running is promoted
+    // into it, so the engine opens no second execution and reports the
+    // delivery it recorded — absent means the engine's own default, `steer`.
+    prompt: mock(async (
+      scope: { directory: string },
+      sessionID: string,
+      request: { text: string; id?: string; delivery?: "steer" | "queue" },
+    ) => {
+      const delivery = request.delivery ?? "steer"
+      if (!running.has(sessionID)) {
+        running.add(sessionID)
+        if (options.execution !== "manual") {
+          queueMicrotask(() => {
+            emit({
+              id: "evt_1",
+              type: "session.text.delta",
+              directory: scope.directory,
+              hintOnly: true,
+              data: { sessionID, assistantMessageID: "msg_a", ordinal: 0, delta: "hello" },
+            })
+            running.delete(sessionID)
+            emit({
+              id: "evt_2",
+              type: "session.execution.succeeded",
+              durable: { aggregateID: sessionID, seq: 2 },
+              hintOnly: false,
+              data: { sessionID },
+            })
           })
         }
-      })
-      return { id: "msg_u", sessionID, createdAt: 1, text: "hi" }
+      }
+      return { id: request.id ?? "msg_u", sessionID, createdAt: 1, text: request.text, delivery }
     }),
     messages: mock(async () => ({ messages: [] })),
     interrupt: mock(async () => {}),
@@ -91,7 +107,33 @@ function runtime(options: { lifecycle?: "cold" | "ready" } = {}) {
     host: { status: () => ({ lifecycle: options.lifecycle ?? "ready", events: "healthy" }) },
     close: async () => {},
   } as unknown as OpenCodeRuntime
-  return { value, sessions, launch, launchWrites }
+  return { value, sessions, launch, launchWrites, emit, finish: (sessionID: string) => {
+    running.delete(sessionID)
+    emit({
+      id: "evt_done",
+      type: "session.execution.succeeded",
+      durable: { aggregateID: sessionID, seq: 9 },
+      hintOnly: false,
+      data: { sessionID },
+    })
+  } }
+}
+
+function promptInput(text: string, id: string) {
+  return {
+    parts: [{ type: "text" as const, text }],
+    userMessageId: `caller-user-${id}`,
+    assistantMessageId: `caller-assistant-${id}`,
+    agent: "build",
+    model: { providerID: "anthropic", modelID: "claude-sonnet-4" },
+  }
+}
+
+async function until(condition: () => boolean) {
+  for (let attempt = 0; attempt < 200 && !condition(); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  if (!condition()) throw new Error("condition never held")
 }
 
 function adapterFor(fake: ReturnType<typeof runtime>, directory: string) {
@@ -158,6 +200,76 @@ describe("OpenCodeSdkHarnessAdapter", () => {
       { type: "text-delta", delta: "hello", harness: "opencode" },
       { type: "finish", sessionId: "ses_1", harness: "opencode" },
     ])
+  })
+
+  test("hands a prompt for the running turn to it and reports the delivery the engine recorded", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+    const events: unknown[] = []
+    const turn = (async () => {
+      for await (const event of adapter.executeTurn(binding(directory, "ses_1"), promptInput("start the work", "1"))) {
+        events.push(event)
+      }
+    })()
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+
+    expect(await adapter.steerTurn(binding(directory, "ses_1"), promptInput("also update the readme", "2")))
+      .toEqual({ ok: true })
+    expect(fake.sessions.prompt.mock.calls[1]?.[2]).toMatchObject({
+      text: "also update the readme",
+      id: "caller-user-2",
+      delivery: "steer",
+    })
+
+    fake.finish("ses_1")
+    await turn
+    expect(events).toEqual([{ type: "finish", sessionId: "ses_1", harness: "opencode" }])
+    expect(await adapter.steerTurn(binding(directory, "ses_1"), promptInput("too late", "3"))).toMatchObject({
+      status: "no_active_turn",
+    })
+    expect(fake.sessions.prompt.mock.calls).toHaveLength(2)
+  })
+
+  test("steering a session with no running turn is refused rather than starting one", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+
+    expect(await adapter.steerTurn(binding(directory, "ses_1"), promptInput("late", "3"))).toEqual({
+      ok: false,
+      status: "no_active_turn",
+      message: "Session ses_1 has no running turn",
+    })
+    expect(fake.sessions.prompt).not.toHaveBeenCalled()
+  })
+
+  test("a prompt the engine records as queued is reported as declined, not as steered", async () => {
+    const fake = runtime({ execution: "manual" })
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+    const turn = (async () => {
+      for await (const _event of adapter.executeTurn(binding(directory, "ses_1"), promptInput("start the work", "1"))) {
+        // drained so the generator reaches its terminal event
+      }
+    })()
+    await until(() => fake.sessions.prompt.mock.calls.length === 1)
+    fake.sessions.prompt.mockImplementationOnce(async (_scope, sessionID, request) => ({
+      id: request.id ?? "msg_u",
+      sessionID,
+      createdAt: 1,
+      text: request.text,
+      delivery: "queue" as const,
+    }))
+
+    expect(await adapter.steerTurn(binding(directory, "ses_1"), promptInput("then run the tests", "2"))).toEqual({
+      ok: false,
+      status: "declined",
+      message: "OpenCode queued this prompt behind the running turn",
+    })
+
+    fake.finish("ses_1")
+    await turn
   })
 
   test("rejects prompt content without a V2 mapping instead of fabricating it", async () => {
