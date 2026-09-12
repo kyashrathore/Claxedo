@@ -59,6 +59,9 @@ export type NavigationRowProps = {
   /** Begin the row's read-only activation preparation at pointerdown. */
   onPrepareActivate?: () => void
   onActivate: () => void
+  /** Secondary gestures on the row; session rows open their menu here. */
+  onDblClick?: (event: MouseEvent) => void
+  onContextMenu?: (event: MouseEvent) => void
   /** The domain row used to build the typed drag payload. */
   dragRow: SessionNavigationRow | TerminalSurfaceRow
   /**
@@ -112,6 +115,8 @@ export function NavigationRow(props: NavigationRowProps) {
       onPointerLeave={engagement.handlers.onPointerLeave}
       onFocusIn={engagement.handlers.onFocusIn}
       onFocusOut={engagement.handlers.onFocusOut}
+      onDblClick={props.onDblClick}
+      onContextMenu={props.onContextMenu}
     >
       {/* `touch-pan-y` must match the row's drag-source `touch-action`: the
           overlay covers the whole row, so `none` here kills sidebar touch

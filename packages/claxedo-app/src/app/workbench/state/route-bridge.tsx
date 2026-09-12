@@ -23,6 +23,7 @@ import {
 import { useDirectorySessionCacheActions } from "../../../features/session/data/sync/directory-session-cache"
 import {
   parseShellRoute,
+  sessionRoute,
   shellRouteDirectory,
   workspaceSessionRoute,
   workspaceRoute,
@@ -68,6 +69,7 @@ export { recoverWorkspaceRuntimeRoute } from "./route-runtime-recovery"
 import {
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
+  collectSessionDeepLinks,
   deepLinkEvent,
   drainPendingDeepLinks,
   newSessionDeepLinkRoute,
@@ -161,9 +163,9 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       },
       surfaces: state.meta.all,
       closeContent: state.layout.closeContent,
+      closeSubagentTabs: state.workspacePanel.noteDeletedSession,
     }))
   })
-      closeSubagentTabs: state.workspacePanel.noteDeletedSession,
 
   createEffect(() => {
     const unsub = createBatchAutoTabListener({
@@ -235,6 +237,15 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         link.directory,
         (workspaceId) => newSessionDeepLinkRoute(link, workspaceId, workspaceSessionRoute),
       )
+    }
+    for (const link of collectSessionDeepLinks(urls)) {
+      // A local session's canonical route is `/s/<id>` regardless of how the
+      // workspace is addressed — the project open is sidebar context only.
+      if (!link.workspaceDirectory) {
+        navigate(sessionRoute(link.sessionId))
+        continue
+      }
+      void openProjectFromDeepLink(link.workspaceDirectory, () => sessionRoute(link.sessionId))
     }
   }
 

@@ -5,6 +5,7 @@ import {
   projectActionDirectory,
   railWorkspaceMetaLabels,
   railWorkspaceSessionBacking,
+  sessionRowLinks,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
   workspaceInventoryGroupFor,
@@ -225,6 +226,64 @@ describe("railWorkspaceSessionBacking", () => {
         },
       }),
     })).toBeUndefined()
+  })
+})
+
+describe("sessionRowLinks", () => {
+  test("a local session on a local server gets only the on-disk deep link", () => {
+    const links = sessionRowLinks({
+      sessionId: "ses_1",
+      sessionRef: "local:/repo/main:session:ses_1",
+      workspaceDirectory: "/repo/main",
+      localServer: true,
+      sessionStore: "/home/me/.claxedo/opencode-runtime/opencode.db",
+    })
+    expect(links.link).toBeUndefined()
+    expect(links.deepLink).toBe(
+      "claxedo://open-session?directory=%2Frepo%2Fmain&store=%2Fhome%2Fme%2F.claxedo%2Fopencode-runtime%2Fopencode.db&session=ses_1",
+    )
+
+    // Without a known store the link still names the worktree and session.
+    const unstored = sessionRowLinks({
+      sessionId: "ses_1",
+      sessionRef: "local:/repo/main:session:ses_1",
+      workspaceDirectory: "/repo/main",
+      localServer: true,
+    })
+    expect(unstored.deepLink).toBe("claxedo://open-session?directory=%2Frepo%2Fmain&session=ses_1")
+  })
+
+  test("a workspace-backed session gets only the hosted link, even on a local server", () => {
+    const links = sessionRowLinks({
+      sessionId: "ses_1",
+      sessionRef: "workspace:ws_1:session:ses_1",
+      workspaceDirectory: "workspace:ws_1",
+      workspaceId: "ws_1",
+      localServer: true,
+    })
+    expect(links.link).toBe("https://app.claxedo.com/w/ws_1/session/ses_1")
+    // Its directory is a path on the host machine — nothing here can open it.
+    expect(links.deepLink).toBeUndefined()
+  })
+
+  test("a central session links only where the session's server is the control plane", () => {
+    const local = sessionRowLinks({
+      sessionId: "ses_1",
+      sessionRef: "central:ses_1",
+      workspaceDirectory: "global",
+      localServer: true,
+    })
+    expect(local.link).toBeUndefined()
+    expect(local.deepLink).toBeUndefined()
+
+    const hosted = sessionRowLinks({
+      sessionId: "ses_1",
+      sessionRef: "central:ses_1",
+      workspaceDirectory: "global",
+      localServer: false,
+    })
+    expect(hosted.link).toBe("https://app.claxedo.com/s/ses_1")
+    expect(hosted.deepLink).toBeUndefined()
   })
 })
 

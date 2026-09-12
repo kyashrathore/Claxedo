@@ -23,6 +23,8 @@ type Globals = {
   wsl: boolean
   deepLinks?: string[]
   startupIsolationStage?: string
+  /** Absolute path of the local daemon's session sqlite store. */
+  sessionStore?: string
 }
 
 const root = dirname(fileURLToPath(import.meta.url))
@@ -234,6 +236,7 @@ function injectGlobals(win: BrowserWindow, globals: Globals) {
       wsl: globals.wsl,
       deepLinks: Array.isArray(deepLinks) ? deepLinks.splice(0) : deepLinks,
       startupIsolationStage: globals.startupIsolationStage,
+      sessionStore: globals.sessionStore,
     }
     void win.webContents.executeJavaScript(
       `window.__CLAXEDO__ = Object.assign(window.__CLAXEDO__ ?? {}, ${JSON.stringify(data)})`,

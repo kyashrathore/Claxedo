@@ -184,6 +184,24 @@ export function remoteAccessWorkspaceLink(input: {
   return url.toString()
 }
 
+/**
+ * The link a session row's copy action hands out — always on the deployment
+ * origin, never the page's own: the window's origin is a renderer (Vite dev,
+ * packaged file://), not the server that owns the session.
+ *
+ * The bare `/s/` form resolves only where the session inventory is the control
+ * plane's — the hosted or self-hosted app — so callers must offer it only when
+ * the session's server IS the control plane (workspace-backed rows always
+ * qualify: the workspace id resolves through it). It carries no second-device
+ * markers: a reader who opens it is not being enrolled as one.
+ */
+export function remoteAccessSessionLink(input: { sessionId: string; workspaceId?: string }) {
+  const route = input.workspaceId
+    ? workspaceSessionRoute(input.workspaceId, input.sessionId)
+    : sessionRoute(input.sessionId)
+  return new URL(route, remoteAccessAppOrigin()).toString()
+}
+
 export function shouldRecordSecondDeviceOpen(input: {
   url: URL
   currentClientId: string
@@ -202,5 +220,5 @@ export function remoteAccessClientId(storage: Pick<Storage, "getItem" | "setItem
   storage.setItem(key, id)
   return id
 }
-import { workspaceRoute } from "@/platform/identity/route"
+import { sessionRoute, workspaceRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { readString } from "@/lib/record"

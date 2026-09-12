@@ -1,4 +1,5 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
+import { Portal } from "solid-js/web"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
 import {
   NavigationRow,
@@ -26,6 +27,10 @@ export type SessionNavigationDisplayRow = {
     label: string
   }
   owner?: SessionNavigationRow["owner"]
+  /** Hosted-app URL the row's menu may copy; absent when no deployment can resolve it. */
+  link?: string
+  /** `claxedo://` address of a session on this machine's disk; absent otherwise. */
+  deepLink?: string
 }
 
 export type SessionNavigationProps = {
@@ -77,7 +82,13 @@ function SessionNavigationItem(props: {
   const status = createMemo(() => props.row.status)
   const [archiving, setArchiving] = createSignal(false)
   const [engaged, setEngaged] = createSignal(false)
+  const [menu, setMenu] = createSignal<{ x: number; y: number }>()
   const activate = () => props.onActivate(props.row)
+  const openMenu = (event: MouseEvent) => {
+    if (!props.row.link && !props.row.deepLink) return
+    event.preventDefault()
+    setMenu({ x: event.clientX, y: event.clientY })
+  }
   const owner = createMemo(() => props.row.owner)
   // Nested shared rows: owner mark lives in the absolute glyph column (left-4),
   // same slot as the status dot — not inside the overflow-hidden title flex.
@@ -102,6 +113,8 @@ function SessionNavigationItem(props: {
       active={props.row.active}
       onPrepareActivate={() => props.onPrepareActivate?.(props.row)}
       onActivate={activate}
+      onDblClick={openMenu}
+      onContextMenu={openMenu}
       dragRow={props.row.source}
       prepareContentId={() => props.onPrepareDrag(props.row)}
       onDragStart={props.onDragStart}
@@ -187,7 +200,67 @@ function SessionNavigationItem(props: {
           </button>
         </Show>
       </div>
+      <Show when={menu()}>
+        {(at) => (
+          <SessionRowMenu
+            at={at()}
+            link={props.row.link}
+            deepLink={props.row.deepLink}
+            onDismiss={() => setMenu(undefined)}
+          />
+        )}
+      </Show>
     </NavigationRow>
+  )
+}
+
+function SessionRowMenu(props: {
+  at: { x: number; y: number }
+  link?: string
+  deepLink?: string
+  onDismiss: () => void
+}) {
+  const copy = (value: string | undefined) => {
+    if (!value) return
+    void navigator.clipboard?.writeText(value)
+    props.onDismiss()
+  }
+  return (
+    <Portal>
+      <div
+        data-slot="session-navigation-menu-dismiss"
+        class="fixed inset-0 z-[90]"
+        onClick={() => props.onDismiss()}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          props.onDismiss()
+        }}
+      />
+      <div
+        data-surface="overlay"
+        data-overlay-shell="prominent"
+        data-slot="session-navigation-menu"
+        class="fixed z-[91] min-w-40 bg-background-stronger p-1"
+        style={{ left: `${props.at.x}px`, top: `${props.at.y}px` }}
+      >
+        <button
+          type="button"
+          disabled={!props.link}
+          class="flex w-full items-center gap-2 rounded-md px-2 h-9 text-13-regular text-text-base enabled:hover:bg-surface-base-active disabled:opacity-50 disabled:cursor-default"
+          onClick={() => copy(props.link)}
+        >
+          <Icon name="copy" size="small" /> Copy session link
+        </button>
+        <button
+          type="button"
+          disabled={!props.deepLink}
+          class="flex w-full items-center gap-2 rounded-md px-2 h-9 text-13-regular text-text-base enabled:hover:bg-surface-base-active disabled:opacity-50 disabled:cursor-default"
+          onClick={() => copy(props.deepLink)}
+        >
+          <Icon name="copy" size="small" /> Copy deep link
+        </button>
+      </div>
+    </Portal>
   )
 }
 

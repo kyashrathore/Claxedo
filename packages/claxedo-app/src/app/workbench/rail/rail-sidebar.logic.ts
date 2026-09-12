@@ -2,10 +2,12 @@ import { getFilename } from "@opencode-ai/ui/utils/path"
 import { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind } from "./domain-types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
+import { remoteAccessSessionLink } from "@/features/onboarding/remote-access-state"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver"
 import { isRelayBackedWorkspaceKind, isUserHostedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { projectWorkspaceForRef } from "@/platform/identity/project-workspace"
+import { sessionDeepLink } from "../state/route-deep-links"
 
 export function sessionRowTitle(title?: string, projectedTitle?: string, updatedAt?: number) {
   return resolveSessionTitle({
@@ -136,6 +138,46 @@ export function railWorkspaceSessionBacking(input: {
   // An unknown `ws_*` row can still predate signed inventory hydration. UUIDs
   // and inventory-confirmed local records have already returned above.
   return { workspaceId: input.workspaceId, kind: "user-hosted" }
+}
+
+/**
+ * Which "copy" affordances a session row may offer.
+ *
+ * `link` is a hosted-app URL, so it exists only where the deployment can
+ * resolve the session: workspace-backed rows (the workspace id goes through
+ * the control plane whoever opens it), or any row when the app's own server
+ * IS the control plane — `localServer` false means hosted or self-hosted web,
+ * where the registry answers `/s/<id>` for central sessions.
+ *
+ * `deepLink` is the `claxedo://` address of a session that lives on this
+ * machine's disk — the `local:<dir>:session:<id>` rows. A workspace-backed
+ * row's directory is a path on another machine, so it earns no deep link.
+ */
+export function sessionRowLinks(input: {
+  sessionId: string
+  sessionRef: string
+  workspaceDirectory: string
+  workspaceId?: string
+  localServer: boolean
+  /** Absolute path of the local daemon's session sqlite store, when known. */
+  sessionStore?: string
+}): { link?: string; deepLink?: string } {
+  const link =
+    input.workspaceId || !input.localServer
+      ? remoteAccessSessionLink({
+          sessionId: input.sessionId,
+          ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+        })
+      : undefined
+  const deepLink =
+    !input.workspaceId && input.sessionRef.startsWith("local:")
+      ? sessionDeepLink({
+          workspaceDirectory: input.workspaceDirectory,
+          sessionId: input.sessionId,
+          ...(input.sessionStore ? { store: input.sessionStore } : {}),
+        })
+      : undefined
+  return { link, deepLink }
 }
 
 export function isRootWorktreeRef(input: {

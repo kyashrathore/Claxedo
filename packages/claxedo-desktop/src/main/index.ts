@@ -570,6 +570,9 @@ async function initialize() {
     packaged: IS_PACKAGED,
     wsl: getWslConfig().enabled,
     deepLinks: pendingDeepLinks,
+    // Same derivation the session-memory scanner uses: the local daemon's
+    // runtime db is the on-disk position the app's session deep links name.
+    sessionStore: join(desktopServerDataDir(), "opencode-runtime", "opencode.db"),
     ...(process.env.CLAXEDO_PERF_STAGE ? { startupIsolationStage: process.env.CLAXEDO_PERF_STAGE } : {}),
   }
 

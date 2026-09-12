@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, within } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
@@ -359,6 +359,72 @@ describe("SessionNavigation", () => {
     expect(firstRow.getAttribute("class")).toBe(firstRowClass)
     expect(firstRow.querySelector('[data-slot="session-navigation-title"]')?.getAttribute("class")).toBe(firstTitleClass)
     expect(firstRow.querySelector('[data-slot="session-navigation-time"]')?.getAttribute("class")).toBe(firstTimeClass)
+  })
+
+  test("opens the row menu on double-click and right-click and copies the row's links", () => {
+    const writeText = vi.fn()
+    vi.stubGlobal("navigator", { clipboard: { writeText } })
+    const view = render(() => (
+      <SessionNavigation
+        rows={[row({
+          link: "https://app.claxedo.test/w/ws_1/session/ses_1",
+          deepLink: "claxedo://open-session?directory=%2Frepo&session=ses_1",
+        })]}
+        onActivate={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const rowElement = view.getByTestId("rail-sidebar-session-row")
+    // The menu renders through a Portal, so queries must run against
+    // document.body — `view`'s helpers are bound to the render container.
+    const body = within(document.body)
+
+    fireEvent.dblClick(rowElement)
+    fireEvent.click(body.getByText("Copy session link"))
+    expect(writeText).toHaveBeenCalledWith("https://app.claxedo.test/w/ws_1/session/ses_1")
+    // The item dismisses the menu after acting on it.
+    expect(body.queryByText("Copy session link")).toBeNull()
+
+    fireEvent.contextMenu(rowElement)
+    fireEvent.click(body.getByText("Copy deep link"))
+    expect(writeText).toHaveBeenCalledWith("claxedo://open-session?directory=%2Frepo&session=ses_1")
+    expect(body.queryByText("Copy deep link")).toBeNull()
+
+    // An off-menu click lands on the full-viewport dismiss layer.
+    fireEvent.dblClick(rowElement)
+    fireEvent.click(document.body.querySelector('[data-slot="session-navigation-menu-dismiss"]')!)
+    expect(body.queryByText("Copy session link")).toBeNull()
+  })
+
+  test("disables the menu item whose link the row does not carry", () => {
+    const writeText = vi.fn()
+    vi.stubGlobal("navigator", { clipboard: { writeText } })
+    const view = render(() => (
+      <SessionNavigation
+        rows={[row({ deepLink: "claxedo://open-session?directory=%2Frepo&session=ses_1" })]}
+        onActivate={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    fireEvent.dblClick(view.getByTestId("rail-sidebar-session-row"))
+    const body = within(document.body)
+    const linkItem = body.getByText("Copy session link").closest("button")!
+    expect(linkItem.disabled).toBe(true)
+    fireEvent.click(linkItem)
+    expect(writeText).not.toHaveBeenCalled()
+    expect(body.getByText("Copy deep link").closest("button")!.disabled).toBe(false)
+  })
+
+  test("opens no menu on double-click when the row carries no link", () => {
+    const view = render(() => (
+      <SessionNavigation
+        rows={[row()]}
+        onActivate={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    fireEvent.dblClick(view.getByTestId("rail-sidebar-session-row"))
+    expect(within(document.body).queryByText("Copy session link")).toBeNull()
   })
 
   test("prepares the workbench drag payload from a pointer drag", () => {

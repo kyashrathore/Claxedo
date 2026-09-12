@@ -2,11 +2,14 @@ import { describe, expect, test } from "bun:test"
 import {
   collectNewSessionDeepLinks,
   collectOpenProjectDeepLinks,
+  collectSessionDeepLinks,
   deepLinkEvent,
   drainPendingDeepLinks,
   newSessionDeepLinkRoute,
   parseDeepLink,
   parseNewSessionDeepLink,
+  parseSessionDeepLink,
+  sessionDeepLink,
 } from "./route-deep-links"
 
 // The session-probe/metadata URL builders moved to ./route-bridge-resolution;
@@ -36,6 +39,31 @@ describe("route bridge deep links", () => {
       "claxedo://open-project?directory=/repo/main",
       "claxedo://new-session?directory=/repo/next&prompt=ship",
     ])).toEqual([{ directory: "/repo/next", prompt: "ship" }])
+  })
+
+  test("round-trips a session's on-disk location through open-session deep links", () => {
+    const link = sessionDeepLink({
+      workspaceDirectory: "/repo/main",
+      sessionId: "ses_1",
+      store: "/home/me/.claxedo/opencode-runtime/opencode.db",
+    })
+    expect(link).toBe(
+      "claxedo://open-session?directory=%2Frepo%2Fmain&store=%2Fhome%2Fme%2F.claxedo%2Fopencode-runtime%2Fopencode.db&session=ses_1",
+    )
+    expect(parseSessionDeepLink(link)).toEqual({
+      sessionId: "ses_1",
+      workspaceDirectory: "/repo/main",
+      store: "/home/me/.claxedo/opencode-runtime/opencode.db",
+    })
+    // A bare `session` param still opens the session; the rest is provenance.
+    expect(parseSessionDeepLink("claxedo://open-session?session=ses_1"))
+      .toEqual({ sessionId: "ses_1", workspaceDirectory: undefined, store: undefined })
+    expect(collectSessionDeepLinks([
+      "https://example.com",
+      link,
+      "claxedo://open-session?directory=/repo/main",
+      "claxedo://open-project?directory=/repo/main",
+    ])).toEqual([{ sessionId: "ses_1", workspaceDirectory: "/repo/main", store: "/home/me/.claxedo/opencode-runtime/opencode.db" }])
   })
 
   test("carries new-session prompt text in the routed workspace URL", () => {

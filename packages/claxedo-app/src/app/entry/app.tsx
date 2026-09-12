@@ -179,6 +179,8 @@ declare global {
       serverUrl?: string
       activeDirectory?: string
       deepLinks?: string[]
+      /** Absolute path of the local daemon's session sqlite store (desktop only). */
+      sessionStore?: string
       wsl?: boolean
       debugTerminal?: boolean
       perfEnabled?: boolean

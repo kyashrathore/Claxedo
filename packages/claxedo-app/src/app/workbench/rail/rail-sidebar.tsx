@@ -69,6 +69,7 @@ import {
   railProjectCaptionFromName,
   railProjectLabel,
   railWorkspaceMetaLabels,
+  sessionRowLinks,
   sessionRowTitle,
   shouldAutoOpenWorkspaceSection,
   workspaceRowId,
@@ -1062,6 +1063,15 @@ export function RailSidebar(props: RailSidebarProps) {
     const directory = sessionDirectory(session)
     const time = session.time ?? 0
     return {
+    const directory = sessionDirectory(session)
+    const links = sessionRowLinks({
+      sessionId: session.id,
+      sessionRef: sessionNavigationRefForRow(session),
+      workspaceDirectory: directory,
+      workspaceId: workspaceSessionBacking(session, directory)?.workspaceId,
+      localServer: server.isLocal(),
+      sessionStore: window.__CLAXEDO__?.sessionStore,
+    })
       type: "session",
       sessionRef: sessionNavigationRefForRow(session),
       sessionId: session.id,
@@ -1102,6 +1112,8 @@ export function RailSidebar(props: RailSidebarProps) {
       kind !== "local"
     )
     const label = [
+      ...(links.link ? { link: links.link } : {}),
+      ...(links.deepLink ? { deepLink: links.deepLink } : {}),
       kind === "local" ? undefined : runtimeLabel(kind),
       showWorkspace ? workspaceLabel : undefined,
     ].filter((item): item is string => !!item).join(" · ")

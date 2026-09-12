@@ -1,8 +1,9 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import {
   remoteAccessAvailability,
   remoteAccessResumeDecision,
   remoteAccessDeviceLink,
+  remoteAccessSessionLink,
   remoteAccessWorkspaceLink,
   shouldRecordSecondDeviceOpen,
 } from "./remote-access-state"
@@ -224,5 +225,38 @@ describe("remote access onboarding state", () => {
       currentClientId: "phone-client",
       signedIn: true,
     })).toBe(false)
+  })
+
+  describe("remoteAccessSessionLink", () => {
+    let previousUrl: string
+    beforeEach(() => { previousUrl = window.location.href })
+    afterEach(() => { window.location.href = previousUrl })
+
+    test("a workspace-backed session is addressed by workspace id on the deployment origin", () => {
+      // The link has to resolve for whoever opens it, so the window's own
+      // origin never wins — only the deployment can find `ws_1` for another
+      // device or a teammate.
+      window.location.href = "http://localhost:5173/"
+      expect(remoteAccessSessionLink({ sessionId: "ses_1", workspaceId: "ws_1" }))
+        .toBe("https://app.claxedo.com/w/ws_1/session/ses_1")
+
+      window.location.href = "https://self-hosted.example.test/"
+      expect(remoteAccessSessionLink({ sessionId: "ses_1", workspaceId: "ws_1" }))
+        .toBe("https://self-hosted.example.test/w/ws_1/session/ses_1")
+    })
+
+    test("a bare session link is the deployment's `/s/` route wherever the page runs", () => {
+      // The renderer origin is never the session's server — a dev server's
+      // least of all — so the bare form always names the deployment. The
+      // caller gates it: the registry only answers `/s/<id>` for sessions it
+      // owns.
+      window.location.href = "https://self-hosted.example.test/"
+      expect(remoteAccessSessionLink({ sessionId: "ses 1" }))
+        .toBe("https://self-hosted.example.test/s/ses%201")
+
+      window.location.href = "file:///Applications/Claxedo.app/Contents/Resources/app.asar/out/renderer/index.html"
+      expect(remoteAccessSessionLink({ sessionId: "ses_1" }))
+        .toBe("https://app.claxedo.com/s/ses_1")
+    })
   })
 })
