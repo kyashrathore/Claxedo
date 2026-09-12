@@ -500,12 +500,22 @@ the previous Container image-upload blocker remains.
 
 ### Signed runtime preparation context and withdrawal delivery — 2026-09-13
 
-Appendix E item 9 is partially repaired at the hosted route boundary. Initial
-cloud creation, cloud connection/wake, and user-hosted connection now pass
-`{ workspaceId, userId: auth.user.subject }` to preparation and provisioning.
-The shared hook contract requires this context and forwards no bearer/session
-token. Existing Agent Plugins composition continues its canonical snapshot
-policy; this change does not select personal provider accounts or change leases.
+Appendix E item 9 is **threaded to the routes, and no further**. Initial cloud
+creation, cloud connection/wake, and user-hosted connection pass
+`{ workspaceId, userId: auth.user.subject }` to preparation and provisioning,
+and the shared hook contract requires that context and forwards no
+bearer/session token.
+
+The only consumer of the hook ignores the subject. `createHostedMcpRuntimePreparation`
+calls `activations.runtimeSnapshot(workspaceId)`, and the D1 activation store
+resolves the identity from `workspaces.owner_user_id`; two different signed
+callers therefore mint the same gateway credential, with the workspace owner as
+its subject. That is pinned by a test
+(`agent-plugins/mcp/runtime-preparation.test.ts`, "the runtime credential's
+subject is the activation owner, not the signed caller") so the gap cannot close
+silently. **Per-user identity arrives with the lease-key change** (section 5):
+one identity per sandbox needs a lease key that carries it, and nothing before
+that point can honestly resolve a personal account here.
 
 The trace also found a withdrawal bug upstream of the newly verified native
 adapter: preparation omitted an empty authoritative secret set, and connection
