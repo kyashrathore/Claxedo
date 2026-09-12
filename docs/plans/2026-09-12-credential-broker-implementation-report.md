@@ -189,3 +189,11 @@ The real Pi 0.85.0 public-runtime integration passed, including two new assertio
 Changed files: `packages/agent-sdk-runtime/src/harnesses/pi/native.integration.test.ts`, design 002, and this report.
 
 Cloudflare follow-up: the stuck public-image pull was waiting in `docker-credential-desktop get`. A direct HTTPS request to Docker Hub returned the expected unauthenticated 401. After terminating only this task's stuck pull/helper, an empty task-local Docker client config allowed the public pull to finish: image digest `sha256:4a56a37a3cfd9b38d65bb4b5d0b341e6490a3a4c0226274ae4c1cca4948e85fe`. The isolated config also needs Docker Desktop's `cliPluginsExtraDirs` so Wrangler can use Buildx. A new local probe image build progressed into its Dockerfile dependency installation; no interception result is claimed yet.
+
+## OpenCode provider endpoint feasibility (2026-09-13)
+
+Added `packages/workspace-runtime/scripts/node-provider-feasibility.mjs`, an actual Node/embedded-SDK/workspace-HTTP smoke. It configures an OpenAI-compatible provider endpoint and dummy key, creates a workspace session, submits a turn, asserts the real outbound path, bearer header, and model, and waits for the provider's streamed text in the workspace message snapshot. It uses an isolated workspace/database/test home and cleans up the host and local HTTP server.
+
+Command from workspace-runtime: `node scripts/node-provider-feasibility.mjs`: pass; one actual provider HTTP request, Node 26.8.1, no provider mocks inside the SDK. The provider response itself is deterministic test data. Appendix E item 6 now records the verified OpenCode keys and explicit limits. No live model-vendor request or production binding configuration is claimed.
+
+Changed files: that new smoke script, design 002, and this report. `git diff --check`: pass. No production imports or dependency declarations changed.

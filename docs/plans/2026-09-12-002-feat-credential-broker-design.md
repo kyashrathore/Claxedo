@@ -369,3 +369,11 @@ Commands from the repository root:
 Result: **yes for Pi custom provider base URL and placeholder transport**. Two native integration tests pass, with 27 assertions. `models.json` uses `providers.<name>.baseUrl`, `api: "openai-completions"`, and `apiKey`; actual requests arrive at the configured `/v1/chat/completions` endpoint with `Authorization: Bearer local-test`. The real runtime executes a native file tool, records usage, resumes its session, and performs compaction. This does not prove every built-in provider override, a model-vendor request, or generic-broker production integration. The OpenCode portion of item 6 remains unverified.
 
 The globally installed Pi 0.85.1 was rejected by the runtime's existing exact-version gate (two failing tests); the experiment used an isolated install of the repository's required 0.85.0 without changing that gate or the global installation.
+
+### Experiment log — 2026-09-13, item 6 (OpenCode portion)
+
+Harness: pinned embedded OpenCode SDK `0.0.0-beta-18684`, Node 26.8.1, Claxedo workspace host's session and prompt HTTP routes. The upstream is a deterministic local HTTP server, not a live model vendor.
+
+Command from `packages/workspace-runtime`: `node scripts/node-provider-feasibility.mjs` (using the current `dist` artifacts produced by the successful sandbox host build).
+
+Result: **yes for an OpenAI-compatible provider's base URL and placeholder transport**. The real SDK sent one request to `/v1/chat/completions` on the configured local endpoint with `Authorization: Bearer broker-placeholder` and model `proof`; its streamed response reached the workspace message snapshot. The keys are `provider.<id>.npm: "@ai-sdk/openai-compatible"`, `provider.<id>.options.baseURL`, and `provider.<id>.options.apiKey`, with the model declared under `provider.<id>.models`. This does not prove every vendor-specific SDK, a live paid-provider request, or automatic binding selection/configuration. The smoke uses an isolated database, workspace, and SDK test home and closes the host and endpoint afterward.
