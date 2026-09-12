@@ -42,6 +42,7 @@ import {
 import { getCachedCodeHighlight, highlightCodeThroughCache } from "./markdown-code-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
 import { markdownTableText } from "./markdown-table"
+import { handleTranscriptLinkClick, transcriptLinkHref } from "./transcript-link"
 import {
   disposeProgressiveMarkdown,
   stageMarkdownCollections as stageCollections,
@@ -153,19 +154,6 @@ type CopyButtonState = {
 
 const copyButtonState = new WeakMap<HTMLElement, CopyButtonState>()
 const viewButtonState = new WeakMap<HTMLElement, () => void>()
-
-const urlPattern = /^https?:\/\/[^\s<>()`"']+$/
-
-function codeUrl(text: string): string | undefined {
-  const href = text.trim().replace(/[),.;!?]+$/, "")
-  if (!urlPattern.test(href)) return undefined
-  try {
-    const url = new URL(href)
-    return url.toString()
-  } catch {
-    return undefined
-  }
-}
 
 function createCopyButton(labels: CopyLabels) {
   const host = document.createElement("div")
@@ -592,7 +580,7 @@ function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels) {
 function markCodeLinks(root: HTMLDivElement) {
   const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
   for (const code of codeNodes) {
-    const href = codeUrl(code.textContent ?? "")
+    const href = transcriptLinkHref(code.textContent ?? "")
     const parentLink =
       code.parentElement instanceof HTMLAnchorElement && code.parentElement.classList.contains("external-link")
         ? code.parentElement
@@ -691,6 +679,13 @@ function decorate(root: HTMLDivElement, labels: CopyLabels) {
   decorateTables(root, labels)
   stabilizeImages(root)
   renderMermaidBlocks(root)
+}
+
+// Capture, so no descendant can stop a click before the link is offered to the
+// host; a host that claims links from further up still gets there first.
+function setupLinkOpen(root: HTMLDivElement) {
+  root.addEventListener("click", handleTranscriptLinkClick, { capture: true })
+  return () => root.removeEventListener("click", handleTranscriptLinkClick, { capture: true })
 }
 
 function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
@@ -903,6 +898,7 @@ export function Markdown(
   )
 
   let copyCleanup: (() => void) | undefined
+  let linkCleanup: (() => void) | undefined
 
   // This owns the Markdown DOM itself, so its initial commit belongs to
   // Solid's render phase. A deferred user effect left a fully mounted text row
@@ -971,11 +967,13 @@ export function Markdown(
         copy: i18n.t("ui.message.copy"),
         copied: i18n.t("ui.message.copied"),
       }))
+    if (!linkCleanup) linkCleanup = setupLinkOpen(container)
     traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
   })
 
   onCleanup(() => {
     if (copyCleanup) copyCleanup()
+    if (linkCleanup) linkCleanup()
     activeCodeKeys.forEach(disposeCode)
   })
 

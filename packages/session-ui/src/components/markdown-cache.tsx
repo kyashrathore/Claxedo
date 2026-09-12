@@ -1,6 +1,7 @@
 import { checksum } from "@opencode-ai/ui/utils/encode"
 import DOMPurify from "dompurify"
 import { project } from "./markdown-stream"
+import { transcriptLinkUriPattern } from "./transcript-link"
 
 export type MarkdownCacheEntry = {
   raw: string
@@ -29,6 +30,11 @@ function entryBytes(value: MarkdownCacheEntry) {
 }
 const config = {
   USE_PROFILES: { html: true, mathMl: true },
+  // The same schemes the transcript's own linkifier recognises, so a target the
+  // app can route survives the sanitizer instead of reaching the page as an
+  // anchor with no href. A `data:` image is unaffected: DOMPurify checks those
+  // against DATA_URI_TAGS ahead of this pattern.
+  ALLOWED_URI_REGEXP: transcriptLinkUriPattern,
   SANITIZE_NAMED_PROPS: true,
   FORBID_TAGS: ["style"],
   FORBID_CONTENTS: ["style", "script"],
