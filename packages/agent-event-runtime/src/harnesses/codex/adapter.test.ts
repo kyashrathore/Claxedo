@@ -196,33 +196,87 @@ describe("codexAppServerAdapter", () => {
     })
   }
 
-  test("a non-zero exit Codex did not call a failure completes normally", () => {
+  test("a completion carries Codex's exit code for the row to render", () => {
     const agent = runtime()
-    const events = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
+    const failed = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
       item: {
-        id: "no-match",
+        id: "missing-binary",
+        type: "commandExecution",
+        command: "grep needle haystack",
+        cwd: "/repo",
+        status: "failed",
+        exitCode: 127,
+        aggregatedOutput: "zsh: command not found: grep",
+      },
+    } }).events
+    expect(failed).toContainEqual(expect.objectContaining({
+      type: "tool-error",
+      toolCallId: "missing-binary",
+      error: "zsh: command not found: grep",
+      metadata: { codex: { itemType: "command_execution", exitCode: 127 } },
+    }))
+
+    const passed = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
+      item: {
+        id: "matched",
         type: "commandExecution",
         command: "grep needle haystack",
         cwd: "/repo",
         status: "completed",
-        exitCode: 1,
-        aggregatedOutput: "",
+        exitCode: 0,
+        aggregatedOutput: "needle",
       },
     } }).events
-    expect(events.some((event) => event.type === "tool-error")).toBe(false)
-    expect(events).toContainEqual(expect.objectContaining({ type: "tool-output", toolCallId: "no-match" }))
+    expect(passed).toContainEqual(expect.objectContaining({
+      type: "tool-output",
+      toolCallId: "matched",
+      metadata: { codex: { itemType: "command_execution", exitCode: 0 } },
+    }))
   })
 
-  test("a bare process exit is a result, not an error, whatever the code", () => {
+  test("a declined command is an error naming the decline, not a silent success", () => {
     const agent = runtime()
-    const events = agent.ingest({ source: "codex.app-server", method: "process/exited", payload: {
-      processHandle: "proc-1",
-      exitCode: 1,
+    const events = agent.ingest({ source: "codex.app-server", method: "item/completed", payload: {
+      item: {
+        id: "declined-command",
+        type: "commandExecution",
+        command: "rm -rf /repo",
+        cwd: "/repo",
+        status: "declined",
+        aggregatedOutput: null,
+      },
+    } }).events
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "tool-error",
+      toolCallId: "declined-command",
+      error: "User declined the command",
+    }))
+    expect(events.some((event) => event.type === "tool-output")).toBe(false)
+  })
+
+  test("a process exit reports the code's verdict", () => {
+    const failed = runtime().ingest({ source: "codex.app-server", method: "process/exited", payload: {
+      processHandle: "proc-killed",
+      exitCode: 137,
       stdout: "",
       stderr: "",
     } }).events
-    expect(events.some((event) => event.type === "tool-error")).toBe(false)
-    expect(events).toContainEqual(expect.objectContaining({ type: "tool-output", toolCallId: "proc-1" }))
+    expect(failed).toContainEqual(expect.objectContaining({
+      type: "tool-error",
+      toolCallId: "proc-killed",
+      error: "Process exited with code 137",
+      metadata: { codex: expect.objectContaining({ exitCode: 137 }) },
+    }))
+    expect(failed.some((event) => event.type === "tool-output")).toBe(false)
+
+    const passed = runtime().ingest({ source: "codex.app-server", method: "process/exited", payload: {
+      processHandle: "proc-ok",
+      exitCode: 0,
+      stdout: "done",
+      stderr: "",
+    } }).events
+    expect(passed).toContainEqual(expect.objectContaining({ type: "tool-output", toolCallId: "proc-ok", output: "done" }))
+    expect(passed.some((event) => event.type === "tool-error")).toBe(false)
   })
 
   test("a command that produced no output yields empty output, not the raw envelope", () => {

@@ -133,6 +133,29 @@ describe("cursorSdkAdapter", () => {
     }])
   })
 
+  test("a shell exit code decides the completion, whatever the result status says", () => {
+    const shellCompletion = (callId: string, result: unknown) => runtime().ingest({
+      source: "cursor.sdk.message",
+      payload: {
+        type: "tool_call",
+        agent_id: "agent-1",
+        run_id: "run-1",
+        call_id: callId,
+        name: "shell",
+        status: "completed",
+        args: { command: "bun test", workingDirectory: "/repo" },
+        result,
+      },
+    }).events.filter((event) => event.type === "tool-output" || event.type === "tool-error")
+
+    expect(shellCompletion("shell-nonzero-success", { status: "success", value: { exitCode: 1, stdout: "", stderr: "1 fail" } }))
+      .toMatchObject([{ type: "tool-error", toolCallId: "shell-nonzero-success" }])
+    expect(shellCompletion("shell-nonzero-error", { status: "error", value: { exitCode: 1, stdout: "", stderr: "1 fail" } }))
+      .toMatchObject([{ type: "tool-error", toolCallId: "shell-nonzero-error" }])
+    expect(shellCompletion("shell-zero", { status: "success", value: { exitCode: 0, stdout: "passed", stderr: "" } }))
+      .toMatchObject([{ type: "tool-output", toolCallId: "shell-zero" }])
+  })
+
   test("routes UpdateTodos and Task tools to first-class runtime events", () => {
     const agent = runtime()
 
