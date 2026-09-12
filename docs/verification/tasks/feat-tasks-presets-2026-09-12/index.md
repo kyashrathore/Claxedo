@@ -38,3 +38,8 @@ Environment for the live rows: unsigned local stack started from the worktree. S
 ## Reds inherited from dev `85f1d007c8` (proven at the base commit)
 
 claxedo-server: `deployment-closures` (Better Auth locked closure 16 > 15), `governance/codebase-shape` (`documents/routes/index.ts` missing), `session-env-document-roundtrip.integration` (Pi executable), `local-product-contract` allowlist (extra `/api/claxedo/agent-config/providers/custom` from `2e1d6ee407`). workspace-runtime: `generateNotifyScript > reports failed delivery…`. local-server: `control-plane Pi catalog > serves credential-owner authentication methods…`. Root lint: three errors in `claxedo-app/perf-harness/**` on this checkout.
+
+## Escalations outside this feature
+
+- Hosted session access ranks a caller by workspace owner, workspace and project memberships and org role (`actorWorkspaceRoleRankSql` in `packages/claxedo-server-core/src/authority/adapters/sqlite/session-authority.ts`), while project access also counts team grants (`projectAccess` in `workspace-authority.ts`). A member whose project access comes only through a team grant passes `authorizeProject`, can create and edit tasks, and is refused at session reservation. Every hosted session create has the same gap; Tasks is the first feature that makes it visible. Owner: session authority. Not changed on this branch.
+- Preview cannot refuse an unsupported effort level: no host-side reader exists for a harness's effort levels that is independent of that harness's current model, so effort travels as `variant` and the runtime refuses at create.
