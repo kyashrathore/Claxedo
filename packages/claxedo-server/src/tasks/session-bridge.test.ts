@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { ConfigurationSlot, Preset, SessionReference, StartCommand, Task } from "@claxedo/tasks"
 import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import type { ControlPlaneServices } from "../authority/services"
@@ -268,6 +269,48 @@ describe("hosted tasks session bridge", () => {
       expect.anything(),
       expect.objectContaining({ workspaceId: "ws_cloud" }),
     )
+  })
+
+  test("stops rather than reserving as itself when a supplied resolver names nobody", async () => {
+    const host = runtime()
+    const composition = services()
+    const kit = bridge(composition, async () => undefined)
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+
+    const started = await kit.start(startCommand(previewed.preview.digest))
+    expect(started).toMatchObject({ ok: false, error: { code: "forbidden" } })
+    expect(composition.authority.reserveRuntimeSession).not.toHaveBeenCalled()
+    expect(host.calls.some((call) => call.path.startsWith("/session?"))).toBe(false)
+  })
+
+  test("reports the authority's own workspace refusal as a Start failure", async () => {
+    const host = runtime()
+    const composition = services()
+    composition.authority.reserveRuntimeSession.mockRejectedValue(
+      new ControlPlaneAuthError(403, "workspace_authorization_denied", "Session authorization was denied"),
+    )
+    const kit = bridge(composition)
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+
+    const started = await kit.start(startCommand(previewed.preview.digest))
+    expect(started).toMatchObject({
+      ok: false,
+      error: { code: "forbidden", message: "Session authorization was denied" },
+    })
+    expect(host.calls.some((call) => call.path.startsWith("/session?"))).toBe(false)
+  })
+
+  test("lets a reservation fault travel instead of reporting it as a refusal", async () => {
+    runtime()
+    const composition = services()
+    composition.authority.reserveRuntimeSession.mockRejectedValue(new Error("D1 is unreachable"))
+    const kit = bridge(composition)
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+
+    await expect(kit.start(startCommand(previewed.preview.digest))).rejects.toThrow("D1 is unreachable")
   })
 
   test("refuses a start whose preview digest no longer describes the configuration", async () => {

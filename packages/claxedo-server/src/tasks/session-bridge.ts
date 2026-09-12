@@ -11,7 +11,9 @@ import {
   type WorkspaceRuntimeClientOptions,
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import { listWorkspaces, resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
-import { tasksErrorDetail, type TasksActor, type TasksSessionBridgePort } from "@claxedo/tasks"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
+import { tasksErrorDetail, type TasksActor, type TasksErrorDetail, type TasksSessionBridgePort } from "@claxedo/tasks"
 import { isComposedAuthorityPort } from "../authority/composed-authority"
 import type { ControlPlaneServices } from "../authority/services"
 
@@ -62,16 +64,32 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
       )) {
         return { ok: false, error: tasksErrorDetail("unsupported", "Session registration is unavailable on this host") }
       }
-      // The service actor is the local and unsigned fallback: a host with no
-      // canonical human actor still has to reserve before it may create.
-      const principal = (await input.principal?.(intent.actor)) ?? CONTROL_PLANE_RUNTIME_ACTOR
-      const reservation = await authority.reserveRuntimeSession(principal, {
-        operationId: intent.origin,
-        sessionId: intent.sessionId,
-        workspaceId: intent.workspaceId,
-        kind: "create",
-        title: intent.title,
-      })
+      // The service actor is the fallback for a composition that named no
+      // resolver at all. A composition that named one and cannot answer stops
+      // here instead: the service actor can write workspaces the caller cannot,
+      // so substituting it would take the reservation's own workspace gate off
+      // the caller and leave them a session they cannot read.
+      const principal = input.principal ? await input.principal(intent.actor) : CONTROL_PLANE_RUNTIME_ACTOR
+      if (!principal) {
+        return {
+          ok: false,
+          error: tasksErrorDetail("forbidden", "This host reserves a session for the person starting it, and this caller has no canonical actor"),
+        }
+      }
+      let reservation
+      try {
+        reservation = await authority.reserveRuntimeSession(principal, {
+          operationId: intent.origin,
+          sessionId: intent.sessionId,
+          workspaceId: intent.workspaceId,
+          kind: "create",
+          title: intent.title,
+        })
+      } catch (error) {
+        const refused = reservationRefusal(error)
+        if (!refused) throw error
+        return refused
+      }
       if (reservation.sessionId !== intent.sessionId || reservation.operationId !== intent.origin) {
         return {
           ok: false,
@@ -106,4 +124,19 @@ function dispatchTarget(workspace: Workspace, options: WorkspaceRuntimeClientOpt
     // relay, no local runtime in a Worker — is unreachable, not a fault.
     return null
   }
+}
+
+/**
+ * A reservation refusal the authority owns, as a Start failure rather than an
+ * escaping exception: the workspace gate runs there, as the caller, and it
+ * answers by throwing. Anything that is not one of its refusals is a fault and
+ * keeps travelling.
+ */
+function reservationRefusal(error: unknown): { ok: false; error: TasksErrorDetail } | null {
+  const status = error instanceof ControlPlaneAuthError || error instanceof ClaxedoError ? error.status : undefined
+  const message = error instanceof Error ? error.message : "The session reservation was refused"
+  if (status === 401 || status === 403) return { ok: false, error: tasksErrorDetail("forbidden", message) }
+  if (status === 409) return { ok: false, error: tasksErrorDetail("conflict", message) }
+  if (status === 400) return { ok: false, error: tasksErrorDetail("invalid_input", message) }
+  return null
 }
