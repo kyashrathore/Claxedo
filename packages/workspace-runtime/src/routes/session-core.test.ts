@@ -2010,7 +2010,9 @@ test("late approval is not found without resolving a retired harness", async () 
 describe("createSessionRoutes session instructions", () => {
   function instructionRoutes(input: { instructionChannel: boolean }) {
     const creates: Array<{ id?: string; options?: { instructions?: string } }> = []
+    const turns: Array<string | undefined> = []
     let stored: string | undefined
+    const configRead = { fails: false }
     const fixture: AgentHarnessAdapter = {
       ...adapter(),
       ...(input.instructionChannel ? { adapterCapabilities: ["session-instructions"] as const } : {}),
@@ -2020,12 +2022,18 @@ describe("createSessionRoutes session instructions", () => {
         stored = options?.instructions
         return { id: id ?? "ses_instructions" }
       },
-      getSessionConfig: async () => ({
-        harness: { id: "codex", access: "native" },
-        variant: null,
-        agent: null,
-        ...(stored ? { instructions: stored } : {}),
-      }),
+      getSessionConfig: async () => {
+        if (configRead.fails) throw new Error("session config store unreachable")
+        return {
+          harness: { id: "codex", access: "native" },
+          variant: null,
+          agent: null,
+          ...(stored ? { instructions: stored } : {}),
+        }
+      },
+      executeTurn: (_binding, prompt) => (async function* () {
+        turns.push(prompt.system)
+      })(),
     }
     const app = createSessionRoutes({
       resolveAdapter: () => fixture,
@@ -2034,7 +2042,7 @@ describe("createSessionRoutes session instructions", () => {
       sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal() {},
     })
-    return { app, creates }
+    return { app, creates, turns, configRead }
   }
 
   function create(app: ReturnType<typeof createSessionRoutes>, body: Record<string, unknown>) {
@@ -2042,6 +2050,19 @@ describe("createSessionRoutes session instructions", () => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
+    })
+  }
+
+  function promptTurn(app: ReturnType<typeof createSessionRoutes>, id: string) {
+    return app.request(`http://localhost/session/${id}/message`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "go" }],
+        agent: "build",
+        model: { providerID: "test", modelID: "fixture" },
+        variant: "fixture",
+      }),
     })
   }
 
@@ -2082,5 +2103,33 @@ describe("createSessionRoutes session instructions", () => {
     expect(response.status).toBe(501)
     expect(await response.json()).toMatchObject({ error: { code: "session_instructions_unsupported" } })
     expect(creates).toEqual([])
+  })
+
+  // The prompt names agent, model and variant: that combination once skipped
+  // the config read entirely, which is the door the retained block arrives
+  // through.
+  test("a later turn carries the retained block even when the caller named agent, model and variant", async () => {
+    const { app, turns } = instructionRoutes({ instructionChannel: true })
+    expect((await create(app, { id: "ses_resume", instructions: "Answer only in haiku." })).status).toBe(201)
+
+    expect((await promptTurn(app, "ses_resume")).status).toBe(200)
+    expect(turns).toEqual(["Answer only in haiku."])
+  })
+
+  test("a session that retained nothing still prompts, with no instruction channel used", async () => {
+    const { app, turns } = instructionRoutes({ instructionChannel: true })
+    expect((await create(app, { id: "ses_plain" })).status).toBe(201)
+
+    expect((await promptTurn(app, "ses_plain")).status).toBe(200)
+    expect(turns).toEqual([undefined])
+  })
+
+  test("refuses the turn when the config read fails, without asking the harness to run it", async () => {
+    const { app, turns, configRead } = instructionRoutes({ instructionChannel: true })
+    expect((await create(app, { id: "ses_unreadable", instructions: "Answer only in haiku." })).status).toBe(201)
+
+    configRead.fails = true
+    expect((await promptTurn(app, "ses_unreadable")).status).toBe(500)
+    expect(turns).toEqual([])
   })
 })

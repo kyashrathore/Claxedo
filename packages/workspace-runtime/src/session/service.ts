@@ -257,16 +257,31 @@ function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
 }
 
 /**
- * The config read is unconditional: a session's retained instructions live only
- * there, so skipping it whenever the caller happened to name agent, model and
- * variant would drop the instruction block the session was created with.
+ * The config read is unconditional, and a failure refuses the turn: a session's
+ * retained instructions live only there, so skipping the read whenever the
+ * caller happened to name agent, model and variant — or treating a failed read
+ * as "no config" — would run the turn under none of the instructions the
+ * session was created with. A session that retained nothing reads back a config
+ * without an instruction block, which is a successful read.
  */
 async function promptForSession(
   adapter: AgentHarnessAdapter,
   binding: AgentExecutionBinding,
   body: SessionPromptBody,
 ) {
-  return prompt(body, await adapter.getSessionConfig(binding).catch(() => undefined))
+  let config: SessionConfig | undefined
+  try {
+    config = (await adapter.getSessionConfig(binding)) ?? undefined
+  } catch (cause) {
+    throw new AgentRuntimeContractError({
+      code: "upstream_error",
+      connectionId: binding.connectionId,
+      message: `Session ${binding.sessionId} configuration is unavailable, so its instructions cannot be applied: ${
+        cause instanceof Error ? cause.message : String(cause)
+      }`,
+    })
+  }
+  return prompt(body, config)
 }
 
 function isMessage(input: unknown): input is AgentMessage {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { AgentRuntimeContractError, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -58,6 +58,36 @@ describe("session service", () => {
       publishGlobal: () => {},
       publishStatus: () => {},
     })).rejects.toThrow("execution binding sessionId mismatch")
+    expect(executed).toBe(false)
+  })
+
+  it("refuses the turn with an upstream error when the session config cannot be read", async () => {
+    let executed = false
+    const fixture = adapter({
+      getSessionConfig: async () => {
+        throw new Error("session config store unreachable")
+      },
+      async *executeTurn() {
+        executed = true
+      },
+    })
+
+    const refusal = await runSessionPromptTurn({
+      adapter: fixture,
+      binding: executionBinding,
+      sessionId: "s1",
+      directory: "/work",
+      body: { parts: [], agent: "build", model: { providerID: "test", modelID: "fixture" }, variant: "fixture" },
+      publishGlobal: () => {},
+      publishStatus: () => {},
+    }).then(() => undefined, (error: unknown) => error)
+
+    expect(refusal).toBeInstanceOf(AgentRuntimeContractError)
+    expect((refusal as AgentRuntimeContractError).detail).toEqual({
+      code: "upstream_error",
+      connectionId: "native:codex",
+      message: "Session s1 configuration is unavailable, so its instructions cannot be applied: session config store unreachable",
+    })
     expect(executed).toBe(false)
   })
 
