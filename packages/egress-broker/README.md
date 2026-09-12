@@ -19,3 +19,9 @@ Pass `egressBroker` to `createLocalApp` / `startLocalServer` or `createSelfHoste
 Requests outside a binding's method/path policy receive 403. Upstream destinations must be HTTPS origins. The broker replaces incoming authentication with the authoritative header, streams request and response bodies, refuses every upstream 3xx with 502 and no Location, and reports upstream 401/403 against the exact revision used. It removes credential, cookie, and transport headers from responses; it does not inspect or redact upstream response bodies.
 
 This package is an in-memory skeleton. Persistent hosted storage, automatic provisioning selection, harness configuration, and token renewal are not implemented here. A host must explicitly supply its broker handler; adding this package does not enable credential brokering by default.
+
+## Codex subscription feasibility
+
+`scripts/codex-subscription-feasibility.ts` runs the real Codex app-server through this broker, using an isolated Codex home and test binding authority. Supply `BROKER_CODEX_AUTH_FILE` (a local ChatGPT auth file), `BROKER_CODEX_BINARY`, and an account-eligible `BROKER_CODEX_MODEL`. From this package, run `../workspace-runtime/node_modules/.bin/tsx scripts/codex-subscription-feasibility.ts`.
+
+This makes one real subscription model request. Only the controller reads the saved access token; the app-server receives a scoped placeholder in its custom provider configuration. The probe then withdraws the binding, verifies that the same client reaches the withdrawn binding without another upstream request, checks that runtime files contain no real token, and removes its temporary home. It does not modify the source auth file or implement automatic credential selection/refresh.

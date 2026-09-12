@@ -406,3 +406,30 @@ Result: **not run on deployed Cloudflare: container image upload failed twice**.
 Harness: real Cursor SDK 1.0.24, local `Agent.create` and `agent.send`, with an isolated directory and an explicit dummy API key. Command from `packages/agent-sdk-runtime`: `node scripts/cursor-endpoint-feasibility.mjs`.
 
 Result: **yes for endpoint routing using `CURSOR_BACKEND_URL`**. The real SDK sent `POST /auth/exchange_user_api_key` and `GET /v1/models` to the configured local endpoint, both with `Authorization: Bearer broker-probe-placeholder`. The auth-exchange body was `{}`. The local server deliberately returned 401, so this does not establish successful authentication, inference streaming, or end-to-end broker support. No real Cursor credential or vendor request was used. `CURSOR_API_ENDPOINT` was not the tested key; the installed SDK's authoritative implementation reads `CURSOR_BACKEND_URL`.
+
+### Experiment log — 2026-09-13, item 4
+
+Harness: real Codex app-server 0.133.0 (the runtime-image pin), using the repository's `CodexAppServerProcess` and actual `@claxedo/egress-broker` Node listener/delivery adapter. Provider: a live ChatGPT subscription, model `gpt-5.5`, selected from that account's live model catalog.
+
+Setup from the repository root: `npm install --prefix .artifacts/broker-codex --no-save @openai/codex@0.133.0`.
+
+Command from `packages/egress-broker`:
+
+```sh
+BROKER_CODEX_AUTH_FILE=/Users/yashvardhansingh/.codex/auth.json \
+BROKER_CODEX_BINARY=/Users/yashvardhansingh/test/opencode-broker/.artifacts/broker-codex/node_modules/.bin/codex \
+BROKER_CODEX_MODEL=gpt-5.5 \
+../workspace-runtime/node_modules/.bin/tsx scripts/codex-subscription-feasibility.ts
+```
+
+Result: **yes for the custom model-provider form**. `model_providers.broker` uses `wire_api="responses"`, `requires_openai_auth=false`, the binding-scoped base URL, and an Authorization header containing the signed placeholder. No local ChatGPT login or real provider key is given to the app-server. The actual broker injects the subscription access token for `https://chatgpt.com/backend-api/codex/responses`; the backend returned 200 and Codex completed the requested `BROKER_OK` reply. After binding withdrawal, a second turn from the same running client failed at the broker's missing-binding lookup without another upstream request. The closed app-server's files contained no real credential and its temporary home was removed.
+
+The initial test model `gpt-5.3-codex` was rejected by this account. A read-only `/backend-api/codex/models?client_version=0.133.0` request returned the eligible `gpt-5.5`; the experiment then used that model. This is model availability evidence, not a failed proxy shape. The successful run emitted a client-disconnect warning during stream teardown but exited 0 after all acceptance assertions.
+
+The authority and lease identities in this probe are explicit test fixtures. Production account selection, signed-user propagation, renewal, and hosted binding persistence are not exercised or implemented by this result. The alternative `chatgpt_base_url` form was unnecessary and was not tested.
+
+### Access checks — 2026-09-13, items 7–9
+
+- exe.dev: `ssh -oBatchMode=yes -oConnectTimeout=10 -oStrictHostKeyChecking=yes exe.dev help` failed because no trusted host key was configured. Item 7 is **not run: trusted SSH access is not established in this environment**. No host-trust setting or integration was changed.
+- Modal: `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` are unset and `~/.modal.toml` is absent. Item 8 is **not run: no configured Modal authentication or identified allowlisted workspace is available**.
+- Signed subject in all deployment modes: **not run as a live cross-deployment experiment**. Current source evidence shows a remaining gap: `WorkspaceRouteOptions.prepareRuntime` accepts only `workspaceId`, and `hostedConnectionInfo` calls it without the available signed auth context before `hostManager.ensure`. This does not prove personal account selection or per-user sandbox isolation. Those require the planned authority/lease work; no synthetic user identity was added to production provisioning.
