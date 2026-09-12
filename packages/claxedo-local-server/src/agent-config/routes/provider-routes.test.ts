@@ -84,7 +84,10 @@ describe("control-plane Pi catalog", () => {
   test("serves credential-owner authentication methods without a workspace", async () => {
     const response = await app.request("/providers/auth?nativeHarness=pi", { headers: { authorization: "Bearer org_a" } })
     expect(response.status).toBe(200)
-    expect((await response.json()).anthropic).toEqual([{ type: "api", label: "API Key" }])
+    expect((await response.json()).anthropic).toEqual([
+      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
+      { type: "api", label: "API Key" },
+    ])
   })
 })
 
