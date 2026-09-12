@@ -227,8 +227,15 @@ describe("@claxedo/local-server closure", () => {
     // the published closure now measures exactly 83 modules / 24 packages.
     // app/local-documents adds the desktop composition of shared Documents;
     // the published closure measures 84 modules / 24 packages.
-    expect(modules.size).toBeLessThanOrEqual(84)
+    // credentials/broker.ts is the 85th module: the desktop's credential
+    // authority, which derives a binding per active registry row and hands the
+    // loopback broker its handler. Its one new package edge is
+    // @claxedo/egress-broker, the request policy, header injection and
+    // runtime-token verification behind that handler; it reaches only `jose`
+    // and `@hono/node-server`, both already here. Measured: 85 modules,
+    // 25 packages.
+    expect(modules.size).toBeLessThanOrEqual(85)
     // smol-toml is the hosted MCP installer's configuration validator.
-    expect(packages.size).toBeLessThanOrEqual(24)
+    expect(packages.size).toBeLessThanOrEqual(25)
   })
 })
