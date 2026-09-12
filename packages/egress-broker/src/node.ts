@@ -13,7 +13,10 @@ export async function listenLoopbackBroker(options: BrokerOptions & { port?: num
     origin: `http://127.0.0.1:${address.port}`,
     close: () => new Promise<void>((resolve, reject) => {
       server.close((error?: Error) => error ? reject(error) : resolve())
-      server.closeAllConnections()
+      // `serve` without a `createServer` returns a plain http.Server, but its
+      // declared return type is the union with the HTTP/2 servers, which have
+      // no keep-alive sockets to cut.
+      if ("closeAllConnections" in server) server.closeAllConnections()
     }),
   }
 }

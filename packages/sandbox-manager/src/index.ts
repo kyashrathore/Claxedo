@@ -86,7 +86,25 @@ export type SandboxDriverMetadata = {
   hostResumeBehavior: "same-host" | "replacement-host"
   /** How the control plane reaches the sandbox target returned by the driver. */
   targetAccess: "relay" | "loopback"
-  secretBrokering: "native" | "proxy" | "none"
+  /**
+   * How the driver can honor a `SandboxBrokeredSecret` — a credential the
+   * sandbox may USE for outbound requests but must NEVER be able to READ.
+   *
+   * - `"native"` — the provider brokers it on egress to the allowlisted hosts
+   *   with no extra infrastructure of ours: Daytona secret placeholders,
+   *   Vercel firewall header transforms, Cloudflare outbound handlers reading
+   *   the value from KV. The driver installs it during `ensureHost`.
+   * - `"none"` — no way to keep the value out of sandbox processes. The
+   *   provider may still have an encrypted secret STORE (e.g. Modal secrets),
+   *   but it is exposed as a readable env var, which cannot satisfy the
+   *   never-readable contract.
+   *
+   * There is no third state. A driver that would need a broker we operate is
+   * `"none"` until it has one, because the manager fails closed on anything
+   * that is not `"native"` and an "achievable but unwired" value read as
+   * provisionable in every caller that did not consult this comment.
+   */
+  secretBrokering: "native" | "none"
   /**
    * How the driver can enforce a RESTRICTED `SandboxNetworkPolicy` — i.e.
    * whether the sandbox's outbound network can actually be contained.
@@ -229,6 +247,19 @@ function defaultEgressUnenforcedSink(event: SandboxEgressUnenforcedEvent) {
   console.warn(event.message)
 }
 
+/**
+ * A credential the SANDBOX must be able to USE for outbound requests but must
+ * NEVER be able to READ. Unlike `env` (plaintext, readable — reserved for
+ * credentials the agent is trusted with, e.g. the user's own model
+ * subscription), a brokered secret's `value` never enters the sandbox: the
+ * provider injects it on egress to `hosts` only. Non-model credentials
+ * (connection tokens, deploy tokens) belong here.
+ *
+ * Guarantees enforced by the manager: brokered secrets are never written to
+ * labels, never logged, and never captured in a driver snapshot. A driver
+ * whose `metadata.secretBrokering` is not `"native"` cannot honor them and the
+ * manager refuses to provision (fail-closed).
+ */
 export type SandboxBrokeredSecret = {
   /** Env var name the sandbox references (Daytona placeholder key). */
   name: string
@@ -647,7 +678,10 @@ function ensureHostInput(input: {
     workspaceRuntimePort: input.managerInput?.workspaceRuntimePort ?? DEFAULT_WORKSPACE_RUNTIME_PORT,
     env: input.managerInput?.env ?? {},
     // Brokered secrets ride their own channel — NEVER merged into labels or env.
-    ...(input.managerInput?.secrets?.length ? { secrets: input.managerInput.secrets } : {}),
+    // Presence of the key, not its length, is the signal: `[]` is the caller
+    // withdrawing every brokered secret, and dropping it would reach the driver
+    // as "preserve what you have".
+    ...(input.managerInput?.secrets ? { secrets: input.managerInput.secrets } : {}),
     source: input.managerInput?.source,
     exposure:
       input.managerInput?.exposure ??
@@ -809,10 +843,12 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
         appLabel: options.appLabel ?? DEFAULT_APP_LABEL,
       })
       // Fail-closed: a brokered secret must never be downgraded to readable
-      // plaintext env. `"native"` (Daytona/Vercel — transparent egress) and
-      // `"proxy"` (Cloudflare — Worker egress proxy) both keep the value out
-      // of the sandbox; only `"none"` cannot, so it alone refuses here rather
-      // than expose the credential.
+      // plaintext env. Daytona, Vercel and Cloudflare all keep the value out of
+      // the sandbox through their own provider edge; a `"none"` driver has no
+      // way to, so it refuses here rather than expose the credential.
+      //
+      // An EMPTY list is a withdrawal, not a delivery, and passes: a driver
+      // that cannot broker has nothing to withdraw either.
       if (ensure.secrets?.length && options.driver.metadata.secretBrokering === "none") {
         return {
           status: "unavailable",

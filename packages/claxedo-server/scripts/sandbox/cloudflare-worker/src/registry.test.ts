@@ -7,8 +7,13 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
 // Cloudflare sandbox can be enumerated (DO namespaces are not listable), so it
 // is what the control plane's GC sweep depends on.
 const sandboxStub = {
-  setOutboundByHosts: vi.fn(async () => {}),
-  ensureWorkspaceRuntime: vi.fn(async (_command: string, _env: Record<string, string>, _port: number) => true),
+  setOutboundByHosts: vi.fn(async (_handlers: Record<string, { method: string; params: unknown }>) => {}),
+  ensureWorkspaceRuntime: vi.fn(async (
+    _command: string,
+    _env: Record<string, string>,
+    _port: number,
+    _options: { reuseRunning: boolean },
+  ) => true),
   workspaceRuntimeReady: vi.fn(async () => true),
   destroy: vi.fn(async () => {}),
   createBackup: vi.fn(async () => ({ id: "bk_1", dir: "/workspace" })),
@@ -18,13 +23,29 @@ const sandboxStub = {
 const getSandboxMock = vi.fn(() => sandboxStub)
 const containerProxyStub = class ContainerProxy { readonly stub = "container-proxy" }
 
+// `@cloudflare/containers` cannot be imported outside workerd (its module scope
+// pulls `cloudflare:workers`), so the one piece of the base class our code
+// depends on is reproduced exactly: `outboundHandlers` is a registry-backed
+// static ACCESSOR, keyed by class name. A static field on the subclass shadows
+// it and the SDK then finds no handler — that is what this base is here to
+// catch.
+const outboundHandlersRegistry = new Map<string, Record<string, unknown>>()
+
 vi.mock("@cloudflare/sandbox", () => ({
   getSandbox: getSandboxMock,
-  Sandbox: class Sandbox { readonly stub = "sandbox" },
+  Sandbox: class Sandbox {
+    readonly stub = "sandbox"
+    static get outboundHandlers() {
+      return outboundHandlersRegistry.get(this.name)
+    }
+    static set outboundHandlers(handlers: Record<string, unknown> | undefined) {
+      outboundHandlersRegistry.set(this.name, handlers ?? {})
+    }
+  },
   ContainerProxy: containerProxyStub,
 }))
 
-const { default: worker, ContainerProxy } = await import("./index")
+const { default: worker, ContainerProxy, Sandbox, ensureRuntimeProcess } = await import("./index")
 
 type Metadata = Record<string, string>
 
@@ -100,6 +121,28 @@ describe("cloudflare sandbox Worker registry (W1.2)", () => {
 
   test("exports the SDK ContainerProxy so intercepted HTTPS can leave the sandbox", () => {
     expect(ContainerProxy).toBe(containerProxyStub)
+  })
+
+  test("the credential handler is registered through the inherited setter, not shadowed by a field", async () => {
+    expect(Object.getOwnPropertyDescriptor(Sandbox, "outboundHandlers")).toBeUndefined()
+    const handlers = outboundHandlersRegistry.get("Sandbox")
+    expect(handlers).toBeDefined()
+    // The same key setOutboundByHosts dispatches on below.
+    expect(Object.keys(handlers!)).toEqual(["credential"])
+
+    await call("/sandbox/handler-name/ensure-runtime", env({
+      EGRESS_SECRETS: { get: async () => null, put: async () => {}, delete: async () => {} },
+    }), {
+      method: "POST",
+      body: JSON.stringify({
+        command: "runtime",
+        env: {},
+        egress: [{ name: "KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer v" }],
+      }),
+    })
+    expect(sandboxStub.setOutboundByHosts).toHaveBeenLastCalledWith({
+      "api.vendor.test": { method: Object.keys(handlers!)[0], params: { sandboxId: "handler-name" } },
+    })
   })
 
   test("ensure-runtime records the sandbox, and GET /sandboxes enumerates it", async () => {
@@ -267,5 +310,111 @@ describe("native credential registration", () => {
       method: "POST", body: JSON.stringify({ command: "runtime", env: {}, egress: [{ ...registration, value: 42 }] }),
     })
     expect(response.status).toBe(400)
+  })
+})
+
+describe("workspace-runtime process env", () => {
+  function process(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "claxedo-workspace-runtime",
+      status: "running",
+      waitForPort: vi.fn(async () => {}),
+      getStatus: vi.fn(async () => "running"),
+      kill: vi.fn(async () => {}),
+      getLogs: vi.fn(async () => ({ stdout: "", stderr: "" })),
+      ...overrides,
+    }
+  }
+
+  function operations(existing: ReturnType<typeof process> | null) {
+    const started = process()
+    return {
+      started,
+      listProcesses: vi.fn(async () => (existing ? [existing] : [])),
+      startProcess: vi.fn(async () => started),
+      cleanupCompletedProcesses: vi.fn(async () => {}),
+    }
+  }
+
+  test("a healthy runtime is reused when its env has not changed", async () => {
+    const existing = process()
+    const sandbox = operations(existing)
+
+    await expect(
+      ensureRuntimeProcess(sandbox as never, "runtime", { MODEL_KEY: "claxedo-broker:MODEL_KEY" }, 2593, {
+        reuseRunning: true,
+      }),
+    ).resolves.toBe(true)
+
+    expect(sandbox.startProcess).not.toHaveBeenCalled()
+    expect(existing.kill).not.toHaveBeenCalled()
+  })
+
+  test("a running runtime is replaced when the env it booted with no longer matches", async () => {
+    // A newly registered credential only becomes CLAXEDO_MCP_<key> for a
+    // process spawned with it; returning early left the placeholder absent
+    // until something else happened to restart the runtime.
+    const existing = process()
+    const sandbox = operations(existing)
+    const env = { MODEL_KEY: "claxedo-broker:MODEL_KEY" }
+
+    await expect(
+      ensureRuntimeProcess(sandbox as never, "runtime", env, 2593, { reuseRunning: false }),
+    ).resolves.toBe(true)
+
+    expect(existing.kill).toHaveBeenCalled()
+    expect(sandbox.startProcess).toHaveBeenCalledWith("runtime", {
+      env,
+      processId: "claxedo-workspace-runtime",
+    })
+  })
+})
+
+describe("runtime env reconciliation on ensure-runtime", () => {
+  beforeEach(() => vi.clearAllMocks())
+  function credentials(seed: Record<string, string> = {}) {
+    const values = new Map(Object.entries(seed))
+    return {
+      values,
+      get: async (id: string) => values.get(id) ?? null,
+      put: async (id: string, value: string) => { values.set(id, value) },
+      delete: async (id: string) => { values.delete(id) },
+    }
+  }
+  const registration = { name: "CLAXEDO_MCP_NOTION", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer real" }
+
+  test("a newly registered credential replaces the running runtime so its placeholder exists", async () => {
+    const kv = credentials()
+    await call("/sandbox/added/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
+      method: "POST",
+      body: JSON.stringify({ command: "runtime", env: {}, egress: [registration] }),
+    })
+
+    expect(sandboxStub.ensureWorkspaceRuntime).toHaveBeenLastCalledWith(
+      "runtime",
+      expect.objectContaining({ CLAXEDO_MCP_NOTION: "claxedo-broker:CLAXEDO_MCP_NOTION" }),
+      2593,
+      { reuseRunning: false },
+    )
+  })
+
+  test("a rotated value keeps the same placeholder and leaves the running runtime alone", async () => {
+    const kv = credentials({ rotated: JSON.stringify([registration]) })
+    await call("/sandbox/rotated/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
+      method: "POST",
+      body: JSON.stringify({ command: "runtime", env: {}, egress: [{ ...registration, value: "Bearer fresh" }] }),
+    })
+
+    expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[3]).toEqual({ reuseRunning: true })
+  })
+
+  test("withdrawing a credential replaces the runtime so its placeholder stops existing", async () => {
+    const kv = credentials({ withdrawn: JSON.stringify([registration]) })
+    await call("/sandbox/withdrawn/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
+      method: "POST",
+      body: JSON.stringify({ command: "runtime", env: {}, egress: [] }),
+    })
+
+    expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[3]).toEqual({ reuseRunning: false })
   })
 })

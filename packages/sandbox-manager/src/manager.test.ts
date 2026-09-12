@@ -1060,17 +1060,15 @@ describe("sandbox manager", () => {
     expect(driver.ensureHost).not.toHaveBeenCalled()
   })
 
-  test("brokered secrets are passed through for both native and proxy drivers", async () => {
-    for (const brokering of ["native", "proxy"] as const) {
-      const driver = fakeDriver({ metadata: { secretBrokering: brokering } as never })
-      const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
-      const result = await manager.ensure("ws_1", {
-        homeRegion: "us-east",
-        secrets: [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"], header: "Authorization" }],
-      })
-      expect(result.status).toBe("ready")
-      expect(driver.ensureHost).toHaveBeenCalled()
-    }
+  test("brokered secrets are passed through for a native driver", async () => {
+    const driver = fakeDriver({ metadata: { secretBrokering: "native" } as never })
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+    const result = await manager.ensure("ws_1", {
+      homeRegion: "us-east",
+      secrets: [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"], header: "Authorization" }],
+    })
+    expect(result.status).toBe("ready")
+    expect(driver.ensureHost).toHaveBeenCalled()
   })
 
   test("brokered secrets reach the driver on its own channel, never in env or labels", async () => {
@@ -1103,6 +1101,72 @@ describe("sandbox manager", () => {
     expect(JSON.stringify(seen?.labels)).not.toContain("ntn-secret")
     expect(JSON.stringify(seen?.labels)).not.toContain("NOTION_TOKEN")
     expect(seen?.env).toEqual({ MODEL_KEY: "sk-model" })
+  })
+
+  test("an empty secret list reaches the driver as a withdrawal, not as an omission", async () => {
+    let seen: Parameters<SandboxDriver["ensureHost"]>[0] | undefined
+    const driver = fakeDriver({
+      ensureHost: vi.fn(async (input) => {
+        seen = input
+        return { sandboxId: "sandbox_1", url: "https://runtime.test", hostId: "host_1", labels: input.labels }
+      }),
+    })
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+
+    await manager.ensure("ws_1", { homeRegion: "us-east", secrets: [] })
+
+    expect(seen).toHaveProperty("secrets")
+    expect(seen?.secrets).toEqual([])
+  })
+
+  test("an omitted secret list stays omitted so the driver preserves what it has", async () => {
+    let seen: Parameters<SandboxDriver["ensureHost"]>[0] | undefined
+    const driver = fakeDriver({
+      ensureHost: vi.fn(async (input) => {
+        seen = input
+        return { sandboxId: "sandbox_1", url: "https://runtime.test", hostId: "host_1", labels: input.labels }
+      }),
+    })
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+
+    await manager.ensure("ws_1", { homeRegion: "us-east" })
+
+    expect(seen).not.toHaveProperty("secrets")
+  })
+
+  test("an empty secret list reaches a resuming driver as a withdrawal", async () => {
+    const store = createMemoryLeaseStore([
+      sandboxLease({
+        workspaceId: "ws_stopped",
+        status: "stopped",
+        epoch: 3,
+        sandboxId: "sandbox_stopped",
+        url: "https://runtime.test/stopped",
+        hostId: "host_stopped",
+      }),
+    ])
+    let seen: Parameters<NonNullable<SandboxDriver["resumeHost"]>>[0] | undefined
+    const driver = fakeDriver({
+      resumeHost: vi.fn(async (input) => {
+        seen = input
+        return { sandboxId: input.lease.sandboxId!, url: "https://runtime.test/restarted", hostId: input.lease.hostId! }
+      }),
+    })
+    const manager = createSandboxManager({ leaseStore: store, driver })
+
+    await manager.ensure("ws_stopped", { homeRegion: "us-east", secrets: [] })
+
+    expect(seen?.ensure).toHaveProperty("secrets")
+    expect(seen?.ensure.secrets).toEqual([])
+  })
+
+  test("an empty secret list never trips the fail-closed refusal", async () => {
+    const driver = fakeDriver({ metadata: { secretBrokering: "none" } as never })
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+
+    const result = await manager.ensure("ws_1", { homeRegion: "us-east", secrets: [] })
+
+    expect(result.status).toBe("ready")
   })
 
   test("adds brokered destinations to an enforced host allowlist", async () => {

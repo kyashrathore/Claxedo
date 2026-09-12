@@ -9,9 +9,11 @@ import {
 import {
   captureSupervisorSandboxCheckpoint,
   restoreSupervisorSandboxCheckpoint,
+  sandboxBindingsRequested,
   startSandbox,
   stopSandbox,
   touchSandbox,
+  type SandboxBindings,
 } from "./sandbox"
 import {
   acquireSupervisorSandboxHold,
@@ -37,7 +39,6 @@ import type {
   SandboxEnsureResult,
   SandboxLease,
   SandboxManager,
-  SandboxBrokeredSecret,
   SandboxRegisterInput,
   SandboxTarget,
   SandboxTargetResult,
@@ -73,10 +74,10 @@ export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) 
   })
 }
 
-export async function ensureSupervisorSandbox(workspaceId: string, secrets?: SandboxBrokeredSecret[]) {
+export async function ensureSupervisorSandbox(workspaceId: string, bindings?: SandboxBindings) {
   const ws = await getWorkspace(workspaceId)
   if (!ws) throw new Error(`workspace not found: ${workspaceId}`)
-  const entry = await startRuntime(runtimeState(ws), secrets)
+  const entry = await startRuntime(runtimeState(ws), bindings)
   entry.used_at = now()
   scheduleStop(entry)
   return entry
@@ -91,7 +92,7 @@ export async function syncSupervisorSandbox(workspaceId: string) {
 async function ensureRelayProtectedSandbox(
   workspaceId: string,
   hostId: string,
-  secrets?: SandboxBrokeredSecret[],
+  bindings?: SandboxBindings,
 ) {
   if (!hostId.trim()) throw new Error("host id required")
   const ws = await getWorkspace(workspaceId)
@@ -101,7 +102,7 @@ async function ensureRelayProtectedSandbox(
     throw new Error(`sandbox mismatch: ${workspaceId}`)
   }
   entry.relay_host_id = hostId
-  const started = await startRuntime(entry, secrets)
+  const started = await startRuntime(entry, bindings)
   if (started.sandbox_target) {
     started.sandbox_target = {
       ...started.sandbox_target,
@@ -238,9 +239,13 @@ export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
   return {
     async ensure(workspaceId, input) {
       try {
+        const bindings: SandboxBindings = {
+          ...(input.secrets !== undefined ? { secrets: input.secrets } : {}),
+          ...(input.net !== undefined ? { net: input.net } : {}),
+        }
         const entry = input.hostId
-          ? await ensureRelayProtectedSandbox(workspaceId, input.hostId, input.secrets)
-          : await ensureSupervisorSandbox(workspaceId, input.secrets)
+          ? await ensureRelayProtectedSandbox(workspaceId, input.hostId, bindings)
+          : await ensureSupervisorSandbox(workspaceId, bindings)
         const lease = getSupervisorSandboxLease(workspaceId)
         const target = entry.sandbox_target ?? sandboxTargetFromSupervisorState(entry) ?? sandboxTargetFromLease(lease)
         if (!target) {
@@ -437,8 +442,11 @@ function recordSupervisorRuntimeSnapshot(workspaceId: string, input: SandboxRegi
   return { ok: true as const, status: "ready" as const }
 }
 
-async function startRuntime(state: WorkspaceRuntimeState, secrets?: SandboxBrokeredSecret[]) {
-  if (state.status === "ready" && state.url) {
+async function startRuntime(state: WorkspaceRuntimeState, bindings?: SandboxBindings) {
+  // A warm runtime is served from memory only when the caller stated no
+  // authority to reconcile; otherwise the withdrawal or the narrowed policy
+  // would never reach the driver.
+  if (state.status === "ready" && state.url && !sandboxBindingsRequested(bindings)) {
     state.used_at = now()
     scheduleStop(state)
     return state
@@ -447,7 +455,7 @@ async function startRuntime(state: WorkspaceRuntimeState, secrets?: SandboxBroke
   state.start = (async () => {
     try {
       if (state.ws.kind === "cloud") {
-        return await startSandbox(state, { scheduleStop }, secrets)
+        return await startSandbox(state, { scheduleStop }, bindings)
       }
       throw new Error("local workspaces use embedded workspace-runtime hosts")
     } finally {

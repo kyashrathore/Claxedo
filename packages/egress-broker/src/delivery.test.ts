@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest"
-import { createGenericDeliveryAdapter, verifyRuntimeToken, type Binding } from "./index.js"
+import { createGenericDeliveryAdapter, mintRuntimeToken, verifyRuntimeToken, type Binding } from "./index.js"
 import { listenLoopbackBroker } from "./node.js"
 
 const binding: Binding = {
@@ -107,6 +107,68 @@ test("a decoded upstream body is not relabelled with the upstream's encoding", a
     await expect(response.json()).resolves.toEqual({ ok: true })
   } finally {
     await broker.close()
+    adapter.dispose()
+  }
+})
+
+test("a runtime token cannot outlive one hour", async () => {
+  const key = new Uint8Array(32).fill(7)
+  const now = 1_700_000_000_000
+  await expect(mintRuntimeToken({ ...binding, bindingIds: ["b1"], expiresAt: now + 3_600_001 }, key, now))
+    .rejects.toThrow("one hour")
+  await expect(mintRuntimeToken({ ...binding, bindingIds: ["b1"], expiresAt: now + 3_600_000 }, key, now))
+    .resolves.toBeTypeOf("string")
+
+  // A shorter request is the caller's to make and is kept as asked.
+  const short = await mintRuntimeToken({ ...binding, bindingIds: ["b1"], expiresAt: now + 30_000 }, key, now)
+  expect((await verifyRuntimeToken(short, key, now))?.exp).toBe(Math.floor((now + 30_000) / 1000))
+
+  const adapter = createGenericDeliveryAdapter({ signingKey: key, reportFailure: async () => {} })
+  adapter.activateRuntime(binding)
+  adapter.apply(binding, "key-one")
+  await expect(adapter.project(binding.id, "https://broker.test", Date.now() + 7_200_000)).rejects.toThrow("one hour")
+  adapter.dispose()
+})
+
+test("a superseded generation's bindings and values are evicted", async () => {
+  const adapter = createGenericDeliveryAdapter({ signingKey: new Uint8Array(32).fill(3), reportFailure: async () => {} })
+  try {
+    adapter.activateRuntime(binding)
+    adapter.apply(binding, "key-one")
+    expect(await adapter.authority.resolve(binding.id)).toBeDefined()
+
+    adapter.activateRuntime({ ...binding, leaseGeneration: 2, runtimeId: "runtime-2" })
+
+    // `resolve` hands the broker the credential before `currentRuntime` is
+    // consulted, so the replaced generation's value must not survive here.
+    expect(await adapter.authority.resolve(binding.id)).toBeUndefined()
+  } finally {
+    adapter.dispose()
+  }
+})
+
+test("a destination the broker could only refuse at request time is refused at apply", async () => {
+  const adapter = createGenericDeliveryAdapter({ signingKey: new Uint8Array(32).fill(5), reportFailure: async () => {} })
+  try {
+    adapter.activateRuntime(binding)
+    const destinations = [
+      { ...binding.destination, origin: "http://api.vendor.test" },
+      { ...binding.destination, origin: "https://user:pass@api.vendor.test" },
+      { ...binding.destination, origin: "https://api.vendor.test/v1" },
+      { ...binding.destination, origin: "not a url" },
+      { ...binding.destination, pathPrefixes: [] },
+      { ...binding.destination, pathPrefixes: ["v1/messages"] },
+      { ...binding.destination, methods: [] },
+      // The broker matches `Request.method`, which is upper-case, so a
+      // lower-case method here denies every request instead of allowing one.
+      { ...binding.destination, methods: ["post"] },
+    ]
+    for (const destination of destinations) {
+      expect(() => adapter.apply({ ...binding, destination }, "key-one"), destination.origin)
+        .toThrow("destination")
+    }
+    expect(() => adapter.apply(binding, "key-one")).not.toThrow()
+  } finally {
     adapter.dispose()
   }
 })

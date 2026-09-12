@@ -1,30 +1,58 @@
+import { isWorkerRecord } from "./worker-json"
+
 export type EgressRegistration = { name: string; hosts: string[]; header: string; value: string }
 
+const PLACEHOLDER_PREFIX = "claxedo-broker:"
+
 export function credentialPlaceholder(name: string) {
-  return `claxedo-broker:${name}`
+  return `${PLACEHOLDER_PREFIX}${name}`
+}
+
+/**
+ * Whether the request is asking this handler for a credential at all.
+ *
+ * Interception is per-HOST, so everything the sandbox sends to a host that
+ * happens to carry a registration arrives here — `git clone`, `npm install`,
+ * `curl`, a request already carrying the user's own token. Only a request
+ * presenting one of our placeholders is ours to answer.
+ */
+function presentsPlaceholder(request: Request) {
+  for (const [, value] of request.headers) {
+    if (value.includes(PLACEHOLDER_PREFIX)) return true
+  }
+  return false
+}
+
+const HOST_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/
+
+/** A non-empty list of plain hostnames, or nothing: one bad entry rejects the list. */
+function registrationHosts(value: unknown): string[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined
+  const hosts: string[] = []
+  for (const host of value) {
+    if (typeof host !== "string" || !HOST_PATTERN.test(host)) return undefined
+    hosts.push(host)
+  }
+  return hosts
 }
 
 export function parseRegistrations(input: unknown): EgressRegistration[] {
   if (!Array.isArray(input)) throw new Error("egress must be an array")
   const names = new Set<string>()
   return input.map((entry: unknown) => {
-    if (!entry || typeof entry !== "object") throw new Error("invalid egress registration")
-    const name = "name" in entry ? entry.name : undefined
-    const header = "header" in entry ? entry.header : undefined
-    const value = "value" in entry ? entry.value : undefined
-    const hosts = "hosts" in entry ? entry.hosts : undefined
-    if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
-      || names.has(name) || typeof header !== "string" || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(header)
-      || typeof value !== "string" || !value || /[\r\n]/.test(value)
-      || !Array.isArray(hosts) || !hosts.length
-      || !hosts.every((host: unknown): host is string => typeof host === "string" && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/.test(host))) {
+    if (!isWorkerRecord(entry)) throw new Error("invalid egress registration")
+    const hosts = registrationHosts(entry.hosts)
+    if (typeof entry.name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.name)
+      || names.has(entry.name) || typeof entry.header !== "string" || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(entry.header)
+      || typeof entry.value !== "string" || !entry.value || /[\r\n]/.test(entry.value)
+      || !hosts) {
       throw new Error("invalid egress registration")
     }
-    if (["host", "content-length", "connection", "transfer-encoding", "cookie", "proxy-authorization"].includes(header.toLowerCase())) {
+    if (["host", "content-length", "connection", "transfer-encoding", "cookie", "proxy-authorization"].includes(entry.header.toLowerCase())) {
       throw new Error("invalid credential header")
     }
-    names.add(name)
-    return { name, header, value, hosts }
+    names.add(entry.name)
+    return { name: entry.name, header: entry.header, value: entry.value, hosts }
   })
 }
 
@@ -32,6 +60,18 @@ export async function forwardCredential(request: Request, options: {
   registrations: () => Promise<EgressRegistration[]>
   fetch?: (request: Request) => Promise<Response>
 }) {
+  const send = options.fetch ?? fetch
+  // Ordinary traffic to a registered host: forwarded exactly as sent, with no
+  // credential attached and no response scrubbing, because nothing of ours is
+  // in it. The protocol and destination rules below guard the ATTACHMENT of a
+  // credential, so they apply only once one has been asked for.
+  if (!presentsPlaceholder(request)) {
+    try {
+      return await send(request)
+    } catch {
+      return new Response("Upstream unavailable", { status: 502 })
+    }
+  }
   const url = new URL(request.url)
   if (url.protocol !== "https:" || url.username || url.password || (url.port && url.port !== "443")) {
     return new Response("Forbidden", { status: 403 })
@@ -55,7 +95,7 @@ export async function forwardCredential(request: Request, options: {
   headers.set(selected.header, selected.value)
   let upstream: Response
   try {
-    upstream = await (options.fetch ?? fetch)(new Request(request, { headers, redirect: "manual" }))
+    upstream = await send(new Request(request, { headers, redirect: "manual" }))
   } catch {
     return new Response("Upstream unavailable", { status: 502 })
   }

@@ -65,7 +65,7 @@ function oauthFetch(publicServer = false, multipleIssuers = false) {
 
 async function subject(input: {
   publicServer?: boolean
-  brokering?: "native" | "proxy" | "none"
+  brokering?: "native" | "none"
   connected?: boolean
   multipleIssuers?: boolean
 } = {}) {
@@ -134,6 +134,56 @@ describe("hosted MCP runtime preparation", () => {
       integrationId: await mcpOAuthIntegrationId({ pluginInstanceId: "claxedo/docs", serverName: "docs" }),
     }, value.env)
     expect(scope).toMatchObject({ workspaceId: "workspace-1", pluginInstanceId: "claxedo/docs" })
+  })
+
+  test("the runtime credential's subject is the activation owner, not the signed caller", async () => {
+    // `WorkspaceRuntimeContext` carries the signed user through to the hosted
+    // prepare hook, but the only consumer of that hook looks the identity up by
+    // workspace id: `runtimeSnapshot` reads `workspaces.owner_user_id`. Two
+    // different signed callers therefore mint the same credential. Per-user
+    // identity is the lease-key change, not this threading.
+    const env = await signingEnv()
+    const runtimeSnapshot = vi.fn(async (workspaceId: string) => ({
+      ...snapshot(),
+      identity: { userId: "owner-of-record", organizationId: "org-1", projectId: "project-1", workspaceId },
+    }))
+    const prepare = createHostedMcpRuntimePreparation({
+      activations: { runtimeSnapshot },
+      artifacts: {
+        put: async (value) => value,
+        get: async () => ({
+          digest,
+          tree: { entries: [] },
+          plugin: {
+            root: ".",
+            manifest: { $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "docs" },
+            skills: [],
+            mcp: { status: "valid", servers: [{ name: "docs", type: "streamable-http" as const, url: "https://mcp.example/mcp" }] },
+          },
+        }),
+      },
+      resolveConnection: async () => ({
+        ok: true as const,
+        connectionId: "connection-1",
+        integrationId: "dynamic",
+        scope: "personal" as const,
+        fields: { resource: "https://mcp.example/mcp" },
+      }),
+      oauth: { fetch: oauthFetch(), preRegistered: { "https://login.example": { clientId: "claxedo" } } },
+      gatewayUrl: "https://mcp-gateway.example/",
+      signingEnv: env,
+      secretBrokering: "native",
+    })
+
+    const preparation = await prepare("workspace-1")
+
+    // The workspace id is the whole of the lookup; no subject reaches it.
+    expect(runtimeSnapshot).toHaveBeenCalledWith("workspace-1")
+    const secret = preparation.secrets![0]
+    const scope = await verifyMcpGatewayToken(secret.value.replace(/^Bearer /, ""), {
+      integrationId: await mcpOAuthIntegrationId({ pluginInstanceId: "claxedo/docs", serverName: "docs" }),
+    }, env)
+    expect(scope?.userId).toBe("owner-of-record")
   })
 
   test("starts every server's discovery before walking any of them", async () => {

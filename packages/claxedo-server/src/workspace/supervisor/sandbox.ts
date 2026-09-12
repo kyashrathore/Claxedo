@@ -7,6 +7,7 @@ import {
   type SandboxCheckpointRuntime,
   type SandboxEnsureResult,
   type SandboxManager,
+  type SandboxNetworkPolicy,
 } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
 import { defaultSnapshotName } from "@claxedo/sandbox-manager/image-name"
@@ -64,10 +65,25 @@ type SandboxCallbacks = {
   scheduleStop(state: WorkspaceRuntimeState): void
 }
 
+/**
+ * What authority this generation of the sandbox may use: the brokered
+ * credentials and the egress policy. Named by the caller, or produced by this
+ * deployment when the caller names neither.
+ */
+export type SandboxBindings = {
+  secrets?: SandboxBrokeredSecret[]
+  net?: SandboxNetworkPolicy
+}
+
+/** Whether the caller stated an authority that has to reach the driver. */
+export function sandboxBindingsRequested(bindings: SandboxBindings | undefined) {
+  return bindings?.secrets !== undefined || bindings?.net !== undefined
+}
+
 export async function startSandbox(
   state: WorkspaceRuntimeState,
   callbacks: SandboxCallbacks,
-  secrets?: SandboxBrokeredSecret[],
+  bindings?: SandboxBindings,
 ): Promise<WorkspaceRuntimeState> {
   const cfg = await loadUserConfig()
   const driverId =
@@ -79,7 +95,11 @@ export async function startSandbox(
   const prev = storedLease ?? pendingSandboxLease(state.ws.id, driverId, now())
   const recordedHostUrl = storedLease?.status === "ready" ? sandboxLeaseUrl(storedLease) : undefined
 
-  if (recordedHostUrl) {
+  // Reattaching a recorded url makes no driver call at all, so it can only be
+  // taken when there is nothing to reconcile. A wake that withdrew a credential
+  // or narrowed egress has to go through the manager, which re-ensures a ready
+  // lease on the same epoch.
+  if (recordedHostUrl && !sandboxBindingsRequested(bindings)) {
     const attached = await attachRecordedSandbox(state, callbacks, {
       driverId,
       storedLease,
@@ -93,7 +113,7 @@ export async function startSandbox(
   if (action.action === "wait") {
     const ms = Math.max(0, action.until - now())
     if (ms > 0) await sleep(ms)
-    return startSandbox(state, callbacks, secrets)
+    return startSandbox(state, callbacks, bindings)
   }
 
   if (action.action === "mark_failed") {
@@ -117,7 +137,11 @@ export async function startSandbox(
 
   try {
     await markSandboxAcquiring(state)
-    const net = await resolveSupervisorSandboxNetworkPolicy(state, driverId, action)
+    // The caller's policy wins: it is the one the deployment that owns this
+    // workspace's egress decided on. Recomputing it here would replace a stated
+    // restriction with whatever the local policy table happens to hold, which
+    // for an empty table is allow-all.
+    const net = bindings?.net ?? await resolveSupervisorSandboxNetworkPolicy(state, driverId, action)
     const result = await (
       await createSupervisorSandboxManager(state, driverId)
     ).ensure(state.ws.id, {
@@ -140,12 +164,12 @@ export async function startSandbox(
       source: state.ws.repo_url
         ? { kind: "git", repoUrl: state.ws.repo_url, branch: state.ws.git_branch ?? undefined }
         : { kind: "empty" },
-      net: net ? { mode: net.mode, hosts: net.hosts, cidrs: net.cidrs } : undefined,
-      secrets,
+      net: net ? { mode: net.mode, ...(net.hosts ? { hosts: net.hosts } : {}), ...(net.cidrs ? { cidrs: net.cidrs } : {}) } : undefined,
+      secrets: bindings?.secrets,
     })
     if (result.status === "provisioning") {
       await sleep(result.retryAfterMs)
-      return startSandbox(state, callbacks, secrets)
+      return startSandbox(state, callbacks, bindings)
     }
     if (result.status !== "ready") {
       throw new Error(result.error ?? "sandbox unavailable")

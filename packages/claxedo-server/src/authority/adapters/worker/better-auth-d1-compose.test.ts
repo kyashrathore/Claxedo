@@ -188,7 +188,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
         hostStopBehavior: "suspends-host",
         hostResumeBehavior: "same-host",
         targetAccess: "relay",
-        secretBrokering: "proxy",
+        secretBrokering: "native",
         egressControl: "hosts-and-cidrs",
         persistence: {
           resume: "same-sandbox",

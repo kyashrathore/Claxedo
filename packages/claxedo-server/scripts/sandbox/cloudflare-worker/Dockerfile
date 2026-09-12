@@ -16,10 +16,14 @@ ARG CLAXEDO_NPM_AGENTS="@anthropic-ai/claude-code@2.1.150 @openai/codex@0.133.0 
 # ~430MB and most deployments don't use them, so off by default.
 ARG CLAXEDO_CURL_AGENTS="1"
 
-# Install build tools for native deps (better-sqlite3, node-pty)
+# Install build tools for native deps (better-sqlite3, node-pty). `git` is named
+# explicitly because the runtime configures a github.com clone header at boot
+# and agents clone from inside the sandbox; whether the base image happens to
+# carry it is not something this image should depend on.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl ca-certificates make g++ python3 xz-utils && \
-    rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends curl ca-certificates git make g++ python3 xz-utils && \
+    rm -rf /var/lib/apt/lists/* && \
+    command -v git
 
 # The cloudflare/sandbox base ships Node 20, under which better-sqlite3 13.x
 # SEGFAULTS on load (verified in-image: node20 `new Database(':memory:')`

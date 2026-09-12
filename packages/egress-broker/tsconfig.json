@@ -1,15 +1,11 @@
 {
+  "extends": "@tsconfig/node-lts/tsconfig.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "strict": true,
-    "skipLibCheck": true,
-    "declaration": true,
-    "outDir": "dist",
-    "rootDir": "src",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "customConditions": ["development"],
+    "noUncheckedIndexedAccess": false,
+    "lib": ["ESNext", "DOM"]
   },
-  "include": ["src"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src"]
 }
