@@ -59,6 +59,7 @@ import {
   permissionModeLevel,
   widestPermissionModeUnder,
   type AgentPermissionMode,
+  type AgentPermissionModeState,
   type AutoLevel,
 } from "@claxedo/agent-sdk-runtime"
 import { arr, bool, num, rec, str } from "../json-value"
@@ -166,9 +167,20 @@ async function requireExecutionBinding(
 }
 
 /**
- * The level a new session may not exceed: the narrower of the parent's
- * current mode and the ceiling the caller declared. A parent whose harness
- * reports no current mode caps at `ask`, the floor.
+ * The restriction a parent hands down: `ask` when its harness has a mode
+ * surface but reports no current mode, and nothing at all when the harness has
+ * no mode surface. A harness with no surface enforces no restriction on the
+ * parent either, so reading it as the floor would invent a ceiling the parent
+ * never ran under and refuse every child on that harness.
+ */
+function inheritedPermissionLevel(state: AgentPermissionModeState | undefined): AutoLevel | undefined {
+  if (!state || state.unsupported) return undefined
+  return permissionModeLevel(state.modes.find((mode) => mode.id === state.currentModeId))
+}
+
+/**
+ * The level a new session may not exceed: the narrower of the restriction the
+ * parent hands down and the ceiling the caller declared.
  */
 async function effectivePermissionCeiling(
   opts: Opts,
@@ -182,8 +194,8 @@ async function effectivePermissionCeiling(
   const state = adapter.listPermissionModes
     ? await adapter.listPermissionModes(await requireExecutionBinding(opts, c, directory, parent.id, adapter))
     : undefined
-  const current = state?.modes.find((mode) => mode.id === state.currentModeId)
-  const parentLevel = permissionModeLevel(current)
+  const parentLevel = inheritedPermissionLevel(state)
+  if (!parentLevel) return declared
   return declared ? narrowerPermissionLevel(parentLevel, declared) : parentLevel
 }
 

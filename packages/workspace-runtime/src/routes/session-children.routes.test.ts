@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { AgentMessage, AgentPermissionMode, AgentSession, SessionConfig } from "@claxedo/agent-sdk-runtime"
+import type { AgentMessage, AgentPermissionMode, AgentPermissionModeState, AgentSession, SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { buildSession } from "../compat-events"
@@ -13,6 +13,8 @@ const MODES: readonly AgentPermissionMode[] = [
   { id: "untrusted", name: "Untrusted" },
   { id: "full-access", name: "Full access", level: "full" },
 ]
+
+const NO_MODE_SURFACE: AgentPermissionModeState = { modes: [], unsupported: "codex exposes no permission modes", appliesFrom: "next-turn" }
 
 function fixture(input: { parentMode?: string } = {}) {
   const store = new MemoryRuntimeStore()
@@ -163,6 +165,50 @@ describe("POST /session with parentID", () => {
     expect(response.status).toBe(403)
     expect(await response.json()).toMatchObject({ error: { code: "permission_ceiling_unsupported" } })
     expect(item.calls.created).toEqual([])
+  })
+
+  for (
+    const [surface, hideModeSurface] of [
+      ["no permission-mode methods at all", (adapter: AgentHarnessAdapter) => {
+        adapter.listPermissionModes = undefined
+        adapter.listDraftPermissionModes = undefined
+        adapter.setPermissionMode = undefined
+      }],
+      ["a state that says it has no mode surface", (adapter: AgentHarnessAdapter) => {
+        adapter.listPermissionModes = async () => NO_MODE_SURFACE
+      }],
+    ] as const
+  ) {
+    test(`a parent whose harness reports ${surface} restricts its child to nothing`, async () => {
+      const item = fixture()
+      item.seedParent("parent")
+      hideModeSurface(item.adapter)
+
+      const response = await item.create({ parentID: "parent" })
+      expect(response.status).toBe(201)
+      const child = await response.json() as { id: string; permissionMode?: string }
+      expect(child.permissionMode).toBeUndefined()
+      expect(item.calls.modes).toEqual([])
+      expect(item.store.getSessionConfig(child.id)?.permissionCeiling).toBeUndefined()
+    })
+  }
+
+  test("a declared ceiling still caps a child under a parent whose harness has no mode surface", async () => {
+    const item = fixture()
+    item.seedParent("parent")
+    item.adapter.listPermissionModes = async () => NO_MODE_SURFACE
+
+    const child = await (await item.create({ parentID: "parent", permissionCeiling: "ask" })).json() as { id: string; permissionMode?: string }
+    expect(child.permissionMode).toBe("read-only")
+    expect(item.calls.modes).toEqual([{ sessionId: child.id, modeId: "read-only" }])
+    expect(item.store.getSessionConfig(child.id)?.permissionCeiling).toBe("ask")
+
+    const widened = await item.app.request(`http://localhost/session/${child.id}/permission-mode?directory=${encodeURIComponent(DIRECTORY)}`, {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ modeId: "full-access" }),
+    })
+    expect(widened.status).toBe(403)
+    expect(await widened.json()).toMatchObject({ error: { code: "permission_ceiling_exceeded", ceiling: "ask" } })
+    expect(item.calls.modes).toHaveLength(1)
   })
 
   test("refuses a ceiling when no target mode fits instead of using the harness default", async () => {
