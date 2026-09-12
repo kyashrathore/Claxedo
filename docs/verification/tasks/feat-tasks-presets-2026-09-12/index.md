@@ -9,7 +9,7 @@ Environment for the live rows: unsigned local stack started from the worktree. S
 | T01 | app architecture guard; desktop renderer-config guard; self-hosted selection tests; local-server feature-off resume test; `verify:closure` emitted manifests both ways | none | PASS (four artifacts measured; packaged desktop and deployed hosted NOT RUN) | See "Build-time feature selection" below. |
 | T02 | package model/service/http tests; SQLite + D1 conformance | live create, reload, server restart | PASS (local) | Task `tsk_234d73b3…` survived app reload and a server restart at revision 3. |
 | T03 | conformance `stale revision` cases; app store 409 test | none | PASS (automated only) | Two-client live case not run. |
-| T04 | service reparent/child rules | live add subtask via Add button | PASS (local) | Enter in the subtask field did not submit in the pane; the Add button did. Unverified whether that is real. |
+| T04 | service reparent/child rules | live add subtask via Add button | PASS (local) | Enter in the subtask field did not submit in the Claude Browser pane; a vanilla control form failed identically under the pane's key injection while Playwright submitted both, so this is a harness artifact, not a defect. |
 | T05 | board/list vitest | live list, board, filters visible | PARTIAL | One task + one child only; paging not exercised. Board scrolls (`overflow-x: auto`, 904 > 738 px), no clipping. |
 | T06 | service guard tests; board vitest incl. snap-back | live Done refused | PASS (local) | Alert "has 1 unfinished children"; server status stayed `doing`; menu shows the record after `b8e08cbc0c`. |
 | T07 | service/store archive tests | none | PASS (automated only) | |
@@ -64,3 +64,29 @@ claxedo-server: `deployment-closures` (Better Auth locked closure 16 > 15), `gov
 
 - Hosted session access ranks a caller by workspace owner, workspace and project memberships and org role (`actorWorkspaceRoleRankSql` in `packages/claxedo-server-core/src/authority/adapters/sqlite/session-authority.ts`), while project access also counts team grants (`projectAccess` in `workspace-authority.ts`). A member whose project access comes only through a team grant passes `authorizeProject`, can create and edit tasks, and is refused at session reservation. Every hosted session create has the same gap; Tasks is the first feature that makes it visible. Owner: session authority. Not changed on this branch.
 - Preview cannot refuse an unsupported effort level: no host-side reader exists for a harness's effort levels that is independent of that harness's current model, so effort travels as `variant` and the runtime refuses at create.
+
+## Fix wave after the Codex review (same day)
+
+All fifteen findings in codex-gpt-6-astra-review.md were addressed; each fix carries a mutation-checked test.
+
+| Finding | Commit | Outcome |
+|---|---|---|
+| 1 Start bypassed session authorization | `11ab2b400e` | `authorizeSessionOpen` before an idempotent return, a readability probe, or a Continue transcript read |
+| 2 Origin did not reserve its configuration | `11ab2b400e`, `859112f373` | `configurationDigest` on the link and in the hosted operationId; both hosts read the session config back and refuse a mismatch |
+| 3 Settlement ignored the admitting state | `11ab2b400e` | link insert plus task CAS in one unit; the task revision advances on link |
+| 4 Parent guard used a reread | `11ab2b400e`, `be3742511f` | validated parent snapshot carried to the CAS; conformance case pins no in-write reread |
+| 5 SQLite transaction on the shared connection | `be3742511f` | dedicated Tasks connection (`ClaxedoDB.connect()`), `BEGIN DEFERRED`; an unrelated write survives a Tasks rollback |
+| 6 Memory rollback over concurrent commits | `be3742511f` | serialized units; overlap cases pinned in the conformance suite |
+| 7 Unreadable history read as not sent | `11ab2b400e` | `present / absent / unreadable`; unreadable refuses |
+| 8 Metadata never repaired on recovery | `11ab2b400e` | projection reconciled when an existing reserved session is recovered |
+| 9 D1 commit conflicts unclassified | `be3742511f`, `859112f373` | typed `TasksStoreConflict`; duplicate receipts replay, competitors get 409 |
+| 10 Continue unreachable | `11ab2b400e`, `fcd39ef904` | readability computed independent of the checkbox; dialog re-previews without unmounting the row |
+| 11 Pagination dropped | `fcd39ef904` | cursors followed; Load more on list and board; children auto-follow |
+| 12 Signed self-host mounted loopback composition | `8a4c5d1c5d`, `9cd23059fa`, `1b016d24a2` | signed SQLite composition selected by the composed auth posture; sessions reserved for the signed starter |
+| 13 No build-time selection | `9cd23059fa` | `CLAXEDO_BUILD_TASKS` define-gated loaders and baked server gates; measured ON/OFF artifacts (see T01 section) |
+| 14 Config read failed open | `2e01a9759d` | a failing config read refuses the turn; a missing row still prompts |
+| 15 Comments claimed absent checks | `11ab2b400e`, `1755c046ae` | effort comment rewritten; hosted capabilities report local only |
+
+Also found and fixed during the wave: the kit client dropped `currentTask` / `currentPreset` from stale-revision refusals, so every rebase path in the app was dead while its hand-built tests passed (`260e04f298`); the Start flow now rebases once and retries, and the edit conflict paths are proven through the real transport (`b59f178746`).
+
+Still not proven here: packaged desktop, deployed hosted Worker, a credentialed model turn, cloud placement (S5/S6), delegation with effort (S7).
