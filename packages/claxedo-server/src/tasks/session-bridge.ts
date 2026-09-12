@@ -34,11 +34,6 @@ export type HostedTasksSessionBridgeInput = {
   principal?: (actor: TasksActor) => Promise<PrivateSessionRuntimePrincipal | undefined>
 }
 
-/**
- * Tasks' half of Start on a hosted control plane: the managed session
- * reservation this host requires before a create, then the workspace runtime
- * the control plane dispatches to.
- */
 export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeInput): TasksSessionBridgePort {
   return createTasksSessionBridge({
     async target(workspaceId) {

@@ -8,8 +8,10 @@ import {
   startInstructions,
   startOriginId,
   tasksErrorDetail,
+  type ConfigurationSlot,
   type ModelConfiguration,
   type ModelReference,
+  type SessionHandoffCommand,
   type SessionLiveness,
   type SessionReference,
   type StartBlocker,
@@ -44,13 +46,7 @@ export type TasksSessionReservation =
   | { ok: true; headers: Record<string, string> }
   | { ok: false; error: TasksErrorDetail }
 
-/**
- * What differs between the hosts that run Tasks sessions: which runtimes they
- * can reach, where session metadata lives, and whether a create needs a
- * managed reservation first. Everything else about a Start — validation,
- * instructions, the deterministic origin and its first message — is the same
- * work against the same runtime routes, and lives below.
- */
+/** What differs between the hosts that run Tasks sessions. */
 export type TasksSessionHost = {
   /** The workspace's runtime, or null when this host cannot reach one for it. */
   target(workspaceId: string): Promise<TasksRuntimeTarget | null>
@@ -117,6 +113,10 @@ export function createTasksSessionBridge(host: TasksSessionHost): TasksSessionBr
         }
       }
       return startSession(host, command, resolved)
+    },
+
+    async handoff(command) {
+      return sendFirstMessage(host, command)
     },
   }
 }
@@ -263,9 +263,15 @@ async function readHandoff(
  * session whatever the checkbox says, because the checkbox is what the answer
  * is for: a dialog can only offer Continue once this host has read that
  * transcript, and the kit has already authorized the link it came on.
+ *
+ * A session the kit reports deleted is the exception. Nothing can be continued
+ * from it, and the kit asks its session authority about that link only when
+ * there is something to open — so reading its transcript here would be reading
+ * one nobody authorized.
  */
 function previousSessionOf(command: StartPreviewCommand | StartCommand): SessionReference | null {
   if ("previousSession" in command) return command.previousSession
+  if (command.currentState === "deleted") return null
   return command.currentLink?.sessionRef ?? null
 }
 
@@ -393,6 +399,47 @@ function destination(
   return dropped.length === 0 ? where : `${where}. The instruction block cap dropped ${dropped.join(" and ")}.`
 }
 
+/**
+ * The ids an origin decides, so two clients racing one slot and attempt
+ * converge on one session and one first message instead of two of each, and a
+ * handoff that runs long after the create addresses the same message.
+ */
+async function originIds(input: {
+  scopeId: string
+  taskId: string
+  slot: ConfigurationSlot
+  attempt: number
+}): Promise<{ origin: string; sessionId: string; messageId: string }> {
+  const origin = startOriginId(input.scopeId, input.taskId, input.slot, input.attempt)
+  const hash = (await hashRequest(origin)).slice(0, 32)
+  return { origin, sessionId: `ses_tasks_${hash}`, messageId: `msg_tasks_${hash}` }
+}
+
+const creating = new Map<string, Promise<unknown>>()
+
+/**
+ * One creator per origin inside this process.
+ *
+ * The session id is derived from the origin, so two concurrent Starts would
+ * otherwise both read it as absent and create it — the second with whichever
+ * configuration its own preset resolved, under the id the first one is already
+ * using. A host with a managed reservation refuses the second before it gets
+ * here; an unsigned local host has no such table, and one process is the whole
+ * of it.
+ */
+async function perOrigin<T>(origin: string, work: () => Promise<T>): Promise<T> {
+  const queued = (creating.get(origin) ?? Promise.resolve()).then(work, work)
+  const tail = queued.then(
+    () => undefined,
+    () => undefined,
+  )
+  creating.set(origin, tail)
+  void tail.then(() => {
+    if (creating.get(origin) === tail) creating.delete(origin)
+  })
+  return queued
+}
+
 async function startSession(
   host: TasksSessionHost,
   command: StartCommand,
@@ -400,32 +447,31 @@ async function startSession(
 ): Promise<TasksResult<{ session: StartedSession }>> {
   const target = resolved.target
   if (!target) return { ok: false, error: tasksErrorDetail("unsupported", "This task has no reachable workspace") }
-  const origin = startOriginId(command.actor.scopeId, command.task.id, command.slot, command.attempt)
-  // The origin decides both ids, so two clients racing one slot and attempt
-  // converge on one session and one first message instead of two of each.
-  const hash = (await hashRequest(origin)).slice(0, 32)
-  const sessionId = `ses_tasks_${hash}`
-  const messageId = `msg_tasks_${hash}`
+  const { origin, sessionId } = await originIds({
+    scopeId: command.actor.scopeId,
+    taskId: command.task.id,
+    slot: command.slot,
+    attempt: command.attempt,
+  })
   // The reservation carries the configuration the ids do not: a host that
   // admits one operation per origin then refuses a second configuration
   // claiming the same session instead of letting it adopt the first one.
   const operationId = `${origin}:${command.configurationDigest}`
 
-  const reserved = await host.reserve?.({
-    actor: command.actor,
-    operationId,
-    sessionId,
-    workspaceId: target.workspace.id,
-    title: command.task.title,
-  })
-  if (reserved && !reserved.ok) return reserved
+  const held = await perOrigin(origin, async (): Promise<{ ok: true } | Refusal> => {
+    const reserved = await host.reserve?.({
+      actor: command.actor,
+      operationId,
+      sessionId,
+      workspaceId: target.workspace.id,
+      title: command.task.title,
+    })
+    if (reserved && !reserved.ok) return reserved
 
-  const existing = await target.request(`/session/${encodeURIComponent(sessionId)}`).catch(() => undefined)
-  if (!existing) return { ok: false, error: tasksErrorDetail("unsupported", "The workspace runtime is unreachable") }
-  if (existing.status === 200) {
-    const recovered = await recoverSession(host, target, sessionId, command, resolved)
-    if (!recovered.ok) return recovered
-  } else {
+    const existing = await target.request(`/session/${encodeURIComponent(sessionId)}`).catch(() => undefined)
+    if (!existing) return { ok: false, error: tasksErrorDetail("unsupported", "The workspace runtime is unreachable") }
+    if (existing.status === 200) return recoverSession(host, target, sessionId, command, resolved)
+
     const created = await target.request(`/session?${tasksHarnessQuery(resolved.configuration.harness)}`, {
       method: "POST",
       headers: { "content-type": "application/json", ...reserved?.headers },
@@ -437,16 +483,57 @@ async function startSession(
         instructions: resolved.instructions,
       }),
     })
-    if (!created.ok) return { ok: false, error: await runtimeRefusal("create this session", created) }
+    if (!created.ok) {
+      // A runtime that refuses because the id is taken has the session another
+      // Start created, which is the same situation as finding it above: adopt
+      // it only if it is running this configuration.
+      const collided = await target.request(`/session/${encodeURIComponent(sessionId)}`).catch(() => undefined)
+      if (collided?.status === 200) return recoverSession(host, target, sessionId, command, resolved)
+      return { ok: false, error: await runtimeRefusal("create this session", created) }
+    }
     await host.projectSessionMeta({
       sessionId,
       target,
       title: command.task.title,
       model: resolved.configuration.model,
     })
-  }
+    return { ok: true }
+  })
+  if (!held.ok) return held
 
-  const sent = await alreadySent(target, sessionId, messageId)
+  return {
+    ok: true,
+    session: {
+      sessionRef: { sessionId, workspaceId: target.workspace.id },
+      continuedFrom: resolved.handoff?.session ?? null,
+    },
+  }
+}
+
+/**
+ * The task, handed to the session the committed link names. The message id
+ * comes from the origin and the history is read first, so a Start retried
+ * after a crash between the link and this call sends the task once, and one
+ * retried after it landed sends nothing.
+ */
+async function sendFirstMessage(
+  host: TasksSessionHost,
+  command: SessionHandoffCommand,
+): Promise<TasksResult<{ sent: boolean }>> {
+  const target = await host.target(command.session.workspaceId ?? "")
+  if (!target) {
+    return {
+      ok: false,
+      error: tasksErrorDetail("unsupported", `Session ${command.session.sessionId} is not reachable from this host`),
+    }
+  }
+  const { messageId } = await originIds({
+    scopeId: command.actor.scopeId,
+    taskId: command.task.id,
+    slot: command.slot,
+    attempt: command.attempt,
+  })
+  const sent = await alreadySent(target, command.session.sessionId, messageId)
   if (sent === "unreadable") {
     return {
       ok: false,
@@ -456,25 +543,17 @@ async function startSession(
       ),
     }
   }
-  if (sent === "absent") {
-    const prompt = await target.request(`/session/${encodeURIComponent(sessionId)}/prompt_async`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        messageID: messageId,
-        parts: [{ type: "text", text: startFirstMessage({ task: command.task, handoffText: command.handoffText }) }],
-      }),
-    })
-    if (!prompt.ok) return { ok: false, error: await runtimeRefusal("send the first message", prompt) }
-  }
-
-  return {
-    ok: true,
-    session: {
-      sessionRef: { sessionId, workspaceId: target.workspace.id },
-      continuedFrom: resolved.handoff?.session ?? null,
-    },
-  }
+  if (sent === "present") return { ok: true, sent: false }
+  const prompt = await target.request(`/session/${encodeURIComponent(command.session.sessionId)}/prompt_async`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      messageID: messageId,
+      parts: [{ type: "text", text: startFirstMessage({ task: command.task, handoffText: command.handoffText }) }],
+    }),
+  })
+  if (!prompt.ok) return { ok: false, error: await runtimeRefusal("send the first message", prompt) }
+  return { ok: true, sent: true }
 }
 
 /**

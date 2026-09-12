@@ -20,6 +20,7 @@ export type { HarnessDescriptor, TasksCapabilitiesPort, TasksHostCapabilities } 
 export type { TasksClockPort } from "./ports/clock"
 export type { TasksIdsPort } from "./ports/ids"
 export type {
+  SessionHandoffCommand,
   SessionStateReading,
   StartCommand,
   StartPreviewCommand,

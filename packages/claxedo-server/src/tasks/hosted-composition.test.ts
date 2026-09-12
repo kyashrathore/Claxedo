@@ -120,6 +120,7 @@ function reportingBridge(principal: TasksRuntimePrincipal): TasksSessionBridgePo
     },
     preview: (command) => refuse(command.actor),
     start: (command) => refuse(command.actor),
+    handoff: (command) => refuse(command.actor),
   }
 }
 

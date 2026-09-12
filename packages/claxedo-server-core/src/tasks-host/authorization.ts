@@ -1,14 +1,3 @@
-/**
- * Who a Tasks request is, and what that identity may reach.
- *
- * The kit knows only `TasksActor = { scopeId, ownerId }` — two opaque strings
- * — so a host has to keep the principal those strings were derived from
- * somewhere the authorization port can find it again. That is what
- * `createTasksPrincipals` is: the actor handed to the kit is minted here, and
- * the signed principal stays beside it under the actor's own identity. Nothing
- * is keyed by the id strings, so a caller cannot reach another request's
- * principal by claiming its scope.
- */
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { localControlPlaneAuth, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
@@ -26,6 +15,11 @@ export type TasksPrincipals = {
   authOf(actor: TasksActor): SignedControlPlaneAuth | undefined
 }
 
+/**
+ * The principal is held against the actor object, never against its id
+ * strings: two requests can carry the same scope and owner, so a lookup by
+ * those strings would hand one request the other's signed principal.
+ */
 export function createTasksPrincipals(): TasksPrincipals {
   const principals = new WeakMap<TasksActor, SignedControlPlaneAuth>()
   return {
@@ -50,9 +44,9 @@ export function createTasksPrincipals(): TasksPrincipals {
  * adapter resolved, so the actor id is read from there rather than derived
  * from a string the kit happens to carry.
  *
- * Undefined for any actor this registry did not mint and for a principal that
- * is not a person — the caller reserves as its own service actor then, which
- * is a different fact about the session, not a fallback identity for this one.
+ * Human principals only. Anything else — an actor this registry did not mint,
+ * a service or agent principal — is undefined, and a reservation asked for
+ * with a resolver that cannot answer refuses instead of reserving as itself.
  */
 export type TasksRuntimePrincipal = (actor: TasksActor) => Promise<PrivateSessionRuntimePrincipal | undefined>
 

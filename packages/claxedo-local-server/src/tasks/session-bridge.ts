@@ -19,10 +19,6 @@ export type LocalTasksSessionBridgeInput = {
   reserve?: TasksSessionHost["reserve"]
 }
 
-/**
- * Tasks' half of Start on a local host: the embedded workspace runtime this
- * process serves, and the session projection it lists sessions from.
- */
 export function createLocalTasksSessionBridge(input: LocalTasksSessionBridgeInput = {}): TasksSessionBridgePort {
   return createTasksSessionBridge({
     ...(input.reserve ? { reserve: input.reserve } : {}),

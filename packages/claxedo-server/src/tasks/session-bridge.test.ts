@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { D1SessionAuthorityError } from "../authority/adapters/d1/session-authority"
-import { startConfigurationDigest, type ConfigurationSlot, type Preset, type SessionReference, type StartCommand, type Task } from "@claxedo/tasks"
+import {
+  startConfigurationDigest,
+  type ConfigurationSlot,
+  type Preset,
+  type SessionHandoffCommand,
+  type SessionReference,
+  type StartCommand,
+  type Task,
+} from "@claxedo/tasks"
 import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import type { ControlPlaneServices } from "../authority/services"
 
@@ -171,11 +179,21 @@ async function startCommand(digest: string, chosen: Preset = preset()): Promise<
     slot,
     attempt: 1,
     previewDigest: digest,
-    handoffText: "Pick up from the failing import test.",
     continueFromPrevious: false,
     clientRequestId: "req_1",
     configurationDigest: await startConfigurationDigest({ preset: chosen, slot }),
     previousSession: null,
+  }
+}
+
+function handoffCommand(session: SessionReference): SessionHandoffCommand {
+  return {
+    actor,
+    task: task(),
+    slot,
+    attempt: 1,
+    handoffText: "Pick up from the failing import test.",
+    session,
   }
 }
 
@@ -200,7 +218,7 @@ beforeEach(() => {
 })
 
 describe("hosted tasks session bridge", () => {
-  test("reserves the origin, creates with the resolved configuration, and sends one first message", async () => {
+  test("reserves the origin, creates with the resolved configuration, and hands the task over once", async () => {
     const host = runtime()
     const composition = services()
     const kit = bridge(composition)
@@ -232,6 +250,11 @@ describe("hosted tasks session bridge", () => {
       variant: "high",
       instructions: expect.stringContaining("Read before you write."),
     })
+
+    // The create hands the task to nobody: the kit commits the link first and
+    // asks for the handoff afterwards.
+    expect(host.calls.some((call) => call.path.endsWith("/prompt_async"))).toBe(false)
+    expect(await kit.handoff(handoffCommand(started.session.sessionRef))).toMatchObject({ ok: true, sent: true })
 
     const prompt = host.calls.find((call) => call.path.endsWith("/prompt_async"))
     const promptBody: unknown = JSON.parse(prompt?.init?.body ?? "{}")
@@ -271,9 +294,12 @@ describe("hosted tasks session bridge", () => {
     if (!previewed.ok) throw new Error("preview refused")
 
     const first = await kit.start(await startCommand(previewed.preview.digest))
+    if (!first.ok) throw new Error("start refused")
+    expect(await kit.handoff(handoffCommand(first.session.sessionRef))).toMatchObject({ ok: true, sent: true })
     const again = await kit.start(await startCommand(previewed.preview.digest))
     expect(again).toMatchObject({ ok: true })
-    if (!first.ok || !again.ok) return
+    if (!again.ok) return
+    expect(await kit.handoff(handoffCommand(again.session.sessionRef))).toMatchObject({ ok: true, sent: false })
 
     expect(again.session.sessionRef).toEqual(first.session.sessionRef)
     expect(host.calls.filter((call) => call.path.startsWith("/session?"))).toHaveLength(1)
@@ -315,6 +341,8 @@ describe("hosted tasks session bridge", () => {
     if (!previewed.ok) throw new Error("preview refused")
     const started = await kit.start(await startCommand(previewed.preview.digest))
     expect(started).toMatchObject({ ok: true })
+    if (!started.ok) return
+    expect(await kit.handoff(handoffCommand(started.session.sessionRef))).toMatchObject({ ok: true, sent: true })
 
     const readable = mock.request.getMockImplementation()!
     mock.request.mockImplementation(async (path: string, init?: RuntimeCall["init"]) =>
@@ -322,9 +350,38 @@ describe("hosted tasks session bridge", () => {
         ? Response.json({ error: { message: "the runtime is restarting" } }, { status: 503 })
         : readable(path, init))
 
-    const refused = await kit.start(await startCommand(previewed.preview.digest))
+    const refused = await kit.handoff(handoffCommand(started.session.sessionRef))
     expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
     expect(host.calls.filter((call) => call.path.endsWith("/prompt_async"))).toHaveLength(1)
+  })
+
+  test("compares the configuration of a session another creator won between the probe and the create", async () => {
+    const host = runtime()
+    const composition = services()
+    const kit = bridge(composition)
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+
+    // This Start read the id as absent and the runtime then refused its create:
+    // the session under that id belongs to whoever won it, and adopting it
+    // without comparing the configuration would report the wrong preset as the
+    // one running.
+    const answering = mock.request.getMockImplementation()!
+    mock.request.mockImplementation(async (path: string, init?: RuntimeCall["init"]) => {
+      if (!path.startsWith("/session?")) return answering(path, init)
+      const body: unknown = JSON.parse(init?.body ?? "{}")
+      const row = typeof body === "object" && body ? (body as Record<string, unknown>) : {}
+      await answering(path, { ...init, body: JSON.stringify({ ...row, instructions: "Another Start's instructions." }) })
+      return Response.json({ error: { message: "a session already exists under that id" } }, { status: 409 })
+    })
+
+    const refused = await kit.start(await startCommand(previewed.preview.digest))
+    expect(refused).toMatchObject({
+      ok: false,
+      error: { code: "conflict", message: expect.stringContaining("already running another configuration") },
+    })
+    expect(host.calls.filter((call) => call.path.startsWith("/session?"))).toHaveLength(1)
+    expect(host.calls.some((call) => call.path.endsWith("/prompt_async"))).toBe(false)
   })
 
   test("repairs session metadata lost after the create, so the attempt stops reading as deleted", async () => {

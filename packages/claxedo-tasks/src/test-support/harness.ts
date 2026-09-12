@@ -13,7 +13,12 @@ import type { HarnessDescriptor, TasksCapabilitiesPort, TasksHostCapabilities } 
 import type { TasksAuthorizationPort } from "../ports/authorization"
 import type { TasksClockPort } from "../ports/clock"
 import type { TasksIdsPort } from "../ports/ids"
-import type { StartCommand, StartPreviewCommand, TasksSessionBridgePort } from "../ports/session-bridge"
+import type {
+  SessionHandoffCommand,
+  StartCommand,
+  StartPreviewCommand,
+  TasksSessionBridgePort,
+} from "../ports/session-bridge"
 
 export const ACTOR: TasksActor = { scopeId: "scope-alpha", ownerId: "owner-alpha" }
 export const OTHER_ACTOR: TasksActor = { scopeId: "scope-alpha", ownerId: "owner-beta" }
@@ -85,16 +90,26 @@ export type FakeBridge = TasksSessionBridgePort & {
   setState(sessionId: string, state: SessionLiveness): void
   nextSession(sessionId: string): void
   refuseStart(message: string): void
+  /** Null clears the refusal, for a retry after the host would not answer. */
+  refuseHandoff(message: string | null): void
   readonly starts: readonly StartCommand[]
   readonly previews: readonly StartPreviewCommand[]
+  /** Every handoff asked for, including the ones already on the session. */
+  readonly handoffs: readonly SessionHandoffCommand[]
+  /** The handoffs that submitted a message, which is what must happen once. */
+  readonly delivered: readonly SessionHandoffCommand[]
 }
 
 export function fakeBridge(): FakeBridge {
   const states = new Map<string, SessionLiveness>()
   const starts: StartCommand[] = []
   const previews: StartPreviewCommand[] = []
+  const handoffs: SessionHandoffCommand[] = []
+  const delivered: SessionHandoffCommand[] = []
+  const sent = new Set<string>()
   let nextSessionId = "session-1"
   let refusal: string | null = null
+  let handoffRefusal: string | null = null
 
   const previewOf = (command: StartPreviewCommand): StartPreview => {
     const configuration = command.preset.configurations[command.slot]
@@ -135,6 +150,17 @@ export function fakeBridge(): FakeBridge {
         },
       }
     },
+    async handoff(command) {
+      handoffs.push(command)
+      if (handoffRefusal !== null) return { ok: false, error: { code: "conflict", message: handoffRefusal } }
+      // The real host derives the message id from the origin, so the same
+      // origin sent to the same session is the message that is already there.
+      const origin = `${command.session.sessionId}:${command.task.id}:${command.slot}:${command.attempt}`
+      if (sent.has(origin)) return { ok: true, sent: false }
+      sent.add(origin)
+      delivered.push(command)
+      return { ok: true, sent: true }
+    },
     setState: (sessionId, state) => void states.set(sessionId, state),
     nextSession: (sessionId) => {
       nextSessionId = sessionId
@@ -142,11 +168,20 @@ export function fakeBridge(): FakeBridge {
     refuseStart: (message) => {
       refusal = message
     },
+    refuseHandoff: (message) => {
+      handoffRefusal = message
+    },
     get starts() {
       return starts
     },
     get previews() {
       return previews
+    },
+    get handoffs() {
+      return handoffs
+    },
+    get delivered() {
+      return delivered
     },
   }
 }

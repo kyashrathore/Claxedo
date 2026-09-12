@@ -203,7 +203,6 @@ async function startedSession() {
     slot: "primary",
     attempt: 1,
     previewDigest: previewed.preview.digest,
-    handoffText: null,
     continueFromPrevious: false,
     clientRequestId: "req_off",
     configurationDigest: await startConfigurationDigest({ preset: preset(), slot: "primary" }),

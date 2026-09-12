@@ -140,26 +140,41 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     return new Map(readings.map((reading) => [reading.session.sessionId, reading.state]))
   }
 
-  const authorizedLinks = async (actor: TasksActor, links: readonly TaskSessionLink[]): Promise<readonly TaskSessionLink[]> => {
-    const visible: TaskSessionLink[] = []
+  /**
+   * The task's links, as far as this actor may see them. The owner's liveness
+   * reading decides which need a grant to open: a deleted session cannot be
+   * opened by anyone, and hiding it would cost the reader the attempt number
+   * the next Start has to name. Every other state is a session this actor must
+   * be allowed to open before the link is named at all.
+   */
+  const linkViews = async (actor: TasksActor, links: readonly TaskSessionLink[]): Promise<readonly TaskSessionLinkView[]> => {
+    const states = await livenessOf(links.map((link) => link.sessionRef))
+    const visible: TaskSessionLinkView[] = []
     for (const link of links) {
-      if (await deps.authorization.authorizeSessionOpen(actor, link.sessionRef)) visible.push(link)
+      const state = states.get(link.sessionRef.sessionId) ?? "unavailable"
+      if (state !== "deleted" && !(await deps.authorization.authorizeSessionOpen(actor, link.sessionRef))) continue
+      visible.push(linkView(link, state))
     }
     return visible
   }
 
-  const linkViews = async (actor: TasksActor, links: readonly TaskSessionLink[]): Promise<readonly TaskSessionLinkView[]> => {
-    const visible = await authorizedLinks(actor, links)
-    const states = await livenessOf(visible.map((link) => link.sessionRef))
-    return visible.map((link) => linkView(link, states.get(link.sessionRef.sessionId) ?? "unavailable"))
+  const requireSessionOpen = async (actor: TasksActor, link: TaskSessionLink): Promise<void> => {
+    if (!(await deps.authorization.authorizeSessionOpen(actor, link.sessionRef))) {
+      refuse("forbidden", `No access to the session slot ${link.slot} holds`)
+    }
   }
 
   /**
-   * The slot's session, once this actor is allowed to open it. Every use of it
-   * is privileged — it decides which attempt is admissible, it is returned as
-   * the answer to an idempotent Start, its transcript is what a readability
-   * probe reads and what Continue copies — so an actor the session authority
-   * refuses here is refused the slot rather than served from it.
+   * The slot's session and how the owner reports it.
+   *
+   * Liveness is read before authority because it is what says whether there is
+   * anything to authorize: a session the owner no longer has discloses nothing
+   * and is only evidence that the next attempt may start, so a user whose
+   * session authority refuses deleted rows can still Start again. In every
+   * other state the session can be opened or copied — it answers an idempotent
+   * Start, a readability probe reads its transcript, Continue carries it — so
+   * an actor the authority refuses is refused the slot rather than served from
+   * it.
    */
   const currentSlotState = async (
     actor: TasksActor,
@@ -168,11 +183,10 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
   ): Promise<{ link: TaskSessionLink | null; state: SessionLiveness | null }> => {
     const link = await deps.store.links.getCurrent(actor.scopeId, taskId, slot)
     if (!link) return { link: null, state: null }
-    if (!(await deps.authorization.authorizeSessionOpen(actor, link.sessionRef))) {
-      refuse("forbidden", `No access to the session slot ${slot} holds`)
-    }
     const states = await livenessOf([link.sessionRef])
-    return { link, state: states.get(link.sessionRef.sessionId) ?? "unavailable" }
+    const state = states.get(link.sessionRef.sessionId) ?? "unavailable"
+    if (state !== "deleted") await requireSessionOpen(actor, link)
+    return { link, state }
   }
 
   /**
@@ -218,6 +232,29 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
     const current = await currentSlotState(actor, taskId, request.slot)
     checkAttempt(request.attempt, current)
     return { task, preset, current, configurationDigest: await startConfigurationDigest({ preset, slot: request.slot }) }
+  }
+
+  /**
+   * The first message, after the link that names its session is durable. It is
+   * repeated on every Start of that attempt because a committed link is no
+   * evidence the message was submitted; the host decides the message id from
+   * the origin, so a session that already has it is left alone.
+   */
+  const handOff = async (
+    actor: TasksActor,
+    task: Task,
+    request: StartRequest,
+    session: SessionReference,
+  ): Promise<void> => {
+    const handed = await deps.bridge.handoff({
+      actor,
+      task,
+      slot: request.slot,
+      attempt: request.attempt,
+      handoffText: request.handoffText,
+      session,
+    })
+    if (!handed.ok) throw new TasksError(handed.error)
   }
 
   return {
@@ -401,10 +438,10 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       const { task, preset, current, configurationDigest } = await startSubject(actor, taskId, request)
 
       // Attempt `current` while the session is live is the idempotent
-      // re-request: the slot already holds that session, so nothing is created
-      // and no first message is resent. A request that resolved to another
-      // configuration is not that re-request, and answering it with this
-      // session would report the other preset as the one running.
+      // re-request: the slot already holds that session, so nothing is
+      // created. A request that resolved to another configuration is not that
+      // re-request, and answering it with this session would report the other
+      // preset as the one running.
       if (current.link && current.state === "live" && request.attempt === current.link.attempt) {
         if (current.link.configurationDigest !== configurationDigest) {
           refuse(
@@ -412,10 +449,18 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
             `Slot ${request.slot} attempt ${request.attempt} is running a different configuration; start the next attempt instead`,
           )
         }
+        await handOff(actor, task, request, current.link.sessionRef)
         return { link: linkView(current.link, "live"), created: false }
       }
 
-      const continued = request.continueFromPrevious ? (current.link?.sessionRef ?? null) : null
+      // Continue has the host read the previous session's transcript, so the
+      // authority answers again immediately before the call rather than the
+      // slot read above standing in for it: a grant lost since then must not
+      // reach the bridge as a transcript to copy. A session the owner reports
+      // deleted carries nothing over and was never authorized here.
+      const continued = request.continueFromPrevious && current.link && current.state !== "deleted" ? current.link : null
+      if (continued) await requireSessionOpen(actor, continued)
+
       const started = await deps.bridge.start({
         actor,
         task,
@@ -423,11 +468,10 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         slot: request.slot,
         attempt: request.attempt,
         previewDigest: request.previewDigest,
-        handoffText: request.handoffText,
         continueFromPrevious: request.continueFromPrevious,
         clientRequestId: request.clientRequestId,
         configurationDigest,
-        previousSession: continued,
+        previousSession: continued?.sessionRef ?? null,
       })
       if (!started.ok) throw new TasksError(started.error)
 
@@ -446,18 +490,35 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       }
 
       // The session exists by now, so the link commits under live authority and
-      // against the revision that authorized this Start. That one predicate is
-      // the whole condition — a revision names an immutable row, so a task
-      // archived, moved or re-attempted meanwhile fails here — and the write
-      // carries it rather than a re-read, because a store that decides nothing
-      // until commit decides it there. Advancing the revision is also what
-      // makes an edit that read the task before the link existed fail its own
-      // compare-and-set.
+      // against the revisions that authorized this Start. A task revision names
+      // an immutable row, so a task archived, moved or re-attempted meanwhile
+      // fails here, and the write carries that revision rather than a re-read,
+      // because a store that decides nothing until commit decides it there.
+      // Advancing the revision is also what makes an edit that read the task
+      // before the link existed fail its own compare-and-set. The preset is
+      // re-read for the same reason the task is pinned: its instructions and
+      // configuration went into the session, and a preset edited while the
+      // session was being created would leave the link naming a revision that
+      // never ran.
       const settled = await deps.store.transaction(async (tx): Promise<{ link: TaskSessionLink; created: boolean }> => {
         await authorize(actor, task.projectId, "write")
+        const settling = await tx.presets.get(actor.scopeId, preset.id)
+        if (!settling || settling.revision !== preset.revision) {
+          refuse("conflict", `Preset ${preset.id} changed while its session was being created`)
+        }
         const inserted = await tx.links.insert(link)
         if (inserted.status === "exists") {
-          if (inserted.link.sessionRef.sessionId === link.sessionRef.sessionId) return { link: inserted.link, created: false }
+          // Another client reached this origin first. Its link answers this
+          // request only if it is the same session started for the same
+          // configuration in the same workspace; anything else is a different
+          // Start, and reporting it as this one would name the wrong preset.
+          if (
+            inserted.link.sessionRef.sessionId === link.sessionRef.sessionId
+            && inserted.link.sessionRef.workspaceId === link.sessionRef.workspaceId
+            && inserted.link.configurationDigest === link.configurationDigest
+          ) {
+            return { link: inserted.link, created: false }
+          }
           return refuse("conflict", `Slot ${request.slot} attempt ${request.attempt} already holds another session`)
         }
         if (!(await tx.tasks.update({ ...task, revision: task.revision + 1, updatedAt: deps.clock.now() }, task.revision))) {
@@ -471,6 +532,8 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         if (cause instanceof TasksStoreConflict) refuse("conflict", cause.message)
         throw cause
       })
+
+      await handOff(actor, task, request, settled.link.sessionRef)
 
       const states = await livenessOf([settled.link.sessionRef])
       return {

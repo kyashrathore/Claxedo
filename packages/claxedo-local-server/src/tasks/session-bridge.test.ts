@@ -10,7 +10,15 @@ import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxe
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { putSessionMeta, sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
-import { startConfigurationDigest, type Preset, type StartCommand, type Task, type TaskSessionLink } from "@claxedo/tasks"
+import {
+  startConfigurationDigest,
+  type Preset,
+  type SessionHandoffCommand,
+  type SessionReference,
+  type StartCommand,
+  type Task,
+  type TaskSessionLink,
+} from "@claxedo/tasks"
 import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
@@ -134,11 +142,26 @@ async function startCommand(input: {
     slot: "primary",
     attempt: 1,
     previewDigest: input.digest,
-    handoffText: null,
     continueFromPrevious: false,
     clientRequestId: "req_1",
     configurationDigest: await startConfigurationDigest({ preset: chosen, slot: "primary" }),
     previousSession: null,
+  }
+}
+
+function handoffCommand(input: {
+  workspaceId: string | null
+  projectId?: string
+  session: SessionReference
+  attempt?: number
+}): SessionHandoffCommand {
+  return {
+    actor: { scopeId: "local", ownerId: "local" },
+    task: task(input),
+    slot: "primary",
+    attempt: input.attempt ?? 1,
+    handoffText: null,
+    session: input.session,
   }
 }
 
@@ -258,6 +281,12 @@ describe("local tasks session bridge", () => {
       harness: { id: CONNECTION_ID, access: "connection" },
     })
 
+    // The kit commits the link between the two calls, so the create hands the
+    // task to nobody on its own.
+    expect(host.turns).toEqual([])
+    const handed = await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: started.session.sessionRef }))
+    expect(handed).toMatchObject({ ok: true, sent: true })
+
     const messageId = host.turns[0] ?? ""
     expect(messageId).toMatch(/^msg_tasks_/)
     const messages = await waitForMessage(host.request, sessionId, messageId)
@@ -267,8 +296,105 @@ describe("local tasks session bridge", () => {
     expect(replayed).toMatchObject({ ok: true })
     if (!replayed.ok) return
     expect(replayed.session.sessionRef.sessionId).toBe(sessionId)
+    const rehanded = await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: started.session.sessionRef }))
+    expect(rehanded).toMatchObject({ ok: true, sent: false })
     expect(host.created).toHaveLength(1)
     expect(host.turns).toEqual([messageId])
+  })
+
+  test("a Start retried before the task was handed over creates once and sends the message once", async () => {
+    // The kit commits the link between `start` and `handoff`, so a process that
+    // died there comes back to a live session with no first message. Repeating
+    // `start` must neither create a second session nor send anything, and the
+    // handoff that follows has to send the task exactly once.
+    const host = await harness()
+    roots.push(host.root)
+    const previewed = await host.bridge.preview({
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      preset: preset(),
+      slot: "primary",
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+    })
+    if (!previewed.ok) throw new Error("preview refused")
+    const command = await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest })
+
+    const started = await host.bridge.start(command)
+    if (!started.ok) throw new Error("start refused")
+    const retried = await host.bridge.start(command)
+    if (!retried.ok) throw new Error("retried start refused")
+    expect(retried.session.sessionRef).toEqual(started.session.sessionRef)
+    expect(host.created).toHaveLength(1)
+    expect(host.turns).toEqual([])
+
+    const handed = await host.bridge.handoff(
+      handoffCommand({ workspaceId: host.workspaceId, session: retried.session.sessionRef }),
+    )
+    expect(handed).toMatchObject({ ok: true, sent: true })
+    const messageId = host.turns[0] ?? ""
+    const messages = await waitForMessage(host.request, retried.session.sessionRef.sessionId, messageId)
+    expect(JSON.stringify(messages)).toContain("Fix the importer")
+    expect(host.turns).toEqual([messageId])
+  })
+
+  test("refuses the handoff rather than sending it when the runtime will not say whether it is already there", async () => {
+    const host = await harness()
+    roots.push(host.root)
+    const refused = await host.bridge.handoff(handoffCommand({
+      workspaceId: host.workspaceId,
+      session: { sessionId: "ses_tasks_unknown", workspaceId: host.workspaceId },
+    }))
+    expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
+    expect(host.turns).toEqual([])
+  })
+
+  test("serializes two starts on one origin, so the second cannot create over the first configuration", async () => {
+    // Both requests resolve the same session id from the origin, and this host
+    // has no reservation table to collide in: without the in-process lock they
+    // both read the id as absent and create it.
+    const host = await harness()
+    roots.push(host.root)
+    const previewCommand = {
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      preset: preset(),
+      slot: "primary" as const,
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+    }
+    const rewritten: Preset = { ...preset(), revision: 4, instructions: "Ignore the code and rewrite it." }
+    const first = await host.bridge.preview(previewCommand)
+    const second = await host.bridge.preview({ ...previewCommand, preset: rewritten })
+    if (!first.ok || !second.ok) throw new Error("preview refused")
+    const firstCommand = await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest })
+    const secondCommand = await startCommand({
+      workspaceId: host.workspaceId,
+      digest: second.preview.digest,
+      preset: rewritten,
+    })
+
+    const [one, two] = await Promise.all([host.bridge.start(firstCommand), host.bridge.start(secondCommand)])
+
+    // Which request reaches the lock first is not this host's promise; that
+    // only one of them creates, and that the session it created runs its own
+    // configuration, is.
+    const started = [one, two].filter((outcome) => outcome.ok)
+    expect(started).toHaveLength(1)
+    expect([one, two].filter((outcome) => !outcome.ok)).toMatchObject([{ error: { code: "conflict" } }])
+    expect(host.created).toHaveLength(1)
+    const winner = started.at(0)
+    if (!winner?.ok) return
+    const [ran, lost] = one.ok
+      ? ["Read before you write.", "Ignore the code and rewrite it."]
+      : ["Ignore the code and rewrite it.", "Read before you write."]
+    const config: unknown = await (await host.request(`/session/${winner.session.sessionRef.sessionId}/config`)).json()
+    expect(config).toMatchObject({ instructions: expect.stringContaining(ran) })
+    expect(JSON.stringify(config)).not.toContain(lost)
   })
 
   test("carries the previous session into the instruction block when Continue is chosen", async () => {
@@ -291,6 +417,10 @@ describe("local tasks session bridge", () => {
     expect(started).toMatchObject({ ok: true })
     if (!started.ok) return
     const previous = started.session.sessionRef
+    expect(await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: previous }))).toMatchObject({
+      ok: true,
+      sent: true,
+    })
     await waitForMessage(host.request, previous.sessionId, host.turns[0] ?? "")
 
     const continued = await host.bridge.preview({
@@ -336,6 +466,7 @@ describe("local tasks session bridge", () => {
     const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
     if (!started.ok) throw new Error("start refused")
     const previous = started.session.sessionRef
+    await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: previous }))
     await waitForMessage(host.request, previous.sessionId, host.turns[0] ?? "")
 
     const unchecked = await host.bridge.preview({
@@ -358,6 +489,54 @@ describe("local tasks session bridge", () => {
     expect(restarted).toMatchObject({ ok: true })
     expect(host.created).toHaveLength(2)
     expect(host.created[1]?.instructions).not.toContain("<session-handoff")
+  })
+
+  test("offers no transcript from a session the kit reports deleted, even while the runtime still holds it", async () => {
+    // A deleted session is the one state the kit does not ask its session
+    // authority about, because nothing can be opened or continued from it. Its
+    // transcript must therefore not be read here either.
+    const host = await harness()
+    roots.push(host.root)
+    const previewCommand = {
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      preset: preset(),
+      slot: "primary" as const,
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+    }
+    const first = await host.bridge.preview(previewCommand)
+    if (!first.ok) throw new Error("preview refused")
+    const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
+    if (!started.ok) throw new Error("start refused")
+    const previous = started.session.sessionRef
+    await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: previous }))
+    await waitForMessage(host.request, previous.sessionId, host.turns[0] ?? "")
+
+    const digest = await startConfigurationDigest({ preset: preset(), slot: "primary" })
+    const gone = await host.bridge.preview({
+      ...previewCommand,
+      attempt: 2,
+      continueFromPrevious: true,
+      currentLink: link(previous, digest),
+      currentState: "deleted",
+    })
+    expect(gone).toMatchObject({ ok: true })
+    if (!gone.ok) return
+    expect(gone.preview.previousTranscriptReadable).toBe(false)
+
+    const readable = await host.bridge.preview({
+      ...previewCommand,
+      attempt: 2,
+      continueFromPrevious: true,
+      currentLink: link(previous, digest),
+      currentState: "archived",
+    })
+    expect(readable).toMatchObject({ ok: true })
+    if (!readable.ok) return
+    expect(readable.preview.previousTranscriptReadable).toBe(true)
   })
 
   test("refuses to adopt the attempt's session for another configuration and leaves its instructions alone", async () => {

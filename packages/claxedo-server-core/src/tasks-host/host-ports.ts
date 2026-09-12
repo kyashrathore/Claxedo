@@ -1,9 +1,3 @@
-/**
- * What a host supplies to the Tasks kit besides its store, authority and
- * session bridge: the clock every persisted timestamp comes from, the id mint
- * every row identity comes from, and the structural capability answer a preset
- * is validated against when it is saved.
- */
 import { randomUUID } from "node:crypto"
 import type { HarnessReference, TasksCapabilitiesPort, TasksClockPort, TasksHostCapabilities, TasksIdsPort } from "@claxedo/tasks"
 
