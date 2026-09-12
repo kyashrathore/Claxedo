@@ -172,7 +172,7 @@ export async function putCredential(
   }
 
   const ts = now()
-  const row = {
+  const fields = {
     id,
     org_id: orgId,
     owner,
@@ -224,16 +224,16 @@ export async function putCredential(
       )
       .all()
       .some((other) => other.id !== id)
-    const values = { ...row, is_active: fanoutEligibleAuth(input.kind, input.provider_id) && !held }
+    const row = { ...fields, is_active: fanoutEligibleAuth(input.kind, input.provider_id) && !held }
     if (existing) {
       db.update(ClaxedoProviderCredentialTable)
-        .set(values)
+        .set(row)
         .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, id)))
         .run()
     } else {
-      db.insert(ClaxedoProviderCredentialTable).values(values).run()
+      db.insert(ClaxedoProviderCredentialTable).values(row).run()
     }
-    return values
+    return row
   })
 
   for (const cred of replaced) {
