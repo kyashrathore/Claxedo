@@ -111,7 +111,12 @@ describe("shell data query factories", () => {
       },
     })
 
+    // The resolved-request ledger this writer keeps beside the entry is offered
+    // the same session scope; with no previous ledger it writes nothing.
     expect(writes).toEqual([{
+      queryKey: ["shell", "session", "ses_shell", "resolved-requests"],
+      value: undefined,
+    }, {
       queryKey: ["shell", "session", "ses_shell", "requests"],
       value: {
         permissions: [{ id: "perm_1", sessionID: "ses_shell", permission: "edit", patterns: [], metadata: {}, always: [] }],
@@ -130,7 +135,8 @@ describe("shell data query factories", () => {
     const writes: unknown[] = []
     setSessionRequestsQueryData({
       queryClient: {
-        setQueryData: (_queryKey, value) => {
+        setQueryData: (queryKey, value) => {
+          if (queryKey[3] !== "requests") return
           writes.push(typeof value === "function" ? value(previous) : value)
         },
       },
@@ -150,7 +156,8 @@ describe("shell data query factories", () => {
     }
     setSessionRequestsQueryData({
       queryClient: {
-        setQueryData: (_queryKey, value) => {
+        setQueryData: (queryKey, value) => {
+          if (queryKey[3] !== "requests") return
           writes.push(typeof value === "function" ? value(previous) : value)
         },
       },

@@ -6,6 +6,8 @@ import {
   dispatchSessionStatusEvent,
   promptSessionStatusMeta,
 } from "@/features/session/store/session-status-dispatcher"
+import { applyDirectorySessionMeta } from "@/features/session/store/directory-session-meta"
+import { applyDirectoryEventToShellQueries } from "@/features/session/data/sync/directory-event-projector"
 import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
   abortSidebarSessionStatusBatches,
@@ -324,6 +326,36 @@ describe("publishFocusedRailSessionMeta", () => {
 
     expect(published).toBe(false)
     expect(applied).toEqual([])
+  })
+
+  // The rail batch is the second writer of these canonical entries, so it has
+  // to respect a reply the pane's own writer already recorded.
+  test("does not re-open the focused row's answered question", () => {
+    queryClient.removeQueries({ queryKey: ["shell", "session"] })
+    const asked = {
+      id: "que_rail",
+      sessionID: "ses_rail",
+      questions: [{ question: "Keep going?", header: "Next", options: [] }],
+    }
+    const focused = target("central:ses_rail", "ses_rail")
+    applyDirectoryEventToShellQueries({ event: { type: "question.asked", properties: asked }, directory: "/w" })
+    applyDirectoryEventToShellQueries({
+      event: { type: "question.replied", properties: { sessionID: "ses_rail", requestID: "que_rail" } },
+      directory: "/w",
+    })
+
+    publishFocusedRailSessionMeta({
+      focused,
+      group: group([focused]),
+      statuses: { ses_rail: { type: "idle" } },
+      permissions: [],
+      questions: [asked],
+      apply: applyDirectorySessionMeta,
+    })
+
+    expect(queryClient.getQueryData<{ questions: unknown[] }>(
+      shellDataKeys.sessionId("ses_rail", "requests"),
+    )?.questions).toEqual([])
   })
 
   test("publishes successful legs without inventing data for failed legs", () => {

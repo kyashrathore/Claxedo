@@ -1,6 +1,7 @@
-import type { PermissionRequest, QuestionRequest, SessionStatus } from "../data/sync/queries"
+import type { PermissionRequest, QuestionRequest, SessionRequestsQueryData, SessionStatus } from "../data/sync/queries"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
+import { pendingSessionRequests } from "../data/sync/writers"
 import { dispatchSessionRequestsEvent, dispatchSessionStatusEvent } from "./session-status-dispatcher"
 import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSessionPermissions, pickSessionQuestions } from "./session-store"
 
@@ -11,12 +12,15 @@ import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSes
  * This payload has two independent authorities that fetch it — the session
  * pane's hydration (`syncSessionMeta`) and the rail's status batch — so the
  * derivation lives here rather than inside either of them. Both must produce
- * the same status from the same bytes, or the two writers flap against each
+ * the same entries from the same bytes, or the two writers flap against each
  * other through the shared cache entry.
  *
- * The two rules a raw write-through would lose: an absent permission/question
- * list means "unknown, keep what we had" rather than "empty", and a reported
- * status is merged against active turn evidence rather than trusted outright.
+ * The three rules a raw write-through would lose: an absent
+ * permission/question list means "unknown, keep what we had" rather than
+ * "empty"; a read taken before a reply still lists the request it answered, so
+ * it may neither re-open that request nor count it as a turn still running;
+ * and a reported status is merged against active turn evidence rather than
+ * trusted outright.
  */
 export function applyDirectorySessionMeta(input: {
   sessionID: string
@@ -24,15 +28,17 @@ export function applyDirectorySessionMeta(input: {
   permissions?: PermissionRequest[]
   questions?: QuestionRequest[]
 }) {
-  const cachedRequests = queryClient.getQueryData<{ permissions: PermissionRequest[]; questions: QuestionRequest[] }>(
+  const cachedRequests = queryClient.getQueryData<SessionRequestsQueryData>(
     shellDataKeys.sessionId(input.sessionID, "requests"),
   )
-  const sessionPermissions = input.permissions === undefined
-    ? cachedRequests?.permissions ?? []
-    : pickSessionPermissions(input.permissions, input.sessionID)
-  const sessionQuestions = input.questions === undefined
-    ? cachedRequests?.questions ?? []
-    : pickSessionQuestions(input.questions, input.sessionID)
+  const pending = pendingSessionRequests({
+    queryClient,
+    sessionId: input.sessionID,
+    permissions: input.permissions && pickSessionPermissions(input.permissions, input.sessionID),
+    questions: input.questions && pickSessionQuestions(input.questions, input.sessionID),
+  })
+  const sessionPermissions = pending.permissions ?? cachedRequests?.permissions ?? []
+  const sessionQuestions = pending.questions ?? cachedRequests?.questions ?? []
   // A directory read is only authoritative about the absence of active
   // requests when both request legs completed (or both were already cached).
   // If either leg failed, treating its missing value as [] can let an idle

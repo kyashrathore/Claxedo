@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
-import type { SessionStatus } from "../data/sync/queries"
+import type { QuestionRequest, SessionStatus } from "../data/sync/queries"
+import { applyDirectoryEventToShellQueries } from "../data/sync/directory-event-projector"
 import { applyDirectorySessionMeta } from "./directory-session-meta"
-import { subscribeSessionActivity } from "./session-status-dispatcher"
+import { dispatchSessionRequestsEvent, subscribeSessionActivity } from "./session-status-dispatcher"
 
 const SESSION = "ses_meta"
 const OTHER = "ses_other"
@@ -17,6 +18,9 @@ const readRequests = (sessionID: string) =>
 
 const permission = (id: string, sessionID: string) =>
   ({ id, sessionID, permission: "edit", patterns: [], metadata: {}, always: [] }) as never
+
+const question = (id: string, sessionID: string): QuestionRequest =>
+  ({ id, sessionID, questions: [{ question: "Keep going?", header: "Next", options: [] }] })
 
 describe("applyDirectorySessionMeta", () => {
   beforeEach(() => {
@@ -130,5 +134,141 @@ describe("applyDirectorySessionMeta", () => {
 
     expect(readStatus(SESSION)).toBe(status)
     expect(readRequests(SESSION)).toBe(requests)
+  })
+})
+
+describe("applyDirectorySessionMeta, requests already resolved", () => {
+  const RESOLVED = "ses_resolved"
+
+  beforeEach(() => {
+    queryClient.removeQueries({ queryKey: ["shell", "session"] })
+  })
+
+  const ask = (question: QuestionRequest) =>
+    applyDirectoryEventToShellQueries({
+      event: { type: "question.asked", properties: question },
+      directory: "/w",
+    })
+  const reply = (type: "question.replied" | "permission.replied", sessionID: string, requestID: string) =>
+    applyDirectoryEventToShellQueries({
+      event: { type, properties: { sessionID, requestID } },
+      directory: "/w",
+    })
+
+  test("a read that still lists a replied question does not put it back", () => {
+    ask(question("que_answered", RESOLVED))
+    reply("question.replied", RESOLVED, "que_answered")
+
+    applyDirectorySessionMeta({
+      sessionID: RESOLVED,
+      status: { [RESOLVED]: { type: "idle" } },
+      permissions: [],
+      questions: [question("que_answered", RESOLVED)],
+    })
+
+    expect(readRequests(RESOLVED)?.questions).toEqual([])
+  })
+
+  test("a read that still lists a replied permission does not put it back", () => {
+    applyDirectorySessionMeta({
+      sessionID: RESOLVED,
+      status: { [RESOLVED]: { type: "busy" } },
+      permissions: [permission("perm_decided", RESOLVED)],
+      questions: [],
+    })
+    reply("permission.replied", RESOLVED, "perm_decided")
+
+    applyDirectorySessionMeta({
+      sessionID: RESOLVED,
+      status: { [RESOLVED]: { type: "idle" } },
+      permissions: [permission("perm_decided", RESOLVED)],
+      questions: [],
+    })
+
+    expect(readRequests(RESOLVED)?.permissions).toEqual([])
+  })
+
+  // The question dock clears its own entry on a successful reply, before the
+  // server's `question.replied` frame arrives.
+  test("an optimistically cleared question does not come back with the next read", () => {
+    ask(question("que_answered", RESOLVED))
+    dispatchSessionRequestsEvent({
+      event: {
+        type: "session.requests",
+        source: "optimistic",
+        sessionID: RESOLVED,
+        requests: (previous) => ({
+          permissions: previous?.permissions ?? [],
+          questions: (previous?.questions ?? []).filter((item) => item.id !== "que_answered"),
+        }),
+      },
+    })
+
+    applyDirectorySessionMeta({
+      sessionID: RESOLVED,
+      status: { [RESOLVED]: { type: "idle" } },
+      permissions: [],
+      questions: [question("que_answered", RESOLVED)],
+    })
+
+    expect(readRequests(RESOLVED)?.questions).toEqual([])
+  })
+
+  test("a replied question in the read is no evidence that the turn is still running", () => {
+    ask(question("que_answered", RESOLVED))
+    reply("question.replied", RESOLVED, "que_answered")
+    queryClient.setQueryData(shellDataKeys.sessionId(RESOLVED, "status"), { type: "busy" })
+
+    applyDirectorySessionMeta({
+      sessionID: RESOLVED,
+      status: { [RESOLVED]: { type: "idle" } },
+      permissions: [],
+      questions: [question("que_answered", RESOLVED)],
+    })
+
+    expect(readStatus(RESOLVED)).toEqual({ type: "idle" })
+  })
+
+  test("a question asked after the reply reaches the dock through the same read", () => {
+    ask(question("que_answered", RESOLVED))
+    reply("question.replied", RESOLVED, "que_answered")
+
+    applyDirectorySessionMeta({
+      sessionID: RESOLVED,
+      status: { [RESOLVED]: { type: "busy" } },
+      permissions: [],
+      questions: [question("que_answered", RESOLVED), question("que_next", RESOLVED)],
+    })
+
+    expect(readRequests(RESOLVED)?.questions).toEqual([question("que_next", RESOLVED)])
+  })
+
+  test("the server asking the same request again re-opens it", () => {
+    ask(question("que_answered", RESOLVED))
+    reply("question.replied", RESOLVED, "que_answered")
+
+    ask(question("que_answered", RESOLVED))
+    applyDirectorySessionMeta({
+      sessionID: RESOLVED,
+      permissions: [],
+      questions: [question("que_answered", RESOLVED)],
+    })
+
+    expect(readRequests(RESOLVED)?.questions).toEqual([question("que_answered", RESOLVED)])
+  })
+
+  // The guard has to retire, or a reused id could never be shown again.
+  test("a read that stops listing the replied question retires the guard", () => {
+    ask(question("que_answered", RESOLVED))
+    reply("question.replied", RESOLVED, "que_answered")
+    applyDirectorySessionMeta({ sessionID: RESOLVED, permissions: [], questions: [] })
+
+    applyDirectorySessionMeta({
+      sessionID: RESOLVED,
+      permissions: [],
+      questions: [question("que_answered", RESOLVED)],
+    })
+
+    expect(readRequests(RESOLVED)?.questions).toEqual([question("que_answered", RESOLVED)])
   })
 })
