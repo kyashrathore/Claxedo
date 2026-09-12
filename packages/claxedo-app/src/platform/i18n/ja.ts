@@ -261,8 +261,12 @@ export const dict = {
   "prompt.attachment.remove": "添付ファイルを削除",
   "prompt.action.send": "送信",
   "prompt.action.stop": "停止",
-  "prompt.toast.pasteUnsupported.title": "サポートされていない添付ファイル",
-  "prompt.toast.pasteUnsupported.description": "画像、PDF、またはテキストファイルのみ添付できます。",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} はこの添付ファイルを扱えません",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} には {{mime}} を渡す入力がなく、このセッションにはファイルを置くローカルワークスペースもありません。",
+  "prompt.toast.attachmentUnreadable.title": "添付ファイルを読み取れませんでした",
+  "prompt.toast.attachmentUnreadable.description":
+    "このデバイスから {{filename}} を読み取れませんでした。",
   "prompt.toast.modelAgentRequired.title": "エージェントとモデルを選択",
   "prompt.toast.modelAgentRequired.description": "プロンプトを送信する前にエージェントとモデルを選択してください。",
   "prompt.toast.worktreeCreateFailed.title": "ワークツリーの作成に失敗しました",

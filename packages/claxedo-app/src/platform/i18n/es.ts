@@ -281,8 +281,12 @@ export const dict = {
   "prompt.action.send": "Enviar",
   "prompt.action.stop": "Detener",
 
-  "prompt.toast.pasteUnsupported.title": "Adjunto no compatible",
-  "prompt.toast.pasteUnsupported.description": "Solo se pueden adjuntar imágenes, PDFs o archivos de texto aquí.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} no puede usar este adjunto",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} no tiene una entrada de prompt para {{mime}}, y esta sesión no tiene un espacio de trabajo local donde guardar el archivo.",
+  "prompt.toast.attachmentUnreadable.title": "No se pudo leer el adjunto",
+  "prompt.toast.attachmentUnreadable.description":
+    "No se pudo leer {{filename}} desde este dispositivo.",
   "prompt.toast.modelAgentRequired.title": "Selecciona un agente y modelo",
   "prompt.toast.modelAgentRequired.description": "Elige un agente y modelo antes de enviar un prompt.",
   "prompt.toast.worktreeCreateFailed.title": "Fallo al crear el árbol de trabajo",

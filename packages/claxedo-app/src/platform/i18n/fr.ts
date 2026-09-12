@@ -261,9 +261,12 @@ export const dict = {
   "prompt.attachment.remove": "Supprimer la pièce jointe",
   "prompt.action.send": "Envoyer",
   "prompt.action.stop": "Arrêter",
-  "prompt.toast.pasteUnsupported.title": "Pièce jointe non prise en charge",
-  "prompt.toast.pasteUnsupported.description":
-    "Seules les images, les PDF ou les fichiers texte peuvent être joints ici.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} ne peut pas utiliser cette pièce jointe",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} n'a pas d'entrée de prompt pour {{mime}}, et cette session n'a pas d'espace de travail local pour conserver le fichier.",
+  "prompt.toast.attachmentUnreadable.title": "La pièce jointe n'a pas pu être lue",
+  "prompt.toast.attachmentUnreadable.description":
+    "{{filename}} n'a pas pu être lu depuis cet appareil.",
   "prompt.toast.modelAgentRequired.title": "Sélectionnez un agent et un modèle",
   "prompt.toast.modelAgentRequired.description": "Choisissez un agent et un modèle avant d'envoyer un message.",
   "prompt.toast.worktreeCreateFailed.title": "Échec de la création de l'arbre de travail",

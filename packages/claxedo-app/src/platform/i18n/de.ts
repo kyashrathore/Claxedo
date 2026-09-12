@@ -266,8 +266,12 @@ export const dict = {
   "prompt.attachment.remove": "Anhang entfernen",
   "prompt.action.send": "Senden",
   "prompt.action.stop": "Stopp",
-  "prompt.toast.pasteUnsupported.title": "Nicht unterstützter Anhang",
-  "prompt.toast.pasteUnsupported.description": "Hier können nur Bilder, PDFs oder Textdateien angehängt werden.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} kann diesen Anhang nicht verarbeiten",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} hat keine Prompt-Eingabe für {{mime}}, und diese Sitzung hat keinen lokalen Arbeitsbereich, in dem die Datei bleiben könnte.",
+  "prompt.toast.attachmentUnreadable.title": "Anhang konnte nicht gelesen werden",
+  "prompt.toast.attachmentUnreadable.description":
+    "{{filename}} konnte von diesem Gerät nicht gelesen werden.",
   "prompt.toast.modelAgentRequired.title": "Wählen Sie einen Agenten und ein Modell",
   "prompt.toast.modelAgentRequired.description":
     "Wählen Sie einen Agenten und ein Modell, bevor Sie eine Eingabe senden.",

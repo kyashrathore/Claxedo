@@ -261,8 +261,12 @@ export const dict = {
   "prompt.attachment.remove": "첨부 파일 제거",
   "prompt.action.send": "전송",
   "prompt.action.stop": "중지",
-  "prompt.toast.pasteUnsupported.title": "지원되지 않는 첨부 파일",
-  "prompt.toast.pasteUnsupported.description": "이미지, PDF 또는 텍스트 파일만 첨부할 수 있습니다.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}}에서 이 첨부 파일을 사용할 수 없습니다",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}}에는 {{mime}}을 전달할 입력이 없고, 이 세션에는 파일을 보관할 로컬 워크스페이스도 없습니다.",
+  "prompt.toast.attachmentUnreadable.title": "첨부 파일을 읽을 수 없습니다",
+  "prompt.toast.attachmentUnreadable.description":
+    "이 기기에서 {{filename}}을 읽을 수 없습니다.",
   "prompt.toast.modelAgentRequired.title": "에이전트 및 모델 선택",
   "prompt.toast.modelAgentRequired.description": "프롬프트를 보내기 전에 에이전트와 모델을 선택하세요.",
   "prompt.toast.worktreeCreateFailed.title": "작업 트리 생성 실패",

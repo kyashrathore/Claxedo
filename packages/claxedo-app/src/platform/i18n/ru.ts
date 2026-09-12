@@ -281,8 +281,12 @@ export const dict = {
   "prompt.action.send": "Отправить",
   "prompt.action.stop": "Остановить",
 
-  "prompt.toast.pasteUnsupported.title": "Неподдерживаемое вложение",
-  "prompt.toast.pasteUnsupported.description": "Здесь можно прикрепить только изображения, PDF или текстовые файлы.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} не может использовать это вложение",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "У {{harness}} нет входа промпта для {{mime}}, а у этой сессии нет локального рабочего пространства, где мог бы остаться файл.",
+  "prompt.toast.attachmentUnreadable.title": "Не удалось прочитать вложение",
+  "prompt.toast.attachmentUnreadable.description":
+    "Не удалось прочитать {{filename}} с этого устройства.",
   "prompt.toast.modelAgentRequired.title": "Выберите агента и модель",
   "prompt.toast.modelAgentRequired.description": "Выберите агента и модель перед отправкой запроса.",
   "prompt.toast.worktreeCreateFailed.title": "Не удалось создать worktree",

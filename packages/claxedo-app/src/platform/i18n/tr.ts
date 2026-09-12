@@ -286,8 +286,12 @@ export const dict = {
   "prompt.action.send": "Gönder",
   "prompt.action.stop": "Durdur",
 
-  "prompt.toast.pasteUnsupported.title": "Desteklenmeyen ek",
-  "prompt.toast.pasteUnsupported.description": "Buraya yalnızca resimler, PDF'ler veya metin dosyaları eklenebilir.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} bu eki kullanamıyor",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} için {{mime}} alan bir istem girişi yok ve bu oturumun dosyayı tutacak yerel bir çalışma alanı da yok.",
+  "prompt.toast.attachmentUnreadable.title": "Ek okunamadı",
+  "prompt.toast.attachmentUnreadable.description":
+    "{{filename}} bu cihazdan okunamadı.",
   "prompt.toast.modelAgentRequired.title": "Bir ajan ve model seçin",
   "prompt.toast.modelAgentRequired.description": "Komut göndermeden önce bir ajan ve model seçin.",
   "prompt.toast.worktreeCreateFailed.title": "Çalışma ağacı oluşturulamadı",

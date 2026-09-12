@@ -262,8 +262,12 @@ export const dict = {
   "prompt.attachment.remove": "Usuń załącznik",
   "prompt.action.send": "Wyślij",
   "prompt.action.stop": "Zatrzymaj",
-  "prompt.toast.pasteUnsupported.title": "Nieobsługiwany załącznik",
-  "prompt.toast.pasteUnsupported.description": "Można tutaj załączać tylko obrazy, pliki PDF lub pliki tekstowe.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} nie obsługuje tego załącznika",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} nie ma wejścia promptu dla {{mime}}, a ta sesja nie ma lokalnego obszaru roboczego, w którym plik mógłby pozostać.",
+  "prompt.toast.attachmentUnreadable.title": "Nie udało się odczytać załącznika",
+  "prompt.toast.attachmentUnreadable.description":
+    "Nie udało się odczytać {{filename}} z tego urządzenia.",
   "prompt.toast.modelAgentRequired.title": "Wybierz agenta i model",
   "prompt.toast.modelAgentRequired.description": "Wybierz agenta i model przed wysłaniem zapytania.",
   "prompt.toast.worktreeCreateFailed.title": "Nie udało się utworzyć drzewa roboczego",

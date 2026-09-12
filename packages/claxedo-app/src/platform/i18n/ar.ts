@@ -261,8 +261,12 @@ export const dict = {
   "prompt.attachment.remove": "إزالة المرفق",
   "prompt.action.send": "إرسال",
   "prompt.action.stop": "توقف",
-  "prompt.toast.pasteUnsupported.title": "مرفق غير مدعوم",
-  "prompt.toast.pasteUnsupported.description": "يمكن إرفاق الصور أو ملفات PDF أو الملفات النصية فقط هنا.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} لا يمكنه استخدام هذا المرفق",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "لا يوجد في {{harness}} مدخل مطالبة لـ {{mime}}، وهذه الجلسة لا تحتوي على مساحة عمل محلية لحفظ الملف.",
+  "prompt.toast.attachmentUnreadable.title": "تعذّر قراءة المرفق",
+  "prompt.toast.attachmentUnreadable.description":
+    "تعذّر قراءة {{filename}} من هذا الجهاز.",
   "prompt.toast.modelAgentRequired.title": "حدد وكيلاً ونموذجاً",
   "prompt.toast.modelAgentRequired.description": "اختر وكيلاً ونموذجاً قبل إرسال الموجه.",
   "prompt.toast.worktreeCreateFailed.title": "فشل إنشاء شجرة العمل",

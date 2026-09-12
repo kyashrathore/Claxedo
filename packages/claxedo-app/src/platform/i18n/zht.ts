@@ -283,8 +283,12 @@ export const dict = {
   "prompt.action.send": "傳送",
   "prompt.action.stop": "停止",
 
-  "prompt.toast.pasteUnsupported.title": "不支援的附件",
-  "prompt.toast.pasteUnsupported.description": "此處僅能附加圖片、PDF 或文字檔案。",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} 無法使用此附件",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} 沒有接收 {{mime}} 的提示輸入，而此工作階段也沒有可保存該檔案的本機工作區。",
+  "prompt.toast.attachmentUnreadable.title": "無法讀取附件",
+  "prompt.toast.attachmentUnreadable.description":
+    "無法從此裝置讀取 {{filename}}。",
   "prompt.toast.modelAgentRequired.title": "請選擇代理程式和模型",
   "prompt.toast.modelAgentRequired.description": "傳送提示前請先選擇代理程式和模型。",
   "prompt.toast.worktreeCreateFailed.title": "建立工作樹失敗",

@@ -284,8 +284,12 @@ export const dict = {
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stopp",
 
-  "prompt.toast.pasteUnsupported.title": "Ikke støttet vedlegg",
-  "prompt.toast.pasteUnsupported.description": "Kun bilder, PDF-er eller tekstfiler kan legges ved her.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} kan ikke bruke dette vedlegget",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} har ingen prompt-inndata for {{mime}}, og denne økten har ikke et lokalt arbeidsområde å lagre filen i.",
+  "prompt.toast.attachmentUnreadable.title": "Vedlegget kunne ikke leses",
+  "prompt.toast.attachmentUnreadable.description":
+    "{{filename}} kunne ikke leses fra denne enheten.",
   "prompt.toast.modelAgentRequired.title": "Velg en agent og modell",
   "prompt.toast.modelAgentRequired.description": "Velg en agent og modell før du sender en forespørsel.",
   "prompt.toast.worktreeCreateFailed.title": "Kunne ikke opprette worktree",

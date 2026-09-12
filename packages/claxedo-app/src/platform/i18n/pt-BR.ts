@@ -261,8 +261,12 @@ export const dict = {
   "prompt.attachment.remove": "Remover anexo",
   "prompt.action.send": "Enviar",
   "prompt.action.stop": "Parar",
-  "prompt.toast.pasteUnsupported.title": "Anexo não suportado",
-  "prompt.toast.pasteUnsupported.description": "Apenas imagens, PDFs ou arquivos de texto podem ser anexados aqui.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} não consegue usar este anexo",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} não tem uma entrada de prompt para {{mime}}, e esta sessão não tem um espaço de trabalho local para guardar o arquivo.",
+  "prompt.toast.attachmentUnreadable.title": "Não foi possível ler o anexo",
+  "prompt.toast.attachmentUnreadable.description":
+    "Não foi possível ler {{filename}} neste dispositivo.",
   "prompt.toast.modelAgentRequired.title": "Selecione um agente e modelo",
   "prompt.toast.modelAgentRequired.description": "Escolha um agente e modelo antes de enviar um prompt.",
   "prompt.toast.worktreeCreateFailed.title": "Falha ao criar worktree",

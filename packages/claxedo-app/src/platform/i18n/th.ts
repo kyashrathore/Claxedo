@@ -281,8 +281,12 @@ export const dict = {
   "prompt.action.send": "ส่ง",
   "prompt.action.stop": "หยุด",
 
-  "prompt.toast.pasteUnsupported.title": "ไฟล์แนบที่ไม่รองรับ",
-  "prompt.toast.pasteUnsupported.description": "แนบได้เฉพาะรูปภาพ, PDF หรือไฟล์ข้อความเท่านั้น",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} ใช้ไฟล์แนบนี้ไม่ได้",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} ไม่มีช่องรับข้อมูลพรอมต์สำหรับ {{mime}} และเซสชันนี้ก็ไม่มีเวิร์กสเปซในเครื่องสำหรับเก็บไฟล์",
+  "prompt.toast.attachmentUnreadable.title": "อ่านไฟล์แนบไม่ได้",
+  "prompt.toast.attachmentUnreadable.description":
+    "อ่าน {{filename}} จากอุปกรณ์นี้ไม่ได้",
   "prompt.toast.modelAgentRequired.title": "เลือกเอเจนต์และโมเดล",
   "prompt.toast.modelAgentRequired.description": "เลือกเอเจนต์และโมเดลก่อนส่งพร้อมท์",
   "prompt.toast.worktreeCreateFailed.title": "ไม่สามารถสร้าง worktree",

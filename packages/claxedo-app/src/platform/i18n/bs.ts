@@ -282,8 +282,12 @@ export const dict = {
   "prompt.action.send": "Pošalji",
   "prompt.action.stop": "Zaustavi",
 
-  "prompt.toast.pasteUnsupported.title": "Nepodržan prilog",
-  "prompt.toast.pasteUnsupported.description": "Ovdje se mogu priložiti samo slike, PDF-ovi ili tekstualne datoteke.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} ne može primiti ovaj prilog",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} nema ulaz upita za {{mime}}, a ova sesija nema lokalni radni prostor u kojem bi datoteka ostala.",
+  "prompt.toast.attachmentUnreadable.title": "Prilog se nije mogao pročitati",
+  "prompt.toast.attachmentUnreadable.description":
+    "{{filename}} se nije mogao pročitati s ovog uređaja.",
   "prompt.toast.modelAgentRequired.title": "Odaberi agenta i model",
   "prompt.toast.modelAgentRequired.description": "Odaberi agenta i model prije slanja upita.",
   "prompt.toast.worktreeCreateFailed.title": "Neuspješno kreiranje worktree-a",

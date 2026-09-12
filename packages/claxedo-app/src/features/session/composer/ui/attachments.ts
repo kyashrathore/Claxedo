@@ -5,7 +5,7 @@ import { usePrompt, type ContentPart, type ImageAttachmentPart } from "@/feature
 import { useLanguage } from "@/platform/i18n/provider"
 import { uuid } from "@/lib/uuid"
 import { getCursorPosition } from "./editor-dom"
-import { attachmentMime } from "./files"
+import { attachmentMime, attachmentRefusal, type AttachmentRefusal, type AttachmentTarget } from "./files"
 import { normalizePaste, pasteMode } from "./paste"
 
 function dataUrl(file: File, mime: string) {
@@ -25,6 +25,19 @@ function dataUrl(file: File, mime: string) {
   })
 }
 
+/**
+ * The paste fields this reads. Declared structurally so the handler is not tied
+ * to a DOM `ClipboardEvent` constructor, which no test environment here has.
+ */
+export type PromptPasteEvent = {
+  clipboardData: {
+    items: ArrayLike<{ kind: string; getAsFile: () => File | null }>
+    getData: (format: string) => string
+  } | null
+  preventDefault: () => void
+  stopPropagation: () => void
+}
+
 type PromptAttachmentsInput = {
   editor: () => HTMLDivElement | undefined
   isDialogActive: () => boolean
@@ -32,31 +45,40 @@ type PromptAttachmentsInput = {
   focusEditor: () => void
   addPart: (part: ContentPart) => boolean
   readClipboardImage?: () => Promise<File | null>
+  target: () => AttachmentTarget
 }
 
 export function createPromptAttachments(input: PromptAttachmentsInput) {
   const prompt = usePrompt()
   const language = useLanguage()
 
-  const warn = () => {
+  const unreadable = (filename: string) => {
     showToast({
-      title: language.t("prompt.toast.pasteUnsupported.title"),
-      description: language.t("prompt.toast.pasteUnsupported.description"),
+      title: language.t("prompt.toast.attachmentUnreadable.title"),
+      description: language.t("prompt.toast.attachmentUnreadable.description", { filename }),
     })
   }
 
-  const add = async (file: File, toast = true) => {
+  const refuse = (refusal: AttachmentRefusal) => {
+    showToast({
+      title: language.t("prompt.toast.attachmentHarnessUnsupported.title", { harness: refusal.harness }),
+      description: language.t("prompt.toast.attachmentHarnessUnsupported.description", {
+        harness: refusal.harness,
+        mime: refusal.mime,
+      }),
+    })
+  }
+
+  const add = async (file: File): Promise<AttachmentRefusal | boolean> => {
     // The draft the user attached to, resolved before the file is read: the pane
-    // can resolve a different one while the read is in flight, and the image
+    // can resolve a different one while the read is in flight, and the file
     // belongs to the composer it was dropped into rather than to whichever
     // thread is on screen when the bytes arrive.
     const scope = prompt.scope()
 
     const mime = await attachmentMime(file)
-    if (!mime) {
-      if (toast) warn()
-      return false
-    }
+    const refusal = attachmentRefusal(mime, input.target())
+    if (refusal) return refusal
 
     const editor = input.editor()
     if (!editor) return false
@@ -76,17 +98,35 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     return true
   }
 
-  const addAttachment = (file: File) => add(file)
+  const addAttachment = async (file: File) => {
+    const result = await add(file)
+    if (result === true) return true
+    if (result === false) unreadable(file.name)
+    else refuse(result)
+    return false
+  }
 
+  /**
+   * Reports the first reason nothing was attached rather than one per file: a
+   * multi-file drop onto a session that takes none of them would otherwise
+   * stack a toast per file.
+   */
   const addAttachments = async (files: File[], toast = true) => {
     let found = false
+    let refusal: AttachmentRefusal | undefined
+    let unread: string | undefined
 
     for (const file of files) {
-      const ok = await add(file, false)
-      if (ok) found = true
+      const result = await add(file)
+      if (result === true) found = true
+      else if (result === false) unread ??= file.name
+      else refusal ??= result
     }
 
-    if (!found && files.length > 0 && toast) warn()
+    if (!found && files.length > 0 && toast) {
+      if (refusal) refuse(refusal)
+      else if (unread) unreadable(unread)
+    }
     return found
   }
 
@@ -96,7 +136,7 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
     prompt.set(next, prompt.cursor())
   }
 
-  const handlePaste = async (event: ClipboardEvent) => {
+  const handlePaste = async (event: PromptPasteEvent) => {
     const clipboardData = event.clipboardData
     if (!clipboardData) return
 

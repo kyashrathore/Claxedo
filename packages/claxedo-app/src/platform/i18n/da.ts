@@ -280,8 +280,12 @@ export const dict = {
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
 
-  "prompt.toast.pasteUnsupported.title": "Ikke understøttet vedhæftning",
-  "prompt.toast.pasteUnsupported.description": "Kun billeder, PDF'er eller tekstfiler kan vedhæftes her.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} kan ikke bruge denne vedhæftning",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} har ingen prompt-input til {{mime}}, og denne session har intet lokalt arbejdsområde at gemme filen i.",
+  "prompt.toast.attachmentUnreadable.title": "Vedhæftningen kunne ikke læses",
+  "prompt.toast.attachmentUnreadable.description":
+    "{{filename}} kunne ikke læses fra denne enhed.",
   "prompt.toast.modelAgentRequired.title": "Vælg en agent og model",
   "prompt.toast.modelAgentRequired.description": "Vælg en agent og model før du sender en forespørgsel.",
   "prompt.toast.worktreeCreateFailed.title": "Kunne ikke oprette worktree",

@@ -302,8 +302,12 @@ export const dict = {
   "prompt.attachment.remove": "移除附件",
   "prompt.action.send": "发送",
   "prompt.action.stop": "停止",
-  "prompt.toast.pasteUnsupported.title": "不支持的附件",
-  "prompt.toast.pasteUnsupported.description": "此处仅能附加图片、PDF 或文本文件。",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} 无法使用此附件",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} 没有接收 {{mime}} 的提示输入，而此会话也没有可保存该文件的本地工作区。",
+  "prompt.toast.attachmentUnreadable.title": "无法读取附件",
+  "prompt.toast.attachmentUnreadable.description":
+    "无法从此设备读取 {{filename}}。",
   "prompt.toast.modelAgentRequired.title": "请选择智能体和模型",
   "prompt.toast.modelAgentRequired.description": "发送提示前请先选择智能体和模型。",
   "prompt.toast.worktreeCreateFailed.title": "创建工作树失败",

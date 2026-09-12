@@ -281,8 +281,12 @@ export const dict = {
   "prompt.attachment.remove": "Remove attachment",
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
-  "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
-  "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
+  "prompt.toast.attachmentHarnessUnsupported.title": "{{harness}} cannot take this attachment",
+  "prompt.toast.attachmentHarnessUnsupported.description":
+    "{{harness}} has no prompt input for {{mime}}, and this session has no local workspace to keep the file in.",
+  "prompt.toast.attachmentUnreadable.title": "Attachment could not be read",
+  "prompt.toast.attachmentUnreadable.description":
+    "{{filename}} could not be read from this device.",
   "prompt.toast.modelAgentRequired.title": "Select an agent and model",
   "prompt.toast.modelAgentRequired.description": "Choose an agent and model before sending a prompt.",
   "prompt.toast.worktreeCreateFailed.title": "Failed to create worktree",
