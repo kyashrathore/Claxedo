@@ -34,7 +34,7 @@ import {
   type CredentialScope,
   type CredentialWrite,
   type CredentialStatus,
-  type SetActiveCredentialResult,
+  type SetActiveCredentialsResult,
 } from "./types"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { ensurePresetForProvider, removeAutoPresetForProvider } from "../sandbox/network/policy"
@@ -197,7 +197,7 @@ export async function putCredential(
   /**
    * A save takes the mark only from an account that cannot be used. A WORKING
    * active account keeps it — adding a second login must not silently move
-   * every later turn onto it, and switching is `setActiveCredential`. An
+   * every later turn onto it, and switching is `setActiveCredentials`. An
    * active account the provider has since rejected or expired YIELDS: without
    * that, pasting a corrected key leaves the broken one chosen, the fanout
    * sends nothing, and the harness falls back to the machine login with no
@@ -302,44 +302,66 @@ const activeFirst = [
   desc(ClaxedoProviderCredentialTable.updated_at),
 ]
 
+/** The scope one mark is unique within: a partition of the active index. */
+function markPartition(row: CredentialRow) {
+  return `${row.owner ?? ""} ${row.provider_id}`
+}
+
 /**
- * Mark one stored account as the one its provider runs on, clearing whatever
- * held the mark for the same owner. Both halves are one transaction: between
- * them the provider has no active account, and the partial unique index would
- * reject the second write if they were separate statements and the first had
- * not landed.
+ * Mark one account as the one its providers run on.
+ *
+ * Takes every row that stores the account, because one login is saved once per
+ * binding a harness has — a Claude login is a `claude-acp` row and a
+ * `claude-sdk` row — and a switch that moved one of them would leave the next
+ * turn on the old account through the other.
+ *
+ * Everything is read and refused before anything is written, and the whole call
+ * is one transaction: a caller never sees the account marked on some bindings
+ * and not others, and the clear-then-set pair never leaves two marks in one
+ * partition for the unique index to reject.
  */
-export function setActiveCredential(
-  id: string,
+export function setActiveCredentials(
+  ids: readonly string[],
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): SetActiveCredentialResult {
+): SetActiveCredentialsResult {
   const orgId = credentialOrg(org)
   return ClaxedoDB.transaction((db) => {
-    const row = db
-      .select()
-      .from(ClaxedoProviderCredentialTable)
-      .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, id)))
-      .get()
-    if (!row) return { ok: false, reason: "not_found" }
-    if (!fanoutEligible(toMetadata(row))) return { ok: false, reason: "not_eligible" }
+    const rows: CredentialRow[] = []
+    for (const id of ids) {
+      const row = db
+        .select()
+        .from(ClaxedoProviderCredentialTable)
+        .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, id)))
+        .get()
+      if (!row) return { ok: false, reason: "not_found" }
+      if (!fanoutEligible(toMetadata(row))) return { ok: false, reason: "not_eligible" }
+      rows.push(row)
+    }
+    // Two rows in one partition cannot both hold the mark, and nothing here can
+    // say which of them the caller meant.
+    if (new Set(rows.map(markPartition)).size !== rows.length) return { ok: false, reason: "ambiguous" }
 
     const ts = now()
-    db.update(ClaxedoProviderCredentialTable)
-      .set({ is_active: false, updated_at: ts })
-      .where(
-        and(
-          inOrg(orgId),
-          eq(ClaxedoProviderCredentialTable.provider_id, row.provider_id),
-          ownedBy(row.owner),
-          eq(ClaxedoProviderCredentialTable.is_active, true),
-        ),
-      )
-      .run()
-    db.update(ClaxedoProviderCredentialTable)
-      .set({ is_active: true, updated_at: ts })
-      .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, id)))
-      .run()
-    return { ok: true, credential: toMetadata({ ...row, is_active: true, updated_at: ts }) }
+    for (const row of rows) {
+      db.update(ClaxedoProviderCredentialTable)
+        .set({ is_active: false, updated_at: ts })
+        .where(
+          and(
+            inOrg(orgId),
+            eq(ClaxedoProviderCredentialTable.provider_id, row.provider_id),
+            ownedBy(row.owner),
+            eq(ClaxedoProviderCredentialTable.is_active, true),
+          ),
+        )
+        .run()
+    }
+    for (const row of rows) {
+      db.update(ClaxedoProviderCredentialTable)
+        .set({ is_active: true, updated_at: ts })
+        .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, row.id)))
+        .run()
+    }
+    return { ok: true, credentials: rows.map((row) => toMetadata({ ...row, is_active: true, updated_at: ts })) }
   })
 }
 

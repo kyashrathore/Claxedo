@@ -26,8 +26,9 @@ const {
   deleteCredential,
   deleteCredentialsByProvider,
   resolveAllSecrets,
+  resolveSecretsForScope,
   selectCredentialsForScope,
-  setActiveCredential,
+  setActiveCredentials,
 } = await import("./registry")
 const { ClaxedoProviderCredentialTable } = await import("./provider-credential.sql")
 
@@ -165,7 +166,7 @@ describe("credential registry", () => {
     // login however many other accounts the provider holds.
     expect(piRegistryProviderConnected("openai-codex")).toBe(false)
 
-    setActiveCredential(oauth.id)
+    setActiveCredentials([oauth.id])
     expect(piRegistryCredentialProvider("openai-codex")).toBe("codex-app-server")
     expect(piRegistryProviderConnected("openai-codex")).toBe(true)
 
@@ -648,13 +649,13 @@ describe("credential registry", () => {
         .toHaveLength(1)
     })
 
-    test("setActiveCredential moves the mark, and the fanout sends the account it moved to", async () => {
+    test("setActiveCredentials moves the mark, and the fanout sends the account it moved to", async () => {
       const { first, second } = await twoAccounts("active-switch")
       expect(await resolveSecret("active-switch")).toBe("first-secret")
 
-      const result = setActiveCredential(second.id)
+      const result = setActiveCredentials([second.id])
 
-      expect(result).toMatchObject({ ok: true, credential: { id: second.id, is_active: true } })
+      expect(result).toMatchObject({ ok: true, credentials: [{ id: second.id, is_active: true }] })
       expect(getCredential(first.id)?.is_active).toBe(false)
       expect(await resolveSecret("active-switch")).toBe("second-secret")
       expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-switch"))
@@ -662,7 +663,7 @@ describe("credential registry", () => {
       expect(await resolveAllSecrets()).toMatchObject({ "active-switch": "second-secret" })
     })
 
-    test("setActiveCredential refuses an id it cannot see and one that never reaches a harness", async () => {
+    test("setActiveCredentials refuses an id it cannot see and one that never reaches a harness", async () => {
       const driver = await putCredential({
         provider_id: "active-driver",
         kind: "sandbox_driver",
@@ -671,10 +672,77 @@ describe("credential registry", () => {
       })
       const { first } = await twoAccounts("active-other-org")
 
-      expect(setActiveCredential(randomUUID())).toEqual({ ok: false, reason: "not_found" })
-      expect(setActiveCredential(first.id, "some-other-org")).toEqual({ ok: false, reason: "not_found" })
-      expect(setActiveCredential(driver.id)).toEqual({ ok: false, reason: "not_eligible" })
+      expect(setActiveCredentials([randomUUID()])).toEqual({ ok: false, reason: "not_found" })
+      expect(setActiveCredentials([first.id], "some-other-org")).toEqual({ ok: false, reason: "not_found" })
+      expect(setActiveCredentials([driver.id])).toEqual({ ok: false, reason: "not_eligible" })
       expect(getCredential(driver.id)?.is_active).toBe(false)
+    })
+
+    test("every binding of one account is marked in a single call", async () => {
+      const bindings = await Promise.all(["binding-acp", "binding-sdk"].map((providerId) => putCredential({
+        provider_id: providerId,
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_old",
+        secret: `${providerId}-old`,
+      })))
+      const replacing = await Promise.all(["binding-acp", "binding-sdk"].map((providerId) => putCredential({
+        provider_id: providerId,
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_new",
+        secret: `${providerId}-new`,
+      })))
+
+      const result = setActiveCredentials(replacing.map((row) => row.id))
+
+      expect(result).toMatchObject({ ok: true })
+      expect(replacing.every((row) => getCredential(row.id)?.is_active === true)).toBe(true)
+      expect(bindings.some((row) => getCredential(row.id)?.is_active === true)).toBe(false)
+      expect(await resolveSecretsForScope("local")).toMatchObject({
+        "binding-acp": "binding-acp-new",
+        "binding-sdk": "binding-sdk-new",
+      })
+    })
+
+    test("one refused id leaves every partition in the call untouched", async () => {
+      const holder = await putCredential({
+        provider_id: "atomic-binding",
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_old",
+        secret: "atomic-old",
+      })
+      const account = await putCredential({
+        provider_id: "atomic-binding",
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_new",
+        secret: "atomic-new",
+      })
+      const driver = await putCredential({
+        provider_id: "atomic-driver",
+        kind: "sandbox_driver",
+        source: "managed",
+        secret: "atomic-driver-key",
+      })
+      expect(getCredential(account.id)?.is_active).toBe(false)
+
+      expect(setActiveCredentials([account.id, driver.id])).toEqual({ ok: false, reason: "not_eligible" })
+
+      expect(getCredential(account.id)?.is_active).toBe(false)
+      expect(getCredential(holder.id)?.is_active).toBe(true)
+      expect(await resolveSecret("atomic-binding")).toBe("atomic-old")
+    })
+
+    test("two ids competing for one provider are refused rather than one of them chosen", async () => {
+      const { first, second } = await twoAccounts("ambiguous-mark")
+
+      expect(setActiveCredentials([first.id, second.id])).toEqual({ ok: false, reason: "ambiguous" })
+      expect(setActiveCredentials([second.id, second.id])).toEqual({ ok: false, reason: "ambiguous" })
+
+      expect(getCredential(first.id)?.is_active).toBe(true)
+      expect(getCredential(second.id)?.is_active).toBe(false)
     })
 
     test("deleting the active account leaves the provider with none, and nothing is promoted", async () => {
@@ -707,7 +775,7 @@ describe("credential registry", () => {
 
       expect(selectCredentialsForScope("shared").filter((row) => row.provider_id === "active-scope")).toEqual([])
 
-      setActiveCredential(shared.id)
+      setActiveCredentials([shared.id])
 
       expect(selectCredentialsForScope("shared").filter((row) => row.provider_id === "active-scope"))
         .toMatchObject([{ id: shared.id }])

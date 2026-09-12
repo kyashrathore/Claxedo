@@ -16,7 +16,7 @@ const {
   resolveAllSecrets,
   resolveSecret,
   resolveSecretsForScope,
-  setActiveCredential,
+  setActiveCredentials,
   updateCredentialHealth,
 } = await import("@claxedo/server-core/credentials/registry")
 const { ClaxedoDB } = await import("../platform/db")
@@ -138,7 +138,7 @@ describe("credential fanout fence", () => {
     expect((await resolveSecretsForScope("local"))["multi-account-scope"]).toBe("local-token")
     expect(await resolveSecretsForScope("shared")).not.toHaveProperty("multi-account-scope")
 
-    expect(setActiveCredential(shared.id)).toMatchObject({ ok: true })
+    expect(setActiveCredentials([shared.id])).toMatchObject({ ok: true })
 
     expect((await resolveSecretsForScope("shared"))["multi-account-scope"]).toBe("consented-shared-token")
     expect((await resolveSecretsForScope("local"))["multi-account-scope"]).toBe("consented-shared-token")

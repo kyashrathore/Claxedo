@@ -206,22 +206,16 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     })
   }
 
-  /**
-   * One account is one row per binding and the route marks one row, so a switch
-   * is a write each. A write that fails leaves the account marked on some
-   * bindings and not others; the re-read below then shows it as not active,
-   * which is what it is until every binding agrees.
-   */
   const activate = async (ids: readonly string[]) => {
     const [first] = ids
     if (first === undefined) return
     setActivating(first)
     try {
-      for (const id of ids) await activateCredential(id)
+      await activateCredential(ids)
+      await readStored()
     } catch (err: unknown) {
       fail(err)
     } finally {
-      await readStored().catch(() => undefined)
       setActivating(undefined)
     }
   }

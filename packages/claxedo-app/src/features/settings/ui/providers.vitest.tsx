@@ -6,6 +6,7 @@ const clients = new Set<QueryClient>()
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal, type JSX } from "solid-js"
 import { nativeHarness, connectionHarness, type HarnessSelection } from "@/platform/identity/harness-selection"
+import { readStringArray } from "@/lib/record"
 
 type CatalogProject = {
   id: string
@@ -46,10 +47,8 @@ const state = vi.hoisted(() => ({
   projects: [] as CatalogProject[],
   /** What the credential store already holds, as the list route reports it. */
   storedCredentials: [] as Array<Record<string, unknown>>,
-  /** Every account id activate was called for, in order. */
-  activated: [] as string[],
-  /** Account ids the activate route refuses. */
-  activateFails: [] as string[],
+  /** Every activate call's body, in order. */
+  activated: [] as string[][],
   /** What a machine scan finds, as the discovery route reports it. */
   discoveryItems: [] as Array<Record<string, unknown>>,
   credentialCalls: [] as string[],
@@ -156,6 +155,11 @@ const { SettingsScopeProvider } = await import("@/features/settings/scope/settin
 const { SettingsProviders } = await import("./providers")
 const { useProviderAuth } = await import("@/app/providers/use-providers")
 
+/** The JSON a fetch call carried. A non-string body is not something we send. */
+function requestJson(init?: RequestInit): unknown {
+  return typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+}
+
 // The credential routes are the only network the agents section has; leaving the
 // real request module in place keeps the machine scan on the onboarding engine.
 globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
@@ -170,17 +174,16 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
       credentials: state.storedCredentials.filter((row) => row.is_active !== false),
     }))
   }
-  if (url.pathname.endsWith("/activate")) {
-    const id = decodeURIComponent(url.pathname.split("/").at(-2) ?? "")
-    state.activated.push(id)
-    if (state.activateFails.includes(id)) {
-      return new Response(JSON.stringify({ error: { code: "credential_not_activatable", message: "refused" } }), { status: 409 })
-    }
-    // The route marks one row and clears the mark for that row's provider only.
-    const target = state.storedCredentials.find((row) => row.id === id)
+  if (url.pathname === "/api/claxedo/credentials/activate") {
+    const ids = readStringArray(requestJson(init), "ids") ?? []
+    state.activated.push(ids)
+    // The route marks every id and clears the mark across each id's provider.
+    const providers = new Set(state.storedCredentials.filter((row) => ids.includes(String(row.id))).map((row) => row.provider_id))
     state.storedCredentials = state.storedCredentials.map((row) =>
-      row.provider_id === target?.provider_id ? { ...row, is_active: row.id === id } : row)
-    return new Response(JSON.stringify({ credential: state.storedCredentials.find((row) => row.id === id) }))
+      providers.has(row.provider_id) ? { ...row, is_active: ids.includes(String(row.id)) } : row)
+    return new Response(JSON.stringify({
+      credentials: state.storedCredentials.filter((row) => ids.includes(String(row.id))),
+    }))
   }
   if (url.pathname === "/api/claxedo/credentials/discover") {
     return new Response(JSON.stringify({ discovery_id: "disc_1", items: state.discoveryItems }))
@@ -275,7 +278,6 @@ beforeEach(() => {
   state.dialogs.length = 0
   state.storedCredentials = []
   state.activated.length = 0
-  state.activateFails.length = 0
   state.discoveryItems = []
   state.projects = [LOCAL_PROJECT, CLOUD_PROJECT]
   state.catalogs = {
@@ -553,12 +555,12 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
     accountRow("anthropic", "cred_key").querySelector<HTMLButtonElement>('[data-action="settings-provider-activate"]')!.click()
 
-    await waitFor(() => expect(state.activated).toEqual(["cred_key"]))
+    await waitFor(() => expect(state.activated).toEqual([["cred_key"]]))
     await waitFor(() => expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
       .toBe("settings.providers.agents.inUse:API key"))
     expect(accountRow("anthropic", "cred_key").getAttribute("data-active")).toBe("true")
     expect(accountRow("anthropic", "cred_token").getAttribute("data-active")).toBe("false")
-    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/cred_key/activate")
+    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/activate")
   })
 
   test("Add account opens the same inline connect card the Connect button opens", async () => {
@@ -592,6 +594,17 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       .toBe("settings.providers.agents.switchLater")
   })
 
+  test("an account marked on one binding and not the other reads as not active", async () => {
+    state.storedCredentials = [
+      { id: "acp_half", provider_id: "claude-acp", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: false },
+      { id: "sdk_half", provider_id: "claude-sdk", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+    ]
+    mount()
+
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_half"]))
+    expect(accountRow("anthropic", "sdk_half").getAttribute("data-active")).toBe("false")
+  })
+
   test("a login saved under both bindings is one account, keyed by the connect provider's row", async () => {
     state.storedCredentials = [
       { id: "acp_old", provider_id: "claude-acp", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
@@ -619,29 +632,11 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     accountRow("anthropic", "sdk_new").querySelector<HTMLButtonElement>('[data-action="settings-provider-activate"]')!.click()
 
     await waitFor(() => expect(accountRow("anthropic", "sdk_new").getAttribute("data-active")).toBe("true"))
-    expect(state.activated).toEqual(["sdk_new", "acp_new"])
-    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/sdk_new/activate")
-    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/acp_new/activate")
-    expect(accountRow("anthropic", "sdk_old").getAttribute("data-active")).toBe("false")
-  })
-
-  test("a switch that half-lands leaves the account reading as not active", async () => {
-    state.storedCredentials = [
-      { id: "acp_old", provider_id: "claude-acp", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
-      { id: "sdk_old", provider_id: "claude-sdk", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
-      { id: "acp_new", provider_id: "claude-acp", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
-      { id: "sdk_new", provider_id: "claude-sdk", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
-    ]
-    state.activateFails = ["acp_new"]
-    mount()
-    await waitFor(() => expect(accountIds("anthropic")).toHaveLength(2))
-
-    accountRow("anthropic", "sdk_new").querySelector<HTMLButtonElement>('[data-action="settings-provider-activate"]')!.click()
-
-    await waitFor(() => expect(state.activated).toEqual(["sdk_new", "acp_new"]))
-    // The SDK binding moved, the ACP binding was refused: neither account has
-    // every binding, so neither claims the tag.
-    await waitFor(() => expect(accountRow("anthropic", "sdk_new").getAttribute("data-active")).toBe("false"))
+    // One call names both bindings, so the store can never hold the account on
+    // one of them and not the other.
+    expect(state.activated).toEqual([["sdk_new", "acp_new"]])
+    expect(state.credentialCalls.filter((call) => call.endsWith("/activate")))
+      .toEqual(["POST /api/claxedo/credentials/activate"])
     expect(accountRow("anthropic", "sdk_old").getAttribute("data-active")).toBe("false")
   })
 })

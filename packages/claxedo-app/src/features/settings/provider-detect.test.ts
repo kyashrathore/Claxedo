@@ -62,6 +62,11 @@ afterEach(() => {
   globalThis.fetch = realFetch
 })
 
+/** The JSON a fetch call carried. A non-string body is not something we send. */
+function requestJson(init?: RequestInit): unknown {
+  return typeof init?.body === "string" ? JSON.parse(init.body) : undefined
+}
+
 function stubNetwork(routes: Record<string, unknown>) {
   const calls: string[] = []
   globalThis.fetch = (async (input: URL | RequestInfo) => {
@@ -169,23 +174,28 @@ describe("accountIdentity", () => {
 })
 
 describe("activateCredential", () => {
-  test("posts to the account's own activate route", async () => {
-    const calls = stubNetwork({ "/api/claxedo/credentials/cred_2/activate": { credential: { id: "cred_2" } } })
+  test("names every row of the account in one post", async () => {
+    const sent: Array<{ pathname: string; body: unknown }> = []
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      sent.push({ pathname: url.pathname, body: requestJson(init) })
+      return new Response(JSON.stringify({ credentials: [{ id: "sdk" }, { id: "acp" }] }))
+    }) as typeof globalThis.fetch
 
-    await activateCredential("cred_2")
+    await activateCredential(["sdk", "acp"])
 
-    expect(calls).toEqual(["/api/claxedo/credentials/cred_2/activate"])
+    expect(sent).toEqual([{ pathname: "/api/claxedo/credentials/activate", body: { ids: ["sdk", "acp"] } }])
   })
 
   test("a refusal reaches the caller as the server's own message", async () => {
     stubNetwork({
-      "/api/claxedo/credentials/cred_3/activate": new Response(
+      "/api/claxedo/credentials/activate": new Response(
         JSON.stringify({ error: { code: "credential_not_activatable", message: "This credential is not an account a harness runs on" } }),
         { status: 409 },
       ),
     })
 
-    await expect(activateCredential("cred_3")).rejects.toThrow("This credential is not an account a harness runs on")
+    await expect(activateCredential(["cred_3"])).rejects.toThrow("This credential is not an account a harness runs on")
   })
 })
 

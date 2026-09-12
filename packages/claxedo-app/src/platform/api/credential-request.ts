@@ -43,10 +43,10 @@ export async function claxedoCredentialRequest(
 }
 
 function credentialRoute(input?: ClaxedoCredentialRequestInput) {
-  if (input?.credentialId && (input.action === "verify" || input.action === "scope" || input.action === "activate")) {
+  if (input?.credentialId && (input.action === "verify" || input.action === "scope")) {
     return `/api/claxedo/credentials/${encodeURIComponent(input.credentialId)}/${input.action}`
   }
-  if (input?.action === "discover" || input?.action === "save-discovered" || input?.action === "effective") {
+  if (input?.action === "discover" || input?.action === "save-discovered" || input?.action === "effective" || input?.action === "activate") {
     return `/api/claxedo/credentials/${input.action}`
   }
   if (input?.providerId) return `/api/claxedo/credentials/provider/${encodeURIComponent(input.providerId)}`

@@ -54,6 +54,12 @@ const saveDiscoveredBody = z.object({
 
 const scopeBody = z.object({ scope: z.enum(["local", "shared"]) })
 
+/**
+ * The rows that store one account. Bounded because the caller is naming a
+ * harness's bindings, of which there are a handful, not submitting a batch.
+ */
+const activateBody = z.object({ ids: z.array(z.string().min(1)).min(1).max(8) })
+
 function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialByProvider"]>>) {
   if (!cred) return null
   return {
@@ -295,17 +301,23 @@ export function CredentialRoutes(
         return c.json(errorBody("credential_verification_failed", "Credential verification failed"), 500)
       }
     })
-    .post("/:id/activate", async (c) => {
-      if (!credentials.setActiveCredential) {
+    .post("/activate", async (c) => {
+      const body = activateBody.safeParse(await c.req.json().catch(() => null))
+      if (!body.success) return c.json(invalidBody(body.error), 400)
+      if (!credentials.setActiveCredentials) {
         return c.json(errorBody("credential_activate_unsupported", "This host does not choose between accounts"), 501)
       }
-      const result = await credentials.setActiveCredential(c.req.param("id"), org(c.req.raw))
+      const result = await credentials.setActiveCredentials(body.data.ids, org(c.req.raw))
       if (!result.ok) {
-        return result.reason === "not_found"
-          ? c.json(errorBody("credential_not_found", "Credential not found"), 404)
-          : c.json(errorBody("credential_not_activatable", "This credential is not an account a harness runs on"), 409)
+        if (result.reason === "not_found") {
+          return c.json(errorBody("credential_not_found", "Credential not found"), 404)
+        }
+        if (result.reason === "ambiguous") {
+          return c.json(errorBody("credential_activate_ambiguous", "Two of these credentials compete for one provider"), 400)
+        }
+        return c.json(errorBody("credential_not_activatable", "This credential is not an account a harness runs on"), 409)
       }
-      return c.json({ credential: redact(result.credential) })
+      return c.json({ credentials: result.credentials.map(redact) })
     })
     .patch("/:id/status", async (c) => {
       const body = statusBody.safeParse(await c.req.json().catch(() => null))

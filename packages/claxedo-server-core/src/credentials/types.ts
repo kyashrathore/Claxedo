@@ -75,15 +75,17 @@ export interface CredentialMetadata {
 }
 
 /**
- * The outcome of marking one stored account active.
+ * The outcome of marking one account active across every row that stores it.
  *
- * A refusal is not an error: the id can name a row in another tenant, or a
- * credential that never fans out to a harness (a sandbox driver token, a
- * connection secret), and each answers the caller with its own status code.
+ * A refusal is not an error, and it is always total: an id can name a row in
+ * another tenant (`not_found`), a credential that never reaches a harness such
+ * as a sandbox driver token or a connection secret (`not_eligible`), or two ids
+ * competing for the same (owner, provider) mark (`ambiguous`). Each answers the
+ * caller with its own status code, and none of them writes.
  */
-export type SetActiveCredentialResult =
-  | { ok: true; credential: CredentialMetadata }
-  | { ok: false; reason: "not_found" | "not_eligible" }
+export type SetActiveCredentialsResult =
+  | { ok: true; credentials: CredentialMetadata[] }
+  | { ok: false; reason: "not_found" | "not_eligible" | "ambiguous" }
 
 /** Input for creating or updating a credential. */
 export interface CredentialWrite {

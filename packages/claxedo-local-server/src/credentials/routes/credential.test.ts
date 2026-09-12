@@ -744,6 +744,14 @@ describe("choosing which account a provider runs on", () => {
     })
   }
 
+  function activate(ids: string[]) {
+    return app.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids }),
+    })
+  }
+
   test("activate moves the mark in the store, and both listings report it", async () => {
     const first = await account("claude-sdk", "acc_first")
     const second = await account("claude-sdk", "acc_second")
@@ -754,11 +762,11 @@ describe("choosing which account a provider runs on", () => {
     expect(listed.credentials.filter((row) => row.is_active).map((row) => row.id)).toEqual([first.id])
     expect(listed.credentials.every((row) => row.owner === null)).toBe(true)
 
-    const response = await app.request(`http://localhost/${second.id}/activate`, { method: "POST" })
+    const response = await activate([second.id])
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({
-      credential: { id: second.id, is_active: true, owner: null, label: "acc_second" },
+      credentials: [{ id: second.id, is_active: true, owner: null, label: "acc_second" }],
     })
     expect(registry.getCredential(first.id)?.is_active).toBe(false)
     const effective = await (await app.request("http://localhost/effective")).json() as {
@@ -768,22 +776,61 @@ describe("choosing which account a provider runs on", () => {
       .toEqual([second.id])
   })
 
-  test("an unknown id is 404 and a credential no harness runs on is 409", async () => {
+  test("every binding named in one call is marked together", async () => {
+    const acp = await account("binding-acp", "acc_route")
+    const sdk = await account("binding-sdk", "acc_route")
+
+    const response = await activate([sdk.id, acp.id])
+
+    expect(response.status).toBe(200)
+    const body = await response.json() as { credentials: Array<{ id: string; is_active: boolean }> }
+    expect(body.credentials.map((row) => row.id)).toEqual([sdk.id, acp.id])
+    expect(body.credentials.every((row) => row.is_active)).toBe(true)
+    expect(registry.getCredential(acp.id)?.is_active).toBe(true)
+    expect(registry.getCredential(sdk.id)?.is_active).toBe(true)
+  })
+
+  test("an unknown id is 404, a credential no harness runs on is 409, and neither writes", async () => {
     const driver = await registry.putCredential({
       provider_id: "daytona",
       kind: "sandbox_driver",
       source: "managed",
       secret: "daytona-master-key",
     })
+    const waiting = await account("route-atomic", "acc_waiting")
 
-    const missing = await app.request(`http://localhost/${randomUUID()}/activate`, { method: "POST" })
+    const missing = await activate([randomUUID()])
     expect(missing.status).toBe(404)
     await expect(missing.json()).resolves.toMatchObject({ error: { code: "credential_not_found" } })
 
-    const ineligible = await app.request(`http://localhost/${driver.id}/activate`, { method: "POST" })
+    const ineligible = await activate([waiting.id, driver.id])
     expect(ineligible.status).toBe(409)
     await expect(ineligible.json()).resolves.toMatchObject({ error: { code: "credential_not_activatable" } })
     expect(registry.getCredential(driver.id)?.is_active).toBe(false)
+  })
+
+  test("two ids competing for one provider are refused as a bad request", async () => {
+    const first = await account("route-ambiguous", "acc_one")
+    const second = await account("route-ambiguous", "acc_two")
+
+    const response = await activate([first.id, second.id])
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_activate_ambiguous" } })
+    expect(registry.getCredential(first.id)?.is_active).toBe(true)
+    expect(registry.getCredential(second.id)?.is_active).toBe(false)
+  })
+
+  test("a body naming no account, or more bindings than a harness has, is refused before the store is touched", async () => {
+    await expect(activate([])).resolves.toMatchObject({ status: 400 })
+    await expect(activate(Array.from({ length: 9 }, () => randomUUID()))).resolves.toMatchObject({ status: 400 })
+    const malformed = await app.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "not json",
+    })
+    expect(malformed.status).toBe(400)
+    await expect(malformed.json()).resolves.toMatchObject({ error: { code: "credential_invalid_body" } })
   })
 })
 
@@ -791,7 +838,11 @@ describe("a host that holds one record per provider", () => {
   test("reports activation as unsupported rather than pretending the choice was made", async () => {
     const app = CredentialRoutes(credentials(), {})
 
-    const response = await app.request("http://localhost/cred_1/activate", { method: "POST" })
+    const response = await app.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: ["cred_1"] }),
+    })
 
     expect(response.status).toBe(501)
     await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_activate_unsupported" } })

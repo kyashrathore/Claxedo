@@ -167,9 +167,15 @@ export function harnessAccounts(
   return [...accounts.filter((account) => account.isActive), ...accounts.filter((account) => !account.isActive)]
 }
 
-/** Mark one stored account as the one its provider runs on. */
-export async function activateCredential(credentialId: string) {
-  await claxedoCredentialRequest({ action: "activate", credentialId }, { method: "POST" })
+/**
+ * Mark one account as the one its providers run on, naming every row that
+ * stores it so the server moves all of its bindings or none of them.
+ */
+export async function activateCredential(credentialIds: readonly string[]) {
+  await claxedoCredentialRequest({ action: "activate" }, {
+    method: "POST",
+    body: JSON.stringify({ ids: credentialIds }),
+  })
 }
 
 /**
