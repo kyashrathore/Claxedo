@@ -22,8 +22,11 @@ const PENDING_DELETION: string[] = []
  * Directories that never contain first-party source. `patches/` matters here:
  * it holds upstream diffs for unrelated packages (an ai-sdk patch touches its
  * own `dist/internal/`), and matching those would be noise, not a finding.
+ * `dist-*` directories are build outputs (root .gitignore `dist-*`); a server
+ * bundle there carries the SDK host's text inline, which is not an import.
  */
-const NEVER_SOURCE = ["node_modules", "dist", "out", ".artifacts", "dist-node", ".claude", "patches"]
+const NEVER_SOURCE = ["node_modules", "out", ".artifacts", ".claude", "patches"]
+const neverSource = (name: string) => NEVER_SOURCE.includes(name) || name === "dist" || name.startsWith("dist-")
 
 /** Only real source can import anything. */
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".mjs", ".cjs"]
@@ -39,7 +42,7 @@ function sourceFiles(root: string, excluded: ReadonlySet<string>): string[] {
       if (entry.name.startsWith(".")) continue
       const child = relative ? `${relative}/${entry.name}` : entry.name
       if (entry.isDirectory()) {
-        if (NEVER_SOURCE.includes(entry.name) || excluded.has(child)) continue
+        if (neverSource(entry.name) || excluded.has(child)) continue
         walk(child)
         continue
       }
