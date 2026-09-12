@@ -135,9 +135,11 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
     expect(config.mcpServers.docs).toEqual({
       type: "http",
       url: "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id",
-      headers: { Authorization: "Bearer dtn_secret_reference" },
+      headers: { Authorization: "dtn_secret_reference" },
     })
     expect(JSON.stringify(config)).not.toContain("upstream-oauth-token")
+    const substituted = config.mcpServers.docs.headers.Authorization.replace("dtn_secret_reference", "Bearer gateway-token")
+    expect(substituted).toBe("Bearer gateway-token")
   })
 
   test("routes brokered MCP through the existing Cloudflare egress capability", async () => {

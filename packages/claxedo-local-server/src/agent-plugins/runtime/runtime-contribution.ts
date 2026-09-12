@@ -131,7 +131,8 @@ function cloudflareEgressHosts(value: string) {
  * `env` is wherever the brokered secret VALUES live for this runtime: the
  * sandbox's process environment on a VM, or the desktop daemon's in-memory
  * map of the credentials the signed pull carried. Either way the name in the
- * apply request is the key and the value is the bearer without its scheme.
+ * apply request is the key and the value is the complete Authorization header.
+ * Daytona substitutes that entire value for its opaque reference.
  */
 export function runtimeMcpServers(
   rows: AgentPluginRuntimeApplyRequest["mcpServers"],
@@ -171,7 +172,7 @@ export function runtimeMcpServers(
       ...identity,
       state: "gateway",
       url: target,
-      ...(placeholder ? { headers: { Authorization: `Bearer ${placeholder}` } } : {}),
+      ...(placeholder ? { headers: { Authorization: placeholder } } : {}),
     }
   })
 }
