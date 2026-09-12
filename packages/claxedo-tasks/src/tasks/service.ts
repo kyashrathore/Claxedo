@@ -29,7 +29,7 @@ import type { TasksAuthorizationPort } from "../ports/authorization"
 import type { TasksClockPort } from "../ports/clock"
 import type { TasksIdsPort } from "../ports/ids"
 import type { TasksSessionBridgePort } from "../ports/session-bridge"
-import type { TasksStorePort } from "../ports/store"
+import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
 import { startConfigurationDigest } from "../start"
 import { validateReparent, validateTaskDraft, validateTaskEdit } from "./model"
 
@@ -464,6 +464,12 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
           refuse("conflict", `Task ${task.id} changed while its session was being created`)
         }
         return { link, created: true }
+      }).catch((cause: unknown) => {
+        // A store that only discovers a broken predicate at commit reports it
+        // here; for this unit either kind means the same thing, and Start has
+        // no receipt to replay it from.
+        if (cause instanceof TasksStoreConflict) refuse("conflict", cause.message)
+        throw cause
       })
 
       const states = await livenessOf([settled.link.sessionRef])

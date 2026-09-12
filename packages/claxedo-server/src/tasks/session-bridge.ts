@@ -4,6 +4,7 @@ import {
   chooseProjectWorkspace,
   createTasksSessionBridge,
   type TasksRuntimeTarget,
+  type TasksSessionHost,
   type TasksSessionReservation,
 } from "@claxedo/server-core/tasks-host/session-bridge-core"
 import {
@@ -56,54 +57,7 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
 
     sessionMetas: (sessionIds) => input.services.projectionStore.session_metas([...sessionIds]),
 
-    async reserve(intent): Promise<TasksSessionReservation> {
-      const authority = input.services.authority ?? undefined
-      if (!isComposedAuthorityPort<Pick<PrivateSessionAuthority, "reserveRuntimeSession">>(
-        authority,
-        ["reserveRuntimeSession"],
-      )) {
-        return { ok: false, error: tasksErrorDetail("unsupported", "Session registration is unavailable on this host") }
-      }
-      // The service actor is the fallback for a composition that named no
-      // resolver at all. A composition that named one and cannot answer stops
-      // here instead: the service actor can write workspaces the caller cannot,
-      // so substituting it would take the reservation's own workspace gate off
-      // the caller and leave them a session they cannot read.
-      const principal = input.principal ? await input.principal(intent.actor) : CONTROL_PLANE_RUNTIME_ACTOR
-      if (!principal) {
-        return {
-          ok: false,
-          error: tasksErrorDetail("forbidden", "This host reserves a session for the person starting it, and this caller has no canonical actor"),
-        }
-      }
-      let reservation
-      try {
-        reservation = await authority.reserveRuntimeSession(principal, {
-          operationId: intent.operationId,
-          sessionId: intent.sessionId,
-          workspaceId: intent.workspaceId,
-          kind: "create",
-          title: intent.title,
-        })
-      } catch (error) {
-        const refused = reservationRefusal(error)
-        if (!refused) throw error
-        return refused
-      }
-      if (reservation.sessionId !== intent.sessionId || reservation.operationId !== intent.operationId) {
-        return {
-          ok: false,
-          error: tasksErrorDetail("conflict", `Origin ${intent.operationId} is reserved for another session`),
-        }
-      }
-      if (reservation.state === "compensation_pending" || reservation.state === "compensated") {
-        return {
-          ok: false,
-          error: tasksErrorDetail("conflict", `Origin ${intent.operationId} was compensated and can no longer register a session`),
-        }
-      }
-      return { ok: true, headers: { "x-claxedo-session-registration-operation": reservation.operationId } }
-    },
+    reserve: createTasksSessionReserve(input),
 
     projectSessionMeta: (created) => input.services.projectionStore.put_session_meta(created.sessionId, {
       ws: created.target.workspace,
@@ -113,6 +67,70 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
       model: created.model,
     }),
   })
+}
+
+export type TasksSessionReserveInput = {
+  services: ControlPlaneServices
+  principal?: HostedTasksSessionBridgeInput["principal"]
+}
+
+/**
+ * The managed reservation a control plane requires before Tasks may create a
+ * session, for the hosted bridge and for a signed self-host running the local
+ * one: both record a creator actor, and a session reserved for anyone but the
+ * person who started it is one they cannot open.
+ */
+export function createTasksSessionReserve(
+  input: TasksSessionReserveInput,
+): NonNullable<TasksSessionHost["reserve"]> {
+  return async (intent): Promise<TasksSessionReservation> => {
+    const authority = input.services.authority ?? undefined
+    if (!isComposedAuthorityPort<Pick<PrivateSessionAuthority, "reserveRuntimeSession">>(
+      authority,
+      ["reserveRuntimeSession"],
+    )) {
+      return { ok: false, error: tasksErrorDetail("unsupported", "Session registration is unavailable on this host") }
+    }
+    // The service actor is the fallback for a composition that named no
+    // resolver at all. A composition that named one and cannot answer stops
+    // here instead: the service actor can write workspaces the caller cannot,
+    // so substituting it would take the reservation's own workspace gate off
+    // the caller and leave them a session they cannot read.
+    const principal = input.principal ? await input.principal(intent.actor) : CONTROL_PLANE_RUNTIME_ACTOR
+    if (!principal) {
+      return {
+        ok: false,
+        error: tasksErrorDetail("forbidden", "This host reserves a session for the person starting it, and this caller has no canonical actor"),
+      }
+    }
+    let reservation
+    try {
+      reservation = await authority.reserveRuntimeSession(principal, {
+        operationId: intent.operationId,
+        sessionId: intent.sessionId,
+        workspaceId: intent.workspaceId,
+        kind: "create",
+        title: intent.title,
+      })
+    } catch (error) {
+      const refused = reservationRefusal(error)
+      if (!refused) throw error
+      return refused
+    }
+    if (reservation.sessionId !== intent.sessionId || reservation.operationId !== intent.operationId) {
+      return {
+        ok: false,
+        error: tasksErrorDetail("conflict", `Origin ${intent.operationId} is reserved for another session`),
+      }
+    }
+    if (reservation.state === "compensation_pending" || reservation.state === "compensated") {
+      return {
+        ok: false,
+        error: tasksErrorDetail("conflict", `Origin ${intent.operationId} was compensated and can no longer register a session`),
+      }
+    }
+    return { ok: true, headers: { "x-claxedo-session-registration-operation": reservation.operationId } }
+  }
 }
 
 function dispatchTarget(workspace: Workspace, options: WorkspaceRuntimeClientOptions): TasksRuntimeTarget | null {

@@ -20,7 +20,7 @@ import {
   type FakeAuthorization,
   type FakeBridge,
 } from "../test-support/harness"
-import type { TasksStoreOperations, TasksStorePort } from "../ports/store"
+import { TasksStoreConflict, type TasksStoreOperations, type TasksStorePort } from "../ports/store"
 import { createTasksService, type TasksService } from "./service"
 
 const PROJECT = "project-alpha"
@@ -591,6 +591,23 @@ describe("tasks service", () => {
       }
       const racing = createTasksService({ store, clock: fakeClock(), ids: fakeIds(), authorization, bridge: revoking })
       expect((await refusalOf(() => racing.start(ACTOR, task.id, start(task)))).code).toBe("forbidden")
+      expect((await store.links.listByTask(ACTOR.scopeId, task.id)).length).toBe(0)
+    })
+
+    test("an origin lost at commit is refused as a conflict rather than escaping as a fault", async () => {
+      const task = (await tasks.create(ACTOR, draft())).task
+      const losing: TasksStorePort = {
+        ...store,
+        transaction: (work) =>
+          store.transaction(async (operations) => {
+            await work(operations)
+            throw new TasksStoreConflict("link-conflict", "the origin was taken before this unit committed")
+          }),
+      }
+      const racing = createTasksService({ store: losing, clock: fakeClock(), ids: fakeIds(), authorization, bridge })
+
+      const detail = await refusalOf(() => racing.start(ACTOR, task.id, start(task)))
+      expect(detail.code).toBe("conflict")
       expect((await store.links.listByTask(ACTOR.scopeId, task.id)).length).toBe(0)
     })
 
