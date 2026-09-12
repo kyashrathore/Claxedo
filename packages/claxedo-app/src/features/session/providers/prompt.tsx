@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, createRoot, createSignal, getOwner, onCleanup } from "solid-js"
+import { batch, createMemo, createRoot, createSignal, createUniqueId, getOwner, onCleanup } from "solid-js"
 import type { Accessor } from "solid-js"
 import type { SetStoreFunction } from "solid-js/store"
 import type {
@@ -409,6 +409,19 @@ const promptContextInput = {
       )
     }
 
+    // A composer whose pane names neither a session nor a surface still owns a
+    // draft of its own. Without an id minted here its scope falls back to the
+    // directory, and every such composer in that directory reads and writes one
+    // shared draft — an image attached in one appears in the next. A real session
+    // id outranks it in `promptScopeKey`, so the minted id only ever names the
+    // drafts nothing else names.
+    const ownDraftId = createUniqueId()
+    const mountedScope = createMemo<Scope>(() => ({
+      dir: (props.directory ? value(props.directory) : undefined) ?? "",
+      id: props.sessionId ? value(props.sessionId) : undefined,
+      draftId: (props.draftId ? value(props.draftId) : undefined) ?? ownDraftId,
+    }))
+
     // The mounted scope's pin, and the only long-lived one. `onCleanup` inside a
     // memo runs before every recompute and on owner disposal, so the pin is
     // released on both ways out — a scope switch and provider teardown — with no
@@ -417,14 +430,7 @@ const promptContextInput = {
     // itself throws, the cache never admitted an entry, so there is nothing to
     // release.
     const session = createMemo(() => {
-      const handle = acquire(
-        promptScopeKey({
-          dir: props.directory ? value(props.directory) : undefined,
-          id: props.sessionId ? value(props.sessionId) : undefined,
-          draftId: props.draftId ? value(props.draftId) : undefined,
-        }),
-        undefined,
-      )
+      const handle = acquire(promptScopeKey(mountedScope()), undefined)
       onCleanup(handle.release)
       return handle.value
     })
@@ -455,6 +461,12 @@ const promptContextInput = {
 
     return {
       ready: () => session().ready(),
+      // The draft this provider is mounted on, as a value. A writer that resumes
+      // after an `await`, and the post-submit clear, both have to reach the draft
+      // the user was typing into rather than whichever one the pane resolves by
+      // the time they run; re-deriving it from their own props drifts off this
+      // one the moment either side changes.
+      scope: (): Scope => ({ ...mountedScope() }),
       // The raw per-scope handle. Resolves through the same `withScope` the
       // scoped `set`/`reset` use, so a controller bound here and a scoped clear
       // can never target different prompt-cache entries. Reference-stable per
@@ -466,8 +478,8 @@ const promptContextInput = {
       // still be evicted; no caller does that today (`controller-engine.ts` binds
       // `capture()` with no argument).
       capture: (scope?: Scope): PromptDraftCapture => withScope(scope, (target) => target),
-      current: () => session().current(),
-      cursor: () => session().cursor(),
+      current: (scope?: Scope) => withScope(scope, (target) => target.current()),
+      cursor: (scope?: Scope) => withScope(scope, (target) => target.cursor()),
       dirty: () => session().dirty(),
       goal: {
         armed: () => session().goal.armed(),

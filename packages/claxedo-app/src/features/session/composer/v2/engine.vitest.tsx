@@ -154,7 +154,7 @@ function Probe(props: { kind: ComposerEngineKind }) {
 
 function mount(kind: ComposerEngineKind, directory = nextScope()) {
   const view = render(() => (
-    <PromptProvider directory={directory}>
+    <PromptProvider directory={directory} draftId={`${directory}/surface`}>
       <Probe kind={kind} />
     </PromptProvider>
   ))
@@ -383,8 +383,8 @@ for (const kind of ["legacy", "controller"] as const) {
       cleanup()
       document.body.replaceChildren()
       mount(kind === "legacy" ? "controller" : "legacy", scope)
-      // Same directory scope means the same prompt-cache entry, so the other engine starts
-      // from the draft the first one left behind.
+      // The other engine remounts on the same pane surface, so it resolves the same
+      // prompt-cache entry and starts from the draft the first one left behind.
       await waitFor(() => expect(harness.text()).toBe("survives the flip"))
       expect(harness.prompt.current()).toEqual(parts)
       // ...and the new engine renders it into its own editor element.

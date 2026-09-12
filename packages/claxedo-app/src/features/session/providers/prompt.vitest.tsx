@@ -288,4 +288,33 @@ describe("PromptProvider", () => {
       sourcePath: "/Users/me/Pictures/shot.png",
     })
   })
+
+  // Two draft composers in one directory with neither a session nor a surface to
+  // name them. A key that falls back to the directory hands both the same draft,
+  // so an image attached in one appears in the other.
+  test("gives a draft composer with no session and no surface its own draft", async () => {
+    const view = render(() => (
+      <>
+        <PromptProvider directory="/draft-repo">
+          <Probe />
+        </PromptProvider>
+        <PromptProvider directory="/draft-repo">
+          <OtherProbe />
+        </PromptProvider>
+      </>
+    ))
+
+    const attachment: ImageAttachmentPart = {
+      type: "image",
+      id: "img-shared",
+      filename: "shot.png",
+      mime: "image/png",
+      dataUrl: "data:image/png;base64,AAAA",
+    }
+    latest.set([...text("first thread"), attachment], 12)
+    await waitFor(() => expect(view.getByTestId("prompt")).toHaveAttribute("data-images", "1"))
+
+    expect(view.getByTestId("other").textContent).toBe("")
+    expect(other.current().filter((part) => part.type === "image")).toHaveLength(0)
+  })
 })

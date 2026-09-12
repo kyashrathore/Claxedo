@@ -183,13 +183,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     input.addToHistory(currentPrompt, userMode)
     input.resetHistoryNavigation()
 
-    // Match PromptProvider.session() keying exactly: restoring a submitted draft
-    // must not mutate another draft opened while this submission was in flight.
-    const promptScope = promptViewScope({
-      directory: projectDirectory ?? fallbackDirectory ?? sdk.directory,
-      sessionId: explicitSessionID,
-      draftId,
-    })
+    // The draft this composer is mounted on, taken from the provider that owns
+    // it rather than re-derived here: clearing or restoring a submitted draft
+    // must reach the one the composer reads, and must not mutate another draft
+    // opened while this submission was in flight.
+    const promptScope = prompt.scope()
     const isNewSession = !explicitSessionID || explicitSessionID === "new"
     const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"

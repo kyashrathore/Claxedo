@@ -177,6 +177,8 @@ export const state: {
   goalMutation: unknown
   sessionConfigSaveError: string | undefined
   claxedoServerUrl: string
+  /** The draft the mounted PromptProvider resolves for the pane under test. */
+  promptScope: { dir: string; id?: string; draftId?: string }
   syncProject: SyncProject | undefined
   globalProjects: SyncProject[]
   mockClaxedoState: any
@@ -225,6 +227,7 @@ export const state: {
   },
   sessionConfigSaveError: undefined,
   claxedoServerUrl: "http://localhost:3001",
+  promptScope: { dir: "/repo/main", id: "new", draftId: "draft-1" },
   syncProject: undefined,
   globalProjects: [],
   mockClaxedoState: undefined,
@@ -232,7 +235,6 @@ export const state: {
 }
 
 export const projectsQueryKey = ["test", "projects"] as const
-export const repoMainPromptScope = "workspace:%2Frepo%2Fmain:draft"
 
 export function submitEvent() {
   return new Event("submit", { bubbles: true, cancelable: true })
@@ -717,6 +719,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
   mock.module("@/features/session/providers/prompt", () => ({
     ...realPrompt,
     usePrompt: () => ({
+      scope: () => ({ ...state.promptScope }),
       current: () => promptValue,
       reset: (scope?: unknown) => {
         promptCalls.reset.push(scope)
@@ -1061,6 +1064,7 @@ export function resetSubmitHarness() {
   }
   state.sessionConfigSaveError = undefined
   state.claxedoServerUrl = "http://localhost:3001"
+  state.promptScope = { dir: "/repo/main", id: "new", draftId: "draft-1" }
   state.syncProject = { id: "project-1", worktree: "/repo/main", sandboxes: [], workspaces: { "/repo/main": { kind: "local" } } }
   state.globalProjects = [state.syncProject]
   state.mockClaxedoState = undefined

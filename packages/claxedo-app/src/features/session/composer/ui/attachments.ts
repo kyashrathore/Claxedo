@@ -46,6 +46,12 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
   }
 
   const add = async (file: File, toast = true) => {
+    // The draft the user attached to, resolved before the file is read: the pane
+    // can resolve a different one while the read is in flight, and the image
+    // belongs to the composer it was dropped into rather than to whichever
+    // thread is on screen when the bytes arrive.
+    const scope = prompt.scope()
+
     const mime = await attachmentMime(file)
     if (!mime) {
       if (toast) warn()
@@ -65,8 +71,8 @@ export function createPromptAttachments(input: PromptAttachmentsInput) {
       mime,
       dataUrl: url,
     }
-    const cursor = prompt.cursor() ?? getCursorPosition(editor)
-    prompt.set([...prompt.current(), attachment], cursor)
+    const cursor = prompt.cursor(scope) ?? getCursorPosition(editor)
+    prompt.set([...prompt.current(scope), attachment], cursor, scope)
     return true
   }
 
