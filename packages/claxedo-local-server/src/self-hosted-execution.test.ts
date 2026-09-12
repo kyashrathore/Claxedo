@@ -25,6 +25,13 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
       // reason: a product that does not name this subpath carries neither the
       // routes nor the kit.
       "@claxedo/local-server/tasks/local-composition",
+      // The SIGNED self-hosted Tasks composition
+      // (claxedo-server/src/tasks/self-hosted-composition.ts) binds this box's
+      // own identity to the kit but starts sessions the same way the unsigned
+      // one does, because the box runs them. The bridge is the only piece it
+      // shares, and re-implementing it there would be a second copy of the
+      // start path rather than a boundary.
+      "@claxedo/local-server/tasks/session-bridge",
     ])
     const offenders: string[] = []
     const walk = (dir: string): string[] =>

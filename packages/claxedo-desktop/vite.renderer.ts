@@ -43,6 +43,11 @@ export function createElectronRenderer(mode: string): UserConfig {
       // removes the dynamic import entirely; a release emits it as a hashed
       // chunk while keeping the base document and its startup path local.
       __CLAXEDO_HOSTED_ACTIVATION_ENABLED__: JSON.stringify(hostedActivationEnabled),
+      // `CLAXEDO_BUILD_TASKS=0` turns Tasks off; anything else, unset
+      // included, leaves it on, so a packaging run that never sets the
+      // variable still ships the feature. Same replacement timing as above:
+      // the Tasks chunk is dropped, not emitted unreferenced.
+      __CLAXEDO_TASKS_ENABLED__: JSON.stringify(process.env.CLAXEDO_BUILD_TASKS !== "0"),
       // Empty when unset, which `remoteAccessAppOrigin()` treats as "not
       // baked" and falls back from — rather than baking the string
       // "undefined", which is truthy and would be handed to a phone verbatim.

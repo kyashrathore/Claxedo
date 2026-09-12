@@ -1,12 +1,12 @@
 # Tasks and Presets — evidence index (local slice, 2026-09-12)
 
-Source: branch `feat/tasks-presets` in worktree `~/test/opencode-tasks`, cut from dev `85f1d007c8`; evidence recorded at `a44662d5ef` plus the two orchestrator fixes `28cd279a9d` and `b8e08cbc0c`. Tasks selection: always-on in this build (no `CLAXEDO_BUILD_TASKS` artifact exclusion exists yet; see gaps).
+Source: branch `feat/tasks-presets` in worktree `~/test/opencode-tasks`, cut from dev `85f1d007c8`; evidence recorded at `a44662d5ef` plus the two orchestrator fixes `28cd279a9d` and `b8e08cbc0c`. Tasks selection: `CLAXEDO_BUILD_TASKS` selects the feature at build time; unset and any value other than `0` keep it on, so the live rows above were taken from an enabled build.
 
 Environment for the live rows: unsigned local stack started from the worktree. Server `npm run start` in `packages/claxedo-server` with `CLAXEDO_DATA_DIR`/`CLAXEDO_STATE_DIR` under the session scratchpad and `CLAXEDO_SERVER_PORT=2594`; app `bun run dev:local` in `packages/claxedo-app` with `PORT=4448 VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:2594`. Project registered with `POST /api/claxedo/projects` (`{ name, source: { kind: "directory", directory } }`) pointing at a scratch git repository. Scope `local`, owner `local`. Screenshots were inspected in the Claude Browser pane; pointer/keyboard input was screenshot-driven with element refs from the accessibility tree.
 
 | Journey | Automated | Visual / live | Result | Notes |
 |---|---|---|---|---|
-| T01 | none | none | NOT RUN | No feature-off artifact exists; `CLAXEDO_BUILD_TASKS` is not implemented. |
+| T01 | app architecture guard; desktop renderer-config guard; self-hosted selection tests; local-server feature-off resume test; `verify:closure` emitted manifests both ways | none | PASS (four artifacts measured; packaged desktop and deployed hosted NOT RUN) | See "Build-time feature selection" below. |
 | T02 | package model/service/http tests; SQLite + D1 conformance | live create, reload, server restart | PASS (local) | Task `tsk_234d73b3…` survived app reload and a server restart at revision 3. |
 | T03 | conformance `stale revision` cases; app store 409 test | none | PASS (automated only) | Two-client live case not run. |
 | T04 | service reparent/child rules | live add subtask via Add button | PASS (local) | Enter in the subtask field did not submit in the pane; the Add button did. Unverified whether that is real. |
@@ -27,7 +27,28 @@ Environment for the live rows: unsigned local stack started from the worktree. S
 | T19 | none live | none | NOT RUN | Two local presets with different instructions not run. |
 | T20–T22 | cloud refused with a reason | none | NOT RUN | Cloud placement and selected-only projection (S5/S6) are not implemented. |
 | T23 | none | none | NOT RUN | Delegation with effort (S7) not implemented; `effort_unsupported` is never produced at preview. |
-| T24 | archive/authority tests | none | PARTIAL | Feature-off resume not testable without an off artifact. |
+| T24 | archive/authority tests; `packages/claxedo-local-server/src/tasks/feature-off-resume.test.ts` | none | PARTIAL | Feature-off resume now proven at the route/runtime level: a session the enabled bridge created answers `GET /session/<id>/config` with its retained instructions, model and harness while the app is composed with no Tasks contribution and `/api/claxedo/tasks/*` answers 404. Not run on a packaged desktop or a deployed hosted Worker. |
+
+## Build-time feature selection (T01)
+
+`CLAXEDO_BUILD_TASKS=0` is the only value that turns Tasks off; unset keeps it on, so a build that never sets the variable ships the feature rather than silently dropping it. Asserted for every renderer config in `packages/claxedo-app/src/architecture/tasks-build-selection.guard.test.ts` and `packages/claxedo-desktop/src/renderer/renderer-entry-closure.guard.test.ts`, which run the real configs under unset/`1`/`0`.
+
+Measured, with the enabled build as the positive control in each case:
+
+| Artifact | Command | Enabled | Disabled |
+|---|---|---|---|
+| `@claxedo/app` local renderer | `bun run verify:closure` in `packages/claxedo-app` | 2950 emitted modules, 533 chunks, `assets/tasks-contributions-*.js` present | 2916 modules, 528 chunks, no Tasks chunk and no `packages/claxedo-tasks` module |
+| `@claxedo/server` self-hosted bundle | `bun run build:self-hosted-boundary` | 4445 modules, 19 `@claxedo/tasks` + 7 `tasks-host` modules, `claxedo_task_session_link` DDL present, 41 staged migrations | 4415 modules, 0 Tasks modules, DDL absent, 40 staged migrations |
+| desktop `claxedo-server` bundle | `bundleClaxedoServer(scripts/claxedo-server-boot.ts, …)` | 52 chunks, `claxedo-tasks` / `TASKS_ROUTE_PATH` / `claxedo_task_preset` / `claxedo_task_session_link` each in one chunk, 41 staged migrations | 49 chunks, none of those strings in any emitted file, 40 staged migrations |
+| `@claxedo/local-server` dist | `bun run scripts/build.ts` in `packages/claxedo-local-server` | 41 staged migrations incl. `20260912100000_claxedo_tasks` | 40, that migration excluded |
+
+The `app-local` and `server-self-hosted` policies in `script/product-boundary/policies/` carry the emitted rules and were cross-checked in both directions: the disabled manifest read against the enabled policy reports the missing required Tasks modules, and the enabled manifest read against the disabled policy reports the forbidden ones.
+
+What is NOT proven:
+
+- The desktop RENDERER has no artifact-level Tasks rule. `desktopRendererBoundaryManifestPlugin` records the base entry's STATIC closure, so a measured enabled build carries no Tasks module and no Tasks chunk either; a forbidden rule there would pass on both artifacts. The renderer source is `@claxedo/app`'s, so the cut is covered by `app-local`'s emitted manifest and the app guard. A desktop-specific emitted proof needs that plugin to record the renderer's dynamic closure.
+- The hosted Worker variant selection is UNCHANGED: no certified artifact was added or altered, and `certified-worker-artifacts.ts` is untouched. Hosted Tasks remains the hosted composition's own concern.
+- No packaged desktop and no deployed hosted Worker were built or exercised (T16 stays NOT RUN).
 
 ## Defects found only by the live run
 

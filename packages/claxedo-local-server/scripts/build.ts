@@ -10,6 +10,7 @@ import {
   serializeBuildManifest,
 } from "../../../script/product-boundary/normalize-build-manifest"
 import { runBunBuild } from "../../../script/bun-build"
+import { stageMigrationJournal } from "../../../script/migration-journal"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const REPO_ROOT = path.resolve(ROOT, "../..")
@@ -46,7 +47,7 @@ stageOpenCodeSdk(path.join(DIST, "node_modules"))
 const journalModule = require.resolve("@claxedo/server-core/platform/db/journal")
 const migrations = path.join(path.dirname(journalModule), "claxedo-migration")
 if (!fs.existsSync(migrations)) throw new Error(`Local Server migration journal is missing: ${migrations}`)
-fs.cpSync(migrations, path.join(DIST, "claxedo-migration"), { recursive: true })
+const staged = stageMigrationJournal(migrations, path.join(DIST, "claxedo-migration"))
 
 const mapFile = path.join(DIST, "self-hosted-execution.js.map")
 const sourceMap = readSourceMapMetadata(fs.readFileSync(mapFile, "utf8"), mapFile)
@@ -63,4 +64,7 @@ const manifestFile = path.join(ROOT, ".artifacts/u8-package-split/manifests/loca
 fs.mkdirSync(path.dirname(manifestFile), { recursive: true })
 fs.writeFileSync(manifestFile, serializeBuildManifest(manifest))
 
-console.log(`[local-server] built ${manifest.modules.length} modules in ${manifest.chunks.length} chunk`)
+console.log(
+  `[local-server] built ${manifest.modules.length} modules in ${manifest.chunks.length} chunk` +
+    (staged.excluded.length > 0 ? `, migrations excluded: ${staged.excluded.join(", ")}` : ""),
+)

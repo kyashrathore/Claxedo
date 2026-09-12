@@ -86,6 +86,34 @@ describe("emitted manifest boundary", () => {
     ])
   })
 
+  test("reports a required chunk marker that is not emitted", () => {
+    // The positive control for a build-selected cut: without it, a renamed
+    // chunk satisfies the forbidden rule on the disabled build AND passes
+    // unnoticed on the enabled one, so the exclusion reads as proven when
+    // nothing is being measured.
+    const { root, policy } = fixture({
+      entry: "packages/app/src/index.ts",
+      modules: ["packages/app/src/index.ts", "packages/app/src/optional/feature.ts"],
+      chunks: ["assets/index-abc.js"],
+      edges: { static: [], dynamic: [] },
+    })
+    policy.emitted!.requiredChunkMarkers = ["optional-feature"]
+    expect(emittedManifestFindings(policy, root)).toEqual([
+      "required emitted chunk marker missing: optional-feature",
+    ])
+  })
+
+  test("accepts a required chunk marker the build emitted", () => {
+    const { root, policy } = fixture({
+      entry: "packages/app/src/index.ts",
+      modules: ["packages/app/src/index.ts", "packages/app/src/optional/feature.ts"],
+      chunks: ["assets/index-abc.js", "assets/optional-feature-def.js"],
+      edges: { static: [], dynamic: [] },
+    })
+    policy.emitted!.requiredChunkMarkers = ["optional-feature"]
+    expect(emittedManifestFindings(policy, root)).toEqual([])
+  })
+
   test("supports a narrower static emitted closure than the full source graph", () => {
     const { root, policy } = fixture({
       entry: "packages/app/src/index.ts",

@@ -1,6 +1,12 @@
 import type { Policy } from "../policy.ts"
+import { TASKS_SELECTED } from "./shared.ts"
 
 const SRC = "packages/claxedo-server/src"
+
+const FORBIDDEN_MODULES = [
+  `${SRC}/deployments/hosted-node`,
+  `${SRC}/deployments/hosted-workerd`,
+]
 
 /**
  * `@claxedo/server` ships one Node production entry: the single binary
@@ -23,10 +29,7 @@ export const serverSelfHosted: Policy = {
     "electron",
     "@claxedo/desktop",
   ],
-  forbiddenModules: [
-    `${SRC}/deployments/hosted-node`,
-    `${SRC}/deployments/hosted-workerd`,
-  ],
+  forbiddenModules: FORBIDDEN_MODULES,
 
   control: {
     minModules: 50,
@@ -121,7 +124,19 @@ export const serverSelfHosted: Policy = {
   // reaches only `@claxedo/helpers/string` and the scope module already in
   // this closure. No package edge. Re-measured, no headroom: 139/38.
   // Consent revocation shares platform/auth/oauth-consent-revocation.ts across both OAuth providers.
-  ceilings: { modules: 139, packages: 38 },
+  // +1 package (2026-09-12): `src/tasks/self-hosted-composition.ts`,
+  // the SIGNED posture's Tasks composition, selected in
+  // `deployments/self-hosted-node/start.ts` from the composed
+  // `services.auth.config.enabled`. It is owned here and not in
+  // `@claxedo/local-server` because it binds THIS deployment's identity — the
+  // embedded issuer's bearer verifier and the local SQLite workspace authority
+  // — to the kit, and the loopback composition next to it authorizes every
+  // project unconditionally. The new package edge is `@claxedo/tasks`, reached
+  // only through that module; `CLAXEDO_BUILD_TASKS=0` folds the branch away
+  // and the emitted bundle carries neither. Measured 115 -> 116 modules and
+  // 38 -> 39 packages; only the package ceiling is raised, because the module
+  // ceiling above already sits well over what this entry reaches.
+  ceilings: { modules: 139, packages: 39 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -133,7 +148,28 @@ export const serverSelfHosted: Policy = {
       "packages/claxedo-local-server/src/self-hosted-execution.ts",
       // Chat SDK adapters remain externalized behind `@claxedo/channels` and
       // are verified by that package rather than duplicated into this bundle.
+      // Tasks, on an enabled build. The positive control for the rule below:
+      // `CLAXEDO_BUILD_TASKS=0` has to remove these, and a forbidden-only rule
+      // also passes when a rename makes them unfindable in both artifacts.
+      ...(TASKS_SELECTED
+        ? [`${SRC}/tasks/self-hosted-composition.ts`, "packages/claxedo-tasks/src/http/routes.ts"]
+        : []),
     ],
+    // The source walk reaches Tasks either way — the gate is a `process.env`
+    // comparison esbuild folds — so this is the only half that separates the
+    // two bundles. Measured: 4445 modules with Tasks, 4415 without, and the
+    // `claxedo_task_session_link` DDL present only in the first.
+    ...(TASKS_SELECTED
+      ? {}
+      : {
+          forbiddenModules: [
+            ...FORBIDDEN_MODULES,
+            "packages/claxedo-tasks",
+            `${SRC}/tasks`,
+            "packages/claxedo-server-core/src/tasks-host",
+            "packages/claxedo-local-server/src/tasks",
+          ],
+        }),
   },
 
   isolation: {

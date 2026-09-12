@@ -4,6 +4,7 @@ export {}
 
 declare global {
   const __CLAXEDO_HOSTED_ACTIVATION_ENABLED__: boolean
+  const __CLAXEDO_TASKS_ENABLED__: boolean
 }
 
 declare module "solid-js" {

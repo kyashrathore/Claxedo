@@ -312,6 +312,26 @@ describe("the renderer build keeps one local base document", () => {
       hostedActivation: "true",
     })
   })
+
+  test("only an explicit CLAXEDO_BUILD_TASKS=0 bakes Tasks out of the renderer", async () => {
+    const previous = process.env.CLAXEDO_BUILD_TASKS
+    const tasksDefine = async (selection: string | undefined) => {
+      if (selection === undefined) delete process.env.CLAXEDO_BUILD_TASKS
+      else process.env.CLAXEDO_BUILD_TASKS = selection
+      const { createElectronRenderer } = await import("../../vite.renderer")
+      return createElectronRenderer("production").define?.__CLAXEDO_TASKS_ENABLED__
+    }
+    try {
+      // Unset must stay ON: a packaging run that never heard of the variable
+      // has to ship the feature rather than silently drop it.
+      expect(await tasksDefine(undefined)).toBe("true")
+      expect(await tasksDefine("1")).toBe("true")
+      expect(await tasksDefine("0")).toBe("false")
+    } finally {
+      if (previous === undefined) delete process.env.CLAXEDO_BUILD_TASKS
+      else process.env.CLAXEDO_BUILD_TASKS = previous
+    }
+  })
 })
 
 describe("the local base document reaches main and the renderer build", () => {

@@ -7,10 +7,6 @@ import { configureTerminalAppPorts } from "@/features/terminal/app-ports"
 import { configureSettingsAppPorts } from "@/features/settings/app-ports"
 import { configureOnboardingAppPorts } from "@/features/onboarding/app-ports"
 import { configureReviewAppPorts } from "@/features/review/app-ports"
-import { registerContentSurface } from "@/app/integrations/first-party-content-surfaces"
-import { tasksContentSurface } from "@/app/integrations/tasks/content-surface"
-import { configureTasksAppPorts } from "@/features/tasks/app-ports"
-import { tasksAppPorts } from "@/app/integrations/tasks/tasks-ports"
 import * as SDK from "@/app/providers/sdk/sdk"
 import { useServer } from "@/app/connection/server"
 import * as GlobalSDK from "@/app/providers/global-sdk/provider"
@@ -134,9 +130,20 @@ if (rendererTraceEnabled()) {
   performance.mark("runtime.secondaryFeaturePortsModuleEvaluated")
 }
 
-// Tasks ships in every build that renders the shell. It is registered here
-// rather than in the first-party surface list because that list is reached from
-// the published local entry, whose closure must stay free of hosted capability
-// modules; this wiring runs only once the shell is being composed.
-configureTasksAppPorts(tasksAppPorts())
-registerContentSurface(tasksContentSurface)
+/**
+ * Tasks, selected at build time.
+ *
+ * The specifier is a string literal inside a branch on a `define`d identifier,
+ * so `CLAXEDO_BUILD_TASKS=0` makes Rollup drop the chunk instead of emitting
+ * one nothing reaches. Registration is awaited by `preloadRuntimeProviders()`
+ * through this module's export, which is what keeps a restored Tasks tab from
+ * painting the surface fallback while the chunk is still in flight.
+ *
+ * It is wired here rather than in the first-party surface list because that
+ * list is reached from the published local entry, whose closure must stay free
+ * of hosted capability modules; this wiring runs only once the shell is being
+ * composed.
+ */
+export const secondaryFeaturePortsReady: Promise<void> = __CLAXEDO_TASKS_ENABLED__
+  ? import("@/app/integrations/tasks-contributions").then((module) => module.loadTasksContributions())
+  : Promise.resolve()

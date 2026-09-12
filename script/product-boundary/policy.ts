@@ -100,6 +100,12 @@ export type Policy = {
     forbiddenModules?: string[]
     forbiddenPackages?: string[]
     forbiddenChunkMarkers?: string[]
+    /**
+     * Chunks that MUST be emitted. The positive control for every
+     * `forbiddenChunkMarkers` entry: an absent name satisfies the forbidden
+     * rule whether the feature was excluded or merely renamed.
+     */
+    requiredChunkMarkers?: string[]
   }
 
   /** Fresh-install build commands run with only these workspace sources. */

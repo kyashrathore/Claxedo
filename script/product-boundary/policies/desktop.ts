@@ -421,7 +421,9 @@ export const desktopRendererUnsigned: Policy = {
   // +16 modules, +1 package (2026-09-12): the same Tasks and Presets owners
   // app-local reviews, reaching the renderer through the shell's secondary port
   // wiring. The new package edge is @claxedo/tasks. Measured 1079 / 58.
-  ceilings: { modules: 1079, packages: 58 },
+  // +1 module (2026-09-12): the same tasks-contributions gate owner app-local
+  // reviews. No new package edge. Measured 1080 / 58.
+  ceilings: { modules: 1080, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -440,6 +442,16 @@ export const desktopRendererUnsigned: Policy = {
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],
+    // NO Tasks rule here, and the omission is deliberate. This manifest is the
+    // renderer's STATIC closure (`desktopRendererBoundaryManifestPlugin` builds
+    // the base entry without `includeDynamicImports`), so a measured
+    // `CLAXEDO_BUILD_TASKS=1` build carries no Tasks module and no Tasks chunk
+    // either — a forbidden rule would pass on both artifacts and read as
+    // coverage. The renderer source is `@claxedo/app`'s, so the cut is proven
+    // by `app-local`'s emitted manifest, which records the full closure, plus
+    // `claxedo-app/src/architecture/tasks-build-selection.guard.test.ts`. A
+    // desktop-specific emitted proof needs that plugin to record the
+    // renderer's dynamic closure, which today it does not.
     forbiddenChunkMarkers: ["desktop-hosted-contributions"],
   },
 }

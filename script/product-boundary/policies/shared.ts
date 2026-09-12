@@ -41,3 +41,29 @@ export const MANIFEST_READS = [
   "packages/claxedo-app/src/app/dialogs/settings.tsx -> packages/claxedo-app/package.json",
   "packages/claxedo-desktop/src/renderer/shell.tsx -> packages/claxedo-desktop/package.json",
 ]
+
+/**
+ * Tasks, as the emitted artifact shows it.
+ *
+ * `CLAXEDO_BUILD_TASKS=0` is read here, once, for every policy that has to
+ * state a different emitted cut for the two builds. Each product's gate is a
+ * value its bundler replaces, so the SOURCE walk reaches Tasks either way and
+ * only the emitted half can tell the artifacts apart.
+ *
+ * The marker is the chunk name Rollup derives from the module behind the gated
+ * dynamic import (`app/integrations/tasks-contributions.ts`). It is asserted
+ * PRESENT on an enabled build as well as absent on a disabled one: a forbidden
+ * marker alone passes when a rename makes the name unfindable in both.
+ */
+export const TASKS_CHUNK_MARKER = "tasks-contributions"
+
+export const TASKS_SELECTED = process.env.CLAXEDO_BUILD_TASKS !== "0"
+
+export function tasksModuleRoots(appSrc: string) {
+  return [
+    "packages/claxedo-tasks",
+    `${appSrc}/app/integrations/tasks`,
+    `${appSrc}/app/integrations/tasks-contributions.ts`,
+    `${appSrc}/features/tasks`,
+  ]
+}

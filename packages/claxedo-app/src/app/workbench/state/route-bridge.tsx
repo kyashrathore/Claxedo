@@ -687,7 +687,9 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           workspaceBacking,
           sessionId: id,
           marketplace: routeKind === "marketplace",
-          tasks: routeKind === "tasks",
+          // A build without Tasks registers no surface for the tab this opens,
+          // so `/tasks` must reach nothing rather than an empty pane.
+          tasks: __CLAXEDO_TASKS_ENABLED__ && routeKind === "tasks",
           pageId: pid,
           terminalId: tid,
           workspaceBrowse: routeKind === "workspace",

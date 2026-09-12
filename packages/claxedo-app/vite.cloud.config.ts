@@ -115,6 +115,15 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
     || env.VITE_CLAXEDO_SERVER_URL
     || "http://127.0.0.1:2593"
   return {
+    define: {
+      // Read here, and only here, for every renderer this config composes
+      // (vite.local.config.ts derives from it): `CLAXEDO_BUILD_TASKS=0` turns
+      // Tasks off, anything else — including unset — leaves it on, so a build
+      // that never heard of the variable still ships the feature. Replaced
+      // before Rollup links the graph, which is what drops the Tasks chunk
+      // rather than emitting one nothing imports.
+      __CLAXEDO_TASKS_ENABLED__: JSON.stringify(process.env.CLAXEDO_BUILD_TASKS !== "0"),
+    },
     plugins: [solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
     publicDir: "public",
     server: {

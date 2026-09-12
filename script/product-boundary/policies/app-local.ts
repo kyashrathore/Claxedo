@@ -1,7 +1,19 @@
 import type { Policy } from "../policy.ts"
-import { APP_ALIASES, MANIFEST_READS } from "./shared.ts"
+import { APP_ALIASES, MANIFEST_READS, TASKS_CHUNK_MARKER, TASKS_SELECTED, tasksModuleRoots } from "./shared.ts"
 
 const SRC = "packages/claxedo-app/src"
+
+const FORBIDDEN_MODULES = [
+  // The module that MINTS a token. Every local module that needs one takes
+  // it from `configureApiRuntime`/`configureAuthSession` instead.
+  `${SRC}/platform/auth/better-auth-browser-auth.ts`,
+  // The hosted browser entry. A local build reaching it would start the
+  // signed-identity composition.
+  `${SRC}/app/entry/main.tsx`,
+  // The hosted implementation set. Its loaders are injected by main.tsx, so a
+  // local build must not carry even their lazy chunks.
+  `${SRC}/app/integrations/documents-content-surfaces.tsx`,
+]
 
 /**
  * `@claxedo/app`'s LOCAL production entry.
@@ -41,17 +53,7 @@ export const appLocal: Policy = {
   aliases: APP_ALIASES,
 
   forbiddenPackages: ["better-auth"],
-  forbiddenModules: [
-    // The module that MINTS a token. Every local module that needs one takes
-    // it from `configureApiRuntime`/`configureAuthSession` instead.
-    `${SRC}/platform/auth/better-auth-browser-auth.ts`,
-    // The hosted browser entry. A local build reaching it would start the
-    // signed-identity composition.
-    `${SRC}/app/entry/main.tsx`,
-    // The hosted implementation set. Its loaders are injected by main.tsx, so a
-    // local build must not carry even their lazy chunks.
-    `${SRC}/app/integrations/documents-content-surfaces.tsx`,
-  ],
+  forbiddenModules: FORBIDDEN_MODULES,
   permittedOutsideRoots: MANIFEST_READS,
 
   control: {
@@ -343,7 +345,12 @@ export const appLocal: Policy = {
   // features/tasks modules behind them — app-ports, the catalog client and its
   // queries, the filter/draft store, and the surface, its two views, the two
   // dialogs, the detail panel and the start flow. Measured 1028 / 39.
-  ceilings: { modules: 1028, packages: 39 },
+  // +1 module (2026-09-12): app/integrations/tasks-contributions.ts, the one
+  // module the renderer's `CLAXEDO_BUILD_TASKS` gate dynamic-imports. It holds
+  // the two registration calls and nothing else; the sixteen owners above are
+  // reached through it instead of statically. No new package edge.
+  // Measured 1029 / 39.
+  ceilings: { modules: 1029, packages: 39 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
@@ -356,6 +363,14 @@ export const appLocal: Policy = {
       `${SRC}/app/entry/app.tsx`,
       `${SRC}/features/terminal/core/backend/xterm.ts`,
     ],
-    forbiddenChunkMarkers: ["documents-content-surfaces"],
+    // Tasks is the one cut the source walk cannot see: its gate is a `define`d
+    // identifier, so the same source graph produces both artifacts.
+    ...(TASKS_SELECTED
+      ? { requiredChunkMarkers: [TASKS_CHUNK_MARKER] }
+      : { forbiddenModules: [...FORBIDDEN_MODULES, ...tasksModuleRoots(SRC)] }),
+    forbiddenChunkMarkers: [
+      "documents-content-surfaces",
+      ...(TASKS_SELECTED ? [] : [TASKS_CHUNK_MARKER]),
+    ],
   },
 }

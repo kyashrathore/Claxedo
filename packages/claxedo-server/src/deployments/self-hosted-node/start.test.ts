@@ -76,7 +76,7 @@ describe("selfHostedPosture", () => {
 describe("the reported authority is the one the composition builds", () => {
   /**
    * Drives `createDefaultLocalControlPlaneServices` — the function the
-   * self-hosted entry reaches through `startServer` — and compares what it
+   * self-hosted entry composes its services with — and compares what it
    * selected against what `selfHostedPosture` reports for the SAME
    * environment. `process.env` is what both read, so the two cannot be given
    * different inputs.
@@ -167,9 +167,12 @@ describe("staticAppPosture", () => {
 
 describe("the self-hosted entry wiring", () => {
   test("asserts the posture before composing anything", () => {
-    // Order is the property. A gate that ran after `startServer` would let the
-    // listener come up on a configuration it was about to reject.
-    expect(start.indexOf("assertSelfHostedPosture(")).toBeLessThan(start.indexOf("return startServer("))
+    // Order is the property. A gate that ran after the services were composed
+    // would open SQLite and bind a listener on a configuration it was about to
+    // reject.
+    expect(start.indexOf("assertSelfHostedPosture(")).toBeLessThan(
+      start.indexOf("createDefaultLocalControlPlaneServices()"),
+    )
   })
 
   test("the process entry goes through the gated start, not startServer", () => {
