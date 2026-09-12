@@ -93,7 +93,7 @@ fn render_markdown(request: &RenderRequest) -> Result<String, String> {
     let arena = Arena::new();
     let root = parse_document(&arena, &source, &options);
     autolink_prose(&arena, root);
-    mask_blocked_link_schemes(root);
+    mask_blocked_schemes(root);
     let mut html = String::new();
     format_html(root, &options, &mut html)
         .map_err(|error| format!("failed to render Markdown: {error}"))?;
@@ -104,6 +104,7 @@ fn render_markdown(request: &RenderRequest) -> Result<String, String> {
             "<a class=\"external-link\" target=\"_blank\" rel=\"noopener noreferrer\" href=",
         )
         .replace(&format!("href=\"{BLOCKED_SCHEME_MASK}"), "href=\"")
+        .replace(&format!("src=\"{BLOCKED_SCHEME_MASK}"), "src=\"")
         .replace("\u{e000}CLAXEDO_MATH_OPEN\u{e001}", "\\(")
         .replace("\u{e000}CLAXEDO_MATH_CLOSE\u{e001}", "\\)"))
 }
@@ -230,19 +231,19 @@ fn autolink_prose<'a>(arena: &'a Arena<'a>, root: &'a AstNode<'a>) {
     }
 }
 
-fn mask_blocked_link_schemes<'a>(root: &'a AstNode<'a>) {
+fn mask_blocked_schemes<'a>(root: &'a AstNode<'a>) {
     for node in root.descendants() {
         let mut data = node.data.borrow_mut();
-        let NodeValue::Link(link) = &mut data.value else {
+        let (NodeValue::Link(destination) | NodeValue::Image(destination)) = &mut data.value else {
             continue;
         };
         // An author-written destination must not be able to spell the mask and
         // ride the restore past the formatter's dangerous-url scanner.
-        while let Some(rest) = link.url.strip_prefix(BLOCKED_SCHEME_MASK) {
-            link.url = rest.to_owned();
+        while let Some(rest) = destination.url.strip_prefix(BLOCKED_SCHEME_MASK) {
+            destination.url = rest.to_owned();
         }
-        if has_transcript_prefix(&link.url) && dangerous_url(&link.url) {
-            link.url.insert_str(0, BLOCKED_SCHEME_MASK);
+        if has_transcript_prefix(&destination.url) && dangerous_url(&destination.url) {
+            destination.url.insert_str(0, BLOCKED_SCHEME_MASK);
         }
     }
 }
@@ -392,6 +393,48 @@ mod tests {
                 "href=\"vscode://b\">vscode://b</a></em> — fertig.</p>\n"
             )
         );
+    }
+
+    #[test]
+    fn keeps_the_image_sources_the_web_renderer_keeps() {
+        assert_eq!(
+            markdown("![shot](file:///Users/dev/shot.png)"),
+            "<p><img src=\"file:///Users/dev/shot.png\" alt=\"shot\" /></p>\n"
+        );
+        for prefix in TRANSCRIPT_LINK_PREFIXES {
+            assert!(
+                markdown(&format!("![shot]({prefix}example.com/shot.png)"))
+                    .contains(&format!("src=\"{prefix}example.com/shot.png\"")),
+                "{prefix} lost its image source"
+            );
+        }
+        assert!(
+            markdown("![x](data:image/png;base64,AAAA)")
+                .contains("src=\"data:image/png;base64,AAAA\"")
+        );
+    }
+
+    #[test]
+    fn blanks_an_image_source_off_the_closed_list() {
+        for source in [
+            "![x](javascript:alert(1))".to_owned(),
+            "![x](data:text/html,x)".to_owned(),
+            format!("![x]({BLOCKED_SCHEME_MASK}javascript:alert(1))"),
+        ] {
+            let html = markdown(&source);
+            assert!(html.contains("src=\"\""), "{source} kept a source: {html}");
+            assert!(!html.contains("javascript:"), "{source} kept the scheme");
+            assert!(!html.contains(BLOCKED_SCHEME_MASK), "{source} leaked the mask");
+        }
+    }
+
+    #[test]
+    fn leaves_an_image_literal_where_the_author_put_it() {
+        assert_eq!(
+            markdown("`![shot](file:///Users/dev/shot.png)` stays code"),
+            "<p><code>![shot](file:///Users/dev/shot.png)</code> stays code</p>\n"
+        );
+        assert!(!markdown("```\n![shot](file:///Users/dev/shot.png)\n```").contains("<img"));
     }
 
     #[test]
