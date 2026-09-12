@@ -222,6 +222,45 @@ describe("SQLite workspace authority tenancy migration", () => {
     }).toEqual(firstSnapshot)
   })
 
+  test("adds the last-human-turn column to a registered session in place and leaves it unprompted", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-human-turn-migrate-")), "authority.db")
+    const existing = new Database(file)
+    existing.exec(`
+      CREATE TABLE session_registration_operations (
+        operation_id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL UNIQUE,
+        workspace_id TEXT NOT NULL,
+        creator_actor_id TEXT NOT NULL,
+        operation_kind TEXT NOT NULL,
+        parent_session_id TEXT,
+        requested_title TEXT,
+        state TEXT NOT NULL,
+        state_reason TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE session_history (
+        session_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        creator_actor_id TEXT NOT NULL,
+        operation_id TEXT NOT NULL UNIQUE,
+        title TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        max_event_ordinal INTEGER NOT NULL DEFAULT 0,
+        deleted_at INTEGER
+      );
+      INSERT INTO session_history VALUES ('session_before', 'ws_one', 'actor_one', 'operation_one', 'Kept', 1, 2, 0, NULL);
+    `)
+    existing.close()
+
+    const database = openAuthorityDb({ path: file })()
+
+    expect(database.prepare("SELECT * FROM session_history").all()).toEqual([
+      expect.objectContaining({ session_id: "session_before", updated_at: 2, last_human_turn_at: null }),
+    ])
+  })
+
   test("ambiguous legacy tenancy aborts without partially rewriting rows", () => {
     const database = new Database(":memory:")
     createLegacyAuthorityTables(database)

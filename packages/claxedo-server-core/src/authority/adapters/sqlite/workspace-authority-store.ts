@@ -72,6 +72,9 @@ CREATE TABLE session_history (
   title TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
+  -- NULL means nobody has ever prompted this session. updated_at moves for an
+  -- agent's turn too, so the session list cannot band on it.
+  last_human_turn_at INTEGER,
   max_event_ordinal INTEGER NOT NULL DEFAULT 0,
   deleted_at INTEGER
 );
@@ -459,6 +462,9 @@ function ensureSessionTurnSchema(db: SqliteAuthorityDb) {
     );
   `)
   addColumn(db, "session_history", "snapshot_hash", "TEXT")
+  // Not backfilled: a session registered before this column reads as never
+  // prompted, which is the only thing the store can honestly say about it.
+  addColumn(db, "session_history", "last_human_turn_at", "INTEGER")
 }
 
 function migrateRuntimeAccessTokenSchema(db: SqliteAuthorityDb) {

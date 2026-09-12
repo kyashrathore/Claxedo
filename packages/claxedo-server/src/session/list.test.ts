@@ -86,4 +86,34 @@ describe("signedSessionList", () => {
     expect(listSessions).toHaveBeenCalledWith(signed, { workspaceId: "ws_cloud" })
     expect(response.items?.map((item) => item.sessionId)).toEqual(["ses_ws_cloud"])
   })
+
+  /**
+   * The union re-spreads every row to attach the workspace and project it was
+   * read for, so a column the authority stamped is one spread away from being
+   * dropped — and the loss would read as a plausible creation order.
+   */
+  test("keeps the authority's last human turn as the project union's order", async () => {
+    const svc = services({
+      listWorkspaces: vi.fn(async () => [
+        { workspace_id: "ws_one", project_id: "prj_1", access: "cloud" },
+        { workspace_id: "ws_two", project_id: "prj_1", access: "cloud" },
+      ]),
+      listSessions: vi.fn(async (_auth: unknown, args: { workspaceId: string }) => [
+        args.workspaceId === "ws_one"
+          ? { session_id: "ses_prompted", created_at: 1, updated_at: 9, last_human_turn_at: 7 }
+          : { session_id: "ses_quiet", created_at: 5, updated_at: 5 },
+      ]),
+    })
+
+    const response = await signedSessionList(
+      svc,
+      signed,
+      query("scope=project&projectId=prj_1&sort=human_turn_desc"),
+    )
+
+    expect(response.items?.map((item) => [item.sessionId, item.lastHumanTurnAt])).toEqual([
+      ["ses_prompted", 7],
+      ["ses_quiet", undefined],
+    ])
+  })
 })

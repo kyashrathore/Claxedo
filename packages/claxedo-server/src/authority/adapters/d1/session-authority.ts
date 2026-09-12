@@ -94,6 +94,7 @@ type SessionRow = {
   title: string | null
   created_at: number
   updated_at: number
+  last_human_turn_at: number | null
   deleted_at: number | null
   max_event_ordinal: number
   snapshot_generation: number
@@ -414,12 +415,35 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       && row.actor_id === actor.actorId
       && row.released_at === null
       && row.expires_at > now
-    ) return turnLeaseJson(row)
+    ) {
+      await this.stampHumanTurn(actor, sessionId, workspaceId, row.acquired_at)
+      return turnLeaseJson(row)
+    }
 
     // Recheck after the conditional write so a current denial never leaks the
     // competing turn's expiry. Only an authorized contender gets a 409.
     await this.requireSessionAccess(actor, sessionId, workspaceId, "write")
     throw new SessionTurnConflictError(sessionId, row?.expires_at)
+  }
+
+  /**
+   * A wake, a subagent or a channel message admits a turn the same way the
+   * reader does, so only the actor kind this store resolved for the admitted
+   * principal tells them apart. Stamping the lease's own admission time makes an
+   * exact retry idempotent; max() stops a host whose clock ran backwards from
+   * moving a session's last prompt earlier than one already recorded.
+   */
+  private async stampHumanTurn(actor: Principal, sessionId: string, workspaceId: string, admittedAt: number) {
+    if (actor.actorKind !== "human") return
+    await this.database
+      .prepare(
+        `
+      update sessions set last_human_turn_at = max(coalesce(last_human_turn_at, 0), ?)
+      where session_id = ? and workspace_id = ? and deleted_at is null
+    `,
+      )
+      .bind(admittedAt, sessionId, workspaceId)
+      .run()
   }
 
   async renewSessionTurn(input: OwnedSessionTurnInput): Promise<SessionTurnLease> {
@@ -2046,6 +2070,7 @@ function sessionJson(row: SessionRow) {
     ...(row.title === null ? {} : { title: row.title }),
     created_at: row.created_at,
     updated_at: row.updated_at,
+    ...(row.last_human_turn_at === null ? {} : { last_human_turn_at: row.last_human_turn_at }),
   }
 }
 

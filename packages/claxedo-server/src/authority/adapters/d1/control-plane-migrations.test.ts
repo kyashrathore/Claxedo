@@ -31,6 +31,7 @@ const CONTROL_PLANE_MIGRATIONS = [
   "0021_mcp_oauth_clients.sql",
   "0022_sandbox_leases.sql",
   "0023_agent_plugin_sources.sql",
+  "0024_session_last_human_turn.sql",
 ]
 
 const BEFORE_ADAPTER_REBUILD = CONTROL_PLANE_MIGRATIONS.slice(

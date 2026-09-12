@@ -7,6 +7,7 @@ import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/p
 import { exercisePrivateSessionAuthorityConformance } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
 import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 
+import { buildSessionListResponse, parseSessionListQuery } from "../../../session/list"
 import { D1WorkspaceAuthority } from "./workspace-authority"
 import { D1SessionAuthority } from "./session-authority"
 
@@ -17,6 +18,7 @@ const MIGRATIONS = [
   "0010_session_turn_leases.sql",
   "0011_session_turn_producers.sql",
   "0013_org_team_session_sharing.sql",
+  "0024_session_last_human_turn.sql",
 ].map(
   (name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)),
 )
@@ -66,6 +68,9 @@ async function setup() {
     now,
     advancePast: (expiresAt: number) => {
       currentTime = Math.max(currentTime, expiresAt)
+    },
+    rewindTo: (value: number) => {
+      currentTime = value
     },
   }
 }
@@ -710,4 +715,119 @@ describe("D1 private multiplayer session authority", () => {
       await input.database.prepare("select deleted_at from sessions where session_id = 'ses_b'").first(),
     ).toMatchObject({ deleted_at: expect.any(Number) })
   })
+
+  test("stamps the admitted human turn and refuses to move it backwards", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, { operationId: "op_turn", sessionId: "ses_turn" })
+    const runtime = {
+      principalKind: "user" as const,
+      actorId: alice.principal!.actorId,
+      actorKind: "human" as const,
+      sessionId: "ses_turn",
+      workspaceId: "ws_main",
+    }
+
+    const first = await input.sessions.acquireSessionTurn({ ...runtime, turnId: "m1" })
+    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([
+      expect.objectContaining({ session_id: "ses_turn", last_human_turn_at: first.acquiredAt }),
+    ])
+
+    await input.sessions.releaseSessionTurn({
+      ...runtime,
+      turnId: "m1",
+      leaseId: first.leaseId,
+      fencingToken: first.fencingToken,
+    })
+    input.rewindTo(first.acquiredAt - 10_000)
+    const second = await input.sessions.acquireSessionTurn({ ...runtime, turnId: "m2" })
+
+    expect(second.acquiredAt).toBeLessThan(first.acquiredAt)
+    expect(await input.sessions.listSessions(alice, { workspaceId: "ws_main" })).toEqual([
+      expect.objectContaining({ session_id: "ses_turn", last_human_turn_at: first.acquiredAt }),
+    ])
+  })
+
+  test("leaves a session an agent drove unprompted", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    // Every identity this store mints is a human actor, so the agent row a
+    // service principal arrives with has no entrypoint and is seeded directly.
+    await input.database
+      .prepare(
+        `insert into actors (actor_id, user_id, kind, state, created_at, updated_at, revoked_at)
+         values (?, ?, 'agent', 'active', 1, 1, null)`,
+      )
+      .bind("actor_agent", alice.principal!.userId)
+      .run()
+    const agent = { principalKind: "service" as const, actorId: "actor_agent", actorKind: "agent" as const }
+    await input.sessions.reserveRuntimeSession(agent, {
+      operationId: "op_agent",
+      sessionId: "ses_agent",
+      workspaceId: "ws_main",
+      kind: "create",
+    })
+    await input.sessions.registerRuntimeSession({
+      ...agent,
+      operationId: "op_agent",
+      sessionId: "ses_agent",
+      workspaceId: "ws_main",
+    })
+
+    await input.sessions.acquireSessionTurn({
+      ...agent,
+      sessionId: "ses_agent",
+      workspaceId: "ws_main",
+      turnId: "m_agent",
+    })
+
+    const rows = await input.sessions.listSessions(alice, { workspaceId: "ws_main" })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).not.toHaveProperty("last_human_turn_at")
+  })
+
+  test("orders the session list by the last human turn and pages past the never-prompted rows", async () => {
+    const input = await setup()
+    const { alice } = await sharedWorkspace(input)
+    for (const sessionId of ["ses_first", "ses_second", "ses_quiet"]) {
+      await reserveAndRegister(input.sessions, alice, { operationId: `op_${sessionId}`, sessionId })
+    }
+    const prompt = async (sessionId: string, turnId: string) => {
+      const runtime = {
+        principalKind: "user" as const,
+        actorId: alice.principal!.actorId,
+        actorKind: "human" as const,
+        sessionId,
+        workspaceId: "ws_main",
+      }
+      const lease = await input.sessions.acquireSessionTurn({ ...runtime, turnId })
+      await input.sessions.releaseSessionTurn({
+        ...runtime,
+        turnId,
+        leaseId: lease.leaseId,
+        fencingToken: lease.fencingToken,
+      })
+    }
+    await prompt("ses_first", "m_first")
+    await prompt("ses_second", "m_second")
+
+    const sessions = await input.sessions.listSessions(alice, { workspaceId: "ws_main" })
+    const page = buildSessionListResponse({ query: sessionListQuery("limit=2"), sessions })
+    expect(page.items?.map((item) => item.sessionId)).toEqual(["ses_second", "ses_first"])
+
+    const rest = buildSessionListResponse({
+      query: sessionListQuery(`limit=2&cursor=${encodeURIComponent(page.nextCursor!)}`),
+      sessions,
+    })
+    expect(rest.items?.map((item) => item.sessionId)).toEqual(["ses_quiet"])
+  })
 })
+
+/** The query `GET /api/control/session-list` builds for a cloud workspace rail. */
+function sessionListQuery(search: string) {
+  return parseSessionListQuery(
+    new URL(
+      `https://control.test/api/control/session-list?scope=workspace&workspaceId=ws_main&sort=human_turn_desc&${search}`,
+    ),
+  )
+}

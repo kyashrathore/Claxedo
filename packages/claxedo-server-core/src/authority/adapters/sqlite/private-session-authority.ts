@@ -54,6 +54,7 @@ type SessionRow = {
   title: string | null
   created_at: number
   updated_at: number
+  last_human_turn_at: number | null
   max_event_ordinal: number
   snapshot_hash: string | null
   deleted_at: number | null
@@ -302,6 +303,7 @@ export function createSqlitePrivateSessionAuthority(input: {
             session_id, workspace_id, turn_id, fencing_token, actor_id, admitted_at
           ) VALUES (?, ?, ?, ?, ?, ?)
         `).run(sessionId, workspaceId, turnId, fencingToken, actor.token_identifier, at)
+        stampHumanTurn(db, actor, sessionId, workspaceId, at)
         return publicTurnLease(turnLease(db, sessionId)!)
       })()
     },
@@ -705,10 +707,31 @@ function publicSession(db: SqliteAuthorityDb, row: SessionRow, viewerActorId: st
     title: row.title ?? undefined,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    ...(row.last_human_turn_at === null ? {} : { last_human_turn_at: row.last_human_turn_at }),
     ...(creator?.public_id ? { owner_public_id: creator.public_id } : {}),
     ...(creator?.name ? { owner_name: creator.name } : {}),
     ...(creator?.image_url ? { owner_avatar_url: creator.image_url } : {}),
   }
+}
+
+/**
+ * A wake, a subagent or a channel message admits a turn the same way the reader
+ * does, so only the actor kind this store resolved for the admitted principal
+ * tells them apart. MAX stops a host whose clock ran backwards from moving a
+ * session's last prompt earlier than one already recorded.
+ */
+function stampHumanTurn(
+  db: SqliteAuthorityDb,
+  actor: { kind: string },
+  sessionId: string,
+  workspaceId: string,
+  at: number,
+) {
+  if (actor.kind !== "human") return
+  db.prepare(`
+    UPDATE session_history SET last_human_turn_at = MAX(COALESCE(last_human_turn_at, 0), ?)
+    WHERE session_id = ? AND workspace_id = ?
+  `).run(at, sessionId, workspaceId)
 }
 
 function messageId(value: unknown) {

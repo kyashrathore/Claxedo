@@ -7,6 +7,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import { exercisePrivateSessionAuthorityConformance } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
 import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
+import { openAuthorityDb, upsertUser } from "./workspace-authority-store"
 
 function auth(subject: string): SignedControlPlaneAuth {
   return {
@@ -162,6 +163,104 @@ describe("SQLite private-session authority", () => {
       sessions: [{ sessionId: "unregistered" }],
     })).rejects.toMatchObject({ status: 403 })
     expect(await store.listSessions(creator, { workspaceId: "workspace_main" })).toEqual([])
+  })
+
+  test("stamps the admitted human turn and refuses to move it backwards", async () => {
+    const creator = auth("creator")
+    const runtime = {
+      principalKind: "user" as const,
+      actorId: creator.user.tokenIdentifier,
+      actorKind: "human" as const,
+      sessionId: "session_1",
+      workspaceId: "workspace_main",
+    }
+    const store = authority()
+    let currentTime = 1_800_000_000_000
+    const originalNow = Date.now
+    Date.now = () => currentTime
+    try {
+      await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+      await store.reserveSession(creator, {
+        operationId: "operation_1",
+        sessionId: "session_1",
+        workspaceId: "workspace_main",
+        kind: "create",
+      })
+      await store.registerRuntimeSession({ ...runtime, operationId: "operation_1" })
+
+      currentTime = 1_800_000_050_000
+      const first = await store.acquireSessionTurn({ ...runtime, turnId: "message_1" })
+      expect(await store.listSessions(creator, { workspaceId: "workspace_main" })).toEqual([
+        expect.objectContaining({ session_id: "session_1", last_human_turn_at: 1_800_000_050_000 }),
+      ])
+
+      await store.releaseSessionTurn({
+        ...runtime,
+        turnId: "message_1",
+        leaseId: first.leaseId,
+        fencingToken: first.fencingToken,
+      })
+      currentTime = 1_800_000_040_000
+      await store.acquireSessionTurn({ ...runtime, turnId: "message_2" })
+
+      expect(await store.listSessions(creator, { workspaceId: "workspace_main" })).toEqual([
+        expect.objectContaining({ session_id: "session_1", last_human_turn_at: 1_800_000_050_000 }),
+      ])
+    } finally {
+      Date.now = originalNow
+    }
+  })
+
+  test("leaves a session an agent drove unprompted", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-agent-turn-"))
+    temporaryDirectories.push(directory)
+    const databasePath = path.join(directory, "authority.db")
+    const store = createSqliteWorkspaceAuthority({ path: databasePath })
+    const seed = openAuthorityDb({ path: databasePath })
+    openAuthorities.push(store, seed)
+    const creator = auth("creator")
+    // Every signed request upserts a human user, so the agent row a service
+    // principal arrives with has no entrypoint here and is seeded directly.
+    upsertUser(seed(), { token_identifier: "actor_agent", kind: "agent" })
+
+    await store.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+    await store.reserveSession(creator, {
+      operationId: "operation_1",
+      sessionId: "session_1",
+      workspaceId: "workspace_main",
+      kind: "create",
+    })
+    await store.registerRuntimeSession({
+      principalKind: "user",
+      actorId: creator.user.tokenIdentifier,
+      actorKind: "human",
+      operationId: "operation_1",
+      sessionId: "session_1",
+      workspaceId: "workspace_main",
+    })
+    await store.grantWorkspaceShare(creator, {
+      workspaceId: "workspace_main",
+      role: "editor",
+      target: { kind: "actor", actorId: "actor_agent" },
+    })
+    await store.grantSessionParticipant(creator, {
+      sessionId: "session_1",
+      workspaceId: "workspace_main",
+      participantActorId: "actor_agent",
+    })
+
+    await store.acquireSessionTurn({
+      principalKind: "service",
+      actorId: "actor_agent",
+      actorKind: "agent",
+      sessionId: "session_1",
+      workspaceId: "workspace_main",
+      turnId: "message_agent",
+    })
+
+    const rows = await store.listSessions(creator, { workspaceId: "workspace_main" })
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).not.toHaveProperty("last_human_turn_at")
   })
 
   test("hard-cuts legacy workspace-visible sessions instead of inventing private attribution", async () => {
