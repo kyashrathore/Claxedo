@@ -35,6 +35,7 @@ building the app and desktop diagnostics helper.
 | `bun run run:all` | All cataloged renderer flows | Same renderer policy |
 | `bun run run:diagnostics` | Disabled/enabled/enabled/disabled pairs | Fixed diagnostics overhead policy plus real process samples |
 | `bun src/cli.ts run --scenario session-switch --suite attribution --no-trend` | One instrumented experiment | Raw report; no baseline or durable comparison |
+| `bun src/cli.ts run --scenario transcript-flick --suite attribution --no-trend --iterations 3` | Blank viewport area under a fast flick | Raw per-speed table; no baseline |
 | `bun src/cli.ts memory --iterations 5` | Repeated session visits and forced GC | Settlement, cache ceiling, source stability and verified process exit |
 | `bun run list` | Browser flow names | Discovery only |
 | `bun run catalog` | All performance owners and entrypoints | Discovery only |
@@ -89,6 +90,22 @@ The browser uses the real compiled renderer and synthetic API fixtures. It measu
 renderer work and readiness; it cannot establish physical display FPS, packaged Electron
 presentation, live server latency or authenticated multiplayer behavior. Package-owned
 and packaged acceptance remain necessary for those claims.
+
+## Re-measuring the timeline's render band
+
+`transcript-flick` pages a transcript in, flicks down it with a compositor
+gesture at each `CLAXEDO_PERF_FLICK_PX_PER_FRAME` speed (default
+`700,1400,2800,5600`), and prints one row per speed: viewport pixels left with
+no mounted row under them, how far the scroller travelled past the mounted rows
+while the renderer missed frames, and what those frames cost.
+
+The band itself is a constant in the app (`renderOverscan`,
+`features/session/ui/message-timeline.tsx`), so a band sweep is one build per
+value; `forward rows` in the table is the band the run observed, so each report
+names its own band. Blank area is reported two ways, and they answer different
+questions: `blank px` is what a frame the renderer produced was missing, and
+`worst exposed px` is what the frames it missed showed instead, derived from the
+gap between rendered frames and the travel in it.
 
 ## Evidence and baselines
 

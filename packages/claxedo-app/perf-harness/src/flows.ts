@@ -16,6 +16,7 @@ export const FLOWS = [
   { id: "workspace-lifecycle", name: "Workspace panel lifecycle phases, each separately clocked" },
   { id: "workspace-interactions", name: "Isolated interactions inside a loaded workspace" },
   { id: "session-switch-workspace", name: "Session switching with the workspace panel closed and open" },
+  { id: "transcript-flick", name: "Fast wheel flick down a long transcript, blank viewport area per frame" },
 ] as const
 
 export function flowName(id: ScenarioId) {

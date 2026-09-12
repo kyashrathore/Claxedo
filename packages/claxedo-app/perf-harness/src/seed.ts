@@ -33,6 +33,10 @@ function defaultSeedForScenario(id: ScenarioId): SeedManifest {
   // Two workspaces, four cold destinations per workspace across the three
   // open/closed blocks plus the shared warm destination.
   if (id === "session-switch-workspace") return { ...baseSeed, projects: 2, sessions: 8, changed_files: 500, messages: 800 }
+  // The flick pages older turns in until the timeline stops growing, so the
+  // corpus only has to outlast that walk: 2k messages page in far more rows
+  // than the 20-frame flick traverses.
+  if (id === "transcript-flick") return { ...baseSeed, sessions: 2, messages: 2_000 }
   return { ...baseSeed, sessions: 1, terminals: 1, changed_files: 120, messages: 10_000 }
 }
 

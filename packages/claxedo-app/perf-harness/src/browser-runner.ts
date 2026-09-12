@@ -18,6 +18,7 @@ import { heavyWorkspaceReopen } from "./browser/scenarios/heavy-workspace"
 import { largeDiffToggle } from "./browser/scenarios/review"
 import { launchProject, sessionSwitch } from "./browser/scenarios/session"
 import { sessionSwitchWorkspace } from "./browser/scenarios/session-switch-workspace"
+import { transcriptFlick } from "./browser/scenarios/transcript-flick"
 import { liveTerminalSwitch } from "./browser/scenarios/terminal"
 import { workspaceInteractions } from "./browser/scenarios/workspace-interactions"
 import { workspaceLifecycle } from "./browser/scenarios/workspace-lifecycle"
@@ -420,6 +421,7 @@ const flowDrivers: Record<ScenarioId, (page: Page, app: BrowserTarget, fixture: 
   "workspace-lifecycle": workspaceLifecycle,
   "workspace-interactions": workspaceInteractions,
   "session-switch-workspace": sessionSwitchWorkspace,
+  "transcript-flick": transcriptFlick,
 }
 
 async function runFlow(scenario: ScenarioId, page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>) {

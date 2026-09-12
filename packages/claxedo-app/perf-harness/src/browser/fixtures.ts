@@ -329,12 +329,20 @@ function messageParts(input: {
 }
 
 export function sessionRenderer(scenario: ScenarioId): SessionRenderer {
+  // The flick needs tall, unequal rows — a markdown body with a 40-row table
+  // next to a one-line turn — because a uniform-height list hides exactly the
+  // band-too-small failure it measures.
+  if (scenario === "transcript-flick") return rendererOverride() ?? "markdown"
   if (scenario !== "session-switch") return "plain"
+  return rendererOverride() ?? "diff"
+}
+
+function rendererOverride(): SessionRenderer | undefined {
   const value = process.env.CLAXEDO_PERF_SESSION_RENDERER
   if (value === "plain" || value === "markdown" || value === "code" || value === "mermaid" || value === "diff") {
     return value
   }
-  return "diff"
+  return undefined
 }
 
 function rendererText(renderer: ReturnType<typeof sessionRenderer>, index: number, sessionLabel: string) {
