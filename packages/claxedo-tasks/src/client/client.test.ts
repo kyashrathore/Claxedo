@@ -165,6 +165,33 @@ describe("tasks client over the real routes", () => {
     expect(invalid instanceof TasksApiError && invalid.detail.fields).toEqual([{ path: "name", reason: "required" }])
   })
 
+  test("a stale revision carries the current record, so a caller can rebase without a second read", async () => {
+    const task = await createTask("Rename me")
+    await client.command({
+      clientRequestId: "request-rename",
+      command: {
+        type: "task.edit",
+        input: { taskId: task.id, revision: task.revision, title: "Renamed", description: "Details", workspaceId: null },
+      },
+    })
+
+    const stale = await client
+      .command({
+        clientRequestId: "request-stale",
+        command: {
+          type: "task.edit",
+          input: { taskId: task.id, revision: task.revision, title: "Mine", description: "Details", workspaceId: null },
+        },
+      })
+      .catch((cause: unknown) => cause)
+
+    expect(stale).toBeInstanceOf(TasksApiError)
+    expect(stale instanceof TasksApiError && stale.code).toBe("stale_revision")
+    const current = stale instanceof TasksApiError ? stale.detail.currentTask : undefined
+    expect(current?.title).toBe("Renamed")
+    expect(current?.revision).toBe(task.revision + 1)
+  })
+
   test("a body that is not a tasks response is a payload error, not a typed record", async () => {
     const impostor = new Hono()
     impostor.get("/presets/:id", (c) => c.json({ preset: { id: "preset-1" } }))

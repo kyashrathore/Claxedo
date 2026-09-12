@@ -3,12 +3,14 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { TASKS_ROUTE_PATH, type Preset, type SessionReference, type StartPreview, type Task } from "@claxedo/tasks"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
+import { useTaskDetail, type TasksScope } from "@/features/tasks/data/queries"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
 import { StartTaskFlow } from "@/features/tasks/ui/start-task-flow"
 
 afterEach(cleanup)
 
 const SERVER = "http://tasks.test"
+const SCOPE: TasksScope = { serverUrl: SERVER, scopeId: "local" }
 
 const preset: Preset = {
   id: "pre_1",
@@ -42,11 +44,15 @@ const task: Task = {
   updatedAt: 2,
 }
 
-function previewOf(input: { continueFromPrevious: boolean; previousTranscriptReadable: boolean }): StartPreview {
+function previewOf(input: {
+  continueFromPrevious: boolean
+  previousTranscriptReadable: boolean
+  taskRevision: number
+}): StartPreview {
   return {
-    // The host hashes the resolved input, so including the transcript is a
-    // different preview than the same settings without it.
-    digest: input.continueFromPrevious ? "digest_with_transcript" : "digest_plain",
+    // The host hashes the resolved input, so including the transcript and
+    // rebasing onto another revision each produce a different preview.
+    digest: `${input.continueFromPrevious ? "with_transcript" : "plain"}_r${input.taskRevision}`,
     expiresAt: 10_000,
     placement: "local",
     slot: "primary",
@@ -61,39 +67,78 @@ function previewOf(input: { continueFromPrevious: boolean; previousTranscriptRea
   }
 }
 
-function json(body: unknown) {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
+}
+
+function refusal(code: string, message: string, current?: Task) {
+  return json({ error: { code, message, ...(current ? { currentTask: current } : {}) } }, 409)
 }
 
 type Body = Record<string, unknown>
 
+/** Stands in for the detail read the panel behind the dialog holds. */
+function DetailProbe() {
+  const detail = useTaskDetail(
+    () => SCOPE,
+    () => task.id,
+  )
+  return <span data-testid="detail-revision">{detail.data?.task.revision ?? ""}</span>
+}
+
 /**
  * A fake host at the HTTP boundary: the real client, decoders and query owner
- * run against it, and `previousTranscriptReadable` arrives the way the host
- * reports it rather than being supplied to the dialog directly.
+ * run against it, so `previousTranscriptReadable` and a stale revision arrive
+ * the way the host reports them rather than being handed to the dialog.
+ *
+ * `advanceOnFirstStart` is the race the host's revision guard produces — a
+ * session linked between this preview and this Start.
  */
-function mount(input: { previousTranscriptReadable: boolean }) {
+function mount(input: {
+  previousTranscriptReadable: boolean
+  advanceOnFirstStart?: boolean
+  refuseStartWithConflict?: boolean
+  previewStaleAtOwnRevision?: boolean
+  /** The revision the host holds, when it is ahead of the one the dialog opened with. */
+  hostRevision?: number
+}) {
   const previews: Body[] = []
   const starts: Body[] = []
   const openSession = vi.fn<(session: SessionReference) => void>()
+  let revision = input.hostRevision ?? task.revision
+  let advanceOnFirstStart = input.advanceOnFirstStart === true
+  const current = (): Task => ({ ...task, revision })
 
   configureTasksAppPorts({
-    useScope: () => () => ({ serverUrl: SERVER, scopeId: "local" }),
+    useScope: () => () => SCOPE,
     request: async (url, init) => {
       const path = url.slice(`${SERVER}${TASKS_ROUTE_PATH}`.length)
       const body = init?.body === undefined ? undefined : (JSON.parse(String(init.body)) as Body)
       if (path.startsWith("/presets")) return json({ items: [preset], nextCursor: null })
+      if (path === `/tasks/${task.id}`) return json({ task: current(), links: [] })
       if (path.endsWith("/start-preview")) {
         previews.push(body!)
+        if (input.previewStaleAtOwnRevision === true) {
+          return refusal("stale_revision", `Task ${task.id} is at revision ${revision}`, current())
+        }
+        if (body!.taskRevision !== revision) return refusal("stale_revision", `Task ${task.id} is at revision ${revision}`, current())
         return json({
           preview: previewOf({
             continueFromPrevious: body!.continueFromPrevious === true,
             previousTranscriptReadable: input.previousTranscriptReadable,
+            taskRevision: revision,
           }),
         })
       }
       if (path.endsWith("/sessions")) {
         starts.push(body!)
+        if (input.refuseStartWithConflict === true) return refusal("conflict", `Task ${task.id} is archived`)
+        if (advanceOnFirstStart) {
+          advanceOnFirstStart = false
+          revision += 1
+          return refusal("stale_revision", `Task ${task.id} is at revision ${revision}`, current())
+        }
+        if (body!.taskRevision !== revision) return refusal("stale_revision", `Task ${task.id} is at revision ${revision}`, current())
         return json({
           link: {
             taskId: task.id,
@@ -122,9 +167,10 @@ function mount(input: { previousTranscriptReadable: boolean }) {
   const onClose = vi.fn()
   render(() => (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <DetailProbe />
       <StartTaskFlow
         store={createTasksStore()}
-        scope={() => ({ serverUrl: SERVER, scopeId: "local" })}
+        scope={() => SCOPE}
         task={task}
         slot="primary"
         attempt={2}
@@ -138,6 +184,11 @@ function mount(input: { previousTranscriptReadable: boolean }) {
 async function choosePreset() {
   await waitFor(() => expect(screen.getByTestId("start-task-preset").querySelectorAll("option")).toHaveLength(2))
   fireEvent.change(screen.getByTestId("start-task-preset"), { target: { value: preset.id } })
+}
+
+async function clickStart() {
+  await waitFor(() => expect(screen.getByTestId("start-task-submit")).not.toBeDisabled())
+  fireEvent.click(screen.getByTestId("start-task-submit"))
 }
 
 describe("start task flow against a fake host", () => {
@@ -158,12 +209,11 @@ describe("start task flow against a fake host", () => {
     // from under them.
     expect(screen.getByTestId("start-task-continue")).toBe(row)
 
-    await waitFor(() => expect(screen.getByTestId("start-task-submit")).not.toBeDisabled())
-    fireEvent.click(screen.getByTestId("start-task-submit"))
+    await clickStart()
 
     await waitFor(() => expect(starts).toHaveLength(1))
     expect(starts[0].continueFromPrevious).toBe(true)
-    expect(starts[0].previewDigest).toBe("digest_with_transcript")
+    expect(starts[0].previewDigest).toBe("with_transcript_r4")
     await waitFor(() => expect(openSession).toHaveBeenCalledWith({ sessionId: "ses_2", workspaceId: "ws_1" }))
   })
 
@@ -174,5 +224,65 @@ describe("start task flow against a fake host", () => {
     await waitFor(() => expect(previews).toHaveLength(1))
     await waitFor(() => expect(screen.getByTestId("start-task-submit")).not.toBeDisabled())
     expect(screen.queryByTestId("start-task-continue-row")).toBeNull()
+  })
+
+  test("a Start refused on a stale revision rebases, re-previews and succeeds on the retry", async () => {
+    const { previews, starts, openSession, onClose } = mount({
+      previousTranscriptReadable: false,
+      advanceOnFirstStart: true,
+    })
+    await choosePreset()
+    await clickStart()
+
+    await waitFor(() => expect(starts).toHaveLength(2))
+    expect(starts.map((body) => body.taskRevision)).toEqual([4, 5])
+    // The retry cannot reuse the digest the stale revision produced: the host
+    // binds a preview to the revision it resolved against.
+    expect(previews.at(-1)?.taskRevision).toBe(5)
+    expect(starts[1].previewDigest).toBe("plain_r5")
+    await waitFor(() => expect(openSession).toHaveBeenCalledWith({ sessionId: "ses_2", workspaceId: "ws_1" }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(screen.queryByRole("alert")).toBeNull()
+  })
+
+  test("a successful Start refetches the task detail, so the panel shows the revision the link advanced", async () => {
+    const { starts } = mount({ previousTranscriptReadable: false, advanceOnFirstStart: true })
+    await waitFor(() => expect(screen.getByTestId("detail-revision").textContent).toBe("4"))
+    await choosePreset()
+    await clickStart()
+
+    await waitFor(() => expect(starts).toHaveLength(2))
+    await waitFor(() => expect(screen.getByTestId("detail-revision").textContent).toBe("5"))
+  })
+
+  test("a preview refused on a stale revision rebases itself, so Start is reachable at all", async () => {
+    const { previews, starts } = mount({ previousTranscriptReadable: false, hostRevision: 5 })
+    await choosePreset()
+
+    await waitFor(() => expect(previews.map((body) => body.taskRevision)).toEqual([4, 5]))
+    await clickStart()
+
+    await waitFor(() => expect(starts).toHaveLength(1))
+    expect(starts[0].taskRevision).toBe(5)
+    expect(starts[0].previewDigest).toBe("plain_r5")
+  })
+
+  test("a host that reports the revision the client already claims is not re-previewed forever", async () => {
+    const { previews } = mount({ previousTranscriptReadable: false, previewStaleAtOwnRevision: true })
+    await choosePreset()
+
+    await waitFor(() => expect(screen.getByTestId("start-task-preview-error")).toBeTruthy())
+    expect(previews).toHaveLength(1)
+    expect(screen.getByTestId("start-task-submit")).toBeDisabled()
+  })
+
+  test("a refusal with nothing to rebase onto is surfaced after one attempt", async () => {
+    const { starts, openSession } = mount({ previousTranscriptReadable: false, refuseStartWithConflict: true })
+    await choosePreset()
+    await clickStart()
+
+    await waitFor(() => expect(screen.getByText(`Task ${task.id} is archived`)).toBeTruthy())
+    expect(starts).toHaveLength(1)
+    expect(openSession).not.toHaveBeenCalled()
   })
 })

@@ -1,4 +1,4 @@
-import { createMemo, createResource, createSignal } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal } from "solid-js"
 import type { ConfigurationSlot, StartPreview, Task } from "@claxedo/tasks"
 import { StartTaskDialog, emptyPresetEditorDraft, type StartDraft, type StartPreviewState } from "@claxedo/tasks/solid"
 import { uuid } from "@/lib/uuid"
@@ -36,6 +36,15 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
   })
   const [busy, setBusy] = createSignal(false)
   const [startError, setStartError] = createSignal<string | undefined>()
+  /**
+   * A successful Start advances the task's revision, so the revision this
+   * dialog opened with goes stale as soon as another client links a session —
+   * or as soon as a lost response is re-sent. The host answers such a request
+   * with the record to rebase onto; this holds it so the preview and the retry
+   * claim the revision the host actually has.
+   */
+  const [rebased, setRebased] = createSignal<Task | undefined>()
+  const task = () => rebased() ?? props.task
 
   const selectedPreset = createMemo(() => presets.items().find((preset) => preset.id === draft().presetId))
 
@@ -43,8 +52,8 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
     const preset = selectedPreset()
     if (!preset) return undefined
     return {
-      taskId: props.task.id,
-      taskRevision: props.task.revision,
+      taskId: task().id,
+      taskRevision: task().revision,
       presetId: preset.id,
       presetRevision: preset.revision,
       slot: draft().slot,
@@ -65,6 +74,19 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
     return response.preview
   })
 
+  /** Returns the rebased record, or nothing when the refusal is not one. */
+  const rebaseFrom = (error: unknown): Task | undefined => {
+    const current = refusalOf(error).stale?.task
+    if (!current || current.revision === task().revision) return undefined
+    setRebased(current)
+    return current
+  }
+
+  createEffect(() => {
+    const failure = preview.error
+    if (failure) rebaseFrom(failure)
+  })
+
   const previewState = (): StartPreviewState => {
     if (!previewInput()) return { status: "idle" }
     const failure = preview.error
@@ -72,6 +94,26 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
     const resolved: StartPreview | undefined = preview.latest
     if (!resolved) return { status: "loading" }
     return { status: "ready", preview: resolved, refreshing: preview.loading }
+  }
+
+  type StartChoice = { presetId: string; presetRevision: number; slot: ConfigurationSlot; attempt: number }
+
+  const send = async (current: Task, choice: StartChoice, previewDigest: string) => {
+    const response = await client().start(current.id, {
+      clientRequestId: uuid(),
+      taskRevision: current.revision,
+      presetId: choice.presetId,
+      presetRevision: choice.presetRevision,
+      slot: choice.slot,
+      attempt: choice.attempt,
+      previewDigest,
+      handoffText: draft().handoffText.trim().length > 0 ? draft().handoffText : null,
+      continueFromPrevious: draft().continueFromPrevious,
+    })
+    invalidate.task(current.id)
+    await invalidate.everything()
+    openSession(response.link.sessionRef)
+    props.onClose()
   }
 
   const start = async () => {
@@ -83,23 +125,28 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
     setBusy(true)
     setStartError(undefined)
     try {
-      const response = await client().start(props.task.id, {
-        clientRequestId: uuid(),
-        taskRevision: input.taskRevision,
-        presetId: input.presetId,
-        presetRevision: input.presetRevision,
-        slot: input.slot,
-        attempt: input.attempt,
-        previewDigest: resolved.digest,
-        handoffText: draft().handoffText.trim().length > 0 ? draft().handoffText : null,
-        continueFromPrevious: draft().continueFromPrevious,
-      })
-      invalidate.task(props.task.id)
-      await invalidate.everything()
-      openSession(response.link.sessionRef)
-      props.onClose()
+      await send(task(), input, resolved.digest)
     } catch (error) {
-      setStartError(refusalOf(error).message)
+      const current = rebaseFrom(error)
+      if (!current) {
+        setStartError(refusalOf(error).message)
+        return
+      }
+      try {
+        // The digest binds a preview to the revision it resolved against, so
+        // the rebased attempt needs its own preview before it can be sent.
+        const rebasedPreview = await client().startPreview(current.id, {
+          taskRevision: current.revision,
+          presetId: input.presetId,
+          presetRevision: input.presetRevision,
+          slot: input.slot,
+          attempt: input.attempt,
+          continueFromPrevious: draft().continueFromPrevious,
+        })
+        await send(current, input, rebasedPreview.preview.digest)
+      } catch (retried) {
+        setStartError(refusalOf(retried).message)
+      }
     } finally {
       setBusy(false)
     }
@@ -107,7 +154,7 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
 
   return (
     <StartTaskDialog
-      taskTitle={props.task.title}
+      taskTitle={task().title}
       attempt={props.attempt}
       presets={presets.items()}
       draft={draft()}

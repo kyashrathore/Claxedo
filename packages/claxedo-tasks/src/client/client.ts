@@ -27,6 +27,7 @@ import {
   decodePresetPage,
   decodeStartPreviewResponse,
   decodeStartResponse,
+  decodeTask,
   decodeTaskDetail,
   decodeTaskSummaryPage,
 } from "../decode"
@@ -97,7 +98,18 @@ function refusalError(status: number, payload: unknown): Error {
     return new TasksClientPayloadError(status, `Request failed with status ${status}`)
   }
   const named: TasksErrorDetail = { code: detail.code, message: detail.message }
-  return new TasksApiError(status, detail.code, isFieldList(detail.fields) ? { ...named, fields: detail.fields } : named)
+  // `stale_revision` carries the record to rebase onto. A record that does not
+  // decode is dropped rather than raised: the refusal itself is what the caller
+  // has to act on, and losing its reason to a malformed extra is worse than
+  // rebasing from a second read.
+  const currentPreset = detail.currentPreset === undefined ? undefined : decodePreset(detail.currentPreset)
+  const currentTask = detail.currentTask === undefined ? undefined : decodeTask(detail.currentTask)
+  return new TasksApiError(status, detail.code, {
+    ...named,
+    ...(isFieldList(detail.fields) ? { fields: detail.fields } : {}),
+    ...(currentPreset?.ok === true ? { currentPreset: currentPreset.value } : {}),
+    ...(currentTask?.ok === true ? { currentTask: currentTask.value } : {}),
+  })
 }
 
 /** `HeadersInit` is three shapes; only `Headers` merges all three without losing entries. */
