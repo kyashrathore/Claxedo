@@ -2,7 +2,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
-import { createSignal, Show, type Component } from "solid-js"
+import { createSignal, For, Show, type Component } from "solid-js"
 import { ProviderConnectForm } from "@/features/settings/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
 import type { ProviderSetupStatus } from "@/features/settings/provider-settings-logic"
@@ -12,6 +12,18 @@ export function providerSetupStatusLabel(status: ProviderSetupStatus, language: 
   if (status === "detected") return language.t("settings.providers.status.detected")
   if (status === "broken") return language.t("settings.providers.status.broken")
   return language.t("settings.providers.status.notConnected")
+}
+
+/** One stored account under a harness row, already in words. */
+export type ProviderAccount = {
+  id: string
+  name: string
+  /** The account's identity at the provider, or a pasted key's last characters. */
+  detail?: string
+  /** What the provider last said about this account, and when. */
+  live?: string
+  expiry?: string
+  isActive: boolean
 }
 
 export const ProviderSetupRow: Component<{
@@ -29,6 +41,14 @@ export const ProviderSetupRow: Component<{
   inUse?: string
   /** What the provider last said about that credential, in words. */
   live?: string
+  /** Every account stored for this harness, active first. */
+  accounts?: readonly ProviderAccount[]
+  /** Offers Make active on each inactive account; absent leaves the list read-only. */
+  onActivate?: (credentialId: string) => void | Promise<void>
+  /** Why a read-only list offers no switch yet. */
+  activateNote?: string
+  /** The account whose switch is in flight. */
+  activating?: string
   /** Asks the provider now; the row reads "Checking…" until it answers. */
   onCheck?: () => void | Promise<void>
   checking?: boolean
@@ -104,7 +124,62 @@ export const ProviderSetupRow: Component<{
           </Show>
         </div>
       </div>
-      <Show when={expanded() && !connected()}>
+      <Show when={(props.accounts?.length ?? 0) > 0}>
+        <div class="mb-3 ml-8 flex flex-col gap-2" data-component="provider-accounts">
+          <For each={props.accounts}>
+            {(account) => (
+              <div
+                class="flex flex-wrap items-center justify-between gap-3"
+                data-component="provider-account"
+                data-account={account.id}
+                data-active={account.isActive ? "true" : "false"}
+              >
+                <div class="flex min-w-0 flex-col gap-0.5">
+                  <span class="text-12-medium text-text-strong">{account.name}</span>
+                  <Show when={account.detail}>
+                    {(detail) => <span class="text-12-regular text-text-weak">{detail()}</span>}
+                  </Show>
+                  <Show when={account.live}>
+                    {(live) => <span class="text-12-regular text-text-weak">{live()}</span>}
+                  </Show>
+                  <Show when={account.expiry}>
+                    {(expiry) => <span class="text-12-regular text-text-weak">{expiry()}</span>}
+                  </Show>
+                </div>
+                <Show
+                  when={!account.isActive && props.onActivate}
+                  fallback={
+                    <Show when={account.isActive}>
+                      <Tag>{language.t("settings.providers.agents.accountActive")}</Tag>
+                    </Show>
+                  }
+                >
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    disabled={props.activating !== undefined}
+                    data-action="settings-provider-activate"
+                    onClick={() => void props.onActivate?.(account.id)}
+                  >
+                    {props.activating === account.id
+                      ? language.t("settings.providers.agents.makingActive")
+                      : language.t("settings.providers.agents.makeActive")}
+                  </Button>
+                </Show>
+              </div>
+            )}
+          </For>
+          <Show when={props.activateNote}>
+            {(note) => <span class="text-12-regular text-text-weak" data-component="provider-activate-note">{note()}</span>}
+          </Show>
+          <div>
+            <Button size="small" variant="ghost" data-action="settings-provider-add-account" onClick={() => setExpanded(true)}>
+              {language.t("settings.providers.agents.addAccount")}
+            </Button>
+          </div>
+        </div>
+      </Show>
+      <Show when={expanded()}>
         <div
           class="mb-3 ml-8 overflow-hidden rounded-md border border-border-weak-base bg-background-stronger"
           data-component="provider-connect-card"

@@ -45,7 +45,9 @@ const state = vi.hoisted(() => ({
   focusedWorkspace: undefined as { workspaceId: string; directory: string } | undefined,
   projects: [] as CatalogProject[],
   /** What the credential store already holds, as the list route reports it. */
-  storedCredentials: [] as Array<{ provider_id: string }>,
+  storedCredentials: [] as Array<Record<string, unknown>>,
+  /** Every account id activate was called for, in order. */
+  activated: [] as string[],
   /** What a machine scan finds, as the discovery route reports it. */
   discoveryItems: [] as Array<Record<string, unknown>>,
   credentialCalls: [] as string[],
@@ -161,7 +163,16 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
     return new Response(JSON.stringify({ credentials: state.storedCredentials }))
   }
   if (url.pathname === "/api/claxedo/credentials/effective") {
-    return new Response(JSON.stringify({ scope: "local", credentials: state.storedCredentials }))
+    return new Response(JSON.stringify({
+      scope: "local",
+      credentials: state.storedCredentials.filter((row) => row.is_active !== false),
+    }))
+  }
+  if (url.pathname.endsWith("/activate")) {
+    const id = decodeURIComponent(url.pathname.split("/").at(-2) ?? "")
+    state.activated.push(id)
+    state.storedCredentials = state.storedCredentials.map((row) => ({ ...row, is_active: row.id === id }))
+    return new Response(JSON.stringify({ credential: state.storedCredentials.find((row) => row.id === id) }))
   }
   if (url.pathname === "/api/claxedo/credentials/discover") {
     return new Response(JSON.stringify({ discovery_id: "disc_1", items: state.discoveryItems }))
@@ -231,6 +242,18 @@ function agentStatus(id: string) {
   return agentRow(id).querySelector('[data-component="tag"]')?.textContent ?? ""
 }
 
+/** The stored accounts a harness row listed, by credential id. */
+function accountIds(id: string) {
+  return [...agentRow(id).querySelectorAll<HTMLElement>('[data-component="provider-account"]')]
+    .map((node) => node.getAttribute("data-account") ?? "")
+}
+
+function accountRow(id: string, credentialId: string) {
+  const row = agentRow(id).querySelector<HTMLElement>(`[data-account="${credentialId}"]`)
+  if (!row) throw new Error(`no account row for ${credentialId}`)
+  return row
+}
+
 beforeEach(() => {
   state.requests.length = 0
   state.rememberedHarness = nativeHarness("pi")
@@ -243,6 +266,7 @@ beforeEach(() => {
   state.credentialCalls.length = 0
   state.dialogs.length = 0
   state.storedCredentials = []
+  state.activated.length = 0
   state.discoveryItems = []
   state.projects = [LOCAL_PROJECT, CLOUD_PROJECT]
   state.catalogs = {
@@ -393,7 +417,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
   })
 
   test("a stored credential is reported before any scan runs", async () => {
-    state.storedCredentials = [{ provider_id: "claude-sdk" }]
+    state.storedCredentials = [{ id: "cred_claude", provider_id: "claude-sdk", is_active: true }]
     mount()
     await waitFor(() => expect(agentStatus("anthropic")).toBe("settings.providers.status.connected"))
     expect(state.credentialCalls).toContain("GET /api/claxedo/credentials")
@@ -484,5 +508,78 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     fireEvent.click(within(agentRow("cursor")).getByRole("button", { name: "common.close" }))
     expect(agentRow("cursor").querySelector('[data-component="provider-connect-card"]')).toBeNull()
     expect(within(agentRow("cursor")).getByRole("button", { name: "common.connect" })).toBeInTheDocument()
+  })
+
+  test("the accounts a harness holds are listed under its row, active first", async () => {
+    state.storedCredentials = [
+      { id: "cred_key", provider_id: "claude-sdk", kind: "api_key", label: "API key", account_id: "fp_0123abcd…wxyz", is_active: false, expires_at: 4102444800000 },
+      { id: "cred_token", provider_id: "claude-sdk", kind: "oauth_token", label: "Subscription", is_active: true, health: "ok", last_validated_at: 7 },
+    ]
+    mount()
+
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_token", "cred_key"]))
+    const active = accountRow("anthropic", "cred_token")
+    expect(active.getAttribute("data-active")).toBe("true")
+    expect(active.textContent).toContain("Subscription")
+    expect(active.textContent).toContain("settings.providers.agents.accountActive")
+    expect(active.querySelector('[data-action="settings-provider-activate"]')).toBeNull()
+
+    const inactive = accountRow("anthropic", "cred_key")
+    expect(inactive.getAttribute("data-active")).toBe("false")
+    // A pasted key is named by its last characters, not by the whole fingerprint.
+    expect(inactive.textContent).toContain("…wxyz")
+    expect(inactive.textContent).not.toContain("fp_0123abcd")
+    expect(inactive.textContent).toContain("settings.providers.agents.accountExpires")
+    expect(inactive.querySelector('[data-action="settings-provider-activate"]')).not.toBeNull()
+  })
+
+  test("Make active switches the account and the In use line names the new one", async () => {
+    state.storedCredentials = [
+      { id: "cred_key", provider_id: "claude-sdk", kind: "api_key", label: "API key", account_id: "fp_0123abcd…wxyz", is_active: false, expires_at: 4102444800000 },
+      { id: "cred_token", provider_id: "claude-sdk", kind: "oauth_token", label: "Subscription", is_active: true, health: "ok", last_validated_at: 7 },
+    ]
+    mount()
+    await waitFor(() => expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
+      .toBe("settings.providers.agents.inUse:Subscription"))
+
+    accountRow("anthropic", "cred_key").querySelector<HTMLButtonElement>('[data-action="settings-provider-activate"]')!.click()
+
+    await waitFor(() => expect(state.activated).toEqual(["cred_key"]))
+    await waitFor(() => expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
+      .toBe("settings.providers.agents.inUse:API key"))
+    expect(accountRow("anthropic", "cred_key").getAttribute("data-active")).toBe("true")
+    expect(accountRow("anthropic", "cred_token").getAttribute("data-active")).toBe("false")
+    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/cred_key/activate")
+  })
+
+  test("Add account opens the same inline connect card the Connect button opens", async () => {
+    state.storedCredentials = [
+      { id: "cred_key", provider_id: "claude-sdk", kind: "api_key", label: "API key", account_id: "fp_0123abcd…wxyz", is_active: false, expires_at: 4102444800000 },
+      { id: "cred_token", provider_id: "claude-sdk", kind: "oauth_token", label: "Subscription", is_active: true, health: "ok", last_validated_at: 7 },
+    ]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toHaveLength(2))
+    expect(agentRow("anthropic").querySelector('[data-component="provider-connect-card"]')).toBeNull()
+
+    agentRow("anthropic").querySelector<HTMLButtonElement>('[data-action="settings-provider-add-account"]')!.click()
+
+    const card = agentRow("anthropic").querySelector('[data-component="provider-connect-card"]')
+    expect(card).not.toBeNull()
+    expect(card?.textContent).toContain("settings.providers.connect.title:Claude Code")
+    expect(within(agentRow("anthropic")).getByTestId("provider-connect-form")).toBeInTheDocument()
+  })
+
+  test("Codex lists its accounts but offers no switch yet, and says so", async () => {
+    state.storedCredentials = [
+      { id: "cred_codex", provider_id: "codex-app-server", kind: "oauth_token", label: "ChatGPT OAuth", account_id: "acc_1", is_active: true },
+      { id: "cred_codex_two", provider_id: "codex-app-server", kind: "oauth_token", label: "Second ChatGPT", account_id: "acc_2", is_active: false },
+    ]
+    mount()
+
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_two"]))
+    expect(accountRow("openai", "cred_codex").textContent).toContain("settings.providers.agents.accountActive")
+    expect(agentRow("openai").querySelector('[data-action="settings-provider-activate"]')).toBeNull()
+    expect(agentRow("openai").querySelector('[data-component="provider-activate-note"]')?.textContent)
+      .toBe("settings.providers.agents.switchLater")
   })
 })

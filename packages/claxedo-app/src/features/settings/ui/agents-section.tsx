@@ -12,13 +12,18 @@ import {
 } from "@/features/settings/app-ports"
 import type { AIUsageWindow } from "@/features/onboarding/ai-connect-state"
 import {
+  accountIdentity,
+  activateCredential,
   agentInUse,
   agentSetupStatus,
+  harnessAccounts,
   listEffectiveCredentials,
-  listStoredCredentialProviders,
+  listStoredCredentials,
   runProviderDetect,
+  storedCredentialProviders,
   type EffectiveCredential,
   type ProviderDetectResult,
+  type StoredCredential,
 } from "@/features/settings/provider-detect"
 import { SettingsList } from "@/features/settings/ui/list"
 import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
@@ -97,17 +102,18 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const globalSDK = useGlobalSDK()
   const serverIsLocal = useServerIsLocal()
   const [detecting, setDetecting] = createSignal(false)
-  const [stored, setStored] = createSignal<ReadonlySet<string>>(new Set<string>())
+  const [stored, setStored] = createSignal<readonly StoredCredential[]>([])
   const [discovered, setDiscovered] = createSignal<readonly LocalHarnessStatus[]>([])
   const [discovery, setDiscovery] = createSignal<Pick<ProviderDetectResult, "discoveryId" | "rows">>()
   const [effective, setEffective] = createSignal<ReadonlyMap<string, EffectiveCredential>>()
   const [scannedAt, setScannedAt] = createSignal<number>()
   const [checks, setChecks] = createSignal<Record<string, LiveCheck>>({})
   const [checking, setChecking] = createSignal<string>()
+  const [activating, setActivating] = createSignal<string>()
 
   const readStored = async () => {
-    const [storedIds, inUse] = await Promise.all([listStoredCredentialProviders(), listEffectiveCredentials()])
-    setStored(storedIds)
+    const [rows, inUse] = await Promise.all([listStoredCredentials(), listEffectiveCredentials()])
+    setStored(rows)
     setEffective(inUse)
   }
 
@@ -148,9 +154,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     return at === undefined ? undefined : scanCheck(discovered().find((status) => status.id === check.id), at)
   }
 
-  const liveLabel = (check: LocalHarnessCheck) => {
-    const live = liveCheck(check)
-    if (!live) return undefined
+  const liveText = (live: LiveCheck) => {
     const verdict = language.t(VERDICT_KEY[live.verdict])
     const parts = [live.reason ? `${verdict}: ${live.reason}` : verdict]
     for (const window of live.usage ?? []) {
@@ -164,6 +168,45 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       ? language.t("settings.providers.live.checkedNow")
       : language.t("settings.providers.live.checkedAt", { when: formatRelativeTime(live.at, language.locale()) }))
     return parts.join(" · ")
+  }
+
+  const liveLabel = (check: LocalHarnessCheck) => {
+    const live = liveCheck(check)
+    return live ? liveText(live) : undefined
+  }
+
+  /**
+   * The accounts under one harness row. Make active is offered on Claude only:
+   * a Codex switch rewrites the operator's own `~/.codex/auth.json` through the
+   * app-server, so the list names the account and says the switch is not here
+   * yet rather than offering one that damages the machine's login.
+   */
+  const accounts = (check: LocalHarnessCheck) =>
+    harnessAccounts({ providerIds: providerIds(check) }, stored()).map((row) => ({
+      id: row.id,
+      name: row.label ?? row.kind ?? row.providerId,
+      isActive: row.isActive,
+      ...(accountIdentity(row) === undefined ? {} : { detail: accountIdentity(row)! }),
+      ...(row.health !== undefined && isHealth(row.health) && row.lastValidatedAt !== undefined
+        ? { live: liveText({ at: row.lastValidatedAt, verdict: row.health }) }
+        : {}),
+      ...(row.expiresAt === undefined ? {} : {
+        expiry: language.t("settings.providers.agents.accountExpires", {
+          when: formatRelativeTime(row.expiresAt, language.locale()),
+        }),
+      }),
+    }))
+
+  const activate = async (id: string) => {
+    setActivating(id)
+    try {
+      await activateCredential(id)
+      await readStored()
+    } catch (err: unknown) {
+      fail(err)
+    } finally {
+      setActivating(undefined)
+    }
   }
 
   onMount(() => {
@@ -275,7 +318,11 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       <SettingsList>
         <For each={[...localHarnessChecks()]}>
           {(check) => {
-            const status = () => agentSetupStatus({ ...check, providerIds: providerIds(check) }, stored(), discovered())
+            const status = () => agentSetupStatus(
+              { ...check, providerIds: providerIds(check) },
+              storedCredentialProviders(stored()),
+              discovered(),
+            )
             return (
               <ProviderSetupRow
                 id={AGENT_ICON[check.id] ?? check.id}
@@ -287,6 +334,10 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
                 note={language.t("settings.providers.agents.sharedCredential")}
                 inUse={inUseLabel(check)}
                 live={liveLabel(check)}
+                accounts={accounts(check)}
+                onActivate={check.id === "claude" ? (id) => activate(id) : undefined}
+                activateNote={check.id === "codex" ? language.t("settings.providers.agents.switchLater") : undefined}
+                activating={activating()}
                 onCheck={() => runCheck(check)}
                 checking={checking() === check.id || detecting()}
                 onUseLogin={discoveredRow(check) ? () => useLogin(check) : undefined}

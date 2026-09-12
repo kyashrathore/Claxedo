@@ -1,5 +1,16 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test"
-import { agentInUse, agentSetupStatus, listEffectiveCredentials, listStoredCredentialProviders, runProviderDetect } from "./provider-detect"
+import {
+  accountIdentity,
+  activateCredential,
+  agentInUse,
+  agentSetupStatus,
+  harnessAccounts,
+  listEffectiveCredentials,
+  listStoredCredentials,
+  runProviderDetect,
+  storedCredentialProviders,
+  type StoredCredential,
+} from "./provider-detect"
 import { localHarnessChecks, type LocalHarnessStatus } from "@/features/settings/app-ports"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 
@@ -64,26 +75,90 @@ function stubNetwork(routes: Record<string, unknown>) {
   return calls
 }
 
-describe("listStoredCredentialProviders", () => {
-  test("the provider ids the server already holds", async () => {
+describe("listStoredCredentials", () => {
+  test("every account the server holds, with the mark and the expiry it carries", async () => {
     stubNetwork({
       "/api/claxedo/credentials": {
-        credentials: [{ provider_id: "claude-sdk" }, { provider_id: "openai" }, { id: "no-provider" }, null],
+        credentials: [
+          { id: "cred_1", provider_id: "claude-sdk", label: "Subscription", account_id: "fp_0123abcd…wxyz", is_active: true, health: "ok", last_validated_at: 7, expires_at: 99 },
+          { id: "cred_2", provider_id: "openai", is_active: false },
+          { provider_id: "no-id" },
+          { id: "no-provider" },
+          null,
+        ],
       },
     })
-    expect([...await listStoredCredentialProviders()].sort((left, right) => left.localeCompare(right))).toEqual(["claude-sdk", "openai"])
+
+    const rows = await listStoredCredentials()
+
+    expect(rows).toEqual([
+      { id: "cred_1", providerId: "claude-sdk", label: "Subscription", accountId: "fp_0123abcd…wxyz", isActive: true, health: "ok", lastValidatedAt: 7, expiresAt: 99 },
+      { id: "cred_2", providerId: "openai", isActive: false },
+    ])
+    expect([...storedCredentialProviders(rows)].sort((left, right) => left.localeCompare(right))).toEqual(["claude-sdk", "openai"])
   })
 
-  test("a response with no credentials array names no provider", async () => {
+  test("a response with no credentials array names no account", async () => {
     stubNetwork({ "/api/claxedo/credentials": {} })
-    expect([...await listStoredCredentialProviders()]).toEqual([])
+    expect(await listStoredCredentials()).toEqual([])
+  })
+})
+
+function account(partial: Partial<StoredCredential> & { id: string; providerId: string }): StoredCredential {
+  return { isActive: false, ...partial }
+}
+
+describe("harnessAccounts", () => {
+  test("every binding of the harness, including the one its connect card stores under, active first", () => {
+    const rows = [
+      account({ id: "acp", providerId: "claude-acp" }),
+      account({ id: "openai", providerId: "openai" }),
+      account({ id: "sdk_second", providerId: "claude-sdk" }),
+      account({ id: "sdk_active", providerId: "claude-sdk", isActive: true }),
+    ]
+
+    expect(harnessAccounts({ providerIds: ["claude-acp", "claude-sdk"] }, rows).map((row) => row.id))
+      .toEqual(["sdk_active", "acp", "sdk_second"])
+  })
+
+  test("a harness with nothing stored lists nothing", () => {
+    expect(harnessAccounts(codex(), [account({ id: "sdk", providerId: "claude-sdk" })])).toEqual([])
+  })
+})
+
+describe("accountIdentity", () => {
+  test("a provider's own account id is shown as it is, and a pasted key by its last characters", () => {
+    expect(accountIdentity(account({ id: "a", providerId: "codex-app-server", accountId: "acc_1234" }))).toBe("acc_1234")
+    expect(accountIdentity(account({ id: "b", providerId: "claude-sdk", accountId: "fp_0123abcd…wxyz" }))).toBe("…wxyz")
+    expect(accountIdentity(account({ id: "c", providerId: "claude-sdk" }))).toBeUndefined()
+  })
+})
+
+describe("activateCredential", () => {
+  test("posts to the account's own activate route", async () => {
+    const calls = stubNetwork({ "/api/claxedo/credentials/cred_2/activate": { credential: { id: "cred_2" } } })
+
+    await activateCredential("cred_2")
+
+    expect(calls).toEqual(["/api/claxedo/credentials/cred_2/activate"])
+  })
+
+  test("a refusal reaches the caller as the server's own message", async () => {
+    stubNetwork({
+      "/api/claxedo/credentials/cred_3/activate": new Response(
+        JSON.stringify({ error: { code: "credential_not_activatable", message: "This credential is not an account a harness runs on" } }),
+        { status: 409 },
+      ),
+    })
+
+    await expect(activateCredential("cred_3")).rejects.toThrow("This credential is not an account a harness runs on")
   })
 })
 
 describe("runProviderDetect", () => {
   test("one scan answers both halves a row reads, through the onboarding discovery engine", async () => {
     const calls = stubNetwork({
-      "/api/claxedo/credentials": { credentials: [{ provider_id: "claude-sdk" }] },
+      "/api/claxedo/credentials": { credentials: [{ id: "cred_1", provider_id: "claude-sdk", is_active: true }] },
       "/api/claxedo/credentials/effective": { scope: "local", credentials: [{ id: "cred_1", provider_id: "claude-sdk", label: "Claude token" }] },
       "/api/claxedo/credentials/discover": {
         discovery_id: "disc_1",
@@ -97,16 +172,17 @@ describe("runProviderDetect", () => {
     const result = await runProviderDetect()
 
     expect(calls.sort()).toEqual(["/api/claxedo/credentials", "/api/claxedo/credentials/discover", "/api/claxedo/credentials/effective"])
-    expect([...result.stored]).toEqual(["claude-sdk"])
+    expect(result.stored.map((row) => row.providerId)).toEqual(["claude-sdk"])
     expect(agentInUse(claude(), result.effective ?? new Map())?.label).toBe("Claude token")
     expect(result.agents.map((row) => ({ id: row.id, state: row.state }))).toEqual([
       { id: "claude", state: "working" },
       { id: "codex", state: "missing" },
       { id: "cursor", state: "unverifiable" },
     ])
-    expect(agentSetupStatus(claude(), result.stored, result.agents)).toEqual({ status: "connected" })
-    expect(agentSetupStatus(cursor(), result.stored, result.agents)).toEqual({ status: "detected" })
-    expect(agentSetupStatus(codex(), result.stored, result.agents)).toEqual({ status: "missing" })
+    const stored = storedCredentialProviders(result.stored)
+    expect(agentSetupStatus(claude(), stored, result.agents)).toEqual({ status: "connected" })
+    expect(agentSetupStatus(cursor(), stored, result.agents)).toEqual({ status: "detected" })
+    expect(agentSetupStatus(codex(), stored, result.agents)).toEqual({ status: "missing" })
   })
 })
 

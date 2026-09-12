@@ -22,7 +22,7 @@ export type ClaxedoCredentialRequestInput = {
   serverUrl?: string
   providerId?: string
   credentialId?: string
-  action?: "discover" | "save-discovered" | "verify" | "scope" | "effective"
+  action?: "discover" | "save-discovered" | "verify" | "scope" | "effective" | "activate"
 }
 
 export async function claxedoCredentialRequest(
@@ -43,7 +43,7 @@ export async function claxedoCredentialRequest(
 }
 
 function credentialRoute(input?: ClaxedoCredentialRequestInput) {
-  if (input?.credentialId && (input.action === "verify" || input.action === "scope")) {
+  if (input?.credentialId && (input.action === "verify" || input.action === "scope" || input.action === "activate")) {
     return `/api/claxedo/credentials/${encodeURIComponent(input.credentialId)}/${input.action}`
   }
   if (input?.action === "discover" || input?.action === "save-discovered" || input?.action === "effective") {
