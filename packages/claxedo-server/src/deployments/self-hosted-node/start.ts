@@ -75,6 +75,9 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
   assertSelfHostedPosture(selfHostedPosture(env))
   const agentPlugins = await import("@claxedo/local-server/agent-plugins/local-composition")
     .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition(env))
+  const tasks = await import("@claxedo/local-server/tasks/local-composition")
   await agentPlugins.ready
-  return startServer(options.port, { routeContributions: agentPlugins.routeContributions })
+  return startServer(options.port, {
+    routeContributions: [...agentPlugins.routeContributions, ...tasks.routeContributions],
+  })
 }

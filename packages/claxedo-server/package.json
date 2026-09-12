@@ -92,6 +92,7 @@
     "@claxedo/sandbox-manager": "workspace:*",
     "@claxedo/service-contract": "workspace:*",
     "@claxedo/server-core": "workspace:*",
+    "@claxedo/tasks": "workspace:*",
     "@claxedo/wakes": "workspace:*",
     "@claxedo/workspace-relay": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",

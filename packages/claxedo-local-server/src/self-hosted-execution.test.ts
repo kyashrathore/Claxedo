@@ -21,6 +21,10 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
       // (deployments/self-hosted-node/start.ts), the same module the desktop's
       // server entry mounts. Only that entry may name it.
       "@claxedo/local-server/agent-plugins/local-composition",
+      // The same entry mounts local Tasks, the same way and for the same
+      // reason: a product that does not name this subpath carries neither the
+      // routes nor the kit.
+      "@claxedo/local-server/tasks/local-composition",
     ])
     const offenders: string[] = []
     const walk = (dir: string): string[] =>

@@ -18,6 +18,7 @@ import {
 
 const agentPlugins = await import("@claxedo/local-server/agent-plugins/local-composition")
   .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition())
+const tasks = await import("@claxedo/local-server/tasks/local-composition")
 void agentPlugins.ready.catch((error) => {
   console.error("Agent Plugins startup reconciliation failed", error)
 })
@@ -54,7 +55,7 @@ const server = startLocalServer({
     lifecycle,
   },
   ...(transport ? { processObserver: transport.observer } : {}),
-  routeContributions: agentPlugins.routeContributions,
+  routeContributions: [...agentPlugins.routeContributions, ...tasks.routeContributions],
   harnessLaunch: agentPlugins.harnessLaunch,
 })
 const discovery: ClaxedoDaemonDiscovery = {

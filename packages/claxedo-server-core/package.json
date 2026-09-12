@@ -44,6 +44,7 @@
     "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:*",
+    "@claxedo/tasks": "workspace:*",
     "@claxedo/usage-contract": "workspace:*",
     "@claxedo/workspace-relay": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",

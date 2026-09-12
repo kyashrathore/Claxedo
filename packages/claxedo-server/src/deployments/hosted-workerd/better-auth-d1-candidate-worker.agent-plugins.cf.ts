@@ -1,6 +1,8 @@
 import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
 import { composeBetterAuthD1UserDeployedControlPlane } from "../../authority/adapters/worker/better-auth-d1-compose"
 import { createHostedAgentPluginsComposition } from "../../agent-plugins/hosted-composition"
+import { createHostedTasksComposition, hostedTasksRuntimeClient } from "../../tasks/hosted-composition"
+import { createHostedTasksSessionBridge } from "../../tasks/session-bridge"
 import type { AgentPluginR2Bucket } from "../../agent-plugins/artifacts/r2-artifact-adapter"
 import {
   betterAuthD1CandidateCompositionInput,
@@ -42,11 +44,24 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
   })
+  // Tasks rides the same entry as Agent Plugins because it needs what only
+  // this composition has: a runtime that can hold a preset's selected-only
+  // capability set on a cloud root.
+  const tasks = createHostedTasksComposition({
+    services: base.plane.services,
+    database: env.CONTROL_PLANE_DB,
+    authentication: base.options.authentication,
+    bridge: createHostedTasksSessionBridge({
+      services: base.plane.services,
+      runtimeClient: hostedTasksRuntimeClient(base.plane.services),
+    }),
+    cloudSelectedCapabilities: true,
+  })
   return {
     ...base,
     options: {
       ...base.options,
-      routeContributions: feature.routeContributions,
+      routeContributions: [...feature.routeContributions, ...tasks.routeContributions],
       integrationRoutes: feature.integrationRoutes,
       productWorkspace: {
         ...base.options.productWorkspace,
