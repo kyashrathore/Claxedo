@@ -340,37 +340,44 @@ Calls the fix wave had made on its own, now made deliberately:
 - **History is not rewritten**: commits 455ba55814 … eae253dfd5 still do not
   build in isolation; they are pushed.
 
+### Third pass, 2026-09-12 (evening): the rows that were "still open"
+
+| # | Now | Why |
+|---|---|---|
+| D9 | Fixed | On a local session every attachment — video, audio, any binary, images too — is written into the workspace under `.claxedo/attachments/` (content-addressed, with its own `.gitignore`) and the prompt carries its path on one line; a hosted session gets image and PDF blocks where the API takes them and a refusal that names the harness and the type otherwise. Found underneath: three drivers had been reducing every prompt to text, so a pasted image never reached Claude, Codex or Cursor at all. Claude now gets image/document blocks, Codex `localImage`, Cursor images, ACP the block its capabilities negotiated |
+| D10 | Fixed | A prompt sent while a turn runs carries `delivery: "steer"`; the runtime hands it to the active turn where the harness can take one (Claude through streaming input, Codex `turn/steer` against the active turn id, Pi its rpc steer, the OpenCode engine its own steer) and queues it otherwise (Cursor). The route answers which; the composer sends instead of stopping and shows "Queued"; a queued prompt is persisted and re-issued after a restart. Verified live against Codex; Claude's case drives the real CLI with the model stubbed because this machine's Claude CLI cannot authenticate |
+| D14 | Fixed | streamed text was reconciled per turn while a snapshot covers one message; it is now keyed by the stream's owner and the message id, so a second message is never re-emitted in full and a child's repeated snapshot emits once; a genuinely diverging snapshot emits only past the common prefix and reports a diagnostic |
+| D17 | Fixed | an abort names the turn the composer started; the runtime ignores one naming a turn that is no longer active |
+| D19 | Fixed | the fold is decided before the first paint: a warm switch restores the counts the last visit rendered, a cold one counts them from the seed's own cached page; the session title latches once named |
+| D20 | Measured, band kept | a rendered frame is coherent however far it moved; blank area appears only on skipped frames, from about 5,600 px per frame; six rows is the only band inside the 60 Hz budget at ordinary speed, so it stays, and the harness scenario keeps the number re-measurable |
+| cloud order | Fixed | both signed authority stores carry `last_human_turn_at`, stamped inside turn admission only for a human actor |
+| native autolink | Fixed | the Rust renderer links the same closed scheme list, and comrak's dangerous-url scanner no longer blanks a `file://` href |
+
+Also: an unmapped `post_turn_summary` from Claude Code 2.1 was logged as an adapter error on every turn and is now an informational diagnostic.
+
 ### Still open
 
-- **A cloud (registry-authoritative) workspace orders by creation**: the
-  signed authority stores (`session_history` in the sqlite adapter, `sessions`
-  in the D1 adapter) have no last-human-turn column, so every row keys on
-  "never prompted". Adding the column to both stores and writing it from the
-  session-registration path finishes the order there.
-- **D9** (video attachments) is a contract change, not a filter; **D10/D17**
-  need a runtime that can steer or queue a prompt into a running turn and an
-  abort scoped to a turn — the SDK runtime refuses a second prompt while one is
-  in flight; **D14** needs a captured trace of a duplicating turn; **D19**
-  needs the fold to resolve from cached data before first paint; **D20**'s band
-  needs a measurement.
+- **Claude steering is verified only with the model stubbed**: this machine's Claude CLI holds no refreshable credential, so the real-model run is the one acceptance check not taken; the opt-in live test (`CLAXEDO_LIVE_HARNESS=1`) runs it wherever a signed-in CLI exists.
+- Several prompts queued at once for one session start in no guaranteed order; a queued prompt is re-issued on the first request after boot, so a runtime that never receives a request never re-issues it.
+- A markdown image whose source is a `file://` URL is still blanked by comrak in the native renderer.
+- Commits 455ba55814 … eae253dfd5 remain non-building in isolation on the pushed history.
 
-### Gates, 2026-09-12 (end of the second pass)
+### Gates, 2026-09-12 (end of the third pass)
 
-Run on the working tree, which also holds another session's uncommitted
-models-settings refactor; ceilings were measured at a clean checkout.
+Run on the working tree, which still holds another session's uncommitted
+credential and settings work; ceilings measured at a clean checkout.
 
 | Gate | Result |
 |---|---|
-| root `bun run lint` | 0 errors (from 194 at the start of the day) |
-| `bun run test:architecture-ratchets` | passes; app-local 1011 / 38, desktop-renderer-unsigned 1062 / 57 at a clean checkout of the branch head |
-| claxedo-app `bun run test:architecture` | 252 pass |
+| root `bun run lint` | 0 errors |
+| `bun run test:architecture-ratchets` | passes; app-local 1013 / 38, desktop-renderer-unsigned 1064 / 57 at a clean checkout |
 | every package typecheck, claxedo-app `tsgo -b` and `typecheck:e2e` | clean |
-| claxedo-app `bun test` / `vitest` | 5538 / 1409 pass, 0 fail |
-| claxedo-server-core (vitest) | 645 pass |
-| workspace-runtime | 1119 pass under bun; the pty suite passes under the node runner it belongs to |
-| agent-sdk-runtime / agent-event-runtime / agent-runtime-contract / session-ui / ui | 663 / 225 / 40 / 267 / 66 pass |
-| claxedo-local-server (vitest) | the live MCP subagent file 9 of 9; one failure in `provider-routes.test.ts` belongs to the other session's in-flight credential edit |
-| e2e, build-preview mode | `core-harness-rendering-matrix` 30, `core-busy-abort-errors` 10 (three runs), `core-claude-native-sdk-rail` 3, `core-source-control` 12, `core-cloud-provisioning` 5, `core-sidebar-tree` 23 (two runs); the real-harness specs were updated but not run |
+| claxedo-app `bun test` / `vitest` / `test:architecture` | 5564 / 1424 / 252 pass, 0 fail |
+| claxedo-server-core / claxedo-server / claxedo-local-server (vitest) | 651 / 2500 (3 skipped: Pi 0.85.1 vs the 0.85.0 pin, no real ACP binary) / 431 pass |
+| workspace-runtime / agent-sdk-runtime / agent-event-runtime / agent-runtime-contract / session-ui / ui | 1140 / 701 / 229 / 40 / 267 / 67 pass |
+| native renderer `cargo test` | 12 pass |
+| e2e, build-preview mode | `core-busy-abort-errors` 11, `core-harness-rendering-matrix` 30, `core-claude-native-sdk-rail` 3, `core-source-control` 12, `core-cloud-provisioning` 5, `core-sidebar-tree` 23 |
+| live | Codex steer end to end (5 runs); Claude with the model stubbed through the real CLI; Pi and Cursor skipped for want of a pinned binary and a key |
 
 ## D1 — The `skill` tool row is a dead click target
 
