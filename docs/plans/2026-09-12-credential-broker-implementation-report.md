@@ -400,3 +400,18 @@ Final gates: server `bun run typecheck` passed; root
 source policies plus helper ratchet without baseline changes; `git diff --check`
 passed. The first typecheck exposed the initial-create call sites, which were
 then covered by a failing route test and updated.
+
+## Scope coordination and exe.dev access — 2026-09-13
+
+Commit `0fb565036d` contains the signed-context and withdrawal fixes. A scope
+question is pending because full integration requires steps 3/4 and credential
+contract edits explicitly reserved by the objective file. No dependent edit has
+been made while awaiting that decision.
+
+Independent exe.dev verification progressed beyond the earlier host-trust gate.
+The scanned RSA key matched the provider's HTTPS-published fingerprint and was
+supplied via a task-local known-hosts file. The authenticated read-only
+`integrations list --json` command then failed with exit 255, Permission denied
+(publickey,keyboard-interactive). Exact command and source are in Appendix E.
+No user SSH configuration, provider integration, VM, or account was changed.
+Live integration behavior remains not run until registered-key access exists.

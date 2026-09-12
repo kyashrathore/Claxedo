@@ -515,3 +515,20 @@ not signed identity inside every driver's provisioning request or per-user lease
 isolation. Provider selection, authoritative binding storage, unsigned-local
 identity policy, and per-user leases remain unimplemented; Appendix E item 9
 is not an overall pass.
+
+### exe.dev authentication gate revalidated — 2026-09-13
+
+The official [host fingerprint](https://exe.dev/docs/faq/host-key) matched
+`ssh-keyscan -T 10 -t rsa exe.dev` followed by `ssh-keygen -lf` on the captured
+public key: `SHA256:JJOP/lwiBGOMilfONPWZCXUrfK154cnJFXcqlsi6lPo`.
+The key was used only in the task-local
+`.artifacts/broker-exe/candidate-known-hosts`; the user's SSH trust was unchanged.
+
+Command: `ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes
+-o UserKnownHostsFile=/Users/yashvardhansingh/test/opencode-broker/.artifacts/broker-exe/candidate-known-hosts
+exe.dev integrations list --json`.
+Result: **not run: SSH authentication rejected** with exit 255 and
+`Permission denied (publickey,keyboard-interactive)`. This supersedes the prior
+host-trust-only blocker. No integration, VM, or account was created. A registered
+SSH key/account access is needed to test personal/team behavior and live edits;
+the provider's documented commands are not counted as live evidence.
