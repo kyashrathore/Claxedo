@@ -8,7 +8,6 @@ export type TaskBoardProps = {
   tasks: readonly TaskSummary[]
   selectedTaskId?: string
   busyTaskId?: string
-  /** Set while the server holds a further page of this list. */
   more?: MorePages
   onSelect: (taskId: string) => void
   onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void

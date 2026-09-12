@@ -31,7 +31,10 @@ export const TASKS_BOUNDS = {
   handoffTextMaxBytes: 16 * 1024,
   listLimitDefault: 50,
   listLimitMax: 100,
-  /** JSON escaping can double a 64 KiB field, and a command carries two of them. */
+  /**
+   * A 64 KiB text field can escape to several times its size, and a preset
+   * command carries up to 384 capability references beside it.
+   */
   commandRequestMaxBytes: 512 * 1024,
   startRequestMaxBytes: 64 * 1024,
 } as const

@@ -144,9 +144,6 @@ export type AppShellLayoutProps = ParentProps<{
    */
   onOpenMarketplace?: () => void
 
-  /**
-   * Callback to open Tasks and Presets as an in-workbench tab.
-   */
   onOpenTasks?: () => void
 
   /**

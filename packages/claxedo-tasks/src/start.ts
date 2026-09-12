@@ -49,7 +49,7 @@ export type StartInstructions = {
   transcriptBytesDropped: number
 }
 
-/** Room for the two truncation markers, so a marker can never push the block over its cap. */
+/** Room for one truncation marker, subtracted once per section that can be cut. */
 const MARKER_RESERVE = 120
 
 function describeConfiguration(configuration: ModelConfiguration): string {

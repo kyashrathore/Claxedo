@@ -14,7 +14,7 @@ export function encodePageCursor(key: PageKey): string {
   return `${key.createdAt}:${key.id}`
 }
 
-/** Undefined for anything this module did not write; callers answer 400, never an unfiltered page. */
+/** Undefined for a value this module did not write, which pages from the start rather than refusing. */
 export function decodePageCursor(value: string): PageKey | undefined {
   const separator = value.indexOf(":")
   if (separator <= 0) return undefined

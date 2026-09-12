@@ -10,7 +10,6 @@ export type TaskListProps = {
   emptyLabel?: string
   showChildren?: boolean
   childrenOf?: (taskId: string) => readonly TaskSummary[]
-  /** Set while the server holds a further page of this list. */
   more?: MorePages
   onSelect: (taskId: string) => void
   onStatusChange?: (input: { taskId: string; revision: number; status: TaskStatus }) => void
