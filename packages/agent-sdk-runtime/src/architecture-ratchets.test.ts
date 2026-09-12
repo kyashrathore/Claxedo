@@ -11,12 +11,16 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // new feature. Each is the file's exact length at its last review, with
       // no headroom, so the next feature must name an owner rather than append.
       // `runtime.ts` delegates the Goal surface to `runtime/goal-controller.ts`
-      // and `harnesses/codex/driver.ts` delegates app-server login state to
-      // `harnesses/codex/process-auth.ts`.
-      "runtime.ts": 840,
+      // and per-session turn admission to `runtime/turn-admission.ts`;
+      // `harnesses/codex/driver.ts` delegates app-server login state to
+      // `harnesses/codex/process-auth.ts` and `turn/steer` to
+      // `harnesses/codex/protocol.ts`; `harnesses/shared/sdk-runtime-adapter.ts`
+      // delegates steering to `harnesses/shared/turn-steering.ts` and keeps only
+      // the entrypoint.
+      "runtime.ts": 819,
       "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 651,
-      "harnesses/shared/sdk-runtime-adapter.ts": 875,
+      "harnesses/codex/driver.ts": 656,
+      "harnesses/shared/sdk-runtime-adapter.ts": 880,
       "harnesses/pi/index.ts": 12,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {

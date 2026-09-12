@@ -1,13 +1,19 @@
-export type PromptAdmission = "admit" | "abort-active" | "ignore"
+export type PromptAdmission = "admit" | "steer" | "abort-active" | "ignore"
 
-/** The primary composer control stops an active turn, even with a queued draft. */
+/**
+ * What the composer's primary control does with a submission.
+ *
+ * A draft submitted while a turn runs is sent to that turn — Send means send,
+ * whatever the session is doing. The control only stops the turn when there is
+ * nothing to send, which is the state it renders as Stop.
+ */
 export function admitPromptSubmission(input: {
   readonly bodyMd: string
   readonly imageCount?: number
   readonly commentCount?: number
   readonly working?: boolean
 }): PromptAdmission {
-  if (input.working) return "abort-active"
-  if (input.bodyMd.trim().length > 0 || input.imageCount || input.commentCount) return "admit"
-  return "ignore"
+  const hasContent = input.bodyMd.trim().length > 0 || !!input.imageCount || !!input.commentCount
+  if (input.working) return hasContent ? "steer" : "abort-active"
+  return hasContent ? "admit" : "ignore"
 }

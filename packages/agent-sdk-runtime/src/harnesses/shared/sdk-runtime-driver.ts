@@ -68,6 +68,8 @@ export type ActiveTurn = {
   abort: AbortController
   close?: () => void
   turnId?: string
+  /** Present only while this turn's protocol can accept another user message. */
+  steer?: (input: PromptInput) => Promise<void>
 }
 
 export type SdkRuntimeAuth = { anthropic?: string; openai?: string; cursor?: string }

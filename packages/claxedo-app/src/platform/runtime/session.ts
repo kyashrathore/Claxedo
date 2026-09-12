@@ -1,4 +1,4 @@
-import type { AgentPresentationMessage as Message, AgentContentPart as Part, AgentPresentationSession as Session, AgentTodo as Todo, PromptInput } from "@claxedo/agent-runtime-contract"
+import type { AgentPresentationMessage as Message, AgentContentPart as Part, AgentPresentationSession as Session, AgentTodo as Todo, PromptDeliveryRequest, PromptInput } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-urls"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { HarnessSelection } from "@/platform/identity/harness-selection"
@@ -178,4 +178,9 @@ export type AgentRuntimePromptPayload = {
    * the agent has already acted.
    */
   permissionMode?: string
+  /**
+   * What the runtime should do when the session is already running a turn:
+   * `steer` hands this prompt to that turn, `queue` waits for it to end.
+   */
+  delivery?: PromptDeliveryRequest
 }

@@ -40,6 +40,7 @@ for await (const line of readline.createInterface({ input: process.stdin })) {
     case "get_available_models": ok({ models: [{ provider: "test", id: "model", name: "Test" }] }); break
     case "get_available_thinking_levels": ok({ levels: ["off", "high"] }); break
     case "set_model": case "set_thinking_level": case "clear_queue": ok({}); break
+    case "steer": ok({}); done("steered: " + cmd.message); break
     case "abort": ok({}); emit({ type: "agent_settled" }); break
     case "prompt":
       ok({}); emit({ type: "agent_start" });

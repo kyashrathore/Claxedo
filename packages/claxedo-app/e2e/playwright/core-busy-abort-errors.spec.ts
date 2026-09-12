@@ -341,6 +341,41 @@ test.describe("core busy / abort / errors @core", () => {
     await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
   })
 
+  test("a message sent mid-turn joins the running turn instead of stopping it", async ({ page }) => {
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
+      // The turn must still be running when the second message is sent.
+      timingsMs: { busy: 60, pending: 150, delta: 16_000, completed: 300, idle: 150 },
+    })
+    await neutralizeStatusPoll(page)
+    await seedOneProject(page, DIR)
+    const input = await openDraftPrompt(page, DIR)
+
+    await sendPrompt(page, input, "start the long job")
+    await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible({ timeout: 20_000 })
+    await expect(submitIcon(page)).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+    await waitForDispatchReceived({ get count() { return mock.requests.promptCount } })
+    await expect(input).toHaveText("", { timeout: 20_000 })
+
+    const steered = "also update the readme"
+    await input.click()
+    await input.fill(steered)
+    // A draft written mid-turn turns the control back into Send: there is
+    // something to send, so the primary control is not Stop.
+    await expect(submitIcon(page)).toHaveAttribute("data-icon", "send", { timeout: 15_000 })
+    await page.keyboard.press("Enter")
+
+    await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(2)
+    expect(mock.requests.promptBodies[1]?.delivery, "the second message must ask to steer the running turn").toBe("steer")
+    expect(mock.requests.abortCount, "sending mid-turn must not stop the running turn").toBe(0)
+    await expect(page.getByText(steered).last(), "the steered message never reached the transcript")
+      .toBeVisible({ timeout: 20_000 })
+    await expect(page.locator(SELECTORS.thinkingRow), "the running turn must still be running")
+      .toBeVisible({ timeout: 5_000 })
+  })
+
   test("a retry/ACP-recovery status renders the retry banner, then the turn recovers and completes", async ({
     page,
   }) => {

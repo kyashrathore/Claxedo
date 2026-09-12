@@ -23,6 +23,7 @@ import {
   type Query,
   type SDKActiveGoalMessage,
   type SDKMessage,
+  type SDKUserMessage,
   type SessionStore,
   type SessionStoreEntry,
   type SpawnOptions,
@@ -40,7 +41,6 @@ import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type Sd
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
-  extractTextFromParts,
   text,
   type SdkRuntimeAuth,
   type SdkRuntimeDriver,
@@ -49,9 +49,16 @@ import {
   stringRecord,
 } from "../shared/sdk-runtime-adapter"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
+import {
+  deliverPromptAttachments,
+  isPromptImageMime,
+  type MaterializedAttachment,
+  type PromptDelivery,
+} from "../shared/prompt-attachments"
 import { interruptGoalTurn } from "../shared/goal-stop-order"
 import { claudeAuthEnv, claudeAuthValue } from "./auth"
 import { requireClaudeExecutable } from "./executable"
+import { createClaudeTurnInput, type ClaudeTurnInput } from "./turn-input"
 import { harnessSpawnEnv } from "../shared/spawn-env"
 import {
   CLAUDE_DENY_FLOOR,
@@ -85,6 +92,44 @@ export function claudeSystemPrompt(system?: string) {
   return system
     ? { type: "preset" as const, preset: "claude_code" as const, append: system }
     : undefined
+}
+
+type ClaudeUserContent = Exclude<SDKUserMessage["message"]["content"], string>[number]
+
+const CLAUDE_DOCUMENT_MIME = "application/pdf"
+
+function claudeAttachmentBlock(attachment: MaterializedAttachment): ClaudeUserContent | undefined {
+  if (isPromptImageMime(attachment.mime)) {
+    return { type: "image", source: { type: "base64", media_type: attachment.mime, data: attachment.base64 } }
+  }
+  if (attachment.mime === CLAUDE_DOCUMENT_MIME) {
+    return { type: "document", source: { type: "base64", media_type: CLAUDE_DOCUMENT_MIME, data: attachment.base64 } }
+  }
+  return undefined
+}
+
+/**
+ * One user message for the turn, in whichever of the SDK's two prompt shapes
+ * carries it.
+ *
+ * Text alone stays a plain string. An attachment the API renders itself only
+ * fits the streaming-input form, whose single message carries the same text
+ * alongside the content blocks. Either shape reaches `query()` through
+ * `createClaudeTurnInput`, which owns when stdin closes.
+ */
+export function claudeTurnPrompt(delivery: PromptDelivery): string | AsyncIterable<SDKUserMessage> {
+  const blocks = delivery.attachments.flatMap((attachment) => {
+    const block = claudeAttachmentBlock(attachment)
+    return block ? [block] : []
+  })
+  if (!blocks.length) return delivery.text
+  const message: SDKUserMessage = {
+    type: "user",
+    session_id: "",
+    message: { role: "user", content: [...blocks, { type: "text", text: delivery.text }] },
+    parent_tool_use_id: null,
+  }
+  return { async *[Symbol.asyncIterator]() { yield message } }
 }
 
 export function claudeGoalSnapshot(
@@ -283,7 +328,15 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 
   async runTurn(input: SdkRuntimeTurnInput) {
-    await this.runQuery(input, extractTextFromParts(input.input.parts))
+    const turnInput = createClaudeTurnInput(claudeTurnPrompt(await deliverPromptAttachments({
+      parts: input.input.parts,
+      directory: input.directory,
+    })))
+    try {
+      await this.runQuery(input, turnInput.prompt, undefined, turnInput)
+    } finally {
+      turnInput.end()
+    }
   }
 
   private async stopGoal(sessionId: string, directory: string) {
@@ -338,8 +391,9 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
 
   private async runQuery(
     input: SdkRuntimeTurnInput,
-    prompt: string,
+    prompt: string | AsyncIterable<SDKUserMessage>,
     onGoal?: (goal: RuntimeGoalSnapshot | null) => void,
+    turnInput?: ClaudeTurnInput,
   ) {
     const tasks = createClaudeTaskLedger()
     const applyGoal = (goal: RuntimeGoalSnapshot | null) => {
@@ -536,6 +590,14 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     this.host.lifecycle().set(input.sessionId, {
       abort: input.abort,
       close: () => q.close(),
+      ...(turnInput
+        ? {
+            steer: async (steered) => await turnInput.steer(claudeTurnPrompt(await deliverPromptAttachments({
+              parts: steered.parts,
+              directory: input.directory,
+            }))),
+          }
+        : {}),
     })
     try {
       let result: SDKMessage | undefined
@@ -548,6 +610,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         // Ordinary query results precede subprocess cleanup. Keep their terminal
         // projection out of both the store and event hub until iteration closes.
         if (!onGoal && message.type === "result") {
+          // The result ends the turn, so stop holding stdin open for another
+          // steer. A message already written still runs, and its own result
+          // replaces this one as the turn's terminal projection.
+          turnInput?.end()
           result = message
           continue
         }

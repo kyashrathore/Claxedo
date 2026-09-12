@@ -51,10 +51,41 @@ describe("Cursor SDK driver", () => {
   })
 
   test("places a handoff transcript before the first Cursor prompt", () => {
-    expect(cursorTurnPrompt([{ type: "text", text: "continue" }], "prior conversation"))
+    expect(cursorTurnPrompt({ text: "continue", attachments: [] }, "prior conversation"))
       .toBe("prior conversation\n\ncontinue")
-    expect(cursorTurnPrompt([{ type: "text", text: "continue" }]))
+    expect(cursorTurnPrompt({ text: "continue", attachments: [] }))
       .toBe("continue")
+  })
+
+  test("sends an image attachment's bytes alongside the text that names its path", () => {
+    const attachment = {
+      mime: "image/png",
+      base64: "AAAB",
+      url: "data:image/png;base64,AAAB",
+      filename: "shot.png",
+      path: "/workspace/.claxedo/attachments/abc-shot.png",
+    }
+    expect(cursorTurnPrompt({
+      text: `look\nAttached file (image/png): ${attachment.path}`,
+      attachments: [attachment],
+    })).toEqual({
+      text: `look\nAttached file (image/png): ${attachment.path}`,
+      images: [{ data: "AAAB", mimeType: "image/png" }],
+    })
+  })
+
+  test("leaves a video attachment to the path Cursor reads it from", () => {
+    const attachment = {
+      mime: "video/mp4",
+      base64: "AAAC",
+      url: "data:video/mp4;base64,AAAC",
+      filename: "clip.mp4",
+      path: "/workspace/.claxedo/attachments/def-clip.mp4",
+    }
+    expect(cursorTurnPrompt({
+      text: `watch\nAttached file (video/mp4): ${attachment.path}`,
+      attachments: [attachment],
+    })).toBe(`watch\nAttached file (video/mp4): ${attachment.path}`)
   })
 
   test("admits Task lifecycle metadata before projecting a sanitized parent frame", async () => {

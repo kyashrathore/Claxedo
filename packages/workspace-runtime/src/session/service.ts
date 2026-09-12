@@ -7,6 +7,8 @@ import type {
   AgentRuntime,
   AgentRuntimeStreamEvent,
   AgentRuntimeTurnStartInput,
+  PromptDelivery,
+  PromptDeliveryRequest,
   PromptInput,
   RuntimeDirectory,
   SessionConfig,
@@ -58,6 +60,12 @@ export type SessionPromptBody = {
    * The PUT route remains, for changing the mode MID-conversation.
    */
   permissionMode?: string
+  /**
+   * What to do when the session is already running a turn: `steer` hands this
+   * prompt to that turn, `queue` holds it until the turn ends. Absent means the
+   * caller wants a turn of its own and takes the admission conflict.
+   */
+  delivery?: PromptDeliveryRequest
 }
 
 /**
@@ -114,7 +122,12 @@ export function parseSessionPromptBody(input: unknown): SessionPromptBody {
     system: str(body.system),
     variant: str(body.variant),
     permissionMode: str(body.permissionMode),
+    delivery: promptDelivery(body.delivery),
   }
+}
+
+function promptDelivery(input: unknown): PromptDeliveryRequest | undefined {
+  return input === "steer" || input === "queue" ? input : undefined
 }
 
 export type SessionPromptTurnResult = {
@@ -126,6 +139,12 @@ export type SessionPromptTurnResult = {
   error?: string
   messages: AgentMessage[]
 }
+
+/**
+ * How the runtime admitted the prompt, reported as soon as it decides and
+ * before the turn runs, because that is what the response has to carry.
+ */
+export type PromptDeliveryObserver = (delivery: PromptDelivery) => void
 
 export type SessionPromptTurnInput = {
   adapter: AgentHarnessAdapter
@@ -158,6 +177,7 @@ export type RuntimePromptTurnInput = {
   createActiveTurnScope?: () => ActiveTurnScope | undefined
   streamErrorMessage?: (error: unknown) => string
   onAdmissionSettled?: (error?: unknown) => void
+  onDelivery?: PromptDeliveryObserver
   /** Current durable lease generation, checked before every producer publish. */
   turnAdmission?: { valid(): boolean; fencingToken(): number }
   actor?: { actorId: string; actorKind: "human" | "agent" }
@@ -359,18 +379,43 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ...(input.body.system ? { system: input.body.system } : {}),
       ...(input.body.permissionMode ? { permissionMode: input.body.permissionMode } : {}),
       ...(input.body.variant !== undefined ? { variant: input.body.variant } : {}),
+      ...(input.body.delivery ? { delivery: input.body.delivery } : {}),
       ...(input.author ? { author: input.author } : {}),
       ...(input.turnAdmission ? { admission: input.turnAdmission } : {}),
     } satisfies Omit<AgentRuntimeTurnStartInput, "actorId" | "actorKind">
-    turn = await (input.actor
+    const start = () => input.actor
       ? input.runtime.turns.start({
           ...turnInput,
           actorId: input.actor.actorId,
           actorKind: input.actor.actorKind,
         })
-      : input.runtime.turns.start(turnInput))
+      : input.runtime.turns.start(turnInput)
+    turn = await start()
+    // A queued prompt waits here, in the host request that holds it, because
+    // the turn it becomes needs this loop to reach the event bus: the runtime
+    // publishes to subscribers, and this subscription is the only one bridging
+    // them to the client.
+    while (turn.delivery === "queue") {
+      input.onDelivery?.("queue")
+      settleAdmission()
+      await input.runtime.turns.whenIdle(input.sessionId)
+      turn = await start()
+    }
+    input.onDelivery?.(turn.delivery)
     settleAdmission()
     assistantId = turn.assistantMessageId
+    // A steered prompt joined the running turn, and that turn's own driver is
+    // already publishing its events through a subscription of its own.
+    if (turn.delivery === "steer") {
+      return {
+        sessionId: input.sessionId,
+        prompt: turn.prompt,
+        scope,
+        assistantId,
+        assistantMessagePublished: false,
+        messages: await input.runtime.events.list(input.sessionId, input.directory),
+      }
+    }
     const projection = createPromptEventProjection({
       sessionId: input.sessionId,
       directory: scope,

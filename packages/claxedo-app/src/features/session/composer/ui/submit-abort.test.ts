@@ -134,6 +134,38 @@ describe("prompt Stop results", () => {
   })
 })
 
+describe("which turn Stop names", () => {
+  const abortWith = (sessionID: string, seen: Array<string | undefined>, turnId?: string) => createPromptAbort({
+    sessionID: () => sessionID,
+    defaultDirectory: "/repo",
+    ...(turnId ? { turnId: () => turnId } : {}),
+    clientForDirectory: () => ({
+      session: {
+        abort: async (input: { turnId?: string }) => {
+          seen.push(input.turnId)
+          return { data: { ok: true as const, status: "cancelled" as const } }
+        },
+        status: async () => ({ data: {} }),
+      },
+      permission: { list: async () => ({ data: [] }) },
+      question: { list: async () => ({ data: [] }) },
+    }),
+  })
+
+  test("names the turn this composer started", async () => {
+    const seen: Array<string | undefined> = []
+    await abortWith("ses_scoped", seen, "msg_first")()
+    expect(seen).toEqual(["msg_first"])
+  })
+
+  test("names no turn when this composer started none", async () => {
+    const seen: Array<string | undefined> = []
+    await abortWith("ses_unscoped", seen)()
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toBeUndefined()
+  })
+})
+
 describe("prompt Stop feedback", () => {
   const sessionSnapshot = (sessionID: string) => ({
     status: queryClient.getQueryData(shellDataKeys.sessionId(sessionID, "status")),

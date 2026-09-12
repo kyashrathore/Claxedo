@@ -9,7 +9,7 @@ import path from "node:path"
 import os from "node:os"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { piRpcAdapter } from "@claxedo/agent-event-runtime/harnesses/pi"
-import type { AgentConfigOption } from "../../index"
+import type { AgentConfigOption, PromptInput } from "../../index"
 import { modelConfigOption, type SdkModelEntry } from "../../sdk-model-options"
 import {
   extractTextFromParts,
@@ -392,7 +392,17 @@ class PiRpcDriver implements SdkRuntimeDriver {
         )
         if (event.type === "agent_settled") finish()
       })
-      this.host.lifecycle().set(input.sessionId, { abort: input.abort, close: abort })
+      this.host.lifecycle().set(input.sessionId, {
+        abort: input.abort,
+        close: abort,
+        steer: async (steered) => {
+          const steeredImages = piImageContents(steered.parts)
+          await process.request("steer", {
+            message: extractTextFromParts(steered.parts),
+            ...(steeredImages.length ? { images: steeredImages } : {}),
+          })
+        },
+      })
       input.abort.signal.addEventListener("abort", abort, { once: true })
       if (input.abort.signal.aborted) {
         abort()
@@ -406,14 +416,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
         await settled
         return
       }
-      const images = input.input.parts.flatMap((part) => {
-        const file = record(part)
-        const url = text(file?.url)
-        const match = url?.match(/^data:(image\/[^;]+);base64,(.+)$/s)
-        if (file?.type === "file" && !match)
-          throw new Error("Pi attachments require an inline base64 image; refer to workspace files by path")
-        return match ? [{ type: "image", mimeType: match[1], data: match[2] }] : []
-      })
+      const images = piImageContents(input.input.parts)
       await process.request("prompt", {
         message: [input.input.system, extractTextFromParts(input.input.parts)].filter(Boolean).join("\n\n"),
         ...(images.length ? { images } : {}),
@@ -560,6 +563,21 @@ class PiRpcDriver implements SdkRuntimeDriver {
     }
     this.entries.clear()
   }
+}
+
+/**
+ * Pi takes images inline. A file part with any other url has no Pi
+ * representation at all, so it is refused rather than silently dropped.
+ */
+function piImageContents(parts: PromptInput["parts"]) {
+  return parts.flatMap((part) => {
+    const file = record(part)
+    const url = text(file?.url)
+    const match = url?.match(/^data:(image\/[^;]+);base64,(.+)$/s)
+    if (file?.type === "file" && !match)
+      throw new Error("Pi attachments require an inline base64 image; refer to workspace files by path")
+    return match ? [{ type: "image", mimeType: match[1], data: match[2] }] : []
+  })
 }
 
 /** A native model key belongs to its harness; Pi qualifies its models by provider. */

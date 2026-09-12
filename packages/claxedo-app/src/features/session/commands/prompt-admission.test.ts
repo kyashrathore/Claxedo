@@ -15,10 +15,14 @@ describe("prompt admission", () => {
   })
 
   test.each([
-    { bodyMd: "" },
     { bodyMd: "the next message" },
-    { bodyMd: "", imageCount: 1, commentCount: 1 },
-  ])("stops active work instead of dispatching another turn: %j", (input) => {
-    expect(admitPromptSubmission({ ...input, working: true })).toBe("abort-active")
+    { bodyMd: "", imageCount: 1 },
+    { bodyMd: "", commentCount: 1 },
+  ])("sends a draft to the running turn instead of stopping it: %j", (input) => {
+    expect(admitPromptSubmission({ ...input, working: true })).toBe("steer")
+  })
+
+  test.each(["", "   "])("stops the active turn when there is nothing to send: %j", (bodyMd) => {
+    expect(admitPromptSubmission({ bodyMd, working: true })).toBe("abort-active")
   })
 })

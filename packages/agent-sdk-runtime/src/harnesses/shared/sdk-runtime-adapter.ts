@@ -39,6 +39,7 @@ import type {
   AgentHarnessAdapterHealthContext,
   AgentPermissionModeState,
   AgentTurnWriteContext,
+  SteerResult,
 } from "../../adapter-contract"
 import { turnWriteFence } from "../../adapter-contract"
 import type { HarnessCapabilities } from "../../capabilities"
@@ -53,6 +54,7 @@ import {
   EXPLICIT_TURN_ABORT_REASON,
   type SessionTurnLifecycle,
 } from "../shared/turn-lifecycle"
+import { steerActiveTurn } from "./turn-steering"
 import { commitSdkAutomaticTitle } from "./sdk-runtime-title"
 import { createSdkRuntimeProducers } from "./sdk-runtime-producers"
 import { requireWorkspaceDirectory } from "../../target"
@@ -758,6 +760,11 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   async getMessages(binding: AgentExecutionBinding): Promise<AgentMessage[]> {
     const { sessionId } = assertAgentExecutionBinding(binding)
     return this.store.getMessages(sessionId)
+  }
+
+  async steerTurn(binding: AgentExecutionBinding, input: PromptInput): Promise<SteerResult> {
+    assertAgentExecutionBinding(binding)
+    return await steerActiveTurn(this.lifecycle(), binding.sessionId, input)
   }
 
   async abort(binding: AgentExecutionBinding): Promise<AbortResult> {

@@ -23,6 +23,7 @@ import type {
 import {
   assistantIdForUserMessage,
   parseSessionPromptRequest,
+  sessionPromptDelivered,
   SESSION_PROMPT_SUCCESS,
 } from "./contracts/session-prompt"
 import {
@@ -219,6 +220,8 @@ export type PromptBody = {
    * a picker can relabel itself while nothing reaches the runtime.
    */
   permissionMode?: string
+  /** What this prompt asked a busy session to do with it. */
+  delivery?: "steer" | "queue"
 }
 
 /** A recorded, contract-validated `POST /session`. */
@@ -302,6 +305,8 @@ export type MockRuntimeRequests = {
    * (before `holdAbort`'s gate, so a held-open abort still increments here).
    */
   abortCount: number
+  /** The `?turnId=` each Stop named, in order; `undefined` for one that named none. */
+  abortedTurnIds: Array<string | undefined>
   /** Validated `POST /session/:id/permissions/:permId` decisions, in order. */
   permissionResponses: PermissionResponseValue[]
   /**
@@ -983,6 +988,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     promptCount: 0,
     promptBodies: [],
     abortCount: 0,
+    abortedTurnIds: [],
     permissionResponses: [],
     permissionModeWrites: [],
     questionReplies: [],
@@ -1039,6 +1045,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const busWrRuntime = runtimeFanout.channel() // /api/wr/runtime-events (primary origin)
   const busRelayRuntime = runtimeFanout.channel() // cloud relay runtime-events mount
   let messages: MockMessageRow[] = []
+  // The user message id of the turn the mock is driving, which is what a scoped
+  // Stop names and what a steered prompt joins.
+  let runningTurn: string | undefined
   let sessionCreated = false
   let sessionDirectory = DIR
   let harnessPollCount = 0
@@ -1535,6 +1544,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
 
     await wait(timings.idle + (options.delayedIdleMs ?? 0))
+    runningTurn = undefined
     setSessionStatus(SESSION_ID)
     emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })
   }
@@ -2830,12 +2840,24 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       modelID: body?.model?.modelID,
       variant: body?.variant,
       ...(typeof body?.permissionMode === "string" ? { permissionMode: body.permissionMode } : {}),
+      ...(body?.delivery ? { delivery: body.delivery } : {}),
     })
 
-    messages = [...messages, userMessage({ id: userID, text, agent, providerID, modelID })]
-    // CONTRACT: the real route returns 204 with an empty body on every success path.
-    await route.fulfill({ ...SESSION_PROMPT_SUCCESS })
+    const userRow = userMessage({ id: userID, text, agent, providerID, modelID })
+    messages = [...messages, userRow]
+    // A steered prompt joins the turn already running: the runtime commits its
+    // user message and the running turn keeps going, so no turn is driven here
+    // and the response carries the delivery the composer needs to read.
+    if (body?.delivery === "steer" && runningTurn) {
+      emit({ type: "message.updated", properties: { sessionID: SESSION_ID, info: userRow.info } })
+      await route.fulfill({ ...sessionPromptDelivered("steer") })
+      return
+    }
+    // CONTRACT: the real route returns 204 with an empty body for a prompt that
+    // asked nothing about delivery, and `{ delivery }` for one that did.
+    await route.fulfill(body?.delivery ? { ...sessionPromptDelivered("start") } : { ...SESSION_PROMPT_SUCCESS })
 
+    runningTurn = userID
     // Fire-and-forget: the staged event sequence runs on its own clock, independent
     // of this route handler's lifecycle.
     void driveTurn({ userID, assistantID, text, agent, providerID, modelID, turn: requests.promptCount })
@@ -2858,7 +2880,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // Counted on RECEIPT, before the gate: a held-open abort has still reached the
     // network, and proving exactly that is what `holdAbort` exists for.
     requests.abortCount += 1
+    const namedTurn = new URL(route.request().url()).searchParams.get("turnId") ?? undefined
+    requests.abortedTurnIds.push(namedTurn)
     if (abortGate) await abortGate
+    // A Stop that names a turn the session is no longer running is ignored, the
+    // way the runtime ignores it: the turn that replaced it keeps going.
+    if (namedTurn && runningTurn && namedTurn !== runningTurn) {
+      return json(route, { ok: true, status: "already_idle" })
+    }
+    runningTurn = undefined
     if (options.holdTurn) {
       setSessionStatus(SESSION_ID)
       emit({ type: "session.idle", properties: { sessionID: SESSION_ID } })

@@ -169,6 +169,24 @@ describe("native Pi through the shared adapter", () => {
       await f.cleanup()
     }
   })
+  test("hands a prompt sent mid-turn to the running turn instead of a second one", async () => {
+    const f = await fixture()
+    try {
+      const turn = (async () => {
+        for await (const _event of f.adapter.executeTurn(f.binding, prompt("hold"))) {
+          // The held turn's frames are not what this asserts.
+        }
+      })()
+
+      expect(await steerWhenRunning(f.adapter, f.binding, "also update the readme")).toEqual({ ok: true })
+
+      await turn
+      expect(JSON.stringify(f.store.getMessages(f.binding.sessionId)))
+        .toContain("steered: also update the readme")
+    } finally {
+      await f.cleanup()
+    }
+  })
   test("returns the process model list and thinking levels", async () => {
     const f = await fixture()
     try {
@@ -323,3 +341,18 @@ test("a goal accounts for work and evaluator usage before its single terminal ev
     await f.cleanup()
   }
 })
+
+/**
+ * Steering is refused until the turn has opened its RPC, and the adapter
+ * publishes no frame for that moment, so the readiness wait is the refusal
+ * itself: a turn that cannot take input yet answers without sending anything.
+ */
+async function steerWhenRunning(adapter: PiHarnessAdapter, binding: AgentExecutionBinding, text: string) {
+  let last
+  for (let attempt = 0; attempt < 300; attempt++) {
+    last = await adapter.steerTurn(binding, prompt(text))
+    if (last.ok) return last
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  return last
+}

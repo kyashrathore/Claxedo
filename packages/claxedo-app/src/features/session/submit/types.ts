@@ -8,6 +8,8 @@ import type {
   AgentOutputFormat as OutputFormat,
   AgentPresentationMessage as Message,
   AgentTextPartInput as TextPartInput,
+  PromptDelivery,
+  PromptDeliveryRequest,
 } from "@claxedo/agent-runtime-contract"
 import type { ContextItem } from "@/features/session/providers/prompt"
 import type { useClaxedoState } from "@/features/session/app-ports"
@@ -28,6 +30,8 @@ export type PromptDispatchPayload = {
   permissionMode?: string
   system?: string
   format?: OutputFormat
+  /** How a session that is already running a turn should take this prompt. */
+  delivery?: PromptDeliveryRequest
 }
 
 export type PromptDispatchInput = {
@@ -180,6 +184,8 @@ export type WaitForPendingWorktreeContext = {
 
 export type SendPromptRequestContext = {
   sessionID: string
+  /** Told how the runtime took this prompt, and which turn id it carried. */
+  onDelivery?: (delivery: PromptDelivery, turnId: string) => void
   client: PromptDispatchInput["client"]
   payload: PromptDispatchPayload
   waitForWorktree: () => Promise<boolean>

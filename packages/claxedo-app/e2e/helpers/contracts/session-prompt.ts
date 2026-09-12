@@ -149,6 +149,13 @@ export const SESSION_PROMPT_FIELDS = {
     whenAbsent:
       "the turn runs under whatever mode the harness already stands at — for a FIRST turn that is the runtime's default rung, since no session existed to set one on beforehand",
   },
+  delivery: {
+    check: (value) =>
+      value === undefined || value === "steer" || value === "queue"
+        ? undefined
+        : `delivery must be "steer" or "queue", got ${typeOf(value)}`,
+    whenAbsent: "a prompt for a session that is already running a turn takes the 409 admission conflict",
+  },
 } satisfies Record<keyof Required<SessionPromptBody>, FieldSpec>
 
 /**
@@ -243,13 +250,21 @@ export function parseSessionPromptRequest(rawBody: unknown, url: string): Sessio
 // ---------------------------------------------------------------------------
 
 /**
- * The real route's success response, verbatim: `return c.body(null, 204)`
- * (workspace-runtime/src/routes/session-core.ts:714-796 — every success path, both
- * the dedup short-circuits and the fire-and-forget dispatch, returns exactly this).
- * The mock must not invent a 200-with-JSON here; specs that assert "the reply arrives
- * over SSE, not from this response" depend on it being empty.
+ * The real route's success response for a prompt that asked nothing about
+ * delivery, verbatim: `return c.body(null, 204)`. The mock must not invent a
+ * 200-with-JSON here; specs that assert "the reply arrives over SSE, not from
+ * this response" depend on it being empty.
  */
 export const SESSION_PROMPT_SUCCESS = { status: 204, body: "" } as const
+
+/**
+ * The response to a prompt that DID ask about delivery: the real route answers
+ * `c.json({ delivery })` with how the runtime took it, which is the only way the
+ * composer learns that its message is waiting for the running turn.
+ */
+export function sessionPromptDelivered(delivery: "steer" | "queue" | "start") {
+  return { status: 200, contentType: "application/json", body: JSON.stringify({ delivery }) } as const
+}
 
 /**
  * When the client supplies a `messageID`, the assistant reply's id is the one

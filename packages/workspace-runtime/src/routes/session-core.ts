@@ -8,6 +8,7 @@ import type {
   AgentQuestion,
   AgentRuntime,
   AgentSession,
+  PromptDelivery,
   RuntimeDirectory,
   SessionConfig,
   SessionConfigRequestUpdate,
@@ -1893,8 +1894,11 @@ export function createSessionRoutes(opts: Opts) {
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "abort", "abort")
       if (unsupported) return unsupported
       const runtime = await opts.resolveRuntime?.(c, { sessionId, directory })
+      // A Stop names the turn the caller was looking at, so a request that
+      // lands after that turn ended cannot cancel the one that replaced it.
+      const turnId = c.req.query("turnId")
       const result = runtime
-        ? await runtime.turns.abort(sessionId, directory)
+        ? await runtime.turns.abort(sessionId, directory, turnId ? { turnId } : undefined)
         : await adapter.abort!(await requireExecutionBinding(opts, c, directory, sessionId, adapter))
       if (result.status === "recovering") {
         opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionStatus(sessionId, recovering(result.message))))
@@ -2087,6 +2091,7 @@ export function createSessionRoutes(opts: Opts) {
         modeId: body.permissionMode,
       })
       let settleAdmission: ((error?: unknown) => void) | undefined
+      let deliveredAs: PromptDelivery | undefined
       const admission = runtime
         ? new Promise<unknown>((resolve) => {
             settleAdmission = resolve
@@ -2115,6 +2120,7 @@ export function createSessionRoutes(opts: Opts) {
                 ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
                 streamErrorMessage: streamTurnErrorMessage,
                 onAdmissionSettled: settleAdmission,
+                onDelivery: (delivery) => { deliveredAs = delivery },
                 actor: access.actor,
                 author: access.author,
               })
@@ -2174,6 +2180,9 @@ export function createSessionRoutes(opts: Opts) {
         }
         return turnAdmissionConflict(c)
       }
+      // A prompt that asked how a busy session should take it gets that answer;
+      // every other prompt keeps the empty fire-and-forget acknowledgement.
+      if (body.delivery && deliveredAs) return c.json({ delivery: deliveredAs })
       return c.body(null, 204)
     })
     .get("/agent", async (c) => {

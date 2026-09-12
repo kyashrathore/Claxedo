@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import type { Query } from "@anthropic-ai/claude-agent-sdk"
+import fs from "fs"
+import os from "os"
+import path from "path"
+import type { Query, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
-import type { SdkRuntimeDriverHost, SdkRuntimeTurnInput } from "../shared/sdk-runtime-driver"
+import { removeTestTempDir } from "../shared/test-temp-dir"
+import type { ActiveTurn, SdkRuntimeDriverHost, SdkRuntimeTurnInput } from "../shared/sdk-runtime-driver"
 import type { ClaudeSdkDriverOptions } from "./driver"
 import { createClaudeTaskLedger } from "@claxedo/agent-event-runtime/harnesses/claude"
 import {
@@ -9,6 +13,7 @@ import {
   CLAUDE_FORWARD_SUBAGENT_TEXT,
   claudeSystemPrompt,
   claudeSpawnEnv,
+  claudeTurnPrompt,
   createClaudeSdkDriver,
   ingestClaudeSdkMessage,
 } from "./driver"
@@ -31,6 +36,167 @@ describe("Claude SDK driver", () => {
     expect(claudePluginConfigs({ pluginRoots: ["/plugins/one", 42] })).toEqual([
       { type: "local", path: "/plugins/one" },
     ])
+  })
+
+  test("writes a pasted image into the workspace and sends it as an image block", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claude-attachment-"))
+    try {
+      const prompts: unknown[] = []
+      const lifecycle = createSessionTurnLifecycle()
+      const driver = createClaudeSdkDriver({
+        lifecycle: () => lifecycle as never,
+        pendingPermissions: new Map(),
+        pendingQuestions: new Map(),
+        bindSession() {},
+        getAgentSessionId: () => "claude-sdk:pending",
+        getSessionForAgentSession: () => null,
+        getSessionConfig: () => null,
+        updatePermissionState() {},
+        publishGoal() {},
+        async runProviderTurn() { return true },
+      } as never, {
+        executable: () => "/fake/claude",
+        query: ((request: { prompt: unknown }) => {
+          prompts.push(request.prompt)
+          const stream = (async function* () {})()
+          return Object.assign(stream, { close() {} }) as unknown as Query
+        }) as never,
+      })
+      await driver.runTurn({
+        sessionId: "session-1",
+        getAgentSessionId: () => "claude-sdk:pending",
+        getSessionForAgentSession: () => null,
+        input: {
+          parts: [
+            { type: "text", text: "what is wrong here" },
+            { type: "file", mime: "image/png", filename: "shot.png", url: "data:image/png;base64,AAAB" },
+          ],
+          userMessageId: "user-1",
+          assistantMessageId: "assistant-1",
+          agent: "build",
+          model: { providerID: "claude", modelID: "sonnet" },
+        },
+        directory,
+        abort: new AbortController(),
+        ingest() {},
+        associateChild() {},
+        observeSubagent: async () => ({ event: {} }),
+        rebindAgentSession() {},
+        model: "sonnet",
+      } as never)
+
+      const written = fs.readdirSync(path.join(directory, ".claxedo", "attachments"))
+        .filter((name) => name !== ".gitignore")
+      expect(written).toHaveLength(1)
+      const target = path.join(directory, ".claxedo", "attachments", written[0])
+      expect(fs.readFileSync(target).toString("base64")).toBe("AAAB")
+
+      const sent: Array<{ message: { content: Array<Record<string, unknown>> } }> = []
+      for await (const message of prompts[0] as AsyncIterable<never>) sent.push(message)
+      expect(sent[0]?.message.content).toEqual([
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAB" } },
+        { type: "text", text: `what is wrong here\nAttached file (image/png): ${target}` },
+      ])
+    } finally {
+      removeTestTempDir(directory)
+    }
+  })
+
+  test("keeps the query's input stream open, so a prompt sent mid-turn reaches the same query", async () => {
+    const prompts: unknown[] = []
+    const lifecycle = createSessionTurnLifecycle<ActiveTurn>()
+    let endTurn!: () => void
+    const turnClosed = new Promise<void>((resolve) => { endTurn = resolve })
+    const host = {
+      lifecycle: () => lifecycle, pendingPermissions: new Map(), pendingQuestions: new Map(),
+      bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
+      getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
+      getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
+      updatePermissionState() {},
+    } as unknown as SdkRuntimeDriverHost
+    const running = createClaudeSdkDriver(host, {
+      executable: () => "/fake/claude",
+      query: ((request: { prompt: unknown }) => {
+        prompts.push(request.prompt)
+        const stream = (async function* () { await turnClosed })()
+        return Object.assign(stream, { close() {} }) as unknown as Query
+      }) as never,
+    }).runTurn({
+      sessionId: "session-1",
+      getAgentSessionId: () => "claude-sdk:session-1",
+      input: { parts: [{ type: "text", text: "start the work" }], assistantMessageId: "assistant-1", agent: "build", model: { providerID: "claude", modelID: "opus" } },
+      directory: "/repo", abort: new AbortController(), ingest() {}, associateChild() {},
+      observeSubagent: async () => ({ event: {} }), rebindAgentSession() {}, model: "",
+    } as unknown as SdkRuntimeTurnInput)
+
+    const steer = await waitForSteer(lifecycle, "session-1")
+    await steer({ parts: [{ type: "text", text: "also update the readme" }], assistantMessageId: "assistant-2", agent: "build", model: { providerID: "claude", modelID: "opus" } })
+
+    const input = (prompts[0] as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]()
+    expect(await promptedText(input)).toBe("start the work")
+    expect(await promptedText(input)).toBe("also update the readme")
+    endTurn()
+    await running
+  })
+
+  test("keeps a prompt with no attachments a plain string", () => {
+    expect(claudeTurnPrompt({ text: "run the tests", attachments: [] })).toBe("run the tests")
+  })
+
+  test("sends an image attachment as an image block before the text", async () => {
+    const attachment = {
+      mime: "image/png" as const,
+      base64: "AAAB",
+      url: "data:image/png;base64,AAAB",
+      filename: "shot.png",
+      path: "/workspace/.claxedo/attachments/abc-shot.png",
+    }
+    const text = `look\nAttached file (image/png): ${attachment.path}`
+    const prompt = claudeTurnPrompt({ text, attachments: [attachment] })
+    expect(typeof prompt).not.toBe("string")
+    const sent = []
+    for await (const message of prompt as AsyncIterable<unknown>) sent.push(message)
+    expect(sent).toEqual([{
+      type: "user",
+      session_id: "",
+      parent_tool_use_id: null,
+      message: {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAB" } },
+          { type: "text", text },
+        ],
+      },
+    }])
+  })
+
+  test("sends a PDF attachment as a document block", async () => {
+    const attachment = {
+      mime: "application/pdf",
+      base64: "JVBER",
+      url: "data:application/pdf;base64,JVBER",
+      filename: "spec.pdf",
+      path: "/workspace/.claxedo/attachments/abc-spec.pdf",
+    }
+    const prompt = claudeTurnPrompt({ text: "read it", attachments: [attachment] })
+    const sent: Array<{ message: { content: Array<Record<string, unknown>> } }> = []
+    for await (const message of prompt as AsyncIterable<never>) sent.push(message)
+    expect(sent[0]?.message.content).toEqual([
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: "JVBER" } },
+      { type: "text", text: "read it" },
+    ])
+  })
+
+  test("leaves a video attachment to the path the text names", () => {
+    const attachment = {
+      mime: "video/mp4",
+      base64: "AAAC",
+      url: "data:video/mp4;base64,AAAC",
+      filename: "clip.mp4",
+      path: "/workspace/.claxedo/attachments/def-clip.mp4",
+    }
+    const text = `watch\nAttached file (video/mp4): ${attachment.path}`
+    expect(claudeTurnPrompt({ text, attachments: [attachment] })).toBe(text)
   })
 
   test("appends a handoff transcript to Claude Code's canonical system prompt", () => {
@@ -371,4 +537,21 @@ async function turnModelOption(modelID: string) {
     observeSubagent: async () => ({ event: {} }), rebindAgentSession() {}, model: "",
   } as unknown as SdkRuntimeTurnInput)
   return calls.at(-1)!.options!.model
+}
+
+async function waitForSteer(lifecycle: ReturnType<typeof createSessionTurnLifecycle<ActiveTurn>>, sessionId: string) {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const steer = lifecycle.get(sessionId)?.steer
+    if (steer) return steer
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  throw new Error("the turn never accepted steering")
+}
+
+async function promptedText(input: AsyncIterator<SDKUserMessage>) {
+  const next: IteratorResult<SDKUserMessage> = await input.next()
+  const content = next.value?.message.content
+  if (typeof content === "string") return content
+  const block = content?.find((part: { type: string }) => part.type === "text")
+  return block?.type === "text" ? block.text : undefined
 }

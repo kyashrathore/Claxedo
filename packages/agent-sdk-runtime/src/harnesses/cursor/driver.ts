@@ -12,6 +12,7 @@ import type {
   McpServerConfig as CursorMcpServerConfig,
   SDKAgent as CursorSDKAgent,
   SDKMessage,
+  SDKUserMessage as CursorSDKUserMessage,
 } from "@cursor/sdk"
 import type { AgentConfigOption } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
@@ -29,7 +30,6 @@ import {
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
-  extractTextFromParts,
   text,
   type SdkRuntimeAuth,
   type SdkRuntimeDriver,
@@ -39,6 +39,11 @@ import {
   stringRecord,
 } from "../shared/sdk-runtime-adapter"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
+import {
+  deliverPromptAttachments,
+  promptImageAttachments,
+  type PromptDelivery,
+} from "../shared/prompt-attachments"
 import {
   observeAgentProcess,
   type AgentProcessObserverHandle,
@@ -94,9 +99,19 @@ export function createCursorSdkDriver(
   return new CursorSdkDriver(host, options)
 }
 
-export function cursorTurnPrompt(parts: unknown[], system?: string) {
-  const prompt = extractTextFromParts(parts)
-  return system ? `${system}\n\n${prompt}` : prompt
+/**
+ * The message `Agent.send` receives.
+ *
+ * A text-only turn stays a plain string. An image attachment rides the
+ * message's `images` array as bytes, while the text still names the workspace
+ * path it was written to; Cursor has no input for any other attachment type, so
+ * those reach it through their path line alone.
+ */
+export function cursorTurnPrompt(delivery: PromptDelivery, system?: string): string | CursorSDKUserMessage {
+  const text = system ? `${system}\n\n${delivery.text}` : delivery.text
+  const images = promptImageAttachments(delivery)
+    .map((attachment) => ({ data: attachment.base64, mimeType: attachment.mime }))
+  return images.length ? { text, images } : text
 }
 
 class CursorSdkDriver implements SdkRuntimeDriver {
@@ -247,7 +262,8 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   async runTurn(input: SdkRuntimeTurnInput) {
     const agent = await this.ensureAgent(input.sessionId, input.getAgentSessionId(), input.directory)
     const model = cursorSdkModel(text(input.input.model.modelID) ?? text(input.model))
-    const run = await agent.send(cursorTurnPrompt(input.input.parts, input.input.system), {
+    const delivery = await deliverPromptAttachments({ parts: input.input.parts, directory: input.directory })
+    const run = await agent.send(cursorTurnPrompt(delivery, input.input.system), {
       ...(model ? { model } : {}),
       ...this.mcpServersFor(input.sessionId),
       ...(input.input.agent === "plan" ? { mode: "plan" as const } : {}),

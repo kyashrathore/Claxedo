@@ -117,10 +117,13 @@ export async function sendPromptRequest(input: SendPromptRequestContext) {
   markPendingPromptSent(input.sessionID)
   let claimedByStop = false
   try {
-    await dispatchPrompt({
+    const delivery = await dispatchPrompt({
       client: input.client,
       payload: input.payload,
     })
+    // A transport with no runtime behind it answers nothing, and so does a
+    // prompt that asked nothing about delivery: both started a turn of their own.
+    input.onDelivery?.(delivery ?? "start", input.payload.messageID)
   } finally {
     claimedByStop = !hasPendingPrompt(input.sessionID)
     clearPendingPrompt(input.sessionID)

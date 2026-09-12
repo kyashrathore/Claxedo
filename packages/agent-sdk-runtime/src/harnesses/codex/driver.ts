@@ -55,6 +55,7 @@ import {
   codexIdleTimeoutMs,
   codexSpawnEnv,
   codexTurnModel,
+  codexSteerTurn,
   codexUserInput,
   startTurnWithThreadRecovery,
 } from "./protocol"
@@ -360,10 +361,14 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     })
     const unsubscribeStderr = proc.onStderr(onStderr)
     input.abort.signal.addEventListener("abort", onAbort, { once: true })
-    this.host.lifecycle().set(input.sessionId, { abort: input.abort, close: stop })
+    this.host.lifecycle().set(input.sessionId, {
+      abort: input.abort,
+      close: stop,
+      steer: (steered) => codexSteerTurn({ process: proc, threadId, turnId, input: steered, directory: input.directory }),
+    })
     const startTurn = async (): Promise<JsonRecord> => asRecord(await proc.request("turn/start", {
       threadId,
-      input: codexUserInput(input.input.parts),
+      input: await codexUserInput({ parts: input.input.parts, directory: input.directory }),
       cwd: input.directory,
       approvalPolicy: codexSettingsFor(this.permissionSelection.currentId(input.sessionId)).approvalPolicy,
       approvalsReviewer: "user",

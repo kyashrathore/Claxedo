@@ -1,3 +1,4 @@
+import type { PromptDelivery } from "@claxedo/agent-runtime-contract"
 import { sessionStatus } from "@/features/session/store/session-status-dispatcher"
 import type { ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"
 import { Identifier } from "@/lib/id"
@@ -58,6 +59,9 @@ export async function dispatchNormalPromptSubmit(input: {
   readonly permissionMode?: string
   readonly system?: string
   readonly format?: PromptDispatchPayload["format"]
+  /** Set when this prompt is sent into a session that is already running a turn. */
+  readonly delivery?: PromptDispatchPayload["delivery"]
+  readonly onDelivery?: (delivery: PromptDelivery, turnId: string) => void
   readonly targetCreated: boolean
   readonly replaceSession: boolean
   readonly explicitExistingSession: boolean
@@ -141,6 +145,7 @@ export async function dispatchNormalPromptSubmit(input: {
     return {
       sessionID: input.session.id,
       client: input.runtimePromptClient,
+      ...(input.onDelivery ? { onDelivery: input.onDelivery } : {}),
       waitForWorktree: () => waitForPendingWorktree({
         sessionID: input.session.id,
         sessionDirectory: input.sessionDirectory,
@@ -195,6 +200,7 @@ export async function dispatchNormalPromptSubmit(input: {
     ...(input.permissionMode ? { permissionMode: input.permissionMode } : {}),
     ...(input.system ? { system: input.system } : {}),
     ...(input.format ? { format: input.format } : {}),
+    ...(input.delivery ? { delivery: input.delivery } : {}),
   })
   const rollback = (promptRequest: ReturnType<typeof preparePromptRequest>) => {
     const timeline = timelineFor(promptRequest)

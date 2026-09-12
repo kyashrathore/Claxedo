@@ -7,6 +7,7 @@ import type { SubmitBlock } from "@/features/session/composer/submit-block-reaso
 
 export function PromptSubmitControl(props: {
   stage: Accessor<SessionStatusStageValue>
+  queued: Accessor<boolean>
   busy: Accessor<boolean>
   onCancel: VoidFunction
   onRetry: Accessor<(() => void) | undefined>
@@ -82,8 +83,22 @@ export function PromptSubmitControl(props: {
     )
   }
 
+  // Stop is what this control means only while there is nothing to send. With a
+  // draft in the composer it means Send, and the draft goes to the running turn.
+  const stopping = () => props.busy() && props.blank()
+
   return (
     <>
+      <Show when={props.queued()}>
+        <div
+          data-testid="composer-queued"
+          class="flex items-center gap-1.5 rounded-md border border-border-base bg-surface-raised-base px-2 py-1 text-12-medium text-text-weak"
+          role="status"
+          aria-live="polite"
+        >
+          <span>Queued</span>
+        </div>
+      </Show>
       <SessionStatusStage
         stage={props.stage()}
         busy={props.busy()}
@@ -111,12 +126,12 @@ export function PromptSubmitControl(props: {
             disabled={props.disabled()}
             tabIndex={props.excludeFromTab() ? -1 : undefined}
             onClick={explain}
-            icon={props.busy() ? "stop" : props.mode() === "shell" ? "arrow-undo-down" : "send"}
+            icon={stopping() ? "stop" : props.mode() === "shell" ? "arrow-undo-down" : "send"}
             variant="primary"
             class="size-8 rounded-full bg-v2-background-bg-inverse p-[7px] text-v2-icon-icon-inverse shadow-none transition-opacity duration-150 hover:opacity-90 disabled:opacity-35 [&[data-booting]>[data-component=icon]]:opacity-0 [&>[data-component=icon]]:transition-opacity [&>[data-component=icon]]:duration-150"
             classList={{ "opacity-50": actionable() }}
             aria-label={
-              props.busy()
+              stopping()
                 ? props.stopLabel
                 : props.booting()
                   ? props.bootText()

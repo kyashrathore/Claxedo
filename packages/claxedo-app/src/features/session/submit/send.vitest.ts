@@ -251,6 +251,47 @@ describe("sendPromptRequest", () => {
   })
 })
 
+describe("how the runtime took a prompt sent into a busy session", () => {
+  const deliveringClient = (delivery: string): PromptDispatchInput["client"] => ({
+    session: { promptAsync: async () => ({ data: { delivery } }) },
+  })
+  const send = (
+    client: PromptDispatchInput["client"],
+    body: Partial<PromptDispatchPayload>,
+    seen: Array<[string, string]>,
+  ) =>
+    sendPromptRequest({
+      sessionID: "ses_1",
+      client,
+      payload: { ...payload, ...body },
+      onDelivery: (delivery, turnId) => seen.push([delivery, turnId]),
+      waitForWorktree: async () => true,
+      clearBoot: () => {},
+      clearCloudStartup: () => {},
+    })
+
+  test("a steered prompt is reported as steered, with the turn id it carried", async () => {
+    const seen: Array<[string, string]> = []
+    await send(deliveringClient("steer"), { messageID: "msg_steer", delivery: "steer" }, seen)
+
+    expect(seen).toEqual([["steer", "msg_steer"]])
+  })
+
+  test("a queued prompt is reported as queued", async () => {
+    const seen: Array<[string, string]> = []
+    await send(deliveringClient("queue"), { messageID: "msg_queued", delivery: "steer" }, seen)
+
+    expect(seen).toEqual([["queue", "msg_queued"]])
+  })
+
+  test("a prompt the transport answers nothing for counts as having started its own turn", async () => {
+    const seen: Array<[string, string]> = []
+    await send(liveClient, { messageID: "msg_own" }, seen)
+
+    expect(seen).toEqual([["start", "msg_own"]])
+  })
+})
+
 describe("sendPromptRequest abort coverage", () => {
   test("pre-await abort: waitForWorktree=false leaves optimistic busy AND skips the dispatch", async () => {
     let dispatched = 0

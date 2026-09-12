@@ -113,6 +113,8 @@ export const PromptInputFrame: Component<{
   variantLabel: (value: string) => string
   onVariantSelect: (value: string) => void
   statusStage: Accessor<SessionStatusStageValue>
+  /** A prompt the runtime is holding until the running turn ends. */
+  queued: Accessor<boolean>
   stoppable: Accessor<boolean>
   abort: VoidFunction
   onRetry: Accessor<(() => void) | undefined>
@@ -386,6 +388,7 @@ export const PromptInputFrame: Component<{
         />
         <PromptSubmitControl
           stage={props.statusStage}
+          queued={props.queued}
           busy={props.stoppable}
           onCancel={props.abort}
           onRetry={props.onRetry}

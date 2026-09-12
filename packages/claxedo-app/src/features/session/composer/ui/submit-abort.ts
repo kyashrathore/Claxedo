@@ -10,7 +10,7 @@ type SessionRequestItem = (PermissionRequest | QuestionRequest) & { sessionID?: 
 
 type AbortClient = {
   session: {
-    abort(input: { sessionID: string; directory: string }): Promise<Pick<Awaited<ReturnType<WorkspaceRuntimeClient["session"]["abort"]>>, "data">>
+    abort(input: { sessionID: string; directory: string; turnId?: string }): Promise<Pick<Awaited<ReturnType<WorkspaceRuntimeClient["session"]["abort"]>>, "data">>
     status(): Promise<{ data?: Record<string, SessionStatus> }>
   }
   permission: {
@@ -75,6 +75,8 @@ export function createPromptAbort(input: {
   sessionID?: Accessor<string | undefined>
   sessionDirectory?: Accessor<string | undefined>
   defaultDirectory: string
+  /** The turn this caller started, when it started one. */
+  turnId?: Accessor<string | undefined>
   clientForDirectory: (directory: string) => AbortClient
 }) {
   return async () => {
@@ -99,7 +101,11 @@ export function createPromptAbort(input: {
       queued.cleanup()
       return Promise.resolve()
     }
-    const result = await client.session.abort({ sessionID, directory })
+    // Stop names the turn this composer started, so a request that lands after
+    // that turn ended cannot cancel the one that replaced it. A turn this
+    // composer did not start has no id to name, and cancels whatever is running.
+    const turnId = input.turnId?.()
+    const result = await client.session.abort({ sessionID, directory, ...(turnId ? { turnId } : {}) })
     if (!result.data) throw new Error("Stop returned no cancellation result")
     if (!result.data.ok) throw new Error(result.data.message)
     // The turn is already cancelled; these reads only reconcile what it left

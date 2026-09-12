@@ -27,15 +27,16 @@ import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
 import { createRuntimeEventHub } from "./runtime-event-hub"
 import { deriveSessionTitle, extractPromptTitleText, hasConcreteSessionTitle } from "./session-title"
-import { DEFAULT_MODEL_ID, resolveSessionModel } from "./session-model"
+import { DEFAULT_MODEL_ID } from "./session-model"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./runtime/turn-outcome"
 import { createTurnPublication } from "./runtime/turn-publication"
-import { turnStartRecord } from "./runtime/turn-record"
+import { turnPrompt, turnStartRecord } from "./runtime/turn-record"
 import { assertSessionCreateBindingScope, normalizeDirectory as runtimeDirectory, requireExecutionBinding } from "./runtime/execution-binding"
 import { executeHandoffTransaction } from "./runtime/handoff-transaction"
 import { createRuntimeLifecycle } from "./runtime/lifecycle"
 import { createRuntimeGoalController } from "./runtime/goal-controller"
+import { createTurnAdmissions, deliverToBusySession } from "./runtime/turn-admission"
 
 export {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
@@ -98,12 +99,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   const subscribers = new Set<RuntimeSubscriber>()
   const lifecycle = createRuntimeLifecycle()
   const { resource, track } = lifecycle
-  // Prompt admission belongs to the runtime, not to a downstream harness
-  // iterator. Claim the session before persisting the user/assistant rows so a
-  // rejected concurrent prompt cannot manufacture a failed turn or overwrite
-  // the status of the turn that is actually running.
-  const activeTurnAdmissions = new Map<string, object>()
-  const activeTurnLeases = new Map<string, string>()
+  // The session is claimed before the user/assistant rows are persisted, so a
+  // refused concurrent prompt cannot manufacture a failed turn or overwrite the
+  // status of the turn that is actually running.
+  const admissions = createTurnAdmissions(store)
 
   const adapterFor = async (harness: SessionHarness) => {
     const harnessKey = key(harness)
@@ -240,7 +239,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   ) => {
     const sessionId = binding.sessionId
     const directory = binding.directory
-    const ownsAdmission = () => activeTurnAdmissions.get(sessionId) === admission
+    const ownsAdmission = () => admissions.owns(sessionId, admission)
     // Two fences guard every producer write for this turn. `ownsAdmission`
     // rejects a superseded in-process generation; `fence` is the host's
     // durable admission, which a takeover elsewhere can invalidate while this
@@ -533,12 +532,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     // releasing admission so route-level subscribers always settle and
     // any later adapter frames remain fenced as the old generation.
     publish({ sessionId, directory, payload: { type: "finish", sessionId } })
-    activeTurnAdmissions.delete(sessionId)
-    const lease = activeTurnLeases.get(sessionId)
-    if (lease) {
-      activeTurnLeases.delete(sessionId)
-      store.releaseTurnLease(sessionId, lease)
-    }
+    admissions.discard(sessionId)
   }
 
   const goals = createRuntimeGoalController({
@@ -642,46 +636,21 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
-        const prompt: PromptInput = {
-          parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
-          userMessageId,
-          assistantMessageId,
-          agent: turn.agent ?? config?.agent ?? "build",
-          model: turn.model ?? resolveSessionModel(config),
-          ...(turn.tools ? { tools: turn.tools } : {}),
-          ...(turn.format ? { format: turn.format } : {}),
-          ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
-          ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
-          ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
-          // The turn's author travels with the prompt as well as with the
-          // durable turn record: a harness stamps it onto the user message it
-          // builds itself, and without it every message a harness authors is
-          // attributed to nobody.
-          ...(turn.author ? { author: turn.author } : {}),
+        const prompt = turnPrompt({ turn, config, userMessageId, assistantMessageId, handoff })
+        const running = admissions.active(turn.sessionId)
+        if (running) {
+          if (!turn.delivery) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
+          return await deliverToBusySession({
+            running, turn, prompt, userMessageId, assistantMessageId, directory,
+            requested: turn.delivery,
+            ...(adapter.steerTurn ? { steer: () => adapter.steerTurn!(binding, prompt) } : {}),
+            commit: (payload) => commitAndPublish(turn.sessionId, directory, payload, { dir: "out", method: "turn.steer" }),
+          })
         }
-        if (activeTurnAdmissions.has(turn.sessionId)) {
-          throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
-        }
-        const admission = {}
-        activeTurnAdmissions.set(turn.sessionId, admission)
-        // The store lease is the CROSS-INSTANCE admission: two runtimes sharing
-        // one store (two route clients, say) must not both admit a turn for the
-        // same session. The in-memory map above only covers this instance.
-        const leaseId = store.acquireTurnLease(turn.sessionId)
-        if (!leaseId) {
-          activeTurnAdmissions.delete(turn.sessionId)
-          throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
-        }
-        activeTurnLeases.set(turn.sessionId, leaseId)
-        const releaseAdmission = () => {
-          if (activeTurnLeases.get(turn.sessionId) === leaseId) {
-            activeTurnLeases.delete(turn.sessionId)
-            store.releaseTurnLease(turn.sessionId, leaseId)
-          }
-          if (activeTurnAdmissions.get(turn.sessionId) === admission) {
-            activeTurnAdmissions.delete(turn.sessionId)
-          }
-        }
+        const claimed = admissions.claim(turn.sessionId, { turnId: userMessageId, assistantMessageId })
+        if (!claimed) throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
+        const admission = claimed.generation
+        const releaseAdmission = claimed.release
         turn.onAdmitted?.()
         try {
           const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
@@ -700,9 +669,15 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           releaseAdmission()
           throw error
         }
-        return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
+        return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt, delivery: "start" }
       },
-      async abort(sessionId: string, directory?: RuntimeDirectory): Promise<AgentRuntimeAbortResult> {
+      async abort(sessionId: string, directory?: RuntimeDirectory, scope?: { turnId?: string }): Promise<AgentRuntimeAbortResult> {
+        // A late abort names the turn the caller was looking at. Once a
+        // different turn owns the session, stopping it is not what was asked.
+        const running = admissions.active(sessionId)
+        if (scope?.turnId && running && running.turnId !== scope.turnId) {
+          return { ok: true, status: "already_idle" }
+        }
         const adapter = await adapterForSession(sessionId)
         if (!adapter.abort) throw new Error("This harness does not support abort")
         const result = await adapter.abort(executionBinding(sessionId, directory))
@@ -713,6 +688,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           completeCancellation(sessionId, directory)
         }
         return result
+      },
+      /** Resolves when no turn holds this session, for a caller holding a queued prompt. */
+      async whenIdle(sessionId: string) {
+        await admissions.whenIdle(sessionId)
       },
     }),
     goals: resource(goals.resource),
@@ -817,7 +796,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ? []
           : [...new Set(adapters.values())].map((adapter) => Promise.resolve().then(() => adapter.dispose()))),
         () => {
-          activeTurnAdmissions.clear()
+          admissions.clear()
           goals.dispose()
           for (const subscriber of subscribers) subscriber.close()
         },

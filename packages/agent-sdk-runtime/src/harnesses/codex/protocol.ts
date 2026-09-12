@@ -4,11 +4,11 @@ import { harnessSpawnEnv } from "../shared/spawn-env"
 import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
-  extractTextFromParts,
   text,
   type JsonRecord,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
+import { deliverPromptAttachments, promptImageAttachments } from "../shared/prompt-attachments"
 import type { CodexAppServerProcess } from "./app-server-process"
 
 /** Cancel generation and terminate only command processes owned by this turn. */
@@ -53,6 +53,29 @@ export function createCodexTurnStop(input: {
       }
     })(),
   }
+}
+
+/**
+ * Hands another user message to the turn already running on this thread.
+ *
+ * `expectedTurnId` is a precondition the app-server enforces, so a steer that
+ * loses the race with the turn's completion fails instead of starting a turn
+ * nobody asked for. Steering a review or compact turn is refused the same way
+ * (`activeTurnNotSteerable`).
+ */
+export async function codexSteerTurn(steer: {
+  process: Pick<CodexAppServerProcess, "request">
+  threadId: string
+  turnId: string | undefined
+  input: PromptInput
+  directory: string
+}) {
+  if (!steer.turnId) throw new Error("Codex has no active turn id to steer")
+  await steer.process.request("turn/steer", {
+    threadId: steer.threadId,
+    input: await codexUserInput({ parts: steer.input.parts, directory: steer.directory }),
+    expectedTurnId: steer.turnId,
+  })
 }
 
 export type CodexActiveThread = {
@@ -168,10 +191,21 @@ export function codexSpawnEnv(input: Record<string, string | undefined>) {
   return harnessSpawnEnv(input)
 }
 
-export function codexUserInput(parts: unknown[]) {
-  const textInput = extractTextFromParts(parts)
-  if (!textInput) return [{ type: "text", text: "", text_elements: [] }]
-  return [{ type: "text", text: textInput, text_elements: [] }]
+/**
+ * The `turn/start` input: the prompt text, then one `localImage` per image
+ * attachment.
+ *
+ * `localImage` takes the workspace path the attachment was written to, which is
+ * the same path the text already names — Codex renders the picture from it and
+ * the model can still read the file with its own tools. Codex has no input for
+ * any other attachment type, so those reach it through their path line alone.
+ */
+export async function codexUserInput(input: { parts: readonly unknown[]; directory: string }) {
+  const delivery = await deliverPromptAttachments(input)
+  return [
+    { type: "text", text: delivery.text, text_elements: [] },
+    ...promptImageAttachments(delivery).map((attachment) => ({ type: "localImage", path: attachment.path })),
+  ]
 }
 
 export function codexAppServerModel(model: string | undefined) {

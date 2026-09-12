@@ -22,18 +22,22 @@ function renderControl(input: {
   block?: SubmitBlock | null
   booting?: boolean | Accessor<boolean>
   onChooseModel?: () => void
+  busy?: boolean
+  blank?: boolean
+  queued?: boolean
 }) {
   const submit = vi.fn((event: SubmitEvent) => event.preventDefault())
   const view = render(() => (
     <DockShellForm onSubmit={submit}>
       <PromptSubmitControl
         stage={() => undefined}
-        busy={() => false}
+        queued={() => input.queued ?? false}
+        busy={() => input.busy ?? false}
         onCancel={() => {}}
         onRetry={() => undefined}
         booting={() => typeof input.booting === "function" ? input.booting() : input.booting ?? false}
         working={() => false}
-        blank={() => false}
+        blank={() => input.blank ?? false}
         tip={() => "Send"}
         bootText={() => "Starting"}
         mode={() => "normal"}
@@ -52,6 +56,22 @@ function renderControl(input: {
 }
 
 describe("PromptSubmitControl", () => {
+  test("reads Stop only while there is nothing to send", () => {
+    expect(renderControl({ busy: true, blank: true }).getByRole("button", { name: "Stop" })).toBeTruthy()
+  })
+
+  test("offers Send for a draft written while a turn is running", () => {
+    const view = renderControl({ busy: true, blank: false })
+
+    expect(view.getByRole("button", { name: "Send" })).toBeTruthy()
+    expect(view.queryByRole("button", { name: "Stop" })).toBeNull()
+  })
+
+  test("says a prompt is queued when the runtime is holding it", () => {
+    expect(renderControl({ busy: true, blank: true, queued: true }).getByTestId("composer-queued").textContent)
+      .toContain("Queued")
+  })
+
   test("submits the real control through the shared dock form", () => {
     const view = renderControl({})
 

@@ -452,6 +452,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     addPart: engine.addPart,
     readClipboardImage: platform.readClipboardImage,
+    // A hosted workspace has no path the runtime can write an attachment to,
+    // so only the harness's own prompt inputs are left there.
+    target: () => ({
+      ...(currentHarnessType(scope()) ? { harness: currentHarnessType(scope())! } : {}),
+      workspace: !props.workspaceKind?.(),
+    }),
   })
   const setScopedVariant = (value: string | undefined) => {
     local.model.variant.set(value)
@@ -538,7 +544,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       blank,
       rootEl: () => rootEl,
     })
-  const { abort, handleSubmit: rawHandleSubmit } = createPromptSubmit({
+  const { abort, handleSubmit: rawHandleSubmit, queued } = createPromptSubmit({
     info,
     // Only HARNESS modes travel with the prompt. Claxedo's own options are not
     // ids any harness would recognise — they are delivered by their own paths
@@ -701,6 +707,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         restoreFocus()
       }}
       statusStage={statusStage}
+      queued={queued}
       stoppable={stoppable}
       abort={() => abort()}
       onRetry={onRetry}

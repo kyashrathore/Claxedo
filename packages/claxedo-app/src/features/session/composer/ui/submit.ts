@@ -1,3 +1,4 @@
+import { createMemo, createSignal } from "solid-js"
 import { showToast } from "@opencode-ai/ui/toast"
 import { requestErrorMessage } from "../../lib/request-error-message"
 import { useNavigate } from "@solidjs/router"
@@ -50,6 +51,13 @@ import { createHostedWorkspace } from "@/platform/runtime/agent/workspace-create
 export type { FollowupDraft } from "./submit-input"
 
 export function createPromptSubmit(input: PromptSubmitInput) {
+  const [queuedStretch, setQueuedStretch] = createSignal<number | undefined>()
+  const [startedTurn, setStartedTurn] = createSignal<string | undefined>()
+  // One uninterrupted stretch of work. The runtime holds a queued prompt only
+  // until the running turn ends, so a prompt queued during one stretch has
+  // become a turn of its own by the next — and calling a running turn "queued"
+  // is a lie the composer would otherwise keep telling.
+  const workStretch = createMemo<number>((previous) => (input.working() ? previous : previous + 1), 0)
   const navigate = useNavigate()
   const sdk = useSDK()
   const globalBootstrapActions = useGlobalBootstrapActions()
@@ -134,6 +142,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     sessionID: input.sessionID,
     sessionDirectory: input.sessionDirectory,
     defaultDirectory: sdk.directory,
+    turnId: startedTurn,
     clientForDirectory: (directory) =>
       usesSignedControlPlane(directory) || usesLoopbackWorkspaceBridge(directory)
         ? sessionClient(directory)
@@ -172,6 +181,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
     if (admission === "abort-active") return abort()
     if (admission === "ignore") return undefined
+    // A draft sent while a turn runs goes to that turn; the runtime answers
+    // whether the harness took it or it waits for the next one.
+    const delivery = admission === "steer" ? ("steer" as const) : undefined
+    setQueuedStretch(undefined)
 
     const goalIntent = prepareGoalComposerIntent({
       text, armed: input.goalArmed?.() ?? false, mode: userMode, prompt: currentPrompt,
@@ -627,6 +640,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       permissionMode,
       system: input.system?.()?.trim(),
       format: input.format?.(),
+      ...(delivery ? { delivery } : {}),
+      onDelivery: (delivered, turnId) => {
+        setQueuedStretch(delivered === "queue" ? workStretch() : undefined)
+        // A steered prompt joined the turn already recorded; a queued one
+        // becomes a turn that may start after the user has moved on.
+        if (delivered === "start") setStartedTurn(turnId)
+        else if (delivered === "queue") setStartedTurn(undefined)
+      },
       targetCreated: target.created,
       replaceSession,
       explicitExistingSession: !!explicitSessionID && explicitSessionID !== "new" && session.id === explicitSessionID,
@@ -672,5 +693,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   return {
     abort,
     handleSubmit,
+    /** A prompt the runtime is holding for the turn after the running one. */
+    queued: () => queuedStretch() !== undefined && queuedStretch() === workStretch(),
   }
 }

@@ -1,0 +1,160 @@
+import type { SteerResult } from "../adapter-contract"
+import {
+  buildUserMessage,
+  buildUserPromptParts,
+  messagePartUpdated,
+  messageUpdated,
+  type CompatEvent,
+} from "../compat-events"
+import type { PromptDeliveryRequest, PromptInput } from "../index"
+import type {
+  AgentRuntimeStore,
+  AgentRuntimeTurnStartInput,
+  AgentRuntimeTurnStartResult,
+} from "./contracts"
+
+export type ActiveTurn = {
+  /** The in-process generation every producer write for this turn is fenced against. */
+  readonly generation: object
+  /** The turn's user message id, which is what a scoped abort names. */
+  readonly turnId: string
+  readonly assistantMessageId: string
+}
+
+export type ClaimedTurn = ActiveTurn & { release: () => void }
+
+/**
+ * Per-session turn admission: the in-process claim, the cross-instance store
+ * lease, the active turn's identity, and the prompts waiting for it to end.
+ *
+ * The store lease is the CROSS-INSTANCE half — two runtimes sharing one store
+ * (two route clients, say) must not both admit a turn for the same session —
+ * and the claim map only covers this instance.
+ */
+export function createTurnAdmissions(
+  store: Pick<AgentRuntimeStore, "acquireTurnLease" | "releaseTurnLease">,
+) {
+  const active = new Map<string, ActiveTurn>()
+  const leases = new Map<string, string>()
+  const waiting = new Map<string, Array<() => void>>()
+
+  const wakeWaiters = (sessionId: string) => {
+    if (active.has(sessionId)) return
+    for (const resolve of waiting.get(sessionId)?.splice(0) ?? []) resolve()
+    waiting.delete(sessionId)
+  }
+
+  return {
+    /**
+     * Resolves once no turn holds this session, for a caller holding a prompt
+     * that waits for the running turn. Every waiter is woken and each claims
+     * through `turns.start`, so a caller that gives up cannot strand the rest.
+     */
+    whenIdle(sessionId: string) {
+      if (!active.has(sessionId)) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        waiting.set(sessionId, [...(waiting.get(sessionId) ?? []), resolve])
+      })
+    },
+    active(sessionId: string) {
+      return active.get(sessionId)
+    },
+    owns(sessionId: string, generation: object) {
+      return active.get(sessionId)?.generation === generation
+    },
+    claim(sessionId: string, turn: { turnId: string; assistantMessageId: string }): ClaimedTurn | undefined {
+      if (active.has(sessionId)) return undefined
+      const claimed: ActiveTurn = { generation: {}, ...turn }
+      active.set(sessionId, claimed)
+      const leaseId = store.acquireTurnLease(sessionId)
+      if (!leaseId) {
+        active.delete(sessionId)
+        return undefined
+      }
+      leases.set(sessionId, leaseId)
+      return {
+        ...claimed,
+        release: () => {
+          if (leases.get(sessionId) === leaseId) {
+            leases.delete(sessionId)
+            store.releaseTurnLease(sessionId, leaseId)
+          }
+          if (active.get(sessionId) === claimed) active.delete(sessionId)
+          wakeWaiters(sessionId)
+        },
+      }
+    },
+    discard(sessionId: string) {
+      active.delete(sessionId)
+      const leaseId = leases.get(sessionId)
+      if (leaseId) {
+        leases.delete(sessionId)
+        store.releaseTurnLease(sessionId, leaseId)
+      }
+      wakeWaiters(sessionId)
+    },
+    clear() {
+      active.clear()
+      leases.clear()
+      for (const waiters of waiting.values()) for (const resolve of waiters) resolve()
+      waiting.clear()
+    },
+  }
+}
+
+export type TurnAdmissions = ReturnType<typeof createTurnAdmissions>
+
+/**
+ * A prompt for a session that is already running a turn. `steer` hands it to
+ * that turn through the harness; anything else answers `queue`, which tells the
+ * caller to hold the prompt and start it once `whenIdle` resolves. A harness
+ * with no steer method is queued rather than refused, and so is a steer the
+ * harness declined — the running turn was the only thing that could have taken
+ * it as more input.
+ */
+export async function deliverToBusySession(input: {
+  running: ActiveTurn
+  requested: PromptDeliveryRequest
+  turn: AgentRuntimeTurnStartInput
+  prompt: PromptInput
+  userMessageId: string
+  assistantMessageId: string
+  directory: AgentRuntimeTurnStartResult["directory"]
+  steer?: () => Promise<SteerResult>
+  commit: (payload: CompatEvent) => void
+}): Promise<AgentRuntimeTurnStartResult> {
+  const steered = input.requested === "steer" && input.steer && (await input.steer()).ok
+  if (steered) for (const payload of steeredUserMessage(input.prompt, input.turn.sessionId)) input.commit(payload)
+  return {
+    sessionId: input.turn.sessionId,
+    userMessageId: input.userMessageId,
+    assistantMessageId: steered ? input.running.assistantMessageId : input.assistantMessageId,
+    directory: input.directory,
+    prompt: input.prompt,
+    delivery: steered ? "steer" : "queue",
+  }
+}
+
+/**
+ * The transcript rows for a prompt handed to the turn already running: the user
+ * message and its parts, with no turn record of their own.
+ *
+ * These are committed unfenced on purpose. The store checks a fencing token
+ * against the RUNNING turn's, and this prompt carries its own from its own
+ * admission lease, so passing it would be rejected as a stale generation.
+ */
+export function steeredUserMessage(input: PromptInput, sessionId: string): CompatEvent[] {
+  const id = input.userMessageId
+  if (!id) return []
+  return [
+    messageUpdated(buildUserMessage({
+      id,
+      sessionID: sessionId,
+      agent: input.agent,
+      model: input.model,
+      ...(input.variant ? { variant: input.variant } : {}),
+      ...(input.author ? { author: input.author } : {}),
+    })),
+    ...buildUserPromptParts(sessionId, id, input.parts).map(messagePartUpdated),
+  ]
+}

@@ -25,6 +25,10 @@ export type AbortResult =
   | { ok: true; status: "cancelled" | "already_idle" }
   | { ok: false; status: "not_found" | "recovering" | "failed"; message: string }
 
+export type SteerResult =
+  | { ok: true }
+  | { ok: false; status: "no_active_turn" | "declined" | "failed"; message: string }
+
 export type AgentHarnessAdapterHealth = {
   status: "ok" | "degraded" | "unavailable"
   reason?: string
@@ -132,6 +136,15 @@ export interface AgentHarnessAdapterCore {
 
 export interface SupportsAbort {
   abort(binding: AgentExecutionBinding): Promise<AbortResult>
+}
+
+/**
+ * Hands a prompt to the turn already running for this session instead of
+ * starting one. Only a harness whose protocol accepts input mid-turn implements
+ * it; the runtime queues for the rest.
+ */
+export interface SupportsSteer {
+  steerTurn(binding: AgentExecutionBinding, input: PromptInput): Promise<SteerResult>
 }
 
 export interface SupportsRevert {
@@ -371,6 +384,7 @@ export interface SupportsConfigOptions {
 export type AgentHarnessAdapter =
   & AgentHarnessAdapterCore
   & Partial<SupportsAbort>
+  & Partial<SupportsSteer>
   & Partial<SupportsRevert>
   & Partial<SupportsUnrevert>
   & Partial<SupportsFork>

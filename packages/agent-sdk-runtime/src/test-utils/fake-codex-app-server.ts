@@ -33,7 +33,7 @@ function persistGoal() {
   else if (fs.existsSync(goalFile)) fs.unlinkSync(goalFile)
 }
 function record(message) {
-  fs.appendFileSync(log, JSON.stringify({ method: message.method, status: message.params?.status, ...(message.method.includes("backgroundTerminals") ? { processId: message.params?.processId } : {}) }) + "\\n")
+  fs.appendFileSync(log, JSON.stringify({ method: message.method, status: message.params?.status, ...(message.method.includes("backgroundTerminals") ? { processId: message.params?.processId } : {}), ...(message.params?.expectedTurnId ? { expectedTurnId: message.params.expectedTurnId } : {}) }) + "\\n")
 }
 process.stdin.setEncoding("utf8")
 process.stdin.on("data", (chunk) => {

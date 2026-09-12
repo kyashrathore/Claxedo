@@ -1,6 +1,8 @@
 import { asRecord } from "@claxedo/agent-runtime-contract"
 import type {
   AgentRuntimeStreamEvent,
+  PromptDelivery,
+  PromptDeliveryRequest,
   PromptInput,
   PromptModel,
   RuntimeDirectory,
@@ -138,6 +140,11 @@ export type AgentRuntimeTurnStartInput = {
   permissionMode?: string
   variant?: string
   author?: PromptInput["author"]
+  /**
+   * What to do when a turn is already running for this session. Absent takes
+   * the admission conflict.
+   */
+  delivery?: PromptDeliveryRequest
   /** Host-owned durable admission fence checked before producer mutations. */
   admission?: { valid(): boolean; fencingToken(): number }
 } & AgentRuntimeTurnActor
@@ -145,9 +152,11 @@ export type AgentRuntimeTurnStartInput = {
 export type AgentRuntimeTurnStartResult = {
   sessionId: string
   userMessageId: string
+  /** The turn this prompt joined: the running turn's when it steered it. */
   assistantMessageId: string
   directory: RuntimeDirectory
   prompt: PromptInput
+  delivery: PromptDelivery
 }
 
 export type AgentRuntimeGoalStartInput = {

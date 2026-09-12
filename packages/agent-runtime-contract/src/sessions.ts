@@ -110,8 +110,19 @@ export type PromptInput = {
   system?: string
   variant?: string
   permissionMode?: string
+  /**
+   * What to do when the session is already running a turn. `steer` hands this
+   * prompt to that turn; `queue` holds it for the next one. Absent means the
+   * caller wants a turn of its own and will take an admission conflict.
+   */
+  delivery?: PromptDeliveryRequest
   author?: AgentMessageAuthor
 }
+
+export type PromptDeliveryRequest = "steer" | "queue"
+
+/** How a prompt was admitted. `start` ran it as a turn of its own. */
+export type PromptDelivery = "start" | PromptDeliveryRequest
 
 export type AgentMessageAuthor = {
   id: string
