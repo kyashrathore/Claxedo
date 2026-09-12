@@ -159,6 +159,9 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
   if (url.pathname === "/api/claxedo/credentials") {
     return new Response(JSON.stringify({ credentials: state.storedCredentials }))
   }
+  if (url.pathname === "/api/claxedo/credentials/effective") {
+    return new Response(JSON.stringify({ scope: "local", credentials: state.storedCredentials }))
+  }
   if (url.pathname === "/api/claxedo/credentials/discover") {
     return new Response(JSON.stringify({ discovery_id: "disc_1", items: state.discoveryItems }))
   }
@@ -412,6 +415,15 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     fireEvent.click(detectButton())
     await waitFor(() => expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/discover"))
     expect(["anthropic", "openai", "cursor"].map(agentStatus)).toEqual(["", "", ""])
+  })
+
+  test("each harness row says which credential it runs on: the stored row, else this computer's login", async () => {
+    state.storedCredentials = [{ id: "cred_codex", provider_id: "codex-app-server", kind: "oauth_token", label: "ChatGPT OAuth" }]
+    mount()
+    await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
+    await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-in-use"]')?.textContent).toBe("settings.providers.agents.inUse:ChatGPT OAuth"))
+    expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent).toBe("settings.providers.agents.inUseMachine")
+    expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/effective")
   })
 
   test("Connect opens an inset card in the row, named for the harness, that its own close button dismisses", async () => {

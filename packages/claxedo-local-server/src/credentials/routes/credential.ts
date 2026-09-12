@@ -194,6 +194,14 @@ export function CredentialRoutes(
       const creds = (await credentials.listCredentials(org(c.req.raw))).map(redact)
       return c.json({ credentials: creds })
     })
+    .get("/effective", async (c) => {
+      if (!credentials.effectiveCredentials) {
+        return c.json(errorBody("credential_effective_unsupported", "This host does not report effective credentials"), 501)
+      }
+      const scope = c.req.query("scope") === "shared" ? "shared" : "local"
+      const rows = await credentials.effectiveCredentials(scope, org(c.req.raw))
+      return c.json({ scope, credentials: rows.map(redact) })
+    })
     .get("/:providerId", async (c) => {
       const cred = await credentials.getCredentialByProvider(c.req.param("providerId"), undefined, org(c.req.raw))
       if (!cred) return c.json({ credential: null })

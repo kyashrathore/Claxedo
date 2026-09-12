@@ -614,6 +614,8 @@ export const dict = {
   "settings.providers.detect.description": "Просканировать этот компьютер на входы Claude, Codex и Cursor и обновить статус ниже.",
   "settings.providers.agents.sharedCredential": "Одна настройка покрывает ACP и нативный SDK.",
   "settings.providers.agents.useLogin": "Использовать этот вход",
+  "settings.providers.agents.inUse": "Используется: {{label}}",
+  "settings.providers.agents.inUseMachine": "Используется: вход этого компьютера",
   "settings.providers.connect.title": "Подключить {{provider}}",
   "settings.providers.connect.subtitle": "Сохраняется для {{provider}} на этом компьютере. Esc закрывает без сохранения.",
   "settings.providers.connect.open": "Подключение…",

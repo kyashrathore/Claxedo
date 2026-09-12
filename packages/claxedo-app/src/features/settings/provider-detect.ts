@@ -10,6 +10,49 @@ import {
 import type { ProviderSetupStatus } from "@/features/settings/provider-settings-logic"
 import { readArray, readString } from "@/lib/record"
 
+/** What the server would hand a harness for a provider: the row, without its secret. */
+export type EffectiveCredential = { id: string; providerId: string; label?: string; kind?: string; accountId?: string }
+
+/**
+ * The credential each provider runs on, keyed by provider id. Undefined when
+ * the host cannot enumerate its store (the hosted KV adapter), so a caller
+ * shows nothing rather than a wrong "machine login".
+ */
+export async function listEffectiveCredentials() {
+  const res = await claxedoCredentialRequest({ action: "effective" }, { accept: [501] })
+  if (res.status === 501) return undefined
+  const rows = readArray(await res.json(), "credentials") ?? []
+  const effective = new Map<string, EffectiveCredential>()
+  for (const row of rows) {
+    const id = readString(row, "id")
+    const providerId = readString(row, "provider_id")
+    if (id === undefined || providerId === undefined) continue
+    const label = readString(row, "label")
+    const kind = readString(row, "kind")
+    const accountId = readString(row, "account_id")
+    effective.set(providerId, {
+      id,
+      providerId,
+      ...(label === undefined ? {} : { label }),
+      ...(kind === undefined ? {} : { kind }),
+      ...(accountId === undefined ? {} : { accountId }),
+    })
+  }
+  return effective
+}
+
+/**
+ * The stored credential a harness row runs on, if any. Absent means the
+ * harness runs on whatever login its own CLI holds on this computer.
+ */
+export function agentInUse(check: { providerIds: readonly string[] }, effective: ReadonlyMap<string, EffectiveCredential>) {
+  for (const id of check.providerIds) {
+    const row = effective.get(id)
+    if (row) return row
+  }
+  return undefined
+}
+
 export async function listStoredCredentialProviders() {
   const res = await claxedoCredentialRequest(undefined)
   const credentials = readArray(await res.json(), "credentials") ?? []
@@ -29,7 +72,7 @@ export async function listStoredCredentialProviders() {
  * nothing performed.
  */
 export function agentSetupStatus(
-  check: LocalHarnessCheck,
+  check: { id: LocalHarnessCheck["id"]; providerIds: readonly string[] },
   stored: ReadonlySet<string>,
   discovered: readonly LocalHarnessStatus[],
 ): { status: ProviderSetupStatus; detail?: string } {
@@ -42,6 +85,7 @@ export function agentSetupStatus(
 
 export type ProviderDetectResult = {
   stored: ReadonlySet<string>
+  effective: ReadonlyMap<string, EffectiveCredential> | undefined
   agents: LocalHarnessStatus[]
   /** The scan's id and rows, kept so a row can save the login it found without a second scan. */
   discoveryId: string
@@ -50,10 +94,11 @@ export type ProviderDetectResult = {
 
 /** One scan of this machine: the status inputs `agentSetupStatus` reads, plus the scan itself. */
 export async function runProviderDetect(): Promise<ProviderDetectResult> {
-  const [discovery, stored] = await Promise.all([
+  const [discovery, stored, effective] = await Promise.all([
     discoverAIConnections({}),
     listStoredCredentialProviders(),
+    listEffectiveCredentials(),
   ])
   const rows = groupDiscoveryItems(discovery.items)
-  return { stored, agents: localHarnessStatuses(rows), discoveryId: discovery.discoveryId, rows }
+  return { stored, effective, agents: localHarnessStatuses(rows), discoveryId: discovery.discoveryId, rows }
 }

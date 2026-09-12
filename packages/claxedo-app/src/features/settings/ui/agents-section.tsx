@@ -9,7 +9,15 @@ import {
   type LocalHarnessCheck,
   type LocalHarnessStatus,
 } from "@/features/settings/app-ports"
-import { agentSetupStatus, listStoredCredentialProviders, runProviderDetect, type ProviderDetectResult } from "@/features/settings/provider-detect"
+import {
+  agentInUse,
+  agentSetupStatus,
+  listEffectiveCredentials,
+  listStoredCredentialProviders,
+  runProviderDetect,
+  type EffectiveCredential,
+  type ProviderDetectResult,
+} from "@/features/settings/provider-detect"
 import { SettingsList } from "@/features/settings/ui/list"
 import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -47,9 +55,26 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const [stored, setStored] = createSignal<ReadonlySet<string>>(new Set<string>())
   const [discovered, setDiscovered] = createSignal<readonly LocalHarnessStatus[]>([])
   const [discovery, setDiscovery] = createSignal<Pick<ProviderDetectResult, "discoveryId" | "rows">>()
+  const [effective, setEffective] = createSignal<ReadonlyMap<string, EffectiveCredential>>()
 
   const readStored = async () => {
-    setStored(await listStoredCredentialProviders())
+    const [storedIds, inUse] = await Promise.all([listStoredCredentialProviders(), listEffectiveCredentials()])
+    setStored(storedIds)
+    setEffective(inUse)
+  }
+
+  /** A harness's bound provider ids plus the one its connect card stores under. */
+  const providerIds = (check: LocalHarnessCheck): readonly string[] => {
+    const connect = AGENT_CONNECT_PROVIDER[check.id]
+    return connect && !(check.providerIds as readonly string[]).includes(connect) ? [...check.providerIds, connect] : check.providerIds
+  }
+
+  const inUseLabel = (check: LocalHarnessCheck) => {
+    const known = effective()
+    if (!known) return undefined
+    const row = agentInUse({ providerIds: providerIds(check) }, known)
+    if (!row) return language.t("settings.providers.agents.inUseMachine")
+    return language.t("settings.providers.agents.inUse", { label: row.label ?? row.kind ?? row.providerId })
   }
 
   onMount(() => {
@@ -68,6 +93,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     try {
       const result = await runProviderDetect()
       setStored(result.stored)
+      setEffective(result.effective)
       setDiscovered(result.agents)
       setDiscovery({ discoveryId: result.discoveryId, rows: result.rows })
       await props.onConnected?.()
@@ -128,7 +154,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       <SettingsList>
         <For each={[...localHarnessChecks()]}>
           {(check) => {
-            const status = () => agentSetupStatus(check, stored(), discovered())
+            const status = () => agentSetupStatus({ ...check, providerIds: providerIds(check) }, stored(), discovered())
             return (
               <ProviderSetupRow
                 id={AGENT_ICON[check.id] ?? check.id}
@@ -138,6 +164,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
                 providerId={AGENT_CONNECT_PROVIDER[check.id] ?? check.providerIds[0]}
                 harness={check.id}
                 note={language.t("settings.providers.agents.sharedCredential")}
+                inUse={inUseLabel(check)}
                 onUseLogin={discoveredRow(check) ? () => useLogin(check) : undefined}
                 onConnected={async () => {
                   await readStored()

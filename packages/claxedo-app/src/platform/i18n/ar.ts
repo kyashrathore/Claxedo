@@ -534,6 +534,8 @@ export const dict = {
   "settings.providers.detect.description": "افحص هذا الجهاز بحثًا عن تسجيلات دخول Claude وCodex وCursor، ثم حدّث الحالة أدناه.",
   "settings.providers.agents.sharedCredential": "إعداد واحد يغطي ACP وSDK الأصلي.",
   "settings.providers.agents.useLogin": "استخدم تسجيل الدخول هذا",
+  "settings.providers.agents.inUse": "قيد الاستخدام: {{label}}",
+  "settings.providers.agents.inUseMachine": "قيد الاستخدام: تسجيل الدخول على هذا الجهاز",
   "settings.providers.connect.title": "توصيل {{provider}}",
   "settings.providers.connect.subtitle": "يُحفظ لـ {{provider}} على هذا الجهاز. Esc يغلق دون حفظ.",
   "settings.providers.connect.open": "جارٍ التوصيل…",

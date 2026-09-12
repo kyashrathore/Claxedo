@@ -552,6 +552,8 @@ export const dict = {
   "settings.providers.detect.description": "Diesen Rechner nach Claude-, Codex- und Cursor-Logins durchsuchen und den Status unten aktualisieren.",
   "settings.providers.agents.sharedCredential": "Eine Einrichtung deckt ACP und natives SDK ab.",
   "settings.providers.agents.useLogin": "Diese Anmeldung verwenden",
+  "settings.providers.agents.inUse": "In Gebrauch: {{label}}",
+  "settings.providers.agents.inUseMachine": "In Gebrauch: die Anmeldung dieses Computers",
   "settings.providers.connect.title": "{{provider}} verbinden",
   "settings.providers.connect.subtitle": "Für {{provider}} auf diesem Computer gespeichert. Esc schließt ohne zu speichern.",
   "settings.providers.connect.open": "Verbinden…",

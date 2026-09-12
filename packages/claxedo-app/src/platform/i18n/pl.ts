@@ -540,6 +540,8 @@ export const dict = {
   "settings.providers.detect.description": "Przeskanuj ten komputer w poszukiwaniu logowań Claude, Codex i Cursor, a następnie zaktualizuj poniższy status.",
   "settings.providers.agents.sharedCredential": "Jedna konfiguracja obejmuje ACP i natywne SDK.",
   "settings.providers.agents.useLogin": "Użyj tego logowania",
+  "settings.providers.agents.inUse": "W użyciu: {{label}}",
+  "settings.providers.agents.inUseMachine": "W użyciu: logowanie tego komputera",
   "settings.providers.connect.title": "Połącz {{provider}}",
   "settings.providers.connect.subtitle": "Zapisane dla {{provider}} na tym komputerze. Esc zamyka bez zapisywania.",
   "settings.providers.connect.open": "Łączenie…",

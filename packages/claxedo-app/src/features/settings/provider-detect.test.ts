@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, test } from "bun:test"
-import { agentSetupStatus, listStoredCredentialProviders, runProviderDetect } from "./provider-detect"
+import { agentInUse, agentSetupStatus, listEffectiveCredentials, listStoredCredentialProviders, runProviderDetect } from "./provider-detect"
 import { localHarnessChecks, type LocalHarnessStatus } from "@/features/settings/app-ports"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 
@@ -58,6 +58,7 @@ function stubNetwork(routes: Record<string, unknown>) {
     calls.push(url.pathname)
     const body = routes[url.pathname]
     if (body === undefined) return new Response("not found", { status: 404 })
+    if (body instanceof Response) return body
     return new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } })
   }) as typeof globalThis.fetch
   return calls
@@ -83,6 +84,7 @@ describe("runProviderDetect", () => {
   test("one scan answers both halves a row reads, through the onboarding discovery engine", async () => {
     const calls = stubNetwork({
       "/api/claxedo/credentials": { credentials: [{ provider_id: "claude-sdk" }] },
+      "/api/claxedo/credentials/effective": { scope: "local", credentials: [{ id: "cred_1", provider_id: "claude-sdk", label: "Claude token" }] },
       "/api/claxedo/credentials/discover": {
         discovery_id: "disc_1",
         items: [
@@ -94,8 +96,9 @@ describe("runProviderDetect", () => {
     })
     const result = await runProviderDetect()
 
-    expect(calls.sort()).toEqual(["/api/claxedo/credentials", "/api/claxedo/credentials/discover"])
+    expect(calls.sort()).toEqual(["/api/claxedo/credentials", "/api/claxedo/credentials/discover", "/api/claxedo/credentials/effective"])
     expect([...result.stored]).toEqual(["claude-sdk"])
+    expect(agentInUse(claude(), result.effective ?? new Map())?.label).toBe("Claude token")
     expect(result.agents.map((row) => ({ id: row.id, state: row.state }))).toEqual([
       { id: "claude", state: "working" },
       { id: "codex", state: "missing" },
@@ -104,5 +107,30 @@ describe("runProviderDetect", () => {
     expect(agentSetupStatus(claude(), result.stored, result.agents)).toEqual({ status: "connected" })
     expect(agentSetupStatus(cursor(), result.stored, result.agents)).toEqual({ status: "detected" })
     expect(agentSetupStatus(codex(), result.stored, result.agents)).toEqual({ status: "missing" })
+  })
+})
+
+describe("listEffectiveCredentials / agentInUse", () => {
+  test("the credential each provider runs on, keyed by provider, with the secret withheld", async () => {
+    stubNetwork({
+      "/api/claxedo/credentials/effective": {
+        scope: "local",
+        credentials: [
+          { id: "cred_1", provider_id: "codex-app-server", label: "ChatGPT OAuth", kind: "oauth_token", account_id: "acc_1" },
+          { id: "no-provider" },
+        ],
+      },
+    })
+    const effective = await listEffectiveCredentials()
+    expect([...effective.keys()]).toEqual(["codex-app-server"])
+    expect(effective.get("codex-app-server")).toEqual({ id: "cred_1", providerId: "codex-app-server", label: "ChatGPT OAuth", kind: "oauth_token", accountId: "acc_1" })
+    expect(agentInUse(codex(), effective)?.label).toBe("ChatGPT OAuth")
+    // Nothing stored for Claude: it runs on the login its own CLI holds.
+    expect(agentInUse(claude(), effective)).toBeUndefined()
+  })
+
+  test("a host that cannot enumerate its store yields no answer", async () => {
+    stubNetwork({ "/api/claxedo/credentials/effective": new Response(JSON.stringify({ error: "credential_effective_unsupported" }), { status: 501 }) })
+    expect(await listEffectiveCredentials()).toBeUndefined()
   })
 })

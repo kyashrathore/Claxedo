@@ -80,6 +80,27 @@ describe("credential routes", () => {
     expect(registry.listCredentials).not.toHaveBeenCalled()
   })
 
+  test("reports the credential each provider runs on, without its secret", async () => {
+    const registry = Object.assign(credentials(), {
+      effectiveCredentials: vi.fn(async (scope: "local" | "shared") => scope === "local"
+        ? [{
+            id: "cred_1", provider_id: "codex-app-server", kind: "oauth_token" as const, source: "managed" as const,
+            label: "ChatGPT OAuth", account_id: "acc_1", secure_ref: "local:1", status: "available" as const,
+            health: null, expires_at: null, last_validated_at: null, last_error: null, created_at: 1, updated_at: 1,
+          }]
+        : []),
+    })
+    const response = await CredentialRoutes(registry, {}).request("http://localhost/effective")
+    expect(response.status).toBe(200)
+    const body = await response.json() as { scope: string; credentials: Array<Record<string, unknown>> }
+    expect(body.scope).toBe("local")
+    expect(body.credentials).toHaveLength(1)
+    expect(body.credentials[0]).toMatchObject({ id: "cred_1", provider_id: "codex-app-server", label: "ChatGPT OAuth", has_secret: true })
+    expect(JSON.stringify(body)).not.toContain("secure_ref")
+    const shared = await CredentialRoutes(registry, {}).request("http://localhost/effective?scope=shared")
+    await expect(shared.json()).resolves.toMatchObject({ scope: "shared", credentials: [] })
+  })
+
   test("discovers redacted credentials and saves only the selected preview", async () => {
     const registry = Object.assign(credentials(), {
       discoverLocalCredentials: vi.fn(async () => ({

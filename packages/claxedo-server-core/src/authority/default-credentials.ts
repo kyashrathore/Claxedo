@@ -58,6 +58,7 @@ async function syncOpenCodeCredentials(org?: string) {
 export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
   return {
     listCredentials: async (org) => (await credentialRegistry()).listCredentials(org),
+    effectiveCredentials: async (scope, org) => (await credentialRegistry()).selectCredentialsForScope(scope, org),
     getCredentialByProvider: async (providerId, kind, org) => (await credentialRegistry()).getCredentialByProvider(providerId, kind, org),
     getCredential: async (id, org) => (await credentialRegistry()).getCredential(id, org),
     resolveCredentialSecret: async (providerId, org) => (await credentialRegistry()).resolveSecret(providerId, undefined, org),

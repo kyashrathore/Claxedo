@@ -534,6 +534,8 @@ export const dict = {
   "settings.providers.detect.description": "이 컴퓨터에서 Claude, Codex, Cursor 로그인을 검색한 뒤 아래 상태를 업데이트합니다.",
   "settings.providers.agents.sharedCredential": "한 번의 설정으로 ACP와 네이티브 SDK를 모두 지원합니다.",
   "settings.providers.agents.useLogin": "이 로그인 사용",
+  "settings.providers.agents.inUse": "사용 중: {{label}}",
+  "settings.providers.agents.inUseMachine": "사용 중: 이 컴퓨터의 로그인",
   "settings.providers.connect.title": "{{provider}} 연결",
   "settings.providers.connect.subtitle": "이 컴퓨터의 {{provider}}에 저장됩니다. Esc를 누르면 저장하지 않고 닫습니다.",
   "settings.providers.connect.open": "연결 중…",

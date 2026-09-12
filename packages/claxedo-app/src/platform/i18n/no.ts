@@ -612,6 +612,8 @@ export const dict = {
   "settings.providers.detect.description": "Skann denne maskinen etter Claude-, Codex- og Cursor-pålogginger, og oppdater statusen nedenfor.",
   "settings.providers.agents.sharedCredential": "Ett oppsett dekker ACP og det native SDK-et.",
   "settings.providers.agents.useLogin": "Bruk denne innloggingen",
+  "settings.providers.agents.inUse": "I bruk: {{label}}",
+  "settings.providers.agents.inUseMachine": "I bruk: denne datamaskinens innlogging",
   "settings.providers.connect.title": "Koble til {{provider}}",
   "settings.providers.connect.subtitle": "Lagret for {{provider}} på denne datamaskinen. Esc lukker uten å lagre.",
   "settings.providers.connect.open": "Kobler til…",

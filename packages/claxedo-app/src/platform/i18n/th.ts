@@ -607,6 +607,8 @@ export const dict = {
   "settings.providers.detect.description": "สแกนเครื่องนี้เพื่อหาการเข้าสู่ระบบ Claude, Codex และ Cursor แล้วอัปเดตสถานะด้านล่าง",
   "settings.providers.agents.sharedCredential": "ตั้งค่าครั้งเดียวครอบคลุมทั้ง ACP และ SDK แบบเนทีฟ",
   "settings.providers.agents.useLogin": "ใช้การเข้าสู่ระบบนี้",
+  "settings.providers.agents.inUse": "กำลังใช้: {{label}}",
+  "settings.providers.agents.inUseMachine": "กำลังใช้: การเข้าสู่ระบบของคอมพิวเตอร์เครื่องนี้",
   "settings.providers.connect.title": "เชื่อมต่อ {{provider}}",
   "settings.providers.connect.subtitle": "บันทึกสำหรับ {{provider}} บนคอมพิวเตอร์เครื่องนี้ กด Esc เพื่อปิดโดยไม่บันทึก",
   "settings.providers.connect.open": "กำลังเชื่อมต่อ…",

@@ -538,6 +538,8 @@ export const dict = {
   "settings.providers.detect.description": "このマシンで Claude、Codex、Cursor のログインをスキャンし、以下のステータスを更新します。",
   "settings.providers.agents.sharedCredential": "一度の設定で ACP とネイティブ SDK の両方に対応します。",
   "settings.providers.agents.useLogin": "このログインを使う",
+  "settings.providers.agents.inUse": "使用中: {{label}}",
+  "settings.providers.agents.inUseMachine": "使用中: このコンピューターのログイン",
   "settings.providers.connect.title": "{{provider}} を接続",
   "settings.providers.connect.subtitle": "このコンピューターの {{provider}} 用に保存されます。Esc で保存せずに閉じます。",
   "settings.providers.connect.open": "接続中…",

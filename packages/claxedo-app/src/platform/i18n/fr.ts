@@ -547,6 +547,8 @@ export const dict = {
   "settings.providers.detect.description": "Analyser cette machine à la recherche de connexions Claude, Codex et Cursor, puis mettre à jour le statut ci-dessous.",
   "settings.providers.agents.sharedCredential": "Une seule configuration couvre ACP et le SDK natif.",
   "settings.providers.agents.useLogin": "Utiliser cette connexion",
+  "settings.providers.agents.inUse": "Utilisé : {{label}}",
+  "settings.providers.agents.inUseMachine": "Utilisé : la connexion de cet ordinateur",
   "settings.providers.connect.title": "Connecter {{provider}}",
   "settings.providers.connect.subtitle": "Enregistré pour {{provider}} sur cet ordinateur. Échap ferme sans enregistrer.",
   "settings.providers.connect.open": "Connexion…",

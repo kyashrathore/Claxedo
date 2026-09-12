@@ -25,6 +25,8 @@ export const ProviderSetupRow: Component<{
   /** The workspace-or-directory scope those credentials belong to. */
   scope?: string
   note?: string
+  /** Which credential this harness runs on right now, in words. */
+  inUse?: string
   /** Saves the login a scan found on this machine; offered while the row reads detected. */
   onUseLogin?: () => void | Promise<void>
   onConnected?: () => void | Promise<void>
@@ -61,6 +63,9 @@ export const ProviderSetupRow: Component<{
             <span class="text-14-medium text-text-strong">{props.name}</span>
             <Show when={props.note}>
               {(note) => <span class="text-12-regular text-text-weak">{note()}</span>}
+            </Show>
+            <Show when={props.inUse}>
+              {(inUse) => <span class="text-12-regular text-text-base" data-component="provider-in-use">{inUse()}</span>}
             </Show>
             <Show when={!expanded() && props.detail}>
               {(detail) => <span class="text-12-regular text-text-weak">{detail()}</span>}

@@ -74,6 +74,8 @@ export type CredentialSyncResult = {
  */
 export type ControlPlaneCredentials = {
   listCredentials: (org?: string) => Promise<CredentialMetadata[]>
+  /** The rows the fanout would send for a scope, one per provider, secrets withheld. */
+  effectiveCredentials?: (scope: "local" | "shared", org?: string) => Promise<CredentialMetadata[]>
   getCredentialByProvider: (
     providerId: string,
     kind?: CredentialKind,

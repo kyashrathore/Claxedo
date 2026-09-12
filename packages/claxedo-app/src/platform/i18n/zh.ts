@@ -605,6 +605,8 @@ export const dict = {
   "settings.providers.detect.description": "扫描本机的 Claude、Codex 和 Cursor 登录信息，然后更新下方状态。",
   "settings.providers.agents.sharedCredential": "一次设置即可覆盖 ACP 和原生 SDK。",
   "settings.providers.agents.useLogin": "使用此登录",
+  "settings.providers.agents.inUse": "使用中：{{label}}",
+  "settings.providers.agents.inUseMachine": "使用中：此电脑的登录",
   "settings.providers.connect.title": "连接 {{provider}}",
   "settings.providers.connect.subtitle": "保存为此电脑上的 {{provider}}。按 Esc 不保存并关闭。",
   "settings.providers.connect.open": "连接中…",

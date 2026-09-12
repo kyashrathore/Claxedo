@@ -614,6 +614,8 @@ export const dict = {
   "settings.providers.detect.description": "Skenirajte ovu mašinu za Claude, Codex i Cursor prijave, zatim ažurirajte status ispod.",
   "settings.providers.agents.sharedCredential": "Jedno podešavanje pokriva ACP i nativni SDK.",
   "settings.providers.agents.useLogin": "Koristi ovu prijavu",
+  "settings.providers.agents.inUse": "U upotrebi: {{label}}",
+  "settings.providers.agents.inUseMachine": "U upotrebi: prijava na ovom računaru",
   "settings.providers.connect.title": "Poveži {{provider}}",
   "settings.providers.connect.subtitle": "Sačuvano za {{provider}} na ovom računaru. Esc zatvara bez spremanja.",
   "settings.providers.connect.open": "Povezivanje…",

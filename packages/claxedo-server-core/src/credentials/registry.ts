@@ -599,14 +599,26 @@ export async function resolveAllSecrets(
   return result
 }
 
+/**
+ * The rows the fanout sends for a scope, one per provider, without their
+ * secrets. This is the only place the "which credential runs" question is
+ * answered, so a surface that shows it reads the same selection.
+ */
+export function selectCredentialsForScope(
+  scope: CredentialSecretScope = "local",
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): CredentialMetadata[] {
+  return preferredCredentialPerProvider(
+    listCredentialsByProviderPreference(org)
+      .filter((c) => fanoutEligible(c) && credentialAvailableForScope(c, scope)),
+  )
+}
+
 export async function resolveSecretsForScope(
   scope: CredentialSecretScope = "local",
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<Record<string, string>> {
-  const creds = preferredCredentialPerProvider(
-    listCredentialsByProviderPreference(org)
-      .filter((c) => fanoutEligible(c) && credentialAvailableForScope(c, scope)),
-  )
+  const creds = selectCredentialsForScope(scope, org)
   const backend = getBackend()
   const result: Record<string, string> = {}
 

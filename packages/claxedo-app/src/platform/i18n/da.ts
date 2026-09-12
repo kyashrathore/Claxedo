@@ -605,6 +605,8 @@ export const dict = {
   "settings.providers.detect.description": "Scan denne maskine for Claude-, Codex- og Cursor-logins, og opdater status nedenfor.",
   "settings.providers.agents.sharedCredential": "Én opsætning dækker ACP og det native SDK.",
   "settings.providers.agents.useLogin": "Brug dette login",
+  "settings.providers.agents.inUse": "I brug: {{label}}",
+  "settings.providers.agents.inUseMachine": "I brug: denne computers login",
   "settings.providers.connect.title": "Forbind {{provider}}",
   "settings.providers.connect.subtitle": "Gemt for {{provider}} på denne computer. Esc lukker uden at gemme.",
   "settings.providers.connect.open": "Forbinder…",

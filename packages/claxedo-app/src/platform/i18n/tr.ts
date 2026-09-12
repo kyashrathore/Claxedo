@@ -623,6 +623,8 @@ export const dict = {
   "settings.providers.detect.description": "Bu makinede Claude, Codex ve Cursor oturumlarını tara ve aşağıdaki durumu güncelle.",
   "settings.providers.agents.sharedCredential": "Tek kurulum ACP ve yerel SDK'yı kapsar.",
   "settings.providers.agents.useLogin": "Bu girişi kullan",
+  "settings.providers.agents.inUse": "Kullanımda: {{label}}",
+  "settings.providers.agents.inUseMachine": "Kullanımda: bu bilgisayarın girişi",
   "settings.providers.connect.title": "{{provider}} bağla",
   "settings.providers.connect.subtitle": "Bu bilgisayarda {{provider}} için saklanır. Esc kaydetmeden kapatır.",
   "settings.providers.connect.open": "Bağlanıyor…",

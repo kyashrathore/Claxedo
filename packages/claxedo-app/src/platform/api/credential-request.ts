@@ -22,10 +22,13 @@ export type ClaxedoCredentialRequestInput = {
   serverUrl?: string
   providerId?: string
   credentialId?: string
-  action?: "discover" | "save-discovered" | "verify" | "scope"
+  action?: "discover" | "save-discovered" | "verify" | "scope" | "effective"
 }
 
-export async function claxedoCredentialRequest(input?: ClaxedoCredentialRequestInput, init?: RequestInit) {
+export async function claxedoCredentialRequest(
+  input?: ClaxedoCredentialRequestInput,
+  init?: RequestInit & { accept?: readonly number[] },
+) {
   const headers = new Headers(init?.headers)
   headers.set("Accept", "application/json")
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
@@ -34,7 +37,7 @@ export async function claxedoCredentialRequest(input?: ClaxedoCredentialRequestI
     new URL(credentialRoute(input), credentialRequestOrigin(input)),
     { ...init, headers },
   )
-  if (res.ok) return res
+  if (res.ok || init?.accept?.includes(res.status)) return res
 
   throw new Error(await claxedoCredentialErrorMessage(res))
 }
@@ -43,7 +46,7 @@ function credentialRoute(input?: ClaxedoCredentialRequestInput) {
   if (input?.credentialId && (input.action === "verify" || input.action === "scope")) {
     return `/api/claxedo/credentials/${encodeURIComponent(input.credentialId)}/${input.action}`
   }
-  if (input?.action === "discover" || input?.action === "save-discovered") {
+  if (input?.action === "discover" || input?.action === "save-discovered" || input?.action === "effective") {
     return `/api/claxedo/credentials/${input.action}`
   }
   if (input?.providerId) return `/api/claxedo/credentials/provider/${encodeURIComponent(input.providerId)}`

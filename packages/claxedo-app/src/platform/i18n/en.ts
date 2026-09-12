@@ -652,6 +652,8 @@ export const dict = {
   "settings.providers.detect.description": "Scan this machine for Claude, Codex, and Cursor logins, then update the status below.",
   "settings.providers.agents.sharedCredential": "One setup covers ACP and native SDK.",
   "settings.providers.agents.useLogin": "Use this login",
+  "settings.providers.agents.inUse": "In use: {{label}}",
+  "settings.providers.agents.inUseMachine": "In use: this computer's login",
   "settings.providers.connect.title": "Connect {{provider}}",
   "settings.providers.connect.subtitle": "Stored for {{provider}} on this computer. Esc closes without saving.",
   "settings.providers.connect.open": "Connecting…",

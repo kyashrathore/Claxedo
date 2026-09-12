@@ -619,6 +619,8 @@ export const dict = {
   "settings.providers.detect.description": "Analiza esta máquina en busca de inicios de sesión de Claude, Codex y Cursor y actualiza el estado a continuación.",
   "settings.providers.agents.sharedCredential": "Una sola configuración cubre ACP y el SDK nativo.",
   "settings.providers.agents.useLogin": "Usar este inicio de sesión",
+  "settings.providers.agents.inUse": "En uso: {{label}}",
+  "settings.providers.agents.inUseMachine": "En uso: el inicio de sesión de este equipo",
   "settings.providers.connect.title": "Conectar {{provider}}",
   "settings.providers.connect.subtitle": "Guardado para {{provider}} en este equipo. Esc cierra sin guardar.",
   "settings.providers.connect.open": "Conectando…",
