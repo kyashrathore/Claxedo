@@ -152,11 +152,25 @@ export function createMemorySubagentAdmissionStore(): SubagentAdmissionStore & {
       const childOwner = input.observation.childSessionId
         ? childOwners.get(scoped(input.parentSessionId, `child:${input.observation.childSessionId}`))
         : undefined
+      // `correlationKeys` is ordered by strength — the id the provider itself
+      // minted, then the harness's stable id, then the tool call — so an
+      // observation whose keys name two different rows joins the row its
+      // strongest key names rather than opening a third. A candidate whose
+      // bound provider contradicts this observation is not one of its rows.
+      const strongestMatch = () => {
+        for (const key of associationKeys) {
+          const match = sole([...(associations.get(scoped(input.parentSessionId, key)) ?? [])]
+            .filter((candidate) => compatibleBinding(bindings.get(scoped(input.parentSessionId, candidate)), input.observation)))
+          if (match) return match
+        }
+        return undefined
+      }
       const resolved = input.observation.subagentKey
         ?? childOwner
         ?? (providerAssociation
           ? sole(associations.get(scoped(input.parentSessionId, providerAssociation))) ?? unboundMatch
-          : sole(associationMatches))
+          : undefined)
+        ?? strongestMatch()
       const subagentKey = resolved ?? deterministicKey(input.parentSessionId, input.observation) ?? input.allocateKey()
       const bindingKey = scoped(input.parentSessionId, subagentKey)
       const binding = bindings.get(bindingKey) ?? {}
@@ -291,6 +305,16 @@ function sole(values: Iterable<string> | undefined): string | undefined {
   const unique = new Set(values)
   if (unique.size !== 1) return undefined
   return unique.values().next().value
+}
+
+function compatibleBinding(
+  binding: { providerId?: string; providerKind?: string } | undefined,
+  observation: SubagentObservation,
+) {
+  if (!binding) return true
+  if (observation.providerId && binding.providerId && binding.providerId !== observation.providerId) return false
+  if (observation.providerKind && binding.providerKind && binding.providerKind !== observation.providerKind) return false
+  return true
 }
 
 function requireCompatibleBinding(field: string, current: string | undefined, next: string | undefined) {

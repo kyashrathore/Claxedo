@@ -79,12 +79,11 @@ import type {
 } from "./sdk-runtime-driver"
 import { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
 import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
+import { createSubagentChildren } from "./subagent-lifecycle"
 import {
   admissibleSubagentObservation,
   openSubagentTranscript,
-  scopedSubagentKey,
   subagentCorrelationKeys,
-  subagentOutcome,
   transcriptText,
 } from "./subagent-transcript"
 import { acceptedSessionConfig, acceptedSessionUpdate } from "./accepted-session-mutation"
@@ -576,6 +575,16 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       const result = runtime.ingest(raw)
       for (const runtimeEvent of result.events) router.project(runtimeEvent, source, route)
     }
+    const subagentChildren = createSubagentChildren({
+      parentSessionId: id,
+      directory,
+      input,
+      fenced,
+      store: this.store,
+      children: this.subagentChildren,
+      bindSession: (binding) => this.bindStoreSession(binding),
+      projectChild: router.projectChild,
+    })
     const observeSubagent: SdkRuntimeTurnInput["observeSubagent"] = async (observed) => {
       const fileTranscript = await openSubagentTranscript(this.options.transcriptRegistrar, id, observed.observation)
       const observation = admissibleSubagentObservation(observed.observation, fileTranscript)
@@ -600,63 +609,19 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         store: admissionStore,
         publish: (_parentSessionId, payload) => router.project(payload, source),
       }).admit(id, observation, openable ? { allocateChildSessionId: () => randomUUID() } : undefined)
+      subagentChildren.track(observation, event)
 
       const childSessionId = event.childSessionId
       if (!childSessionId) return { event }
       // The host already owns this child's execution binding, configuration
       // and transcript on its chosen harness. The parent only adds a tool edge.
       if (observation.providerKind === "claxedo") return { event, childSessionId }
-      const childKey = scopedSubagentKey(id, event.subagentKey)
-      const child = this.subagentChildren.get(childKey)
-        ?? [...this.subagentChildren.values()].find((candidate) => candidate.sessionId === childSessionId)
-        ?? (() => {
-        const agentSessionId = observation.providerId ?? `unbound:${childSessionId}`
-        const created = Date.now()
-        const target = {
-          sessionId: childSessionId,
-          getAgentSessionId: () => this.subagentChildren.get(childKey)?.agentSessionId ?? agentSessionId,
-          assistantMessageId: randomUUID(),
-          created,
-          input: {
-            userMessageId: randomUUID(),
-            agent: input.agent,
-            model: input.model,
-            ...(input.variant ? { variant: input.variant } : {}),
-          },
-        } satisfies ChildProjectionTarget
-        this.bindStoreSession({
-          sessionId: childSessionId,
-          parentSessionId: id,
-          directory,
-          title: observation.description ?? observation.label ?? "Subagent",
-          agentSessionId,
-        })
-        const parentConfig = this.store.getSessionConfig(id)
-        if (parentConfig) this.store.updateSessionConfig(childSessionId, parentConfig)
-        this.store.startTurn({
-          ...fenced,
-          sessionId: childSessionId,
-          agentSessionId,
-          userMessageId: target.input.userMessageId,
-          assistantMessageId: target.assistantMessageId,
-          agent: target.input.agent,
-          model: target.input.model,
-          parts: observation.description ? [{ type: "text", text: observation.description }] : [],
-          ...(target.input.variant ? { variant: target.input.variant } : {}),
-        })
-        return { sessionId: childSessionId, agentSessionId, target }
-      })()
-      if (observation.providerId && child.agentSessionId.startsWith("unbound:")) {
-        child.agentSessionId = observation.providerId
-        this.bindStoreSession({
-          sessionId: child.sessionId,
-          parentSessionId: id,
-          directory,
-          title: observation.description ?? observation.label ?? "Subagent",
-          agentSessionId: child.agentSessionId,
-        })
-      }
-      this.subagentChildren.set(childKey, child)
+      const { child, childKey } = subagentChildren.child({
+        observation,
+        subagentKey: event.subagentKey,
+        childSessionId,
+        source,
+      })
       for (const correlationKey of correlationKeys) {
         router.associate(correlationKey, child.target)
       }
@@ -667,15 +632,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         const text = transcriptText(fileTranscript.messages)
         if (text) router.project({ type: "text-delta", delta: text }, source, { kind: "child", correlationKey: fileCorrelation })
       }
-      const outcome = subagentOutcome(observation)
-      if (outcome) {
-        this.store.finishTurn({
-          ...fenced,
-          sessionId: child.sessionId,
-          assistantMessageId: child.target.assistantMessageId,
-          outcome,
-        })
-      }
+      subagentChildren.settle(child, observation, source)
       return { event, childSessionId: child.sessionId }
     }
     const rebindAgentSession = (sdkSessionId: string) => {
@@ -730,6 +687,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       }
     } finally {
       await run
+      await subagentChildren.settleOpen(`turn-end:${id}:${input.assistantMessageId}`, (observation) =>
+        observeSubagent({ observation, source: { dir: "in", method: "subagent/turn-end" } }))
       router.dispose()
     }
 

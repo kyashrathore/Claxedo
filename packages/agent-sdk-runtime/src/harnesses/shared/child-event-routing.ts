@@ -182,6 +182,15 @@ export function createChildEventRouter(options: {
       }
       routeChild(event, source, route.correlationKey)
     },
+    /**
+     * The child's own turn lifecycle has no correlation key to arrive under —
+     * it is the host's statement about the child, not a harness frame routed
+     * to it — so the target names the projector directly.
+     */
+    projectChild: (target: ChildProjectionTarget, event: AgentRuntimeEvent, source: RuntimeAppendSource) => {
+      if (disposed) throw new Error("child event router is disposed")
+      childProjector(target).project(event, source)
+    },
     associate: (correlationKey: string, target: ChildProjectionTarget) => {
       if (disposed) throw new Error("child event router is disposed")
       if (!correlationKey) throw new Error("child projection correlation key is required")

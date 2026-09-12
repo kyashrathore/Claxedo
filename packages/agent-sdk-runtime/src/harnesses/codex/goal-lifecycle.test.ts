@@ -284,7 +284,11 @@ describe("Codex Goal lifecycle", () => {
     const fake = await installFakeCodex()
     const eventHub = createRuntimeEventHub()
     const events: unknown[] = []
-    eventHub.subscribeRuntime((event) => events.push(event.payload))
+    const parentFinishes: unknown[] = []
+    eventHub.subscribeRuntime((event) => {
+      events.push(event.payload)
+      if (event.sessionId === "session-1" && event.payload.type === "finish") parentFinishes.push(event.payload)
+    })
     const turns = { started: 0, children: 0 }
     const adapter = new CodexHarnessAdapter({
       binary: fake.binary,
@@ -306,12 +310,12 @@ describe("Codex Goal lifecycle", () => {
       ok: true,
       goal: { sessionId: session.id, objective: "Ship safely", status: "active", tokenBudget: 1000 },
     })
-    for (let attempt = 0; attempt < 100 && !events.some((event) => (event as { type?: string }).type === "finish"); attempt++) {
+    for (let attempt = 0; attempt < 100 && parentFinishes.length === 0; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
     expect(turns).toEqual({ started: 2, children: 1 })
     expect(events).toContainEqual(expect.objectContaining({ type: "text-delta", delta: "Working" }))
-    expect(events.filter((event) => (event as { type?: string }).type === "finish")).toHaveLength(1)
+    expect(parentFinishes).toHaveLength(1)
     const turn = (async () => {
       for await (const _event of executeTestTurn(adapter, session.id, prompt(), fake.directory)) {}
     })()
@@ -344,7 +348,11 @@ describe("Codex Goal lifecycle", () => {
     const fake = await installFakeCodex()
     const eventHub = createRuntimeEventHub()
     const events: unknown[] = []
-    eventHub.subscribeRuntime((event) => events.push(event.payload))
+    const parentFinishes: unknown[] = []
+    eventHub.subscribeRuntime((event) => {
+      events.push(event.payload)
+      if (event.sessionId === "session-pause-frames" && event.payload.type === "finish") parentFinishes.push(event.payload)
+    })
     const adapter = new CodexHarnessAdapter({
       binary: fake.binary,
       store: store({ started: 0, children: 0 }),
@@ -353,11 +361,11 @@ describe("Codex Goal lifecycle", () => {
     })
     const session = await adapter.createSession(fake.directory, undefined, "session-pause-frames")
     await adapter.goals!.start(session.id, { objective: "provider-pauses mid-turn" }, fake.directory)
-    for (let attempt = 0; attempt < 200 && !events.some((event) => (event as { type?: string }).type === "finish"); attempt++) {
+    for (let attempt = 0; attempt < 200 && parentFinishes.length === 0; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 10))
     }
     expect(events).toContainEqual(expect.objectContaining({ type: "text-delta", delta: "After pause" }))
-    expect(events.filter((event) => (event as { type?: string }).type === "finish")).toHaveLength(1)
+    expect(parentFinishes).toHaveLength(1)
     expect(await adapter.goals!.read(session.id, fake.directory)).toMatchObject({ status: "paused" })
     await adapter.dispose()
   })

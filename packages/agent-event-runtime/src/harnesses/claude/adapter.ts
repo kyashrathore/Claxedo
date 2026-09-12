@@ -1,4 +1,4 @@
-import { isSubagentSpawnToolName } from "@claxedo/agent-runtime-contract"
+import { canonicalToolName, isSubagentSpawnToolName, reconstructQuestionAnswers } from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type {
@@ -309,6 +309,34 @@ function agentResultMetadata(result: Record<string, unknown> | undefined) {
   }
 }
 
+function isQuestionTool(toolName: string) {
+  return canonicalToolName(toolName) === "question"
+}
+
+/**
+ * The `question` renderer reads the answers from the part's metadata; the result text
+ * repeats them as prose no reader parses. Only a completed call carries the record —
+ * a declined prompt arrives as an error.
+ */
+function questionAnswerMetadata(input: Record<string, unknown>, result: Record<string, unknown> | undefined) {
+  const answers = asRecord(result?.answers)
+  if (!answers) return {}
+  const questions = Array.isArray(input.questions) ? input.questions : []
+  return {
+    answers: reconstructQuestionAnswers(
+      questions.map((item) => {
+        const row = asRecord(item) ?? {}
+        return {
+          question: text(row.question) ?? "",
+          optionLabels: optionLabels(row.options),
+          multiple: row.multiSelect === true,
+        }
+      }),
+      answers,
+    ),
+  }
+}
+
 function agentResultText(result: Record<string, unknown> | undefined, fallback: string) {
   if (!result) return fallback
   const content = Array.isArray(result.content) ? result.content : []
@@ -371,63 +399,65 @@ export function claudeSubagentObservations(value: unknown): ClaudeSubagentObserv
     const result = asRecord(message.tool_use_result)
     const agentId = text(result?.agentId)
     if (!agentId) return claudeHostSubagentObservations(message, wrapperId, harnessExecutionId)
-    return toolResultBlocks(message).map((tool) => ({
-      observationId: `claude:agent-result:${wrapperId}:${tool.toolCallId}`,
+    // `SDKUserMessage.tool_use_result` is one tool's Output, and `AgentOutput`
+    // names no tool call, so the agent it reports can only be attributed when
+    // the message carries a single tool_result block. Stamping every block of
+    // a batched delivery gives one agent a spawn edge on each of its siblings'
+    // rows. The turn's other terminals — `task_notification` and the turn-end
+    // sweep — settle the rows this drops.
+    const blocks = toolResultBlocks(message)
+    const sole = blocks.length === 1 ? blocks[0] : undefined
+    if (!sole) return []
+    return [{
+      observationId: `claude:agent-result:${wrapperId}:${sole.toolCallId}`,
       ...(harnessExecutionId ? { harnessExecutionId } : {}),
-      toolCallId: tool.toolCallId,
+      toolCallId: sole.toolCallId,
       toolCallRole: "spawn" as const,
       status: result?.status === "completed" ? "completed" as const : "running" as const,
       ...(result?.status === "async_launched" ? { mode: "background" as const } : {}),
       providerId: agentId,
       providerKind: "claude-agent",
       transcript: { kind: "messages" as const },
-    }))
+    }]
   }
 
   if (message.type !== "system") return []
 
+  // Every backgrounded Bash command, workflow and housekeeping chore is a task
+  // too, and each one admitted here becomes a subagent row with its own chip and
+  // child session. `subagent_type` is the SDK's only marker for a Task-tool
+  // subagent, and `skip_transcript` its only marker for an ambient task the
+  // transcript must not show. A subtype carrying neither — `task_updated`, whose
+  // payload is a task id and a patch — cannot say whose row it patches.
   switch (message.subtype) {
     case "task_started":
+      if (!text(message.subagent_type) || message.skip_transcript === true) return []
       return [taskObservation(message, wrapperId, {
         status: "running",
         description: text(message.description),
-        subagentType: text(message.subagent_type) ?? text(message.task_type),
+        subagentType: text(message.subagent_type),
       })]
     case "task_progress":
+      if (!text(message.subagent_type)) return []
       return [taskObservation(message, wrapperId, {
         status: "running",
         description: text(message.description),
         subagentType: text(message.subagent_type),
       })]
     case "task_notification":
+      if (message.skip_transcript === true) return []
       return [taskObservation(message, wrapperId, {
         status: message.status === "completed" ? "completed" : message.status === "failed" ? "failed" : "killed",
         description: text(message.summary),
       })]
-    case "task_updated": {
-      const patch = asRecord(message.patch) ?? {}
-      const status = taskStatus(patch.status)
-      return [taskObservation(message, wrapperId, {
-        ...(status ? { status } : {}),
-        ...(patch.is_backgrounded === true ? { mode: "background" } : {}),
-        ...(patch.is_backgrounded === false ? { mode: "foreground" } : {}),
-        description: text(patch.description),
-      })]
-    }
-    case "background_tasks_changed": {
-      const tasks = Array.isArray(message.tasks) ? message.tasks : []
-      return tasks.flatMap((value) => {
-        const task = asRecord(value)
-        if (!task || !text(task.task_id)) return []
-        return [taskObservation(task, `${wrapperId}:${text(task.task_id)}`, {
-          status: "running",
-          mode: "background",
-          description: text(task.description),
-          subagentType: text(task.task_type),
-          harnessExecutionId,
-        })]
-      })
-    }
+    // `SDKBackgroundTasksChangedMessage` replaces a set; its members carry
+    // `task_id`/`task_type`/`description` and nothing that identifies a Task
+    // subagent or its tool call, and the SDK states the payload must not be
+    // correlated with the `task_started`/`task_notification` edges. Read as
+    // edges it minted a row per live background chore, each with a child
+    // session no nested message could ever reach.
+    case "background_tasks_changed":
+      return []
     default:
       return []
   }
@@ -436,14 +466,12 @@ export function claudeSubagentObservations(value: unknown): ClaudeSubagentObserv
 function taskObservation(
   message: Record<string, unknown>,
   observationId: string,
-  update: Omit<ClaudeSubagentObservation, "observationId" | "stableCorrelationId" | "toolCallId" | "toolCallRole" | "providerKind" | "transcript">,
+  update: Omit<ClaudeSubagentObservation, "observationId" | "harnessExecutionId" | "stableCorrelationId" | "toolCallId" | "toolCallRole" | "providerKind" | "transcript">,
 ): ClaudeSubagentObservation {
   const taskId = text(message.task_id)
   return {
-    observationId: `claude:${text(message.subtype) ?? "background-task"}:${observationId}`,
-    ...(update.harnessExecutionId ?? text(message.session_id)
-      ? { harnessExecutionId: update.harnessExecutionId ?? text(message.session_id) }
-      : {}),
+    observationId: `claude:${text(message.subtype)}:${observationId}`,
+    ...(text(message.session_id) ? { harnessExecutionId: text(message.session_id) } : {}),
     ...(taskId ? { stableCorrelationId: taskId } : {}),
     ...(text(message.tool_use_id)
       ? { toolCallId: text(message.tool_use_id), toolCallRole: "spawn" }
@@ -455,11 +483,6 @@ function taskObservation(
     providerKind: "claude-agent",
     transcript: { kind: "messages" },
   }
-}
-
-function taskStatus(value: unknown): ClaudeSubagentObservation["status"] {
-  if (value === "pending" || value === "running" || value === "completed" || value === "failed" || value === "killed" || value === "paused") return value
-  return undefined
 }
 
 function slashCommandEvents(message: Record<string, unknown>) {
@@ -878,7 +901,10 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
               output: isTaskTool(tool.toolName) ? agentResultText(result.structured, result.text) : result.text,
               ...(result.images.length ? { attachments: resultAttachments(result.images, display, state.cwd) } : {}),
               display,
-              metadata,
+              metadata: {
+                ...metadata,
+                ...(isQuestionTool(tool.toolName) ? questionAnswerMetadata(tool.input ?? {}, result.structured) : {}),
+              },
             }]
           })
           if (!changedTasks) return events

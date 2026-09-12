@@ -374,6 +374,83 @@ describe("claudeSdkAdapter", () => {
     expect([...new Set(parts.map((part) => part.tool))].sort()).toEqual(["bash", "grep", "read"])
   })
 
+  const ENVIRONMENT_QUESTION = "Which test environment?"
+  const CHECKS_QUESTION = "Which checks should run?"
+
+  function askUserQuestionSession(result: Record<string, unknown>) {
+    const agent = runtime()
+    const projection = createClientPresentationProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "reply-1",
+    })
+    const ingest = (payload: unknown) =>
+      agent.ingest({ source: "claude.sdk.message", payload }).events.flatMap((event) => projection.ingest(event))
+    ingest({
+      type: "assistant",
+      message: {
+        content: [{
+          type: "tool_use",
+          id: "ask-1",
+          name: "AskUserQuestion",
+          input: {
+            questions: [
+              { question: ENVIRONMENT_QUESTION, options: [{ label: "Staging" }, { label: "Production" }] },
+              {
+                question: CHECKS_QUESTION,
+                multiSelect: true,
+                options: [{ label: "Unit" }, { label: "Browser" }, { label: "Staging" }],
+              },
+            ],
+          },
+        }],
+      },
+    })
+    const envelopes = ingest({ type: "user", message: { role: "user", content: [result.content] }, tool_use_result: result.toolUseResult })
+    return envelopes
+      .map((envelope) => envelope.payload)
+      .filter((payload): payload is Extract<typeof payload, { type: "message.part.updated" }> =>
+        payload.type === "message.part.updated",
+      )
+      .map((payload) => payload.properties.part)
+      .filter((part): part is Extract<typeof part, { type: "tool" }> => part.type === "tool")
+      .at(-1)
+  }
+
+  function questionMetadata(part: ReturnType<typeof askUserQuestionSession>) {
+    if (part?.type !== "tool" || part.state.status === "pending") return undefined
+    return part.state.metadata
+  }
+
+  test("carries an answered AskUserQuestion to the question renderer as reconstructed answers", () => {
+    const part = askUserQuestionSession({
+      content: { type: "tool_result", tool_use_id: "ask-1", content: "Staging; Unit, Browser" },
+      toolUseResult: {
+        questions: [{ question: ENVIRONMENT_QUESTION }, { question: CHECKS_QUESTION }],
+        answers: { [ENVIRONMENT_QUESTION]: "Staging", [CHECKS_QUESTION]: "Unit, Browser" },
+      },
+    })
+
+    expect(part).toMatchObject({ type: "tool", tool: "question", state: { status: "completed" } })
+    expect(questionMetadata(part)?.answers).toEqual([["Staging"], ["Unit", "Browser"]])
+  })
+
+  test("leaves a declined AskUserQuestion an error with no answers", () => {
+    const part = askUserQuestionSession({
+      content: {
+        type: "tool_result",
+        tool_use_id: "ask-1",
+        content: "User dismissed the question",
+        is_error: true,
+      },
+      toolUseResult: undefined,
+    })
+
+    expect(part).toMatchObject({ type: "tool", tool: "question", state: { status: "error", error: "User dismissed the question" } })
+    expect(questionMetadata(part)).toMatchObject({ claude: { itemType: "dynamic_tool_call" } })
+    expect(questionMetadata(part)).not.toHaveProperty("answers")
+  })
+
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
   test("carries a read inside the session cwd by path alongside its unchanged text output", () => {
@@ -593,11 +670,7 @@ describe("claudeSdkAdapter", () => {
       session_id: "sdk-session-1",
       task_id: "task-1",
       patch: { status: "paused", is_backgrounded: true },
-    })[0]).toMatchObject({
-      stableCorrelationId: "task-1",
-      status: "paused",
-      mode: "background",
-    })
+    })).toEqual([])
 
     expect(claudeSubagentObservations({
       type: "system",
@@ -610,18 +683,14 @@ describe("claudeSdkAdapter", () => {
     })[0]).toMatchObject({ stableCorrelationId: "task-1", status: "killed" })
   })
 
-  test("U5: treats background_tasks_changed as replacement-level membership, not completion edges", () => {
+  test("U5: background_tasks_changed is a level signal and spawns no subagent row", () => {
     expect(claudeSubagentObservations({
       type: "system",
       subtype: "background_tasks_changed",
       uuid: "background-1",
       session_id: "sdk-session-1",
-      tasks: [{ task_id: "task-1", task_type: "agent", description: "Review" }],
-    })[0]).toMatchObject({
-      stableCorrelationId: "task-1",
-      status: "running",
-      mode: "background",
-    })
+      tasks: [{ task_id: "task-1", task_type: "local_bash", description: "npm run build" }],
+    })).toEqual([])
     expect(claudeSubagentObservations({
       type: "system",
       subtype: "background_tasks_changed",
@@ -629,6 +698,88 @@ describe("claudeSdkAdapter", () => {
       session_id: "sdk-session-1",
       tasks: [],
     })).toEqual([])
+  })
+
+  test("U5: only a Task subagent's own lifecycle becomes a subagent row", () => {
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "task_started",
+      uuid: "task-start-bash",
+      session_id: "sdk-session-1",
+      task_id: "task-bash",
+      tool_use_id: "bash-1",
+      task_type: "local_bash",
+      description: "npm run build",
+    })).toEqual([])
+
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "task_started",
+      uuid: "task-start-ambient",
+      session_id: "sdk-session-1",
+      task_id: "task-ambient",
+      description: "Summarize the session",
+      subagent_type: "housekeeping",
+      skip_transcript: true,
+    })).toEqual([])
+
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "task_notification",
+      uuid: "task-done-ambient",
+      session_id: "sdk-session-1",
+      task_id: "task-ambient",
+      status: "completed",
+      summary: "Summarized",
+      skip_transcript: true,
+    })).toEqual([])
+
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "task_progress",
+      uuid: "task-progress-bash",
+      session_id: "sdk-session-1",
+      task_id: "task-bash",
+      tool_use_id: "bash-1",
+      description: "npm run build",
+      usage: { total_tokens: 0, tool_uses: 0, duration_ms: 10 },
+    })).toEqual([])
+  })
+
+  test("U5: a user message batching several tool results cannot attribute its single agent result", () => {
+    expect(claudeSubagentObservations({
+      type: "user",
+      uuid: "batched-agent-results",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: null,
+      message: {
+        content: [
+          { type: "tool_result", tool_use_id: "tool-agent-1", content: "first report" },
+          { type: "tool_result", tool_use_id: "tool-agent-2", content: "second report" },
+        ],
+      },
+      tool_use_result: { status: "completed", agentId: "agent-42", content: [{ type: "text", text: "first report" }] },
+    })).toEqual([])
+
+    expect(claudeSubagentObservations({
+      type: "user",
+      uuid: "single-agent-result",
+      session_id: "sdk-session-1",
+      parent_tool_use_id: null,
+      message: {
+        content: [{ type: "tool_result", tool_use_id: "tool-agent-1", content: "first report" }],
+      },
+      tool_use_result: { status: "completed", agentId: "agent-42", content: [{ type: "text", text: "first report" }] },
+    })).toEqual([{
+      observationId: "claude:agent-result:single-agent-result:tool-agent-1",
+      harnessExecutionId: "sdk-session-1",
+      toolCallId: "tool-agent-1",
+      toolCallRole: "spawn",
+      status: "completed",
+      providerId: "agent-42",
+      providerKind: "claude-agent",
+      transcript: { kind: "messages" },
+    }])
   })
 
   test("U5: subagent progress usage does not update the parent context gauge", () => {

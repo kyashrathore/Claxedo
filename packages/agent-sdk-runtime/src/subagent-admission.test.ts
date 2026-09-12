@@ -305,6 +305,39 @@ describe("subagent host admission", () => {
     expect(linked.childSessionId).toBe("child-a")
   })
 
+  test("an observation matching two rows joins the stronger key instead of opening a third", async () => {
+    const item = harness()
+    const hosted = await item.boundary.admit("parent", {
+      observationId: "host:create:child-1",
+      subagentKey: "subagent_host",
+      harnessExecutionId: "run",
+      stableCorrelationId: "task-1",
+      status: "pending",
+    })
+    const spawn = await item.boundary.admit("parent", {
+      observationId: "claude:agent-tool:w:tool-1",
+      harnessExecutionId: "run",
+      toolCallId: "tool-1",
+      toolCallRole: "spawn",
+      providerKind: "claude-agent",
+      status: "pending",
+      transcript: { kind: "messages" },
+    })
+    expect(hosted.subagentKey).toBe("subagent_host")
+    expect(spawn.subagentKey).not.toBe("subagent_host")
+
+    const linking = await item.boundary.admit("parent", {
+      observationId: "claude:task_started:w",
+      harnessExecutionId: "run",
+      stableCorrelationId: "task-1",
+      toolCallId: "tool-1",
+      toolCallRole: "spawn",
+      status: "running",
+      transcript: { kind: "messages" },
+    })
+    expect(linking.subagentKey).toBe("subagent_host")
+  })
+
   test("admission allocates the child once and reuses the binding for later child-less observations", async () => {
     const item = harness()
     let allocations = 0
