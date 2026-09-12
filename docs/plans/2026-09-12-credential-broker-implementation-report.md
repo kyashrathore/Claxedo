@@ -137,3 +137,27 @@ At root, `bun run test:architecture-ratchets`: 13 pass, 0 fail; all 8 source pol
 The tests execute the supervisor and manager through the public manager entrypoint with mocked provider transport. They do not prove provider-side injection. Self-hosted MCP preparation composition and fresh authority resolution on independent wake remain to be verified.
 
 Next: inspect every wake caller of `ensure`, add failing tests where network policy is omitted, and route each caller through its deployment's existing policy producer. Creation-time restrictions must survive waking or replacing the sandbox; secret delivery alone does not enforce that boundary.
+
+## Wake reconciliation and generic broker skeleton (2026-09-13)
+
+Commits preceding the package:
+
+- `f074ca4a2f fix(sandbox): enforce hosted network policy on wake`: hosted connection resolution now supplies the canonical policy built from control-plane origin, relay, repository, and configured extra hosts. Hosted connection, route, billing wake, and signed integration fixtures were updated. Focused tests: 46 pass, 0 fail; server typecheck and architecture ratchets pass.
+- `7b9ad8defa fix(daytona): reconcile brokered references on reuse and resume`: existing/resumed Daytona sandboxes receive explicitly supplied references before runtime start. Empty references detach; omitted references preserve the current configuration. Manager tests: 214 pass, 0 fail; manager/server typechecks pass. New environment variables becoming visible to an already running process still require live provider verification.
+
+The new `@claxedo/egress-broker` package implements binding-scoped signed placeholders, immutable revision snapshots, destination/method/path policy, credential injection, streaming forwarding, redirect refusal, and revision-specific failure reports. Its process-owned adapter supports projection, rotation, binding withdrawal, and runtime generation withdrawal. Its standalone Node listener binds only to loopback. Local and self-host control-plane compositions accept its request handler through explicit hosting options. Local hosting requires loopback and withholds CORS access.
+
+Validation commands:
+
+- In `packages/egress-broker`, `bun run test`: 22 pass, 0 fail under Node Vitest, including an actual loopback listener with rotation and withdrawal. `bun run build` and `bun run typecheck`: pass.
+- In `packages/claxedo-local-server`, `bun run test -- src/app/local-app.behaviour.test.ts`: 25 pass, 0 fail. These hosting checks exercise the app with an injected handler; broker semantics are exercised separately by the package's real HTTP test. `bun run typecheck`: pass.
+- In `packages/claxedo-server`, `bun run test -- src/deployments/self-hosted-node/app.security-headers.test.ts`: 17 pass, 0 fail. `bun run typecheck`: pass.
+- At root, `bun run test:architecture-ratchets`: 13 pass, 0 fail; 5 products / 8 source policies and helpers pass. No baselines changed.
+- Initial direct factory imports in both server compositions exceeded package ceilings by one. The final hosting contract accepts a Request-to-Response handler, preserving composition independence; it does not hide or dynamically load a dependency.
+- An initial Bun-run Node-listener test completed request assertions but hung during listener shutdown. The target Node runtime completed the lifecycle smoke and all package tests; package tests now explicitly use Node Vitest.
+
+Changed files for the skeleton: `bun.lock`; `packages/egress-broker/package.json`, `tsconfig.json`, `README.md`, `src/binding.ts`, `src/token.ts`, `src/broker.ts`, `src/delivery.ts`, `src/node.ts`, `src/index.ts`, `src/broker.test.ts`, `src/delivery.test.ts`; `packages/claxedo-local-server/src/app/local-app.ts` and `local-app.behaviour.test.ts`; `packages/claxedo-server/src/deployments/self-hosted-node/app.ts` and `app.security-headers.test.ts`; this report.
+
+The broker is opt-in infrastructure, not an enabled end-to-end model-provider flow. Provisioning selection, harness configuration, renewal, and persistent hosted storage are not connected by this slice. No Appendix E live provider experiment is claimed. The accounts-lane boundary recorded earlier still applies.
+
+Next concrete task: reproduce Cloudflare's expired egress-token failure, trace token production through container configuration and outbound interception, and implement renewal at the authoritative lifecycle owner. Test an active runtime past expiry, renewal failure, and restart so protected egress does not silently stop after the current 15-minute token lifetime. This is required for long-running brokered sessions; successful initial injection alone is insufficient.

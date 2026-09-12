@@ -361,10 +361,10 @@
         "@claxedo/sandbox-manager": "workspace:*",
         "@claxedo/server-core": "workspace:*",
         "@claxedo/service-contract": "workspace:*",
-        "@claxedo/wakes": "workspace:0.4.0",
-        "@claxedo/workspace-relay": "workspace:0.7.0",
-        "@claxedo/workspace-relay-protocol": "workspace:0.7.0",
-        "@claxedo/workspace-runtime": "workspace:0.7.0",
+        "@claxedo/wakes": "workspace:*",
+        "@claxedo/workspace-relay": "workspace:*",
+        "@claxedo/workspace-relay-protocol": "workspace:*",
+        "@claxedo/workspace-runtime": "workspace:*",
         "@hono/node-server": "1.19.11",
         "@hono/node-ws": "1.3.1",
         "@lydell/node-pty": "catalog:",
@@ -478,6 +478,19 @@
         "@types/node": "catalog:",
         "@typescript/native-preview": "catalog:",
         "esbuild": "0.25.12",
+      },
+    },
+    "packages/egress-broker": {
+      "name": "@claxedo/egress-broker",
+      "version": "0.8.0",
+      "dependencies": {
+        "@hono/node-server": "1.19.11",
+        "jose": "6.2.4",
+      },
+      "devDependencies": {
+        "@types/bun": "catalog:",
+        "typescript": "catalog:",
+        "vitest": "2.1.9",
       },
     },
     "packages/opencode-server-adapter": {
@@ -1154,6 +1167,8 @@
     "@claxedo/desktop": ["@claxedo/desktop@workspace:packages/claxedo-desktop"],
 
     "@claxedo/documents-service": ["@claxedo/documents-service@workspace:packages/claxedo-documents-service"],
+
+    "@claxedo/egress-broker": ["@claxedo/egress-broker@workspace:packages/egress-broker"],
 
     "@claxedo/helpers": ["@claxedo/helpers@workspace:packages/claxedo-helpers"],
 

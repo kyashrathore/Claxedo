@@ -495,3 +495,32 @@ describe("local composition — first-party MCP", () => {
     expect(mcp.headers.get("access-control-allow-origin")).toBeNull()
   })
 })
+
+describe("local egress broker hosting", () => {
+  test("uses broker authentication without granting browser CORS access", async () => {
+    const verifyToken = vi.fn(async (_token: string) => undefined)
+    const instance = app({ egressBroker: async (request) => {
+      await verifyToken(request.headers.get("authorization")!.slice(7))
+      return new Response(null, { status: 401 })
+    } })
+    const response = await instance.request("http://127.0.0.1/bindings/b1/v1/messages", {
+      headers: { Authorization: "Bearer invalid-runtime-token", Origin: "http://localhost:3000" },
+    })
+    expect(response.status).toBe(401)
+    expect(verifyToken).toHaveBeenCalledWith("invalid-runtime-token")
+    expect(response.headers.get("access-control-allow-origin")).toBeNull()
+  })
+
+  test("rejects a non-loopback request before verifying its token", async () => {
+    const verifyToken = vi.fn(async (_token: string) => undefined)
+    const instance = app({ egressBroker: async (request) => {
+      await verifyToken(request.headers.get("authorization")!.slice(7))
+      return new Response(null, { status: 401 })
+    } })
+    const response = await instance.request("https://remote.example/bindings/b1/v1/messages", {
+      headers: { Authorization: "Bearer invalid-runtime-token" },
+    })
+    expect(response.status).toBe(403)
+    expect(verifyToken).not.toHaveBeenCalled()
+  })
+})

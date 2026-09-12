@@ -657,6 +657,7 @@ export function localSecurityHeaders(): MiddlewareHandler {
 export function createSelfHostedApp(
   services: ControlPlaneServices,
   options: {
+    egressBroker?: (request: Request) => Promise<Response>
     beforeLocalSessionList?: () => Promise<void>
     /**
      * The deployment posture to validate before composing.
@@ -716,6 +717,10 @@ export function createSelfHostedApp(
   // @hono/node-ws upgrades, whose Requests lack the node-server internals)
   // so loopback gates verify the socket, not the spoofable Host header.
   app.use(peerAddressStamp())
+  if (options.egressBroker) {
+    const broker = options.egressBroker
+    app.all("/bindings/*", (c) => broker(c.req.raw))
+  }
   // top-level error handler. Hono's
   // default onError swallows route exceptions into bare 500s; this keeps that
   // exact response behavior (HTTPException responses pass through) while
@@ -1347,6 +1352,7 @@ export function createSelfHostedApp(
 
 export type ControlPlaneStackOptions = {
   services: ControlPlaneServices
+  egressBroker?: (request: Request) => Promise<Response>
   port?: number
   processObserver?: ProcessObserver
   /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
@@ -1606,6 +1612,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
 
   let localSessionProjectionReady: Promise<void> | undefined
   const built = createSelfHostedApp(services, {
+    egressBroker: options.egressBroker,
     usageRevisionStore,
     usageSourceCoverage,
     usageSourceCoverageReady: usageCoverageReady,
@@ -1671,11 +1678,13 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
 export function startServer(
   port = DEFAULT_CLAXEDO_SERVER_PORT,
   options: {
+    egressBroker?: (request: Request) => Promise<Response>
     processObserver?: ProcessObserver
     routeContributions?: readonly ControlPlaneRouteContribution[]
   } = {},
 ) {
   return startControlPlaneStack({
+    egressBroker: options.egressBroker,
     services: createDefaultLocalControlPlaneServices(),
     port,
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
