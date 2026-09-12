@@ -150,6 +150,9 @@ export const localServer: Policy = {
       { packageDir: "packages/agent-event-runtime" },
       { packageDir: "packages/agent-sdk-runtime" },
       { packageDir: "packages/opencode-server-adapter" },
+      // The loopback credential broker the desktop composition mounts; its
+      // published entry is dist-only and it has no @claxedo/* dependencies.
+      { packageDir: "packages/egress-broker" },
       { packageDir: "packages/workspace-relay-protocol" },
       { packageDir: "packages/workspace-relay" },
       { packageDir: "packages/workspace-runtime" },
