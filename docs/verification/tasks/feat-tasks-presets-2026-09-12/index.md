@@ -114,3 +114,18 @@ Commits are named by subject because the branch history was rewritten for attrib
 | found on the way | `test(runtime): keep boundary and local build outputs out of the SDK-boundary walk` | the SDK-boundary guard no longer scans `dist-boundary` / `dist-local` bundles |
 
 Still not proven here: packaged desktop, a deployed hosted Worker (dry run only), a credentialed model turn, cloud placement (S5/S6), delegation with effort (S7), and `prompt_async` still answers 204 before the configuration read on the adapter path (the refusal is on the event stream).
+
+## Round 3 after the third review (same day)
+
+The third review (codex-gpt-6-astra-review3.md) judged eight closed, five partial and added R1 and R2. Commits by subject.
+
+| Item | Commit subject | Outcome |
+|---|---|---|
+| 1 remainder (revocation during the bridge's await) | `fix(tasks): authorize the transcript at the read, assert the preset at settlement, and recover a stranded origin` | the bridge command carries `authorizeTranscript()`, asked immediately before each transcript read; false means no read and `forbidden` |
+| 3 remainder (no D1 predicate on the preset re-read) | same | `presets.assertRevision` inside the settlement unit; D1 turns it into a guard row in the same batch; conformance case on all three stores; the matching-link branch is proven write-free |
+| R2 (refused settlement strands the origin) | same, plus `fix(authority): release a compensated reservation's session and operation ids` and `fix(tasks): only a pending compensation blocks a hosted reservation` | `bridge.abandon` deletes a created session only when its history is readable and carries no first message, then forgets its metadata and releases the reservation; a completed compensation releases its ids at the next reservation, with no schema change (a partial unique index is infeasible on D1 because `sessions` references the operations table by foreign key) |
+| 7 remainder and R1 (link committed, message never sent) | same, plus `fix(tasks): let task detail resend a first message that never landed` | `handoffText` persisted on the link; each live link reports `handoff` as sent, pending or unknown from the same history read the handoff uses; task detail shows Send task for a pending link and posts the current attempt, which the service delivers idempotently |
+| N1 remainder (204 before admission) | `fix(runtime): answer prompt_async only once the turn is admitted` | pre-execution admission runs before the response; a refused configuration read answers 503 `session_configuration_unavailable`; a slow model turn does not delay the 204 |
+| 15 remainder (comments claiming more than proven) | first commit above | the bridge port's comments state that deleted links pass without a grant and that delivery is at-most-once per readback |
+
+Gates at the round-3 tip: see the final section of this file once recorded. Still not proven here: packaged desktop, a deployed Worker (dry run only), a credentialed model turn, cloud placement (S5/S6), delegation with effort (S7); durable admission across a runtime restart still rests on the history readback rather than a runtime-owned journal.
