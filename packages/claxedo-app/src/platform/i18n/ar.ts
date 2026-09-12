@@ -609,6 +609,8 @@ export const dict = {
 
   "session.todo.progress": "تم إكمال {{done}} من {{total}} مهام",
   "session.question.progress": "{{current}} من {{total}} أسئلة",
+  "session.question.collapse": "طي السؤال",
+  "session.question.expand": "توسيع السؤال",
   "common.key.ctrl": "Ctrl",
   "common.key.alt": "Alt",
   "common.key.shift": "Shift",

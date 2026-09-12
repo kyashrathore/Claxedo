@@ -681,6 +681,8 @@ export const dict = {
 
   "session.todo.progress": "已完成 {{done}} 个任务（共 {{total}} 个）",
   "session.question.progress": "{{current}}/{{total}} 个问题",
+  "session.question.collapse": "折叠问题",
+  "session.question.expand": "展开问题",
   "common.key.ctrl": "Ctrl",
   "common.key.alt": "Alt",
   "common.key.shift": "Shift",

@@ -4,6 +4,7 @@ import { useMutation } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@/ui/session-kit"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { showToast } from "@opencode-ai/ui/toast"
 import type {
   AgentQuestion as QuestionRequest,
@@ -93,7 +94,7 @@ export const SessionQuestionDock: Component<{
     custom: [] as string[],
     customOn: [] as boolean[],
   }))
-  const [ui, setUI] = createStore({ editing: false, focus: 0 })
+  const [ui, setUI] = createStore({ editing: false, focus: 0, collapsed: false })
 
   let root: HTMLDivElement | undefined
   let customRef: HTMLButtonElement | undefined
@@ -166,7 +167,7 @@ export const SessionQuestionDock: Component<{
   const focus = (i: number) => {
     const next = clamp(i)
     setUI("focus", next)
-    if (ui.editing) return
+    if (ui.editing || ui.collapsed) return
     if (focusFrame !== undefined) cancelAnimationFrame(focusFrame)
     focusFrame = requestAnimationFrame(() => {
       focusFrame = undefined
@@ -332,6 +333,7 @@ export const SessionQuestionDock: Component<{
   }
 
   const nav = (event: KeyboardEvent) => {
+    if (ui.collapsed) return
     const target =
       event.target instanceof HTMLElement ? event.target.closest('[data-slot="question-options"]') : undefined
     const action = classifyQuestionKey(event, {
@@ -428,6 +430,16 @@ export const SessionQuestionDock: Component<{
     focus(pickFocus(tab))
   }
 
+  const collapse = () => {
+    const next = !ui.collapsed
+    setUI("collapsed", next)
+    if (next) {
+      setUI("editing", false)
+      return
+    }
+    focus(pickFocus())
+  }
+
   const jump = (tab: number) => {
     if (sending()) return
     setStore("tab", tab)
@@ -441,23 +453,43 @@ export const SessionQuestionDock: Component<{
       kind="question"
       ref={(el) => (root = el)}
       onKeyDown={nav}
+      collapsed={ui.collapsed}
       header={
         <>
           <div data-slot="question-header-title" class="ui-question-header-title">{summary()}</div>
-          <div data-slot="question-progress">
-            <For each={questions()}>
-              {(_, i) => (
-                <button
-                  type="button"
-                  data-slot="question-progress-segment"
-                  data-active={i() === store.tab}
-                  data-answered={answered(i())}
-                  disabled={sending()}
-                  onClick={() => jump(i())}
-                  aria-label={`${language.t("ui.tool.questions")} ${i() + 1}`}
-                />
-              )}
-            </For>
+          <Show when={ui.collapsed}>
+            <div data-slot="question-header-preview" class="ui-question-header-preview">{question()?.question}</div>
+          </Show>
+          <div data-slot="question-header-actions">
+            {/* One question has nothing to navigate between, and a lone 16x2px
+                segment reads as a window control rather than progress. */}
+            <Show when={total() > 1}>
+              <div data-slot="question-progress">
+                <For each={questions()}>
+                  {(_, i) => (
+                    <button
+                      type="button"
+                      data-slot="question-progress-segment"
+                      data-active={i() === store.tab}
+                      data-answered={answered(i())}
+                      disabled={sending()}
+                      onClick={() => jump(i())}
+                      aria-label={`${language.t("ui.tool.questions")} ${i() + 1}`}
+                    />
+                  )}
+                </For>
+              </div>
+            </Show>
+            <IconButton
+              data-slot="question-collapse"
+              icon="chevron-down"
+              size="normal"
+              variant="ghost"
+              style={{ transform: `rotate(${ui.collapsed ? 180 : 0}deg)` }}
+              aria-expanded={!ui.collapsed}
+              aria-label={language.t(ui.collapsed ? "session.question.expand" : "session.question.collapse")}
+              onClick={collapse}
+            />
           </div>
         </>
       }

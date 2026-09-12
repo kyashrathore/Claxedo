@@ -678,6 +678,8 @@ export const dict = {
 
   "session.todo.progress": "已完成 {{done}} 個待辦事項（共 {{total}} 個）",
   "session.question.progress": "{{current}}/{{total}} 個問題",
+  "session.question.collapse": "摺疊問題",
+  "session.question.expand": "展開問題",
   "common.key.ctrl": "Ctrl",
   "common.key.alt": "Alt",
   "common.key.shift": "Shift",
