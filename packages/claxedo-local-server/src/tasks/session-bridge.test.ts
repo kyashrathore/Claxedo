@@ -4,7 +4,7 @@ import os from "os"
 import path from "path"
 import { promisify } from "node:util"
 import { execFile } from "node:child_process"
-import type { ConnectionProvider } from "@claxedo/agent-sdk-runtime"
+import type { ConnectionProvider, HarnessEffortLevels } from "@claxedo/agent-sdk-runtime"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
@@ -41,7 +41,7 @@ const capabilities = {
 
 type Created = { id: string; instructions?: string }
 
-function fixtureProvider(input: { offeredModelId: string }) {
+function fixtureProvider(input: { offeredModelId: string; effortLevels?: HarnessEffortLevels }) {
   const created: Created[] = []
   const turns: string[] = []
   const provider: ConnectionProvider<Record<string, never>> = {
@@ -70,6 +70,7 @@ function fixtureProvider(input: { offeredModelId: string }) {
           status: "optional" as const,
           models: [{ providerId: MODEL.providerID, modelId: input.offeredModelId, name: "Fixture" }],
         },
+        ...(input.effortLevels ? { effortLevels: input.effortLevels } : {}),
       }),
       async *executeTurn(binding, prompt) {
         if (prompt.userMessageId) turns.push(prompt.userMessageId)
@@ -183,7 +184,7 @@ async function waitForMessage(request: (path: string) => Promise<Response>, sess
   throw new Error(`no message ${messageId} on ${sessionId}`)
 }
 
-async function harness(input: { offeredModelId?: string } = {}) {
+async function harness(input: { offeredModelId?: string; effortLevels?: HarnessEffortLevels } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "tasks-session-bridge-"))
   const project = path.join(root, "project")
   await fs.mkdir(project, { recursive: true })
@@ -191,7 +192,10 @@ async function harness(input: { offeredModelId?: string } = {}) {
   // repository, and the bridge resolves its target through that store.
   await promisify(execFile)("git", ["init", "-q"], { cwd: project })
   process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-  const fixture = fixtureProvider({ offeredModelId: input.offeredModelId ?? MODEL.modelID })
+  const fixture = fixtureProvider({
+    offeredModelId: input.offeredModelId ?? MODEL.modelID,
+    ...(input.effortLevels ? { effortLevels: input.effortLevels } : {}),
+  })
   configureEmbeddedWorkspaceRuntime({ connectionProviders: [fixture.provider] })
   configureAgentConfig({ connectionProviders: [fixture.provider] })
   // The bridge dispatches through the local runtime port, and a create there
@@ -957,5 +961,107 @@ describe("local tasks session bridge", () => {
     expect(await host.bridge.sessionState([{ ...origin, sessionRef: absent }])).toEqual([
       { session: absent, state: "deleted", handoff: "unknown" },
     ])
+  })
+
+  test("the session retains the whole resolved group, not just the slot it started under", async () => {
+    const host = await harness()
+    roots.push(host.root)
+    const grouped: Preset = {
+      ...preset(),
+      configurations: {
+        primary: { harness: { id: CONNECTION_ID, access: "connection" }, model: MODEL, effort: "high" },
+        review: { harness: { id: CONNECTION_ID, access: "connection" }, model: MODEL, effort: null },
+      },
+    }
+
+    const previewed = await host.bridge.preview({
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      preset: grouped,
+      slot: "primary",
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+      authorizeTranscript: async () => true,
+    })
+    if (!previewed.ok) throw new Error("preview refused")
+    const started = await host.bridge.start(
+      await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest, preset: grouped }),
+    )
+    if (!started.ok) throw new Error("start refused")
+
+    const config: unknown = await (await host.request(`/session/${started.session.sessionRef.sessionId}/config`)).json()
+    expect(config).toMatchObject({
+      variant: "high",
+      group: {
+        primary: { harness: { id: CONNECTION_ID, access: "connection" }, model: MODEL, effort: "high" },
+        review: { harness: { id: CONNECTION_ID, access: "connection" }, model: MODEL },
+      },
+    })
+    // A slot the preset never configured is absent rather than present and empty.
+    expect(Object.keys((config as { group: Record<string, unknown> }).group).sort()).toEqual(["primary", "review"])
+    expect((config as { group: { review: Record<string, unknown> } }).group.review.effort).toBeUndefined()
+  })
+
+  test("an effort the harness refuses for that model blocks the preview and names the levels it takes", async () => {
+    const host = await harness({
+      effortLevels: { status: "resolved", models: [{ modelID: MODEL.modelID, levels: ["low", "medium"] }] },
+    })
+    roots.push(host.root)
+
+    const previewed = await host.bridge.preview({
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: host.workspaceId }),
+      preset: preset(),
+      slot: "primary",
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+      authorizeTranscript: async () => true,
+    })
+    if (!previewed.ok) throw new Error("preview refused")
+    expect(previewed.preview.available).toBe(false)
+    expect(previewed.preview.blockers).toMatchObject([{ code: "effort_unsupported" }])
+    expect(previewed.preview.blockers[0]?.detail).toContain("low, medium")
+    expect(previewed.preview.blockers[0]?.detail).toContain("high")
+
+    const refused = await host.bridge.start(
+      await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest }),
+    )
+    expect(refused).toMatchObject({
+      ok: false,
+      error: { code: "unsupported", message: expect.stringContaining("it accepts low, medium") },
+    })
+    expect(host.created).toEqual([])
+  })
+
+  test("a catalog that accepts the effort, and one that has not answered, both start", async () => {
+    for (const effortLevels of [
+      { status: "resolved", models: [{ modelID: MODEL.modelID, levels: ["low", "high"] }] },
+      { status: "unresolved", models: [] },
+      { status: "unsupported", models: [] },
+    ] as const) {
+      const host = await harness({ effortLevels })
+      roots.push(host.root)
+      const previewed = await host.bridge.preview({
+        actor: { scopeId: "local", ownerId: "local" },
+        task: task({ workspaceId: host.workspaceId }),
+        preset: preset(),
+        slot: "primary",
+        attempt: 1,
+        continueFromPrevious: false,
+        currentLink: null,
+        currentState: null,
+        authorizeTranscript: async () => true,
+      })
+      if (!previewed.ok) throw new Error(`preview refused for ${effortLevels.status}`)
+      expect(previewed.preview, effortLevels.status).toMatchObject({ available: true, blockers: [] })
+      await shutdownEmbeddedWorkspaceRuntimes()
+      disposeAgentConfig()
+      ClaxedoDB.close()
+      closeAuthorityDatabases()
+    }
   })
 })

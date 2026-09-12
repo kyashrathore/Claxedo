@@ -1,4 +1,11 @@
-import { isAgentMessage, renderSessionHandoff, type AgentMessage, type SessionHarness } from "@claxedo/agent-sdk-runtime"
+import {
+  harnessEffortVerdict,
+  isAgentMessage,
+  renderSessionHandoff,
+  type AgentMessage,
+  type HarnessEffortLevels,
+  type SessionHarness,
+} from "@claxedo/agent-sdk-runtime"
 import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import {
   TasksError,
@@ -6,6 +13,7 @@ import {
   startDigest,
   startFirstMessage,
   startInstructions,
+  startModelGroup,
   startOriginId,
   tasksErrorDetail,
   type ConfigurationSlot,
@@ -20,6 +28,7 @@ import {
   type StartBlocker,
   type StartCommand,
   type StartPreview,
+  type StartModelGroup,
   type StartPreviewCommand,
   type StartedSession,
   type TranscriptGrant,
@@ -173,6 +182,7 @@ type ResolvedStart = {
   preview: StartPreview
   target: TasksRuntimeTarget | null
   configuration: ModelConfiguration
+  group: StartModelGroup
   instructions: string
   handoff: Handoff | null
 }
@@ -221,39 +231,81 @@ function workspaceNameOrDirectory(workspace: Workspace): string {
 }
 
 /**
- * What the harness registered for this workspace says about the chosen model.
- * A harness that selects its own model would run something other than the
- * preset's choice, which is a refusal rather than a silent substitution.
+ * What the harness registered for this workspace says about the chosen model
+ * and effort. A harness that selects its own model would run something other
+ * than the preset's choice, which is a refusal rather than a silent
+ * substitution.
  */
-async function configurationBlocker(
+async function configurationBlockers(
   target: TasksRuntimeTarget,
   configuration: ModelConfiguration,
-): Promise<StartBlocker | null> {
+): Promise<StartBlocker[]> {
   const response = await target
     .request(`/session/capabilities?${tasksHarnessQuery(configuration.harness)}`)
     .catch(() => undefined)
   if (!response?.ok) {
-    return {
+    return [{
       code: "harness_unavailable",
       detail: `The ${configuration.harness.id} harness is not available in ${workspaceNameOrDirectory(target.workspace)}`,
-    }
+    }]
   }
-  const selection = asRecord(asRecord(await response.json().catch(() => undefined))?.modelSelection)
+  const body = asRecord(await response.json().catch(() => undefined))
+  const effort = effortBlockers(body?.effortLevels, configuration)
+  const selection = asRecord(body?.modelSelection)
   if (selection?.status === "unsupported") {
-    return {
+    return [{
       code: "model_unavailable",
       detail: `The ${configuration.harness.id} harness selects its own model and would ignore ${configuration.model.modelID}`,
-    }
+    }, ...effort]
   }
   const models = Array.isArray(selection?.models) ? selection.models : []
-  if (models.length === 0) return null
-  const offered = models.some((model) =>
+  const offered = models.length === 0 || models.some((model) =>
     isRecord(model)
     && model.providerId === configuration.model.providerID
     && model.modelId === configuration.model.modelID)
-  return offered ? null : {
-    code: "model_unavailable",
-    detail: `${configuration.model.providerID}/${configuration.model.modelID} is not offered by the ${configuration.harness.id} harness here`,
+  return [
+    ...(offered ? [] : [{
+      code: "model_unavailable" as const,
+      detail: `${configuration.model.providerID}/${configuration.model.modelID} is not offered by the ${configuration.harness.id} harness here`,
+    }]),
+    ...effort,
+  ]
+}
+
+/**
+ * Only a `resolved` catalog refuses an effort. `unresolved` is a harness whose
+ * model catalog has not answered yet and `unsupported` one whose adapter
+ * reports no effort control at all — including OpenCode and Pi, whose provider
+ * catalog carries no per-model variants — so a preset refused on either would
+ * be refused on silence rather than on what the harness said.
+ */
+function effortBlockers(value: unknown, configuration: ModelConfiguration): StartBlocker[] {
+  const catalog = harnessEffortCatalog(value)
+  if (!configuration.effort || catalog?.status !== "resolved") return []
+  if (harnessEffortVerdict(catalog, configuration.model.modelID, configuration.effort) !== "refused") return []
+  const levels = catalog.models.find((model) => model.modelID === configuration.model.modelID)?.levels ?? []
+  return [{
+    code: "effort_unsupported",
+    detail: `The ${configuration.harness.id} harness does not run ${configuration.model.modelID} at effort ${configuration.effort}; ${
+      levels.length > 0 ? `it accepts ${levels.join(", ")}` : "it accepts no effort for that model"
+    }`,
+  }]
+}
+
+function harnessEffortCatalog(value: unknown): HarnessEffortLevels | undefined {
+  const row = asRecord(value)
+  const status = row?.status
+  if (status !== "resolved" && status !== "unresolved" && status !== "unsupported") return undefined
+  const models = Array.isArray(row?.models) ? row.models : []
+  return {
+    status,
+    models: models.flatMap((model) => {
+      const entry = asRecord(model)
+      const modelID = typeof entry?.modelID === "string" ? entry.modelID : undefined
+      if (!modelID) return []
+      const levels = Array.isArray(entry?.levels) ? entry.levels.filter((level) => typeof level === "string") : []
+      return [{ modelID, levels }]
+    }),
   }
 }
 
@@ -438,8 +490,7 @@ async function resolveStart(
     throw error
   }
   if (target && blockers.length === 0) {
-    const blocker = await configurationBlocker(target, composed.configuration)
-    if (blocker) blockers.push(blocker)
+    blockers.push(...await configurationBlockers(target, composed.configuration))
   }
 
   const currentLink = "currentLink" in command ? command.currentLink : null
@@ -448,6 +499,7 @@ async function resolveStart(
     ok: true,
     target,
     configuration: composed.configuration,
+    group: startModelGroup(command.preset),
     instructions: composed.text,
     handoff,
     preview: {
@@ -577,6 +629,7 @@ async function startSession(
         model: resolved.configuration.model,
         ...(resolved.configuration.effort ? { variant: resolved.configuration.effort } : {}),
         instructions: resolved.instructions,
+        group: resolved.group,
       }),
     })
     if (!created.ok) {

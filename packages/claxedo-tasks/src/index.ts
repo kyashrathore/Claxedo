@@ -59,11 +59,14 @@ export {
   startDigest,
   startFirstMessage,
   startInstructions,
+  startModelGroup,
   startOriginId,
   type StartDigestInput,
   type StartFirstMessageInput,
   type StartInstructions,
   type StartInstructionsInput,
+  type StartModelGroup,
+  type StartModelGroupEntry,
 } from "./start"
 
 export { createMemoryTasksStore } from "./stores/memory"

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { utf8ByteLength } from "@claxedo/helpers/string"
 import { TASKS_BOUNDS, type Preset, type Task } from "./contracts"
 import { primaryConfiguration, refusalOf } from "./test-support/harness"
-import { START_ORIGIN_PREFIX, startDigest, startFirstMessage, startInstructions, startOriginId } from "./start"
+import { START_ORIGIN_PREFIX, startDigest, startFirstMessage, startInstructions, startModelGroup, startOriginId } from "./start"
 
 function preset(overrides: Partial<Preset> = {}): Preset {
   return {
@@ -219,6 +219,34 @@ describe("startDigest", () => {
     ]
     for (const change of changes) {
       expect(await startDigest(change)).not.toBe(base)
+    }
+  })
+})
+
+describe("startModelGroup", () => {
+  test("carries every configured slot, and an unset effort as no field at all", () => {
+    const group = startModelGroup(preset())
+    expect(group).toEqual({
+      primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "claude-sonnet" } },
+      review: { harness: { id: "codex", access: "native" }, model: { providerID: "anthropic", modelID: "claude-sonnet" }, effort: "high" },
+    })
+    expect("effort" in (group.primary ?? {})).toBe(false)
+  })
+
+  test("names no slot the preset left unconfigured", () => {
+    expect(Object.keys(startModelGroup(preset({ configurations: { primary: primaryConfiguration() } })))).toEqual(["primary"])
+  })
+
+  test("resolves the same models the instruction block describes", () => {
+    const chosen = preset()
+    const group = startModelGroup(chosen)
+    for (const slot of ["primary", "review"] as const) {
+      const entry = group[slot]
+      expect(startInstructions({ preset: chosen, slot }).configuration).toMatchObject({
+        harness: entry?.harness,
+        model: entry?.model,
+        effort: entry?.effort ?? null,
+      })
     }
   })
 })

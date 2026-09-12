@@ -2,7 +2,9 @@ import { utf8ByteLength } from "@claxedo/helpers/string"
 import {
   TASKS_BOUNDS,
   type ConfigurationSlot,
+  type HarnessReference,
   type ModelConfiguration,
+  type ModelReference,
   type Preset,
   type PresetPlacement,
   type Task,
@@ -83,6 +85,32 @@ function describeGroup(preset: Preset, slot: ConfigurationSlot, configuration: M
     "",
     "Starting another configuration is the user's action, not this session's; nothing here switches models on its own.",
   ].join("\n")
+}
+
+export type StartModelGroupEntry = {
+  harness: HarnessReference
+  model: ModelReference
+  /** Absent where the preset set none, so the model's own default stands. */
+  effort?: string
+}
+
+export type StartModelGroup = Partial<Record<ConfigurationSlot, StartModelGroupEntry>>
+
+/**
+ * The same group `describeGroup` renders as prose, in the shape a session
+ * retains. A delegation naming a slot resolves it from here; reading it back
+ * out of the prose would resolve whatever the sentence happened to look like.
+ */
+export function startModelGroup(preset: Preset): StartModelGroup {
+  const group: StartModelGroup = {}
+  for (const [slot, configuration] of configurationEntries(preset)) {
+    group[slot] = {
+      harness: configuration.harness,
+      model: configuration.model,
+      ...(configuration.effort === null ? {} : { effort: configuration.effort }),
+    }
+  }
+  return group
 }
 
 /** Cuts on a character boundary: a byte slice through a multi-byte sequence decodes to U+FFFD. */
