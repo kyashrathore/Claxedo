@@ -1,7 +1,7 @@
 import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
 import {
-  SUBAGENT_SPAWN_TOOL_NAMES,
+  toolNameAliases,
   type AgentContentPart,
   type AgentPresentationMessage,
 } from "@claxedo/agent-runtime-contract"
@@ -53,8 +53,10 @@ const FACES = {
 
 type FaceKey = keyof typeof FACES
 
+const isFaceKey = (value: string): value is FaceKey => Object.hasOwn(FACES, value)
+
 const facesOfKind = (kind: string) =>
-  (Object.keys(FACES) as FaceKey[]).filter((key) => FACES[key].kind === kind)
+  Object.keys(FACES).filter(isFaceKey).filter((key) => FACES[key].kind === kind)
 
 /** Selecting a pairing writes body/heading/mono plus size, leading and tracking at once. */
 const PAIRINGS = {
@@ -71,6 +73,8 @@ const PAIRINGS = {
 } as const satisfies Record<string, { label: string; body: FaceKey; heading: FaceKey; mono: FaceKey; size: number; lh: number; track: number }>
 
 type PairingKey = keyof typeof PAIRINGS
+
+const isPairingKey = (value: string): value is PairingKey => Object.hasOwn(PAIRINGS, value)
 
 const HEADING_SCALES = {
   flat: undefined,
@@ -397,9 +401,7 @@ const LEVERS: Lever[] = [
     css: (s) => {
       if (s.listIndent === "shipped") return ""
       const step = s.listIndent === "uniform24" ? 24 : 20
-      return (
-        `${PROSE} :is(ul,ol){padding-left:${step}px}` + `\n${PROSE} li > :is(ul,ol){padding-left:${step}px}`
-      )
+      return `${PROSE} :is(ul,ol){padding-left:${step}px}\n${PROSE} li > :is(ul,ol){padding-left:${step}px}`
     },
   },
   {
@@ -410,12 +412,13 @@ const LEVERS: Lever[] = [
     origin: "ui/src/styles/theme.css:2 (--font-family-sans)",
     control: {
       kind: "segment",
-      options: (Object.keys(PAIRINGS) as PairingKey[]).map((key) => ({ value: key, label: PAIRINGS[key].label })),
+      options: Object.keys(PAIRINGS).filter(isPairingKey).map((key) => ({ value: key, label: PAIRINGS[key].label })),
     },
     apply: (value) => {
-      const preset = PAIRINGS[value as PairingKey]
+      if (!isPairingKey(value)) return {}
+      const preset = PAIRINGS[value]
       return {
-        pairing: value as PairingKey,
+        pairing: value,
         bodyFace: "auto",
         headingFace: "auto",
         monoFace: "auto",
@@ -650,12 +653,22 @@ function parseRgb(value: string): [number, number, number] | undefined {
   return [r, g, b]
 }
 
-function composite(fg: [number, number, number], alpha: number, bg: [number, number, number]) {
-  return fg.map((c, i) => Math.round(alpha * c + (1 - alpha) * bg[i]!)) as [number, number, number]
+function composite(
+  fg: [number, number, number],
+  alpha: number,
+  bg: [number, number, number],
+): [number, number, number] {
+  const over = (channel: number, under: number) => Math.round(alpha * channel + (1 - alpha) * under)
+  return [over(fg[0], bg[0]), over(fg[1], bg[1]), over(fg[2], bg[2])]
 }
 
-function blendToward(from: [number, number, number], to: [number, number, number], amount: number) {
-  return from.map((c, i) => Math.round(c + (to[i]! - c) * amount)) as [number, number, number]
+function blendToward(
+  from: [number, number, number],
+  to: [number, number, number],
+  amount: number,
+): [number, number, number] {
+  const step = (start: number, end: number) => Math.round(start + (end - start) * amount)
+  return [step(from[0], to[0]), step(from[1], to[1]), step(from[2], to[2])]
 }
 
 type Probe = {
@@ -822,6 +835,11 @@ function Census(props: { label: string; value: number; note?: string }) {
   )
 }
 
+const SPAWN_TOOL_NAMES = [
+  "task",
+  ...toolNameAliases().filter(([, target]) => target === "task").map(([alias]) => alias),
+]
+
 function FoldRule(props: { title: string; tools: string[] }) {
   return (
     <div style={{ "margin-bottom": "6px" }}>
@@ -834,14 +852,14 @@ function FoldRule(props: { title: string; tools: string[] }) {
 function TranscriptLab() {
   const [state, setState] = createStore<LabState>({ ...SHIPPED })
 
-  /* LEVERS is heterogeneous, so a lever's key and its control's value lose their
-     correlation here. Each control only ever emits a value from its own lever. */
+  /* Every LabState field holds a string or a number, so this call typechecks for any
+     lever; only the control's own option list keeps the value in its key's range. */
   const setLever = (lever: Lever, value: string | number) => {
     if (lever.apply && typeof value === "string") {
       setState(lever.apply(value, state))
       return
     }
-    setState(lever.key, value as LabState[typeof lever.key])
+    setState(lever.key, value)
   }
   const [holding, setHolding] = createSignal(false)
   const [showDiff, setShowDiff] = createSignal(false)
@@ -1293,7 +1311,7 @@ function TranscriptLab() {
               />
               <FoldRule title="work group · runs of 2+" tools={["everything not named below"]} />
               <FoldRule title="standalone · never folded into a run" tools={[...STANDALONE_TOOLS]} />
-              <FoldRule title="agent row · runs of 2+" tools={[...SUBAGENT_SPAWN_TOOL_NAMES]} />
+              <FoldRule title="agent row · any run length" tools={SPAWN_TOOL_NAMES} />
               <FoldRule title="hidden · never rendered" tools={[...HIDDEN_TOOLS]} />
               <div style={{ "margin-top": "7px", color: "rgba(255,255,255,0.24)" }}>
                 Everything else — text, reasoning, question, permission, mcp, file, patch — renders standalone and

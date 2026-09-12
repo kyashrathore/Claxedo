@@ -91,7 +91,7 @@ describe("prompt Stop results", () => {
         session: {
           abort: async () => {
             if (failure === "transport") throw new Error("Stop request failed")
-            return { data: { ok: false as const, status: failure as "failed" | "recovering", message: "Stop request failed" } }
+            return { data: { ok: false as const, status: failure, message: "Stop request failed" } }
           },
           status: async () => { reads++; return { data: {} } },
         },

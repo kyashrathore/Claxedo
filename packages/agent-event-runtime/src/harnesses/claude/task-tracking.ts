@@ -18,7 +18,7 @@ export function applyClaudeTaskResult(
   input: Record<string, unknown>,
   result: Record<string, unknown> | undefined,
 ): Record<string, ClaudeTrackedTask> | undefined {
-  if (!result) return
+  if (!result) return undefined
   if (name === "TaskCreate") {
     const created = asRecord(result.task)
     const id = text(created?.id)
@@ -28,16 +28,16 @@ export function applyClaudeTaskResult(
   }
   if (name === "TaskList" && Array.isArray(result.tasks)) {
     const rows = result.tasks.map(task)
-    if (rows.some((row) => !row)) return
+    if (rows.some((row) => !row)) return undefined
     return Object.fromEntries(rows.map((row) => [row!.id, row!]))
   }
   if (name === "TaskGet") {
     const row = task(result.task)
     if (row) return { ...current, [row.id]: row }
   }
-  if (name !== "TaskUpdate" || result.success !== true) return
+  if (name !== "TaskUpdate" || result.success !== true) return undefined
   const id = text(result.taskId)
-  if (!id) return
+  if (!id) return undefined
   const status = text(asRecord(result.statusChange)?.to)
   if (status === "deleted") {
     const next = { ...current }
@@ -45,9 +45,9 @@ export function applyClaudeTaskResult(
     return next
   }
   const previous = current[id]
-  if (!previous) return
+  if (!previous) return undefined
   const fields = Array.isArray(result.updatedFields) ? result.updatedFields : []
   const description = fields.includes("subject") ? text(input.subject) : undefined
-  if (!status && !description) return
+  if (!status && !description) return undefined
   return { ...current, [id]: { ...previous, ...(status ? { status } : {}), ...(description ? { description } : {}) } }
 }

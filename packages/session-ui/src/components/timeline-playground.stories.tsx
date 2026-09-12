@@ -35,6 +35,7 @@ const keysOf = <T extends object>(record: T) =>
  * A fixture part is built before it is attached to a message, so `messageID` starts empty
  * and `appendParts` stamps the owning message when it stores the part.
  */
+const SESSION_ID = "playground-session"
 const partIds = (id: string = uid()) => ({ id, sessionID: SESSION_ID, messageID: "" })
 
 // ---------------------------------------------------------------------------
@@ -466,7 +467,6 @@ const TOOL_SAMPLES = {
 // ---------------------------------------------------------------------------
 // Fake data generators
 // ---------------------------------------------------------------------------
-const SESSION_ID = "playground-session"
 const DEFAULT_SESSION = { id: SESSION_ID, title: "Timeline Playground" }
 
 function record(value: unknown): value is Record<string, unknown> {
