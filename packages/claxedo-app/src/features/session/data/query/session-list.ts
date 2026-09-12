@@ -89,11 +89,7 @@ function mergeSessionListResponses(input: {
     : input.append
       ? mergeSessionListItems(input.current.items, input.page.items)
       : mergeSessionListItems(input.page.items, input.current.items)
-  const items = reorder(
-    merged,
-    !input.append && input.page.view.sort === "updated_desc",
-    input.page.view.sort,
-  )
+  const items = input.append ? [...merged] : reorder(merged, input.page.view.sort)
   return {
     ...input.page,
     items,
@@ -307,7 +303,7 @@ function bootstrapSessionListResponse(query: SessionListQuery): SessionListRespo
     view: {
       scope: query.scope,
       groupBy: query.groupBy ?? "none",
-      sort: "updated_desc",
+      sort: query.sort ?? "updated_desc",
       limit: query.limit ?? 0,
     },
     items: [],
@@ -319,6 +315,7 @@ function prependCreatedSessionListRow(
   response: SessionListResponse | undefined,
   query: SessionListQuery,
   row: SessionNavigationRow,
+  sort: SessionListResponse["view"]["sort"],
 ): SessionListResponse {
   const current = response ?? bootstrapSessionListResponse(query)
   const existing = current.items ?? []
@@ -330,7 +327,11 @@ function prependCreatedSessionListRow(
   const without = existing.filter((item) => item.sessionId !== row.sessionId)
   return {
     ...current,
-    items: [row, ...without],
+    // Sorted rather than prepended: a session an agent created carries no human
+    // turn, so under `human_turn_desc` it belongs below every session the reader
+    // has spoken to rather than on top of them. Leading the list before the sort
+    // keeps it first among the rows it ties with, which is where creation puts it.
+    items: reorder([row, ...without], sort),
     totalKnown: current.totalKnown === undefined
       ? without.length + 1
       : current.totalKnown - (existing.length - without.length) + 1,
@@ -364,7 +365,7 @@ export function upsertCreatedSessionListRow(input: {
     if (!scopedRow || !rowMatchesSessionListQuery(scopedRow, listQuery)) continue
     setSessionListQueryData(
       key,
-      (current) => prependCreatedSessionListRow(current, listQuery, scopedRow),
+      (current) => prependCreatedSessionListRow(current, listQuery, scopedRow, sessionListQuerySort(key, current)),
     )
   }
 }
@@ -470,6 +471,12 @@ type SessionListUpdate = {
   workspaceId?: string
   title?: string
   updatedAt?: number
+  /**
+   * Only the submit path may set this. It is what the list orders on, so a
+   * caller that stamps it for an agent's turn, a wake or a completion moves the
+   * row under a reader who did not speak to the session.
+   */
+  lastHumanTurnAt?: number
 }
 
 export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
@@ -480,18 +487,16 @@ export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
     if (!isSessionListQueryKey(key)) continue
     setSessionListQueryData(key, (response) => {
       if (!response) return response
-      // `updated_desc` is the list's contract for surfacing content edits, and
-      // this reconcile can move a row's `updatedAt` — so those rows have to be
-      // re-ordered, not just rewritten in place. Without this an auto-titled
-      // session stayed at whatever index it was first inserted at while
-      // claiming a brand-new timestamp: observed live as a 30-second-old
-      // "Greeting" sitting at position 6, below rows 12-29 minutes older than it.
+      // A rewrite that moves the key the entry is ordered by has to be re-ordered
+      // too, not just written in place: an auto-titled session otherwise stayed at
+      // whatever index it was first inserted at while claiming a brand-new
+      // timestamp — observed live as a 30-second-old "Greeting" sitting at
+      // position 6, below rows 12-29 minutes older than it.
       //
-      // Guarded on the order this entry is held in so a list ordered by
-      // `created_desc` (stable on visit) is left exactly as the server sent
-      // it. Also skip reordering when the update did not change `updatedAt`.
+      // Asked of the key rather than of the sort, so an update that leaves the
+      // ordering key alone — a title under `human_turn_desc`, anything at all
+      // under `created_desc` — cannot move a row.
       const sort = sessionListQuerySort(query.queryKey, response)
-      const shouldReorder = sort === "updated_desc"
       const nextItems = response.items
         ? reconcileUpdatedSessionListRows(response.items, input)
         : undefined
@@ -501,19 +506,19 @@ export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
           items: reconcileUpdatedSessionListRows(group.items, input),
         }))
         : undefined
-      const itemsMoved = shouldReorder && nextItems
-        && updatedAtChanged(response.items ?? [], nextItems, input)
-      const groupsMoved = shouldReorder && nextGroups
+      const itemsMoved = nextItems
+        && sortKeyChanged(response.items ?? [], nextItems, input, sort)
+      const groupsMoved = nextGroups
         && nextGroups.some((group, index) =>
-          updatedAtChanged(response.groups?.[index]?.items ?? [], group.items, input))
+          sortKeyChanged(response.groups?.[index]?.items ?? [], group.items, input, sort))
       return {
         ...response,
         ...(nextItems ? {
-          items: itemsMoved ? reorder(nextItems, true, sort) : nextItems,
+          items: itemsMoved ? reorder(nextItems, sort) : nextItems,
         } : {}),
         ...(nextGroups ? {
           groups: groupsMoved
-            ? nextGroups.map((group) => ({ ...group, items: reorder(group.items, true, sort) }))
+            ? nextGroups.map((group) => ({ ...group, items: reorder(group.items, sort) }))
             : nextGroups,
         } : {}),
       }
@@ -522,31 +527,54 @@ export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
 }
 
 /**
- * Re-sort newest-first, but only when the caller confirmed the view is
- * `updated_desc`. Sorted as a stable pass over a copy: rows whose `updatedAt`
- * ties keep the server's relative order, so this never reshuffles a list it
- * had no reason to touch.
+ * A sort's key for one row, most significant first — the same tuple the server
+ * orders and pages on, so a client-side rewrite lands a row where the next
+ * refetch will also put it.
+ *
+ * The one definition of what each order means on this side of the wire: the
+ * cache appliers below and the composed source in `session-source.ts`, which
+ * assembles a page out of several servers' answers, both read it. A second copy
+ * would let a section that merges runtimes order differently from one that does
+ * not, which is invisible until someone has both.
+ *
+ * A session the reader has never prompted keys on 0 under `human_turn_desc`,
+ * which sorts it below every session they have.
  */
-function reorder(
-  rows: readonly SessionNavigationRow[],
-  sorted: boolean,
-  sort: SessionListResponse["view"]["sort"] = "updated_desc",
-) {
-  // A copy either way: the caller stores the result in a mutable `items` field,
-  // and handing back the readonly input required asserting the readonly away.
-  if (!sorted || sort !== "updated_desc") return rows.slice()
-  return [...rows].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+export function sessionListSortKey(row: SessionNavigationRow, sort: SessionListResponse["view"]["sort"]) {
+  if (sort === "human_turn_desc") return [row.lastHumanTurnAt ?? 0, row.createdAt ?? 0]
+  if (sort === "created_desc") return [row.createdAt ?? 0]
+  return [row.updatedAt ?? 0]
 }
 
-function updatedAtChanged(
+/**
+ * Re-sort into the order the cache entry is held in, as a stable pass over a
+ * copy: rows whose key ties keep the server's relative order, since the client
+ * does not apply the server's `sessionRef` tiebreak and reshuffling ties would
+ * move rows for no reason.
+ */
+function reorder(rows: readonly SessionNavigationRow[], sort: SessionListResponse["view"]["sort"]) {
+  return [...rows].sort((a, b) => {
+    const left = sessionListSortKey(a, sort)
+    const right = sessionListSortKey(b, sort)
+    for (const [index, value] of left.entries()) {
+      const other = right[index] ?? 0
+      if (other !== value) return other - value
+    }
+    return 0
+  })
+}
+
+function sortKeyChanged(
   before: readonly SessionNavigationRow[],
   after: readonly SessionNavigationRow[],
   input: SessionListUpdate,
+  sort: SessionListResponse["view"]["sort"],
 ) {
   const prev = before.find((row) => matchesSessionListRow(row, input))
   const next = after.find((row) => matchesSessionListRow(row, input))
   if (!prev || !next) return false
-  return (prev.updatedAt ?? 0) !== (next.updatedAt ?? 0)
+  const nextKey = sessionListSortKey(next, sort)
+  return sessionListSortKey(prev, sort).some((value, index) => value !== nextKey[index])
 }
 
 function reconcileUpdatedSessionListRows(
@@ -559,6 +587,7 @@ function reconcileUpdatedSessionListRows(
       ...row,
       title: input.title ?? row.title,
       updatedAt: input.updatedAt ?? row.updatedAt,
+      ...(input.lastHumanTurnAt !== undefined ? { lastHumanTurnAt: input.lastHumanTurnAt } : {}),
     }
   })
 }

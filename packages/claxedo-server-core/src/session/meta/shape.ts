@@ -58,6 +58,19 @@ export function root(input: string, by: Map<string, { parentID?: string }>, seen
   return root(parentID, by, seen)
 }
 
+/**
+ * The later of a stored and an incoming human-turn stamp, `null` for "never".
+ *
+ * Only ever moves forward: an engine reconnecting with a snapshot taken before
+ * the reader's last prompt must not erase it, and the session list orders on
+ * this column.
+ */
+export function laterHumanTurn(incoming: number | null | undefined, stored: number | null | undefined) {
+  if (incoming === null || incoming === undefined) return stored ?? null
+  if (stored === null || stored === undefined) return incoming
+  return Math.max(incoming, stored)
+}
+
 export function sessionModel(input: unknown): { providerID: string; modelID: string } | undefined {
   const row = asRecord(input)
   const providerID = txt(row?.providerID) ?? txt(row?.provider_id)

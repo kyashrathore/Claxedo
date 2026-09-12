@@ -146,7 +146,7 @@ export type ControlSessionNavigationListQuery = {
   environment?: readonly string[]
   git?: readonly string[]
   search?: string
-  sort?: "updated_desc" | "created_desc"
+  sort?: "updated_desc" | "created_desc" | "human_turn_desc"
   limit: number
   cursor?: string
 }

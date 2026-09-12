@@ -19,6 +19,7 @@ import {
   fetchSessionListPage,
   mergeSessionListItems,
   sessionListQueryKey,
+  sessionListSortKey,
   type SessionListQuery,
   type SessionListResponse,
 } from "../query/session-list"
@@ -333,6 +334,7 @@ function userHostedNavigationRow(
   const time = asRecord(item?.time)
   const createdAt = asFiniteNumber(time?.created) ?? 0
   const updatedAt = asFiniteNumber(time?.updated) ?? createdAt
+  const lastHumanTurnAt = asFiniteNumber(time?.lastHumanTurn)
   const archivedAt = asFiniteNumber(time?.archived)
   const owner = owners.get(sessionId)
   return {
@@ -350,6 +352,7 @@ function userHostedNavigationRow(
     ...(source.projectId ? { projectId: source.projectId } : {}),
     createdAt,
     updatedAt,
+    ...(lastHumanTurnAt !== undefined ? { lastHumanTurnAt } : {}),
     ...(archivedAt ? { archivedAt } : {}),
     tags: [],
     attachments: [],
@@ -387,9 +390,18 @@ function sortSessionRows(
   rows: readonly SessionNavigationRow[],
   sort: NonNullable<SessionListQuery["sort"]>,
 ): SessionNavigationRow[] {
-  return [...rows].sort((a, b) => sort === "created_desc"
-    ? b.createdAt - a.createdAt || b.sessionRef.localeCompare(a.sessionRef)
-    : b.updatedAt - a.updatedAt || b.sessionRef.localeCompare(a.sessionRef))
+  // `sessionRef` breaks ties the way the server's own listing does. This builds
+  // the page rather than re-ordering one the server built, so it needs the total
+  // order, not just the key.
+  return [...rows].sort((a, b) => {
+    const left = sessionListSortKey(a, sort)
+    const right = sessionListSortKey(b, sort)
+    for (const [index, value] of left.entries()) {
+      const other = right[index] ?? 0
+      if (other !== value) return other - value
+    }
+    return b.sessionRef.localeCompare(a.sessionRef)
+  })
 }
 
 function pageOffset(cursor: string | undefined) {

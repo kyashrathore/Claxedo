@@ -487,7 +487,7 @@ async function installSeededWorkspace(
     const url = new URL(route.request().url())
     const limit = Number(url.searchParams.get("limit") ?? "5") || 5
     return route.fulfill(json(JSON.stringify({
-      view: { scope: url.searchParams.get("scope") ?? "workspace", groupBy: "none", sort: "updated_desc", limit },
+      view: { scope: url.searchParams.get("scope") ?? "workspace", groupBy: "none", sort: url.searchParams.get("sort") ?? "updated_desc", limit },
       items: [{
         type: "session",
         sessionRef: SESSION_ID,

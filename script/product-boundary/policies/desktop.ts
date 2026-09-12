@@ -406,8 +406,9 @@ export const desktopRendererUnsigned: Policy = {
   // +1 module (2026-09-11): review-workspace-tab-button, the workspace panel's
   // one tab chip. It splits out of review-workspace.tsx, which the subagent tab
   // pushed past the 800-line budget, and imports only what that file already
-  // did. It took the slot session-bands held before the rail's ordering moved to
-  // the server's `created_desc` list. No new package edge. Measured 1059 / 57.
+  // did. It sits in the slot `session-order-hold` opened and never recorded,
+  // which `session-bands` inherited one-for-one and freed when the rail's
+  // ordering moved to the server's list. No new package edge. Measured 1059 / 57.
   // +3 modules (2026-09-12): the same three owners app-local reviews —
   // workspace-panel-working-set, pending-prompt-registry, timeline-link-open.
   // No new package edge. Measured at a clean checkout: 1061 / 57.

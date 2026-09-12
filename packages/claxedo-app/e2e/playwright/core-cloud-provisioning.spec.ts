@@ -468,7 +468,7 @@ async function installCloudRuntimeMock(
           }]
         : []
       return json(route, {
-        view: { scope: url.searchParams.get("scope") ?? "workspace", groupBy: url.searchParams.get("groupBy") ?? "none", sort: "updated_desc", limit: Number(url.searchParams.get("limit") ?? "5") },
+        view: { scope: url.searchParams.get("scope") ?? "workspace", groupBy: url.searchParams.get("groupBy") ?? "none", sort: url.searchParams.get("sort") ?? "updated_desc", limit: Number(url.searchParams.get("limit") ?? "5") },
         items: rows,
         totalKnown: rows.length,
       })

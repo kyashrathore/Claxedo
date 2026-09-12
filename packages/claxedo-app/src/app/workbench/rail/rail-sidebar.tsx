@@ -137,20 +137,21 @@ const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const SESSION_GROUP_PAGE_SIZE = 5
 /**
- * The rail's order: newest CREATED first, and a row never moves again.
+ * The rail's order: the session the reader spoke to most recently first, then
+ * the ones they have never prompted, newest created first.
  *
- * `updatedAt` ordering put the session you just messaged at the top, which is
- * the reported defect — "as soon as i click second session it moves to first,
- * feels like auto jumped back this is very bad". Ordering by the reader's own
- * last message only trades agent churn for their own, since alternating between
- * two sessions then swaps the top two rows every time.
+ * A row moves only when the reader sends it a message. Ordering by `updatedAt`
+ * moves a row under the pointer aiming at it — "as soon as i click second session
+ * it moves to first, feels like auto jumped back this is very bad" — because
+ * every actor's turn advances that column: an agent working, a wake, a subagent,
+ * a scheduled run, a turn completing. `lastHumanTurnAt` is written only for a
+ * turn whose `actorKind` is `human`, which comes from the request's auth claims,
+ * so none of those can move a row.
  *
- * `createdAt` never changes: the runtime writes it once and its upsert never
- * updates the column. `reconcileUpdatedSessionListQueryData` reads the sort off
- * the query key and leaves a `created_desc` list exactly as the server sent it,
- * so nothing re-orders a row behind the reader either.
+ * Every section requests this, and `reconcileUpdatedSessionListQueryData` reads
+ * the sort off the query key, so one order owns every session list surface.
  */
-const SESSION_LIST_SORT_DEFAULT = "created_desc" as const
+const SESSION_LIST_SORT_DEFAULT = "human_turn_desc" as const
 type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
 
 export function SessionListNotice(props: {
@@ -280,10 +281,15 @@ type Row = SessionItem & {
   active?: boolean
 }
 
+/**
+ * A section header, not its rows: `count` is how many inventory sessions match
+ * the current filters, which is all the header needs to decide whether to open
+ * itself. The rows it renders come from its own paginated server query.
+ */
 type Section = {
   id: string
   label: string
-  rows: Row[]
+  count: number
   project: ProjectItem
   workspaceDir: string
 }
@@ -291,7 +297,7 @@ type Section = {
 type ProjectSection = {
   id: string
   label: string
-  rows: Row[]
+  count: number
   project: ProjectItem
 }
 
@@ -305,7 +311,9 @@ type Cluster = {
 type GlobalSection = {
   id: string
   label: string
-  rows: Row[]
+  count: number
+  /** The directory Global Chat's own sessions live in, when any have loaded. */
+  worktree?: string
 }
 
 function sessionNavigationRefForRow(session: Row) {
@@ -551,97 +559,23 @@ export function RailSidebar(props: RailSidebarProps) {
     }
   }
 
-  const rows = createMemo<Row[]>(() =>
-    props.projects.flatMap((project) =>
-      (sessionInventory().byProject[project.id] ?? []).map((item) => {
-        const projectedTitle = projectedSessionTitleSelection({
-          sessionId: item.id,
-          directory: item.directory,
-          workspaceId: item.workspaceId,
-        })
-        const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
-        return {
-          id: item.id,
-          get title() { return title() },
-          time: item.time.updated ?? item.time.created,
-          directory: item.directory,
-          workspaceId: item.workspaceId,
-          projectID: item.projectID,
-          projectName: projectLabel(project),
-          workspaceName: workspaceName(item.directory, project),
-          tags: item.tags,
-          attachments: item.attachments,
-          environment: item.environment,
-          git: item.git,
-          archived: item.archived,
-          status: state(item),
-          project,
-        }
-      }),
-    ),
+  /**
+   * Every inventory session in view, as the filter bar and the section counts
+   * read them.
+   *
+   * Inventory rows, not display rows: the lists on screen come from the paginated
+   * server query inside each section block, and this side of the rail answers only
+   * "how many rows match" and "which status/environment/git values can be filtered
+   * on". A display row costs a reactive title memo per session, so building one to
+   * answer a count would allocate per session for nothing rendered.
+   */
+  const inventorySessions = createMemo<SessionInventoryRow[]>(() =>
+    props.projects.flatMap((project) => sessionInventory().byProject[project.id] ?? []),
   )
 
-  const globalRows = createMemo<Row[]>(() =>
-    props.globalChatEnabled
-      ? sessionInventory().global.map((item) => {
-        const projectedTitle = projectedSessionTitleSelection({ sessionId: item.id, central: true })
-        const title = createMemo(() => sessionRowTitle(
-            item.title,
-            projectedTitle.title(),
-            item.time.updated,
-          ))
-        return {
-          id: item.id,
-          sessionRef: `central:${item.id}`,
-          get title() { return title() },
-          time: item.time.updated ?? item.time.created,
-          directory: item.directory,
-          workspaceId: item.workspaceId,
-          projectID: item.projectID,
-          projectName: "Global Chat",
-          workspaceName: "Global Chat",
-          tags: item.tags,
-          attachments: item.attachments,
-          environment: item.environment,
-          git: item.git,
-          archived: item.archived,
-          status: state(item),
-          project: {
-            id: "global",
-            worktree: item.directory,
-            name: "Global Chat",
-          },
-        }
-      })
-      : [],
+  const globalInventorySessions = createMemo<SessionInventoryRow[]>(() =>
+    props.globalChatEnabled ? sessionInventory().global : [],
   )
-
-  const row = (item: SessionInventoryRow, project: ProjectItem, directory?: string): Row => {
-    const projectedTitle = projectedSessionTitleSelection({
-      sessionId: item.id,
-      directory: directory ?? item.directory,
-      workspaceId: item.workspaceId,
-    })
-    const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
-    return {
-      id: item.id,
-      get title() { return title() },
-      time: item.time.updated ?? item.time.created,
-      directory: directory ?? item.directory,
-      workspaceId: item.workspaceId,
-      projectID: item.projectID,
-      projectName: projectLabel(project),
-      workspaceName: item.workspaceName ?? workspaceName(item.workspaceId ?? item.directory, project),
-      tags: item.tags,
-      attachments: item.attachments,
-      environment: item.environment,
-      git: item.git,
-      ...(item.owner ? { owner: item.owner } : {}),
-      archived: item.archived,
-      status: state(item),
-      project,
-    }
-  }
 
   const navigationSessionRow = (
     item: SessionNavigationRow,
@@ -684,19 +618,21 @@ export function RailSidebar(props: RailSidebarProps) {
     }
   }
 
-  const allRows = createMemo(() => [...rows(), ...globalRows()])
-  const statusOptions = createMemo(() => uniq(allRows().flatMap((item) => item.status).filter((item) => item !== "general")))
-  const environmentOptions = createMemo(() => uniq(allRows().flatMap((item) => env(item))))
-  const gitOptions = createMemo(() => uniq(allRows().flatMap((item) => git(item))))
+  const allSessions = createMemo(() => [...inventorySessions(), ...globalInventorySessions()])
+  const statusOptions = createMemo(() => uniq(allSessions().flatMap((item) => state(item)).filter((item) => item !== "general")))
+  const environmentOptions = createMemo(() => uniq(allSessions().flatMap((item) => env(item))))
+  const gitOptions = createMemo(() => uniq(allSessions().flatMap((item) => git(item))))
 
-  const match = (item: Row) => {
+  const match = (item: SessionInventoryRow) => {
     if (view().archived === "active" && item.archived) return false
     if (view().archived === "archived" && !item.archived) return false
-    if (view().status.length && !view().status.some((hit) => item.status.includes(hit))) return false
+    if (view().status.length && !view().status.some((hit) => state(item).includes(hit))) return false
     if (view().environment.length && !view().environment.some((hit) => env(item).includes(hit))) return false
     if (view().git.length && !view().git.some((hit) => git(item).includes(hit))) return false
     return true
   }
+
+  const matchCount = (sessions: readonly SessionInventoryRow[]) => sessions.filter(match).length
 
   const dirs = (project: ProjectItem) => {
     const all = new Set(projectWorkspaceDirectories(project))
@@ -707,14 +643,14 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const globals = createMemo<GlobalSection[]>(() => {
-    const rows = globalRows()
-      .filter(match)
-      .sort((a, b) => (b.time ?? 0) - (a.time ?? 0))
-    if (!props.globalChatEnabled && !rows.length) return []
+    const sessions = globalInventorySessions()
+    const count = matchCount(sessions)
+    if (!props.globalChatEnabled && !count) return []
     return [{
       id: "global",
       label: "Global Chat",
-      rows,
+      count,
+      ...(sessions[0]?.directory ? { worktree: sessions[0].directory } : {}),
     }]
   })
 
@@ -722,9 +658,7 @@ export function RailSidebar(props: RailSidebarProps) {
     props.projects.map((project) => ({
       id: project.id,
       label: projectLabel(project),
-      rows: (sessionInventory().byProject[project.id] ?? [])
-        .map((item) => row(item, project))
-        .filter(match),
+      count: matchCount(sessionInventory().byProject[project.id] ?? []),
       project,
     })),
   )
@@ -748,9 +682,7 @@ export function RailSidebar(props: RailSidebarProps) {
         return {
           id: dir,
           label: workspaceName(dir, project),
-          rows: (group?.sessions ?? [])
-            .map((item) => row(item, project, group?.directory ?? dir))
-            .filter(match),
+          count: matchCount(group?.sessions ?? []),
           project,
           workspaceDir: dir,
         }
@@ -1063,15 +995,6 @@ export function RailSidebar(props: RailSidebarProps) {
     const directory = sessionDirectory(session)
     const time = session.time ?? 0
     return {
-    const directory = sessionDirectory(session)
-    const links = sessionRowLinks({
-      sessionId: session.id,
-      sessionRef: sessionNavigationRefForRow(session),
-      workspaceDirectory: directory,
-      workspaceId: workspaceSessionBacking(session, directory)?.workspaceId,
-      localServer: server.isLocal(),
-      sessionStore: window.__CLAXEDO__?.sessionStore,
-    })
       type: "session",
       sessionRef: sessionNavigationRefForRow(session),
       sessionId: session.id,
@@ -1112,8 +1035,6 @@ export function RailSidebar(props: RailSidebarProps) {
       kind !== "local"
     )
     const label = [
-      ...(links.link ? { link: links.link } : {}),
-      ...(links.deepLink ? { deepLink: links.deepLink } : {}),
       kind === "local" ? undefined : runtimeLabel(kind),
       showWorkspace ? workspaceLabel : undefined,
     ].filter((item): item is string => !!item).join(" · ")
@@ -1142,6 +1063,15 @@ export function RailSidebar(props: RailSidebarProps) {
     const metadata = sessionMetadata(session, input?.showMetadata)
     const time = session.time
     const inputActive = input?.active
+    const directory = sessionDirectory(session)
+    const links = sessionRowLinks({
+      sessionId: session.id,
+      sessionRef: sessionNavigationRefForRow(session),
+      workspaceDirectory: directory,
+      workspaceId: workspaceSessionBacking(session, directory)?.workspaceId,
+      localServer: server.isLocal(),
+      sessionStore: window.__CLAXEDO__?.sessionStore,
+    })
     return {
       source: sessionSourceRow(session),
       get title() {
@@ -1182,6 +1112,8 @@ export function RailSidebar(props: RailSidebarProps) {
         return relativeTime(time)
       },
       ...(metadata ? { metadata } : {}),
+      ...(links.link ? { link: links.link } : {}),
+      ...(links.deepLink ? { deepLink: links.deepLink } : {}),
     }
   }
   const rowForNavigation = (rows: readonly Row[], item: SessionNavigationDisplayRow) =>
@@ -1643,11 +1575,11 @@ export function RailSidebar(props: RailSidebarProps) {
     })
     const sessionListLoadingMore = list.loadingMore
     const sessionListPageError = list.pageError
-    const globalProject = createMemo<ProjectItem>(() => section.rows[0]?.project ?? {
+    const globalProject = createMemo<ProjectItem>(() => ({
       id: "global",
-      worktree: "global",
+      worktree: section.worktree ?? "global",
       name: "Global Chat",
-    })
+    }))
     const sectionRows = createMemo(() =>
       list.loaded() ? list.rows().map((item) => navigationSessionRow(item, globalProject(), "global")) : [])
     let visibleRows = sectionRows()
@@ -1801,8 +1733,8 @@ export function RailSidebar(props: RailSidebarProps) {
       sort: SESSION_LIST_SORT_DEFAULT,
       limit: SESSION_GROUP_PAGE_SIZE,
     }))
-    const [_open, setOpen] = createSignal(section.rows.length > 0)
-    const [autoOpened, setAutoOpened] = createSignal(section.rows.length > 0)
+    const [_open, setOpen] = createSignal(section.count > 0)
+    const [autoOpened, setAutoOpened] = createSignal(section.count > 0)
     const [manuallyToggled, setManuallyToggled] = createSignal(false)
     const open = createMemo(() => _open())
     const list = createRailSectionSessionList({
@@ -2006,7 +1938,7 @@ export function RailSidebar(props: RailSidebarProps) {
     // 150ms after the header stops being the pointer/keyboard target.
     const headerEngagement = createHoverEngagement({ releaseDelayMs: 150 })
     const directories = createMemo(() => dirs(section.project))
-    const [open, setOpen] = createSignal(section.rows.length > 0 || projectMatches(section.project))
+    const [open, setOpen] = createSignal(section.count > 0 || projectMatches(section.project))
     const active = createMemo(() => projectMatches(section.project))
     const projectSessionListQuery = createMemo<SessionListQuery>(() => ({
       scope: "project",
@@ -2215,7 +2147,7 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const WorkspaceGroupBlock = (group: Cluster) => {
-    const [open, setOpen] = createSignal(projectMatches(group.project) || group.items.some((item) => item.rows.length > 0))
+    const [open, setOpen] = createSignal(projectMatches(group.project) || group.items.some((item) => item.count > 0))
     const active = createMemo(() => projectMatches(group.project))
 
     createEffect(() => {

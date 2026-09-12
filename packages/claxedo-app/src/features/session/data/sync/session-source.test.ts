@@ -305,6 +305,28 @@ describe("a re-prompted session's place in the list", () => {
       .toEqual(["ses_old", "ses_new"])
   })
 
+  test("a user-hosted section the rail asked for human_turn_desc orders on the reader's last turn", async () => {
+    const { request } = recordingFetch({
+      [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
+      "https://relay.test/workspaces/ws_1/session": () => Response.json([
+        // Busiest by `updated`, but the reader has never prompted it: an agent has
+        // been working in it the whole time.
+        { id: "ses_agents", title: "agents only", directory: HOST_DIR, time: { created: 3, updated: 9_000 } },
+        { id: "ses_quiet", title: "quiet", directory: HOST_DIR, time: { created: 1, updated: 2, lastHumanTurn: 20 } },
+        { id: "ses_spoken", title: "spoken to", directory: HOST_DIR, time: { created: 2, updated: 5, lastHumanTurn: 30 } },
+      ]),
+    })
+    const options = sessionSourceQueryOptions({
+      baseUrl: CONTROL,
+      source: { kind: "user-hosted", workspaceId: "ws_1", projectId: "prj_1" },
+      query: railQuery({ sort: "human_turn_desc" }),
+      request,
+    })
+    const page = await options.queryFn!({} as never) as SessionListResponse
+
+    expect(page.items?.map((item) => item.sessionId)).toEqual(["ses_spoken", "ses_quiet", "ses_agents"])
+  })
+
   test("a central row whose updatedAt moves is re-sorted in a composed project's section", async () => {
     const { request } = recordingFetch({
       [`${CONTROL}/api/control/session-list`]: () => Response.json({

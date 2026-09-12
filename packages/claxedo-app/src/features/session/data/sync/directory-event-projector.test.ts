@@ -102,37 +102,25 @@ describe("directory event shell query projector", () => {
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_query", "todo"))).toBeUndefined()
   })
 
-  test("message.completed bumps session list updatedAt for reorder", () => {
-    const key = queryKeys.shell.sessionList(undefined, { scope: "workspace", directory: "/tmp/ws", archived: "active", sort: "updated_desc", limit: 50, groupBy: "none" })
-    queryClient.setQueryData(key, {
-      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 },
-      items: [
-        { sessionId: "ses_b", directory: "/tmp/ws", updatedAt: 200, type: "session", sessionRef: "local:/tmp/ws:session:ses_b", tags: [], attachments: [] },
-        { sessionId: "ses_a", directory: "/tmp/ws", updatedAt: 100, type: "session", sessionRef: "local:/tmp/ws:session:ses_a", tags: [], attachments: [] },
-      ],
-    })
+  // Nothing the agent side of the stream reports may move a row: the list orders
+  // on the reader's own last message, which only the submit path writes.
+  test.each(["message.completed", "session.idle", "session.status"])(
+    "%s does not move the session it names",
+    (type) => {
+      const key = queryKeys.shell.sessionList(undefined, { scope: "workspace", directory: "/tmp/ws", archived: "active", sort: "human_turn_desc", limit: 50, groupBy: "none" })
+      queryClient.setQueryData(key, {
+        view: { scope: "workspace", groupBy: "none", sort: "human_turn_desc", limit: 50 },
+        items: [
+          { sessionId: "ses_b", directory: "/tmp/ws", createdAt: 20, updatedAt: 200, lastHumanTurnAt: 200, type: "session", sessionRef: "local:/tmp/ws:session:ses_b", tags: [], attachments: [] },
+          { sessionId: "ses_a", directory: "/tmp/ws", createdAt: 10, updatedAt: 100, lastHumanTurnAt: 100, type: "session", sessionRef: "local:/tmp/ws:session:ses_a", tags: [], attachments: [] },
+        ],
+      })
 
-    apply({ type: "message.completed", properties: { sessionID: "ses_a" } })
+      apply({ type, properties: { sessionID: "ses_a" } })
 
-    const next = queryClient.getQueryData<{ items: Array<{ sessionId: string; updatedAt: number }> }>(key)
-    expect(next?.items?.map((row) => row.sessionId)).toEqual(["ses_a", "ses_b"])
-    expect(next?.items?.[0]?.updatedAt).toBeGreaterThan(100)
-  })
-
-  test("session.idle leaves the list order alone", () => {
-    const key = queryKeys.shell.sessionList(undefined, { scope: "workspace", directory: "/tmp/ws", archived: "active", sort: "updated_desc", limit: 50, groupBy: "none" })
-    queryClient.setQueryData(key, {
-      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 50 },
-      items: [
-        { sessionId: "ses_b", directory: "/tmp/ws", updatedAt: 200, type: "session", sessionRef: "local:/tmp/ws:session:ses_b", tags: [], attachments: [] },
-        { sessionId: "ses_a", directory: "/tmp/ws", updatedAt: 100, type: "session", sessionRef: "local:/tmp/ws:session:ses_a", tags: [], attachments: [] },
-      ],
-    })
-
-    apply({ type: "session.idle", properties: { sessionID: "ses_a" } })
-
-    const next = queryClient.getQueryData<{ items: Array<{ sessionId: string; updatedAt: number }> }>(key)
-    expect(next?.items?.map((row) => row.sessionId)).toEqual(["ses_b", "ses_a"])
-    expect(next?.items?.find((row) => row.sessionId === "ses_a")?.updatedAt).toBe(100)
-  })
+      const next = queryClient.getQueryData<{ items: Array<{ sessionId: string; lastHumanTurnAt?: number }> }>(key)
+      expect(next?.items?.map((row) => row.sessionId)).toEqual(["ses_b", "ses_a"])
+      expect(next?.items?.find((row) => row.sessionId === "ses_a")?.lastHumanTurnAt).toBe(100)
+    },
+  )
 })

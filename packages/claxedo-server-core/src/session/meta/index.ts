@@ -14,6 +14,7 @@ import type {
 import {
   host,
   ids,
+  laterHumanTurn,
   now,
   root,
   sessionMetaSyncRow,
@@ -173,11 +174,7 @@ export async function putSessionMeta(
       : contentChanged
         ? stamp
         : prev?.updated_at ?? stamp
-    // Only ever moves forward: a stale snapshot from a reconnecting engine must not
-    // erase a turn the reader has since started.
-    const lastHumanTurnAt = input.lastHumanTurnAt !== undefined
-      ? Math.max(input.lastHumanTurnAt, prev?.last_human_turn_at ?? 0)
-      : prev?.last_human_turn_at ?? null
+    const lastHumanTurnAt = laterHumanTurn(input.lastHumanTurnAt, prev?.last_human_turn_at)
     const update = {
       session_id: sessionID,
       workspace_id: workspaceID,
@@ -318,7 +315,7 @@ export async function listSessionMetas(input?: {
  */
 export async function listSessionNavigationMetas(input: SessionMetaNavigationListInput) {
   const where: string[] = ["m.parent_session_id IS NULL"]
-  const params: Array<string | number> = []
+  const params: Array<string | number | null> = []
   if (input.workspaceID) {
     where.push("m.workspace_id = ?")
     params.push(input.workspaceID)
@@ -354,31 +351,19 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
       params.push(item, item, item, item)
     }
   }
-  if (input.band) {
-    // A session only agents have ever driven has no human turn at all, so it belongs
-    // to the settled side rather than being dropped from both.
-    where.push(input.band.side === "active"
-      ? "m.last_human_turn_at IS NOT NULL AND m.last_human_turn_at > ?"
-      : "(m.last_human_turn_at IS NULL OR m.last_human_turn_at <= ?)")
-    params.push(input.band.humanTurnSince)
-  }
-  if (input.cursor) {
-    const sortKey = input.sort === "created_desc" ? "created_at" : "updated_at"
-    const cursorAt = input.sort === "created_desc"
-      ? (input.cursor.createdAt ?? input.cursor.updatedAt)
-      : input.cursor.updatedAt
-    where.push(`(m.${sortKey} < ? OR (m.${sortKey} = ? AND m.session_ref < ?))`)
-    params.push(cursorAt, cursorAt, input.cursor.sessionRef ?? input.cursor.sessionID)
+  const order = navigationOrder(input)
+  if (order.keyset) {
+    where.push(order.keyset.sql)
+    params.push(...order.keyset.params)
   }
 
-  const orderKey = input.sort === "created_desc" ? "created_at" : "updated_at"
   const rows = safeMetaRead("session navigation list", [], () =>
     ClaxedoDB.raw()
       .prepare(`
         SELECT m.session_ref
         FROM claxedo_session_meta m
         WHERE ${where.join(" AND ")}
-        ORDER BY m.${orderKey} DESC, m.session_ref DESC
+        ORDER BY ${order.orderBy}
         LIMIT ?
       `)
       .all(...params, Math.max(0, input.limit))
@@ -389,6 +374,63 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
   return hit
     .map((item) => meta.get(item))
     .filter((item): item is SessionMeta => !!item)
+}
+
+/**
+ * The ORDER BY and the matching keyset predicate, built from one description of
+ * the sort so a page boundary cannot disagree with the order it pages through —
+ * a mismatched cursor drops rows or repeats them, and neither shows up until the
+ * reader scrolls.
+ *
+ * `human_turn_desc` is the session list's order: when the reader last spoke to
+ * the session, then when it was created. A session nobody has ever prompted has
+ * no human turn and sorts below every session that has one, which SQLite's DESC
+ * already does — it orders NULL below every value. The cursor has to say that
+ * explicitly instead, because `NULL < ?` is NULL rather than true, so a plain
+ * comparison would end the listing at the first never-prompted row.
+ */
+function navigationOrder(input: SessionMetaNavigationListInput): {
+  orderBy: string
+  keyset?: { sql: string; params: Array<string | number | null> }
+} {
+  const cursor = input.cursor
+  if (input.sort === "human_turn_desc") {
+    const humanTurnAt = cursor?.lastHumanTurnAt ?? null
+    const createdAt = cursor?.createdAt ?? cursor?.updatedAt ?? 0
+    return {
+      orderBy: "m.last_human_turn_at DESC, m.created_at DESC, m.session_ref DESC",
+      ...(cursor ? {
+        keyset: {
+          sql: `(
+            (? IS NOT NULL AND m.last_human_turn_at IS NULL)
+            OR m.last_human_turn_at < ?
+            OR (m.last_human_turn_at IS ? AND (
+              m.created_at < ? OR (m.created_at = ? AND m.session_ref < ?)
+            ))
+          )`,
+          params: [
+            humanTurnAt,
+            humanTurnAt,
+            humanTurnAt,
+            createdAt,
+            createdAt,
+            cursor.sessionRef ?? cursor.sessionID,
+          ],
+        },
+      } : {}),
+    }
+  }
+  const column = input.sort === "created_desc" ? "created_at" : "updated_at"
+  const at = input.sort === "created_desc" ? (cursor?.createdAt ?? cursor?.updatedAt ?? 0) : cursor?.updatedAt ?? 0
+  return {
+    orderBy: `m.${column} DESC, m.session_ref DESC`,
+    ...(cursor ? {
+      keyset: {
+        sql: `(m.${column} < ? OR (m.${column} = ? AND m.session_ref < ?))`,
+        params: [at, at, cursor.sessionRef ?? cursor.sessionID],
+      },
+    } : {}),
+  }
 }
 
 export function applySessionMeta(input: Array<Record<string, unknown>>) {
@@ -455,6 +497,7 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
         parent_session_id: item.parent_session_id ?? prev?.parent_session_id ?? null,
         archived_at: item.archived_at,
         updated_at: Math.max(item.updated_at, prev?.updated_at ?? 0),
+        last_human_turn_at: laterHumanTurn(item.last_human_turn_at, prev?.last_human_turn_at),
       }
       db.insert(ClaxedoSessionMetaTable).values({
         ...update,

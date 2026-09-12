@@ -26,6 +26,13 @@ export type SessionNavigationRow = {
   projectId?: string
   createdAt: number
   updatedAt: number
+  /**
+   * When the reader last sent this session a message. The session list orders on
+   * it, so it moves only on their own send — `updatedAt` advances for any actor's
+   * turn. Absent for a session they have never prompted, which sorts below every
+   * session they have.
+   */
+  lastHumanTurnAt?: number
   archivedAt?: number
   tags: string[]
   attachments: Array<{ kind: string; targetId?: string }>

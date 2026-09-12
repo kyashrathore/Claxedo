@@ -240,7 +240,15 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
     if (statusFilter.length > 0) {
       filtered = filtered.filter((item) => (item.tags ?? []).some((tag) => statusFilter.includes(tag)))
     }
-    filtered = [...filtered].sort((a, b) => b.updatedAt - a.updatedAt)
+    // Ordered as the CLIENT asked. A fixture that answered its own order regardless
+    // would pass whatever the rail requested, so the order under test would never be
+    // exercised. These sessions carry no human turn, so `human_turn_desc` falls through
+    // to creation for all of them.
+    const sort = url.searchParams.get("sort")
+    filtered = [...filtered].sort((a, b) =>
+      sort === "created_desc" || sort === "human_turn_desc"
+        ? b.createdAt - a.createdAt
+        : b.updatedAt - a.updatedAt)
 
     const page_ = filtered.slice(offset, offset + limit)
     const nextCursor = offset + limit < filtered.length ? String(offset + limit) : undefined
@@ -249,7 +257,7 @@ async function installSessionTreeFixtures(page: Page, opts: { dir: string; proje
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        view: { scope: url.searchParams.get("scope") ?? "workspace", groupBy: "none", sort: "updated_desc", limit },
+        view: { scope: url.searchParams.get("scope") ?? "workspace", groupBy: "none", sort: url.searchParams.get("sort") ?? "updated_desc", limit },
         items: page_.map(toNavRow),
         nextCursor,
         totalKnown: filtered.length,

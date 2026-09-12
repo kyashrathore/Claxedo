@@ -14,15 +14,13 @@ import {
 import { shellDataKeys } from "@/platform/sync/keys"
 import { setSessionDiffQueryData } from "./queries"
 import { reconcileUpdatedSessionListQueryData } from "../query/session-list"
-import { sessionEventInfoId, sessionEventSummary, sessionEventWorkspaceId } from "./session-event-info"
+import { sessionEventInfoId, sessionEventSummary } from "./session-event-info"
 import { isRecord, readField, readString } from "@/lib/record"
 
 type DirectoryEvent = {
   type: string
   properties?: unknown
 }
-
-type WorkspaceDirectory = string
 
 /**
  * Payload guards for the directory event bus.
@@ -101,43 +99,6 @@ function updateSessionRequests(
   })
 }
 
-function nonEmpty(value: string | undefined) {
-  return value && value.length > 0 ? value : undefined
-}
-
-/**
- * The session a directory event concerns, wherever the producer put it: the
- * lifecycle envelope's `info.id`, a conversation event's `part.sessionID`, or a
- * flat `sessionID`/`sessionId`.
- */
-function sessionIdFromDirectoryEvent(properties: unknown): string | undefined {
-  return sessionEventInfoId(properties)
-    ?? nonEmpty(readString(readField(properties, "part"), "sessionID"))
-    ?? nonEmpty(readString(properties, "sessionID"))
-    ?? nonEmpty(readString(properties, "sessionId"))
-}
-
-/**
- * Advances a row to "just now" for activity the event stream reports without a
- * timestamp of its own. Only real activity may call this: `session.idle` says a
- * session stopped being busy, which the runtime store deliberately records
- * without moving `time.updated` ("Status polls / visit must not reshuffle the
- * session list"), and bumping it here would reorder the list under a user who
- * did nothing but open the session.
- */
-function bumpSessionListActivity(input: { event: DirectoryEvent; directory: WorkspaceDirectory; workspaceId?: string }) {
-  const sessionId = sessionIdFromDirectoryEvent(input.event.properties)
-  if (!sessionId) return
-  const eventWorkspaceId = input.workspaceId ?? sessionEventWorkspaceId(input.event.properties)
-  const signedWorkspaceId = eventWorkspaceId?.startsWith("ws_") ? eventWorkspaceId : undefined
-  reconcileUpdatedSessionListQueryData({
-    sessionId,
-    directory: input.directory,
-    ...(signedWorkspaceId ? { workspaceId: signedWorkspaceId } : {}),
-    updatedAt: Date.now(),
-  })
-}
-
 export function applyDirectoryEventToShellQueries(input: {
   event: DirectoryEvent
   directory: string
@@ -155,10 +116,6 @@ export function applyDirectoryEventToShellQueries(input: {
       if (info.archived) {
         removeSessionShellQueries(info.id)
       }
-      break
-    }
-    case "message.completed": {
-      bumpSessionListActivity(input)
       break
     }
     case "session.deleted": {

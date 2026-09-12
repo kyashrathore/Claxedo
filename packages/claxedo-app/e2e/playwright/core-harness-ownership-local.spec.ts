@@ -468,7 +468,12 @@ test.describe("core harness ownership (local) @core", () => {
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
+        view: {
+          scope: "workspace",
+          groupBy: "none",
+          sort: new URL(route.request().url()).searchParams.get("sort") ?? "updated_desc",
+          limit: 5,
+        },
         items: [{
           type: "session",
           sessionRef: sessionId,

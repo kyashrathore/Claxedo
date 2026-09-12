@@ -47,7 +47,13 @@ async function openTreeAtDirectory(page: Page, dir: string) {
   await expect(page.locator('[data-testid="rail-sidebar"]')).toBeVisible({ timeout: 20_000 })
 }
 
-type FixtureSession = { sessionId: string; title: string; createdAt: number; updatedAt: number }
+type FixtureSession = {
+  sessionId: string
+  title: string
+  createdAt: number
+  updatedAt: number
+  lastHumanTurnAt?: number
+}
 
 /**
  * Minimal stand-in for the paginated `session-list` the rail rows render from. A local copy
@@ -58,6 +64,28 @@ type FixtureSession = { sessionId: string; title: string; createdAt: number; upd
  * independently of whatever the client has cached. That gap is the whole subject of the
  * auto-title scenario.
  */
+type FixtureSort = "updated_desc" | "created_desc" | "human_turn_desc"
+
+function sortValue(input: string | null): FixtureSort {
+  return input === "created_desc" || input === "human_turn_desc" ? input : "updated_desc"
+}
+
+function fixtureSortKey(item: FixtureSession, sort: FixtureSort) {
+  if (sort === "human_turn_desc") return [item.lastHumanTurnAt ?? 0, item.createdAt]
+  if (sort === "created_desc") return [item.createdAt]
+  return [item.updatedAt]
+}
+
+function compareFixtures(a: FixtureSession, b: FixtureSession, sort: FixtureSort) {
+  const left = fixtureSortKey(a, sort)
+  const right = fixtureSortKey(b, sort)
+  for (const [index, value] of left.entries()) {
+    const other = right[index] ?? 0
+    if (other !== value) return other - value
+  }
+  return b.sessionId.localeCompare(a.sessionId)
+}
+
 async function installSessionListFixture(
   page: Page,
   opts: { dir: string; projectId: string; sessions: FixtureSession[] },
@@ -74,6 +102,7 @@ async function installSessionListFixture(
     projectId: opts.projectId,
     createdAt: item.createdAt,
     updatedAt: item.updatedAt,
+    ...(item.lastHumanTurnAt !== undefined ? { lastHumanTurnAt: item.lastHumanTurnAt } : {}),
     tags: [],
     attachments: [],
   })
@@ -81,12 +110,16 @@ async function installSessionListFixture(
   await page.route(sessionListRoute, async (route) => {
     const url = new URL(route.request().url())
     const limit = Number(url.searchParams.get("limit") ?? "5") || 5
-    const items = [...sessions].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, limit)
+    // Answers in the order the CLIENT asked for. A fixture that answered its own
+    // order regardless would pass whatever the rail requested, so the order under
+    // test would never actually be exercised.
+    const sort = sortValue(url.searchParams.get("sort"))
+    const items = [...sessions].sort((a, b) => compareFixtures(a, b, sort)).slice(0, limit)
     return route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
-        view: { scope: url.searchParams.get("scope") ?? "workspace", groupBy: "none", sort: "updated_desc", limit },
+        view: { scope: url.searchParams.get("scope") ?? "workspace", groupBy: "none", sort, limit },
         items: items.map(toNavRow),
         nextCursor: undefined,
       }),
@@ -216,18 +249,32 @@ test.describe("rail — claude native-SDK harness @core", () => {
         [DIR]: { workspaceId: WORKSPACE_ID, kind: "local", directory: DIR, available: true },
       },
     })
-    const fixtures = await installSessionListFixture(page, { dir: DIR, projectId: PROJECT_ID, sessions: [] })
-    await seedProjectAtHome(page, DIR)
-    await openTreeFromHome(page)
-
     const id = "ses_claude_title"
     const now = Date.now()
-    // A newer neighbour, so the session under test does not start at the top and the
-    // reconcile has to re-order the list rather than only rewrite the row's text. A
-    // single-row fixture could only ever catch the text half.
+    // A neighbour the reader spoke to more recently, so the session under test does not
+    // start at the top and the order assertions below have something to be wrong about.
+    // Seeded before the rail's FIRST list fetch, because the create invalidation that
+    // follows does not refetch this section: a neighbour added after it never reaches the
+    // screen, and every `.first()` assertion is then trivially about the only row there.
+    const neighbour = {
+      sessionId: "ses_claude_neighbour",
+      title: "Neighbour",
+      createdAt: now,
+      updatedAt: now + 60_000,
+      lastHumanTurnAt: now + 60_000,
+    }
+    const fixtures = await installSessionListFixture(page, {
+      dir: DIR,
+      projectId: PROJECT_ID,
+      sessions: [neighbour],
+    })
+    await seedProjectAtHome(page, DIR)
+    await openTreeFromHome(page)
+    await expect(sessionRow(page, "ses_claude_neighbour")).toBeVisible({ timeout: 15_000 })
+
     fixtures.setSessions([
-      { sessionId: "ses_claude_neighbour", title: "Neighbour", createdAt: now, updatedAt: now + 60_000 },
-      { sessionId: id, title: "New Session", createdAt: now, updatedAt: now },
+      neighbour,
+      { sessionId: id, title: "New Session", createdAt: now, updatedAt: now, lastHumanTurnAt: now },
     ])
     mock.emitFlat({
       type: "session.lifecycle",
@@ -285,7 +332,8 @@ test.describe("rail — claude native-SDK harness @core", () => {
           directory: DIR,
           title: newTitle,
           version: "local",
-          // Newer than the neighbour, so `updated_desc` must put this row first.
+          // Newer than the neighbour's, so an order keyed on `updated` would put this row
+          // first. The reader has not spoken to it, so the rail's order must not.
           time: { created: now, updated: now + 120_000 },
         },
       },
@@ -295,15 +343,32 @@ test.describe("rail — claude native-SDK harness @core", () => {
 
     await expect(row.locator('[data-slot="session-navigation-title"]')).toHaveText(newTitle, { timeout: 20_000 })
 
-    // …and the row moves. `reconcileUpdatedSessionListRows` has to re-sort, not just
-    // rewrite `updatedAt` in place, or a freshly titled session keeps its old index while
-    // claiming a new timestamp. Asserted on the first rendered row rather than an nth-match
-    // so the failure message names whichever row wrongly outranks it.
+    // …and the row does NOT move. The list orders on when the reader last spoke to a
+    // session; a title resolving and a turn settling are the agent's work, and the
+    // reported defect is exactly a row moving under the pointer aiming at it.
+    // Asserted on the first rendered row so the failure message names whichever row
+    // wrongly outranks the neighbour.
     await expect(page.locator('[data-testid="rail-sidebar-session-row"]').first()).toHaveAttribute(
       "data-session-id",
-      id,
+      "ses_claude_neighbour",
       { timeout: 20_000 },
     )
+
+    // And clicking it does not move it either, which is the report in its own words:
+    // "as soon as i click second session it moves to first".
+    await row.click()
+    await expect(page).toHaveURL(new RegExp(id))
+    await page.waitForTimeout(2_000)
+    await expect(page.locator('[data-testid="rail-sidebar-session-row"]').first()).toHaveAttribute(
+      "data-session-id",
+      "ses_claude_neighbour",
+    )
+
+    // The other half of the requirement — the row DOES move when the reader sends it a
+    // message — is not assertable here: this environment never refetches the section after
+    // its first fetch, so nothing the fixture reports later reaches the screen. The submit
+    // path is the only writer of that stamp and is covered at its own entrypoints in
+    // `submit-rail-workspace.test.ts`.
   })
 
   /**

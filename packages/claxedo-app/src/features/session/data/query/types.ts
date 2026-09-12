@@ -28,12 +28,6 @@ export type SessionInventoryRow = {
   time: {
     created: number
     updated: number
-    /**
-     * When a human last started a turn here — the rail bands on this rather than
-     * `updated`, which any actor's turn advances. Absent for a session only agents
-     * have driven, and for one that predates the field.
-     */
-    lastHumanTurn?: number
   }
 }
 

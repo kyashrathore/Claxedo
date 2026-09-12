@@ -37,18 +37,13 @@ export type SessionMetaNavigationListInput = {
   archived?: "active" | "all" | "archived"
   status?: string[]
   search?: string
-  sort?: "updated_desc" | "created_desc"
-  /**
-   * Which side of the staleness boundary to return. `active` is every session a human
-   * started a turn in since the cutoff, `settled` the rest — the two bands the session
-   * list renders. The caller passes one cutoff for every page of a listing, so a row
-   * cannot change band between page one and page two.
-   */
-  band?: { side: "active" | "settled"; humanTurnSince: number }
+  sort?: "updated_desc" | "created_desc" | "human_turn_desc"
   limit: number
   cursor?: {
     updatedAt: number
     createdAt?: number
+    /** Absent when the cursor row has no human turn, which sorts it below every row that has one. */
+    lastHumanTurnAt?: number
     sessionID: string
     sessionRef?: string
   }

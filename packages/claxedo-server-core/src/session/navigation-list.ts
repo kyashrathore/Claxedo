@@ -5,7 +5,12 @@ export type SessionListScope = "global" | "project" | "workspace"
 export type SessionListGroupBy = "none" | "project" | "workspace"
 export type SessionListArchiveMode = "active" | "all" | "archived"
 
-export type SessionListSort = "updated_desc" | "created_desc"
+/**
+ * `human_turn_desc` is the session list's order: when the reader last spoke to
+ * the session, then creation for the sessions they never have. Nothing an agent
+ * does moves a row, which `updated_desc` cannot promise.
+ */
+export type SessionListSort = "updated_desc" | "created_desc" | "human_turn_desc"
 
 export type SessionListQuery = {
   scope: SessionListScope
@@ -75,6 +80,8 @@ type CursorShape = {
   query: string
   updatedAt: number
   createdAt?: number
+  /** Absent when the cursor row has no human turn, which sorts it below every row that has one. */
+  lastHumanTurnAt?: number
   sessionId: string
   sessionRef?: string
 }
@@ -156,6 +163,7 @@ export function sessionListStorePageFilter(query: SessionListQuery) {
       cursor: {
         updatedAt: cursor.updatedAt,
         ...(cursor.createdAt !== undefined ? { createdAt: cursor.createdAt } : {}),
+        ...(cursor.lastHumanTurnAt !== undefined ? { lastHumanTurnAt: cursor.lastHumanTurnAt } : {}),
         sessionID: cursor.sessionId,
         sessionRef: cursor.sessionRef,
       },
@@ -185,13 +193,7 @@ function pageRows(query: SessionListQuery, rows: SessionNavigationRow[], cursorA
     throw new Error("invalid_session_list_cursor")
   }
   const window = cursor && !cursorApplied
-    ? rows.filter((row) => {
-      const key = query.sort === "created_desc" ? row.createdAt : row.updatedAt
-      const cursorKey = query.sort === "created_desc"
-        ? (cursor.createdAt ?? cursor.updatedAt)
-        : cursor.updatedAt
-      return key < cursorKey || (key === cursorKey && row.sessionRef < (cursor.sessionRef ?? cursor.sessionId))
-    })
+    ? rows.filter((row) => rowAfterCursor(row, cursor, query.sort))
     : rows
   const items = window.slice(0, query.limit)
   const last = items[items.length - 1]
@@ -374,11 +376,47 @@ function valuesMatch(filters: string[], values: string[]) {
   return filters.some((filter) => values.includes(filter))
 }
 
+/**
+ * A sort's key tuple for one row, most significant first. The comparator and the
+ * cursor window both read it, so a page boundary cannot disagree with the order
+ * it pages through — a mismatch drops rows or repeats them, and neither shows up
+ * until the reader scrolls.
+ *
+ * A session nobody has ever prompted keys on 0, which sorts it below every
+ * session that has a human turn — where `ORDER BY last_human_turn_at DESC` puts
+ * its NULL in the store's own listing.
+ */
+function sortKey(
+  row: { createdAt: number; updatedAt: number; lastHumanTurnAt?: number },
+  sort: SessionListSort,
+) {
+  if (sort === "human_turn_desc") return [row.lastHumanTurnAt ?? 0, row.createdAt]
+  if (sort === "created_desc") return [row.createdAt]
+  return [row.updatedAt]
+}
+
 function compareRows(a: SessionNavigationRow, b: SessionNavigationRow, sort: SessionListSort = "updated_desc") {
-  if (sort === "created_desc") {
-    return b.createdAt - a.createdAt || b.sessionRef.localeCompare(a.sessionRef)
+  const left = sortKey(a, sort)
+  const right = sortKey(b, sort)
+  for (const [index, value] of left.entries()) {
+    const other = right[index] ?? 0
+    if (other !== value) return other - value
   }
-  return b.updatedAt - a.updatedAt || b.sessionRef.localeCompare(a.sessionRef)
+  return b.sessionRef.localeCompare(a.sessionRef)
+}
+
+function rowAfterCursor(row: SessionNavigationRow, cursor: CursorShape, sort: SessionListSort) {
+  const key = sortKey(row, sort)
+  const cursorKey = sortKey({
+    createdAt: cursor.createdAt ?? cursor.updatedAt,
+    updatedAt: cursor.updatedAt,
+    ...(cursor.lastHumanTurnAt !== undefined ? { lastHumanTurnAt: cursor.lastHumanTurnAt } : {}),
+  }, sort)
+  for (const [index, value] of key.entries()) {
+    const other = cursorKey[index] ?? 0
+    if (other !== value) return value < other
+  }
+  return row.sessionRef < (cursor.sessionRef ?? cursor.sessionId)
 }
 
 function encodeCursor(query: SessionListQuery, row: SessionNavigationRow) {
@@ -386,6 +424,7 @@ function encodeCursor(query: SessionListQuery, row: SessionNavigationRow) {
     query: querySignature(query),
     updatedAt: row.updatedAt,
     createdAt: row.createdAt,
+    ...(row.lastHumanTurnAt !== undefined ? { lastHumanTurnAt: row.lastHumanTurnAt } : {}),
     sessionId: row.sessionId,
     sessionRef: row.sessionRef,
   } satisfies CursorShape), "utf8").toString("base64url")
@@ -400,7 +439,8 @@ function decodeCursor(value: string): CursorShape {
     typeof parsed.updatedAt !== "number" ||
     typeof parsed.sessionId !== "string" ||
     ("sessionRef" in parsed && typeof parsed.sessionRef !== "string") ||
-    ("createdAt" in parsed && typeof parsed.createdAt !== "number")
+    ("createdAt" in parsed && typeof parsed.createdAt !== "number") ||
+    ("lastHumanTurnAt" in parsed && typeof parsed.lastHumanTurnAt !== "number")
   ) {
     throw new Error("invalid_session_list_cursor")
   }
@@ -435,7 +475,7 @@ function groupByValue(input: string | null): SessionListGroupBy {
 }
 
 function sortValue(input: string | null): SessionListSort {
-  if (input === "created_desc") return "created_desc"
+  if (input === "created_desc" || input === "human_turn_desc") return input
   return "updated_desc"
 }
 

@@ -19,7 +19,7 @@ export const ClaxedoSessionMetaTable = sqliteTable(
     updated_at: integer().notNull(),
     /**
      * When a human last started a turn here — null for a session only agents have
-     * driven, and for every session that predates the column. The session list bands
+     * driven, and for every session that predates the column. The session list orders
      * on this rather than `updated_at`, which any actor's turn advances.
      */
     last_human_turn_at: integer(),
@@ -32,12 +32,16 @@ export const ClaxedoSessionMetaTable = sqliteTable(
     index("claxedo_session_meta_updated_idx").on(table.updated_at),
     index("claxedo_session_meta_workspace_archive_updated_idx").on(table.workspace_id, table.archived_at, table.updated_at, table.session_ref),
     index("claxedo_session_meta_directory_archive_updated_idx").on(table.directory, table.archived_at, table.updated_at, table.session_ref),
-    // The session list orders by creation and bands by staleness, so created_at is the
-    // ordering column and last_human_turn_at rides along as a residual filter.
     index("claxedo_session_meta_workspace_archive_created_idx").on(table.workspace_id, table.archived_at, table.created_at, table.session_ref),
     index("claxedo_session_meta_directory_archive_created_idx").on(table.directory, table.archived_at, table.created_at, table.session_ref),
     index("claxedo_session_meta_project_archive_created_idx").on(table.project_id, table.archived_at, table.created_at, table.session_ref),
     index("claxedo_session_meta_project_archive_updated_idx").on(table.project_id, table.archived_at, table.updated_at, table.session_ref),
+    // The session list's own order, whole: scope, then archive, then
+    // `last_human_turn_at DESC, created_at DESC, session_ref DESC` — the three
+    // keys its keyset cursor walks.
+    index("claxedo_session_meta_workspace_archive_human_turn_idx").on(table.workspace_id, table.archived_at, table.last_human_turn_at, table.created_at, table.session_ref),
+    index("claxedo_session_meta_directory_archive_human_turn_idx").on(table.directory, table.archived_at, table.last_human_turn_at, table.created_at, table.session_ref),
+    index("claxedo_session_meta_project_archive_human_turn_idx").on(table.project_id, table.archived_at, table.last_human_turn_at, table.created_at, table.session_ref),
   ],
 )
 

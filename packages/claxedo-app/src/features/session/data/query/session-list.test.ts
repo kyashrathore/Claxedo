@@ -851,3 +851,127 @@ describe("session list merge + updated reconcile", () => {
     expect(items?.[0]?.updatedAt).toBe(300)
   })
 })
+
+describe("human_turn_desc", () => {
+  const listKey = () => queryKeys.shell.sessionList(undefined, {
+    scope: "workspace",
+    workspaceId: "ws_1",
+    directory: "/repo",
+    limit: 5,
+    sort: "human_turn_desc",
+  })
+  const spoken = (
+    id: string,
+    input: { createdAt: number; lastHumanTurnAt?: number },
+  ): NonNullable<SessionListResponse["items"]>[number] => ({
+    type: "session",
+    sessionRef: `workspace:ws_1:session:${id}`,
+    sessionId: id,
+    title: id,
+    directory: "/repo",
+    workspaceId: "ws_1",
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+    ...(input.lastHumanTurnAt !== undefined ? { lastHumanTurnAt: input.lastHumanTurnAt } : {}),
+    tags: [],
+    attachments: [],
+  })
+  const seed = (items: NonNullable<SessionListResponse["items"]>) => {
+    queryClient.setQueryData(listKey(), {
+      ...response(),
+      view: { ...response().view, sort: "human_turn_desc", limit: 5 },
+      items,
+    })
+  }
+  const order = () =>
+    queryClient.getQueryData<SessionListResponse>(listKey())?.items?.map((item) => item.sessionId)
+
+  test("the reader's own send moves the row to the top", () => {
+    seed([
+      spoken("ses_1", { createdAt: 1, lastHumanTurnAt: 30 }),
+      spoken("ses_2", { createdAt: 2, lastHumanTurnAt: 20 }),
+    ])
+
+    reconcileUpdatedSessionListQueryData({
+      sessionId: "ses_2",
+      directory: "/repo",
+      workspaceId: "ws_1",
+      updatedAt: 40,
+      lastHumanTurnAt: 40,
+    })
+
+    expect(order()).toEqual(["ses_2", "ses_1"])
+  })
+
+  test("an agent's turn advancing updatedAt, and a title landing, move nothing", () => {
+    seed([
+      spoken("ses_1", { createdAt: 1, lastHumanTurnAt: 30 }),
+      spoken("ses_2", { createdAt: 2, lastHumanTurnAt: 20 }),
+    ])
+
+    reconcileUpdatedSessionListQueryData({
+      sessionId: "ses_2",
+      directory: "/repo",
+      workspaceId: "ws_1",
+      title: "Auto-titled",
+      updatedAt: 9_000,
+    })
+
+    const items = queryClient.getQueryData<SessionListResponse>(listKey())?.items
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_1", "ses_2"])
+    expect(items?.[1]?.title).toBe("Auto-titled")
+    expect(items?.[1]?.updatedAt).toBe(9_000)
+  })
+
+  test("a session the reader has never prompted sorts below every one they have", () => {
+    seed([
+      spoken("never", { createdAt: 9_000 }),
+      spoken("spoken", { createdAt: 1, lastHumanTurnAt: 2 }),
+    ])
+
+    reconcileUpdatedSessionListQueryData({
+      sessionId: "spoken",
+      directory: "/repo",
+      workspaceId: "ws_1",
+      updatedAt: 3,
+      lastHumanTurnAt: 3,
+    })
+
+    expect(order()).toEqual(["spoken", "never"])
+  })
+
+  test("a session an agent created lands among the never-prompted rows, not on top", () => {
+    seed([spoken("spoken", { createdAt: 1, lastHumanTurnAt: 50 })])
+
+    upsertCreatedSessionListRow({
+      row: {
+        sessionId: "ses_spawned",
+        title: "Spawned",
+        directory: "/repo",
+        workspaceId: "ws_1",
+        createdAt: 9_000,
+        updatedAt: 9_000,
+      },
+    })
+
+    expect(order()).toEqual(["spoken", "ses_spawned"])
+  })
+
+  test("the session the reader's own send created lands on top", () => {
+    seed([spoken("spoken", { createdAt: 1, lastHumanTurnAt: 50 })])
+
+    upsertCreatedSessionListRow({
+      row: {
+        sessionId: "ses_sent",
+        title: "Sent",
+        directory: "/repo",
+        workspaceId: "ws_1",
+        createdAt: 60,
+        updatedAt: 60,
+        lastHumanTurnAt: 60,
+      },
+    })
+
+    expect(order()).toEqual(["ses_sent", "spoken"])
+  })
+})

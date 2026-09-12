@@ -57,6 +57,7 @@ export function bumpCreatedSessionRail(input: {
       ...(workspaceId ? { workspaceId } : {}),
       createdAt,
       updatedAt: createdAt,
+      lastHumanTurnAt: createdAt,
     },
   })
   reconcileUpdatedSessionListQueryData({
@@ -64,6 +65,7 @@ export function bumpCreatedSessionRail(input: {
     directory: input.directory,
     ...(workspaceId ? { workspaceId } : {}),
     updatedAt: createdAt,
+    lastHumanTurnAt: createdAt,
   })
 }
 
@@ -78,10 +80,12 @@ export function bumpExistingSessionRail(input: {
     workspaceId: input.workspaceId,
     sessionDirectory: input.directory,
   })
+  const sentAt = Date.now()
   reconcileUpdatedSessionListQueryData({
     sessionId: input.sessionId,
     directory: input.directory,
     ...(workspaceId ? { workspaceId } : {}),
-    updatedAt: Date.now(),
+    updatedAt: sentAt,
+    lastHumanTurnAt: sentAt,
   })
 }

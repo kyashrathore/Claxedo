@@ -2093,13 +2093,31 @@ export class RuntimeStore {
     }
   }
 
+  /**
+   * The stamps and directory `upsertSession` has to be handed back, because it
+   * replaces every column it is given: any handler that writes a session row for
+   * a reason other than the reader speaking to it must pass the existing
+   * `updatedAt` through, or a runtime restart, a recovery or a rediscovery
+   * restamps the row and the session list reorders under a reader who did
+   * nothing. `getSession`'s return is the wire session shape, narrowed here to
+   * what every such handler reads.
+   */
+  private sessionTimes(id: string) {
+    const session = this.getSession(id) as
+      | { directory?: string; time?: { created?: number; updated?: number } }
+      | null
+    return {
+      directory: session?.directory ?? "",
+      created: session?.time?.created,
+      updated: session?.time?.updated,
+    }
+  }
+
   private applyControl(row: Extract<Row, { kind: "control" }>) {
     const control = row.control
     if (control.type === "session.bind") {
       this.db.prepare("DELETE FROM deleted_session WHERE session_id = ?").run(row.sessionId)
-      const existing = this.getSession(row.sessionId) as
-        | { time?: { created?: number; updated?: number } }
-        | null
+      const existing = this.sessionTimes(row.sessionId)
       this.upsertSession({
         id: row.sessionId,
         directory: control.directory,
@@ -2107,9 +2125,8 @@ export class RuntimeStore {
         agentSessionId: control.agentSessionId,
         processKey: control.ownerKey !== undefined ? control.ownerKey : control.processKey,
         parentSessionId: control.parentSessionId,
-        createdAt: control.createdAt ?? existing?.time?.created ?? row.ts,
-        // Re-bind / rediscovery must not bump list order on visit.
-        updatedAt: control.updatedAt ?? existing?.time?.updated ?? row.ts,
+        createdAt: control.createdAt ?? existing.created ?? row.ts,
+        updatedAt: control.updatedAt ?? existing.updated ?? row.ts,
       })
       if (control.workspaceId && control.connectionId && control.upstreamSessionId) {
         this.db
@@ -2136,10 +2153,7 @@ export class RuntimeStore {
       return
     }
     if (control.type === "turn.start") {
-      const session = this.getSession(row.sessionId) as
-        | { directory?: string; time?: { created?: number; updated?: number } }
-        | null
-      const directory = session?.directory ?? ""
+      const directory = this.sessionTimes(row.sessionId).directory
       if (control.userMessageId) {
         this.upsertMessage(
           buildUserMessage({
@@ -2220,19 +2234,13 @@ export class RuntimeStore {
       return
     }
     if (control.type === "session.recovering") {
-      const session = this.getSession(row.sessionId) as
-        | { directory?: string; time?: { created?: number; updated?: number } }
-        | null
+      const session = this.sessionTimes(row.sessionId)
       this.finishTools(row.sessionId, row.ts, control.message)
       this.upsertSession({
         id: row.sessionId,
-        directory: session?.directory ?? "",
-        createdAt: session?.time?.created ?? row.ts,
-        // Recovery is the runtime's own bookkeeping, not the reader speaking to the
-        // session, so it must not restamp it. The idle/status/error handlers already
-        // preserve for the same reason; these three narrowed their `getSession` cast
-        // until the timestamps were out of reach.
-        updatedAt: session?.time?.updated ?? row.ts,
+        directory: session.directory,
+        createdAt: session.created ?? row.ts,
+        updatedAt: session.updated ?? row.ts,
         status: "recovering",
         recoveryError: control.message,
       })
@@ -2248,14 +2256,12 @@ export class RuntimeStore {
     }
     if (control.type === "notice.created") {
       if (control.notice === "recovery_error") {
-        const session = this.getSession(row.sessionId) as
-        | { directory?: string; time?: { created?: number; updated?: number } }
-        | null
+        const session = this.sessionTimes(row.sessionId)
         this.upsertSession({
           id: row.sessionId,
-          directory: session?.directory ?? "",
-          createdAt: session?.time?.created ?? row.ts,
-          updatedAt: session?.time?.updated ?? row.ts,
+          directory: session.directory,
+          createdAt: session.created ?? row.ts,
+          updatedAt: session.updated ?? row.ts,
           recoveryError: control.message,
         })
       }
@@ -2275,19 +2281,13 @@ export class RuntimeStore {
           "UPDATE pending_question SET status = 'stale', updated_at = ? WHERE session_id = ? AND status = 'pending'",
         )
         .run(row.ts, row.sessionId)
-      const session = this.getSession(row.sessionId) as
-        | { directory?: string; time?: { created?: number; updated?: number } }
-        | null
+      const session = this.sessionTimes(row.sessionId)
       this.finishTools(row.sessionId, row.ts, control.message)
       this.upsertSession({
         id: row.sessionId,
-        directory: session?.directory ?? "",
-        createdAt: session?.time?.created ?? row.ts,
-        // Recovery is the runtime's own bookkeeping, not the reader speaking to the
-        // session, so it must not restamp it. The idle/status/error handlers already
-        // preserve for the same reason; these three narrowed their `getSession` cast
-        // until the timestamps were out of reach.
-        updatedAt: session?.time?.updated ?? row.ts,
+        directory: session.directory,
+        createdAt: session.created ?? row.ts,
+        updatedAt: session.updated ?? row.ts,
         status: "recovering",
         recoveryError: control.message,
       })
@@ -2497,9 +2497,7 @@ export class RuntimeStore {
 
   private turnStartEvents(row: TurnStartRow): CompatEvent[] {
     const control = row.control
-    const session = this.getSession(row.sessionId) as
-        | { directory?: string; time?: { created?: number; updated?: number } }
-        | null
+    const directory = this.sessionTimes(row.sessionId).directory
     return [
       sessionStatus(row.sessionId, { type: "busy" }),
       ...(control.userMessageId
@@ -2528,7 +2526,7 @@ export class RuntimeStore {
           parentID: control.userMessageId ?? control.parentMessageId ?? row.sessionId,
           agent: control.agent,
           model: control.model,
-          directory: session?.directory ?? "",
+          directory,
           created: row.ts,
         }),
       ),

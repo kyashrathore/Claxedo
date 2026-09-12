@@ -2643,4 +2643,34 @@ describe("session ordering timestamps", () => {
     const after = store.getSession("s1") as { time?: { lastHumanTurn?: number } } | null
     assert.equal(after?.time?.lastHumanTurn, 222)
   })
+
+  void it("the directory listing carries lastHumanTurn, which is what the session list orders on", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "spoken", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    store.bindSession({ sessionId: "quiet", directory: "/work", agentSessionId: "a2", createdAt: 2 })
+    store.startTurn({
+      sessionId: "spoken",
+      assistantMessageId: "m1",
+      agent: "claude",
+      model: { providerID: "anthropic", modelID: "claude-opus-5" },
+      parts: [{ type: "text", text: "hi" }],
+      actorId: "actor-1",
+      actorKind: "human",
+    })
+    store.startTurn({
+      sessionId: "quiet",
+      assistantMessageId: "m2",
+      agent: "claude",
+      model: { providerID: "anthropic", modelID: "claude-opus-5" },
+      parts: [{ type: "text", text: "wake" }],
+      actorId: "wake-1",
+      actorKind: "agent",
+    })
+
+    const rows = store.listSessions("/work") as Array<{ id: string; time?: { lastHumanTurn?: number } }>
+    const by = new Map(rows.map((row) => [row.id, row.time?.lastHumanTurn]))
+    assert.ok(typeof by.get("spoken") === "number")
+    assert.equal(by.get("quiet"), undefined)
+  })
 })
