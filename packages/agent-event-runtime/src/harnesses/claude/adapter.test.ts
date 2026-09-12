@@ -9,6 +9,7 @@ import {
   claudeSubagentObservations,
   type ClaudeSdkAdapterState,
 } from "./adapter"
+import { createClaudeTaskLedger } from "./task-ledger"
 
 function runtime(initialSnapshot?: RuntimeSnapshot<ClaudeSdkAdapterState>) {
   return createAgentEventRuntime({
@@ -29,7 +30,9 @@ describe("claudeSdkAdapter", () => {
     const ingest = (payload: unknown) => agent.ingest({ source: "claude.sdk.message", payload }).events.flatMap((event) => projection.ingest(event))
     ingest({ type: "assistant", message: { content: [{ type: "tool_use", id: "bash-1", name: "Bash", input: { command: "node work.cjs" } }] } })
     const notification = { type: "system", subtype: "task_notification", task_id: "task-1", tool_use_id: "bash-1", status: failed ? "failed" : "completed", summary: "Run work.cjs", uuid: "done-1" }
-    expect(claudeSubagentObservations(notification)[0]).toMatchObject({ status: failed ? "failed" : "completed" })
+    const ledger = createClaudeTaskLedger()
+    claudeSubagentObservations({ type: "system", subtype: "task_started", task_id: "task-1", tool_use_id: "bash-1", task_type: "local_bash", description: "Run work.cjs", uuid: "start-1" }, ledger)
+    expect(claudeSubagentObservations(notification, ledger)).toEqual([])
     ingest(notification)
     const result = ingest({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "bash-1", content: "actual tool result", is_error: failed }] }, tool_use_result: { stdout: failed ? "" : "actual tool result", stderr: failed ? "actual tool result" : "" } })
     expect(result.at(-1)).toMatchObject({ payload: {
@@ -312,7 +315,7 @@ describe("claudeSdkAdapter", () => {
     }])
   })
 
-  function readImageSession(input: { cwd?: string; filePath: string; data: string }) {
+  function readImageSession(input: { cwd?: string; filePath: string; data: string | string[] }) {
     const agent = runtime()
     const projection = createClientPresentationProjection({ sessionId: "session-1", directory: "/repo", assistantMessageId: "reply-1" })
     const ingest = (payload: unknown) => {
@@ -332,7 +335,9 @@ describe("claudeSdkAdapter", () => {
           type: "tool_result",
           tool_use_id: "tool-read-image-1",
           content: [
-            { type: "image", source: { type: "base64", media_type: "image/png", data: input.data } },
+            ...(Array.isArray(input.data) ? input.data : [input.data]).map((data) => (
+              { type: "image", source: { type: "base64", media_type: "image/png", data } }
+            )),
             { type: "text", text: "This image may contain text." },
             { type: "text", text: "Read 1 image." },
           ],
@@ -484,11 +489,33 @@ describe("claudeSdkAdapter", () => {
           messageID: "reply-1",
           mime: "image/png",
           filename: "screenshot.png",
-          url: "file://docs/screenshot.png",
+          url: "docs/screenshot.png",
           location: { kind: "workspace-file", path: "docs/screenshot.png" },
         }],
       },
     })
+  })
+
+  test("gives every image of a multi-image result its own identity instead of the one path the input named", () => {
+    const second = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    const { events, part } = readImageSession({ cwd: "/repo", filePath: "/repo/docs/screenshot.png", data: [png, second] })
+
+    expect(events).toMatchObject([{
+      type: "tool-output",
+      attachments: [
+        { kind: "inline", mime: "image/png", url: `data:image/png;base64,${png}` },
+        { kind: "inline", mime: "image/png", url: `data:image/png;base64,${second}` },
+      ],
+    }])
+    expect(events[0]).not.toHaveProperty("attachments.0.filename")
+    expect(events[0]).not.toHaveProperty("attachments.1.filename")
+
+    const attachments = part?.type === "tool" && part.state.status === "completed" ? part.state.attachments ?? [] : []
+    expect(attachments.map((attachment) => attachment.url)).toEqual([
+      `data:image/png;base64,${png}`,
+      `data:image/png;base64,${second}`,
+    ])
+    expect(attachments.every((attachment) => !("location" in attachment))).toBe(true)
   })
 
   test("carries a small read outside the session cwd by value", () => {
@@ -510,8 +537,8 @@ describe("claudeSdkAdapter", () => {
     expect(attachment).not.toHaveProperty("location")
   })
 
-  test("drops an oversized read outside the session cwd but keeps its size and text output", () => {
-    const oversized = "A".repeat(TOOL_ATTACHMENT_INLINE_MAX_BYTES)
+  test("drops an oversized read outside the session cwd but keeps the image's own size and text output", () => {
+    const oversized = "A".repeat(TOOL_ATTACHMENT_INLINE_MAX_BYTES + 1)
     const { events, part } = readImageSession({ cwd: "/repo", filePath: "/tmp/huge.png", data: oversized })
 
     expect(events).toMatchObject([{
@@ -522,7 +549,7 @@ describe("claudeSdkAdapter", () => {
         mime: "image/png",
         filename: "huge.png",
         sourcePath: "/tmp/huge.png",
-        bytes: `data:image/png;base64,${oversized}`.length,
+        bytes: 98_304,
       }],
     }])
     expect(part).toMatchObject({
@@ -534,7 +561,7 @@ describe("claudeSdkAdapter", () => {
           mime: "image/png",
           filename: "huge.png",
           url: "file:///tmp/huge.png",
-          location: { kind: "unretained", bytes: `data:image/png;base64,${oversized}`.length },
+          location: { kind: "unretained", bytes: 98_304 },
         }],
       },
     })
@@ -643,6 +670,7 @@ describe("claudeSdkAdapter", () => {
   })
 
   test("U5: normalizes Claude task lifecycle without requiring a tool use id", () => {
+    const ledger = createClaudeTaskLedger()
     expect(claudeSubagentObservations({
       type: "system",
       subtype: "task_started",
@@ -651,7 +679,7 @@ describe("claudeSdkAdapter", () => {
       task_id: "task-1",
       description: "Ambient review",
       subagent_type: "code-reviewer",
-    })).toEqual([{
+    }, ledger)).toEqual([{
       observationId: "claude:task_started:task-start-1",
       harnessExecutionId: "sdk-session-1",
       stableCorrelationId: "task-1",
@@ -670,7 +698,24 @@ describe("claudeSdkAdapter", () => {
       session_id: "sdk-session-1",
       task_id: "task-1",
       patch: { status: "paused", is_backgrounded: true },
-    })).toEqual([])
+    }, ledger)).toEqual([{
+      observationId: "claude:task_updated:task-update-1",
+      harnessExecutionId: "sdk-session-1",
+      stableCorrelationId: "task-1",
+      mode: "background",
+      status: "paused",
+      providerKind: "claude-agent",
+      transcript: { kind: "messages" },
+    }])
+
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "task_updated",
+      uuid: "task-update-2",
+      session_id: "sdk-session-1",
+      task_id: "task-1",
+      patch: { end_time: 17, total_paused_ms: 4 },
+    }, ledger)).toEqual([])
 
     expect(claudeSubagentObservations({
       type: "system",
@@ -680,27 +725,77 @@ describe("claudeSdkAdapter", () => {
       task_id: "task-1",
       status: "stopped",
       summary: "Stopped",
-    })[0]).toMatchObject({ stableCorrelationId: "task-1", status: "killed" })
+    }, ledger)[0]).toMatchObject({ stableCorrelationId: "task-1", status: "killed" })
   })
 
   test("U5: background_tasks_changed is a level signal and spawns no subagent row", () => {
+    const ledger = createClaudeTaskLedger()
     expect(claudeSubagentObservations({
       type: "system",
       subtype: "background_tasks_changed",
       uuid: "background-1",
       session_id: "sdk-session-1",
       tasks: [{ task_id: "task-1", task_type: "local_bash", description: "npm run build" }],
-    })).toEqual([])
+    }, ledger)).toEqual([])
     expect(claudeSubagentObservations({
       type: "system",
       subtype: "background_tasks_changed",
       uuid: "background-2",
       session_id: "sdk-session-1",
       tasks: [],
-    })).toEqual([])
+    }, ledger)).toEqual([])
+  })
+
+  test("U5: a background subagent dropped from the live set gets the terminal it was never sent", () => {
+    const ledger = createClaudeTaskLedger()
+    claudeSubagentObservations({
+      type: "system",
+      subtype: "task_started",
+      uuid: "task-start-agent",
+      session_id: "sdk-session-1",
+      task_id: "task-agent",
+      tool_use_id: "tool-agent-1",
+      description: "Review auth",
+      subagent_type: "code-reviewer",
+    }, ledger)
+    claudeSubagentObservations({
+      type: "system",
+      subtype: "task_started",
+      uuid: "task-start-bash",
+      session_id: "sdk-session-1",
+      task_id: "task-bash",
+      task_type: "local_bash",
+      description: "npm run build",
+    }, ledger)
+    const live = (uuid: string, tasks: Array<{ task_id: string; task_type: string; description: string }>) => claudeSubagentObservations({
+      type: "system",
+      subtype: "background_tasks_changed",
+      uuid,
+      session_id: "sdk-session-1",
+      tasks,
+    }, ledger)
+
+    expect(live("background-1", [
+      { task_id: "task-agent", task_type: "local_agent", description: "Review auth" },
+      { task_id: "task-bash", task_type: "local_bash", description: "npm run build" },
+    ])).toEqual([])
+
+    expect(live("background-2", [{ task_id: "task-bash", task_type: "local_bash", description: "npm run build" }])).toEqual([{
+      observationId: "claude:background_tasks_changed:background-2:task-agent",
+      harnessExecutionId: "sdk-session-1",
+      stableCorrelationId: "task-agent",
+      toolCallId: "tool-agent-1",
+      toolCallRole: "spawn",
+      status: "interrupted",
+      providerKind: "claude-agent",
+      transcript: { kind: "messages" },
+    }])
+
+    expect(live("background-3", [])).toEqual([])
   })
 
   test("U5: only a Task subagent's own lifecycle becomes a subagent row", () => {
+    const ledger = createClaudeTaskLedger()
     expect(claudeSubagentObservations({
       type: "system",
       subtype: "task_started",
@@ -710,7 +805,7 @@ describe("claudeSdkAdapter", () => {
       tool_use_id: "bash-1",
       task_type: "local_bash",
       description: "npm run build",
-    })).toEqual([])
+    }, ledger)).toEqual([])
 
     expect(claudeSubagentObservations({
       type: "system",
@@ -721,7 +816,7 @@ describe("claudeSdkAdapter", () => {
       description: "Summarize the session",
       subagent_type: "housekeeping",
       skip_transcript: true,
-    })).toEqual([])
+    }, ledger)).toEqual([])
 
     expect(claudeSubagentObservations({
       type: "system",
@@ -731,8 +826,28 @@ describe("claudeSdkAdapter", () => {
       task_id: "task-ambient",
       status: "completed",
       summary: "Summarized",
-      skip_transcript: true,
-    })).toEqual([])
+    }, ledger)).toEqual([])
+
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "task_notification",
+      uuid: "task-done-bash",
+      session_id: "sdk-session-1",
+      task_id: "task-bash",
+      tool_use_id: "bash-1",
+      status: "completed",
+      summary: "npm run build finished",
+    }, ledger)).toEqual([])
+
+    expect(claudeSubagentObservations({
+      type: "system",
+      subtype: "task_notification",
+      uuid: "task-done-unknown",
+      session_id: "sdk-session-1",
+      task_id: "task-never-introduced",
+      status: "completed",
+      summary: "Something finished",
+    }, ledger)).toEqual([])
 
     expect(claudeSubagentObservations({
       type: "system",
@@ -743,7 +858,7 @@ describe("claudeSdkAdapter", () => {
       tool_use_id: "bash-1",
       description: "npm run build",
       usage: { total_tokens: 0, tool_uses: 0, duration_ms: 10 },
-    })).toEqual([])
+    }, ledger)).toEqual([])
   })
 
   test("U5: a user message batching several tool results cannot attribute its single agent result", () => {
@@ -759,7 +874,7 @@ describe("claudeSdkAdapter", () => {
         ],
       },
       tool_use_result: { status: "completed", agentId: "agent-42", content: [{ type: "text", text: "first report" }] },
-    })).toEqual([])
+    }, createClaudeTaskLedger())).toEqual([])
 
     expect(claudeSubagentObservations({
       type: "user",
@@ -770,7 +885,7 @@ describe("claudeSdkAdapter", () => {
         content: [{ type: "tool_result", tool_use_id: "tool-agent-1", content: "first report" }],
       },
       tool_use_result: { status: "completed", agentId: "agent-42", content: [{ type: "text", text: "first report" }] },
-    })).toEqual([{
+    }, createClaudeTaskLedger())).toEqual([{
       observationId: "claude:agent-result:single-agent-result:tool-agent-1",
       harnessExecutionId: "sdk-session-1",
       toolCallId: "tool-agent-1",
@@ -1150,7 +1265,7 @@ describe("claudeSdkAdapter", () => {
         }],
       },
     }
-    expect(claudeSubagentObservations(call)).toEqual([])
+    expect(claudeSubagentObservations(call, createClaudeTaskLedger())).toEqual([])
 
     const binding = JSON.stringify({ kind: "claxedo.subagent", subagentKey: "subagent_host", sessionId: "child-9", status: "running" })
     expect(claudeSubagentObservations({
@@ -1162,7 +1277,7 @@ describe("claudeSdkAdapter", () => {
         content: [{ type: "tool_result", tool_use_id: "tool-mcp-spawn-1", content: [{ type: "text", text: binding }] }],
       },
       tool_use_result: [{ type: "text", text: binding }],
-    })).toEqual([{
+    }, createClaudeTaskLedger())).toEqual([{
       observationId: "claude:host-subagent:user-mcp-1:tool-mcp-spawn-1",
       harnessExecutionId: "sdk-session-1",
       subagentKey: "subagent_host",

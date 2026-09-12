@@ -3,6 +3,7 @@ import type { Query } from "@anthropic-ai/claude-agent-sdk"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import type { SdkRuntimeDriverHost, SdkRuntimeTurnInput } from "../shared/sdk-runtime-driver"
 import type { ClaudeSdkDriverOptions } from "./driver"
+import { createClaudeTaskLedger } from "@claxedo/agent-event-runtime/harnesses/claude"
 import {
   claudePluginConfigs,
   CLAUDE_FORWARD_SUBAGENT_TEXT,
@@ -73,6 +74,7 @@ describe("Claude SDK driver", () => {
       parent_tool_use_id: "tool-agent-measurement",
       message: { content: [{ type: "text", text: value }] },
     }))
+    const tasks = createClaudeTaskLedger()
     const ingested: unknown[][] = []
     const input = {
       observeSubagent() {
@@ -85,7 +87,7 @@ describe("Claude SDK driver", () => {
     } as never
 
     for (const message of [...parentMessages, ...childMessages]) {
-      await ingestClaudeSdkMessage(input, message as never)
+      await ingestClaudeSdkMessage(input, message as never, tasks)
     }
 
     const parentFrames = ingested.filter((value) => (value[2] as { kind: string }).kind === "parent")
@@ -106,6 +108,7 @@ describe("Claude SDK driver", () => {
   })
 
   test("admits tool and task observations before routing child-owned SDK messages", async () => {
+    const tasks = createClaudeTaskLedger()
     const observed: unknown[] = []
     const ingested: unknown[][] = []
     const rebound: string[] = []
@@ -135,7 +138,7 @@ describe("Claude SDK driver", () => {
           input: { description: "Review auth", subagent_type: "code-reviewer" },
         }],
       },
-    } as never)
+    } as never, tasks)
     expect(observed).toMatchObject([{
       observation: {
         toolCallId: "tool-agent-1",
@@ -156,7 +159,7 @@ describe("Claude SDK driver", () => {
       tool_use_id: "tool-agent-1",
       description: "Review auth",
       subagent_type: "code-reviewer",
-    } as never)
+    } as never, tasks)
     expect(observed[1]).toMatchObject({
       observation: { stableCorrelationId: "task-1", toolCallId: "tool-agent-1", status: "running" },
       correlationKeys: ["task-1", "tool-agent-1"],
@@ -168,12 +171,13 @@ describe("Claude SDK driver", () => {
       session_id: "sdk-session-1",
       parent_tool_use_id: "tool-agent-1",
       message: { content: [{ type: "tool_use", id: "tool-read-1", name: "Read", input: {} }] },
-    } as never)
+    } as never, tasks)
     expect(ingested[2]?.[2]).toEqual({ kind: "child", correlationKey: "tool-agent-1" })
     expect(rebound).toEqual(["sdk-session-1", "sdk-session-1", "sdk-session-1"])
   })
 
   test("admits the structured Agent identity without parsing the tool-result text", async () => {
+    const tasks = createClaudeTaskLedger()
     const observed: unknown[] = []
     await ingestClaudeSdkMessage({
       observeSubagent(value: unknown) {
@@ -196,7 +200,7 @@ describe("Claude SDK driver", () => {
         content: [{ type: "text", text: "Review complete" }],
         totalTokens: 321,
       },
-    } as never)
+    } as never, tasks)
 
     expect(observed).toMatchObject([{
       observation: {
@@ -241,6 +245,89 @@ describe("Claude SDK driver", () => {
     expect(await turnModelOption("opus[1m]")).toBe("opus[1m]")
   })
 })
+
+  test("carries one task ledger across the turn, so a backgrounded command opens no row and a departed agent settles", async () => {
+    const turn = [
+      {
+        type: "system",
+        subtype: "task_started",
+        uuid: "task-start-bash",
+        session_id: "sdk-session-1",
+        task_id: "task-bash",
+        tool_use_id: "bash-1",
+        task_type: "local_bash",
+        description: "npm run build",
+      },
+      {
+        type: "system",
+        subtype: "task_started",
+        uuid: "task-start-agent",
+        session_id: "sdk-session-1",
+        task_id: "task-agent",
+        tool_use_id: "tool-agent-1",
+        description: "Review auth",
+        subagent_type: "code-reviewer",
+      },
+      {
+        type: "system",
+        subtype: "background_tasks_changed",
+        uuid: "background-1",
+        session_id: "sdk-session-1",
+        tasks: [
+          { task_id: "task-bash", task_type: "local_bash", description: "npm run build" },
+          { task_id: "task-agent", task_type: "local_agent", description: "Review auth" },
+        ],
+      },
+      {
+        type: "system",
+        subtype: "task_notification",
+        uuid: "task-done-bash",
+        session_id: "sdk-session-1",
+        task_id: "task-bash",
+        tool_use_id: "bash-1",
+        status: "completed",
+        summary: "npm run build finished",
+      },
+      {
+        type: "system",
+        subtype: "background_tasks_changed",
+        uuid: "background-2",
+        session_id: "sdk-session-1",
+        tasks: [{ task_id: "task-bash", task_type: "local_bash", description: "npm run build" }],
+      },
+    ]
+    const observed: Array<{ stableCorrelationId?: string; status?: string }> = []
+    const host = {
+      lifecycle: () => createSessionTurnLifecycle(), pendingPermissions: new Map(), pendingQuestions: new Map(),
+      bindSession() {}, getAgentSessionId: () => null, getSessionForAgentSession: () => null,
+      getGoal: () => null, publishGoal() {}, runProviderTurn: async () => true,
+      getSessionConfig: () => ({ harness: { id: "claude", access: "native" } }),
+      updatePermissionState() {},
+    } as unknown as SdkRuntimeDriverHost
+
+    await createClaudeSdkDriver(host, {
+      query: () => Object.assign((async function* () {
+        for (const message of turn) yield message
+      })(), { close() {}, supportedModels: async () => PROBED_MODELS }) as unknown as Query,
+      executable: () => "/fake/claude",
+    }).runTurn({
+      sessionId: "session-1",
+      getAgentSessionId: () => "claude-sdk:session-1",
+      input: { parts: [{ type: "text", text: "hi" }], assistantMessageId: "assistant-1", model: { providerID: "claude", modelID: "opus" } },
+      directory: "/repo", abort: new AbortController(), ingest() {}, associateChild() {},
+      observeSubagent: async (value: { observation: { stableCorrelationId?: string; status?: string } }) => {
+        observed.push({ stableCorrelationId: value.observation.stableCorrelationId, status: value.observation.status })
+        return { event: {} }
+      },
+      rebindAgentSession() {}, model: "",
+    } as unknown as SdkRuntimeTurnInput)
+
+    expect(observed).toEqual([
+      { stableCorrelationId: "task-agent", status: "running" },
+      { stableCorrelationId: "task-agent", status: "interrupted" },
+    ])
+  })
+
 
 // `default` is deliberately not first: the picker must find it by the harness's
 // own marking, not by position.

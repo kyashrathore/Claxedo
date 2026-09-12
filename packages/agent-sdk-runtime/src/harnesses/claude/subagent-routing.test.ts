@@ -2,7 +2,7 @@ import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { executeTestTurn } from "../../test-utils/execution-binding"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
-import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
+import { claudeSdkAdapter, createClaudeTaskLedger } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "../shared/sdk-runtime-adapter"
@@ -10,7 +10,8 @@ import { ingestClaudeSdkMessage } from "./driver"
 
 function claudeDriverFor(messages: unknown[]) {
   return (): SdkRuntimeDriver => ({ ...claudeDriver(), async runTurn(input) {
-    for (const message of messages) await ingestClaudeSdkMessage(input, message as never)
+    const tasks = createClaudeTaskLedger()
+    for (const message of messages) await ingestClaudeSdkMessage(input, message as never, tasks)
   } })
 }
 
@@ -130,7 +131,8 @@ function claudeDriver(): SdkRuntimeDriver {
           modelUsage: { test: { contextWindow: 1000 } },
         },
       ]
-      for (const message of turn) await ingestClaudeSdkMessage(input, message as never)
+      const tasks = createClaudeTaskLedger()
+      for (const message of turn) await ingestClaudeSdkMessage(input, message as never, tasks)
     },
     readRuntimeHealth: () => ({ status: "ok" }),
     configOptions: async () => [],
@@ -329,6 +331,89 @@ describe("Claude native subagent routing", () => {
       .map((event) => event.payload)
     expect(lifecycle.at(-1)).toMatchObject({ subagentKey: "subagent_host", status: "running" })
     expect(lifecycle).not.toContainEqual(expect.objectContaining({ status: "interrupted" }))
+    await adapter.dispose()
+  })
+
+  test("settles a background subagent the live set dropped without a terminal of its own", async () => {
+    const store = createMemoryRuntimeStore()
+    const eventHub = createRuntimeEventHub()
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub,
+      driver: claudeDriverFor([
+        {
+          type: "assistant",
+          uuid: "parent-agent-call",
+          session_id: "claude-parent-thread",
+          parent_tool_use_id: null,
+          message: {
+            content: [{
+              type: "tool_use",
+              id: "tool-agent-1",
+              name: "Agent",
+              input: { description: "Review auth", subagent_type: "code-reviewer", run_in_background: true },
+            }],
+          },
+        },
+        {
+          type: "system",
+          subtype: "task_started",
+          uuid: "task-started-1",
+          session_id: "claude-parent-thread",
+          task_id: "task-1",
+          tool_use_id: "tool-agent-1",
+          description: "Review auth",
+          subagent_type: "code-reviewer",
+        },
+        {
+          type: "system",
+          subtype: "background_tasks_changed",
+          uuid: "background-1",
+          session_id: "claude-parent-thread",
+          tasks: [
+            { task_id: "task-1", task_type: "local_agent", description: "Review auth" },
+            { task_id: "task-bash", task_type: "local_bash", description: "npm run build" },
+          ],
+        },
+        {
+          type: "assistant",
+          uuid: "child-read-call",
+          session_id: "claude-parent-thread",
+          parent_tool_use_id: "tool-agent-1",
+          message: {
+            content: [{ type: "tool_use", id: "tool-child-read-1", name: "Read", input: { file_path: "src/auth.ts" } }],
+          },
+        },
+        {
+          type: "system",
+          subtype: "background_tasks_changed",
+          uuid: "background-2",
+          session_id: "claude-parent-thread",
+          tasks: [{ task_id: "task-bash", task_type: "local_bash", description: "npm run build" }],
+        },
+      ]),
+    })
+    const parent = await adapter.createSession(path.resolve("/repo"))
+
+    for await (const _ of executeTestTurn(adapter, parent.id, {
+      parts: [{ type: "text", text: "Delegate review" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "build",
+      model: { providerID: "claude", modelID: "test" },
+    }, path.resolve("/repo"))) { /* drain */ }
+
+    const lifecycle = runtimeEvents
+      .filter((event) => event.sessionId === parent.id && event.payload.type === "subagent-updated")
+      .map((event) => event.payload)
+    expect(new Set(lifecycle.map((event) => (event as { subagentKey: string }).subagentKey)).size).toBe(1)
+    expect(lifecycle.at(-1)).toMatchObject({ toolCallId: "tool-agent-1", status: "interrupted" })
+    const child = (store.listSessions(path.resolve("/repo")) as Array<{ id: string; parentID?: string }>)
+      .find((session) => session.id !== parent.id)
+    expect(child).toMatchObject({ lastTurn: expect.objectContaining({ status: "cancelled", reason: "interrupted" }) })
+    expect(JSON.stringify(store.getMessages(child!.id))).toContain("tool-child-read-1")
     await adapter.dispose()
   })
 

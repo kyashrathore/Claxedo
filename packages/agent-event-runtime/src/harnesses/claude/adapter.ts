@@ -16,6 +16,7 @@ import { imageAttachment } from "../tool-attachments"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
 import { optionLabels, pathFields, text } from "../../value"
 import { applyClaudeTaskResult, type ClaudeTrackedTask } from "./task-tracking"
+import type { ClaudeTaskLedger, ClaudeTaskRecord } from "./task-ledger"
 
 type ClaudeBlockState = {
   type: "text" | "thinking" | "tool"
@@ -234,12 +235,17 @@ function toolResultImages(block: Record<string, unknown>): Array<{ mime: string;
 /**
  * The read path names the image, and — when it sits under the session cwd —
  * lets the attachment travel as a location instead of 85 KB of base64.
+ *
+ * Only a lone image can be the file the input named. Several of them share nothing but
+ * the call, and the workspace-file branch drops the bytes it carries by value, so a path
+ * handed to each would leave every image pointing at one file with its own pixels gone.
  */
 function resultAttachments(
   images: Array<{ mime: string; data: string }>,
   display: ToolDisplay,
   root: string | undefined,
 ): RuntimeToolAttachment[] {
+  if (images.length !== 1) return images.map((image) => imageAttachment({ ...image, root }))
   const sourcePath = display.filePath ?? display.path
   const filename = sourcePath?.split(/[\\/]/).pop()
   return images.map((image) => imageAttachment({ ...image, filename, sourcePath, root }))
@@ -368,7 +374,7 @@ export function claudeChildCorrelationKey(value: unknown) {
   return text(asRecord(value)?.parent_tool_use_id)
 }
 
-export function claudeSubagentObservations(value: unknown): ClaudeSubagentObservation[] {
+export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLedger): ClaudeSubagentObservation[] {
   const message = asRecord(value)
   if (!message) return []
   const harnessExecutionId = text(message.session_id)
@@ -425,42 +431,104 @@ export function claudeSubagentObservations(value: unknown): ClaudeSubagentObserv
 
   // Every backgrounded Bash command, workflow and housekeeping chore is a task
   // too, and each one admitted here becomes a subagent row with its own chip and
-  // child session. `subagent_type` is the SDK's only marker for a Task-tool
-  // subagent, and `skip_transcript` its only marker for an ambient task the
-  // transcript must not show. A subtype carrying neither — `task_updated`, whose
-  // payload is a task id and a patch — cannot say whose row it patches.
+  // child session. Only `task_started` says which is which — `subagent_type`
+  // names a Task-tool subagent and `skip_transcript` an ambient chore — so every
+  // later frame, which carries the task id alone, is routed by what the ledger
+  // recorded rather than by fields it does not carry.
   switch (message.subtype) {
-    case "task_started":
-      if (!text(message.subagent_type) || message.skip_transcript === true) return []
+    case "task_started": {
+      const taskId = text(message.task_id)
+      if (!taskId) return []
+      const toolUseId = text(message.tool_use_id)
+      const record: ClaudeTaskRecord = {
+        taskId,
+        ...(toolUseId ? { toolUseId } : {}),
+        ...(harnessExecutionId ? { harnessExecutionId } : {}),
+        isAgentTask: !!text(message.subagent_type),
+        skipTranscript: message.skip_transcript === true,
+      }
+      ledger.start(record)
+      if (!admittedTask(record)) return []
       return [taskObservation(message, wrapperId, {
         status: "running",
         description: text(message.description),
         subagentType: text(message.subagent_type),
       })]
+    }
     case "task_progress":
-      if (!text(message.subagent_type)) return []
+      if (!admittedTask(ledger.get(text(message.task_id)))) return []
       return [taskObservation(message, wrapperId, {
         status: "running",
         description: text(message.description),
         subagentType: text(message.subagent_type),
       })]
     case "task_notification":
-      if (message.skip_transcript === true) return []
+      if (!admittedTask(ledger.get(text(message.task_id)))) return []
       return [taskObservation(message, wrapperId, {
         status: message.status === "completed" ? "completed" : message.status === "failed" ? "failed" : "killed",
         description: text(message.summary),
       })]
-    // `SDKBackgroundTasksChangedMessage` replaces a set; its members carry
-    // `task_id`/`task_type`/`description` and nothing that identifies a Task
-    // subagent or its tool call, and the SDK states the payload must not be
-    // correlated with the `task_started`/`task_notification` edges. Read as
-    // edges it minted a row per live background chore, each with a child
-    // session no nested message could ever reach.
+    case "task_updated": {
+      if (!admittedTask(ledger.get(text(message.task_id)))) return []
+      const patch = asRecord(message.patch) ?? {}
+      const status = taskStatus(patch.status)
+      const mode = patch.is_backgrounded === true ? "background" as const : patch.is_backgrounded === false ? "foreground" as const : undefined
+      // The rest of the patch — `end_time`, `total_paused_ms` — is task
+      // bookkeeping no row renders, and an observation carrying none of the
+      // three fields below is a revision the reader cannot act on.
+      if (!status && !mode && !text(patch.description)) return []
+      return [taskObservation(message, wrapperId, {
+        ...(status ? { status } : {}),
+        ...(mode ? { mode } : {}),
+        description: text(patch.description),
+      })]
+    }
+    // `SDKBackgroundTasksChangedMessage` replaces a set of live tasks, and the
+    // SDK offers it so a missed bookend cannot wedge a stale running indicator.
+    // Its members carry `task_id`/`task_type`/`description` and nothing that
+    // identifies a Task subagent or its tool call, so it can only settle rows
+    // the ledger already knows; read as edges it minted a row per live
+    // background chore, each with a child session no nested message could reach.
     case "background_tasks_changed":
-      return []
+      return ledger
+        .replaceLive(liveTaskIds(message))
+        .flatMap((record) => admittedTask(record) ? [departedTaskObservation(record, wrapperId)] : [])
     default:
       return []
   }
+}
+
+function admittedTask(record: ClaudeTaskRecord | undefined) {
+  return record?.isAgentTask && !record.skipTranscript ? record : undefined
+}
+
+function liveTaskIds(message: Record<string, unknown>) {
+  const tasks = Array.isArray(message.tasks) ? message.tasks : []
+  return tasks.flatMap((value) => text(asRecord(value)?.task_id) ?? [])
+}
+
+/**
+ * The level reports a departure, never an outcome: the notification that would
+ * have said `completed`, `failed` or `stopped` is exactly what a wedged row
+ * never received. `interrupted` is what this runtime already calls a row whose
+ * end was never reported, and it settles the child turn the same way a kill
+ * does, so a notification arriving behind the level still states the truth.
+ */
+function departedTaskObservation(record: ClaudeTaskRecord, wrapperId: string): ClaudeSubagentObservation {
+  return {
+    observationId: `claude:background_tasks_changed:${wrapperId}:${record.taskId}`,
+    ...(record.harnessExecutionId ? { harnessExecutionId: record.harnessExecutionId } : {}),
+    stableCorrelationId: record.taskId,
+    ...(record.toolUseId ? { toolCallId: record.toolUseId, toolCallRole: "spawn" as const } : {}),
+    status: "interrupted",
+    providerKind: "claude-agent",
+    transcript: { kind: "messages" },
+  }
+}
+
+function taskStatus(value: unknown): ClaudeSubagentObservation["status"] {
+  if (value === "pending" || value === "running" || value === "completed" || value === "failed" || value === "killed" || value === "paused") return value
+  return undefined
 }
 
 function taskObservation(

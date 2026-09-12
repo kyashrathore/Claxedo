@@ -7,6 +7,8 @@ import {
   claudeChildCorrelationKey,
   claudeSdkAdapter,
   claudeSubagentObservations,
+  createClaudeTaskLedger,
+  type ClaudeTaskLedger,
 } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { randomUUID } from "crypto"
 import { claudeCommandGrant, hasClaudeCommandGrant, withClaudeCommandGrant } from "./permission-state"
@@ -338,6 +340,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     prompt: string,
     onGoal?: (goal: RuntimeGoalSnapshot | null) => void,
   ) {
+    const tasks = createClaudeTaskLedger()
     const applyGoal = (goal: RuntimeGoalSnapshot | null) => {
       this.goalStore.apply(input.sessionId, goal)
       onGoal?.(goal)
@@ -547,9 +550,9 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           result = message
           continue
         }
-        await ingestClaudeSdkMessage(input, message)
+        await ingestClaudeSdkMessage(input, message, tasks)
       }
-      if (result) await ingestClaudeSdkMessage(input, result)
+      if (result) await ingestClaudeSdkMessage(input, result, tasks)
     } catch (cause) {
       // This query carried the Goal: if it died, no iteration is left to report
       // progress, so the Goal must not stay `active` — that state is what makes
@@ -647,10 +650,11 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
 export async function ingestClaudeSdkMessage(
   input: Pick<SdkRuntimeTurnInput, "ingest" | "observeSubagent" | "rebindAgentSession">,
   message: SDKMessage,
+  tasks: ClaudeTaskLedger,
 ) {
   const sdkSessionId = text(asRecord(message)?.session_id)
   if (sdkSessionId) input.rebindAgentSession(sdkSessionId)
-  await Promise.all(claudeSubagentObservations(message).map((observation) => input.observeSubagent({
+  await Promise.all(claudeSubagentObservations(message, tasks).map((observation) => input.observeSubagent({
     observation,
     correlationKeys: [observation.stableCorrelationId, observation.toolCallId]
       .filter((key): key is string => !!key),
