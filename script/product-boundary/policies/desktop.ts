@@ -412,7 +412,9 @@ export const desktopRendererUnsigned: Policy = {
   // +3 modules (2026-09-12): the same three owners app-local reviews —
   // workspace-panel-working-set, pending-prompt-registry, timeline-link-open.
   // No new package edge. Measured at a clean checkout: 1061 / 57.
-  ceilings: { modules: 1061, packages: 57 },
+  // +1 module (2026-09-12): the same review-workspace-subagent-tabs owner
+  // app-local reviews. No new package edge. Measured at a clean checkout: 1062 / 57.
+  ceilings: { modules: 1062, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

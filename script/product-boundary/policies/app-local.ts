@@ -317,7 +317,11 @@ export const appLocal: Policy = {
   //     from the transcript to a Browser tab, the OS opener or platform.openLink
   //     (from message-timeline.tsx).
   // No new package edge. Measured at a clean checkout: 1010 / 38.
-  ceilings: { modules: 1010, packages: 38 },
+  // +1 module (2026-09-12): app/workbench/review/review-workspace-subagent-tabs.ts,
+  // the conversation-scoped policy for subagent tabs, split out of
+  // review-workspace.tsx at its 800-line budget; imports only what that file
+  // already did. No new package edge. Measured at a clean checkout: 1011 / 38.
+  ceilings: { modules: 1011, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
