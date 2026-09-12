@@ -17,10 +17,14 @@ export type HostedTasksSessionBridgeInput = {
   services: ControlPlaneServices
   runtimeClient: WorkspaceRuntimeClientOptions
   /**
-   * The runtime principal a Start acts as. Without one the control plane's own
-   * service actor reserves the session, which is the composition's decision to
-   * make: the bridge port carries a Tasks actor, and a Tasks actor's owner id
-   * is a provider subject, never a canonical actor id.
+   * The canonical actor a Start reserves its session for.
+   *
+   * Session access is granted to the creator actor, a participant row or a
+   * share grant, so a session reserved for the control plane's own service
+   * actor cannot be opened by the person who started it: Start would report
+   * success and the task's link would then read as gone. A Tasks actor cannot
+   * answer this — its `ownerId` is a user id, and the reservation records an
+   * actor id — so the composition resolves it from the signed caller.
    */
   principal?: (actor: TasksActor) => Promise<PrivateSessionRuntimePrincipal | undefined>
 }
@@ -55,7 +59,10 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
       )) {
         return { ok: false, error: tasksErrorDetail("unsupported", "Session registration is unavailable on this host") }
       }
-      const reservation = await authority.reserveRuntimeSession(CONTROL_PLANE_RUNTIME_ACTOR, {
+      // The service actor is the local and unsigned fallback: a host with no
+      // canonical human actor still has to reserve before it may create.
+      const principal = (await input.principal?.(intent.actor)) ?? CONTROL_PLANE_RUNTIME_ACTOR
+      const reservation = await authority.reserveRuntimeSession(principal, {
         operationId: intent.origin,
         sessionId: intent.sessionId,
         workspaceId: intent.workspaceId,

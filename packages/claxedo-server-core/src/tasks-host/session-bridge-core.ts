@@ -17,6 +17,7 @@ import {
   type StartPreview,
   type StartPreviewCommand,
   type StartedSession,
+  type TasksActor,
   type TasksErrorDetail,
   type TasksResult,
   type TasksSessionBridgePort,
@@ -48,8 +49,14 @@ export type TasksSessionHost = {
   sessionMetas(
     sessionIds: readonly string[],
   ): Promise<ReadonlyMap<string, { workspaceID?: string; archived?: number }>>
-  /** Admission this host requires before a session may be created under an origin. */
+  /**
+   * Admission this host requires before a session may be created under an
+   * origin. The actor comes with it because a hosted reservation records the
+   * creator, and a session created for anyone but the person who started it is
+   * one they cannot open.
+   */
   reserve?(input: {
+    actor: TasksActor
     origin: string
     sessionId: string
     workspaceId: string
@@ -320,7 +327,13 @@ async function startSession(
   const sessionId = `ses_tasks_${hash}`
   const messageId = `msg_tasks_${hash}`
 
-  const reserved = await host.reserve?.({ origin, sessionId, workspaceId: target.workspace.id, title: command.task.title })
+  const reserved = await host.reserve?.({
+    actor: command.actor,
+    origin,
+    sessionId,
+    workspaceId: target.workspace.id,
+    title: command.task.title,
+  })
   if (reserved && !reserved.ok) return reserved
 
   const existing = await target.request(`/session/${encodeURIComponent(sessionId)}`).catch(() => undefined)

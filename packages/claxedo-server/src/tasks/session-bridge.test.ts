@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest"
 import type { ConfigurationSlot, Preset, SessionReference, StartCommand, Task } from "@claxedo/tasks"
-import { createHostedTasksSessionBridge } from "./session-bridge"
+import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import type { ControlPlaneServices } from "../authority/services"
 
 const mock = vi.hoisted(() => ({
@@ -150,8 +150,15 @@ function startCommand(digest: string): StartCommand {
   }
 }
 
-function bridge(input: ReturnType<typeof services>) {
-  return createHostedTasksSessionBridge({ services: input.value, runtimeClient: {} })
+function bridge(
+  input: ReturnType<typeof services>,
+  principal?: HostedTasksSessionBridgeInput["principal"],
+) {
+  return createHostedTasksSessionBridge({
+    services: input.value,
+    runtimeClient: {},
+    ...(principal ? { principal } : {}),
+  })
 }
 
 beforeEach(() => {
@@ -174,6 +181,7 @@ describe("hosted tasks session bridge", () => {
     if (!started.ok) return
     const sessionId = started.session.sessionRef.sessionId
 
+    // No resolver: an unsigned host with no canonical human actor still reserves.
     expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledWith(
       { principalKind: "service", actorId: "control-plane", actorKind: "agent" },
       { operationId: `tasks.v1:org:tsk_1:primary:1`, sessionId, workspaceId: "ws_cloud", kind: "create", title: "Fix the importer" },
@@ -200,6 +208,24 @@ describe("hosted tasks session bridge", () => {
     expect(composition.projectionStore.put_session_meta).toHaveBeenCalledWith(
       sessionId,
       expect.objectContaining({ workspaceID: "ws_cloud", host: "workspace", model: MODEL }),
+    )
+  })
+
+  test("reserves for the signed caller's own actor, so the person who started the session can open it", async () => {
+    runtime()
+    const composition = services()
+    const kit = bridge(composition, async (actor) => ({
+      principalKind: "user",
+      actorId: `act_${actor.ownerId}`,
+      actorKind: "human",
+    }))
+    const previewed = await kit.preview(previewCommand())
+    if (!previewed.ok) throw new Error("preview refused")
+    expect(await kit.start(startCommand(previewed.preview.digest))).toMatchObject({ ok: true })
+
+    expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledWith(
+      { principalKind: "user", actorId: "act_owner", actorKind: "human" },
+      expect.objectContaining({ operationId: "tasks.v1:org:tsk_1:primary:1" }),
     )
   })
 
