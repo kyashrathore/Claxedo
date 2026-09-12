@@ -195,7 +195,11 @@ Multiple rows, one winner, chosen by an invisible sort order.
    tier. Sandboxes already bound to the deleted row lose it (broker doc,
    withdraw), and the session says so.
 6. **A saved row is active when it is the first for its provider.** A later
-   save never steals the mark. One-account users see no new UI.
+   save never steals the mark from a working account; an active row whose
+   `status` is not `available` yields it. Without that yield, pasting a
+   corrected key after a rejected one leaves the broken row chosen, the
+   fanout sends nothing, and the harness falls back to the machine login
+   with no sign of why. One-account users see no new UI.
 7. **Identity per row**, so the list is legible: Codex rows carry the
    ChatGPT account id and email from the token claims; a pasted Claude
    token or API key carries a fingerprint (hash prefix plus the last four

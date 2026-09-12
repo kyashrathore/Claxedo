@@ -195,15 +195,21 @@ export async function putCredential(
   }
 
   /**
-   * The mark moves only when the provider would otherwise be left without an
-   * account: an existing active row keeps it, a replacement inherits it from
-   * the row it destroys, and a write that arrives while another account holds
-   * it never takes it. Switching accounts is `setActiveCredential`.
+   * A save takes the mark only from an account that cannot be used. A WORKING
+   * active account keeps it — adding a second login must not silently move
+   * every later turn onto it, and switching is `setActiveCredential`. An
+   * active account the provider has since rejected or expired YIELDS: without
+   * that, pasting a corrected key leaves the broken one chosen, the fanout
+   * sends nothing, and the harness falls back to the machine login with no
+   * sign of why.
+   *
+   * The holder is cleared in the same statement run as the new row's write,
+   * because the partial unique index refuses to see two marks at once.
    *
    * Read inside the write's own transaction because the secret backend is
    * awaited above: two logins imported together would both see an unmarked
-   * provider and both claim the mark, which the partial unique index then
-   * rejects — losing the import rather than the race.
+   * provider and both claim the mark, which the index then rejects — losing
+   * the import rather than the race.
    */
   const stored = ClaxedoDB.transaction((db) => {
     if (replaced.length > 0) {
@@ -211,7 +217,7 @@ export async function putCredential(
         .where(and(inOrg(orgId), inArray(ClaxedoProviderCredentialTable.id, replaced.map((cred) => cred.id))))
         .run()
     }
-    const held = db
+    const holders = db
       .select()
       .from(ClaxedoProviderCredentialTable)
       .where(
@@ -223,8 +229,15 @@ export async function putCredential(
         ),
       )
       .all()
-      .some((other) => other.id !== id)
-    const row = { ...fields, is_active: fanoutEligibleAuth(input.kind, input.provider_id) && !held }
+      .filter((other) => other.id !== id)
+    const usable = holders.some((other) => other.status === "available")
+    const row = { ...fields, is_active: fanoutEligibleAuth(input.kind, input.provider_id) && !usable }
+    if (row.is_active && holders.length > 0) {
+      db.update(ClaxedoProviderCredentialTable)
+        .set({ is_active: false, updated_at: ts })
+        .where(and(inOrg(orgId), inArray(ClaxedoProviderCredentialTable.id, holders.map((other) => other.id))))
+        .run()
+    }
     if (existing) {
       db.update(ClaxedoProviderCredentialTable)
         .set(row)

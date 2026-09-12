@@ -590,6 +590,50 @@ describe("credential registry", () => {
       ).toThrow(/UNIQUE/i)
     })
 
+    test("a rejected active account yields the mark to the next key saved", async () => {
+      const rejected = await putCredential({
+        provider_id: "yield-test",
+        kind: "api_key",
+        source: "managed",
+        secret: "sk-rejected-aaaa",
+      })
+      expect(rejected.is_active).toBe(true)
+      updateCredentialHealth(rejected.id, "auth_failed", 1234)
+
+      const replacement = await putCredential({
+        provider_id: "yield-test",
+        kind: "api_key",
+        source: "managed",
+        secret: "sk-working-bbbb",
+      })
+
+      expect(replacement.is_active).toBe(true)
+      // The rejected account stays listed, with the verdict that is true of it.
+      expect(getCredential(rejected.id)).toMatchObject({ is_active: false, status: "error", health: "auth_failed" })
+      await expect(resolveSecret("yield-test")).resolves.toBe("sk-working-bbbb")
+    })
+
+    test("a rejected active account re-saved with the same key keeps the mark it holds", async () => {
+      const account = await putCredential({
+        provider_id: "yield-same-key-test",
+        kind: "api_key",
+        source: "managed",
+        secret: "sk-same-cccc",
+      })
+      updateCredentialHealth(account.id, "auth_failed", 1234)
+
+      const again = await putCredential({
+        provider_id: "yield-same-key-test",
+        kind: "api_key",
+        source: "managed",
+        secret: "sk-same-cccc",
+      })
+
+      expect(again.id).toBe(account.id)
+      expect(again.is_active).toBe(true)
+      expect(listCredentials().filter((row) => row.provider_id === "yield-same-key-test")).toHaveLength(1)
+    })
+
     test("two accounts imported together leave exactly one marked", async () => {
       const saved = await Promise.all(["acc_a", "acc_b"].map((account) => putCredential({
         provider_id: "active-import",
