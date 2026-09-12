@@ -473,6 +473,12 @@ describe("daytona egress translation", () => {
         return sandbox
       },
       get: async () => sandbox,
+      secret: {
+        list: async () => ({ items: [], nextCursor: null }),
+        create: async ({ name }) => ({ id: `sec_${name}`, name }),
+        update: async () => ({}),
+        delete: async () => {},
+      },
     }
     return { client, created }
   }

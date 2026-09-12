@@ -89,13 +89,32 @@ export type DaytonaClientLike = {
   ) => Promise<DaytonaSandboxLike>
   get: (sandboxIdOrName: string) => Promise<DaytonaSandboxLike>
   /**
-   * Create-or-update an org secret whose value is only substituted by
-   * Daytona's egress proxy for requests to `hosts`
-   * (https://www.daytona.io/docs/en/secrets/). Referenced from `create`'s
-   * `secrets` map; inside the sandbox the env var holds only an opaque
-   * `dtn_secret_…` placeholder, never the value.
+   * The org-secret service, in the SDK's own shape so `createDefaultClient`
+   * hands `sdk.secret` straight through. Upsert and withdrawal POLICY lives in
+   * this driver (`reconcileBrokeredSecrets`) rather than behind a
+   * `upsertSecret` client method: `create` is a conflict on an existing name,
+   * so a client-level "upsert" is a second implementation of the lookup every
+   * embedder would have to get right.
    */
-  upsertSecret?: (params: { name: string; value: string; hosts: string[] }) => Promise<void>
+  secret?: DaytonaSecretServiceLike
+}
+
+/** Identity of an org secret. The plaintext value is write-only and never returned. */
+export type DaytonaSecretLike = { id: string; name: string }
+
+export type DaytonaSecretServiceLike = {
+  /**
+   * `name` is a PARTIAL match, and pages are cursor-based; callers filter the
+   * page themselves and follow `nextCursor` until it is null.
+   */
+  list: (query?: { name?: string; cursor?: string; limit?: number }) => Promise<{
+    items: DaytonaSecretLike[]
+    nextCursor?: string | null
+  }>
+  /** Throws `DaytonaConflictError` when a secret of that name already exists. */
+  create: (params: { name: string; value: string; hosts?: string[] }) => Promise<DaytonaSecretLike>
+  update: (secretId: string, params: { value?: string; hosts?: string[] }) => Promise<unknown>
+  delete: (secretId: string) => Promise<void>
 }
 
 export type DaytonaSandboxDriverOptions = {
@@ -139,6 +158,22 @@ const DEFAULT_WORKSPACE_DIR = "/workspace"
 const DEFAULT_PREVIEW_EXPIRY_S = 3600
 const DEFAULT_OPERATION_TIMEOUT_S = 60
 const LIST_PAGE_SIZE = 100
+const SECRET_LIST_PAGE_SIZE = 200
+/**
+ * Mounted on every sandbox this driver creates, referencing a valueless org
+ * secret. @daytona/sdk 0.211.2 documents that a sandbox created with NO secrets
+ * must be restarted before a later `updateSecrets` works at all; keeping one
+ * slot mounted from boot means connecting the first account only ever adds a
+ * name to an existing mount.
+ */
+const SENTINEL_SECRET_ENV = "CLAXEDO_BROKERED_SECRET_SLOT"
+/**
+ * Written over a withdrawn secret before it is deleted. Rotations take effect
+ * for outbound substitution within seconds; deletion of a secret a live sandbox
+ * still references has no such documented window, so the dead value is what
+ * actually ends the credential's authority.
+ */
+const REVOKED_SECRET_VALUE = "claxedo-revoked"
 // A bounded walk, so a client that ignores the "short page ends it" rule costs
 // a finite sweep instead of an infinite one.
 const MAX_LIST_PAGES = 100
@@ -147,11 +182,27 @@ function labelName(workspaceId: string) {
   return `claxedo-${workspaceId}`
 }
 
-// Org-scoped Daytona secret name for a workspace's brokered secret. Namespaced
-// per workspace so one workspace's secret can never be referenced by another.
+/**
+ * Percent-encode a segment into `[A-Za-z0-9_]`, with `_` as the escape
+ * character. Injective, which a character-class replacement is not: collapsing
+ * every disallowed character to `-` made `A.B` and `A-B` the same org secret,
+ * and left `-` doing double duty as both data and the segment separator.
+ */
+function encodeSecretSegment(value: string) {
+  return encodeURIComponent(value)
+    .replace(/[-_.!~*'()]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`)
+    .replace(/%/g, "_")
+}
+
+// Org-scoped Daytona secret names for a workspace. Namespaced per workspace so
+// one workspace's secret can never be referenced by another, and so the prefix
+// enumerates exactly this workspace's secrets.
+function workspaceSecretPrefix(workspaceId: string) {
+  return `claxedo-${encodeSecretSegment(workspaceId)}-`
+}
+
 function daytonaSecretName(workspaceId: string, secretName: string) {
-  const safe = (value: string) => value.replace(/[^a-zA-Z0-9_-]+/g, "-")
-  return `claxedo-${safe(workspaceId)}-${safe(secretName)}`
+  return `${workspaceSecretPrefix(workspaceId)}${encodeSecretSegment(secretName)}`
 }
 
 /** Markers this driver's SDK has been seen to use for a retryable failure. */
@@ -193,9 +244,7 @@ async function createDefaultClient(options: DaytonaSandboxDriverOptions): Promis
       return sdk.create(params satisfies DaytonaCreateParams, operation)
     },
     get: (sandboxIdOrName) => sdk.get(sandboxIdOrName),
-    async upsertSecret({ name, value, hosts }) {
-      await sdk.secret.create({ name, value, hosts })
-    },
+    secret: sdk.secret,
   }
 }
 
@@ -297,27 +346,117 @@ export function createDaytonaSandboxDriver(
     return target
   }
 
-  // Brokered secrets: create-or-update a Daytona org secret per (workspace,
-  // secret) and reference it by name. Inside the sandbox the env var carries
-  // only an opaque placeholder; the real value is substituted by Daytona's
-  // egress proxy for the secret's allowlisted hosts. Values never touch
-  // envVars, labels, or logs here.
-  async function brokeredSecretReferences(input: SandboxDriverEnsureInput): Promise<Record<string, string>> {
-    if (!input.secrets?.length) return {}
+  type BrokeredSecretPlan = {
+    /** Env-var name → org-secret name, the map `create`/`updateSecrets` takes. */
+    references: Record<string, string>
+    /**
+     * Whether this reconcile changed WHICH org secrets the workspace has, as
+     * opposed to only their values. A value rotation leaves each env var
+     * holding the same opaque placeholder and needs nothing from the sandbox; a
+     * name change swaps the placeholder and only reaches processes spawned
+     * afterwards.
+     */
+    mountedNamesChanged: boolean
+  }
+
+  /**
+   * Bring the workspace's org secrets to exactly the requested set and return
+   * the reference map to mount.
+   *
+   * The org secrets carrying this workspace's prefix ARE the previously mounted
+   * set: this driver is their only writer and a withdrawal deletes them, and
+   * nothing on the SDK's `Sandbox` reports what is mounted. Enumerating them is
+   * therefore the only way to tell a rotation from a name change.
+   *
+   * `withdraw` is false only on a create whose caller named no secrets at all:
+   * "say nothing" is not "remove everything", and org secrets outlive the
+   * sandbox that referenced them.
+   */
+  async function reconcileBrokeredSecrets(
+    input: SandboxDriverEnsureInput,
+    options: { withdraw: boolean },
+  ): Promise<BrokeredSecretPlan> {
     const client = await resolveClient()
-    if (!client.upsertSecret) {
+    const secrets = client.secret
+    if (!secrets) {
       throw new Error("daytona sandbox client does not support secret brokering")
     }
+    const prefix = workspaceSecretPrefix(input.workspaceId)
+    const existing = new Map<string, DaytonaSecretLike>()
+    let cursor: string | undefined
+    do {
+      const page = await secrets.list({ name: prefix, limit: SECRET_LIST_PAGE_SIZE, ...(cursor ? { cursor } : {}) })
+      for (const secret of page.items ?? []) {
+        // `name` matches partially, so the page can carry another workspace's
+        // secrets; the prefix test is the real filter.
+        if (secret.name.startsWith(prefix)) existing.set(secret.name, secret)
+      }
+      cursor = page.nextCursor ?? undefined
+    } while (cursor)
+
     const references: Record<string, string> = {}
-    for (const secret of input.secrets) {
+    const desired = new Set<string>()
+
+    const sentinel = daytonaSecretName(input.workspaceId, SENTINEL_SECRET_ENV)
+    desired.add(sentinel)
+    references[SENTINEL_SECRET_ENV] = sentinel
+    // No hosts and no value: the placeholder substitutes to the empty string
+    // wherever it appears, so an unrestricted slot carries no authority.
+    if (!existing.has(sentinel)) await secrets.create({ name: sentinel, value: "", hosts: [] })
+
+    for (const secret of input.secrets ?? []) {
       if (secret.hosts.length === 0) {
         throw new Error(`daytona brokered secret "${secret.name}" requires at least one host in its egress allowlist`)
       }
-      const secretName = daytonaSecretName(input.workspaceId, secret.name)
-      await client.upsertSecret({ name: secretName, value: secret.value, hosts: secret.hosts })
-      references[secret.name] = secretName
+      const name = daytonaSecretName(input.workspaceId, secret.name)
+      desired.add(name)
+      references[secret.name] = name
+      const current = existing.get(name)
+      if (current) await secrets.update(current.id, { value: secret.value, hosts: secret.hosts })
+      else await secrets.create({ name, value: secret.value, hosts: secret.hosts })
     }
-    return references
+
+    if (options.withdraw) {
+      for (const [name, secret] of existing) {
+        if (desired.has(name)) continue
+        await secrets.update(secret.id, { value: REVOKED_SECRET_VALUE })
+        await secrets.delete(secret.id)
+      }
+    }
+
+    const mountedNamesChanged =
+      existing.size !== desired.size || [...desired].some((name) => !existing.has(name))
+    return { references, mountedNamesChanged }
+  }
+
+  function isRunning(sandbox: DaytonaSandboxLike) {
+    return !sandbox.state || sandbox.state === "started"
+  }
+
+  /**
+   * A newly mounted secret's env var reaches only processes spawned after the
+   * mount (@daytona/sdk 0.211.2 `Sandbox.updateSecrets`), and on reuse the
+   * workspace runtime is already running. Bounce the container so the runtime
+   * that `readyTarget` finds — or starts — carries the new placeholder.
+   */
+  async function restartForMountedSecrets(sandbox: DaytonaSandboxLike, workspaceId: string) {
+    console.warn(
+      `[sandbox-manager] restarting daytona sandbox ${sandbox.id} (workspace ${workspaceId}): `
+      + "the set of brokered secret names changed and mounted env vars only reach processes spawned after the change",
+    )
+    await sandbox.stop(operationTimeout)
+    await sandbox.start(operationTimeout)
+  }
+
+  /**
+   * Mount `plan` on a sandbox this call did not create, restarting it when the
+   * names changed. Returns false when the caller must report `provisioning`.
+   */
+  async function applyBrokeredSecrets(sandbox: DaytonaSandboxLike, plan: BrokeredSecretPlan, workspaceId: string) {
+    await sandbox.updateSecrets(plan.references)
+    if (plan.mountedNamesChanged && isRunning(sandbox)) {
+      await restartForMountedSecrets(sandbox, workspaceId)
+    }
   }
 
   /**
@@ -386,13 +525,18 @@ export function createDaytonaSandboxDriver(
       ? { image: input.bootSource.image }
       : { snapshot: input.bootSource?.kind === "driver-snapshot" ? input.bootSource.snapshotId : input.snapshot ?? options.baseSnapshot }
     const net = network(input)
-    const secrets = await brokeredSecretReferences(input)
     const existing = await findExisting(input.workspaceId)
+    // Reuse with no `secrets` key is the caller preserving what is mounted, so
+    // nothing is reconciled and no restart can be provoked. A create always
+    // reconciles, if only to mount the sentinel slot.
+    const plan = existing && input.secrets === undefined
+      ? undefined
+      : await reconcileBrokeredSecrets(input, { withdraw: input.secrets !== undefined })
     const sandbox = existing ?? await (await resolveClient()).create({
       name: labelName(input.workspaceId),
       ...bootSource,
       envVars: staticBootEnv(input, hostId, workspaceDirectory(input)),
-      ...(Object.keys(secrets).length ? { secrets } : {}),
+      ...(plan ? { secrets: plan.references } : {}),
       labels: { ...input.labels, "claxedo.workspaceId": input.workspaceId },
       public: false,
       ...net,
@@ -403,7 +547,7 @@ export function createDaytonaSandboxDriver(
       throw err
     })
     if (!sandbox) return { provisioning: true as const, retryAfterMs: 2_000 }
-    if (existing && input.secrets !== undefined) await existing.updateSecrets(secrets)
+    if (existing && plan) await applyBrokeredSecrets(existing, plan, input.workspaceId)
     if (!(await ensureStarted(sandbox))) return { provisioning: true as const, retryAfterMs: 2_000 }
     // Reuse only: a sandbox this call just created already carries the policy as
     // creation parameters. See applyNetworkPolicy for why this sits between the
@@ -495,7 +639,8 @@ export function createDaytonaSandboxDriver(
     async resumeHost(input) {
       const sandbox = await sandboxById(input.lease.sandboxId!)
       if (input.ensure.secrets !== undefined) {
-        await sandbox.updateSecrets(await brokeredSecretReferences(input.ensure))
+        const plan = await reconcileBrokeredSecrets(input.ensure, { withdraw: true })
+        await applyBrokeredSecrets(sandbox, plan, input.ensure.workspaceId)
       }
       if (!(await ensureStarted(sandbox))) return { provisioning: true as const, retryAfterMs: 2_000 }
       // Resume always hands back a sandbox created by an earlier ensure, so the
