@@ -1,4 +1,4 @@
-# Codex (gpt-6-astra) review of feat/tasks-presets at 867fd4b116, 2026-09-12
+# Codex (gpt-6-astra) review of feat/tasks-presets at 61d0206502, 2026-09-12
 
 Orchestrator verification: findings 1–8, 10–12, 14 and the host-ports comment in 15 confirmed by reading the cited lines; 9 and the hosted-composition claim in 15 not yet verified; 13 was already recorded in index.md. No fixes applied yet.
 

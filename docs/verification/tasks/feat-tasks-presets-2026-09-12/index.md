@@ -1,6 +1,6 @@
 # Tasks and Presets — evidence index (local slice, 2026-09-12)
 
-Source: branch `feat/tasks-presets` in worktree `~/test/opencode-tasks`, cut from dev `85f1d007c8`; evidence recorded at `a44662d5ef` plus the two orchestrator fixes `28cd279a9d` and `b8e08cbc0c`. Tasks selection: `CLAXEDO_BUILD_TASKS` selects the feature at build time; unset and any value other than `0` keep it on, so the live rows above were taken from an enabled build.
+Source: branch `feat/tasks-presets` in worktree `~/test/opencode-tasks`, cut from dev `85f1d007c8`; evidence recorded at `e314940f35` plus the two orchestrator fixes `e40f2444f2` and `571c0a6a18`. Tasks selection: `CLAXEDO_BUILD_TASKS` selects the feature at build time; unset and any value other than `0` keep it on, so the live rows above were taken from an enabled build.
 
 Environment for the live rows: unsigned local stack started from the worktree. Server `npm run start` in `packages/claxedo-server` with `CLAXEDO_DATA_DIR`/`CLAXEDO_STATE_DIR` under the session scratchpad and `CLAXEDO_SERVER_PORT=2594`; app `bun run dev:local` in `packages/claxedo-app` with `PORT=4448 VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:2594`. Project registered with `POST /api/claxedo/projects` (`{ name, source: { kind: "directory", directory } }`) pointing at a scratch git repository. Scope `local`, owner `local`. Screenshots were inspected in the Claude Browser pane; pointer/keyboard input was screenshot-driven with element refs from the accessibility tree.
 
@@ -11,7 +11,7 @@ Environment for the live rows: unsigned local stack started from the worktree. S
 | T03 | conformance `stale revision` cases; app store 409 test | none | PASS (automated only) | Two-client live case not run. |
 | T04 | service reparent/child rules | live add subtask via Add button | PASS (local) | Enter in the subtask field did not submit in the Claude Browser pane; a vanilla control form failed identically under the pane's key injection while Playwright submitted both, so this is a harness artifact, not a defect. |
 | T05 | board/list vitest | live list, board, filters visible | PARTIAL | One task + one child only; paging not exercised. Board scrolls (`overflow-x: auto`, 904 > 738 px), no clipping. |
-| T06 | service guard tests; board vitest incl. snap-back | live Done refused | PASS (local) | Alert "has 1 unfinished children"; server status stayed `doing`; menu shows the record after `b8e08cbc0c`. |
+| T06 | service guard tests; board vitest incl. snap-back | live Done refused | PASS (local) | Alert "has 1 unfinished children"; server status stayed `doing`; menu shows the record after `571c0a6a18`. |
 | T07 | service/store archive tests | none | PASS (automated only) | |
 | T08 | local bridge test against a real embedded runtime; hosted bridge with captured fetch | live Start | PASS (local, model turn GATING) | Session `ses_tasks_592388684598e5b5ce40018ac327fa5d` created in the project workspace with harness `claude`, model `claude/opus[1m]`, retained `instructions` = preset block + configuration description (read from `agent-core/<ws>/state.db`), one user message `msg_tasks_<hash>` carrying title + description. The assistant turn failed `authentication_failed` because the isolated data dir holds no Claude credential: the real tool result is GATING, not observed. |
 | T09 | service attempt-rule tests; bridge replay tests | live Open on an occupied slot | PASS (local) | Open navigated to the same session; only GETs on the task routes, no second create. Two-client conflicting case not run live. |
@@ -23,7 +23,7 @@ Environment for the live rows: unsigned local stack started from the worktree. S
 | T15 | Miniflare D1 conformance + migration ordering test | none | PASS (automated only) | No deployed Worker. |
 | T16 | none | none | NOT RUN | Packaged desktop and deployed hosted not exercised. |
 | T17 | preset model/service/http tests; preset editor vitest | live create | PASS (local) | Preset `tpr_f8e66290…` persisted with harness/model/instructions; archive/restore not run live. |
-| T18 | preview tests; editor revalidation vitest | live preview | PASS (local) | Preview resolved the project's workspace after `a44662d5ef`; before it the preview was blocked "No reachable workspace" for a task with no explicit workspace. |
+| T18 | preview tests; editor revalidation vitest | live preview | PASS (local) | Preview resolved the project's workspace after `e314940f35`; before it the preview was blocked "No reachable workspace" for a task with no explicit workspace. |
 | T19 | none live | none | NOT RUN | Two local presets with different instructions not run. |
 | T20–T22 | cloud refused with a reason | none | NOT RUN | Cloud placement and selected-only projection (S5/S6) are not implemented. |
 | T23 | none | none | NOT RUN | Delegation with effort (S7) not implemented; `effort_unsupported` is never produced at preview. |
@@ -52,9 +52,9 @@ What is NOT proven:
 
 ## Defects found only by the live run
 
-- Picking a harness in the preset editor overflowed Solid's reactive graph: the slot editor called the host editor as a function inside JSX and the draft callback read the parent's signal inside a child effect. Fixed in `28cd279a9d` with `Dynamic` + `untrack`; regression test in `preset-editor.vitest.tsx` (both mutants fail).
-- The bridge resolved a workspace only from the task's explicit preference, never from the project. Fixed in `a44662d5ef` (`projectTarget`, deterministic root/primary-checkout choice, refusal naming candidates when ambiguous).
-- A refused status change left the native select showing the refused value. Fixed in `b8e08cbc0c`.
+- Picking a harness in the preset editor overflowed Solid's reactive graph: the slot editor called the host editor as a function inside JSX and the draft callback read the parent's signal inside a child effect. Fixed in `e40f2444f2` with `Dynamic` + `untrack`; regression test in `preset-editor.vitest.tsx` (both mutants fail).
+- The bridge resolved a workspace only from the task's explicit preference, never from the project. Fixed in `e314940f35` (`projectTarget`, deterministic root/primary-checkout choice, refusal naming candidates when ambiguous).
+- A refused status change left the native select showing the refused value. Fixed in `571c0a6a18`.
 
 ## Reds inherited from dev `85f1d007c8` (proven at the base commit)
 
@@ -71,22 +71,22 @@ All fifteen findings in codex-gpt-6-astra-review.md were addressed; each fix car
 
 | Finding | Commit | Outcome |
 |---|---|---|
-| 1 Start bypassed session authorization | `11ab2b400e` | `authorizeSessionOpen` before an idempotent return, a readability probe, or a Continue transcript read |
-| 2 Origin did not reserve its configuration | `11ab2b400e`, `859112f373` | `configurationDigest` on the link and in the hosted operationId; both hosts read the session config back and refuse a mismatch |
-| 3 Settlement ignored the admitting state | `11ab2b400e` | link insert plus task CAS in one unit; the task revision advances on link |
-| 4 Parent guard used a reread | `11ab2b400e`, `be3742511f` | validated parent snapshot carried to the CAS; conformance case pins no in-write reread |
-| 5 SQLite transaction on the shared connection | `be3742511f` | dedicated Tasks connection (`ClaxedoDB.connect()`), `BEGIN DEFERRED`; an unrelated write survives a Tasks rollback |
-| 6 Memory rollback over concurrent commits | `be3742511f` | serialized units; overlap cases pinned in the conformance suite |
-| 7 Unreadable history read as not sent | `11ab2b400e` | `present / absent / unreadable`; unreadable refuses |
-| 8 Metadata never repaired on recovery | `11ab2b400e` | projection reconciled when an existing reserved session is recovered |
-| 9 D1 commit conflicts unclassified | `be3742511f`, `859112f373` | typed `TasksStoreConflict`; duplicate receipts replay, competitors get 409 |
-| 10 Continue unreachable | `11ab2b400e`, `fcd39ef904` | readability computed independent of the checkbox; dialog re-previews without unmounting the row |
-| 11 Pagination dropped | `fcd39ef904` | cursors followed; Load more on list and board; children auto-follow |
-| 12 Signed self-host mounted loopback composition | `8a4c5d1c5d`, `9cd23059fa`, `1b016d24a2` | signed SQLite composition selected by the composed auth posture; sessions reserved for the signed starter |
-| 13 No build-time selection | `9cd23059fa` | `CLAXEDO_BUILD_TASKS` define-gated loaders and baked server gates; measured ON/OFF artifacts (see T01 section) |
-| 14 Config read failed open | `2e01a9759d` | a failing config read refuses the turn; a missing row still prompts |
-| 15 Comments claimed absent checks | `11ab2b400e`, `1755c046ae` | effort comment rewritten; hosted capabilities report local only |
+| 1 Start bypassed session authorization | `adcb6b699c` | `authorizeSessionOpen` before an idempotent return, a readability probe, or a Continue transcript read |
+| 2 Origin did not reserve its configuration | `adcb6b699c`, `c48a73f627` | `configurationDigest` on the link and in the hosted operationId; both hosts read the session config back and refuse a mismatch |
+| 3 Settlement ignored the admitting state | `adcb6b699c` | link insert plus task CAS in one unit; the task revision advances on link |
+| 4 Parent guard used a reread | `adcb6b699c`, `66d974c3ef` | validated parent snapshot carried to the CAS; conformance case pins no in-write reread |
+| 5 SQLite transaction on the shared connection | `66d974c3ef` | dedicated Tasks connection (`ClaxedoDB.connect()`), `BEGIN DEFERRED`; an unrelated write survives a Tasks rollback |
+| 6 Memory rollback over concurrent commits | `66d974c3ef` | serialized units; overlap cases pinned in the conformance suite |
+| 7 Unreadable history read as not sent | `adcb6b699c` | `present / absent / unreadable`; unreadable refuses |
+| 8 Metadata never repaired on recovery | `adcb6b699c` | projection reconciled when an existing reserved session is recovered |
+| 9 D1 commit conflicts unclassified | `66d974c3ef`, `c48a73f627` | typed `TasksStoreConflict`; duplicate receipts replay, competitors get 409 |
+| 10 Continue unreachable | `adcb6b699c`, `c149b62a22` | readability computed independent of the checkbox; dialog re-previews without unmounting the row |
+| 11 Pagination dropped | `c149b62a22` | cursors followed; Load more on list and board; children auto-follow |
+| 12 Signed self-host mounted loopback composition | `8c77c74f48`, `1fb18ad49f`, `6c10630f4a` | signed SQLite composition selected by the composed auth posture; sessions reserved for the signed starter |
+| 13 No build-time selection | `1fb18ad49f` | `CLAXEDO_BUILD_TASKS` define-gated loaders and baked server gates; measured ON/OFF artifacts (see T01 section) |
+| 14 Config read failed open | `a157f6a269` | a failing config read refuses the turn; a missing row still prompts |
+| 15 Comments claimed absent checks | `adcb6b699c`, `2a972a4aa8` | effort comment rewritten; hosted capabilities report local only |
 
-Also found and fixed during the wave: the kit client dropped `currentTask` / `currentPreset` from stale-revision refusals, so every rebase path in the app was dead while its hand-built tests passed (`260e04f298`); the Start flow now rebases once and retries, and the edit conflict paths are proven through the real transport (`b59f178746`).
+Also found and fixed during the wave: the kit client dropped `currentTask` / `currentPreset` from stale-revision refusals, so every rebase path in the app was dead while its hand-built tests passed (`b69be7a7ac`); the Start flow now rebases once and retries, and the edit conflict paths are proven through the real transport (`a6d3815550`).
 
 Still not proven here: packaged desktop, deployed hosted Worker, a credentialed model turn, cloud placement (S5/S6), delegation with effort (S7).
