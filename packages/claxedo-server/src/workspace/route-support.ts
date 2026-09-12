@@ -18,6 +18,11 @@ import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
 
+export type WorkspaceRuntimeContext = {
+  workspaceId: string
+  userId: string
+}
+
 export type WorkspaceRuntimePreparation = {
   /** Existing sandbox-manager channel; values never enter runtime config or files. */
   secrets?: SandboxBrokeredSecret[]
@@ -72,14 +77,15 @@ export type WorkspaceRouteOptions = {
   relayUrl?: string
   relayUrls?: ClaxedoRegionMap<string>
   defaultHomeRegion?: ClaxedoRegion
+  sandboxEgressExtraHosts?: string[]
   runtimeAccessTokenSigner?: RuntimeAccessTokenSigner
   hostTunnelTokenSigner?: HostTunnelTokenSigner
   connectionRateLimiter?: ConnectionRateLimiter
   controlPlaneRateLimiter?: ConnectionRateLimiter
   /** Resolve feature state before ensure, including brokered secrets needed by the driver. */
-  prepareRuntime?: (workspaceId: string) => Promise<WorkspaceRuntimePreparation>
+  prepareRuntime?: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   /** Build-composed feature provisioning that must settle before a signed runtime is handed to the caller. */
-  provisionRuntime?: (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => Promise<void>
+  provisionRuntime?: (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => Promise<void>
   /**
    * Entitlement choke point (ADR 014 §5, adversarial review): hosted
    * cloud-workspace capability is paid at BOTH

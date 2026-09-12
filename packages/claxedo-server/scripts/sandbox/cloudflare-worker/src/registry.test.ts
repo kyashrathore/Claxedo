@@ -7,7 +7,8 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
 // Cloudflare sandbox can be enumerated (DO namespaces are not listable), so it
 // is what the control plane's GC sweep depends on.
 const sandboxStub = {
-  ensureWorkspaceRuntime: vi.fn(async () => true),
+  setOutboundByHosts: vi.fn(async () => {}),
+  ensureWorkspaceRuntime: vi.fn(async (_command: string, _env: Record<string, string>, _port: number) => true),
   workspaceRuntimeReady: vi.fn(async () => true),
   destroy: vi.fn(async () => {}),
   createBackup: vi.fn(async () => ({ id: "bk_1", dir: "/workspace" })),
@@ -21,12 +22,6 @@ vi.mock("@cloudflare/sandbox", () => ({
   getSandbox: getSandboxMock,
   Sandbox: class Sandbox { readonly stub = "sandbox" },
   ContainerProxy: containerProxyStub,
-}))
-
-vi.mock("./egress", () => ({
-  EGRESS_TARGET_HEADER: "x-claxedo-egress-target",
-  handleEgressRequest: async () => new Response("{}"),
-  mintEgressToken: async () => "egress-token",
 }))
 
 const { default: worker, ContainerProxy } = await import("./index")
@@ -213,5 +208,64 @@ describe("cloudflare sandbox Worker registry (W1.2)", () => {
 
   test("the listing route rejects non-GET methods", async () => {
     expect((await call("/sandboxes", env(), { method: "POST", body: "{}" })).status).toBe(405)
+  })
+})
+
+
+describe("native credential registration", () => {
+  beforeEach(() => vi.clearAllMocks())
+  function credentials() {
+    const values = new Map<string, string>()
+    return { values, get: async (id: string) => values.get(id) ?? null,
+      put: async (id: string, value: string) => { values.set(id, value) },
+      delete: async (id: string) => { values.delete(id) } }
+  }
+  const registration = { name: "MODEL_KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer real-secret" }
+  test("boots with native handlers and stable placeholders instead of an expiring token", async () => {
+    const kv = credentials()
+    const response = await call("/sandbox/native-proof/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
+      method: "POST", body: JSON.stringify({ command: "runtime", env: {}, egress: [registration] }),
+    })
+    expect(response.status).toBe(200)
+    expect(sandboxStub.setOutboundByHosts).toHaveBeenCalledWith({ "api.vendor.test": { method: "credential", params: { sandboxId: "native-proof" } } })
+    const bootEnv = sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[1]
+    expect(bootEnv).toMatchObject({ MODEL_KEY: "claxedo-broker:MODEL_KEY" })
+    expect(JSON.stringify(bootEnv)).not.toContain("real-secret")
+    expect(bootEnv).not.toHaveProperty("CLAXEDO_EGRESS_TOKEN")
+  })
+  test("explicit empty registrations withdraw stored values and handlers", async () => {
+    const kv = credentials()
+    await kv.put("withdraw-proof", JSON.stringify([registration]))
+    const response = await call("/sandbox/withdraw-proof/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
+      method: "POST", body: JSON.stringify({ command: "runtime", env: {}, egress: [] }),
+    })
+    expect(response.status).toBe(200)
+    expect(JSON.parse(kv.values.get("withdraw-proof")!)).toEqual([])
+    expect(sandboxStub.setOutboundByHosts).toHaveBeenLastCalledWith({})
+  })
+  test("omitted registrations preserve the authority and placeholders on wake", async () => {
+    const kv = credentials()
+    kv.values.set("wake-proof", JSON.stringify([registration]))
+    const response = await call("/sandbox/wake-proof/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
+      method: "POST", body: JSON.stringify({ command: "runtime", env: {} }),
+    })
+    expect(response.status).toBe(200)
+    expect(sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[1]).toMatchObject({ MODEL_KEY: "claxedo-broker:MODEL_KEY" })
+    expect(JSON.parse(kv.values.get("wake-proof")!)).toEqual([registration])
+  })
+
+  test("missing credential storage fails before runtime launch", async () => {
+    const response = await call("/sandbox/no-storage/ensure-runtime", env(), {
+      method: "POST", body: JSON.stringify({ command: "runtime", egress: [registration] }),
+    })
+    expect(response.status).toBe(503)
+    expect(sandboxStub.ensureWorkspaceRuntime).not.toHaveBeenCalled()
+  })
+
+  test("malformed registrations reject provisioning instead of disappearing", async () => {
+    const response = await call("/sandbox/invalid-proof/ensure-runtime", env({ EGRESS_SECRETS: credentials() }), {
+      method: "POST", body: JSON.stringify({ command: "runtime", env: {}, egress: [{ ...registration, value: 42 }] }),
+    })
+    expect(response.status).toBe(400)
   })
 })

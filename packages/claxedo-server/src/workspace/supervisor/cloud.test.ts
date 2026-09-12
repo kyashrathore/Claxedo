@@ -181,6 +181,8 @@ const mockCreateModalSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["node"],
     hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
     targetAccess: "relay",
+    secretBrokering: "none",
+    egressControl: "none",
     persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
@@ -770,6 +772,35 @@ describe("workspace-supervisor", () => {
         status: "ready",
         driver: "daytona",
       })
+    })
+
+    test.each([undefined, "host_secret_test"])("passes brokered secrets through the supervisor manager with host %s", async (hostId) => {
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      const secrets = [{
+        name: "CLAXEDO_GITHUB_CLONE_AUTH",
+        value: "Basic broker-only-credential",
+        hosts: ["github.com"],
+        header: "Authorization",
+      }]
+      const result = await manager.ensure(`ws-secrets-${hostId ?? "direct"}`, {
+        homeRegion: "us-east", hostId, secrets,
+      })
+      expect(result.status).toBe("ready")
+      expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets }))
+      const launch = mockDaytonaLaunch.mock.calls.at(-1)![0]
+      expect(JSON.stringify(launch.env)).not.toContain("broker-only-credential")
+      expect(JSON.stringify(result)).not.toContain("broker-only-credential")
+    })
+
+    test("refuses supplied secrets when the supervisor driver cannot broker them", async () => {
+      driverId = "modal"
+      const result = await supervisor.createWorkspaceSupervisorSandboxManager().ensure("ws-secrets-unsupported", {
+        homeRegion: "us-east",
+        secrets: [{ name: "BROKER_TOKEN", value: "broker-only-credential", hosts: ["github.com"], header: "Authorization" }],
+      })
+      expect(result.status).toBe("unavailable")
+      expect(mockModalLaunch).not.toHaveBeenCalled()
+      expect(JSON.stringify(result)).not.toContain("broker-only-credential")
     })
 
     test("local SandboxManager honors relay tunnel host identity", async () => {

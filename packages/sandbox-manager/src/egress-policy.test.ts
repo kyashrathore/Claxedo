@@ -355,11 +355,11 @@ describe("driver egress capability declarations", () => {
   })
 
   test("cloudflare is uncontained even though it has a secret broker", () => {
-    // Its egress broker is an OPT-IN proxy for brokered credentials, not a
+    // Native credential handlers are not a
     // network boundary: the driver drops `net` on the floor. `secretBrokering`
     // and `egressControl` are independent capabilities and must not be
     // confused for one another.
-    expect(sandboxDriverCatalog.cloudflare.metadata.secretBrokering).toBe("proxy")
+    expect(sandboxDriverCatalog.cloudflare.metadata.secretBrokering).toBe("native")
     expect(sandboxDriverCatalog.cloudflare.metadata.egressControl).toBe("none")
   })
 
@@ -396,6 +396,14 @@ function documentedEgressControls(markdown: string) {
 
 describe("the egress capability doc cannot drift from the metadata", () => {
   const markdown = fs.readFileSync(EGRESS_DOC, "utf8")
+  test("secret delivery declarations match the documented implementation", () => {
+    const rows = new Map([...markdown.matchAll(/^\| `([a-z-]+)` \| `(native|proxy|none)` \|$/gm)]
+      .map((match) => [match[1], match[2]]))
+    expect([...rows.keys()].sort()).toEqual([...sandboxDriverIds].sort())
+    for (const id of sandboxDriverIds) {
+      expect(rows.get(id), id).toBe(sandboxDriverCatalog[id].metadata.secretBrokering)
+    }
+  })
   const documented = documentedEgressControls(markdown)
   // The fetch bridge is a driver factory, not a catalog entry, so it has to be
   // instantiated to read its declaration.
@@ -457,6 +465,7 @@ describe("daytona egress translation", () => {
       start: async () => {},
       stop: async () => {},
       delete: async () => {},
+      updateSecrets: async () => {},
     }
     const client: DaytonaClientLike = {
       create: async (params) => {

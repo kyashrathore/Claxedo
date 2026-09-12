@@ -95,10 +95,19 @@ describe("CloudflareSandboxDriver", () => {
     const ensure = calls.find((c) => c.url.endsWith("/ensure-runtime"))!
     // Egress registration carries the value server-to-server (API_TOKEN-gated).
     expect(ensure.body.egress).toEqual([
-      { hosts: ["api.notion.com"], header: "Authorization", value: "ntn-secret" },
+      { name: "NOTION_TOKEN", hosts: ["api.notion.com"], header: "Authorization", value: "ntn-secret" },
     ])
     // The value is NOT in the container env channel.
     expect(JSON.stringify(ensure.body.env)).not.toContain("ntn-secret")
+  })
+
+  test("explicit empty secrets are delivered as withdrawal while omission preserves registrations", async () => {
+    const { calls, fetch } = harness(() => ({ status: 200, json: { ready: true, url: "https://sbx.example.com/proxy" } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await driver.ensureHost({ ...createInput, secrets: [] })
+    await driver.ensureHost(createInput)
+    expect(calls[0]!.body.egress).toEqual([])
+    expect(calls[1]!.body).not.toHaveProperty("egress")
   })
 
   test("brokered secret without a header is rejected", async () => {
@@ -160,10 +169,10 @@ describe("CloudflareSandboxDriver", () => {
   test("permanent Worker configuration failures are not hidden as provisioning", async () => {
     const { fetch } = harness(() => ({
       status: 503,
-      json: { error: "egress broker not configured (set EGRESS_SIGNING_SECRET + EGRESS_SECRETS)" },
+      json: { error: "egress broker requires EGRESS_SECRETS" },
     }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
-    await expect(driver.ensureHost(createInput)).rejects.toThrow(/egress broker not configured/)
+    await expect(driver.ensureHost(createInput)).rejects.toThrow(/egress broker requires EGRESS_SECRETS/)
   })
 
   test("timed-out ensure is reported as provisioning so callers can retry", async () => {

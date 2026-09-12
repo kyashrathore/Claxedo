@@ -177,7 +177,7 @@ export function createLocalAgentPluginsComposition(
         }
       : { active: false }
   const applySigned = async (input: SignedAgentPluginRuntime) => {
-    const secrets = Object.fromEntries(input.secrets.map((secret) => [secret.name, secret.value.replace(/^Bearer /, "")]))
+    const secrets = Object.fromEntries(input.secrets.map((secret) => [secret.name, secret.value]))
     const active = await readActiveGeneration(signedRuntimeRoot)
     if (active && active.revision >= input.revision) await clearActiveGeneration(signedRuntimeRoot)
     signedGeneration = await materializeAgentPluginGeneration({

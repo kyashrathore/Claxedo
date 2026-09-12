@@ -36,6 +36,7 @@ function sandbox(input: Partial<DaytonaSandboxLike> & { id?: string } = {}) {
         item.state = "destroyed"
       }),
     updateNetworkSettings: input.updateNetworkSettings ?? vi.fn(async () => {}),
+    updateSecrets: input.updateSecrets ?? vi.fn(async () => {}),
   }
   return item
 }
@@ -128,6 +129,20 @@ describe("DaytonaSandboxDriver", () => {
     await expect(
       driver.ensureHost({ ...input, secrets: [{ name: "X", value: "v", hosts: [] }] }),
     ).rejects.toThrow(/host/)
+  })
+
+  test("reuse reconciles explicit secret withdrawal and does not boot after attachment failure", async () => {
+    const execute = vi.fn(async () => ({}))
+    const updateSecrets = vi.fn(async () => {})
+    const existing = sandbox({ updateSecrets, process: { executeCommand: execute } })
+    const daytona = client({ list: vi.fn(async () => ({ items: [existing] })) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+    await driver.ensureHost({ ...input, secrets: [] })
+    expect(existing.updateSecrets).toHaveBeenCalledWith({})
+    execute.mockClear()
+    updateSecrets.mockRejectedValueOnce(new Error("attachment failed"))
+    await expect(driver.ensureHost({ ...input, secrets: [] })).rejects.toThrow("attachment failed")
+    expect(execute).not.toHaveBeenCalled()
   })
 
   test("ensureHost starts the sandbox process and returns preview token labels", async () => {
@@ -299,11 +314,17 @@ describe("DaytonaSandboxDriver", () => {
         createdAt: 1,
         sandboxId: "sb_resumed",
       },
-      ensure: { ...input, net: { mode: "restricted", hosts: ["api.example.test"] } },
+      ensure: {
+        ...input,
+        net: { mode: "restricted", hosts: ["api.example.test"] },
+        secrets: [{ name: "MCP_AUTH", value: "Bearer current-token", hosts: ["api.example.test"], header: "Authorization" }],
+      },
     })
     if ("provisioning" in result) throw new Error("expected ready")
 
     expect(existing.updateNetworkSettings).toHaveBeenCalledWith({ domainAllowList: "api.example.test" })
+    expect(daytona.upsertSecret).toHaveBeenCalledWith({ name: "claxedo-ws_1-MCP_AUTH", value: "Bearer current-token", hosts: ["api.example.test"] })
+    expect(existing.updateSecrets).toHaveBeenCalledWith({ MCP_AUTH: "claxedo-ws_1-MCP_AUTH" })
     expect(result).toMatchObject({ sandboxId: "sb_resumed" })
   })
 

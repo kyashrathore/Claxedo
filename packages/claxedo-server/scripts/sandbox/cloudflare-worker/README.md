@@ -92,32 +92,29 @@ To run the live product-path test against a running claxedo-server:
 CLAXEDO_SERVER_URL=http://127.0.0.1:3001 node --import tsx scripts/sandbox/live/live-ui-test.ts
 ```
 
-## Egress credential broker (optional)
+## Native credential brokering
 
-For non-AI credentials the sandbox must *use* but must never be able to *read*
-(e.g. a connection token), the Worker implements Cloudflare's official
-[Worker-proxy pattern](https://developers.cloudflare.com/sandbox/guides/proxy-requests/).
-The credential is stored in KV keyed by sandbox id (never in the container);
-the sandbox gets only a short-lived JWT and routes brokered-host requests
-through the Worker, which injects the real credential on egress.
+The API-token-gated `ensure-runtime` action accepts named egress registrations.
+The Worker stores values in `EGRESS_SECRETS` KV and configures SDK native HTTPS
+outbound handlers. Container environment variables contain only
+`claxedo-broker:<name>` placeholders. Clients use the original upstream URL.
+Authorization clients may send the placeholder as the complete header or with
+one Bearer prefix; the handler replaces it with the complete registered value.
 
-Enable it:
+Create the namespace with `wrangler kv namespace create EGRESS_SECRETS` and
+set its id in `wrangler.toml`. A nonempty registration requires this binding.
+Omitting `egress` preserves registrations; sending `egress: []` clears them.
+Malformed registrations return 400. Every intercepted request reads KV, so
+rotation needs no runtime token renewal. KV propagation delays apply.
+The handler rejects unmatched placeholders and redirects; it does not redact
+response bodies or restrict unrelated destinations.
 
-```bash
-wrangler kv namespace create EGRESS_SECRETS   # paste the id into wrangler.toml
-wrangler secret put EGRESS_SIGNING_SECRET     # random 32+ byte secret
-```
-
-Until both are set, brokering stays off and `ensure-runtime` rejects any
-`egress` payload with 503 (the sandbox-manager driver declares
-`secretBrokering: "proxy"`, and the manager fails closed on brokered secrets
-if the Worker isn't configured).
-
-Inside the sandbox, brokered egress uses:
-`CLAXEDO_EGRESS_PROXY_URL` (POST/GET here), `Authorization: Bearer
-$CLAXEDO_EGRESS_TOKEN`, and `x-claxedo-egress-target: <absolute upstream URL>`.
-`CLAXEDO_EGRESS_HOSTS` lists the hosts that must be routed this way. The raw
-credential never appears in the container environment.
+The former `/egress` JWT route and signing secret are removed. Deploy the
+Worker and matching driver together, then destroy and recreate existing
+sandboxes with fresh named registrations. No legacy registration migration or
+proxy compatibility route is provided.
+Local native HTTPS interception passed; deployed acceptance remains pending
+because the isolated probe image upload failed (see the implementation report).
 
 ## Workspace checkpoint storage
 

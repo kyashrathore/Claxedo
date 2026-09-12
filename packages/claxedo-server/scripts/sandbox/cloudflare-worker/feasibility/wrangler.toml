@@ -1,0 +1,20 @@
+name = "claxedo-broker-outbound-feasibility"
+main = "outbound.ts"
+compatibility_date = "2025-04-01"
+compatibility_flags = ["nodejs_compat", "enable_ctx_exports"]
+[[containers]]
+class_name = "Sandbox"
+image = "../Dockerfile"
+instance_type = "standard-1"
+max_instances = 1
+[[durable_objects.bindings]]
+class_name = "Sandbox"
+name = "Sandbox"
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Sandbox"]
+
+# Local-only namespace. Provision an isolated namespace before a remote probe.
+[[kv_namespaces]]
+binding = "EGRESS_SECRETS"
+id = "00000000000000000000000000000000"

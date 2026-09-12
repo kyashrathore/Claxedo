@@ -242,7 +242,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       if (controlPlaneLimit) return c.json(controlPlaneLimit.body, controlPlaneLimit.status)
       const rateLimit = await connectionRateLimitError(services, connectionRateLimiter, auth, workspaceId)
       if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
-      const result = await hostedConnectionInfo(services, options, auth, workspaceId, previousJti)
+      const result = await hostedConnectionInfo(services, options, auth, workspaceId, new URL(c.req.url).origin, previousJti)
       if ("error" in result)
         return c.json({ error: result.error }, result.status)
       if ("status" in result.connection && result.connection.status === "provisioning") {
@@ -493,9 +493,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // workerd cancels detached work with the request, which left the first
         // `ensure` — and the Agent Plugins runtime provisioning behind it — to
         // whichever `/connection` poll came next.
+        const runtimeContext = { workspaceId, userId: auth.user.subject }
         keepAlivePastResponse(c, Promise.resolve()
           .then(async () => {
-            const runtimePreparation = await options.prepareRuntime?.(workspaceId)
+            const runtimePreparation = await options.prepareRuntime?.(runtimeContext)
             const runtimeSecrets = runtimePreparation?.secrets ?? []
             const result = await sandboxManager.ensure(workspaceId, {
             homeRegion,
@@ -507,7 +508,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             // Clone token for connected private repos — rides the brokered
             // secret channel (fail-closed in the manager for drivers that
             // cannot broker), never labels or env.
-            ...((provisionSecrets?.length || runtimeSecrets.length)
+            ...((provisionSecrets !== undefined || runtimePreparation?.secrets !== undefined)
               ? { secrets: [...(provisionSecrets ?? []), ...runtimeSecrets] }
               : {}),
             // This is the hosted, multi-tenant create path: the sandbox runs
@@ -551,7 +552,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // to. Metering attribution never gates provisioning, so a deployment
           // with no workspace authority configured simply records nothing.
           .then(async ({ result, runtimePreparation }) => {
-            if (result.status === "ready") await options.provisionRuntime?.(workspaceId, runtimePreparation)
+            if (result.status === "ready") await options.provisionRuntime?.(runtimeContext, runtimePreparation)
             // The only refusal that lands here is
             // `sandbox_egress_policy_unenforceable`: a driver that does enforce
             // egress, handed an encoding it cannot express (hosts-only vercel

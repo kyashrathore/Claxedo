@@ -37,6 +37,7 @@ import type {
   SandboxEnsureResult,
   SandboxLease,
   SandboxManager,
+  SandboxBrokeredSecret,
   SandboxRegisterInput,
   SandboxTarget,
   SandboxTargetResult,
@@ -72,10 +73,10 @@ export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) 
   })
 }
 
-export async function ensureSupervisorSandbox(workspaceId: string) {
+export async function ensureSupervisorSandbox(workspaceId: string, secrets?: SandboxBrokeredSecret[]) {
   const ws = await getWorkspace(workspaceId)
   if (!ws) throw new Error(`workspace not found: ${workspaceId}`)
-  const entry = await startRuntime(runtimeState(ws))
+  const entry = await startRuntime(runtimeState(ws), secrets)
   entry.used_at = now()
   scheduleStop(entry)
   return entry
@@ -90,6 +91,7 @@ export async function syncSupervisorSandbox(workspaceId: string) {
 async function ensureRelayProtectedSandbox(
   workspaceId: string,
   hostId: string,
+  secrets?: SandboxBrokeredSecret[],
 ) {
   if (!hostId.trim()) throw new Error("host id required")
   const ws = await getWorkspace(workspaceId)
@@ -99,7 +101,7 @@ async function ensureRelayProtectedSandbox(
     throw new Error(`sandbox mismatch: ${workspaceId}`)
   }
   entry.relay_host_id = hostId
-  const started = await startRuntime(entry)
+  const started = await startRuntime(entry, secrets)
   if (started.sandbox_target) {
     started.sandbox_target = {
       ...started.sandbox_target,
@@ -237,8 +239,8 @@ export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
     async ensure(workspaceId, input) {
       try {
         const entry = input.hostId
-          ? await ensureRelayProtectedSandbox(workspaceId, input.hostId)
-          : await ensureSupervisorSandbox(workspaceId)
+          ? await ensureRelayProtectedSandbox(workspaceId, input.hostId, input.secrets)
+          : await ensureSupervisorSandbox(workspaceId, input.secrets)
         const lease = getSupervisorSandboxLease(workspaceId)
         const target = entry.sandbox_target ?? sandboxTargetFromSupervisorState(entry) ?? sandboxTargetFromLease(lease)
         if (!target) {
@@ -435,7 +437,7 @@ function recordSupervisorRuntimeSnapshot(workspaceId: string, input: SandboxRegi
   return { ok: true as const, status: "ready" as const }
 }
 
-async function startRuntime(state: WorkspaceRuntimeState) {
+async function startRuntime(state: WorkspaceRuntimeState, secrets?: SandboxBrokeredSecret[]) {
   if (state.status === "ready" && state.url) {
     state.used_at = now()
     scheduleStop(state)
@@ -445,7 +447,7 @@ async function startRuntime(state: WorkspaceRuntimeState) {
   state.start = (async () => {
     try {
       if (state.ws.kind === "cloud") {
-        return await startSandbox(state, { scheduleStop })
+        return await startSandbox(state, { scheduleStop }, secrets)
       }
       throw new Error("local workspaces use embedded workspace-runtime hosts")
     } finally {

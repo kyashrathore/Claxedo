@@ -284,7 +284,7 @@ async function subject(connected: boolean) {
   const provisionForMint = async (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => {
     const env: NodeJS.ProcessEnv = {}
     for (const secret of preparation?.secrets ?? []) {
-      env[secret.name] = secret.value.replace(/^Bearer /, "")
+      env[secret.name] = secret.value
     }
     runtimes.set(workspaceId, await runtimeVm(workspaceId, env))
     const receipt = await provisionRuntime.provision(workspaceId, agentPluginMcpRuntimePlan(preparation))
@@ -305,7 +305,7 @@ describe("signed Composio Gmail on Miniflare", () => {
     const preparation = await prepareRuntime("ws_local")
     const plan = agentPluginMcpRuntimePlan(preparation)
 
-    expect(preparation.secrets).toBeUndefined()
+    expect(preparation.secrets).toEqual([])
     expect(plan.mcpServers).toEqual(expect.arrayContaining([
       expect.objectContaining({
         serverName: "gmail",
@@ -370,7 +370,7 @@ describe("signed Composio Gmail on Miniflare", () => {
     const { resolveConnection, prepareRuntime } = await subject(true)
     const preparation = await prepareRuntime("ws_other_cloud")
     expect(agentPluginMcpRuntimePlan(preparation).mcpServers).toEqual([])
-    expect(preparation.secrets).toBeUndefined()
+    expect(preparation.secrets).toEqual([])
     expect(resolveConnection).not.toHaveBeenCalled()
   })
 
@@ -433,10 +433,10 @@ describe("signed Composio Gmail on Miniflare", () => {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
       runtimeAccessTokenSigner: signer,
-      prepareRuntime,
+      prepareRuntime: ({ workspaceId }) => prepareRuntime(workspaceId),
       // `provisionRuntime` is declared to resolve void; the receipt this test
       // asserts on is read from `receipts` instead.
-      provisionRuntime: async (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => {
+      provisionRuntime: async ({ workspaceId }, preparation?: WorkspaceRuntimePreparation) => {
         await provisionForMint(workspaceId, preparation)
       },
     }, auth, "ws_local_mint")
@@ -491,13 +491,13 @@ describe("signed Composio Gmail on Miniflare", () => {
       defaultHomeRegion: "us-east",
       relayUrl: "wss://relay.test",
       runtimeAccessTokenSigner: signer,
-      prepareRuntime,
+      prepareRuntime: ({ workspaceId }) => prepareRuntime(workspaceId),
       // `provisionRuntime` is declared to resolve void; the receipt this test
       // asserts on is read from `receipts` instead.
-      provisionRuntime: async (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => {
+      provisionRuntime: async ({ workspaceId }, preparation?: WorkspaceRuntimePreparation) => {
         await provisionForMint(workspaceId, preparation)
       },
-    }, auth, "ws_cloud_mint")
+    }, auth, "ws_cloud_mint", "https://control.test")
 
     expect(local).toMatchObject({ connection: { access: "user-hosted", runtimeAccessToken: "runtime-token" } })
     expect(cloud).toMatchObject({ connection: { access: "cloud", runtimeAccessToken: "runtime-token" } })

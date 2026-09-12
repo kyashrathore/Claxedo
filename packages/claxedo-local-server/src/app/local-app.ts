@@ -21,7 +21,7 @@ import { cors } from "hono/cors"
 import { createNodeWebSocket } from "@hono/node-ws"
 import { timingSafeEqual } from "node:crypto"
 import { z } from "zod"
-import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
+import { isLoopbackLocalRequest, peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import {
   requestIsHttps,
   securityHeaderEntries,
@@ -87,6 +87,7 @@ export function localCorsOrigin(origin: string): string | undefined {
 }
 
 export type LocalAppOptions = {
+  egressBroker?: (request: Request) => Promise<Response>
   services: ControlPlaneServicesContract
   /** Same-origin credential paths that must never receive an ACAO header. */
   isCredentialPath?: (path: string) => boolean
@@ -181,6 +182,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         // The MCP route is reached by harness processes, never by a page; a
         // loopback page granted an ACAO here could drive it from a browser.
         if (c.req.path === CLAXEDO_MCP_PATH) return undefined
+        if (c.req.path.startsWith("/bindings/")) return undefined
         return (options.corsOrigin ?? localCorsOrigin)(origin, c.req.path)
       },
       maxAge: 86400,
@@ -191,6 +193,13 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   )
 
   app.use(unsignedLocalRequestGuard({ mode: deploymentMode(env), authConfig: services.auth.config }))
+
+  if (options.egressBroker) {
+    const broker = options.egressBroker
+    app.all("/bindings/*", async (c) => isLoopbackLocalRequest(c.req.raw)
+      ? broker(c.req.raw)
+      : c.json({ error: "loopback_required" }, 403))
+  }
 
   app.post("/api/claxedo/track", async (c) => {
     // Validated against the canonical schema, not a hand-rolled typeof check

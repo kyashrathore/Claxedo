@@ -16,10 +16,12 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
     const agentDir = path.join(directory, "agent")
     await fs.mkdir(agentDir)
     const requests: Array<{ messages: Array<Record<string, unknown>> }> = []
+    const providerRequests: Array<{ pathname: string; authorization: string | null }> = []
     const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
       async fetch(request) {
+        providerRequests.push({ pathname: new URL(request.url).pathname, authorization: request.headers.get("authorization") })
         const body = (await request.json()) as (typeof requests)[number]
         requests.push(body)
         const evaluator = JSON.stringify(body.messages).includes(GOAL_PROMPT_TEXT.evaluatorObjectiveLabel)
@@ -119,6 +121,9 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       const nativeId = rows.getAgentSessionId(session.id)
       expect(nativeId).not.toBe(session.id)
       await turn(session.id, "first")
+      expect(providerRequests).toHaveLength(2)
+      expect(providerRequests.every((request) => request.pathname === "/v1/chat/completions"
+        && request.authorization === "Bearer local-test")).toBe(true)
       expect(await fs.readFile(path.join(directory, "proof.txt"), "utf8")).toBe("written by native Pi")
       expect(JSON.stringify(requests[0].messages)).toContain("data:image/png;base64,")
       expect(requests[1].messages.some((message) => message.role === "tool")).toBe(true)

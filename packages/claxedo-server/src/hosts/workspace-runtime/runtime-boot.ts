@@ -19,6 +19,7 @@ import {
 import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
+import { configureRuntimeGitAuth } from "./git-auth"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeDirectAuthEnv,
@@ -130,6 +131,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const relayOptions = await workspaceRelayRuntimeOptionsFromEnv(env, port)
   const targetDirectory = workspaceDir(env)
   const harness = claxedoRuntimeHarnessFromEnv(env)
+  await configureRuntimeGitAuth(env)
   // A sandbox selecting the native OpenCode harness owns its public
   // embedded-SDK runtime for the workspace and closes it during drain.
   const opencodeRuntime = harness?.kind === "native" && harness.harnessId === "opencode"

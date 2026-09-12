@@ -27,7 +27,7 @@ import {
 
 const REQUIRED = ["content-security-policy", "x-content-type-options", "x-frame-options", "referrer-policy"] as const
 
-function createTestApp() {
+function createTestApp(options: Parameters<typeof createSelfHostedApp>[1] = {}) {
   const centralStore = createSqliteCentralStore({ mode: () => "workspace_replicated" })
   return createSelfHostedApp(
     createControlPlaneServices(
@@ -37,8 +37,22 @@ function createTestApp() {
       },
       { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
+    options,
   ).app
 }
+
+test("control-plane broker authenticates remote runtimes before application auth", async () => {
+  const tokens: string[] = []
+  const app = createTestApp({ egressBroker: async (request) => {
+    tokens.push(request.headers.get("authorization")!.slice(7))
+    return new Response(null, { status: 401 })
+  } })
+  const response = await app.request("https://control.example/bindings/b1/v1/messages", {
+    headers: { authorization: "Bearer runtime-token" },
+  })
+  expect(response.status).toBe(401)
+  expect(tokens).toEqual(["runtime-token"])
+})
 
 /**
  * A miniature `dist/` with the two shapes that matter: the SPA document, and a

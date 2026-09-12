@@ -12,7 +12,7 @@
 // the Worker's `ensure-runtime` action (`setEnvVars`). Brokered secrets
 // (`SandboxBrokeredSecret`) travel separately in the same request as `egress`
 // registrations — the Worker stores the values out of the container and runs
-// the egress proxy (see cloudflare-egress.ts), so the raw value never enters
+// native outbound header injection, so the raw value never enters
 // the sandbox.
 //
 // Reachability: `ensure-runtime` returns the Worker's own data-plane proxy URL
@@ -212,21 +212,20 @@ export function createCloudflareSandboxDriver(
 
   // Brokered secrets travel server-to-server to the Worker (API_TOKEN-gated),
   // NEVER inside the container env. The Worker stores each value out of the
-  // sandbox, mints the sandbox's short-lived egress JWT, and injects the
-  // credential per host on egress (see cloudflare-egress.ts). The sandbox only
-  // receives the proxy URL + JWT the Worker sets, never the raw value.
+  // sandbox and injects the credential through native outbound handlers.
+  // The sandbox receives a stable named placeholder, never the raw value.
   function egressRegistrations(input: SandboxDriverEnsureInput) {
-    if (!input.secrets?.length) return undefined
+    if (input.secrets === undefined) return undefined
     return input.secrets.map((secret) => {
       if (!secret.header) {
         throw new Error(
-          `cloudflare brokered secret "${secret.name}" requires a header — the egress proxy injects the value as an HTTP header`,
+          `cloudflare brokered secret "${secret.name}" requires a header for native outbound injection`,
         )
       }
       if (secret.hosts.length === 0) {
         throw new Error(`cloudflare brokered secret "${secret.name}" requires at least one host in its egress allowlist`)
       }
-      return { hosts: secret.hosts, header: secret.header, value: secret.value }
+      return { name: secret.name, hosts: secret.hosts, header: secret.header, value: secret.value }
     })
   }
 
@@ -365,7 +364,7 @@ export function createCloudflareSandboxDriver(
       hostStopBehavior: "not-supported",
       hostResumeBehavior: "same-host",
       targetAccess: "relay",
-      secretBrokering: "proxy",
+      secretBrokering: "native",
       egressControl: "none",
       persistence: sandboxDriverCatalog.cloudflare.metadata.persistence,
     },

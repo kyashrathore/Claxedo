@@ -135,20 +135,20 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
     expect(config.mcpServers.docs).toEqual({
       type: "http",
       url: "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id",
-      headers: { Authorization: "Bearer dtn_secret_reference" },
+      headers: { Authorization: "dtn_secret_reference" },
     })
     expect(JSON.stringify(config)).not.toContain("upstream-oauth-token")
+    const substituted = config.mcpServers.docs.headers.Authorization.replace("dtn_secret_reference", "Bearer gateway-token")
+    expect(substituted).toBe("Bearer gateway-token")
   })
 
-  test("routes brokered MCP through the existing Cloudflare egress capability", async () => {
+  test("materializes native Cloudflare placeholders at the original gateway URL", async () => {
     const secretName = "CLAXEDO_MCP_ABC"
     const target = "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id"
     const { artifact, app } = await fixture({
       mcp: true,
       env: {
-        CLAXEDO_EGRESS_PROXY_URL: "https://sandbox-worker.example/egress",
-        CLAXEDO_EGRESS_TOKEN: "sandbox-bound-egress-token",
-        CLAXEDO_EGRESS_HOSTS: JSON.stringify(["mcp-abc.gateway.example"]),
+        [secretName]: `claxedo-broker:${secretName}`,
       },
     })
     const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
@@ -174,53 +174,9 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
     const body = await response.json() as { harnessLaunch: { claude: { pluginRoots: string[] } } }
     const config = JSON.parse(await fs.readFile(path.join(body.harnessLaunch.claude.pluginRoots[0], ".mcp.json"), "utf8"))
     expect(config.mcpServers.docs).toMatchObject({
-      url: "https://sandbox-worker.example/egress",
-      headers: {
-        Authorization: "Bearer sandbox-bound-egress-token",
-        "x-claxedo-egress-target": target,
-      },
+      url: target,
+      headers: { Authorization: `claxedo-broker:${secretName}` },
     })
   })
 
-  test("fails closed when Cloudflare egress configuration is partial or malformed", async () => {
-    const secretName = "CLAXEDO_MCP_ABC"
-    const target = "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id"
-    const body = (artifact: Awaited<ReturnType<typeof fixture>>["artifact"]) => ({
-      version: 1,
-      identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
-      revision: 1,
-      selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
-      artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
-      mcpServers: [{
-        pluginInstanceId: "claxedo/review",
-        artifactDigest: artifact.digest,
-        harnessId: "claude",
-        serverName: "docs",
-        state: "gateway",
-        url: target,
-        brokeredSecretName: secretName,
-      }],
-    })
-
-    for (const env of [
-      {
-        CLAXEDO_EGRESS_PROXY_URL: "https://sandbox-worker.example/egress",
-        CLAXEDO_EGRESS_TOKEN: "sandbox-bound-egress-token",
-      },
-      {
-        CLAXEDO_EGRESS_PROXY_URL: "https://sandbox-worker.example/egress",
-        CLAXEDO_EGRESS_TOKEN: "sandbox-bound-egress-token",
-        CLAXEDO_EGRESS_HOSTS: "mcp-abc.gateway.example",
-      },
-    ]) {
-      const { artifact, app, applyHarnessLaunch } = await fixture({ mcp: true, env })
-      const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body(artifact)),
-      })
-      expect(response.status).toBe(500)
-      expect(applyHarnessLaunch).not.toHaveBeenCalled()
-    }
-  })
 })

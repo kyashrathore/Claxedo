@@ -197,7 +197,7 @@ describe("hosted MCP runtime preparation", () => {
 
   test("fails only the protected server closed when the driver cannot broker", async () => {
     const value = await subject({ brokering: "none" })
-    expect(value.preparation.secrets).toBeUndefined()
+    expect(value.preparation.secrets).toEqual([])
     expect(agentPluginMcpRuntimePlan(value.preparation).mcpServers).toEqual(expect.arrayContaining([
       expect.objectContaining({ state: "unavailable", reason: "secret_brokering_unsupported" }),
     ]))
@@ -205,7 +205,7 @@ describe("hosted MCP runtime preparation", () => {
 
   test("leaves public MCP direct and requires no Connection or brokered secret", async () => {
     const value = await subject({ publicServer: true, connected: false })
-    expect(value.preparation.secrets).toBeUndefined()
+    expect(value.preparation.secrets).toEqual([])
     expect(agentPluginMcpRuntimePlan(value.preparation).mcpServers).toEqual([])
     expect(value.resolveConnection).not.toHaveBeenCalled()
   })

@@ -86,28 +86,6 @@ export type SandboxDriverMetadata = {
   hostResumeBehavior: "same-host" | "replacement-host"
   /** How the control plane reaches the sandbox target returned by the driver. */
   targetAccess: "relay" | "loopback"
-  /**
-   * How the driver can honor a `SandboxBrokeredSecret` — a credential the
-   * sandbox may USE for outbound requests but must NEVER be able to READ.
-   *
-   * - `"native"` — the provider brokers it automatically on egress to the
-   *   allowlisted hosts, with no extra infrastructure: Daytona secret
-   *   placeholders + egress proxy; Vercel firewall header transforms. The
-   *   driver injects it during `ensureHost`.
-   * - `"proxy"` — brokering is achievable but only via a host-operated egress
-   *   proxy the driver routes through (Cloudflare's official Worker-proxy
-   *   pattern: the sandbox gets a short-lived JWT, egress hits the Worker,
-   *   the Worker injects the real credential — the raw value never enters the
-   *   sandbox). Not automatic; requires the host's proxy to be wired.
-   * - `"none"` — no way to keep the value out of sandbox processes. The
-   *   provider may still have an encrypted secret STORE (e.g. Modal secrets),
-   *   but those are exposed as readable env vars, so they cannot satisfy the
-   *   never-readable contract.
-   *
-   * The manager fails closed unless the driver actually injects brokered
-   * secrets (today: `"native"` only). `"proxy"` records an achievable ceiling
-   * that is not yet wired and therefore also fails closed.
-   */
   secretBrokering: "native" | "proxy" | "none"
   /**
    * How the driver can enforce a RESTRICTED `SandboxNetworkPolicy` — i.e.
@@ -251,19 +229,6 @@ function defaultEgressUnenforcedSink(event: SandboxEgressUnenforcedEvent) {
   console.warn(event.message)
 }
 
-/**
- * A credential the SANDBOX must be able to USE for outbound requests but must
- * NEVER be able to READ. Unlike `env` (plaintext, readable — reserved for
- * credentials the agent is trusted with, e.g. the user's own model
- * subscription), a brokered secret's `value` never enters the sandbox: the
- * provider injects it on egress to `hosts` only. Non-model credentials
- * (connection tokens, deploy tokens) belong here.
- *
- * Guarantees enforced by the manager: brokered secrets are never written to
- * labels, never logged, and never captured in a driver snapshot. A driver
- * whose `metadata.secretBrokering !== "native"` cannot honor them and the
- * manager refuses to provision (fail-closed).
- */
 export type SandboxBrokeredSecret = {
   /** Env var name the sandbox references (Daytona placeholder key). */
   name: string

@@ -134,7 +134,8 @@ const readPackageJsonFromDisk = (dir: string): PackageJson =>
  * Roots of the host-bundle package closure.
  *
  * The host registers the external adapter itself; workspace-runtime does not
- * depend on it. Keep runtime last for builds and first for dependency-pin priority.
+ * depend on it. Keep runtime first for dependency-pin priority; topological
+ * build order places the first-party MCP mount after the runtime it consumes.
  * Pure server-core source helpers are bundled directly, not package build roots.
  * The Agent Plugins image also bundles the local-server module that owns the
  * runtime apply route (`host-entry.agent-plugins.ts`).
@@ -142,6 +143,7 @@ const readPackageJsonFromDisk = (dir: string): PackageJson =>
 export function hostBundlePackageRoots(agentPlugins = false) {
   return [
     path.join(packagesRoot(), "opencode-server-adapter"),
+    path.join(packagesRoot(), "claxedo-mcp"),
     ...(agentPlugins ? [path.join(packagesRoot(), "claxedo-local-server")] : []),
     workspaceRuntimeRoot(),
   ]
@@ -189,7 +191,7 @@ export function workspacePackageBuildOrder(
  * depends on, dependencies first. The esbuild host bundle resolves each
  * package through its `dist/` (gitignored, nothing else builds it), so a fresh
  * checkout must produce those dists before bundling. Idempotent: re-running
- * simply rebuilds. workspace-runtime is built last.
+ * simply rebuilds.
  */
 export function buildClaxedoWorkspacePackages(
   exec: Exec = defaultExec,
@@ -284,7 +286,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
   // @claxedo package it transitively depends on through their built dist/
   // (all gitignored). Build the whole graph dependencies-first so a fresh CI
   // checkout ships the current checkout — not stale local dist, not a missing
-  // one. workspace-runtime is the last package built.
+  // one. The build order follows the declared dependency graph.
   const roots = hostBundlePackageRoots(options.agentPlugins)
   buildClaxedoWorkspacePackages(exec, readPackageJsonFromDisk, roots)
   const versionFile = writeWorkspaceRuntimeVersion(outDir)

@@ -180,6 +180,7 @@ describe("build-sandbox-image", () => {
 
   test("the enabled image adds the feature package root while the disabled image does not", () => {
     const disabled = hostBundlePackageRoots(false)
+    expect(disabled.map((dir) => path.basename(dir))).toContain("claxedo-mcp")
     const enabled = hostBundlePackageRoots(true)
     expect(disabled.some((root) => root.endsWith("claxedo-local-server"))).toBe(false)
     expect(enabled.filter((root) => root.endsWith("claxedo-local-server"))).toHaveLength(1)
@@ -329,7 +330,7 @@ describe("build-sandbox-image", () => {
     expect(index("workspace-runtime")).toBeGreaterThanOrEqual(0)
     expect(index("opencode-server-adapter")).toBeGreaterThanOrEqual(0)
     expect(index("opencode-server-adapter")).toBeLessThan(index("workspace-runtime"))
-    expect(order.at(-1)).toBe(order[index("workspace-runtime")])
+    expect(index("claxedo-mcp")).toBeGreaterThan(index("workspace-runtime"))
 
     // workspace-runtime's known @claxedo deps are all present and precede it.
     for (const dep of ["agent-event-runtime", "agent-sdk-runtime", "workspace-relay-protocol", "workspace-relay"]) {

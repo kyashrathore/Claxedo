@@ -229,7 +229,7 @@ catalog (`sandbox-manager/src/driver-catalog.ts`) is the left column.
 | --- | --- | --- | --- |
 | daytona | native; hosts and CIDRs | Placeholder swapped in HTTPS headers to allowed hosts, responses scrubbed. `updateSecrets` on a running sandbox; a value change lands within about 15 seconds; a sandbox created with no secrets must restart to receive one. | 0.192.0 → 0.211.2 |
 | vercel | native; hosts | Header transform per domain, with matchers on path, method, query, headers; `forwardURL` to your own proxy with an OIDC token naming the sandbox; denied CIDR ranges; live policy updates. | 1.10.2 → 3.3.0 |
-| cloudflare | proxy, opt-in; no egress control | Outbound Workers since 0.8.0: host allow and deny lists evaluated before handlers, per-host handlers in the Worker, HTTPS intercepted with a per-sandbox CA, header injection in the handler. | 0.8.9 → 0.12.9 |
+| cloudflare | native named-placeholder injection; no egress control | Outbound Workers since 0.8.0: host allow and deny lists evaluated before handlers, per-host handlers in the Worker, HTTPS intercepted with a per-sandbox CA, header injection in the handler. | 0.8.9 → 0.12.9 |
 | exe | none; none | Integrations: the secret is stored server-side and injected at the edge when the VM calls `<name>.int.exe.xyz`; HTTP proxy, GitHub, S3 signing, and an LLM integration that takes an Anthropic or OpenAI key or a **ChatGPT subscription** by device-code login. Attach per VM, per tag, or all. No egress allowlist. | driven over `/exec` |
 | modal | none; none | Secrets are still readable env. Sandbox Sidecars (alpha, allowlisted workspaces) run a proxy that holds the secret while the sandbox has `outbound_cidr_allowlist=[]`; `outbound_domain_allowlist` (beta); `updateNetworkPolicy` (alpha). | 0.7.5 → 0.10.1 |
 | box | none | Plaintext env inside a `docker run` command string; no secret or egress feature. | — |
@@ -358,3 +358,191 @@ Each item is a live experiment with a written result in Appendix B.
    deployment mode (needed by 3.6).
 
 Each item is answered yes, no, or "with this change", with the command, the provider, the date, and the result. A "no" removes that harness or driver from step 6's scope rather than weakening the design.
+
+### Experiment log — 2026-09-13, item 3
+
+Provider: Cloudflare Sandbox 0.12.9, local Wrangler 4.127.1, production runtime Dockerfile and compatibility date `2025-04-01`.
+
+Commands (from `packages/claxedo-server/scripts/sandbox`, then its `cloudflare-worker` directory):
+
+- `bun build-sandbox-image.ts --bundle-only --out=cloudflare-worker/.build`: initially failed because the host's first-party MCP dependency was absent from the image manifest roots. After adding the canonical `claxedo-mcp` package root, passed; build ID `30f6471c69`.
+- `npx wrangler deploy --dry-run --containers-rollout=none --config feasibility/wrangler.toml --outdir .artifacts/outbound-feasibility`: passed Worker bundling only; no deployment.
+- `npx wrangler dev --config feasibility/wrangler.toml --port 8793`: failed building the image at `FROM docker.io/cloudflare/sandbox:0.12.9`, `DeadlineExceeded: context deadline exceeded` while fetching base-image metadata. Docker daemon was running; Wrangler OAuth authentication was available.
+
+Result: **not run: the current runtime container image could not be built because the base-image fetch timed out.** Neither Bun/Node HTTPS interception nor a live handler update is proven. The reproducible local probe is in `cloudflare-worker/feasibility/`; its check must pass before a deployed experiment, and a local pass must not be reported as deployed provider acceptance. The existing 15-minute JWT expiry remains unfixed; the design's native outbound replacement is still gated on this experiment.
+
+### Experiment log — 2026-09-13, item 6 (Pi portion)
+
+Harness: real Pi 0.85.0 process through Claxedo's public agent runtime; upstream is a deterministic local HTTP server, not a live model vendor.
+
+Commands from the repository root:
+
+- `npm install --prefix .artifacts/broker-pi --no-save @earendil-works/pi-coding-agent@0.85.0`
+- From `packages/agent-sdk-runtime`: `PI_EXECUTABLE=/Users/yashvardhansingh/test/opencode-broker/.artifacts/broker-pi/node_modules/.bin/pi bun test src/harnesses/pi/native.integration.test.ts`
+
+Result: **yes for Pi custom provider base URL and placeholder transport**. Two native integration tests pass, with 27 assertions. `models.json` uses `providers.<name>.baseUrl`, `api: "openai-completions"`, and `apiKey`; actual requests arrive at the configured `/v1/chat/completions` endpoint with `Authorization: Bearer local-test`. The real runtime executes a native file tool, records usage, resumes its session, and performs compaction. This does not prove every built-in provider override, a model-vendor request, or generic-broker production integration. The OpenCode portion of item 6 remains unverified.
+
+The globally installed Pi 0.85.1 was rejected by the runtime's existing exact-version gate (two failing tests); the experiment used an isolated install of the repository's required 0.85.0 without changing that gate or the global installation.
+
+### Experiment log — 2026-09-13, item 6 (OpenCode portion)
+
+Harness: pinned embedded OpenCode SDK `0.0.0-beta-18684`, Node 26.8.1, Claxedo workspace host's session and prompt HTTP routes. The upstream is a deterministic local HTTP server, not a live model vendor.
+
+Command from `packages/workspace-runtime`: `node scripts/node-provider-feasibility.mjs` (using the current `dist` artifacts produced by the successful sandbox host build).
+
+Result: **yes for an OpenAI-compatible provider's base URL and placeholder transport**. The real SDK sent one request to `/v1/chat/completions` on the configured local endpoint with `Authorization: Bearer broker-placeholder` and model `proof`; its streamed response reached the workspace message snapshot. The keys are `provider.<id>.npm: "@ai-sdk/openai-compatible"`, `provider.<id>.options.baseURL`, and `provider.<id>.options.apiKey`, with the model declared under `provider.<id>.models`. This does not prove every vendor-specific SDK, a live paid-provider request, or automatic binding selection/configuration. The smoke uses an isolated database, workspace, and SDK test home and closes the host and endpoint afterward.
+
+### Access checks — 2026-09-13, items 1 and 2
+
+- Daytona: `daytona sandbox list --limit 1 --format json` failed with `Unauthorized: Invalid credentials - run 'daytona login' to reauthenticate`. Item 1 is **not run: valid Daytona authentication is unavailable**. No login flow was started, and no sandbox or secret was created.
+- Vercel: `vercel whoami` and `vercel project ls --format json` succeeded. The current account's returned project list contained no Claxedo project, and this checkout has no `.vercel/project.json`. Item 2 is **not run: intended Vercel project/team is awaiting user input**. No sandbox was created in an unrelated project.
+
+### Experiment log — 2026-09-13, item 3 local result
+
+Command: from `packages/claxedo-server/scripts/sandbox/cloudflare-worker`, run `wrangler dev --config feasibility/wrangler.toml --port 8793` using the task-local Docker client configuration, then `node feasibility/check.mjs`.
+
+Result: **with these changes, local interception passes**: register `outboundHandlers` through the SDK's inherited setter (a static class field shadows it), and enable `enable_ctx_exports`. The actual production runtime image, built from host build ID `195438cb63` on Sandbox 0.12.9, completed four HTTPS requests: Node and Bun at revision 1, followed by both clients at revision 2 after `setOutboundByHost`. The synthetic handler received the expected URL and dummy header. The same sandbox remained running between revisions and was destroyed afterward (`GET /destroy` 200, SDK destroy success).
+
+The unmodified compatibility configuration failed with `ctx.exports is undefined`. Cloudflare documents the opt-in [enable_ctx_exports flag](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#enable-ctxexports); the probe retains compatibility date `2025-04-01` and adds that flag. No production Worker configuration has changed yet.
+
+This supersedes the earlier local build blocker. It is **not deployed Cloudflare acceptance** and does not yet prove native secret injection from the binding authority, withdrawal, or the replacement of `/egress`. Those remain required before claiming the Cloudflare adapter complete.
+
+### Experiment log — 2026-09-13, item 3 deployed attempt
+
+The probe now requires a configured `PROBE_TOKEN`, bearer authentication, and POST before any sandbox operation. The authenticated local check passed unauthenticated rejection, four interception requests, and cleanup. `standard-1` supplies the disk capacity required by the production runtime image.
+
+Command from the Cloudflare Worker: `wrangler deploy --config feasibility/wrangler.toml` with the isolated Docker client configuration. Two attempts uploaded the Worker but failed during container image-layer upload with `use of closed network connection`. Both processes exited with failure; the second reused uploaded layers. No probe token was installed on the deployed Worker, so its sandbox operations remained disabled.
+
+Result: **not run on deployed Cloudflare: container image upload failed twice**. This is an environment failure, not a negative result about outbound interception. Cleanup: `wrangler delete --config feasibility/wrangler.toml --force` succeeded; `wrangler containers list --json` contained no matching probe application. The earlier local pass remains valid but does not establish deployed acceptance.
+
+### Experiment log — 2026-09-13, item 5
+
+Harness: real Cursor SDK 1.0.24, local `Agent.create` and `agent.send`, with an isolated directory and an explicit dummy API key. Command from `packages/agent-sdk-runtime`: `node scripts/cursor-endpoint-feasibility.mjs`.
+
+Result: **yes for endpoint routing using `CURSOR_BACKEND_URL`**. The real SDK sent `POST /auth/exchange_user_api_key` and `GET /v1/models` to the configured local endpoint, both with `Authorization: Bearer broker-probe-placeholder`. The auth-exchange body was `{}`. The local server deliberately returned 401, so this does not establish successful authentication, inference streaming, or end-to-end broker support. No real Cursor credential or vendor request was used. `CURSOR_API_ENDPOINT` was not the tested key; the installed SDK's authoritative implementation reads `CURSOR_BACKEND_URL`.
+
+### Experiment log — 2026-09-13, item 4
+
+Harness: real Codex app-server 0.133.0 (the runtime-image pin), using the repository's `CodexAppServerProcess` and actual `@claxedo/egress-broker` Node listener/delivery adapter. Provider: a live ChatGPT subscription, model `gpt-5.5`, selected from that account's live model catalog.
+
+Setup from the repository root: `npm install --prefix .artifacts/broker-codex --no-save @openai/codex@0.133.0`.
+
+Command from `packages/egress-broker`:
+
+```sh
+BROKER_CODEX_AUTH_FILE=/Users/yashvardhansingh/.codex/auth.json \
+BROKER_CODEX_BINARY=/Users/yashvardhansingh/test/opencode-broker/.artifacts/broker-codex/node_modules/.bin/codex \
+BROKER_CODEX_MODEL=gpt-5.5 \
+../workspace-runtime/node_modules/.bin/tsx scripts/codex-subscription-feasibility.ts
+```
+
+Result: **yes for the custom model-provider form**. `model_providers.broker` uses `wire_api="responses"`, `requires_openai_auth=false`, the binding-scoped base URL, and an Authorization header containing the signed placeholder. No local ChatGPT login or real provider key is given to the app-server. The actual broker injects the subscription access token for `https://chatgpt.com/backend-api/codex/responses`; the backend returned 200 and Codex completed the requested `BROKER_OK` reply. After binding withdrawal, a second turn from the same running client failed at the broker's missing-binding lookup without another upstream request. The closed app-server's files contained no real credential and its temporary home was removed.
+
+The initial test model `gpt-5.3-codex` was rejected by this account. A read-only `/backend-api/codex/models?client_version=0.133.0` request returned the eligible `gpt-5.5`; the experiment then used that model. This is model availability evidence, not a failed proxy shape. The successful run emitted a client-disconnect warning during stream teardown but exited 0 after all acceptance assertions.
+
+The authority and lease identities in this probe are explicit test fixtures. Production account selection, signed-user propagation, renewal, and hosted binding persistence are not exercised or implemented by this result. The alternative `chatgpt_base_url` form was unnecessary and was not tested.
+
+### Access checks — 2026-09-13, items 7–9
+
+- exe.dev: `ssh -oBatchMode=yes -oConnectTimeout=10 -oStrictHostKeyChecking=yes exe.dev help` failed because no trusted host key was configured. Item 7 is **not run: trusted SSH access is not established in this environment**. No host-trust setting or integration was changed.
+- Modal: `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` are unset and `~/.modal.toml` is absent. Item 8 is **not run: no configured Modal authentication or identified allowlisted workspace is available**.
+- Signed subject in all deployment modes: **not run as a live cross-deployment experiment**. Current source evidence shows a remaining gap: `WorkspaceRouteOptions.prepareRuntime` accepts only `workspaceId`, and `hostedConnectionInfo` calls it without the available signed auth context before `hostManager.ensure`. This does not prove personal account selection or per-user sandbox isolation. Those require the planned authority/lease work; no synthetic user identity was added to production provisioning.
+
+### Cloudflare native replacement implementation — 2026-09-13
+
+The production Worker now uses native HTTPS outbound handlers and named
+placeholders, with credential values held in its existing sandbox-keyed KV.
+The expiring JWT producer, `/egress` route, vendored helper, exported legacy
+helper and runtime MCP proxy rewrite have been removed. Explicit empty
+registrations withdraw values and host handlers; omission preserves them for
+wake. Malformed registration input rejects provisioning. Native forwarding
+selects by exact host and named header placeholder, reads KV on each request,
+and rejects redirects. Production compatibility flags now enable ctx.exports.
+
+Commands: root Node Vitest invocation of Worker `registry.test.ts` and
+`outbound-credentials.test.ts`: 21 pass. Sandbox-manager `bun test
+src/drivers/cloudflare.test.ts src/egress-policy.test.ts`: 58 pass. Local-server
+`bun test src/agent-plugins/runtime/runtime-contribution.test.ts`: 4 pass.
+Worker `npx wrangler deploy --dry-run --outdir /tmp/broker-native-cf-worker-dry-run`:
+pass, including container image build. Three affected package typechecks and
+sandbox-manager build pass. Architecture ratchets pass without baseline changes.
+
+These are implementation and local checks, not a new deployed result. The
+prior deployed image-upload blocker remains. A real container must still
+exercise this production credential handler, including rotation and withdrawal.
+This retains the existing KV delivery authority: no revision-aware hosted binding
+store, signed-user selection, refresh coordination, immediate global revocation,
+or per-binding method/path policy is claimed for this native adapter. Those
+remain part of the larger broker integration. Existing sandboxes must be
+destroyed and recreated with named registrations when the replacement is deployed.
+
+### Cloudflare production handler through a real local container — 2026-09-13
+
+Provider: Cloudflare Sandbox 0.12.9 under local Wrangler 4.127.1 and Docker,
+using the production Sandbox class and runtime image, plus a temporary deployed
+HTTPS upstream Worker. No provider account credential was used.
+
+Commands from `cloudflare-worker`: `npx wrangler deploy --config
+feasibility/upstream/wrangler.toml`, `npx wrangler secret put PROBE_TOKEN --config
+feasibility/upstream/wrangler.toml`, `npx wrangler dev --config
+feasibility/wrangler.toml --port 8793`, then `node feasibility/check.mjs` with
+`BROKER_PROBE_TOKEN` supplied from the ignored local fixture configuration.
+
+Result: **pass**. Six real HTTPS requests used the production credential handler
+and KV lookup. Both Node and Bun authenticated at revisions 1 and 2 without
+restarting either client process. Clearing the credential registration and native
+host handlers caused both clients to receive HTTP 401 on their next request.
+The upstream returned only a verdict/revision, and no fixture credential appeared
+in the captured responses. The check destroyed the sandbox and cleared KV.
+`npx wrangler delete --config feasibility/upstream/wrangler.toml --force`
+succeeded; the local dev process was stopped after verified cleanup.
+
+This supersedes the pending local production-handler acceptance item. It does
+not establish deployed Container interception or deployed KV propagation delay;
+the previous Container image-upload blocker remains.
+
+### Signed runtime preparation context and withdrawal delivery — 2026-09-13
+
+Appendix E item 9 is partially repaired at the hosted route boundary. Initial
+cloud creation, cloud connection/wake, and user-hosted connection now pass
+`{ workspaceId, userId: auth.user.subject }` to preparation and provisioning.
+The shared hook contract requires this context and forwards no bearer/session
+token. Existing Agent Plugins composition continues its canonical snapshot
+policy; this change does not select personal provider accounts or change leases.
+
+The trace also found a withdrawal bug upstream of the newly verified native
+adapter: preparation omitted an empty authoritative secret set, and connection
+ensure filtered it out. Preparation now returns the complete set, including
+`[]`; creation and wake preserve that explicit empty set through `ensure`.
+
+Commands from claxedo-server: `node node_modules/vitest/vitest.mjs run
+src/routes/hosted/workspace.test.ts
+src/connections/hosted-connection-info.agent-plugins.test.ts
+src/agent-plugins/mcp/runtime-preparation.test.ts
+src/agent-plugins/signed-composio.miniflare.test.ts`: **54 pass, 0 fail**.
+Failing tests first demonstrated three withdrawal failures, two connection
+subject failures, and one creation subject failure. The Miniflare fixture now
+retains the producer's complete Authorization header rather than stripping Bearer.
+
+This proves the three hosted HTTP lifecycle paths and the callback boundary,
+not signed identity inside every driver's provisioning request or per-user lease
+isolation. Provider selection, authoritative binding storage, unsigned-local
+identity policy, and per-user leases remain unimplemented; Appendix E item 9
+is not an overall pass.
+
+### exe.dev authentication gate revalidated — 2026-09-13
+
+The official [host fingerprint](https://exe.dev/docs/faq/host-key) matched
+`ssh-keyscan -T 10 -t rsa exe.dev` followed by `ssh-keygen -lf` on the captured
+public key: `SHA256:JJOP/lwiBGOMilfONPWZCXUrfK154cnJFXcqlsi6lPo`.
+The key was used only in the task-local
+`.artifacts/broker-exe/candidate-known-hosts`; the user's SSH trust was unchanged.
+
+Command: `ssh -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=yes
+-o UserKnownHostsFile=/Users/yashvardhansingh/test/opencode-broker/.artifacts/broker-exe/candidate-known-hosts
+exe.dev integrations list --json`.
+Result: **not run: SSH authentication rejected** with exit 255 and
+`Permission denied (publickey,keyboard-interactive)`. This supersedes the prior
+host-trust-only blocker. No integration, VM, or account was created. A registered
+SSH key/account access is needed to test personal/team behavior and live edits;
+the provider's documented commands are not counted as live evidence.

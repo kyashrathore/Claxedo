@@ -6,7 +6,7 @@
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "@cloudflare/sandbox": "0.8.9"
+    "@cloudflare/sandbox": "0.12.9"
   },
   "devDependencies": {
     "wrangler": "4.127.1"

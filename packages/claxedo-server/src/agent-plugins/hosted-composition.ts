@@ -22,7 +22,7 @@ import {
   createHostedD1ConnectionsSetup,
   hostedConnectionsAuthenticate,
 } from "../connections/hosted-d1/setup"
-import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
+import type { WorkspaceRuntimeContext, WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { D1SignedAgentPluginActivationStore } from "./activation/d1-store"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
 import { hostedAgentPluginsModule } from "./module"
@@ -63,8 +63,8 @@ export type HostedAgentPluginsWorkerEnv = Record<string, unknown> & {
 export type HostedAgentPluginsComposition = {
   routeContributions: readonly ControlPlaneRouteContribution[]
   integrationRoutes: Hono
-  prepareRuntime: (workspaceId: string) => Promise<WorkspaceRuntimePreparation>
-  provisionRuntime: (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => Promise<void>
+  prepareRuntime: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
+  provisionRuntime: (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => Promise<void>
 }
 
 function required(value: string | undefined, name: string) {
@@ -284,11 +284,11 @@ export function createHostedAgentPluginsComposition(input: {
       .first<{ backing: string; access: string }>()
     return row?.backing === "cloud-vm" && row.access === "cloud"
   }
-  const prepareRuntime = async (workspaceId: string): Promise<WorkspaceRuntimePreparation> => {
+  const prepareRuntime = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (!(await cloudWorkspace(workspaceId))) return {}
     return preparer.forSnapshot(await activations.runtimeSnapshot(workspaceId))
   }
-  const provisionRuntime = async (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => {
+  const provisionRuntime = async ({ workspaceId }: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => {
     if (!(await cloudWorkspace(workspaceId))) return
     await provisioner.provision(workspaceId, agentPluginMcpRuntimePlan(preparation))
   }
