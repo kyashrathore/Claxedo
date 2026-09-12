@@ -204,10 +204,15 @@ Settings → Providers. There is no other rule.
 Owner: `packages/claxedo-server-core/src/credentials/provider-credential.sql.ts`,
 a new migration under `platform/db/claxedo-migration/`, `credentials/registry.ts`.
 
-- New column `is_active integer NOT NULL DEFAULT 0`.
-- Partial unique index on `(org_id, provider_id) WHERE is_active = 1`, so
-  two active accounts for one provider are unrepresentable, not merely
-  checked.
+- The active mark is an operation on the `ControlPlaneCredentials` contract
+  (`authority/control-plane-contract.ts`): `setActiveCredential(id, org)`,
+  and `is_active` on `CredentialMetadata`. Two adapters implement it: the
+  Node registry on SQLite, and the hosted Worker's envelope-encrypted KV
+  store (`claxedo-server/src/credentials/worker`), which never loads the
+  SQLite registry. Uniqueness lives in the adapter: SQLite gets the column
+  `is_active integer NOT NULL DEFAULT 0` and a partial unique index on
+  `(org_id, provider_id) WHERE is_active = 1`; the KV adapter clears and
+  sets inside its one write.
 - Migration backfill: for each `(org_id, provider_id)`, mark active the row
   that `providerPreference` orders first among fanout-eligible rows. The
   invisible rule runs exactly once, at migration, and becomes a visible mark.
@@ -256,9 +261,13 @@ using a different account.
 Owner: `packages/workspace-runtime/src/workspace/runtime.ts`.
 
 Clicking **Make active** calls `POST /credentials/:id/activate`, the registry
-flips the mark, and the server republishes the runtime config snapshot the
-way it already does for any credential change. The workspace runtime's
-existing apply path pushes the new `auth` into the adapter.
+flips the mark, and the route calls `fanOutConfig` so every supervised
+sandbox and embedded runtime receives a new snapshot. Today no credential
+route fans out; only the MCP and connection routes do
+(`agent-config/fanout.ts`), so a saved key reaches a sandbox on its next
+restart. The activate, put and delete routes all gain the call. The
+workspace runtime's existing apply path then pushes the new `auth` into the
+adapter.
 
 One change in that path: the wait for active turns at line 1318 today covers
 only ACP connections. It extends to native adapters. A Codex process that is
@@ -279,20 +288,26 @@ failing mid-turn.
 
 Owner: `harnesses/codex/driver.ts`, `harnesses/codex/auth-file.ts`.
 
-Rule: **tokens go back where they came from.**
+Rule: **the registry is the source; the CLI's file is kept in step only for
+a login imported from it.**
 
 - Auth supplied by the registry (`this.codexAuth` set from `applyConfig`):
-  the driver does not touch `auth.json`. It emits the refreshed bundle
-  through the driver host; the workspace runtime forwards it to the server,
-  which calls `putCredential` on the same row (same `account_id`, so the
-  upsert keeps the id and the active mark). A restart replays a live
-  credential.
+  the driver does not write `auth.json` itself. It emits the refreshed
+  bundle through the driver host; the workspace runtime forwards it to the
+  server, which calls `updateCredentialSecret` on the same row (same
+  `account_id`, so the row keeps its id and active mark). The authority's
+  existing `mirrorRenewedLocalTokens` (`authority/default-credentials.ts`)
+  then writes the renewed tokens into `~/.codex/auth.json` **only when the
+  row is `source: "local_only"`**, the marker for a login imported from that
+  file. This is deliberate and stays: the provider rotates refresh tokens,
+  and a file left behind would strand the user's own `codex` CLI. A pasted
+  or second account is `managed` and never touches the file.
 - No registry auth (the process is using the CLI's own login): unchanged,
-  the file is the source and is rewritten.
+  the file is the source and the CLI refreshes it.
 
 `CODEX_HOME` stays the user's `~/.codex`, so `config.toml`, skills and
 session rollouts are untouched. The `codexHome` option the factory never
-passes stays unused; this design never writes account state to disk.
+passes stays unused.
 
 ### 5. Claude: second accounts through `claude setup-token`
 
@@ -427,15 +442,114 @@ Nothing changes in the composer or on the session screen.
 | A `claude setup-token` token minted on a second subscription account runs a turn through our driver | Mint one on a second account, run a turn, record `expires_at` |
 | Claude Code's `~/.claude.json` carries a stable account id and email | Read it on a real install; if absent, derive the id from the token's `sub` claim if it is a JWT, else from a hash |
 
+## Stress test (2026-09-12, evening)
+
+Every flow the sections above lean on was traced in the code. What held,
+what did not, and what each miss changes.
+
+### Held
+
+- A Claude turn is one `query()` with the auth in its spawn environment
+  (`harnesses/claude/driver.ts:509`), so a switch applies at the next turn.
+- A Codex login is per app-server process and `syncProcessAuth` re-logs a
+  live process (`driver.ts:640`).
+- Native turns are already tracked in `activeTurns` (`workspace/runtime.ts:1119`);
+  only the wait is gated to ACP connections (`:770`). Pi throws "Cannot
+  rotate Pi credentials during an active turn" on a mid-turn apply, so the
+  gate removal fixes Pi as well.
+- `putCredential` upserts on `(org, provider, kind, account_id)`; the Codex
+  sync imports every `~/.codex/accounts/*.auth.json` with an account id.
+- The snapshot's `auth` shape is unchanged, so no version bump.
+- Model visibility is independent of accounts.
+
+### Did not hold
+
+1. **The machine login is implicit and the design never modelled it.** With
+   nothing stored, Claude spawns with the server's environment and the CLI
+   uses its own `/login` credential; Codex sends no `account/login/start`
+   and the app-server reads its own `~/.codex/auth.json`. Onboarding says
+   so in words (`destinationStoresCredentials`: a local run stores nothing).
+   This is why the app works locally without ever connecting a harness.
+   "No active row means not connected" would break that. Change: the
+   active choice has an implicit member, **this computer's login**, which
+   is the default whenever no stored row is active. Deleting the active row
+   returns the harness to it, visibly, rather than failing closed.
+2. **Importing the Claude machine login makes it worse, not better.** The
+   sync stores only the access token, with no refresh token and no expiry
+   (`sync.ts:295`), nothing re-syncs it (the only callers are the explicit
+   sync route), and `isRefreshableCredential` covers Codex only. Once
+   imported, the explicit copy is sent as `CLAUDE_CODE_OAUTH_TOKEN`, outranks
+   the CLI's own login, and dies when the access token expires while the
+   keychain copy keeps refreshing. Change: the Claude keychain login is
+   never imported as an account; it is only ever the implicit machine
+   login. Claude's stored accounts are pasted tokens and keys.
+3. **A second ChatGPT login deletes the first.** The OAuth callback runs
+   `deleteCredentialsByProvider` before `putCredential`
+   (`provider-auth/service.ts:233`). Change: upsert by `account_id`.
+4. **There are three winner rules, not one.** The fanout's
+   `preferredCredentialPerProvider`, `getCredentialByProvider` (first row by
+   its own order; behind `GET /credentials/:providerId` and the Pi
+   projection), and the embedded OpenCode bridge's own choice in
+   `reconcileCredentialsIntoSdk` (`opencode/sdk-credential-bridge.ts:81`).
+   Change: all three read the active mark; none keeps a private order.
+5. **The hosted control plane has its own store.** Worker hosts compose an
+   envelope-encrypted KV adapter and must never load the SQLite registry.
+   A column and index cover one of two stores. Change: section 1 now makes
+   the mark a contract operation with two implementations.
+6. **Credential changes do not fan out.** Only MCP and connection routes
+   call `fanOutConfig`; a saved key reaches a sandbox on its next restart.
+   Section 3 said otherwise and is corrected: the credential routes call
+   it.
+7. **The refresh mirror is deliberate.** `mirrorRenewedLocalTokens` writes
+   renewed Codex tokens into `~/.codex/auth.json` for `local_only` imports
+   so the user's CLI is not stranded by refresh-token rotation. "Never
+   touch the file" would have stranded it. Section 4 is corrected.
+8. **Disconnect wipes every account.** The Providers page's disconnect is
+   `DELETE /credentials/provider/:providerId`. The accounts list must delete
+   by id (`DELETE /credentials/:id` exists) and keep the per-provider wipe
+   off the row.
+9. **Claude is two provider ids.** One login is stored under `claude-acp`
+   and `claude-sdk` (`claudeHarnessBindings`). The list groups them as
+   discovery does, and Make active marks both bindings in one write.
+10. **`config.auth` is a fourth source.** The user config's `auth` block is
+    merged under registry rows for local scope (`agent-config/index.ts:527`).
+    It belongs to the implicit machine tier and is documented as such; it
+    never competes with an active row.
+11. **Sandbox consent changes behaviour.** Today the collapse takes the
+    first consented row for `shared` scope, which may not be local's winner.
+    "Active row or nothing" is stricter: a user whose active account is not
+    shared but whose other one is loses sandbox auth until they consent.
+    Kept, with the Settings row saying why.
+
+### Still unverified
+
+- What `account/logout` does to the app-server's own `auth.json`. The
+  driver sends it when an explicit login is replaced by none
+  (`processAuthWasExplicit`), which is exactly the return to the machine
+  login. If it deletes the file, the safe move is to restart the
+  app-server process instead. Verify before Phase 1 closes.
+- Whether a Codex thread started under one account resumes under another.
+- Whether the app-server honours `account/login/start` over an ambient
+  `OPENAI_API_KEY`; moot for our spawns after the env strip.
+- The field names in Claude Code's `~/.claude.json` account record; only
+  needed if the keychain login is ever listed, which finding 2 rules out.
+
 ## Phases and acceptance criteria
 
 Each phase is a reviewable slice with its own gate.
 
 ### Phase 1: active flag, Codex, local
 
-- Column, partial unique index, migration with backfill; `setActiveCredential`;
-  activate route; fanout on the active row; `preferredCredentialPerProvider`
+- `setActiveCredential` on the credentials contract, implemented by the
+  SQLite registry (column, partial unique index, migration with backfill)
+  and the Worker KV adapter; activate route; fanout, `getCredentialByProvider`
+  and the OpenCode bridge all on the active row; `preferredCredentialPerProvider`
   and `providerPreference` deleted.
+- The implicit machine login as the default choice when no row is active;
+  `config.auth` documented as part of that tier.
+- The Codex OAuth callback upserts by account id instead of wiping the
+  provider; credential routes call `fanOutConfig`; the accounts list deletes
+  by id.
 - Native adapters wait for active turns before `applyConfig`.
 - Codex refresh writes back to the registry when the registry supplied auth.
 - Env strip for Codex.
@@ -464,10 +578,12 @@ Progress:
 
 ### Phase 2: Claude accounts
 
-- Claude sync sets `account_id`; the paste path fingerprints a token or key
-  into `account_id`; env strip for Claude; the account list under the
-  Claude row. (The provider-auth `token` method and its inline card landed
-  2026-09-12 in `85f1d007c8`.)
+- The paste path fingerprints a token or key into `account_id`; the Claude
+  keychain login is no longer imported as a row (finding 2) and appears only
+  as the implicit machine login; Make active marks both Claude bindings; env
+  strip for Claude; the account list under the Claude row. (The
+  provider-auth `token` method and its inline card landed 2026-09-12 in
+  `85f1d007c8`.)
 
 Acceptance:
 - [ ] Machine login plus one `setup-token` account listed under Claude; Make
