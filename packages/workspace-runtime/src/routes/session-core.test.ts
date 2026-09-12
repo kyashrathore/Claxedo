@@ -2032,9 +2032,25 @@ describe("createSessionRoutes session instructions", () => {
         }
       },
       executeTurn: (_binding, prompt) => (async function* () {
+        entered.push(prompt.system)
+        notify()
+        if (held) await held
         turns.push(prompt.system)
         notify()
       })(),
+    }
+    const entered: Array<string | undefined> = []
+    let held: Promise<void> | undefined
+    let release: (() => void) | undefined
+    const model = {
+      hold() {
+        held = new Promise<void>((resolve) => {
+          release = resolve
+        })
+      },
+      release() {
+        release?.()
+      },
     }
     const events: CompatEnvelope[] = []
     const watchers = new Set<() => void>()
@@ -2069,7 +2085,7 @@ describe("createSessionRoutes session instructions", () => {
         notify()
       },
     })
-    return { app, creates, turns, configRead, events, settled }
+    return { app, creates, turns, entered, model, configRead, events, settled }
   }
 
   function refusals(events: CompatEnvelope[]) {
@@ -2180,18 +2196,19 @@ describe("createSessionRoutes session instructions", () => {
     expect(turns).toEqual([])
   })
 
-  // prompt_async admits a message id and answers 204 before the turn runs, so a
-  // refusal that leaves the admission behind answers the retry 204 as well and
-  // the submitted message never executes at all.
-  test("a config-read refusal frees the message id, and the same id then runs once with the retained block", async () => {
+  // prompt_async's 204 is a delivery receipt — the Tasks bridge records the turn
+  // as handed off on it — so a turn refused before anything ran has to be the
+  // response, and the refused message id has to submit again.
+  test("answers the config-read refusal, and the same id then runs once with the retained block", async () => {
     const { app, turns, configRead, events, settled } = instructionRoutes({ instructionChannel: true })
     expect((await create(app, { id: "ses_recover", instructions: "Answer only in haiku." })).status).toBe(201)
 
     configRead.fails = true
-    expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)
-    await settled(() => refusals(events).length > 0)
-    expect(refusals(events)).toEqual(["session_configuration_unavailable"])
+    const refused = await promptAsync(app, "ses_recover", "msg_recover")
+    expect(refused.status).toBe(503)
+    expect(await refused.json()).toMatchObject({ error: { code: "session_configuration_unavailable" } })
     expect(turns).toEqual([])
+    expect(refusals(events)).toEqual([])
 
     configRead.fails = false
     expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)
@@ -2201,5 +2218,19 @@ describe("createSessionRoutes session instructions", () => {
     expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(turns).toEqual(["Answer only in haiku."])
+  })
+
+  test("answers 204 while the model is still running the turn", async () => {
+    const { app, turns, entered, model, settled } = instructionRoutes({ instructionChannel: true })
+    expect((await create(app, { id: "ses_slow" })).status).toBe(201)
+
+    model.hold()
+    expect((await promptAsync(app, "ses_slow", "msg_slow")).status).toBe(204)
+    await settled(() => entered.length > 0)
+    expect(turns).toEqual([])
+
+    model.release()
+    await settled(() => turns.length > 0)
+    expect(turns).toEqual([undefined])
   })
 })

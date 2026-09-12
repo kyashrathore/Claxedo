@@ -42,6 +42,7 @@ import { recovering } from "@claxedo/agent-sdk-runtime/status"
 import { isAgentRuntimeGoalError } from "@claxedo/agent-sdk-runtime"
 import { attachSseFanout } from "@claxedo/agent-sdk-runtime/sse"
 import {
+  admitSessionPromptTurn,
   compatScope,
   runRuntimePromptTurn,
   runSessionPromptTurn,
@@ -49,9 +50,12 @@ import {
   sessionTurnRefusal,
   sessionTurnRefused,
   type ActiveTurnScope,
+  type AdmittedSessionPromptTurn,
   type RuntimeSessionBusEvent,
   parseSessionPromptBody,
   type SessionPromptBody,
+  type SessionPromptTurnResult,
+  type SessionTurnRefusalCode,
 } from "../session/service"
 import {
   normalizeSessionConfigUpdate,
@@ -786,6 +790,15 @@ function unsupportedOperation(
       message: details?.message ?? `${caps.harness} does not support ${operation}`,
     },
   }, 409)
+}
+
+/**
+ * The turn was refused before the harness was asked to run anything, so the
+ * cause is external to it and the same message id may submit again once the
+ * cause is gone. `code` is what carries that; the sentence beside it cannot.
+ */
+function turnRefused(c: Ctx, refusal: SessionTurnRefusalCode, message: string) {
+  return c.json(errorBody(refusal, message), 503)
 }
 
 function turnAdmissionConflict(c: Ctx) {
@@ -2104,62 +2117,72 @@ export function createSessionRoutes(opts: Opts) {
         })
         if (turnAdmission.rejected) return turnAdmission.rejected
         const access = sessionAccessContext(c)
-        if (!runtime) await applyTurnPermissionMode({
-          adapter,
-          binding: await requireExecutionBinding(opts, c, directory, id, adapter),
-          modeId: body.permissionMode,
-        })
         let settleAdmission: ((error?: unknown) => void) | undefined
         const admission = runtime
           ? new Promise<unknown>((resolve) => {
               settleAdmission = resolve
             })
           : undefined
+        let runTurn: () => Promise<SessionPromptTurnResult>
+        if (runtime) {
+          runTurn = () => runRuntimePromptTurn({
+            runtime,
+            sessionId: id,
+            directory,
+            body,
+            publishGlobal: opts.publishGlobal,
+            publishStatus: (event) => opts.sessionBus.publish(event),
+            createActiveTurnScope: opts.createActiveTurnScope
+              ? () => turnScope(
+                  opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id }),
+                  turnAdmission.lease,
+                )
+              : undefined,
+            ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
+            streamErrorMessage: streamTurnErrorMessage,
+            onAdmissionSettled: settleAdmission,
+            actor: access.actor,
+            author: access.author,
+          })
+        } else {
+          const binding = await requireExecutionBinding(opts, c, directory, id, adapter)
+          await applyTurnPermissionMode({ adapter, binding, modeId: body.permissionMode })
+          let admitted: AdmittedSessionPromptTurn
+          try {
+            admitted = await admitSessionPromptTurn({ adapter, binding, sessionId: id, directory, body })
+          } catch (error) {
+            const refusal = sessionTurnRefusal(error)
+            if (!refusal) throw error
+            await turnAdmission.lease?.release().catch(() => undefined)
+            return turnRefused(c, refusal, streamTurnErrorMessage(error))
+          }
+          runTurn = () => runSessionPromptTurn({
+            adapter,
+            binding: admitted.binding,
+            admitted,
+            sessionId: id,
+            directory,
+            body,
+            publishGlobal: opts.publishGlobal,
+            publishStatus: (event) => opts.sessionBus.publish(event),
+            publishUserMessage: false,
+            streamErrorMessage: streamTurnErrorMessage,
+            createActiveTurnScope: opts.createActiveTurnScope
+              ? ({ adapter, directory, sessionId }) => turnScope(
+                  opts.createActiveTurnScope?.({ c, adapter, directory, sessionId }),
+                  turnAdmission.lease,
+                )
+              : undefined,
+            ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
+          })
+        }
         await opts.childSessions?.onTurnStarted(id, directory)
-        // prompt_async answers as soon as the turn is ADMITTED; the turn itself
-        // runs on after the response. The IIFE below has its own catch/finally,
-        // so nothing here can reject unobserved.
+        // The turn runs detached: the response must not wait for the model. The
+        // IIFE has its own catch/finally, so nothing here can reject unobserved.
         admittedForExecution = true
         void (async () => {
           try {
-            const turn = runtime
-              ? await runRuntimePromptTurn({
-                  runtime,
-                  sessionId: id,
-                  directory,
-                  body,
-                  publishGlobal: opts.publishGlobal,
-                  publishStatus: (event) => opts.sessionBus.publish(event),
-                  createActiveTurnScope: opts.createActiveTurnScope
-                    ? () => turnScope(
-                        opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id }),
-                        turnAdmission.lease,
-                      )
-                    : undefined,
-                  ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
-                  streamErrorMessage: streamTurnErrorMessage,
-                  onAdmissionSettled: settleAdmission,
-                  actor: access.actor,
-                  author: access.author,
-                })
-              : await runSessionPromptTurn({
-                  adapter,
-                  binding: await requireExecutionBinding(opts, c, directory, id, adapter),
-                  sessionId: id,
-                  directory,
-                  body,
-                  publishGlobal: opts.publishGlobal,
-                  publishStatus: (event) => opts.sessionBus.publish(event),
-                  publishUserMessage: false,
-                  streamErrorMessage: streamTurnErrorMessage,
-                  createActiveTurnScope: opts.createActiveTurnScope
-                    ? ({ adapter, directory, sessionId }) => turnScope(
-                        opts.createActiveTurnScope?.({ c, adapter, directory, sessionId }),
-                        turnAdmission.lease,
-                      )
-                    : undefined,
-                  ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
-                })
+            const turn = await runTurn()
             if (!turnAdmission.lease?.lost()) {
               await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
             }
@@ -2167,8 +2190,7 @@ export function createSessionRoutes(opts: Opts) {
             settleAdmission?.(error)
             if (isAgentRuntimeTurnConflictError(error)) return
             const refusal = sessionTurnRefusal(error)
-            // Nothing executed, so the message id is free again; the submitter was
-            // already answered 204 and learns of the refusal only from this event.
+            // Nothing executed, so the same message id must submit again.
             if (refusal) releasePromptAdmission(id, body.messageID)
             // Keep a human-safe headline but never discard the cause: route the real
             // message through sessionError (→ firstTurnErrorData), so it classifies
@@ -2202,6 +2224,11 @@ export function createSessionRoutes(opts: Opts) {
         if (isAgentRuntimeTurnConflictError(admissionError)) {
           releasePromptAdmission(id, body.messageID)
           return turnAdmissionConflict(c)
+        }
+        const admissionRefusal = sessionTurnRefusal(admissionError)
+        if (admissionRefusal) {
+          releasePromptAdmission(id, body.messageID)
+          return turnRefused(c, admissionRefusal, streamTurnErrorMessage(admissionError))
         }
         return c.body(null, 204)
       } finally {

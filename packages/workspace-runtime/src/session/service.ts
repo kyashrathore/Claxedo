@@ -139,6 +139,8 @@ export type SessionPromptTurnInput = {
   sessionId: string
   directory: RuntimeDirectory
   body: SessionPromptBody
+  /** The caller's own admission decision; without it the configuration is read here. */
+  admitted?: AdmittedSessionPromptTurn
   publishGlobal: (event: CompatEnvelope) => void
   publishStatus: (event: RuntimeSessionBusEvent) => void
   createActiveTurnScope?: (input: {
@@ -284,10 +286,9 @@ export function sessionTurnRefusal(error: unknown): SessionTurnRefusalCode | und
 }
 
 /**
- * `data.code` is what tells a submitter the turn can be retried under the same
- * message id; the classified sentence beside it cannot say that, and a
- * fire-and-forget submitter has already been answered by the time this is
- * published.
+ * `data.code` is what tells a reader the turn can be retried under the same
+ * message id; the classified sentence beside it cannot say that. This reaches
+ * everyone watching the session, including readers that never submitted it.
  */
 export function sessionTurnRefused(
   refusal: SessionTurnRefusalCode,
@@ -333,6 +334,40 @@ async function promptForSession(
     })
   }
   return prompt(body, config)
+}
+
+export type AdmittedSessionPromptTurn = {
+  binding: AgentExecutionBinding
+  prompt: PromptInput
+}
+
+/**
+ * Everything an adapter turn can be refused on before the harness is asked to
+ * run anything: a complete execution binding and the session's configuration. A
+ * caller that answers its client before the turn finishes decides admission
+ * here first, so a refusal is that answer rather than an event the client is
+ * not waiting for.
+ */
+export async function admitSessionPromptTurn(input: {
+  adapter: AgentHarnessAdapter
+  binding: AgentExecutionBinding | undefined
+  sessionId: string
+  directory: RuntimeDirectory
+  body: SessionPromptBody
+}): Promise<AdmittedSessionPromptTurn> {
+  if (!input.binding) {
+    throw new AgentRuntimeContractError({
+      code: "invalid_execution_binding",
+      field: "upstreamSessionId",
+      message: `Session ${input.sessionId} has no complete execution binding`,
+    })
+  }
+  const binding = assertAgentExecutionBinding(input.binding, {
+    ...input.binding,
+    sessionId: input.sessionId,
+    directory: input.directory ?? "",
+  })
+  return { binding, prompt: await promptForSession(input.adapter, binding, input.body) }
 }
 
 function isMessage(input: unknown): input is AgentMessage {
@@ -494,19 +529,13 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
 }
 
 export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promise<SessionPromptTurnResult> {
-  if (!input.binding) {
-    throw new AgentRuntimeContractError({
-      code: "invalid_execution_binding",
-      field: "upstreamSessionId",
-      message: `Session ${input.sessionId} has no complete execution binding`,
-    })
-  }
-  const binding = assertAgentExecutionBinding(input.binding, {
-    ...input.binding,
+  const { binding, prompt: promptInput } = input.admitted ?? await admitSessionPromptTurn({
+    adapter: input.adapter,
+    binding: input.binding,
     sessionId: input.sessionId,
-    directory: input.directory ?? "",
+    directory: input.directory,
+    body: input.body,
   })
-  const promptInput = await promptForSession(input.adapter, binding, input.body)
   const scope = compatScope(input.directory, input.sessionId)
 
   let assistantId = promptInput.assistantMessageId ?? mkAssistantId(promptInput.userMessageId)
