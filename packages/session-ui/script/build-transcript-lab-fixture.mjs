@@ -1,9 +1,17 @@
 import { readFileSync, writeFileSync, statSync } from "node:fs"
+import { homedir, userInfo } from "node:os"
 import { basename, dirname, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { canonicalToolName, reconstructQuestionAnswers } from "@claxedo/agent-runtime-contract"
+import { redactMachineIdentity } from "../src/components/transcript-lab-redact.ts"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
+const REPO_ROOT = resolve(HERE, "../../..")
+const HOME = homedir()
+const LOG_ROOT = `${HOME}/.claude/projects`
+/** Claude Code names a project's log directory after the project path, with `/` and `.` written as `-`. */
+const projectLogDir = (dir) => `${LOG_ROOT}/${dir.replace(/[/.]/g, "-")}`
+const OC = projectLogDir(REPO_ROOT)
 /**
  * Data, not source. Transcripts quote real code, so under a `.ts` extension the repo's
  * source guards (`markdown-svg-sanitize.test.ts`, `lint:theme-tokens`) match `.innerHTML =`
@@ -11,7 +19,6 @@ const HERE = dirname(fileURLToPath(import.meta.url))
  * hand-written wrapper that types this file.
  */
 const OUTPUT = resolve(HERE, "../src/components/transcript-lab-fixture.json")
-const LOG_DIR = "/Users/yashvardhansingh/.claude/projects/-Users-yashvardhansingh-test-opencode"
 const OUTPUT_LIMIT = 8000
 const TRUNCATION_SUFFIX = "\n… [truncated for fixture]"
 
@@ -19,7 +26,7 @@ const SOURCES = [
   {
     id: "diagnosis",
     title: "Transcript readability diagnosis",
-    file: `${LOG_DIR}/e8fbc92a-aef1-4e76-b08c-55ec4212eac5.jsonl`,
+    file: `${OC}/e8fbc92a-aef1-4e76-b08c-55ec4212eac5.jsonl`,
     /**
      * The session that works on this lab writes to this log, so without a stop marker
      * every regeneration rewrites the fixture with whatever happened since. This uuid is
@@ -28,7 +35,15 @@ const SOURCES = [
      */
     untilUuid: "c3e25add-1914-4543-8cda-f2ec92d3c08c",
   },
-  { id: "toolrun", file: `${LOG_DIR}/57c90445-b05e-445f-bd67-c3cbe349f7aa.jsonl` },
+  {
+    id: "toolrun",
+    file: `${OC}/57c90445-b05e-445f-bd67-c3cbe349f7aa.jsonl`,
+    /**
+     * Live log too: this uuid is the assistant text row that ends the turn at
+     * 2026-09-09T19:48:38Z, with no tool call outstanding.
+     */
+    untilUuid: "bf279bde-0ab1-4b42-b19d-4a63c53dde62",
+  },
 ]
 
 
@@ -421,10 +436,8 @@ function convert(source) {
   }
 }
 
-const LOG_ROOT = "/Users/yashvardhansingh/.claude/projects"
-const OC = `${LOG_ROOT}/-Users-yashvardhansingh-test-opencode`
 const CATALOG_SESSION_ID = "transcript-lab-catalog"
-const CATALOG_CWD = "/Users/yashvardhansingh/test/opencode"
+const CATALOG_CWD = REPO_ROOT
 const CATALOG_OUTPUT_LIMIT = 2500
 const CATALOG_START = Date.parse("2026-09-08T09:00:00.000Z")
 const CATALOG_GAP_MS = 1500
@@ -521,7 +534,7 @@ const CATALOG_TURNS = [
     entries: [
       {
         mine: {
-          file: `${LOG_ROOT}/-Users-yashvardhansingh-test-agent-app-benchmark/a2ad53ea-72a6-49cf-90e6-34169605fea7.jsonl`,
+          file: `${projectLogDir(`${HOME}/test/agent-app-benchmark`)}/a2ad53ea-72a6-49cf-90e6-34169605fea7.jsonl`,
           tool: "Bash",
           match: { description: "Check backup sizes" },
         },
@@ -601,7 +614,7 @@ const CATALOG_TURNS = [
     entries: [
       {
         mine: {
-          file: `${LOG_ROOT}/-Users-yashvardhansingh-test-opencode--claude-worktrees-ci-prod-requirements-55b1a1/6bbffd3f-204c-400b-b153-cd001146e025.jsonl`,
+          file: `${projectLogDir(`${REPO_ROOT}/.claude/worktrees/ci-prod-requirements-55b1a1`)}/6bbffd3f-204c-400b-b153-cd001146e025.jsonl`,
           tool: "mcp__plugin_posthog_posthog__exec",
           match: { command: "call generate-app-url" },
         },
@@ -1174,6 +1187,14 @@ for (const source of sources) {
   )
 }
 
+const USER = userInfo().username
+const redacted = redactMachineIdentity(sessions, HOME, USER)
+
 // One session per line: a diff then shows which session changed instead of one 1 MB blob.
-writeFileSync(OUTPUT, `[\n${sessions.map((session) => JSON.stringify(session)).join(",\n")}\n]\n`)
+const json = `[\n${redacted.map((session) => JSON.stringify(session)).join(",\n")}\n]\n`
+for (const leak of [HOME, USER]) {
+  if (leak && json.includes(leak)) throw new Error(`"${leak}" survived redaction; the fixture was not written`)
+}
+
+writeFileSync(OUTPUT, json)
 process.stderr.write(`wrote ${OUTPUT} (${(statSync(OUTPUT).size / 1024).toFixed(1)} KB)\n`)
