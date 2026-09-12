@@ -374,7 +374,7 @@ credential and settings work; ceilings measured at a clean checkout.
 | every package typecheck, claxedo-app `tsgo -b` and `typecheck:e2e` | clean |
 | claxedo-app `bun test` / `vitest` / `test:architecture` | 5564 / 1424 / 252 pass, 0 fail |
 | claxedo-server-core / claxedo-server / claxedo-local-server (vitest) | 651 / 2500 (3 skipped: Pi 0.85.1 vs the 0.85.0 pin, no real ACP binary) / 431 pass |
-| workspace-runtime / agent-sdk-runtime / agent-event-runtime / agent-runtime-contract / session-ui / ui | 1145 / 710 / 229 / 40 / 267 / 67 pass |
+| workspace-runtime / agent-sdk-runtime / agent-event-runtime / agent-runtime-contract / session-ui / ui | 1145 / 710 / 230 / 40 / 268 / 67 pass; claxedo-app jsdom `scrollable-output` 4 pass, both mutations caught |
 | native renderer `cargo test` | 12 pass |
 | e2e, build-preview mode | `core-busy-abort-errors` 11, `core-harness-rendering-matrix` 30, `core-claude-native-sdk-rail` 3, `core-source-control` 12, `core-cloud-provisioning` 5, `core-sidebar-tree` 23 |
 | live | Codex steer end to end (5 runs); Claude steer end to end with the real model (2 runs); Pi and Cursor skipped for want of a pinned binary and a key |
