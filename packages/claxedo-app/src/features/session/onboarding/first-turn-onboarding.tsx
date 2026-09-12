@@ -97,7 +97,7 @@ export function createFirstTurnOnboarding(input: {
           set: (model) => resolve(model),
         }} onSelect={() => dialog.close()} /></Dialog>, () => resolve(undefined)).catch(reject)
       })
-      if (!next) return
+      if (!next) return undefined
       if (harness && controller && selection?.harness) {
         await controller.setModel(harness.scope, next, {
           directory: input.directory(), sessionId: harness.sessionId, sessionRef: harness.sessionRef,
