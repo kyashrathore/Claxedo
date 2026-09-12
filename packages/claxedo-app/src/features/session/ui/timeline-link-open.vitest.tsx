@@ -50,6 +50,24 @@ describe("transcript links reach the host", () => {
     expect(anchor?.getAttribute("href")).toBe(FILE_URL)
   })
 
+  test("a bare file URL in prose renders the same anchor", async () => {
+    const anchor = await anchorFor("It landed in " + FILE_URL + " already.")
+    expect(anchor?.getAttribute("href")).toBe(FILE_URL)
+    expect(anchor?.textContent).toBe(FILE_URL)
+  })
+
+  test("a bare registered-scheme URL in prose renders an anchor", async () => {
+    const anchor = await anchorFor("Reopen vscode://file/Users/dev/work/notes.md:12 to continue.")
+    expect(anchor?.getAttribute("href")).toBe("vscode://file/Users/dev/work/notes.md:12")
+  })
+
+  test("a scheme outside the closed list stays text in prose", async () => {
+    const container = mountMarkdown("Run javascript:alert(1) and smb://attacker/share never.")
+    await wait(200)
+    expect(container.querySelector("a[href]")).toBeNull()
+    expect(container.textContent).toContain("javascript:alert(1)")
+  })
+
   test("clicking an anchor asks the host first and keeps its own default when the host declines", async () => {
     const anchor = await anchorFor("Open `" + REPORT_URL + "` to see it.")
     expect(anchor).toBeTruthy()

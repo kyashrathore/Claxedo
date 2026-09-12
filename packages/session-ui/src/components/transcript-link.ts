@@ -1,17 +1,11 @@
-/**
- * Closed on purpose: an anchor is worth rendering only where a host has a route
- * for the target — a workspace browser tab, the OS browser (the desktop
- * `open-link` channel takes `http`/`https`/`mailto` and drops everything else),
- * the platform's file-open path, or the OS scheme registry. Anything outside
- * the list, a `javascript:` or `data:` payload included, stays inert text.
- */
-const linkPrefixes = ["https://", "http://", "file://", "vscode://", "claxedo://", "mailto:"] as const
+import { transcriptLinkPrefixes, transcriptLinkRunSource } from "@opencode-ai/ui/context/marked"
 
-const prefixAlternation = linkPrefixes.map((prefix) => prefix.replace(/[./]/g, "\\$&")).join("|")
+const prefixAlternation = transcriptLinkPrefixes.map((prefix) => prefix.replace(/[./]/g, "\\$&")).join("|")
 
+/** Not `transcriptLinkRunSource`: an exact match ends at a paren, a run inside prose may open one. */
 const linkText = new RegExp(`^(?:${prefixAlternation})[^\\s<>()\`"']+$`, "i")
 
-const linkInText = new RegExp(`(?:${prefixAlternation})[^\\s<>"'\`)\\]]+`, "gi")
+const linkInText = new RegExp(transcriptLinkRunSource(transcriptLinkPrefixes), "gi")
 
 const trailingPunctuation = /[),.;:!?]+$/
 
@@ -32,7 +26,7 @@ const sanitizerDefaultSchemes: readonly string[] = [
 
 const uriSchemes = [
   ...sanitizerDefaultSchemes,
-  ...linkPrefixes
+  ...transcriptLinkPrefixes
     .map((prefix) => prefix.slice(0, prefix.indexOf(":")))
     .filter((scheme) => !sanitizerDefaultSchemes.includes(scheme)),
 ]

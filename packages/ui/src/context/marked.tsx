@@ -468,6 +468,80 @@ export const rawMarkdownHtmlDisabled: MarkedExtension = {
   },
 }
 
+/**
+ * Closed on purpose: an anchor is worth rendering only where a host has a route
+ * for the target — a workspace browser tab, the OS browser, the platform's
+ * file-open path, or the OS scheme registry. Anything outside the list, a
+ * `javascript:` or `data:` payload included, stays inert text.
+ */
+export const transcriptLinkPrefixes = [
+  "https://",
+  "http://",
+  "file://",
+  "vscode://",
+  "claxedo://",
+  "mailto:",
+] as const
+
+/**
+ * How far a link runs once prose has started one. A closing paren, bracket or
+ * quote ends the run because markdown and prose wrap URLs in those far more
+ * often than a URL carries them; sentence punctuation left on the tail is the
+ * caller's to trim.
+ */
+export function transcriptLinkRunSource(prefixes: readonly string[]) {
+  const alternation = prefixes.map((prefix) => prefix.replace(/[./]/g, "\\$&")).join("|")
+  return `(?:${alternation})[^\\s<>"'\`)\\]]+`
+}
+
+/**
+ * `http(s)` is left to GFM: marked's own url rule backpedals over balanced
+ * parentheses, which a character class cannot do, and the same rule picks up
+ * bare `www.` and email addresses. The remaining prefixes have no GFM rule at
+ * all, so a `file:///…` or `vscode://…` a model writes in prose is inert
+ * without this.
+ */
+const autolinkSource = transcriptLinkRunSource(
+  transcriptLinkPrefixes.filter((prefix) => !prefix.startsWith("http")),
+)
+const autolinkRule = new RegExp(`^${autolinkSource}`, "i")
+const autolinkStart = new RegExp(autolinkSource, "i")
+const autolinkTrailing = /[),.;:!?]+$/
+
+/**
+ * Emits marked's own `link` token rather than a token of its own, so the anchor
+ * comes out of the same renderer as `[text](url)` and GFM's autolink, and the
+ * sanitizer and click handler downstream cannot tell the three apart.
+ */
+export const markedTranscriptAutolink: MarkedExtension = {
+  extensions: [
+    {
+      name: "transcriptAutolink",
+      level: "inline",
+      start(src) {
+        return autolinkStart.exec(src)?.index
+      },
+      tokenizer(src) {
+        // Matches the guard marked puts on its own url rule: a link label is
+        // inline-tokenized with `inLink` set, and nesting an anchor is invalid.
+        if (this.lexer.state.inLink) return undefined
+        const match = autolinkRule.exec(src)
+        if (!match) return undefined
+        const href = match[0].replace(autolinkTrailing, "")
+        if (!href) return undefined
+        return {
+          type: "link",
+          raw: href,
+          href,
+          title: null,
+          text: href,
+          tokens: [{ type: "text", raw: href, text: href }],
+        }
+      },
+    },
+  ],
+}
+
 let openCodeThemeRegistration: Promise<typeof import("@pierre/diffs")> | undefined
 
 export function ensureOpenCodeTheme() {
@@ -509,6 +583,7 @@ function loadJsParser() {
   jsParser ??= import("marked").then(({ Marked }) => {
     const parser = new Marked(
       markedCodeSpanBoundary,
+      markedTranscriptAutolink,
       {
         renderer: {
           html: renderMarkdownHtml,

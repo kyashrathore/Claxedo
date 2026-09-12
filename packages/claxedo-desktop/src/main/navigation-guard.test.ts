@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 
-import { isSafeExternalUrl, navigationDecision, windowOpenDecision } from "./navigation-guard"
+import { isOpenableLinkUrl, isSafeExternalUrl, navigationDecision, windowOpenDecision } from "./navigation-guard"
 
 // The main window's preload exposes an IPC bridge that reaches `execFile`, and
 // it re-runs for every document the window loads. So "does this window ever
@@ -34,6 +36,47 @@ describe("isSafeExternalUrl", () => {
     expect(isSafeExternalUrl("")).toBe(false)
     expect(isSafeExternalUrl("not a url")).toBe(false)
     expect(isSafeExternalUrl("//example.com")).toBe(false)
+  })
+})
+
+describe("isOpenableLinkUrl", () => {
+  test("keeps everything a navigation may leave for", () => {
+    expect(isOpenableLinkUrl("https://example.com/docs")).toBe(true)
+    expect(isOpenableLinkUrl("http://example.com")).toBe(true)
+    expect(isOpenableLinkUrl("mailto:someone@example.com")).toBe(true)
+  })
+
+  test("adds this app's scheme and the editor, which a click on a transcript link means", () => {
+    expect(isOpenableLinkUrl("claxedo://documents/open?id=doc_1")).toBe(true)
+    expect(isOpenableLinkUrl("vscode://file/Users/dev/notes.md:12")).toBe(true)
+  })
+
+  test("stops at those two — the rest still make openExternal a launch primitive", () => {
+    expect(isOpenableLinkUrl("file:///Applications/Evil.app")).toBe(false)
+    expect(isOpenableLinkUrl("javascript:alert(1)")).toBe(false)
+    expect(isOpenableLinkUrl("data:text/html,<script>alert(1)</script>")).toBe(false)
+    expect(isOpenableLinkUrl("smb://attacker/share")).toBe(false)
+    expect(isOpenableLinkUrl("ms-msdt:/id")).toBe(false)
+    expect(isOpenableLinkUrl("not a url")).toBe(false)
+  })
+
+  test("stays out of the navigation policy", () => {
+    for (const url of ["claxedo://x", "vscode://file/etc/passwd"]) {
+      expect(isSafeExternalUrl(url)).toBe(false)
+      expect(windowOpenDecision(url)).toEqual({ action: "block", url })
+      expect(navigationDecision(url, isTrusted)).toEqual({ action: "block", url })
+    }
+  })
+
+  // The wider list is only sound while it reaches `shell.openExternal` through
+  // the link IPC alone; ipc.ts cannot be imported here because it loads Electron.
+  test("is the gate the open-link IPC uses", () => {
+    const ipc = readFileSync(path.join(import.meta.dir, "ipc.ts"), "utf8")
+    const handler = ipc.slice(ipc.indexOf('ipcMain.on("open-link"'))
+
+    expect(handler).toStartWith('ipcMain.on("open-link"')
+    expect(handler.indexOf("isOpenableLinkUrl(url)")).toBeLessThan(handler.indexOf("shell.openExternal(url)"))
+    expect(ipc).not.toContain("isSafeExternalUrl")
   })
 })
 

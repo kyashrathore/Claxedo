@@ -31,6 +31,16 @@
 const EXTERNAL_SCHEMES = new Set(["http:", "https:", "mailto:"])
 
 /**
+ * What the explicit `open-link` IPC may add: `claxedo:` is this app's own
+ * registered scheme and `vscode:` the editor the workspace opens files in. The
+ * list is closed because every entry is a launch of whatever handler the OS has
+ * registered for that scheme, so one more entry is one more program an agent's
+ * rendered output can start. Navigation never consults it — a page reaching a
+ * handler by navigating is the thing `EXTERNAL_SCHEMES` exists to stop.
+ */
+const LINK_SCHEMES = new Set([...EXTERNAL_SCHEMES, "claxedo:", "vscode:"])
+
+/**
  * The one renderer document every desktop emits and loads.
  *
  * Signed capability is not a second document. A signed-capable release starts
@@ -44,6 +54,14 @@ export const MAIN_RENDERER_DOCUMENT = "index.local.html"
 export function isSafeExternalUrl(input: string) {
   try {
     return EXTERNAL_SCHEMES.has(new URL(input).protocol)
+  } catch {
+    return false
+  }
+}
+
+export function isOpenableLinkUrl(input: string) {
+  try {
+    return LINK_SCHEMES.has(new URL(input).protocol)
   } catch {
     return false
   }
