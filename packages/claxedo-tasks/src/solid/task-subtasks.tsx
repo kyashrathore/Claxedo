@@ -1,5 +1,6 @@
 import { For, Show, createSignal } from "solid-js"
 import { TASKS_BOUNDS, type TaskStatus, type TaskSummary } from "../contracts"
+import { LoadMore, type MorePages } from "./load-more"
 import { TaskStatusChip, StatusMenu } from "./status-menu"
 
 export type TaskSubtasksProps = {
@@ -10,6 +11,7 @@ export type TaskSubtasksProps = {
   addDisabledReason?: string
   busy?: boolean
   error?: string
+  more?: MorePages
   onOpen: (taskId: string) => void
   onAdd: (title: string) => void
   onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void
@@ -55,6 +57,7 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
           )}
         </For>
       </div>
+      <LoadMore more={props.more} testId="task-subtasks-load-more" />
       <Show when={props.canAdd} fallback={<p class="tsk-muted">{props.addDisabledReason ?? "Reopen this task to add a subtask."}</p>}>
         <form
           class="tsk-row"

@@ -1,5 +1,6 @@
 import { For, Show, type JSX } from "solid-js"
 import { CONFIGURATION_SLOTS, TASKS_BOUNDS, isConfigurationSlot, type Preset } from "../contracts"
+import { LoadMore, type MorePages } from "./load-more"
 import { PLACEMENT_LABELS, SLOT_LABELS, type StartDraft, type StartPreviewState } from "./view-model"
 
 export type StartTaskDialogProps = {
@@ -10,6 +11,8 @@ export type StartTaskDialogProps = {
   preview: StartPreviewState
   busy?: boolean
   error?: string
+  /** The chooser's own next page: a preset missing from an incomplete list cannot be chosen. */
+  morePresets?: MorePages
   /** Rendered in place of the chooser while the user creates a preset inline. */
   inlinePresetEditor?: JSX.Element
   onDraftChange: (draft: StartDraft) => void
@@ -73,6 +76,7 @@ export function StartTaskDialog(props: StartTaskDialogProps) {
               <For each={props.presets}>{(preset) => <option value={preset.id}>{preset.name}</option>}</For>
             </select>
           </label>
+          <LoadMore more={props.morePresets} testId="start-task-presets-load-more" />
           <button type="button" class="tsk-button" data-testid="start-task-create-preset" onClick={() => props.onCreatePreset()}>
             Create a preset
           </button>

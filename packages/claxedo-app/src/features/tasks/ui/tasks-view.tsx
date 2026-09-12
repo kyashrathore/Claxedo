@@ -11,7 +11,7 @@ import {
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf, type TaskListFilter } from "../data/tasks-api"
-import { useTaskList, useTasksClient, useTasksInvalidation, type TasksScope } from "../data/queries"
+import { morePages, useTaskList, useTasksClient, useTasksInvalidation, type TasksScope } from "../data/queries"
 import type { TasksStore } from "../store/tasks-store"
 import { DialogCreateTask } from "./dialogs/create-task-dialog"
 import { DialogStartTask } from "./dialogs/start-task-dialog"
@@ -42,7 +42,6 @@ export function TasksView(props: TasksViewProps) {
   })
   const tasks = useTaskList(props.scope, filter)
   const visible = createMemo(() => props.store.visibleTasks(tasks.items()))
-  const morePages = () => (tasks.hasMore() ? { onLoadMore: tasks.loadMore, loading: tasks.loadingMore() } : undefined)
   const roots = createMemo(() => visible().filter((task) => task.parentTaskId === null))
   const childrenOf = (taskId: string) => visible().filter((task) => task.parentTaskId === taskId)
 
@@ -157,7 +156,7 @@ export function TasksView(props: TasksViewProps) {
           <TaskList
             tasks={roots()}
             loading={tasks.pending()}
-            more={morePages()}
+            more={morePages(tasks)}
             selectedTaskId={props.store.state.selectedTaskId}
             showChildren={props.store.state.showChildren}
             childrenOf={childrenOf}
@@ -169,7 +168,7 @@ export function TasksView(props: TasksViewProps) {
       >
         <TaskBoard
           tasks={visible()}
-          more={morePages()}
+          more={morePages(tasks)}
           selectedTaskId={props.store.state.selectedTaskId}
           busyTaskId={busyTaskId()}
           onSelect={(taskId) => props.store.selectTask(taskId)}

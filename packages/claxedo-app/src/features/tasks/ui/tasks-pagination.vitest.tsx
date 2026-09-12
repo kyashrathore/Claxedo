@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import type { JSX } from "solid-js"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-import { TASKS_ROUTE_PATH, type SessionReference, type Task, type TaskSummary } from "@claxedo/tasks"
+import { TASKS_BOUNDS, TASKS_ROUTE_PATH, type Preset, type SessionReference, type Task, type TaskSummary } from "@claxedo/tasks"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
+import { PresetsView } from "@/features/tasks/ui/presets-view"
 import { TasksView } from "@/features/tasks/ui/tasks-view"
 
 afterEach(cleanup)
@@ -131,5 +133,139 @@ describe("tasks pagination", () => {
     await waitFor(() =>
       expect(requested.filter((path) => path.startsWith("/tasks?") && path.includes("cursor=tasks-page-2"))).toHaveLength(1),
     )
+  })
+})
+
+function presetRow(id: string): Preset {
+  return {
+    id,
+    revision: 1,
+    scopeId: "local",
+    ownerId: "local",
+    name: `Preset ${id}`,
+    instructions: "",
+    execution: { placement: "local", capabilities: { mode: "inherit-local" } },
+    configurations: {
+      primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "sonnet" }, effort: null },
+    },
+    archivedAt: null,
+    createdAt: 1,
+    updatedAt: 1,
+  }
+}
+
+/**
+ * A host that refuses the second page of every followed list until it is
+ * repaired. Its answers resolve on a timer rather than a microtask, so a
+ * follow that never stops cannot starve the settle window below.
+ */
+function failingSecondPageHost() {
+  const requested: string[] = []
+  let repaired = false
+  configureTasksAppPorts({
+    useScope: () => () => ({ serverUrl: SERVER, scopeId: "local" }),
+    request: async (url) => {
+      const path = url.slice(`${SERVER}${TASKS_ROUTE_PATH}`.length)
+      requested.push(path)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const cursor = new URLSearchParams(path.slice(path.indexOf("?") + 1)).get("cursor")
+      if (path.startsWith("/presets")) {
+        if (cursor !== "presets-page-2") return json({ items: [presetRow("pre_1")], nextCursor: "presets-page-2" })
+        return repaired ? json({ items: [presetRow("pre_2")], nextCursor: null }) : nextPageRefusal()
+      }
+      if (path.startsWith("/tasks/tsk_1/children")) {
+        if (cursor !== "children-page-2") {
+          return json({ items: [summary("tsk_c1", { parentTaskId: "tsk_1" })], nextCursor: "children-page-2" })
+        }
+        return repaired ? json({ items: [summary("tsk_c2", { parentTaskId: "tsk_1" })], nextCursor: null }) : nextPageRefusal()
+      }
+      if (path.startsWith("/tasks?")) return json({ items: [summary("tsk_1", { status: "doing" })], nextCursor: null })
+      if (path === "/tasks/tsk_1") return json({ task: parent, links: [] })
+      if (path === "/capabilities") {
+        return json({
+          protocolVersion: 1,
+          placements: ["local"],
+          cloudSelectedCapabilities: false,
+          instructions: true,
+          configurationSlots: ["primary"],
+          bounds: TASKS_BOUNDS,
+        })
+      }
+      throw new Error(`unexpected request ${path}`)
+    },
+    useProjects: () => () => [{ id: "prj_1", label: "Importer" }],
+    useActiveProjectId: () => () => "prj_1",
+    useCapabilityCatalog: () => () => ({ plugins: [], skills: [], loading: false }),
+    ConfigurationEditor: () => null,
+    useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
+  })
+  return {
+    requested,
+    repair: () => {
+      repaired = true
+    },
+  }
+}
+
+function nextPageRefusal() {
+  return new Response(JSON.stringify({ error: { code: "conflict", message: "The next page is unavailable." } }), {
+    status: 409,
+    headers: { "Content-Type": "application/json" },
+  })
+}
+
+function provide(view: () => JSX.Element) {
+  render(() => (
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <DialogProvider>{view()}</DialogProvider>
+    </QueryClientProvider>
+  ))
+}
+
+/** Long enough for an unbounded follow to issue many more requests than the assertions allow. */
+function settle() {
+  return new Promise((resolve) => setTimeout(resolve, 50))
+}
+
+describe("a followed list whose next page fails", () => {
+  test("children stop following, and one Retry finishes what the failure interrupted", async () => {
+    const host = failingSecondPageHost()
+    const store = createTasksStore()
+    store.selectTask("tsk_1")
+    provide(() => (
+      <TasksView store={store} scope={() => ({ serverUrl: SERVER, scopeId: "local" })} projectId={() => "prj_1"} />
+    ))
+
+    await waitFor(() => expect(screen.getByTestId("task-subtask-tsk_c1")).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId("task-subtasks-load-more").textContent).toBe("Retry"))
+    await settle()
+    expect(host.requested.filter((path) => path.startsWith("/tasks/tsk_1/children"))).toHaveLength(2)
+
+    host.repair()
+    fireEvent.click(screen.getByTestId("task-subtasks-load-more"))
+
+    await waitFor(() => expect(screen.getByTestId("task-subtask-tsk_c2")).toBeTruthy())
+    await settle()
+    expect(host.requested.filter((path) => path.startsWith("/tasks/tsk_1/children"))).toHaveLength(3)
+    expect(screen.queryByTestId("task-subtasks-load-more")).toBeNull()
+  })
+
+  test("presets stop following, and the refusal is readable where the list is", async () => {
+    const host = failingSecondPageHost()
+    provide(() => <PresetsView store={createTasksStore()} scope={() => ({ serverUrl: SERVER, scopeId: "local" })} />)
+
+    await waitFor(() => expect(screen.getByTestId("preset-list-row-pre_1")).toBeTruthy())
+    await waitFor(() => expect(screen.getByTestId("preset-list-load-more").textContent).toBe("Retry"))
+    expect(screen.getByRole("alert").textContent).toBe("The next page is unavailable.")
+    await settle()
+    expect(host.requested.filter((path) => path.startsWith("/presets"))).toHaveLength(2)
+
+    host.repair()
+    fireEvent.click(screen.getByTestId("preset-list-load-more"))
+
+    await waitFor(() => expect(screen.getByTestId("preset-list-row-pre_2")).toBeTruthy())
+    await settle()
+    expect(host.requested.filter((path) => path.startsWith("/presets"))).toHaveLength(3)
+    expect(screen.queryByTestId("preset-list-load-more")).toBeNull()
   })
 })

@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js"
 import { CONFIGURATION_SLOTS, type Preset } from "../contracts"
+import { LoadMore, type MorePages } from "./load-more"
 import { PLACEMENT_LABELS, SLOT_LABELS } from "./view-model"
 
 export type PresetListProps = {
@@ -10,6 +11,7 @@ export type PresetListProps = {
   onIncludeArchivedChange: (value: boolean) => void
   busyPresetId?: string
   error?: string
+  more?: MorePages
   onSelect: (presetId: string) => void
   onCreate: () => void
   onArchive: (input: { presetId: string; revision: number }) => void
@@ -82,6 +84,7 @@ export function PresetList(props: PresetListProps) {
           )}
         </For>
       </div>
+      <LoadMore more={props.more} testId="preset-list-load-more" />
     </div>
   )
 }

@@ -4,7 +4,7 @@ import { StartTaskDialog, emptyPresetEditorDraft, type StartDraft, type StartPre
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf } from "../data/tasks-api"
-import { useTasksClient, useTasksInvalidation, usePresetList, type TasksScope } from "../data/queries"
+import { followRetry, useTasksClient, useTasksInvalidation, usePresetList, type TasksScope } from "../data/queries"
 import type { TasksStore } from "../store/tasks-store"
 import { PresetsView } from "./presets-view"
 
@@ -161,6 +161,7 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
       preview={previewState()}
       busy={busy()}
       error={startError()}
+      morePresets={followRetry(presets)}
       inlinePresetEditor={
         props.store.state.presetDraft ? (
           <PresetsView

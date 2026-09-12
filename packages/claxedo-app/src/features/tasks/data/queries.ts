@@ -1,8 +1,9 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/solid-query"
 import { createEffect, createMemo, type Accessor } from "solid-js"
 import type { Page, Preset, Task, TaskSummary, TasksCapabilities, TaskSessionLinkView } from "@claxedo/tasks"
+import type { MorePages } from "@claxedo/tasks/solid"
 import { useTasksAppPorts, type TasksScope } from "../app-ports"
-import { createTasksApi, tasksQueryKeys, type TaskListFilter } from "./tasks-api"
+import { createTasksApi, refusalOf, tasksQueryKeys, type TaskListFilter } from "./tasks-api"
 
 export type { TasksScope } from "../app-ports"
 
@@ -29,6 +30,10 @@ export function useTasksCapabilities(scope: Accessor<TasksScope>) {
  * A cursor-following list read. `items` holds every page fetched so far, and
  * `hasMore` is the server's own `nextCursor` — never inferred from the page
  * size, which cannot tell a full last page from a truncated one.
+ *
+ * `error` and `moreError` partition the one query error: `error` is the failure
+ * that left the list with nothing, `moreError` the failure of a page after the
+ * first, which leaves what was already read intact.
  */
 export type PagedList<T> = {
   items: Accessor<readonly T[]>
@@ -36,6 +41,7 @@ export type PagedList<T> = {
   error: Accessor<unknown>
   hasMore: Accessor<boolean>
   loadingMore: Accessor<boolean>
+  moreError: Accessor<unknown>
   loadMore: () => void
 }
 
@@ -60,15 +66,42 @@ function pagedList<T>(
   return {
     items,
     pending: () => query.isPending,
-    error: () => query.error,
+    error: () => (query.isFetchNextPageError ? undefined : query.error),
     hasMore: () => query.hasNextPage,
     loadingMore: () => query.isFetchingNextPage,
+    moreError: () => (query.isFetchNextPageError ? query.error : undefined),
     loadMore: () => void query.fetchNextPage(),
+  }
+}
+
+/** The next-page control for a list the user pages by hand. */
+export function morePages(list: PagedList<unknown>): MorePages | undefined {
+  return list.hasMore() ? nextPageControl(list) : undefined
+}
+
+/**
+ * The next-page control for a followed list: absent while following works, and
+ * the retry that resumes following once a page has failed.
+ */
+export function followRetry(list: PagedList<unknown>): MorePages | undefined {
+  return list.moreError() === undefined ? undefined : nextPageControl(list)
+}
+
+function nextPageControl(list: PagedList<unknown>): MorePages {
+  const failure = list.moreError()
+  return {
+    onLoadMore: () => list.loadMore(),
+    loading: list.loadingMore(),
+    ...(failure === undefined ? {} : { error: refusalOf(failure).message }),
   }
 }
 
 function followEveryPage(list: PagedList<unknown>) {
   createEffect(() => {
+    // A failed page leaves `hasMore` true with nothing in flight: without this
+    // stop, the effect re-requests the same failing page for as long as the
+    // view stays mounted.
+    if (list.moreError() !== undefined) return
     if (list.hasMore() && !list.loadingMore()) list.loadMore()
   })
 }

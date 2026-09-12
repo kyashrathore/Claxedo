@@ -11,7 +11,7 @@ import {
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf } from "../data/tasks-api"
-import { useTasksCapabilities, useTasksClient, useTasksInvalidation, usePresetList, type TasksScope } from "../data/queries"
+import { followRetry, useTasksCapabilities, useTasksClient, useTasksInvalidation, usePresetList, type TasksScope } from "../data/queries"
 import type { TasksStore } from "../store/tasks-store"
 
 export type PresetsViewProps = {
@@ -83,6 +83,7 @@ export function PresetsView(props: PresetsViewProps) {
             onIncludeArchivedChange={showArchived}
             selectedPresetId={props.store.state.selectedPresetId}
             error={presets.error() ? refusalOf(presets.error()).message : props.store.state.presetRefusal?.message}
+            more={followRetry(presets)}
             onSelect={(presetId) => {
               const preset = presets.items().find((entry) => entry.id === presetId)
               props.store.selectPreset(presetId)

@@ -4,7 +4,7 @@ import { TaskDetail, TaskSubtasks, groupLinksBySlot } from "@claxedo/tasks/solid
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf } from "../data/tasks-api"
-import { useTaskChildren, useTaskDetail, useTasksClient, useTasksInvalidation, type TasksScope } from "../data/queries"
+import { followRetry, useTaskChildren, useTaskDetail, useTasksClient, useTasksInvalidation, type TasksScope } from "../data/queries"
 import type { TasksStore } from "../store/tasks-store"
 
 export type TaskDetailPanelProps = {
@@ -125,6 +125,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                 }
                 busy={busy()}
                 error={props.store.state.taskErrors[current().id]}
+                more={followRetry(children)}
                 onOpen={(taskId) => props.onOpenTask(taskId)}
                 onAdd={(title) =>
                   void mutate(

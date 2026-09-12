@@ -9,6 +9,7 @@ import { Show } from "solid-js"
 export type MorePages = {
   onLoadMore: () => void
   loading?: boolean
+  error?: string
 }
 
 export function LoadMore(props: { more?: MorePages; testId: string }) {
@@ -16,6 +17,7 @@ export function LoadMore(props: { more?: MorePages; testId: string }) {
     <Show when={props.more}>
       {(more) => (
         <div class="tsk-row">
+          <Show when={more().error}>{(message) => <p class="tsk-error" role="alert">{message()}</p>}</Show>
           <button
             type="button"
             class="tsk-button"
@@ -23,7 +25,7 @@ export function LoadMore(props: { more?: MorePages; testId: string }) {
             disabled={more().loading === true}
             onClick={() => more().onLoadMore()}
           >
-            {more().loading === true ? "Loading…" : "Load more"}
+            {more().loading === true ? "Loading…" : more().error !== undefined ? "Retry" : "Load more"}
           </button>
         </div>
       )}
