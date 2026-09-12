@@ -23,7 +23,7 @@ const PENDING_DELETION: string[] = []
  * it holds upstream diffs for unrelated packages (an ai-sdk patch touches its
  * own `dist/internal/`), and matching those would be noise, not a finding.
  */
-const NEVER_SOURCE = ["node_modules", "dist", "out", ".artifacts", "dist-node", ".claude", "patches"]
+const NEVER_SOURCE = ["node_modules", "dist", "out", ".artifacts", "dist-node", "dist-boundary", "dist-local", ".claude", "patches"]
 
 /** Only real source can import anything. */
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".mjs", ".cjs"]
