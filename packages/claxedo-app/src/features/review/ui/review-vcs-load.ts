@@ -45,10 +45,17 @@ export function createReviewDiffClient(input: Omit<DiffClientInput, "resolveWork
  */
 type ReviewVcsDiffSummaryInput = ReviewVcsDiffInput & {
   client: Pick<ReturnType<typeof createReviewDiffClient>, "vcs">
+}
+
+/**
+ * Bypassing the cache is a fetch-only answer: the options path hands its loader
+ * to an observer, which decides for itself when to run it.
+ */
+type ReviewVcsDiffSummaryFetchInput = ReviewVcsDiffSummaryInput & {
   force?: boolean
 }
 
-function reviewVcsDiffSummaryLoad(input: ReviewVcsDiffSummaryInput) {
+function reviewVcsDiffSummaryLoad(input: ReviewVcsDiffSummaryFetchInput) {
   const { client, directory, mode, fromRef, toRef, force } = input
   return () => {
     if (typeof window !== "undefined") {
@@ -79,7 +86,7 @@ export function reviewVcsDiffSummaryQueryOptions(input: ReviewVcsDiffSummaryInpu
   })
 }
 
-export function fetchReviewVcsDiffSummary(input: ReviewVcsDiffSummaryInput) {
+export function fetchReviewVcsDiffSummary(input: ReviewVcsDiffSummaryFetchInput) {
   const { directory, mode, fromRef, toRef, force } = input
   return cachedReviewVcsDiff({
     directory,

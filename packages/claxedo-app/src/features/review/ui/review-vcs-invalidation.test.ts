@@ -22,6 +22,11 @@ describe("review vcs directory classifier", () => {
       .toEqual({ diffs: true, branch: true })
     expect(stale({ type: "file.watcher.updated", properties: { file: ".git/objects/ab/cdef0123" } })).toEqual(nothing)
     expect(stale({ type: "file.watcher.updated", properties: { file: ".git/index.lock" } })).toEqual(nothing)
+    // A ref lock sits under `.git/refs/`, so the lock rule has to win over the
+    // ref rule or every commit fires twice.
+    expect(stale({ type: "file.watcher.updated", properties: { file: ".git/refs/heads/main.lock" } })).toEqual(nothing)
+    // `git fetch` writes FETCH_HEAD without moving the branch or HEAD.
+    expect(stale({ type: "file.watcher.updated", properties: { file: ".git/FETCH_HEAD" } })).toEqual(nothing)
     expect(stale({ type: "vcs.branch.updated" })).toEqual({ diffs: true, branch: true })
     expect(stale({ type: "message.updated" })).toEqual(nothing)
   })

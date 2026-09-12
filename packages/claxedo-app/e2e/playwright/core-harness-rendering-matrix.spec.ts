@@ -783,15 +783,21 @@ test.describe("core harness rendering matrix @core", () => {
     const trace = loadTrace("claude-sdk", assistantId)
     await replay(mock, dir, trace, assistantInfo)
 
-    // The projection canonicalises `Grep` to `grep` at tool-start, so the trace's three
-    // calls reach the real renderer and fold into one context group like their lowercase
-    // peers — rather than three loud generic rows.
+    // The trace's three capitalised calls reach the real renderer and fold into one
+    // context group like their lowercase peers: the projection canonicalises the name
+    // at tool-start, and the grouping and the registry canonicalise again on read, so
+    // this proves the observable outcome, not which layer produced it.
     await expect(content.locator('[data-component="context-tool-group-trigger"]')).toBeVisible({ timeout: 45_000 })
 
-    // The distinguishing assertion: GenericTool titles a row "Called `Grep`". Asserting
-    // the title text alone cannot tell the two renderers apart, because `ui.tool.grep`
-    // is itself "Grep".
-    await expect(content.getByText("Called", { exact: false })).toHaveCount(0)
+    // A folded turn renders no tool rows at all, so the absence below has to be read
+    // off an unfolded one or it is measuring an empty container.
+    await revealTurn(page)
+    await expect(content.locator('[data-component="tool-part-wrapper"]')).toHaveCount(1)
+    // The distinguishing assertion: an unregistered name falls through to GenericTool.
+    // Its title is prose ("Called `Grep`") that a locale spells its own way and that
+    // `ui.tool.grep` can itself produce, so the renderer's own marker is the only
+    // honest way to say no generic row was built.
+    await expect(content.locator('[data-component="generic-tool"]')).toHaveCount(0)
 
     // TodoWrite is intercepted before it can become a tool-start.
     await expect(content.getByText("Ship it", { exact: true })).toHaveCount(0)

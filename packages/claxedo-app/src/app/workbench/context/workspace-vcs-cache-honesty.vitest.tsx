@@ -44,9 +44,16 @@ const invalidationsOf = (
   key: readonly unknown[],
 ) =>
   spy.mock.calls.filter((call) => {
-    const filters = call[0] as { queryKey?: readonly unknown[] } | undefined
-    const target = filters?.queryKey
-    return !!target && target.every((part, index) => part === key[index])
+    const filters = call[0] as {
+      queryKey?: readonly unknown[]
+      predicate?: (query: { queryKey: readonly unknown[] }) => boolean
+    } | undefined
+    if (!filters) return false
+    const target = filters.queryKey
+    // The review reads are a key family spanning four prefixes, so their
+    // invalidation names them by predicate rather than by one key.
+    if (!target) return filters.predicate?.({ queryKey: key }) === true
+    return target.every((part, index) => part === key[index])
   }).length
 
 afterEach(() => {
@@ -225,7 +232,7 @@ describe("WorkspaceVcsCacheHonesty", () => {
 
     emit({ type: "file.watcher.updated", properties: { file: "src/app.ts" } })
     await vi.advanceTimersByTimeAsync(300)
-    expect(queryClient.getQueryState(diffKey)?.isInvalidated).toBe(true)
+    expect(invalidationsOf(invalidate, diffKey)).toBe(1)
     expect(invalidationsOf(invalidate, statusKey)).toBe(1)
     expect(invalidationsOf(invalidate, gitStatusKey)).toBe(1)
 

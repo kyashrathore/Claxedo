@@ -249,8 +249,8 @@ export function ReviewTab(props: ReviewTabProps) {
     file: string,
     diff: Partial<VcsFileDiff> & { file: string } | undefined,
   ) => {
-    const { target, key: current } = currentDiffState()
-    if (!diff || current !== key) return
+    const { target, key: onScreenKey } = currentDiffState()
+    if (!diff || onScreenKey !== key) return
     updateCachedReviewVcsDiff({
       ...target,
       file,

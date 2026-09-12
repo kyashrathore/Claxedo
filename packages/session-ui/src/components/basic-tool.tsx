@@ -622,24 +622,28 @@ export function GenericTool(props: {
   const output = () => (typeof props.output === "string" ? props.output.trim() : "")
 
   return (
-    <BasicTool
-      icon={genericToolIcon(props.tool, props.input)}
-      status={props.status}
-      startedAt={props.startedAt}
-      trigger={{
-        title: title().title,
-        subtitle: title().subtitle,
-        args: [...(title().context ? [title().context!] : []), ...args(props.input, title().subtitle)],
-      }}
-      hideDetails={props.hideDetails}
-    >
-      {/* Only pass children when there is output, so BasicTool's chevron stays hidden
-          (and the row stays non-interactive) for tools that produced nothing. */}
-      {output() ? (
-        <div data-component="tool-output" data-scrollable tabIndex={0} role="region">
-          <pre>{output()}</pre>
-        </div>
-      ) : undefined}
-    </BasicTool>
+    // The marker is the only thing that tells a generic row from a registered
+    // renderer's: the title is ordinary prose a locale can spell any way.
+    <div data-component="generic-tool">
+      <BasicTool
+        icon={genericToolIcon(props.tool, props.input)}
+        status={props.status}
+        startedAt={props.startedAt}
+        trigger={{
+          title: title().title,
+          subtitle: title().subtitle,
+          args: [...(title().context ? [title().context!] : []), ...args(props.input, title().subtitle)],
+        }}
+        hideDetails={props.hideDetails}
+      >
+        {/* Only pass children when there is output, so BasicTool's chevron stays hidden
+            (and the row stays non-interactive) for tools that produced nothing. */}
+        {output() ? (
+          <div data-component="tool-output" data-scrollable tabIndex={0} role="region">
+            <pre>{output()}</pre>
+          </div>
+        ) : undefined}
+      </BasicTool>
+    </div>
   )
 }
