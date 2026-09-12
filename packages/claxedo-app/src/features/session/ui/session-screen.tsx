@@ -125,7 +125,7 @@ import { trackSessionOpen } from "@/features/session/ui/session-open-perf"
 /**
  * `readOnly` is for a surface that embeds someone else's session — the workspace
  * panel showing a subagent's transcript beside the turn that spawned it. The
- * embedding surface owns the chrome, so there is no title bar. The composer
+ * reader is reading, not driving, so there is nothing to type into. The composer
  * region stays mounted and carries the flag: it holds the permission and
  * question docks, and this is the only surface that shows that session's
  * blocking requests.
@@ -1379,7 +1379,7 @@ export default function SessionPage(props: {
                         historyShift={false}
                         userMessages={historyWindow.renderedUserMessages()}
                         hiddenTurnCount={historyWindow.hiddenTurnCount}
-                        hideTitle={() => floating() || readOnly()}
+                        hideTitle={floating}
                         onRevealPreviousMessages={() => void historyWindow.loadAndReveal(0)}
                         navMessages={visibleUserMessages()}
                         currentMessage={activeMessage()}

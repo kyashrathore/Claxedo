@@ -1,9 +1,10 @@
 import { render, screen } from "@solidjs/testing-library"
 import { createComponent } from "solid-js"
-import { describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
+import { setReviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { WorkspacePanelChrome, WorkbenchShellHeader, WorkspacePanelHeader } from "./workbench-shell-header"
 
 describe("WorkspacePanelChrome", () => {
@@ -133,5 +134,60 @@ describe("WorkspacePanelHeader", () => {
     const restore = screen.getByRole("button", { name: "Restore workspace panel width" })
     expect(restore).toHaveAttribute("aria-pressed", "true")
     expect(restore.querySelector('[data-icon="collapse"]')).toBeTruthy()
+  })
+})
+
+describe("L2 header strip, per workspace tab kind", () => {
+  function renderStrip() {
+    return render(() => (
+      <SessionTitleProjectionProvider>
+        <ClaxedoStateProvider initialState={emptyClaxedoState()}>
+          <WorkspacePanelHeader
+            focusedPanelTarget={() => ({ workspaceDir: "/repo", targetPaneId: "pane-1" })}
+            hasWorkspacePanelTarget={() => true}
+            workspacePanelForFocusedTarget={() => true}
+            workspacePanelNavigator={() => null}
+            workspacePanelMode={() => "review"}
+            toggleFocusedWorkspaceNavigator={() => {}}
+            workspacePanelOpen={() => true}
+            workspacePanelFullWidth={() => false}
+            onToggleFullWidth={() => {}}
+            onTogglePanel={() => {}}
+          />
+        </ClaxedoStateProvider>
+      </SessionTitleProjectionProvider>
+    ))
+  }
+
+  function label(container: HTMLElement, kind: string) {
+    const strip = container.querySelector(`[data-l2-context="${kind}"]`)
+    expect(strip, `L2 strip for ${kind}`).toBeTruthy()
+    return strip!.querySelector("span")!
+  }
+
+  afterEach(() => setReviewWorkspaceActiveTab(undefined))
+
+  test("a context tab's label truncates in the weak tone, as every non-subagent kind does", () => {
+    setReviewWorkspaceActiveTab({ kind: "context", label: "Context" })
+    const { container } = renderStrip()
+
+    expect(label(container, "context").className).toContain("truncate")
+    expect(label(container, "context").className).toContain("text-text-weak")
+    expect(label(container, "context").className).not.toContain("shrink-0")
+  })
+
+  test("a subagent's name holds its width so the summary beside it is what truncates", () => {
+    setReviewWorkspaceActiveTab({ kind: "subagent", label: "explorer", description: "Find every caller" })
+    const { container } = renderStrip()
+
+    const name = label(container, "subagent")
+    expect(name.textContent).toBe("explorer")
+    expect(name.className).toContain("shrink-0")
+    expect(name.className).toContain("text-text-base")
+    expect(name.className).not.toContain("truncate")
+
+    const summary = container.querySelector('[data-l2-context="subagent"] span + span')!
+    expect(summary.textContent).toBe("Find every caller")
+    expect(summary.className).toContain("truncate")
   })
 })

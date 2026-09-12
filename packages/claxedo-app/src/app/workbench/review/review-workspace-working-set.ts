@@ -137,6 +137,16 @@ export function createReviewWorkspaceWorkingSetStore(
     delete(key: string) {
       snapshots.delete(key)
     },
+    /**
+     * Rewrite every retained snapshot in place. Recency is untouched: this serves
+     * evictions the user did not perform (a deleted session), and treating one as
+     * a visit would reorder the LRU against what the user actually opened.
+     */
+    rewrite(change: (snapshot: ReviewWorkspaceWorkingSetSnapshot) => ReviewWorkspaceWorkingSetSnapshot) {
+      for (const [key, snapshot] of snapshots) {
+        snapshots.set(key, cloneReviewWorkspaceWorkingSet(change(cloneReviewWorkspaceWorkingSet(snapshot))))
+      }
+    },
     size() {
       return snapshots.size
     },

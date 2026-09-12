@@ -565,7 +565,6 @@ export function createLayoutOrchestration(input: {
       wb.navigation.show(id)
     },
 
-
     _cleanupOnClose,
   }
   return actions

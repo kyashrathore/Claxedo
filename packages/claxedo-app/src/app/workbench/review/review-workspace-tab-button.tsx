@@ -1,4 +1,4 @@
-import { Show, type JSX } from "solid-js"
+import type { JSX } from "solid-js"
 import { ClaxedoIcon as Icon, type ClaxedoIconName } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import type { ReviewWorkspaceTab } from "@/features/review/ui/review-workspace-tabs"
@@ -68,16 +68,13 @@ export function ReviewWorkspaceTabButton(props: ReviewWorkspaceTabButtonProps): 
           props.onClose()
         }}
       >
-        <Show
-          when={props.tab.kind !== "subagent" || undefined}
-          fallback={
-            // The mark the transcript already gave this agent, seeded the same
-            // way, so the tab and the card that opened it read as one thing.
-            <span class="flex size-4 shrink-0 items-center justify-center">
-              <AgentGlyph seed={props.tab.kind === "subagent" ? props.tab.sessionId : ""} size={props.iconPx} />
-            </span>
-          }
-        >
+        {props.tab.kind === "subagent" ? (
+          // The mark the transcript already gave this agent, seeded the same
+          // way, so the tab and the chip that opened it read as one thing.
+          <span class="flex size-4 shrink-0 items-center justify-center">
+            <AgentGlyph seed={props.tab.sessionId} size={props.iconPx} />
+          </span>
+        ) : (
           <Icon
             name={props.icon}
             size="small"
@@ -90,7 +87,7 @@ export function ReviewWorkspaceTabButton(props: ReviewWorkspaceTabButtonProps): 
             style={{ width: `${props.iconPx}px`, height: `${props.iconPx}px`, margin: `${(16 - props.iconPx) / 2}px` }}
             classList={{ "text-icon-base": props.selected, "text-icon-weak-base": !props.selected }}
           />
-        </Show>
+        )}
         <span class="truncate">{props.label}</span>
       </button>
       <div class="absolute right-1 flex h-full items-center">

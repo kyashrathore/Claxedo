@@ -3,7 +3,7 @@
 // already pure data transitions). This slice gives the orchestration layer a
 // minimal facade that owns the live state.
 
-import { batch, type Accessor } from "solid-js"
+import { batch, createSignal, type Accessor } from "solid-js"
 import type { SetStoreFunction } from "solid-js/store"
 import {
   closeWorkspacePanel,
@@ -19,6 +19,7 @@ import {
   createReviewWorkspaceWorkingSetStore,
   type ReviewWorkspaceWorkingSetStore,
 } from "../review/review-workspace-working-set"
+import { closeSubagentWorkspaceTabsForSession } from "@/features/review/ui/review-workspace-tabs"
 import type { ClaxedoState } from "./types"
 
 // Call sites use two equivalent shapes:
@@ -67,7 +68,14 @@ function sameFocus(left: WorkspacePanelFocus | undefined, right: WorkspacePanelF
   }
   if (left.kind === "browser" && right.kind === "browser") return left.url === right.url
   if (left.kind === "process" && right.kind === "process") return left.processId === right.processId
-  if (left.kind === "subagent" && right.kind === "subagent") return left.sessionId === right.sessionId
+  // Label and description come from the row that was clicked, and the runtime
+  // rewrites that row as the agent works, so a reopen carrying the finished
+  // summary must reach the panel instead of being folded into the last request.
+  if (left.kind === "subagent" && right.kind === "subagent") {
+    return left.sessionId === right.sessionId &&
+      left.label === right.label &&
+      left.description === right.description
+  }
   return left.kind === "context" && right.kind === "context" && left.sessionId === right.sessionId
 }
 
@@ -123,6 +131,13 @@ export type WorkspacePanelSliceApi = {
    * store is non-reactive so restoring one cannot schedule global Solid work.
    */
   reviewWorkingSet: ReviewWorkspaceWorkingSetStore
+  /**
+   * The session the runtime deleted most recently. A subagent tab outlives the
+   * panel body that opened it, so the retained working sets are pruned here and a
+   * mounted workspace watches this to drop the same tabs from its live strip.
+   */
+  deletedSession: Accessor<string | undefined>
+  noteDeletedSession: (sessionId: string) => void
 }
 
 /**
@@ -179,6 +194,7 @@ export function createWorkspacePanelSlice(input: {
   // Same provider-instance ownership as `sessionPanelSnapshots`, and bounded by
   // MAX_REVIEW_WORKSPACE_WORKING_SETS.
   const reviewWorkingSet = createReviewWorkspaceWorkingSetStore()
+  const [deletedSession, setDeletedSession] = createSignal<string>()
   const touchSnapshot = (sessionId: string, snapshot: WorkspacePanelState) => {
     // Re-insert so this key becomes the most-recent in insertion order (LRU).
     sessionPanelSnapshots.delete(sessionId)
@@ -307,5 +323,18 @@ export function createWorkspacePanelSlice(input: {
       replacePanel({ open: true, mode })
     },
     reviewWorkingSet,
+    deletedSession,
+    noteDeletedSession(sessionId) {
+      reviewWorkingSet.rewrite((snapshot) => {
+        const next = closeSubagentWorkspaceTabsForSession({
+          tabs: snapshot.tabs,
+          activeTabId: snapshot.activeTabId,
+          sessionId,
+        })
+        if (!next.removed) return snapshot
+        return { ...snapshot, tabs: [...next.tabs], activeTabId: next.activeTabId }
+      })
+      setDeletedSession(sessionId)
+    },
   }
 }

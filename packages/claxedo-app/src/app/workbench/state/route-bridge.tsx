@@ -163,6 +163,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       closeContent: state.layout.closeContent,
     }))
   })
+      closeSubagentTabs: state.workspacePanel.noteDeletedSession,
 
   createEffect(() => {
     const unsub = createBatchAutoTabListener({

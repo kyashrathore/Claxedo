@@ -6,6 +6,11 @@ export function listenForSessionDeletion(input: {
   listen: (listener: (event: { name: string; details: { type: string; properties?: unknown } }) => void) => () => void
   surfaces: () => Array<{ id: string; type: string; sessionId?: string; directory?: string }>
   closeContent: (id: string) => void
+  /**
+   * A subagent's transcript is a workspace-panel tab, not a workbench surface, so
+   * it is not in `surfaces` and cannot be closed by id from here.
+   */
+  closeSubagentTabs?: (sessionId: string) => void
 }) {
   return input.listen(({ name, details }) => {
     if (details.type !== "session.deleted") return
@@ -21,7 +26,9 @@ export function closeDeletedSessionSurfaces(input: {
   identity: Required<Pick<ContentMeta, "sessionId" | "directory">>
   surfaces: () => Array<{ id: string; type: string; sessionId?: string; directory?: string }>
   closeContent: (id: string) => void
+  closeSubagentTabs?: (sessionId: string) => void
 }) {
+  input.closeSubagentTabs?.(input.identity.sessionId)
   for (const surface of input.surfaces()) {
     if ((surface.type === "session" || surface.type === "context") &&
       surface.sessionId === input.identity.sessionId && surface.directory === input.identity.directory) {

@@ -124,6 +124,32 @@ function statusLabel(status: ChipModel["status"], i18n: UiI18n) {
   return i18n.t(STATUS_KEYS[status])
 }
 
+/**
+ * A chip the surface gave a session href to is an anchor, so cmd/middle-click
+ * must reach the browser's own "open in a new tab" instead of being swallowed by
+ * the in-app open. A chip without an href is a button and has no such meaning to
+ * defer to, so it keeps handling every click.
+ */
+export function subagentChipHandlesClick(input: { modified: boolean; hasHref: boolean }) {
+  return !(input.modified && input.hasHref)
+}
+
+/**
+ * Where a click goes once neither the scroll-to-spawn nor the surrounding
+ * surface has claimed it. A transcript that is not `openable` — never bound, or
+ * gone — has nothing to navigate to, so an interaction row whose spawn is no
+ * longer on screen stops here rather than routing to a session that cannot load.
+ */
+export function subagentChipUnclaimedClick(input: {
+  openable: boolean
+  canNavigate: boolean
+  hasHref: boolean
+}): "navigate" | "href" | "none" {
+  if (!input.openable) return "none"
+  if (input.canNavigate) return "navigate"
+  return input.hasHref ? "href" : "none"
+}
+
 export function SubagentChipRow(props: {
   parts?: AgentToolPart[]
   subagents?: SubagentView[]
@@ -160,49 +186,87 @@ export function SubagentChipRow(props: {
             )
             const interaction = () => chip.toolCallRole === "interaction"
             const openable = () => chip.resolution === "ready" && !!chip.childSessionId
-            const activate = (target: EventTarget | null) => {
-              if (interaction() && scrollToCanonicalSpawn(chip)) return
-              if (dispatchSubagentOpen(target, {
+            // An interaction row is a pointer back into this transcript, not a
+            // second route to the child, so it never becomes an anchor.
+            const href = () =>
+              !interaction() && openable() && chip.childSessionId
+                ? data.sessionHref?.(chip.childSessionId)
+                : undefined
+            const activate = (event: MouseEvent) => {
+              event.stopPropagation()
+              if (!subagentChipHandlesClick({
+                modified: event.button !== 0 || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey,
+                hasHref: !!href(),
+              })) return
+              if (interaction() && scrollToCanonicalSpawn(chip)) {
+                event.preventDefault()
+                return
+              }
+              if (dispatchSubagentOpen(event.currentTarget, {
                 childSessionId: chip.childSessionId,
                 subagentKey: chip.key,
                 label: chip.name,
                 ...(chip.description ? { description: chip.description } : {}),
                 interaction: interaction(),
                 openable: openable(),
-              })) return
+              })) {
+                event.preventDefault()
+                return
+              }
               // No surface claimed the open — a standalone reader, where following
-              // the session's own route is the only way in.
+              // the session's own route is the only way in. With neither a router
+              // nor an href the click has nowhere to go and the anchor, if there
+              // is one, keeps its own navigation.
+              if (subagentChipUnclaimedClick({
+                openable: openable(),
+                canNavigate: !!data.navigateToSession,
+                hasHref: !!href(),
+              }) !== "navigate") return
+              event.preventDefault()
               if (chip.childSessionId) data.navigateToSession?.(chip.childSessionId)
             }
+            const chipAttributes = () => ({
+              "data-component": "subagent-chip",
+              "data-subagent-key": chip.key,
+              "data-subagent-role": chip.toolCallRole ?? "ambient",
+              "data-status": chip.status,
+            })
             return (
               <Show
                 when={openable() || interaction()}
                 fallback={
                   <span
-                    data-component="subagent-chip"
-                    data-subagent-key={chip.key}
-                    data-subagent-role={chip.toolCallRole ?? "ambient"}
-                    data-status={chip.status}
+                    {...chipAttributes()}
                     aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}, transcript unavailable`}
                   >
                     {content()}
                   </span>
                 }
               >
-                <button
-                  type="button"
-                  data-component="subagent-chip"
-                  data-subagent-key={chip.key}
-                  data-subagent-role={chip.toolCallRole ?? "ambient"}
-                  data-status={chip.status}
-                  aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}`}
-                  onClick={(event) => {
-                    event.stopPropagation()
-                    activate(event.currentTarget)
-                  }}
+                <Show
+                  when={href()}
+                  fallback={
+                    <button
+                      type="button"
+                      {...chipAttributes()}
+                      aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}`}
+                      onClick={activate}
+                    >
+                      {content()}
+                    </button>
+                  }
                 >
-                  {content()}
-                </button>
+                  {(value) => (
+                    <a
+                      href={value()}
+                      {...chipAttributes()}
+                      aria-label={`${chip.name}, ${statusLabel(chip.status, i18n)}`}
+                      onClick={activate}
+                    >
+                      {content()}
+                    </a>
+                  )}
+                </Show>
               </Show>
             )
           }}

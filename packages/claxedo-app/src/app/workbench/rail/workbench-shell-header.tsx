@@ -374,7 +374,19 @@ function L2HeaderStrip(props: {
                 when={tab().kind === "process"}
                 fallback={
                   <>
-                    <span class="shrink-0 text-sm text-text-base">{tab().label}</span>
+                    {/* A subagent's name shares the strip with the one-line
+                        summary beside it, so the name holds its width and the
+                        summary is the half that truncates. Every other kind is
+                        alone on the strip and truncates itself. */}
+                    <span
+                      class="text-sm"
+                      classList={{
+                        "shrink-0 text-text-base": tab().kind === "subagent",
+                        "truncate text-text-weak": tab().kind !== "subagent",
+                      }}
+                    >
+                      {tab().label}
+                    </span>
                     <Show when={tab().kind === "subagent" ? subagentTabDescription() : undefined}>
                       {(description) => (
                         <span class="truncate text-sm text-text-weak" title={description()}>

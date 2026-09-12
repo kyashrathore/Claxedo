@@ -12,8 +12,19 @@ export type ReviewWorkspaceTab =
    * child session id rather than a fixed id, so a turn that spawns several holds
    * several tabs — the same shape `process` and `file` already use, and the reason
    * `context` (a singleton) could not carry these.
+   *
+   * `parentSessionId` is what makes the tab belong to a conversation rather than to
+   * the workspace: the working set is keyed per workspace, so without it a switch to
+   * another session keeps showing transcripts spawned by the one the reader left.
    */
-  | { id: string; kind: "subagent"; sessionId: string; label?: string; description?: string }
+  | {
+    id: string
+    kind: "subagent"
+    sessionId: string
+    parentSessionId: string
+    label?: string
+    description?: string
+  }
 
 export const REVIEW_TAB_ID = "review"
 export const CONTEXT_TAB_ID = "context"
@@ -39,29 +50,78 @@ export function subagentTabId(sessionId: string) {
   return `${SUBAGENT_SECTION_PREFIX}${sessionId}`
 }
 
+type SubagentWorkspaceTab = Extract<ReviewWorkspaceTab, { kind: "subagent" }>
+
+function sameSubagentTab(left: SubagentWorkspaceTab, right: SubagentWorkspaceTab) {
+  return left.parentSessionId === right.parentSessionId &&
+    left.label === right.label &&
+    left.description === right.description
+}
+
 export function openSubagentWorkspaceTab(input: {
   tabs: readonly ReviewWorkspaceTab[]
   sessionId: string
+  parentSessionId: string
   /** The spawning row already knows the agent's name; nothing else here does. */
   label?: string
   description?: string
 }) {
   const id = subagentTabId(input.sessionId)
-  if (input.tabs.some((tab) => tab.id === id)) return { tabs: input.tabs, activeTabId: id, added: false }
+  const index = input.tabs.findIndex((tab) => tab.id === id)
+  const found = index === -1 ? undefined : input.tabs[index]
+  const existing = found?.kind === "subagent" ? found : undefined
+  // The runtime rewrites the row's summary as the agent works, so a reopen
+  // carries newer text than the tab holds; a reopen carrying none at all (a
+  // restored focus, a keyboard repeat) must not blank what is already there.
+  const label = input.label ?? existing?.label
+  const description = input.description ?? existing?.description
+  const tab = {
+    id,
+    kind: "subagent",
+    sessionId: input.sessionId,
+    parentSessionId: input.parentSessionId,
+    ...(label ? { label } : {}),
+    ...(description ? { description } : {}),
+  } satisfies ReviewWorkspaceTab
+  if (!existing) return { tabs: [...input.tabs, tab], activeTabId: id, added: true }
+  if (sameSubagentTab(existing, tab)) return { tabs: input.tabs, activeTabId: id, added: false }
   return {
-    tabs: [
-      ...input.tabs,
-      {
-        id,
-        kind: "subagent",
-        sessionId: input.sessionId,
-        ...(input.label ? { label: input.label } : {}),
-        ...(input.description ? { description: input.description } : {}),
-      } satisfies ReviewWorkspaceTab,
-    ],
+    tabs: input.tabs.map((item, itemIndex) => (itemIndex === index ? tab : item)),
     activeTabId: id,
-    added: true,
+    added: false,
   }
+}
+
+/**
+ * The tabs the pane may show for `sessionId`. Every kind but `subagent` belongs to
+ * the workspace and always shows; a subagent tab belongs to the conversation that
+ * spawned it, so it is retained but hidden while another session holds the pane.
+ */
+export function reviewWorkspaceTabsForSession(input: {
+  tabs: readonly ReviewWorkspaceTab[]
+  sessionId: string
+}): ReviewWorkspaceTab[] {
+  return input.tabs.filter((tab) => tab.kind !== "subagent" || tab.parentSessionId === input.sessionId)
+}
+
+/** Drop the deleted session's own transcript tab and every transcript it spawned. */
+export function closeSubagentWorkspaceTabsForSession(input: {
+  tabs: readonly ReviewWorkspaceTab[]
+  activeTabId: string
+  sessionId: string
+}) {
+  const doomed = input.tabs.filter((tab) =>
+    tab.kind === "subagent" && (tab.sessionId === input.sessionId || tab.parentSessionId === input.sessionId)
+  )
+  if (doomed.length === 0) return { tabs: input.tabs, activeTabId: input.activeTabId, removed: false }
+  let tabs = input.tabs
+  let activeTabId = input.activeTabId
+  for (const tab of doomed) {
+    const next = closeWorkspaceTab({ tabs, activeTabId, closeTabId: tab.id })
+    tabs = next.tabs
+    activeTabId = next.activeTabId
+  }
+  return { tabs, activeTabId, removed: true }
 }
 
 export function openProcessWorkspaceTab(input: { tabs: readonly ReviewWorkspaceTab[]; processId: string }) {

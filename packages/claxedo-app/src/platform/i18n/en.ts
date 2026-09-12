@@ -443,6 +443,8 @@ export const dict = {
   "session.timeline.scrollToBottom": "Scroll to latest message",
   "session.tab.review": "Review",
   "session.tab.context": "Context",
+  "session.tab.subagent": "Subagent",
+  "session.tab.closeSubagent": "Close subagent",
 
 
   "session.messages.loading": "Loading messages...",

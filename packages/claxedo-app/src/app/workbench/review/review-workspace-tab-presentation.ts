@@ -35,12 +35,11 @@ const TAB_ICON_PX: Record<ReviewWorkspaceTabKind, number> = {
   subagent: 14,
 }
 
-const CLOSE_LABEL: Record<Exclude<ReviewWorkspaceTabKind, "file">, string> = {
+const CLOSE_LABEL: Record<Exclude<ReviewWorkspaceTabKind, "file" | "subagent">, string> = {
   review: "Close review",
   context: "Close context",
   browser: "Close browser",
   process: "Close process section",
-  subagent: "Close subagent",
 }
 
 /**
@@ -52,6 +51,9 @@ const CLOSE_LABEL: Record<Exclude<ReviewWorkspaceTabKind, "file">, string> = {
 export function createReviewWorkspaceTabPresentation(deps: {
   reviewLabel: () => string
   contextLabel: () => string
+  /** Shown when the spawning row gave the tab no agent name. */
+  subagentLabel: () => string
+  subagentCloseLabel: () => string
   filePathFromTab: (tabId: string) => string | undefined
   processName: (processId: string) => string | undefined
 }) {
@@ -68,7 +70,7 @@ export function createReviewWorkspaceTabPresentation(deps: {
       case "process":
         return deps.processName(tab.processId) ?? "Process"
       case "subagent":
-        return tab.label ?? "Subagent"
+        return tab.label ?? deps.subagentLabel()
       default:
         return unhandledReviewWorkspaceTab(tab)
     }
@@ -78,8 +80,11 @@ export function createReviewWorkspaceTabPresentation(deps: {
 
   const tabIconPx = (tab: ReviewWorkspaceTab): number => TAB_ICON_PX[tab.kind]
 
-  const closeLabel = (tab: ReviewWorkspaceTab): string =>
-    tab.kind === "file" ? `Close ${tabLabel(tab)} tab` : CLOSE_LABEL[tab.kind]
+  const closeLabel = (tab: ReviewWorkspaceTab): string => {
+    if (tab.kind === "file") return `Close ${tabLabel(tab)} tab`
+    if (tab.kind === "subagent") return deps.subagentCloseLabel()
+    return CLOSE_LABEL[tab.kind]
+  }
 
   return { tabLabel, tabIcon, tabIconPx, closeLabel }
 }

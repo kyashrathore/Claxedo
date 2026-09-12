@@ -26,3 +26,18 @@ test("runtime deletion closes every matching saved surface without closing neigh
   stop()
   expect(unsubscribed).toBe(true)
 })
+
+test("a deleted session also evicts the workspace-panel tabs no surface owns", () => {
+  let receive!: Parameters<Parameters<typeof listenForSessionDeletion>[0]["listen"]>[0]
+  const evicted: string[] = []
+  listenForSessionDeletion({
+    listen(fn) { receive = fn; return () => {} },
+    surfaces: () => [],
+    closeContent() {},
+    closeSubagentTabs(sessionId) { evicted.push(sessionId) },
+  })
+  receive({ name: "/workspace", details: { type: "session.updated", properties: { info: { id: "removed" } } } })
+  expect(evicted).toEqual([])
+  receive({ name: "/workspace", details: { type: "session.deleted", properties: { info: { id: "removed" } } } })
+  expect(evicted).toEqual(["removed"])
+})

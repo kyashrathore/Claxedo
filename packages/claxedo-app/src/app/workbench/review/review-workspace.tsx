@@ -57,12 +57,12 @@ import {
   openContextWorkspaceTab,
   openFileWorkspaceTab,
   openProcessWorkspaceTab,
-  openSubagentWorkspaceTab,
   type ReviewWorkspaceTab,
 } from "@/features/review/ui/review-workspace-tabs"
 import { closeReviewWorkspaceTab } from "./review-close"
 import { ReviewWorkspaceTabButton } from "./review-workspace-tab-button"
 import { createReviewTabActivationTransition, reviewWorkspaceMountedTabs } from "./review-mounted-tabs"
+import { createReviewWorkspaceSubagentTabs } from "./review-workspace-subagent-tabs"
 import {
   createReviewWorkspaceTabPresentation,
   unhandledReviewWorkspaceTab,
@@ -234,21 +234,16 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     activateTab(next.activeTabId)
   }
 
-  const openSubagentTab = (sessionId: string, label?: string, description?: string) => {
-    const next = openSubagentWorkspaceTab({
-      tabs: store.tabs,
-      sessionId,
-      ...(label ? { label } : {}),
-      ...(description ? { description } : {}),
-    })
-    if (next.added) {
-      const activation = tabActivation.prepare(next.activeTabId)
-      setStore("tabs", next.tabs)
-      activatePreparedTabAfterMount(activation)
-      return
-    }
-    activateTab(next.activeTabId)
-  }
+  const subagentTabs = createReviewWorkspaceSubagentTabs({
+    tabs: () => store.tabs,
+    activeTabId: () => store.activeTabId,
+    paneSessionId: () => props.sessionId,
+    deletedSession: () => claxedoState.workspacePanel.deletedSession(),
+    setTabs: (tabs) => setStore("tabs", tabs),
+    prepareActivation: tabActivation.prepare,
+    activateAfterMount: activatePreparedTabAfterMount,
+    activate: activateTab,
+  })
 
   const openBrowserTab = (url?: string, navigationVersion?: number) => {
     const next = openBrowserWorkspaceTab({
@@ -309,8 +304,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   }
 
   const setActiveTab = activateTab
+  const visibleTabs = subagentTabs.visibleTabs
   const mountedTabs = createMemo(() => reviewWorkspaceMountedTabs({
-    tabs: store.tabs,
+    tabs: visibleTabs(),
     activeTabId: store.activeTabId,
     reviewTabId: REVIEW_TAB_ID,
     pendingTabId: pendingMountTabId(),
@@ -324,7 +320,9 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       reviewRevealTimer = undefined
       if (reviewActive) {
         if (reviewBodyVisible()) return
-        if (!store.tabs.some((tab) => tab.kind === "context" || tab.kind === "browser")) {
+        if (!store.tabs.some((tab) =>
+          tab.kind === "context" || tab.kind === "browser" || tab.kind === "subagent"
+        )) {
           setReviewBodyVisible(true)
           return
         }
@@ -416,7 +414,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     ([, sessionId, label, description]) => {
       if (!sessionId) return
       props.onFocusConsumed?.()
-      openSubagentTab(sessionId, label, description)
+      subagentTabs.open(sessionId, label, description)
     },
   ))
 
@@ -445,7 +443,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
     // RETRACT here — the body that takes over publishes in the same flush, and
     // the displayed body's own disposal is what clears the line.
     if (!(props.active ?? true)) return
-    const active = store.tabs.find((tab) => tab.id === store.activeTabId)
+    const active = visibleTabs().find((tab) => tab.id === store.activeTabId)
     if (!active) {
       setReviewWorkspaceActiveTab(undefined)
       return
@@ -473,7 +471,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
       case "subagent":
         setReviewWorkspaceActiveTab({
           kind: "subagent",
-          label: active.label ?? "Subagent",
+          label: active.label ?? language.t("session.tab.subagent"),
           ...(active.description ? { description: active.description } : {}),
         })
         return
@@ -505,6 +503,8 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
   const { tabLabel, tabIcon, tabIconPx, closeLabel } = createReviewWorkspaceTabPresentation({
     reviewLabel: () => language.t("session.tab.review"),
     contextLabel: () => language.t("session.tab.context"),
+    subagentLabel: () => language.t("session.tab.subagent"),
+    subagentCloseLabel: () => language.t("session.tab.closeSubagent"),
     filePathFromTab: (tabId) => file.pathFromTab(tabId),
     processName: (processId) => processPane.configs().find((item) => item.id === processId)?.name,
   })
@@ -654,7 +654,7 @@ export function ReviewWorkspace(props: ReviewWorkspaceProps) {
         data-testid="workspace-tab-scroll"
         class="flex h-full min-w-0 flex-1 items-center overflow-x-auto overscroll-x-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <For each={store.tabs}>
+        <For each={visibleTabs()}>
           {(tab) => renderTabButton(tab)}
         </For>
         <div

@@ -36,6 +36,7 @@ import {
   WorkGroup,
 } from "@/ui/session-kit"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
+import { isNarrowViewport } from "@/ui/controls/breakpoints"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -233,10 +234,13 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
 
-  // A subagent's transcript is a workspace-panel tab, not a second pane: the
-  // reader is reading the parent turn, and splitting the pane took the turn they
-  // were reading down to half width to show work they only glanced at.
+  // A subagent's transcript is a workspace-panel tab, not a second pane: splitting took the turn the reader was on down to half width.
+  // Below the md boundary the panel covers that turn rather than sitting beside it, so there the child takes the pane instead.
   const openSubagent = (input: { childSessionId: string; label?: string; description?: string }) => {
+    if (isNarrowViewport()) {
+      claxedoState.layout.showContent(claxedoState.layout.openSession(sdk.directory, input.childSessionId, input.label))
+      return
+    }
     claxedoState.workspacePanel.open({
       workspaceDir: sdk.directory.replace(/\/$/, ""),
       targetPaneId: paneId,

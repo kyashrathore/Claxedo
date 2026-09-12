@@ -79,10 +79,14 @@ vi.mock("@/app/workbench/context/process-pane", () => ({
   useWorkspaceProcessPane: () => ({ configs: () => [] }),
 }))
 
+// The workspace watches the panel slice for the session a runtime deleted; the
+// test drives it with a real signal so the effect tracks it as production does.
+const deletedSession = vi.hoisted(() => ({ read: (() => undefined) as () => string | undefined }))
+
 vi.mock("@/app/workbench/state", () => ({
   useClaxedoState: () => ({
     layout: { openPage: vi.fn() },
-    workspacePanel: { close: vi.fn() },
+    workspacePanel: { close: vi.fn(), deletedSession: () => deletedSession.read() },
   }),
 }))
 
@@ -141,7 +145,13 @@ vi.mock("@/features/session/ui/components/session-pane-scope", () => ({
 }))
 
 vi.mock("@/features/session/ui/session-screen", () => ({
-  default: () => <div data-testid="mock-session-screen" />,
+  default: (props: { presentation: () => string; readOnly?: () => boolean }) => (
+    <div
+      data-testid="mock-session-screen"
+      data-presentation={props.presentation()}
+      data-read-only={props.readOnly?.() ? "true" : "false"}
+    />
+  ),
 }))
 
 vi.mock("@/features/documents/data/documents-api", () => ({
@@ -201,6 +211,7 @@ function flushFrames() {
 }
 
 beforeEach(() => {
+  deletedSession.read = () => undefined
   reviewTabMounts.list = []
   FakeResizeObserver.instances = []
   frameQueue = []
@@ -483,5 +494,121 @@ describe("subagent focus", () => {
 
     expect(container.querySelectorAll('[data-workspace-tab-kind="subagent"]').length).toBe(1)
     expect(activeTabId(container)).toBe("subagent:ses_child")
+  })
+})
+
+describe("a subagent tab belongs to its parent session", () => {
+  test("the pane switching session hides the transcript, and switching back shows it", () => {
+    const [sessionId, setSessionId] = createSignal("ses_parent")
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId={sessionId()}
+        directory="/repo/main"
+        mode="uncommitted"
+        focusSubagentSessionId="ses_child"
+        focusSubagentLabel="explorer"
+        focusSubagentVersion={1}
+      />
+    ))
+    flushFrames()
+    expect(activeTabId(container)).toBe("subagent:ses_child")
+
+    setSessionId("ses_sibling")
+    flushFrames()
+    expect(container.querySelector('[data-workspace-tab-id="subagent:ses_child"]')).toBeNull()
+    expect(activeTabId(container)).toBe("review")
+    expect(container.querySelector('[data-testid="mock-session-pane-scope"]')).toBeNull()
+
+    setSessionId("ses_parent")
+    flushFrames()
+    expect(container.querySelector('[data-workspace-tab-id="subagent:ses_child"]')).toBeTruthy()
+  })
+
+  test("deleting the parent closes the transcripts it opened", () => {
+    const [deleted, setDeleted] = createSignal<string>()
+    deletedSession.read = deleted
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId="ses_parent"
+        directory="/repo/main"
+        mode="uncommitted"
+        focusSubagentSessionId="ses_child"
+        focusSubagentLabel="explorer"
+        focusSubagentVersion={1}
+      />
+    ))
+    flushFrames()
+    expect(activeTabId(container)).toBe("subagent:ses_child")
+
+    setDeleted("ses_parent")
+    flushFrames()
+
+    expect(container.querySelector('[data-workspace-tab-id="subagent:ses_child"]')).toBeNull()
+    expect(activeTabId(container)).toBe("review")
+  })
+
+  test("deleting the child closes its own transcript", () => {
+    const [deleted, setDeleted] = createSignal<string>()
+    deletedSession.read = deleted
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId="ses_parent"
+        directory="/repo/main"
+        mode="uncommitted"
+        focusSubagentSessionId="ses_child"
+        focusSubagentVersion={1}
+      />
+    ))
+    flushFrames()
+
+    setDeleted("ses_child")
+    flushFrames()
+
+    expect(container.querySelector('[data-workspace-tab-id="subagent:ses_child"]')).toBeNull()
+  })
+
+  test("reopening a transcript retitles its tab from the row that was clicked", () => {
+    const [focus, setFocus] = createSignal({ label: "explorer", version: 1 })
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId="ses_parent"
+        directory="/repo/main"
+        mode="uncommitted"
+        focusSubagentSessionId="ses_child"
+        focusSubagentLabel={focus().label}
+        focusSubagentVersion={focus().version}
+      />
+    ))
+    flushFrames()
+    expect(tabButton(container, "subagent:ses_child").textContent).toContain("explorer")
+
+    setFocus({ label: "code-reviewer", version: 2 })
+    flushFrames()
+
+    expect(container.querySelectorAll('[data-workspace-tab-kind="subagent"]').length).toBe(1)
+    expect(tabButton(container, "subagent:ses_child").textContent).toContain("code-reviewer")
+  })
+})
+
+describe("the docked child transcript", () => {
+  test("renders docked and read-only, which is what leaves it its own task heading", async () => {
+    const { container } = render(() => (
+      <ReviewWorkspace
+        sessionId="ses_parent"
+        directory="/repo/main"
+        mode="uncommitted"
+        focusSubagentSessionId="ses_child"
+        focusSubagentVersion={1}
+      />
+    ))
+    flushFrames()
+
+    const screen = await vi.waitFor(() => {
+      const element = container.querySelector('[data-testid="mock-session-screen"]')
+      expect(element).toBeTruthy()
+      return element!
+    })
+    expect(screen.getAttribute("data-presentation")).toBe("docked")
+    expect(screen.getAttribute("data-read-only")).toBe("true")
   })
 })
