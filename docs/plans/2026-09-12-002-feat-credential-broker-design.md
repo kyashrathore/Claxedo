@@ -356,3 +356,16 @@ Commands (from `packages/claxedo-server/scripts/sandbox`, then its `cloudflare-w
 - `npx wrangler dev --config feasibility/wrangler.toml --port 8793`: failed building the image at `FROM docker.io/cloudflare/sandbox:0.12.9`, `DeadlineExceeded: context deadline exceeded` while fetching base-image metadata. Docker daemon was running; Wrangler OAuth authentication was available.
 
 Result: **not run: the current runtime container image could not be built because the base-image fetch timed out.** Neither Bun/Node HTTPS interception nor a live handler update is proven. The reproducible local probe is in `cloudflare-worker/feasibility/`; its check must pass before a deployed experiment, and a local pass must not be reported as deployed provider acceptance. The existing 15-minute JWT expiry remains unfixed; the design's native outbound replacement is still gated on this experiment.
+
+### Experiment log — 2026-09-13, item 6 (Pi portion)
+
+Harness: real Pi 0.85.0 process through Claxedo's public agent runtime; upstream is a deterministic local HTTP server, not a live model vendor.
+
+Commands from the repository root:
+
+- `npm install --prefix .artifacts/broker-pi --no-save @earendil-works/pi-coding-agent@0.85.0`
+- From `packages/agent-sdk-runtime`: `PI_EXECUTABLE=/Users/yashvardhansingh/test/opencode-broker/.artifacts/broker-pi/node_modules/.bin/pi bun test src/harnesses/pi/native.integration.test.ts`
+
+Result: **yes for Pi custom provider base URL and placeholder transport**. Two native integration tests pass, with 27 assertions. `models.json` uses `providers.<name>.baseUrl`, `api: "openai-completions"`, and `apiKey`; actual requests arrive at the configured `/v1/chat/completions` endpoint with `Authorization: Bearer local-test`. The real runtime executes a native file tool, records usage, resumes its session, and performs compaction. This does not prove every built-in provider override, a model-vendor request, or generic-broker production integration. The OpenCode portion of item 6 remains unverified.
+
+The globally installed Pi 0.85.1 was rejected by the runtime's existing exact-version gate (two failing tests); the experiment used an isolated install of the repository's required 0.85.0 without changing that gate or the global installation.

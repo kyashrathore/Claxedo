@@ -181,3 +181,11 @@ Changed files: `scripts/sandbox/build-sandbox-image.ts`, `scripts/sandbox/tests/
 Next: recover the base-image fetch, run the four-request local probe and cleanup, then test the same behavior in an isolated deployed sandbox. Only verified native interception supports replacing the expiring `/egress` route. The long-running credential flow is not complete.
 
 Packaging fix commit: `0a526f2492 fix(sandbox): include first-party MCP in image dependency roots`. Server `bun run typecheck` passes after the probe uses the SDK's namespace parameter type. The first typecheck rejected a global Workers type unavailable to the server compilation and a `keepAlive` option absent from its ambient SDK declaration; the probe no longer supplies that unnecessary option.
+
+## Pi base-URL feasibility and Cloudflare build recovery (2026-09-13)
+
+The real Pi 0.85.0 public-runtime integration passed, including two new assertions of the actual provider request path and bearer placeholder. Exact command: from `packages/agent-sdk-runtime`, `PI_EXECUTABLE=/Users/yashvardhansingh/test/opencode-broker/.artifacts/broker-pi/node_modules/.bin/pi bun test src/harnesses/pi/native.integration.test.ts`: 2 pass, 0 fail, 27 assertions. An isolated npm install supplies the exact version; the globally installed 0.85.1 failed the existing version gate. Appendix E item 6 now records the verified Pi portion and explicitly leaves OpenCode and real-vendor/broker integration unverified.
+
+Changed files: `packages/agent-sdk-runtime/src/harnesses/pi/native.integration.test.ts`, design 002, and this report.
+
+Cloudflare follow-up: the stuck public-image pull was waiting in `docker-credential-desktop get`. A direct HTTPS request to Docker Hub returned the expected unauthenticated 401. After terminating only this task's stuck pull/helper, an empty task-local Docker client config allowed the public pull to finish: image digest `sha256:4a56a37a3cfd9b38d65bb4b5d0b341e6490a3a4c0226274ae4c1cca4948e85fe`. The isolated config also needs Docker Desktop's `cliPluginsExtraDirs` so Wrangler can use Buildx. A new local probe image build progressed into its Dockerfile dependency installation; no interception result is claimed yet.
