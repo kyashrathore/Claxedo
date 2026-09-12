@@ -28,6 +28,10 @@ Make @claxedo the single agent people can address from any supported surface. It
 
 Historical only: [Company PRD](docs/plans/2026-09-08-002-feat-company-prd-design-plan.md) and [task-work plan](docs/plans/2026-09-08-003-feat-pluggable-task-work-plan.md). Their multiple-profile architecture and delivery milestones are superseded. Implement the lightweight presets defined in the current HLD/LLD; do not inherit the historical bot identity, memory or orchestration model.
 
+## Delegating execution
+
+Delegate a slice to an Opus subagent or to `devin --model swe-2-max --permission-mode yolo` when all three hold: the slice is well scoped to a named owner and file set, its feedback/verification loop is tight (a test, typecheck, build or ratchet the agent runs itself after every change), and its exit criterion is explicit and checkable. Such slices do not need the strongest model. Keep tracing, design, cross-owner contract changes and any work judged by reading rather than running with the orchestrator. Read every delegated diff and rerun its checks before accepting it; a delegated "done" is a claim.
+
 ## Priority workstream: scoped context and memory
 
 - [ ] M1 — Trace current context/instruction/tool assembly, knowledge storage/retrieval, session identity, authorization and channel admission owners. Distinguish existing behavior from missing contracts.
