@@ -3,6 +3,7 @@ import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-
 import {
   createSandboxManager,
   type SandboxBootSource,
+  type SandboxBrokeredSecret,
   type SandboxCheckpointRuntime,
   type SandboxEnsureResult,
   type SandboxManager,
@@ -67,6 +68,7 @@ type SandboxCallbacks = {
 export async function startSandbox(
   state: WorkspaceRuntimeState,
   callbacks: SandboxCallbacks,
+  secrets?: SandboxBrokeredSecret[],
 ): Promise<WorkspaceRuntimeState> {
   const cfg = await loadUserConfig()
   const driverId =
@@ -92,7 +94,7 @@ export async function startSandbox(
   if (action.action === "wait") {
     const ms = Math.max(0, action.until - now())
     if (ms > 0) await sleep(ms)
-    return startSandbox(state, callbacks)
+    return startSandbox(state, callbacks, secrets)
   }
 
   if (action.action === "mark_failed") {
@@ -140,10 +142,11 @@ export async function startSandbox(
         ? { kind: "git", repoUrl: state.ws.repo_url, branch: state.ws.git_branch ?? undefined }
         : { kind: "empty" },
       net: net ? { mode: net.mode, hosts: net.hosts, cidrs: net.cidrs } : undefined,
+      secrets,
     })
     if (result.status === "provisioning") {
       await sleep(result.retryAfterMs)
-      return startSandbox(state, callbacks)
+      return startSandbox(state, callbacks, secrets)
     }
     if (result.status !== "ready") {
       throw new Error(result.error ?? "sandbox unavailable")

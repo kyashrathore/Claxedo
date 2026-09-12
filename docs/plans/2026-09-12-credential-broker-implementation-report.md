@@ -119,3 +119,21 @@ Validation:
 This proves runtime header configuration. A private GitHub clone through a live Daytona edge remains unverified.
 
 Next: test and repair self-hosted supervisor secret delivery. Trace the existing runtime preparation and GitHub clone secret producers into the supervisor's `manager.ensure` call, then assert that the same secrets reach the driver without entering ordinary runtime env. This is needed so the clone and MCP consumers receive authority on self-hosted provisioning as well as hosted provisioning.
+
+## Supervisor secret delivery (2026-09-13)
+
+The self-hosted manager discarded `SandboxEnsureInput.secrets` before entering the supervisor. Both its direct and relay-host paths now carry that explicit channel through `startRuntime` and `startSandbox` to the real sandbox manager. Recursive provisioning retries retain the same request's secrets. Values are not stored on runtime state, persisted in lease rows, or placed in the ordinary boot environment. Selection and renewal on later independent wakes remain separate unfinished work.
+
+Changed files: `packages/claxedo-server/src/workspace/supervisor/index.ts`, `sandbox.ts`, and `cloud.test.ts` in that same directory.
+
+Commands from claxedo-server:
+
+- `bun test src/workspace/supervisor/cloud.test.ts`: before fix, the two new direct/relay tests failed because the driver received no secrets. After fix and negative-flow coverage: 61 pass, 0 fail.
+- The added unsupported-driver test initially exposed missing capability fields in the Modal test double. Its metadata now matches production (`secretBrokering: none`, `egressControl: none`), and the real manager's refusal is exercised. No production behavior was weakened to satisfy the test.
+- `bun run typecheck`: passed, zero errors.
+
+At root, `bun run test:architecture-ratchets`: 13 pass, 0 fail; all 8 source policies and helpers pass. No baselines changed. `git diff --check` passed.
+
+The tests execute the supervisor and manager through the public manager entrypoint with mocked provider transport. They do not prove provider-side injection. Self-hosted MCP preparation composition and fresh authority resolution on independent wake remain to be verified.
+
+Next: inspect every wake caller of `ensure`, add failing tests where network policy is omitted, and route each caller through its deployment's existing policy producer. Creation-time restrictions must survive waking or replacing the sandbox; secret delivery alone does not enforce that boundary.
