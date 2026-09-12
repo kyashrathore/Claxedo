@@ -116,12 +116,11 @@ import {
   timelineFileTarget,
   resolveTimelinePath as resolveTimelineFilePath,
 } from "./timeline-file-paths"
+import { createTimelineLinkOpen } from "./timeline-link-open"
 import { createMessageNavRoom } from "./message-nav-layout"
 import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
 import { createMessageNavDeferredMount } from "./message-nav-deferred-mount"
 import { scheduleTimelineFirstFoldReveal } from "./timeline-first-fold-reveal"
-import { BP_MD } from "@/ui/controls/breakpoints"
-import { retargetSessionRef } from "@/platform/identity/session-ref"
 import type { MessageTimelineProps } from "./message-timeline-props"
 import "./message-nav-gutter.css"
 import "./markdown-surfaces.css"
@@ -318,8 +317,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
     messageNavVisible((props.navMessages ?? props.userMessages).length) && messageNavHasRoom() && !!props.onMessageSelect,
   )
 
+  const links = createTimelineLinkOpen({ workspacePanel: claxedoState.workspacePanel, sdk, paneId, platform })
+
   const registerTimelineRoot = (el: HTMLDivElement) => {
     setTimelineRoot(el)
+    const stopLinkOpen = links.listen(el)
     const onOpenSubagent = (event: Event) => {
       // The detail rides on a DOM CustomEvent, so it is read structurally rather
       // than asserted into a typed CustomEvent the listener never guaranteed.
@@ -339,12 +341,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       if (externalSourceUrl) {
         event.preventDefault()
         event.stopImmediatePropagation()
-        claxedoState.workspacePanel.open({
-          workspaceDir: sdk.directory.replace(/\/$/, ""),
-          targetPaneId: paneId,
-          navigator: null,
-          focus: { kind: "browser", url: externalSourceUrl },
-        })
+        links.openBrowserTab(externalSourceUrl)
         return
       }
       const raw = timelineAnchorClickTarget(event)
@@ -355,6 +352,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     }
     el.addEventListener("click", onCapture, { capture: true })
     onCleanup(() => {
+      stopLinkOpen()
       el.removeEventListener("claxedo:open-subagent", onOpenSubagent)
       el.removeEventListener("click", onCapture, { capture: true })
     })
