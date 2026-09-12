@@ -153,10 +153,10 @@ export function createTasksSessionReserve(
         error: tasksErrorDetail("conflict", `Origin ${intent.operationId} is reserved for another session`),
       }
     }
-    if (reservation.state === "compensation_pending" || reservation.state === "compensated") {
+    if (reservation.state === "compensation_pending") {
       return {
         ok: false,
-        error: tasksErrorDetail("conflict", `Origin ${intent.operationId} was compensated and can no longer register a session`),
+        error: tasksErrorDetail("conflict", `Origin ${intent.operationId} is being compensated and cannot register a session yet`),
       }
     }
     return { ok: true, headers: { "x-claxedo-session-registration-operation": reservation.operationId } }
