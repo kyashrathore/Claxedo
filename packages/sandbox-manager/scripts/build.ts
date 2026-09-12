@@ -16,7 +16,6 @@ const entries = [
   "src/hosted-network-policy.ts",
   "src/drivers/box.ts",
   "src/drivers/cloudflare.ts",
-  "src/drivers/cloudflare-egress.ts",
   "src/drivers/daytona.ts",
   "src/drivers/docker.ts",
   "src/drivers/exe.ts",

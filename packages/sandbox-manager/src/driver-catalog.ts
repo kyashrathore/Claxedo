@@ -119,8 +119,8 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
       driverRunsIn: ["worker"],
       hostStopBehavior: "not-supported", hostResumeBehavior: "same-host",
       targetAccess: "relay",
-      secretBrokering: "proxy",
-      // The Worker uses an opt-in proxy; native outbound handlers and host lists are not wired.
+      secretBrokering: "native",
+      // Credential handlers do not restrict unrelated destinations.
       egressControl: "none",
       persistence: {
         resume: "replacement-restore",

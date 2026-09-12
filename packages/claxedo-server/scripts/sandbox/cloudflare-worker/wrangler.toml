@@ -8,7 +8,7 @@ main = "src/index.ts"
 # made `wrangler dev` unusable as the pre-deploy acceptance loop. Keep the
 # package pin and the workflow's explicit secret-sync pin aligned.
 compatibility_date = "2025-04-01"
-compatibility_flags = ["nodejs_compat"]
+compatibility_flags = ["nodejs_compat", "enable_ctx_exports"]
 
 # The runtime is reached through the worker's own /sandbox/:id/proxy route
 # (containerFetch), NOT exposePort preview subdomains — so NO wildcard route or
@@ -62,14 +62,8 @@ BACKUP_BUCKET_NAME = "claxedo-sandbox-backups"
 binding = "BACKUP_BUCKET"
 bucket_name = "claxedo-sandbox-backups"
 
-# Egress credential broker (Cloudflare Worker-proxy pattern). Brokered secrets
-# are stored here keyed by sandbox id — never inside the container. Create the
-# namespace (`wrangler kv namespace create EGRESS_SECRETS`) and set the signing
-# secret (`wrangler secret put EGRESS_SIGNING_SECRET`). Brokering stays off
-# until both are configured.
+# Native outbound handlers read credentials from KV outside the container.
+# Provisioning a brokered credential requires this binding.
 [[kv_namespaces]]
 binding = "EGRESS_SECRETS"
 id = "47926e0723e54c8d825cae7af8bcc60f"
-
-# The Worker keeps credential brokering disabled when this binding or the
-# EGRESS_SIGNING_SECRET Worker secret is absent.

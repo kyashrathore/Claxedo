@@ -245,3 +245,74 @@ Initial `gpt-5.3-codex` failed because that model was unavailable to the account
 This proves the custom-provider subscription proxy mechanism with a fixture binding authority. It does not implement production signed-user selection, binding storage, renewal, or model configuration. Appendix E also records the missing exe.dev host trust, absent Modal authentication, and the workspace-only preparation callback that still drops signed-user context.
 
 Changed files: the Codex feasibility script, egress-broker README, design 002, and this report. Next implementation target: the Cloudflare expiring-token path, using the locally verified native outbound API while keeping deployed acceptance explicitly pending. The off-limits accounts contracts and hosted store remain untouched.
+
+## Native Cloudflare credential delivery — 2026-09-13
+
+Replaced the unrenewed 15-minute JWT with native HTTPS outbound injection.
+The driver preserves each secret name and distinguishes omitted registrations
+from explicit withdrawal. The Worker validates registrations, keeps values in
+its existing KV authority, configures per-host handlers, and boots clients with
+named placeholders. Forwarding checks host and placeholder, reads current KV
+values per request, strips credential/cookie headers, and rejects redirects.
+MCP materialization retains the original URL. Deleted the obsolete JWT helper,
+vendor copy, package export/build entry, HTTP route and consumer rewrite.
+Catalog and docs now declare native brokering with unrestricted unrelated egress.
+
+Failing test first: root `node packages/claxedo-server/node_modules/vitest/vitest.mjs
+run packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/registry.test.ts`
+initially produced 10 pass / 3 fail: absent native handler setup, empty input
+retaining the old value, malformed input accepted. These were actual assertions.
+
+Final gates:
+
+- Root `node packages/claxedo-server/node_modules/vitest/vitest.mjs run packages/claxedo-server/scripts/sandbox/cloudflare-worker/src`: 21 pass / 0 fail.
+- Sandbox-manager `bun test src/drivers/cloudflare.test.ts src/egress-policy.test.ts`: 58 pass / 0 fail. An intermediate run found the old nameless payload assertion; a later run found a documentation table replacement error and stale error-text assertion. All were corrected.
+- Local-server `bun test src/agent-plugins/runtime/runtime-contribution.test.ts`: 4 pass / 0 fail. Removed the obsolete partial-JWT-config test with its production parser; strict registration and authority failure tests cover the new boundary.
+- `bun run typecheck` in claxedo-server, claxedo-local-server and sandbox-manager: pass. The first server check caught test fetch doubles incorrectly cast to Bun's fetch type; the forwarding dependency now exposes only the Request-to-Response function it uses.
+- Sandbox-manager `bun run build`: pass.
+- Worker `npx wrangler deploy --dry-run --outdir /tmp/broker-native-cf-worker-dry-run`: pass, including the Docker image build. No deployment occurred.
+- Root `bun run test:architecture-ratchets`: 13 pass / 0 fail, five product and eight source policies plus helper ratchet pass; no baseline changes.
+- `git diff --check`: pass after removing one trailing blank line.
+
+This completes the source replacement, not deployed acceptance or the full
+credential broker. The new production handler still needs a real-container
+injection/rotation/withdrawal experiment; the previous local probe proved SDK
+interception and handler updates only. The prior remote image upload failure
+still blocks deployed acceptance. Existing KV is eventually consistent and
+sandbox-keyed: this slice does not implement account selection, revision-aware
+hosted bindings, refresh coordination, immediate global revocation, or native
+per-binding method/path policies. Accounts-lane files remain untouched. Deploy
+matching driver and Worker together and destroy/recreate existing sandboxes;
+there is no legacy registration migration.
+
+Changed files:
+
+- `packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/index.ts`
+- `packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/registry.test.ts`
+- `packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/outbound-credentials.ts`
+- `packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/outbound-credentials.test.ts`
+- `packages/claxedo-server/scripts/sandbox/cloudflare-worker/src/egress.ts` (deleted)
+- `packages/claxedo-server/scripts/sandbox/cloudflare-worker/wrangler.toml`
+- `packages/claxedo-server/scripts/sandbox/cloudflare-worker/README.md`
+- `packages/claxedo-local-server/src/agent-plugins/runtime/runtime-contribution.ts`
+- `packages/claxedo-local-server/src/agent-plugins/runtime/runtime-contribution.test.ts`
+- `packages/sandbox-manager/src/drivers/cloudflare.ts`
+- `packages/sandbox-manager/src/drivers/cloudflare.test.ts`
+- `packages/sandbox-manager/src/drivers/cloudflare-egress.ts` (deleted)
+- `packages/sandbox-manager/src/drivers/cloudflare-egress.test.ts` (deleted)
+- `packages/sandbox-manager/src/driver-catalog.ts`
+- `packages/sandbox-manager/src/egress-policy.test.ts`
+- `packages/sandbox-manager/scripts/build.ts`
+- `packages/sandbox-manager/package.json`
+- `packages/sandbox-manager/README.md`
+- `packages/sandbox-manager/docs/architecture.md`
+- `public-docs/sandbox-egress.md`
+- `docs/plans/2026-09-12-002-feat-credential-broker-design.md`
+- This implementation report.
+
+Next task: extend the isolated native probe to call this production handler
+with fixture credentials, then verify real Node and Bun HTTPS requests select
+the correct header, observe rotation without restarting the client, and lose
+credential access after withdrawal. This closes the gap between unit-tested
+forwarding and the platform's actual TLS interception boundary before another
+isolated deployed attempt.

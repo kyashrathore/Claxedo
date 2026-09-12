@@ -355,11 +355,11 @@ describe("driver egress capability declarations", () => {
   })
 
   test("cloudflare is uncontained even though it has a secret broker", () => {
-    // Its egress broker is an OPT-IN proxy for brokered credentials, not a
+    // Native credential handlers are not a
     // network boundary: the driver drops `net` on the floor. `secretBrokering`
     // and `egressControl` are independent capabilities and must not be
     // confused for one another.
-    expect(sandboxDriverCatalog.cloudflare.metadata.secretBrokering).toBe("proxy")
+    expect(sandboxDriverCatalog.cloudflare.metadata.secretBrokering).toBe("native")
     expect(sandboxDriverCatalog.cloudflare.metadata.egressControl).toBe("none")
   })
 

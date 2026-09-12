@@ -11,7 +11,7 @@ import {
   type SandboxOperations,
   type SandboxProcess,
 } from "@cloudflare/sandbox"
-import { EGRESS_TARGET_HEADER, handleEgressRequest, mintEgressToken } from "./egress"
+import { credentialPlaceholder, forwardCredential, parseRegistrations, type EgressRegistration } from "./outbound-credentials"
 
 // Cloudflare routes intercepted container HTTP(S) through this Worker
 // Entrypoint. Without the export, the local sidecar accepts TLS and then has no
@@ -23,6 +23,15 @@ export { ContainerProxy }
 // operations `this` is passed to live on the ambient `@cloudflare/sandbox`
 // declaration, so no call site re-asserts `this`.
 export class Sandbox extends CloudflareSandbox {
+  static {
+    // The SDK registers handlers through an inherited setter, not a static field.
+    Object.assign(this, { outboundHandlers: {
+      credential: (request: Request, env: Env, ctx: { params: { sandboxId: string } }) =>
+        forwardCredential(request, { registrations: () => readRegistrations(env, ctx.params.sandboxId) }),
+    } })
+  }
+  interceptHttps = true
+
   private workspaceRuntimeEnsure?: Promise<boolean>
 
   ensureWorkspaceRuntime(command: string, env: Record<string, string>, port: number) {
@@ -73,8 +82,6 @@ interface RegistryR2 {
 interface Env {
   Sandbox: any
   API_TOKEN: string
-  /** HMAC secret for sandbox egress tokens (wrangler secret put EGRESS_SIGNING_SECRET). Optional — brokering off when unset. */
-  EGRESS_SIGNING_SECRET?: string
   /** KV namespace holding brokered secrets keyed by sandbox id, out of the container. */
   EGRESS_SECRETS?: EgressKV
   /**
@@ -139,16 +146,10 @@ async function unregisterSandbox(env: Env, sandboxId: string) {
   })
 }
 
-type EgressRegistration = { hosts: string[]; header: string; value: string }
-
-// Look up the brokered credential for a (sandbox, host) pair from KV — Worker
-// side only; the value never round-trips through the container.
-async function resolveEgressSecret(env: Env, sandboxId: string, host: string) {
-  const raw = await env.EGRESS_SECRETS?.get(sandboxId)
-  if (!raw) return undefined
-  const registrations = egressRegistrations(parseJsonValue(raw))
-  const match = registrations.find((reg) => reg.hosts.includes(host))
-  return match ? { header: match.header, value: match.value } : undefined
+async function readRegistrations(env: Env, sandboxId: string): Promise<EgressRegistration[]> {
+  if (!env.EGRESS_SECRETS) return []
+  const raw = await env.EGRESS_SECRETS.get(sandboxId)
+  return raw === null ? [] : parseRegistrations(JSON.parse(raw))
 }
 
 // Well-known port the workspace-runtime binds inside the container. Keep this
@@ -317,18 +318,7 @@ export default {
       )
     }
 
-    // ── Egress credential broker ──────────────────────────────────────────
-    // The sandbox routes outbound requests for brokered hosts here, carrying
-    // only its short-lived egress JWT (never the credential). We validate the
-    // token, inject the real credential from KV, and forward. NOT behind the
-    // admin API_TOKEN gate — it is authenticated by the per-sandbox egress JWT.
-    if (parts[0] === "egress") {
-      if (!env.EGRESS_SIGNING_SECRET) return json({ error: "egress broker not configured" }, 503)
-      return handleEgressRequest(request, {
-        signingSecret: env.EGRESS_SIGNING_SECRET,
-        resolveSecret: (sandboxId, host) => resolveEgressSecret(env, sandboxId, host),
-      })
-    }
+
 
     const denied = auth(request, env)
     if (denied) return denied
@@ -416,26 +406,26 @@ export default {
             return json({ error: "ensure-runtime restore requires one absolute directory and a backupId" }, 400)
           }
 
-          // Brokered secrets: store the raw values in KV (out of the container)
-          // and give the container only the proxy URL + a short-lived JWT +
-          // the brokered host list — never the values.
-          const registrations = egressRegistrations(body.egress)
-          const egress = registrations.length > 0 ? registrations : undefined
-          if (egress?.length) {
-            if (!env.EGRESS_SIGNING_SECRET || !env.EGRESS_SECRETS) {
-              return json({ error: "egress broker not configured (set EGRESS_SIGNING_SECRET + EGRESS_SECRETS)" }, 503)
+          let registrations: EgressRegistration[]
+          if (body.egress !== undefined) {
+            try {
+              registrations = parseRegistrations(body.egress)
+            } catch {
+              return json({ error: "invalid egress registrations" }, 400)
             }
-            await env.EGRESS_SECRETS.put(sandboxId, JSON.stringify(egress))
-            const hosts = [...new Set(egress.flatMap((reg) => reg.hosts))]
-            containerEnv.CLAXEDO_EGRESS_PROXY_URL = `${url.origin}/egress`
-            containerEnv.CLAXEDO_EGRESS_TARGET_HEADER = EGRESS_TARGET_HEADER
-            containerEnv.CLAXEDO_EGRESS_HOSTS = JSON.stringify(hosts)
-            containerEnv.CLAXEDO_EGRESS_TOKEN = await mintEgressToken({
-              sandboxId,
-              hosts,
-              signingSecret: env.EGRESS_SIGNING_SECRET,
-            })
+            if (registrations.length && !env.EGRESS_SECRETS) {
+              return json({ error: "egress broker requires EGRESS_SECRETS" }, 503)
+            }
+            await env.EGRESS_SECRETS?.put(sandboxId, JSON.stringify(registrations))
+          } else {
+            registrations = await readRegistrations(env, sandboxId)
           }
+          await sandbox.setOutboundByHosts(Object.fromEntries(
+            registrations.flatMap((row) => row.hosts.map((host) =>
+              [host, { method: "credential", params: { sandboxId } }],
+            )),
+          ))
+          for (const row of registrations) containerEnv[row.name] = credentialPlaceholder(row.name)
           if (restore) {
             // Cloudflare backup mounts are ephemeral and restoring over an
             // active writer is unsafe. Stop the old runtime before mounting
@@ -512,11 +502,6 @@ function asWorkerRecord(value: unknown): Record<string, unknown> | undefined {
   return isWorkerRecord(value) ? value : undefined
 }
 
-function parseJsonValue(text: string): unknown {
-  const parsed: unknown = JSON.parse(text)
-  return parsed
-}
-
 /** Only the string entries of an object; a non-string env or label value is not one. */
 function stringMap(value: unknown): Record<string, string> {
   const record = asWorkerRecord(value)
@@ -524,23 +509,4 @@ function stringMap(value: unknown): Record<string, string> {
   return Object.fromEntries(
     Object.entries(record).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   )
-}
-
-/** Registrations that carry every field the broker uses; a malformed one is dropped rather than trusted. */
-function egressRegistrations(value: unknown): EgressRegistration[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((entry) => {
-    const record = asWorkerRecord(entry)
-    const hosts = record?.hosts
-    if (
-      !record ||
-      typeof record.header !== "string" ||
-      typeof record.value !== "string" ||
-      !Array.isArray(hosts) ||
-      !hosts.every((host): host is string => typeof host === "string")
-    ) {
-      return []
-    }
-    return [{ header: record.header, value: record.value, hosts }]
-  })
 }

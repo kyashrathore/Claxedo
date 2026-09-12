@@ -29,7 +29,7 @@ everything else.
 | --- | --- | --- | --- |
 | `daytona` | `hosts-and-cidrs` | **Enforced** | `domainAllowList` (names) and `networkAllowList` (CIDRs) over a `networkBlockAll` floor. The only driver that filters by name *and* by address. |
 | `vercel` | `hosts` | **Enforced** | The driver sends a hostname allow list, or `deny-all`. SDK subnet rules exist but the driver does not translate `net.cidrs`. |
-| `cloudflare` | `none` | **UNRESTRICTED** | The Cloudflare Sandbox Worker exposes no egress filter. Its credential broker (`drivers/cloudflare-egress.ts`) is an opt-in proxy the sandbox chooses to route brokered-credential requests through — it is not a network boundary and does not stop the sandbox reaching anything else directly. |
+| `cloudflare` | `none` | **UNRESTRICTED** | Native outbound handlers inject credentials for registered hosts. They do not restrict unrelated destinations; the driver does not apply a network allowlist. |
 | `exe` | `none` | **UNRESTRICTED** | exe.dev exposes no egress allowlist. The driver throws if handed one. |
 | `modal` | `none` | **UNRESTRICTED** | The driver implements `blockNetwork` only and rejects host policies. Modal's domain allowlist and alpha sidecar are not wired. |
 | `box` | `none` | **UNRESTRICTED** | No egress allowlist. The driver throws if handed one. |
@@ -37,14 +37,14 @@ everything else.
 | `fetch` | `none` | **UNRESTRICTED** | The fetch bridge forwards a provisioning request to an external HTTP driver; the wire format carries no egress policy, so whatever contains that sandbox (if anything) is outside Claxedo's knowledge. |
 
 Provider features do not become driver capabilities through an SDK upgrade.
-Cloudflare's native outbound handlers and exe.dev's integrations are not wired
-by these drivers. The current secret delivery declarations are:
+Cloudflare's native credential handlers are wired; its network allowlist and
+exe.dev's integrations are not. The current secret delivery declarations are:
 
 | Driver | `secretBrokering` |
 | --- | --- |
 | `daytona` | `native` |
 | `vercel` | `native` |
-| `cloudflare` | `proxy` |
+| `cloudflare` | `native` |
 | `exe` | `none` |
 | `modal` | `none` |
 | `box` | `none` |

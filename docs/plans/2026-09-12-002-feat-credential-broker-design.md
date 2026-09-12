@@ -229,7 +229,7 @@ catalog (`sandbox-manager/src/driver-catalog.ts`) is the left column.
 | --- | --- | --- | --- |
 | daytona | native; hosts and CIDRs | Placeholder swapped in HTTPS headers to allowed hosts, responses scrubbed. `updateSecrets` on a running sandbox; a value change lands within about 15 seconds; a sandbox created with no secrets must restart to receive one. | 0.192.0 → 0.211.2 |
 | vercel | native; hosts | Header transform per domain, with matchers on path, method, query, headers; `forwardURL` to your own proxy with an OIDC token naming the sandbox; denied CIDR ranges; live policy updates. | 1.10.2 → 3.3.0 |
-| cloudflare | proxy, opt-in; no egress control | Outbound Workers since 0.8.0: host allow and deny lists evaluated before handlers, per-host handlers in the Worker, HTTPS intercepted with a per-sandbox CA, header injection in the handler. | 0.8.9 → 0.12.9 |
+| cloudflare | native named-placeholder injection; no egress control | Outbound Workers since 0.8.0: host allow and deny lists evaluated before handlers, per-host handlers in the Worker, HTTPS intercepted with a per-sandbox CA, header injection in the handler. | 0.8.9 → 0.12.9 |
 | exe | none; none | Integrations: the secret is stored server-side and injected at the edge when the VM calls `<name>.int.exe.xyz`; HTTP proxy, GitHub, S3 signing, and an LLM integration that takes an Anthropic or OpenAI key or a **ChatGPT subscription** by device-code login. Attach per VM, per tag, or all. No egress allowlist. | driven over `/exec` |
 | modal | none; none | Secrets are still readable env. Sandbox Sidecars (alpha, allowlisted workspaces) run a proxy that holds the secret while the sandbox has `outbound_cidr_allowlist=[]`; `outbound_domain_allowlist` (beta); `updateNetworkPolicy` (alpha). | 0.7.5 → 0.10.1 |
 | box | none | Plaintext env inside a `docker run` command string; no secret or egress feature. | — |
@@ -433,3 +433,31 @@ The authority and lease identities in this probe are explicit test fixtures. Pro
 - exe.dev: `ssh -oBatchMode=yes -oConnectTimeout=10 -oStrictHostKeyChecking=yes exe.dev help` failed because no trusted host key was configured. Item 7 is **not run: trusted SSH access is not established in this environment**. No host-trust setting or integration was changed.
 - Modal: `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` are unset and `~/.modal.toml` is absent. Item 8 is **not run: no configured Modal authentication or identified allowlisted workspace is available**.
 - Signed subject in all deployment modes: **not run as a live cross-deployment experiment**. Current source evidence shows a remaining gap: `WorkspaceRouteOptions.prepareRuntime` accepts only `workspaceId`, and `hostedConnectionInfo` calls it without the available signed auth context before `hostManager.ensure`. This does not prove personal account selection or per-user sandbox isolation. Those require the planned authority/lease work; no synthetic user identity was added to production provisioning.
+
+### Cloudflare native replacement implementation — 2026-09-13
+
+The production Worker now uses native HTTPS outbound handlers and named
+placeholders, with credential values held in its existing sandbox-keyed KV.
+The expiring JWT producer, `/egress` route, vendored helper, exported legacy
+helper and runtime MCP proxy rewrite have been removed. Explicit empty
+registrations withdraw values and host handlers; omission preserves them for
+wake. Malformed registration input rejects provisioning. Native forwarding
+selects by exact host and named header placeholder, reads KV on each request,
+and rejects redirects. Production compatibility flags now enable ctx.exports.
+
+Commands: root Node Vitest invocation of Worker `registry.test.ts` and
+`outbound-credentials.test.ts`: 21 pass. Sandbox-manager `bun test
+src/drivers/cloudflare.test.ts src/egress-policy.test.ts`: 58 pass. Local-server
+`bun test src/agent-plugins/runtime/runtime-contribution.test.ts`: 4 pass.
+Worker `npx wrangler deploy --dry-run --outdir /tmp/broker-native-cf-worker-dry-run`:
+pass, including container image build. Three affected package typechecks and
+sandbox-manager build pass. Architecture ratchets pass without baseline changes.
+
+These are implementation and local checks, not a new deployed result. The
+prior deployed image-upload blocker remains. A real container must still
+exercise this production credential handler, including rotation and withdrawal.
+This retains the existing KV delivery authority: no revision-aware hosted binding
+store, signed-user selection, refresh coordination, immediate global revocation,
+or per-binding method/path policy is claimed for this native adapter. Those
+remain part of the larger broker integration. Existing sandboxes must be
+destroyed and recreated with named registrations when the replacement is deployed.

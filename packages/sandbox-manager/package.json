@@ -169,13 +169,6 @@
       "types": "./dist/stores/memory.d.ts",
       "import": "./dist/stores/memory.mjs",
       "default": "./dist/stores/memory.mjs"
-    },
-    "./drivers/cloudflare-egress": {
-      "development": "./src/drivers/cloudflare-egress.ts",
-      "bun": "./src/drivers/cloudflare-egress.ts",
-      "types": "./dist/drivers/cloudflare-egress.d.ts",
-      "import": "./dist/drivers/cloudflare-egress.mjs",
-      "default": "./dist/drivers/cloudflare-egress.mjs"
     }
   },
   "files": [

@@ -111,20 +111,6 @@ export function parseAgentPluginRuntimeApplyRequest(input: unknown): AgentPlugin
   }
 }
 
-function cloudflareEgressHosts(value: string) {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(value)
-  } catch {
-    throw new Error("Cloudflare egress host allowlist is not valid JSON")
-  }
-  if (!Array.isArray(parsed)
-    || parsed.some((host) => typeof host !== "string" || !host.trim() || host.includes("/") || host.includes(":"))) {
-    throw new Error("Cloudflare egress host allowlist must be a JSON array of hostnames")
-  }
-  return new Set(parsed.map((host) => host.trim().toLowerCase()))
-}
-
 /**
  * Resolve gateway placeholders into harness-facing MCP projections.
  *
@@ -138,14 +124,6 @@ export function runtimeMcpServers(
   rows: AgentPluginRuntimeApplyRequest["mcpServers"],
   env: Record<string, string | undefined>,
 ): RuntimeMcpServerProjection[] {
-  const proxyUrl = env.CLAXEDO_EGRESS_PROXY_URL?.trim()
-  const proxyToken = env.CLAXEDO_EGRESS_TOKEN?.trim()
-  const proxyHostsRaw = env.CLAXEDO_EGRESS_HOSTS?.trim()
-  const configured = [proxyUrl, proxyToken, proxyHostsRaw].filter(Boolean).length
-  if (configured !== 0 && configured !== 3) {
-    throw new Error("Cloudflare egress configuration requires proxy URL, token, and host allowlist")
-  }
-  const proxyHosts = proxyHostsRaw ? cloudflareEgressHosts(proxyHostsRaw) : new Set<string>()
   return rows.map((row): RuntimeMcpServerProjection => {
     const identity = {
       pluginInstanceId: row.pluginInstanceId,
@@ -155,18 +133,6 @@ export function runtimeMcpServers(
     }
     if (row.state === "unavailable") return { ...identity, state: "unavailable", reason: row.reason! }
     const target = row.url!
-    const host = new URL(target).hostname.toLowerCase()
-    if (proxyUrl && proxyToken && proxyHosts.has(host)) {
-      return {
-        ...identity,
-        state: "gateway",
-        url: proxyUrl,
-        headers: {
-          Authorization: `Bearer ${proxyToken}`,
-          "x-claxedo-egress-target": target,
-        },
-      }
-    }
     const placeholder = env[row.brokeredSecretName!]?.trim()
     return {
       ...identity,

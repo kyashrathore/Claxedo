@@ -100,8 +100,7 @@ credential fields for each provider).
 | Driver | Runs in | `hostStopBehavior` | `hostResumeBehavior` | `targetAccess` | `secretBrokering` |
 | --- | --- | --- | --- | --- | --- |
 | [Box](../src/drivers/box.ts) | `node` | `suspends-host` | `same-host` | `relay` | `none` |
-| [Cloudflare](../src/drivers/cloudflare.ts) | `worker` | `not-supported` | `same-host` | `relay` | `proxy` |
-| [Cloudflare-egress](../src/drivers/cloudflare-egress.ts) | `worker` (+`node` to mint) | n/a — not a placement driver | n/a | n/a | implements Cloudflare's `proxy` brokering |
+| [Cloudflare](../src/drivers/cloudflare.ts) | `worker` | `not-supported` | `same-host` | `relay` | `native` |
 | [Daytona](../src/drivers/daytona.ts) | `worker`, `node` | `suspends-host` | `same-host` | `relay` | `native` |
 | [Docker](../src/drivers/docker.ts) | `local` | `terminates-host` | `same-host` | `loopback` | `none` |
 | [Fetch-bridge](../src/drivers/fetch-bridge.ts) | `worker`, `node` | `suspends-host` | `same-host` | `relay` | `none` |
@@ -137,7 +136,7 @@ ever handing the value to a driver that can't keep it out of the sandbox.
 | `secretBrokering` | Drivers | Mechanism |
 | --- | --- | --- |
 | `native` | Daytona, Vercel | The provider brokers the value on egress to the allowlisted `hosts` with no extra infrastructure: Daytona secret placeholders + built-in egress proxy; Vercel firewall header-transform on `updateNetworkPolicy`. The driver injects it during `ensureHost`, transparently — no sandbox-side code changes needed. |
-| `proxy` | Cloudflare | Implemented by `src/drivers/cloudflare-egress.ts` via the official [Worker-proxy pattern](https://developers.cloudflare.com/sandbox/guides/proxy-requests/): `mintEgressToken` signs a short-lived HS256 JWT (`sub`, `hosts`, `exp`) bound to the sandbox and its allowlisted hosts, exposed to the container as `CLAXEDO_EGRESS_PROXY_URL`/`CLAXEDO_EGRESS_TOKEN`/`CLAXEDO_EGRESS_HOSTS`. `handleEgressRequest` runs inside the Worker: it calls `verifyEgressToken`, checks the requested host (from the `x-claxedo-egress-target` header) against the token's `hosts`, resolves the real credential via the caller-supplied `EgressSecretResolver`, injects it as a header, forwards, and strips the credential back out of the response. The raw value never enters the sandbox — the container only ever holds the JWT. Not automatic like `native`; the sandbox has to route brokered-host requests through the proxy itself. |
+| `native` | Cloudflare | API-token-gated named registrations live in Worker KV. Native HTTPS outbound handlers select a credential by host and placeholder, read its current value per request, and inject its header. The container retains the original URL and a stable placeholder. KV propagation delays apply; unrelated destinations remain unrestricted. |
 | `none` | Modal, Docker, fetch-bridge, Box | No way to keep the value out of sandbox processes. Modal has an encrypted secret *store*, but Modal exposes secrets as readable env vars inside the sandbox, so it can't satisfy the never-readable contract either — hence `"none"` even though it has more secret-hygiene machinery than Docker/Box/fetch-bridge, which have no secret story at all beyond plaintext `env`. |
 
 See the [README](../README.md#credentials--secrets) for the `env` vs.
