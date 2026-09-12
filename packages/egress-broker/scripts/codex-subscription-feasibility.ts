@@ -6,6 +6,7 @@ import { randomBytes } from "node:crypto"
 import { createGenericDeliveryAdapter, verifyRuntimeToken, type Binding } from "../src/index.js"
 import { listenLoopbackBroker } from "../src/node.js"
 import { CodexAppServerProcess } from "../../agent-sdk-runtime/src/harnesses/codex/app-server-process.ts"
+import { asRecord, asString } from "../../claxedo-helpers/src/guards.ts"
 
 const authPath = process.env.BROKER_CODEX_AUTH_FILE
 const binary = process.env.BROKER_CODEX_BINARY
@@ -46,11 +47,13 @@ async function runTurn(process: CodexAppServerProcess, threadId: string, expecte
   const completed = new Promise<string>((resolve, reject) => {
     timer = setTimeout(() => reject(new Error("Codex turn timed out")), 90_000)
     stop = process.onMessage((message) => {
-      const params = message.params as { item?: { type?: string; text?: string }; turn?: { status?: string; error?: unknown } } | undefined
-      if (message.method === "item/completed" && params?.item?.type === "agentMessage") text += params.item.text ?? ""
+      const params = asRecord(message.params)
+      const item = asRecord(params?.item)
+      const turn = asRecord(params?.turn)
+      if (message.method === "item/completed" && item?.type === "agentMessage") text += asString(item.text) ?? ""
       if (message.method === "turn/completed") {
-        if (params?.turn?.status === expectedStatus) resolve(text)
-        else reject(new Error(`Unexpected Codex turn status: ${JSON.stringify(params?.turn)}`))
+        if (turn?.status === expectedStatus) resolve(text)
+        else reject(new Error(`Unexpected Codex turn status: ${JSON.stringify(turn)}`))
       }
     })
   })
@@ -85,22 +88,30 @@ try {
     requestHandler: async () => { throw new Error("Interactive requests are not allowed in this feasibility test") },
     signal: AbortSignal.timeout(30_000),
   })
-  const started = await proc.request("thread/start", { cwd: directory, model, modelProvider: "broker", sandbox: "read-only", approvalPolicy: "untrusted" }) as { thread: { id: string } }
-  assert.equal(typeof started.thread.id, "string")
-  const text = await runTurn(proc, started.thread.id, "completed")
+  const started = asRecord(await proc.request("thread/start", { cwd: directory, model, modelProvider: "broker", sandbox: "read-only", approvalPolicy: "untrusted" }))
+  const threadId = asString(asRecord(started?.thread)?.id)
+  assert.ok(threadId, "Codex did not return a thread id")
+  const text = await runTurn(proc, threadId, "completed")
   assert.ok(text.includes("BROKER_OK"), "Expected the requested subscription response")
-  assert.ok(statuses.includes(200), `No successful upstream response: ${statuses}`)
+  assert.ok(statuses.includes(200), `No successful upstream response: ${statuses.join(", ")}`)
   assert.deepEqual(failures, [])
   const upstreamRequests = statuses.length
   adapter.withdraw(binding.id, 2)
-  await runTurn(proc, started.thread.id, "failed")
+  await runTurn(proc, threadId, "failed")
   assert.equal(statuses.length, upstreamRequests, "Withdrawn binding reached the upstream")
   assert.ok(unavailableBindings > 0, "The second turn did not reach the withdrawn binding")
   await proc.dispose()
   await assertNoCredentialFiles(directory)
   console.log(JSON.stringify({ ok: true, model, upstreamStatuses: statuses, rawCredentialInRuntimeFiles: false, withdrawalBlockedExistingClient: true }))
 } catch (error) {
-  throw new Error(String(error).split(value).join("[REDACTED]"))
+  // The broker hands the real subscription token to the upstream request, so a
+  // failure message or stack can contain it. The caught error is scrubbed in
+  // place because it is re-thrown as the cause and printed with the chain.
+  if (error instanceof Error) {
+    error.message = error.message.split(value).join("[REDACTED]")
+    if (error.stack) error.stack = error.stack.split(value).join("[REDACTED]")
+  }
+  throw new Error(String(error).split(value).join("[REDACTED]"), { cause: error })
 } finally {
   await proc?.dispose()
   await broker.close()

@@ -36,7 +36,7 @@ export async function verifyRuntimeToken(token: string, key: Uint8Array, now = D
     return {
       userId: payload.userId, orgId: payload.orgId, workspaceId: payload.workspaceId,
       leaseId: payload.leaseId, leaseGeneration: payload.leaseGeneration, runtimeId: payload.runtimeId,
-      bindingIds: payload.bindingIds, exp: payload.exp!,
+      bindingIds: payload.bindingIds, exp: payload.exp,
     }
   } catch {
     return undefined

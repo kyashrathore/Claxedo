@@ -9,19 +9,22 @@ export function parseRegistrations(input: unknown): EgressRegistration[] {
   const names = new Set<string>()
   return input.map((entry: unknown) => {
     if (!entry || typeof entry !== "object") throw new Error("invalid egress registration")
-    const row = entry as Record<string, unknown>
-    if (typeof row.name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(row.name)
-      || names.has(row.name) || typeof row.header !== "string" || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(row.header)
-      || typeof row.value !== "string" || !row.value || /[\r\n]/.test(row.value)
-      || !Array.isArray(row.hosts) || !row.hosts.length
-      || !row.hosts.every((host: unknown) => typeof host === "string" && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/.test(host))) {
+    const name = "name" in entry ? entry.name : undefined
+    const header = "header" in entry ? entry.header : undefined
+    const value = "value" in entry ? entry.value : undefined
+    const hosts = "hosts" in entry ? entry.hosts : undefined
+    if (typeof name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
+      || names.has(name) || typeof header !== "string" || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(header)
+      || typeof value !== "string" || !value || /[\r\n]/.test(value)
+      || !Array.isArray(hosts) || !hosts.length
+      || !hosts.every((host: unknown): host is string => typeof host === "string" && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/.test(host))) {
       throw new Error("invalid egress registration")
     }
-    if (["host", "content-length", "connection", "transfer-encoding", "cookie", "proxy-authorization"].includes(row.header.toLowerCase())) {
+    if (["host", "content-length", "connection", "transfer-encoding", "cookie", "proxy-authorization"].includes(header.toLowerCase())) {
       throw new Error("invalid credential header")
     }
-    names.add(row.name)
-    return { name: row.name, header: row.header, value: row.value, hosts: row.hosts as string[] }
+    names.add(name)
+    return { name, header, value, hosts }
   })
 }
 
@@ -46,7 +49,7 @@ export async function forwardCredential(request: Request, options: {
     return incoming === placeholder || (row.header.toLowerCase() === "authorization" && incoming === `Bearer ${placeholder}`)
   })
   if (matches.length !== 1) return new Response("Forbidden", { status: 403 })
-  const selected = matches[0]!
+  const selected = matches[0]
   const headers = new Headers(request.headers)
   for (const name of ["authorization", "x-api-key", "cookie", "proxy-authorization", "host", "connection", "transfer-encoding", ...registrations.map((row) => row.header)]) headers.delete(name)
   headers.set(selected.header, selected.value)

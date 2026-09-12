@@ -3,7 +3,7 @@ import { mintRuntimeToken } from "./token.js"
 
 export function createGenericDeliveryAdapter(input: {
   signingKey: Uint8Array
-  reportFailure(failure: BindingFailure): Promise<void>
+  reportFailure: (failure: BindingFailure) => Promise<void>
 }) {
   const bindings = new Map<string, { binding: Binding; value: string }>()
   const runtimes = new Map<string, RuntimeIdentity>()

@@ -1,4 +1,4 @@
-import { expect, test } from "vitest"
+import { expect, test, vi } from "vitest"
 import { createGenericDeliveryAdapter, verifyRuntimeToken, type Binding } from "./index.js"
 import { listenLoopbackBroker } from "./node.js"
 
@@ -73,8 +73,7 @@ test("loopback transport delivers incremental chunks and cancels upstream on cli
     expect(second.done).toBe(false)
     expect(new TextDecoder().decode(second.value)).toBe("data: second\n\n")
     await reader.cancel()
-    for (let attempt = 0; attempt < 40 && !cancelled; attempt++) await new Promise((resolve) => setTimeout(resolve, 25))
-    expect(cancelled).toBe(true)
+    await vi.waitFor(() => expect(cancelled).toBe(true), { timeout: 1000, interval: 25 })
   } finally {
     await broker.close()
     adapter.dispose()

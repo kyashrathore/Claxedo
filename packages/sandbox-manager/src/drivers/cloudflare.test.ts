@@ -106,8 +106,8 @@ describe("CloudflareSandboxDriver", () => {
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
     await driver.ensureHost({ ...createInput, secrets: [] })
     await driver.ensureHost(createInput)
-    expect(calls[0]!.body.egress).toEqual([])
-    expect(calls[1]!.body).not.toHaveProperty("egress")
+    expect(calls[0].body.egress).toEqual([])
+    expect(calls[1].body).not.toHaveProperty("egress")
   })
 
   test("brokered secret without a header is rejected", async () => {
