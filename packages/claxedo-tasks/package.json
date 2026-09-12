@@ -10,7 +10,6 @@
     "url": "git+https://github.com/kyashrathore/Claxedo.git",
     "directory": "packages/claxedo-tasks"
   },
-  "sideEffects": ["**/*.css"],
   "exports": {
     ".": {
       "types": "./src/index.ts",
