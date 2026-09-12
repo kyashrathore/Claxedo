@@ -13,3 +13,8 @@ name = "Sandbox"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["Sandbox"]
+
+# Local-only namespace. Provision an isolated namespace before a remote probe.
+[[kv_namespaces]]
+binding = "EGRESS_SECRETS"
+id = "00000000000000000000000000000000"

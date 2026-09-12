@@ -316,3 +316,37 @@ the correct header, observe rotation without restarting the client, and lose
 credential access after withdrawal. This closes the gap between unit-tested
 forwarding and the platform's actual TLS interception boundary before another
 isolated deployed attempt.
+
+## Production Cloudflare handler live local acceptance — 2026-09-13
+
+Commit `2b363c7d04` implemented native injection. The isolated feasibility probe
+now imports that production Sandbox class, writes its actual KV authority, and
+configures the production named handler. A temporary deployed HTTPS Worker
+validates a controller-only fixture credential and returns a verdict/revision.
+Two long-running client processes coordinate through files so rotation and
+withdrawal cannot pass by silently restarting either client.
+
+`node feasibility/check.mjs` passed six actual HTTPS requests: Node and Bun
+both authenticated at revisions 1 and 2 with unchanged PIDs; after KV withdrawal
+and native handler removal both returned 401. The controller rejected any
+captured response containing the fixture token. This is not a whole-filesystem
+secret scan, nor a real provider account test. The fixture credential never
+appears in the client script or its input headers.
+
+The upstream deploy and secret configuration succeeded. The checker destroyed
+the sandbox and cleared its KV key. `npx wrangler delete --config
+feasibility/upstream/wrangler.toml --force` succeeded. The verified local dev
+process was then terminated (exit 143). Exact setup/check/cleanup commands are
+recorded in Appendix E and the probe README. Server `bun run typecheck` passed.
+
+This closes local production-handler acceptance left by the previous slice.
+Deployed Cloudflare Container acceptance remains blocked by the earlier image
+upload failure; local KV behavior does not prove global revocation latency.
+Changed files: feasibility `outbound.ts`, `check.mjs`, `wrangler.toml`, `README.md`,
+new `upstream/index.ts` and `upstream/wrangler.toml`, design 002 and this report.
+
+Final acceptance-slice gates: root `bun run test:architecture-ratchets` passed
+13 tests, all five product/eight source policies and helper ratchet unchanged;
+`git diff --check` passed. Next: trace signed-user identity across runtime
+preparation/provisioning and add route-level proof for Appendix E item 9,
+without modifying accounts-owned contracts.

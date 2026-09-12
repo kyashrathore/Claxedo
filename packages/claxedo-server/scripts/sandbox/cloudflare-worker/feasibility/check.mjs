@@ -7,16 +7,18 @@ try {
   const response = await fetch(origin, { method: "POST", headers, signal: AbortSignal.timeout(240_000) })
   assert.equal(response.status, 200, await response.clone().text())
   const results = await response.json()
-  assert.equal(results.length, 4)
-  for (const [index, result] of results.entries()) {
-    assert.equal(result.revision, index < 2 ? 1 : 2)
-    assert.equal(result.client, index % 2 ? "bun" : "node")
-    assert.equal(result.exitCode, 0, JSON.stringify(result))
-    assert.deepEqual(JSON.parse(result.stdout.trim()), {
-      revision: result.revision, url: "https://broker-probe.invalid/probe", clientHeader: "dummy",
-    })
+  assert.equal(results.length, 6)
+  for (const client of ["node", "bun"]) {
+    const phases = results.filter((row) => row.client === client)
+    assert.deepEqual(phases.map((row) => row.revision), [1, 2, 3])
+    assert.equal(new Set(phases.map((row) => row.pid)).size, 1, "The same client must survive rotation and withdrawal")
+    for (const row of phases.slice(0, 2)) {
+      assert.equal(row.status, 200)
+      assert.deepEqual(JSON.parse(row.body), { authenticated: true, revision: row.revision })
+    }
+    assert.ok([401, 403].includes(phases[2].status), "Withdrawal must reject credential use")
   }
-  console.log("PASS: Node and Bun HTTPS interception; live handler update; four requests")
+  console.log(JSON.stringify({ ok: true, clients: ["node", "bun"], requests: results.length, productionHandler: true, sameClientRotationAndWithdrawal: true, withdrawalStatuses: results.slice(4).map((row) => row.status) }))
 } finally {
   const response = await fetch(`${origin}/destroy`, { method: "POST", headers, signal: AbortSignal.timeout(30_000) })
   assert.equal(response.status, 200, "sandbox cleanup failed")

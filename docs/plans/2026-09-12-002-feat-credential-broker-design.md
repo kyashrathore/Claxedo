@@ -461,3 +461,28 @@ store, signed-user selection, refresh coordination, immediate global revocation,
 or per-binding method/path policy is claimed for this native adapter. Those
 remain part of the larger broker integration. Existing sandboxes must be
 destroyed and recreated with named registrations when the replacement is deployed.
+
+### Cloudflare production handler through a real local container — 2026-09-13
+
+Provider: Cloudflare Sandbox 0.12.9 under local Wrangler 4.127.1 and Docker,
+using the production Sandbox class and runtime image, plus a temporary deployed
+HTTPS upstream Worker. No provider account credential was used.
+
+Commands from `cloudflare-worker`: `npx wrangler deploy --config
+feasibility/upstream/wrangler.toml`, `npx wrangler secret put PROBE_TOKEN --config
+feasibility/upstream/wrangler.toml`, `npx wrangler dev --config
+feasibility/wrangler.toml --port 8793`, then `node feasibility/check.mjs` with
+`BROKER_PROBE_TOKEN` supplied from the ignored local fixture configuration.
+
+Result: **pass**. Six real HTTPS requests used the production credential handler
+and KV lookup. Both Node and Bun authenticated at revisions 1 and 2 without
+restarting either client process. Clearing the credential registration and native
+host handlers caused both clients to receive HTTP 401 on their next request.
+The upstream returned only a verdict/revision, and no fixture credential appeared
+in the captured responses. The check destroyed the sandbox and cleared KV.
+`npx wrangler delete --config feasibility/upstream/wrangler.toml --force`
+succeeded; the local dev process was stopped after verified cleanup.
+
+This supersedes the pending local production-handler acceptance item. It does
+not establish deployed Container interception or deployed KV propagation delay;
+the previous Container image-upload blocker remains.
