@@ -12,6 +12,7 @@ async function fixture() {
   }
   let current = true
   const failures: BindingFailure[] = []
+  let reportingUnavailable = false
   const upstream: Request[] = []
   let respond = async () => new Response("streamed result", { headers: { "content-type": "text/event-stream", "x-api-key": "real-key", "set-cookie": "secret=value" } })
   const token = await mintRuntimeToken({ ...identity, bindingIds: ["binding"], expiresAt: Date.now() + 60_000 }, key)
@@ -20,14 +21,14 @@ async function fixture() {
     authority: {
       resolve: async () => ({ binding, value: "real-key" }),
       currentRuntime: async () => current,
-      reportFailure: async (failure) => { failures.push(failure) },
+      reportFailure: async (failure) => { if (reportingUnavailable) throw Error("failure store unavailable"); failures.push(failure) },
     },
     fetch: (async (url, init) => { upstream.push(new Request(url, init)); return respond() }) as typeof fetch,
   })
   const request = (pathname = "/v1/messages", init: RequestInit = {}) => broker(new Request(`http://broker.test/bindings/binding${pathname}`, {
     method: "POST", headers: { "x-api-key": token, cookie: "local=private" }, body: "prompt", ...init,
   }))
-  return { request, token, upstream, failures, update: (patch: Partial<Binding>) => { binding = { ...binding, ...patch } }, stop: () => { current = false }, respond: (fn: typeof respond) => { respond = fn } }
+  return { request, token, upstream, failures, failReporting: () => { reportingUnavailable = true }, update: (patch: Partial<Binding>) => { binding = { ...binding, ...patch } }, stop: () => { current = false }, respond: (fn: typeof respond) => { respond = fn } }
 }
 
 describe("binding broker HTTP entrypoint", () => {
@@ -89,6 +90,21 @@ describe("binding broker HTTP entrypoint", () => {
     })
     expect((await f.request()).status).toBe(401)
     expect(f.failures).toEqual([{ bindingId: "binding", credentialId: "credential", revision: 1, status: 401 }])
+  })
+
+  test.each([401, 403])("cancels the upstream response when recording %s fails", async (status) => {
+    const f = await fixture()
+    let cancelled = false
+    f.respond(async () => new Response(new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode("upstream response")) },
+      cancel() { cancelled = true },
+    }), { status }))
+    f.failReporting()
+    const response = await f.request()
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ error: "broker_authority_unavailable" })
+    expect(cancelled).toBe(true)
+    expect(f.upstream).toHaveLength(1)
   })
 
   test.each([301, 302, 303, 307, 308])("returns 502 without Location on %s", async (status) => {

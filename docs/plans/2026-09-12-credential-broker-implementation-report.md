@@ -415,3 +415,26 @@ supplied via a task-local known-hosts file. The authenticated read-only
 (publickey,keyboard-interactive). Exact command and source are in Appendix E.
 No user SSH configuration, provider integration, VM, or account was changed.
 Live integration behavior remains not run until registered-key access exists.
+
+## Generic broker stream ownership audit — 2026-09-13
+
+The authorized skeleton audit found that `reportFailure` throwing after an
+upstream 401/403 returned the authority-unavailable response without cancelling
+the upstream body. Two failing tests reproduced this leak (21 pass / 2 fail).
+The broker now cancels that body before propagating the failure to its existing
+503 boundary. It does not retry the credential or change accounts.
+
+A new actual Node loopback transport test also proves incremental delivery:
+the client receives the first SSE chunk before the producer creates the second,
+and client reader cancellation cancels the still-open upstream stream.
+`node node_modules/vitest/vitest.mjs run src` from egress-broker passes 25 tests.
+`bun run build` passes. Root `bun run test:architecture-ratchets` passes 13 tests
+and all source/helper policies without baseline changes. `git diff --check`
+passes. Changed files: egress-broker `src/broker.ts`, `src/broker.test.ts`,
+`src/delivery.test.ts`, and this report.
+
+The full-design scope question remains unanswered. Hosted binding storage,
+account selection and per-user leases cannot be implemented within the original
+explicit exclusions. External feasibility blockers remain as recorded: deployed
+Cloudflare image upload, Daytona/ exe.dev/Modal account access, and the Vercel
+project/team choice. No dependent store/lease edit or auth setup was performed.

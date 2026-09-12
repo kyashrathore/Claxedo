@@ -77,7 +77,12 @@ export function createEgressBroker(options: BrokerOptions) {
         return brokerErrorResponse(502, "upstream_redirect_refused")
       }
       if (upstream.status === 401 || upstream.status === 403) {
-        await options.authority.reportFailure({ bindingId, credentialId: binding.credentialId, revision: binding.revision, status: upstream.status })
+        try {
+          await options.authority.reportFailure({ bindingId, credentialId: binding.credentialId, revision: binding.revision, status: upstream.status })
+        } catch (error) {
+          await upstream.body?.cancel()
+          throw error
+        }
       }
       const responseHeaders = new Headers(upstream.headers)
       stripTransportHeaders(responseHeaders)
