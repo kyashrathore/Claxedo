@@ -358,7 +358,7 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "route",
-    module: "documents/routes/index.ts",
+    module: "../../claxedo-server-core/src/documents/routes/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "Documents HTTP adapter",
     reason: "Thin Worker-safe route adapter composed with placement-specific index and DocumentWorkspace backends.",

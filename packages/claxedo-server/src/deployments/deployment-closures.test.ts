@@ -149,7 +149,12 @@ describe("server deployment entry closures", () => {
     // +1: `platform/auth/mcp-oauth-scopes.ts`, the MCP scope and resource
     // names the OAuth provider registers. A dependency-free leaf over string
     // literals, so it adds no edge of its own.
-    expect(result.modules.length).toBeLessThanOrEqual(15)
+    // +1: `platform/auth/oauth-consent-revocation.ts`, owned by
+    // `better-auth-d1-foundation.ts`'s plugin list, which every Better Auth
+    // composition here shares: Better Auth deletes a consent without revoking
+    // its opaque access and refresh tokens, and this Worker issues both. A
+    // plugin over `better-auth/api`, already in this graph, so no package edge.
+    expect(result.modules.length).toBeLessThanOrEqual(16)
     // The release identity reads its empty-service manifest ID from the
     // dependency-neutral `@claxedo/service-contract` rather than owning a
     // second string. No service implementation enters the locked graph; the

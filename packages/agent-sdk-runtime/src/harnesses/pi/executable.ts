@@ -72,6 +72,31 @@ export function piPackageRoot(binary: string): string | undefined {
   return undefined
 }
 
+/**
+ * Why the pinned Pi cannot run here, or `undefined` when it can be attempted.
+ *
+ * `verifyPiExecutable` refuses any binary whose `--version` is not the pin, so
+ * a test that drives a real Pi cannot pass on a machine carrying another one.
+ * Only a proven mismatch answers a reason: a binary outside the npm package
+ * has no manifest to read and is attempted rather than skipped, because an
+ * unknown version is not evidence of a broken environment.
+ */
+export function unpinnedPiReason(): string | undefined {
+  const binary = resolvePiExecutable()
+  if (!binary) return `no Pi executable found; expected ${PI_VERSION}`
+  const root = piPackageRoot(binary)
+  if (!root) return undefined
+  let installed: unknown
+  try {
+    const manifest: unknown = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"))
+    installed = isRecord(manifest) ? manifest.version : undefined
+  } catch {
+    return undefined
+  }
+  if (typeof installed !== "string" || installed === PI_VERSION) return undefined
+  return `Pi ${installed} is installed, pinned ${PI_VERSION}`
+}
+
 export function piCommand(binary: string, args: string[]) {
   return /\.(?:cjs|mjs|js)$/.test(binary) ? { file: process.execPath, args: [binary, ...args] } : { file: binary, args }
 }

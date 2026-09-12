@@ -18,6 +18,7 @@ const { CredentialRoutes } = await import("@claxedo/local-server/credentials/rou
 const { ClaxedoDB } = await import("../../platform/db")
 
 const TOKEN_URL = "https://auth.openai.com/oauth/token"
+const USAGE_URL = "https://chatgpt.com/backend-api/wham/usage"
 
 describe("credential verification integration", () => {
   afterAll(async () => {
@@ -84,7 +85,12 @@ describe("credential verification integration", () => {
       if (fetchUrl(input) === TOKEN_URL) {
         return Response.json({ access_token: "access_renewed", refresh_token: "refresh_renewed" })
       }
-      return Response.json({ id: "response_1" })
+      return Response.json({
+        rate_limit: {
+          primary_window: { used_percent: 12, limit_window_seconds: 18_000, reset_at: 1_757_600_000 },
+          secondary_window: { used_percent: 41, limit_window_seconds: 604_800, reset_at: 1_757_700_000 },
+        },
+      })
     })
     const app = CredentialRoutes(defaultControlPlaneCredentials(), {
       fetch: request as unknown as typeof fetch,
@@ -93,10 +99,22 @@ describe("credential verification integration", () => {
 
     const verified = await app.request(`http://localhost/${credential.id}/verify`, { method: "POST" })
 
-    expect(await verified.json()).toEqual({ result: "ok", health: "ok", verified_at: 2_000 })
+    // A subscription token's check is the vendor's usage read, so the route
+    // answers with the plan's windows as well as the verdict — the settings row
+    // reads both from this one response.
+    expect(await verified.json()).toEqual({
+      result: "ok",
+      health: "ok",
+      verified_at: 2_000,
+      usage: [
+        { window: "session", usedPercent: 12, resetsAt: 1_757_600_000_000 },
+        { window: "weekly", usedPercent: 41, resetsAt: 1_757_700_000_000 },
+      ],
+    })
     // The provider was actually probed, with the renewed token.
     const probe = request.mock.calls.find(([url]) => fetchUrl(url) !== TOKEN_URL)
     expect(probe).toBeDefined()
+    expect(fetchUrl(probe![0])).toBe(USAGE_URL)
     expect(new Headers(probe![1]?.headers).get("authorization")).toBe("Bearer access_renewed")
 
     const stored = JSON.parse((await resolveSecretById(credential.id))!) as Record<string, any>
