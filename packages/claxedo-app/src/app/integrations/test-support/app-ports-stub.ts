@@ -133,6 +133,7 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   DialogCustomProvider: lazy("@/app/dialogs/custom-provider", "DialogCustomProvider"),
   discoverAIConnections: lazy("@/features/onboarding/ai-connect-api", "discoverAIConnections"),
   saveDiscoveredAIConnections: lazy("@/features/onboarding/ai-connect-api", "saveDiscoveredAIConnections"),
+  verifyAIConnection: lazy("@/features/onboarding/ai-connect-api", "verifyAIConnection"),
   useServerIsLocal: () => () => () => true,
   groupDiscoveryItems: lazy("@/features/onboarding/ai-connect-state", "groupDiscoveryItems"),
   localHarnessStatuses: lazy("@/features/onboarding/ai-connect-state", "localHarnessStatuses"),

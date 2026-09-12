@@ -206,6 +206,20 @@ describe("AI connect state", () => {
     })
   })
 
+  test("a working login's usage windows ride along on the harness status", () => {
+    const statuses = localHarnessStatuses(groupDiscoveryItems([
+      {
+        providerId: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json",
+        probe: { state: "working", usage: [{ window: "weekly", usedPercent: 64, resetsAt: 1_757_700_000_000 }] },
+      },
+    ]))
+
+    expect(statuses.find((harness) => harness.id === "codex")).toMatchObject({
+      state: "working",
+      usage: [{ window: "weekly", usedPercent: 64, resetsAt: 1_757_700_000_000 }],
+    })
+  })
+
   test("a found login with no probe at all is unverifiable, not assumed good", () => {
     const statuses = localHarnessStatuses(groupDiscoveryItems([
       { providerId: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json" },

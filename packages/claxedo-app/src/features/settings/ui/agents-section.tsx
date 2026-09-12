@@ -6,9 +6,11 @@ import {
   saveDiscoveredAIConnections,
   useGlobalSDK,
   useServerIsLocal,
+  verifyAIConnection,
   type LocalHarnessCheck,
   type LocalHarnessStatus,
 } from "@/features/settings/app-ports"
+import type { AIUsageWindow } from "@/features/onboarding/ai-connect-state"
 import {
   agentInUse,
   agentSetupStatus,
@@ -20,6 +22,7 @@ import {
 } from "@/features/settings/provider-detect"
 import { SettingsList } from "@/features/settings/ui/list"
 import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
+import { formatRelativeTime } from "@/lib/relative-time"
 import { useLanguage } from "@/platform/i18n/provider"
 
 /** The brand mark each harness is recognised by; its login is the provider's. */
@@ -41,6 +44,48 @@ const AGENT_CONNECT_PROVIDER: Record<string, string> = {
 }
 
 /**
+ * What the provider said about the credential a harness runs on, and when.
+ * `broken` and `unknown` carry the scan's own sentence; the health values are
+ * the verifier's.
+ */
+type LiveCheck = {
+  at: number
+  verdict: "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired" | "broken" | "unknown" | "missing"
+  usage?: AIUsageWindow[]
+  reason?: string
+}
+
+const VERDICT_KEY: Record<LiveCheck["verdict"], string> = {
+  ok: "settings.providers.live.ok",
+  auth_failed: "settings.providers.live.authFailed",
+  no_billing: "settings.providers.live.noBilling",
+  rate_capped: "settings.providers.live.rateCapped",
+  expired: "settings.providers.live.expired",
+  broken: "settings.providers.live.broken",
+  unknown: "settings.providers.live.unknown",
+  missing: "settings.providers.live.missing",
+}
+
+const WINDOW_KEY: Record<string, string> = {
+  session: "settings.providers.window.session",
+  weekly: "settings.providers.window.weekly",
+  weekly_opus: "settings.providers.window.weeklyOpus",
+}
+
+function isHealth(value: string): value is Extract<LiveCheck["verdict"], "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired"> {
+  return value === "ok" || value === "auth_failed" || value === "no_billing" || value === "rate_capped" || value === "expired"
+}
+
+/** The scan's verdict for a harness, as the same shape a stored row's check produces. */
+function scanCheck(status: LocalHarnessStatus | undefined, at: number): LiveCheck | undefined {
+  if (!status) return undefined
+  if (status.state === "working") return { at, verdict: "ok", ...(status.usage ? { usage: status.usage } : {}) }
+  if (status.state === "broken") return { at, verdict: "broken", ...(status.detail ? { reason: status.detail } : {}) }
+  if (status.state === "unverifiable") return { at, verdict: "unknown", ...(status.detail ? { reason: status.detail } : {}) }
+  return { at, verdict: "missing" }
+}
+
+/**
  * The agent logins on the machine this app runs on.
  *
  * Machine-wide, so it sits outside the workspace/harness scope the catalog
@@ -56,6 +101,9 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const [discovered, setDiscovered] = createSignal<readonly LocalHarnessStatus[]>([])
   const [discovery, setDiscovery] = createSignal<Pick<ProviderDetectResult, "discoveryId" | "rows">>()
   const [effective, setEffective] = createSignal<ReadonlyMap<string, EffectiveCredential>>()
+  const [scannedAt, setScannedAt] = createSignal<number>()
+  const [checks, setChecks] = createSignal<Record<string, LiveCheck>>({})
+  const [checking, setChecking] = createSignal<string>()
 
   const readStored = async () => {
     const [storedIds, inUse] = await Promise.all([listStoredCredentialProviders(), listEffectiveCredentials()])
@@ -69,12 +117,53 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     return connect && !(check.providerIds as readonly string[]).includes(connect) ? [...check.providerIds, connect] : check.providerIds
   }
 
-  const inUseLabel = (check: LocalHarnessCheck) => {
+  const inUseRow = (check: LocalHarnessCheck) => {
     const known = effective()
-    if (!known) return undefined
-    const row = agentInUse({ providerIds: providerIds(check) }, known)
+    return known ? agentInUse({ providerIds: providerIds(check) }, known) : undefined
+  }
+
+  const inUseLabel = (check: LocalHarnessCheck) => {
+    if (!effective()) return undefined
+    const row = inUseRow(check)
     if (!row) return language.t("settings.providers.agents.inUseMachine")
     return language.t("settings.providers.agents.inUse", { label: row.label ?? row.kind ?? row.providerId })
+  }
+
+  /**
+   * The freshest answer about the credential in use: a check made here, else
+   * the verdict the server stored with a row, else what the last scan said
+   * about the machine login.
+   */
+  const liveCheck = (check: LocalHarnessCheck): LiveCheck | undefined => {
+    const own = checks()[check.id]
+    if (own) return own
+    const row = inUseRow(check)
+    if (row) {
+      if (row.health !== undefined && isHealth(row.health) && row.lastValidatedAt !== undefined) {
+        return { at: row.lastValidatedAt, verdict: row.health }
+      }
+      return undefined
+    }
+    const at = scannedAt()
+    return at === undefined ? undefined : scanCheck(discovered().find((status) => status.id === check.id), at)
+  }
+
+  const liveLabel = (check: LocalHarnessCheck) => {
+    const live = liveCheck(check)
+    if (!live) return undefined
+    const verdict = language.t(VERDICT_KEY[live.verdict])
+    const parts = [live.reason ? `${verdict}: ${live.reason}` : verdict]
+    for (const window of live.usage ?? []) {
+      const name = WINDOW_KEY[window.window]
+      parts.push(language.t("settings.providers.live.window", {
+        name: name ? language.t(name) : window.window,
+        used: String(window.usedPercent),
+      }))
+    }
+    parts.push(Date.now() - live.at < 60_000
+      ? language.t("settings.providers.live.checkedNow")
+      : language.t("settings.providers.live.checkedAt", { when: formatRelativeTime(live.at, language.locale()) }))
+    return parts.join(" · ")
   }
 
   onMount(() => {
@@ -96,11 +185,43 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       setEffective(result.effective)
       setDiscovered(result.agents)
       setDiscovery({ discoveryId: result.discoveryId, rows: result.rows })
+      setScannedAt(Date.now())
+      setChecks({})
       await props.onConnected?.()
     } catch (err: unknown) {
       fail(err)
     } finally {
       setDetecting(false)
+    }
+  }
+
+  /**
+   * Asks the provider about the credential this harness runs on. A stored row
+   * is verified by id; the machine login is re-scanned, which probes it.
+   */
+  const runCheck = async (check: LocalHarnessCheck) => {
+    setChecking(check.id)
+    try {
+      const row = inUseRow(check)
+      if (!row) {
+        await detect()
+        return
+      }
+      try {
+        const verified = await verifyAIConnection({ serverUrl: globalSDK.url, credentialId: row.id, providerId: row.providerId })
+        setChecks((prev) => ({
+          ...prev,
+          [check.id]: { at: Date.now(), verdict: verified.result, ...(verified.usage ? { usage: verified.usage } : {}) },
+        }))
+      } catch (err: unknown) {
+        setChecks((prev) => ({
+          ...prev,
+          [check.id]: { at: Date.now(), verdict: "unknown", reason: err instanceof Error ? err.message : String(err) },
+        }))
+      }
+      await readStored()
+    } finally {
+      setChecking(undefined)
     }
   }
 
@@ -165,6 +286,9 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
                 harness={check.id}
                 note={language.t("settings.providers.agents.sharedCredential")}
                 inUse={inUseLabel(check)}
+                live={liveLabel(check)}
+                onCheck={() => runCheck(check)}
+                checking={checking() === check.id || detecting()}
                 onUseLogin={discoveredRow(check) ? () => useLogin(check) : undefined}
                 onConnected={async () => {
                   await readStored()

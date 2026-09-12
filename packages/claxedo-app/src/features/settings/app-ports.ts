@@ -32,6 +32,7 @@ export type SettingsAppPorts = {
   DialogCustomProvider: typeof CustomProvider.DialogCustomProvider
   discoverAIConnections: typeof AIConnectApi.discoverAIConnections
   saveDiscoveredAIConnections: typeof AIConnectApi.saveDiscoveredAIConnections
+  verifyAIConnection: typeof AIConnectApi.verifyAIConnection
   /** Whether the server in view is this machine, which decides the scope a saved login gets. */
   useServerIsLocal: () => Accessor<boolean>
   groupDiscoveryItems: typeof AIConnectState.groupDiscoveryItems
@@ -91,6 +92,7 @@ export const DialogSelectProvider = bind((ports) => ports.DialogSelectProvider)
 export const DialogCustomProvider = bind((ports) => ports.DialogCustomProvider)
 export const discoverAIConnections = bind((ports) => ports.discoverAIConnections)
 export const saveDiscoveredAIConnections = bind((ports) => ports.saveDiscoveredAIConnections)
+export const verifyAIConnection = bind((ports) => ports.verifyAIConnection)
 export const useServerIsLocal = bind((ports) => ports.useServerIsLocal)
 export const groupDiscoveryItems = bind((ports) => ports.groupDiscoveryItems)
 export const localHarnessStatuses = bind((ports) => ports.localHarnessStatuses)

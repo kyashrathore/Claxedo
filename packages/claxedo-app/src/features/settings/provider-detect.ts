@@ -8,10 +8,19 @@ import {
   type LocalHarnessStatus,
 } from "@/features/settings/app-ports"
 import type { ProviderSetupStatus } from "@/features/settings/provider-settings-logic"
-import { readArray, readString } from "@/lib/record"
+import { readArray, readFiniteNumber, readString } from "@/lib/record"
 
 /** What the server would hand a harness for a provider: the row, without its secret. */
-export type EffectiveCredential = { id: string; providerId: string; label?: string; kind?: string; accountId?: string }
+export type EffectiveCredential = {
+  id: string
+  providerId: string
+  label?: string
+  kind?: string
+  accountId?: string
+  /** The last provider verdict the server stored for the row, and when. */
+  health?: string
+  lastValidatedAt?: number
+}
 
 /**
  * The credential each provider runs on, keyed by provider id. Undefined when
@@ -30,12 +39,16 @@ export async function listEffectiveCredentials() {
     const label = readString(row, "label")
     const kind = readString(row, "kind")
     const accountId = readString(row, "account_id")
+    const health = readString(row, "health")
+    const lastValidatedAt = readFiniteNumber(row, "last_validated_at")
     effective.set(providerId, {
       id,
       providerId,
       ...(label === undefined ? {} : { label }),
       ...(kind === undefined ? {} : { kind }),
       ...(accountId === undefined ? {} : { accountId }),
+      ...(health === undefined ? {} : { health }),
+      ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
     })
   }
   return effective

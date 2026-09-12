@@ -72,6 +72,10 @@ export function jsonStringEntries(value: unknown): Record<string, string> {
  * to pick the first populated spelling of a token out of a provider blob, and
  * a token's own bytes are not theirs to alter.
  */
+export function jsonNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
 export function jsonString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined
 }

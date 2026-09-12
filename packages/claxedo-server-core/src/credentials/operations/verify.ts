@@ -1,4 +1,4 @@
-import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { jsonNumber, jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { CredentialVerificationError } from "../verification-error"
 import {
@@ -16,6 +16,14 @@ export type { CredentialHealth } from "@claxedo/server-core/credentials/types"
 
 export { CredentialVerificationError } from "../verification-error"
 
+/** One quota window the provider reports for a subscription. */
+export type CredentialUsageWindow = {
+  /** `session` (5 h), `weekly`, `weekly_opus`, or the vendor's slot name when it matches none. */
+  window: string
+  usedPercent: number
+  resetsAt: number | null
+}
+
 export type CredentialVerificationOutcome = {
   health: CredentialHealth
   /**
@@ -23,6 +31,8 @@ export type CredentialVerificationOutcome = {
    * owns persistence — the verifier never writes.
    */
   refreshed?: RefreshedCredentialSecret
+  /** Present only when the probe was a usage read, so API keys never carry it. */
+  usage?: CredentialUsageWindow[]
 }
 
 export async function verifyCredential(
@@ -82,15 +92,20 @@ export async function verifyCredential(
   if (!auth) throw new CredentialVerificationError("Credential secret has an unsupported shape")
   const codex = openai && credential.kind === "oauth_token"
   const probe = providerProbe(credential, auth, anthropic, cursor, codex)
-  const outcome = (health: CredentialHealth): CredentialVerificationOutcome => ({
+  const outcome = (health: CredentialHealth, usage?: CredentialUsageWindow[]): CredentialVerificationOutcome => ({
     health,
     ...(refreshed ? { refreshed } : {}),
+    ...(usage ? { usage } : {}),
   })
   const response = await (options.fetch ?? globalThis.fetch)(probe.url, probe.init).catch(() => {
     throw new CredentialVerificationError("Credential provider request failed")
   })
   if (response.ok) {
-    // The Codex probe must stream; drop the body rather than leave an open SSE
+    if (probe.usage) {
+      const body: unknown = await response.json().catch(() => undefined)
+      return outcome("ok", probe.usage(body))
+    }
+    // The OpenAI probe must stream; drop the body rather than leave an open SSE
     // connection for a completion we never read.
     await response.body?.cancel().catch(() => undefined)
     return outcome("ok")
@@ -109,13 +124,50 @@ export async function verifyCredential(
   throw new CredentialVerificationError("Credential provider verification failed")
 }
 
+/**
+ * Subscription tokens are checked against the vendor's usage read, the same
+ * call each CLI's own status screen makes: it authenticates the token, spends
+ * no quota, and answers the question a completion cannot, how much of the
+ * plan is left. API keys have no usage read, so they keep a minimal completion
+ * (Anthropic, OpenAI) or the key-introspection route (Cursor).
+ */
 function providerProbe(
   credential: CredentialMetadata,
   auth: { token: string; accountId?: string },
   anthropic: boolean,
   cursor: boolean,
   codex: boolean,
-): { url: string; init: RequestInit } {
+): { url: string; init: RequestInit; usage?: (body: unknown) => CredentialUsageWindow[] } {
+  if (codex) {
+    return {
+      url: "https://chatgpt.com/backend-api/wham/usage",
+      init: {
+        method: "GET",
+        signal: AbortSignal.timeout(10_000),
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${auth.token}`,
+          ...(auth.accountId ? { "ChatGPT-Account-Id": auth.accountId } : {}),
+        },
+      },
+      usage: codexUsageWindows,
+    }
+  }
+  if (anthropic && anthropicOAuth(credential, auth.token)) {
+    return {
+      url: "https://api.anthropic.com/api/oauth/usage",
+      init: {
+        method: "GET",
+        signal: AbortSignal.timeout(10_000),
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${auth.token}`,
+          "anthropic-beta": "oauth-2025-04-20",
+        },
+      },
+      usage: anthropicUsageWindows,
+    }
+  }
   // `GET /v1/me` is Cursor's documented "retrieve information about the API key
   // being used for authentication" route, which is exactly this question and
   // nothing more: it returns key metadata (`apiKeyName`, `createdAt`), spends no
@@ -142,9 +194,7 @@ function providerProbe(
         headers: {
           "Content-Type": "application/json",
           "anthropic-version": "2023-06-01",
-          ...(anthropicOAuth(credential, auth.token)
-            ? { Authorization: `Bearer ${auth.token}`, "anthropic-beta": "oauth-2025-04-20" }
-            : { "x-api-key": auth.token }),
+          "x-api-key": auth.token,
         },
         body: JSON.stringify({
           model: "claude-haiku-4-5",
@@ -155,35 +205,71 @@ function providerProbe(
     }
   }
   return {
-    url: codex ? "https://chatgpt.com/backend-api/codex/responses" : "https://api.openai.com/v1/responses",
+    url: "https://api.openai.com/v1/responses",
     init: {
       method: "POST",
       signal: AbortSignal.timeout(10_000),
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${auth.token}`,
-        ...(codex && auth.accountId ? { "ChatGPT-Account-Id": auth.accountId } : {}),
       },
-      // The ChatGPT-backed Codex endpoint is not the public Responses API and
-      // rejects its request shape outright: `input` must be a list, `store`
-      // must be false, `stream` must be true, and `max_output_tokens` is not a
-      // supported parameter. Sending the public shape returned 400 for every
-      // valid subscription, which the mapping below turns into a hard error —
-      // so a working ChatGPT plan could never be verified at all.
-      body: JSON.stringify(codex
-        ? {
-          model: "gpt-5.4-mini",
-          input: [{ role: "user", content: [{ type: "input_text", text: "Reply with OK." }] }],
-          stream: true,
-          store: false,
-        }
-        : {
-          model: "gpt-4.1-nano",
-          input: "Reply with OK.",
-          max_output_tokens: 1,
-        }),
+      body: JSON.stringify({
+        model: "gpt-4.1-nano",
+        input: "Reply with OK.",
+        max_output_tokens: 1,
+      }),
     },
   }
+}
+
+const CODEX_SESSION_WINDOW_SECONDS = 18_000
+const CODEX_WEEKLY_WINDOW_SECONDS = 604_800
+
+/**
+ * `rate_limit.primary_window` / `secondary_window` from the ChatGPT usage read.
+ * A window is named by its `limit_window_seconds`, not its slot: a free plan
+ * gets only the weekly window, delivered in the primary slot.
+ */
+function codexUsageWindows(body: unknown): CredentialUsageWindow[] {
+  const rateLimit = jsonRecord(jsonRecord(body)?.rate_limit)
+  return (["primary_window", "secondary_window"] as const).flatMap((slot) => {
+    const window = jsonRecord(rateLimit?.[slot])
+    const used = jsonNumber(window?.used_percent)
+    if (!window || used === undefined) return []
+    const seconds = jsonNumber(window.limit_window_seconds)
+    const name = seconds === CODEX_SESSION_WINDOW_SECONDS
+      ? "session"
+      : seconds === CODEX_WEEKLY_WINDOW_SECONDS
+        ? "weekly"
+        : slot
+    return [{ window: name, usedPercent: clampPercent(used), resetsAt: usageResetMs(window.reset_at) }]
+  })
+}
+
+/** `five_hour` / `seven_day` / `seven_day_opus` from Anthropic's OAuth usage read. */
+function anthropicUsageWindows(body: unknown): CredentialUsageWindow[] {
+  const record = jsonRecord(body)
+  const slots = [["five_hour", "session"], ["seven_day", "weekly"], ["seven_day_opus", "weekly_opus"]] as const
+  return slots.flatMap(([key, name]) => {
+    const window = jsonRecord(record?.[key])
+    const used = jsonNumber(window?.utilization)
+    if (!window || used === undefined) return []
+    return [{ window: name, usedPercent: clampPercent(used), resetsAt: usageResetMs(window.resets_at) }]
+  })
+}
+
+function clampPercent(value: number) {
+  return Math.min(100, Math.max(0, Math.round(value)))
+}
+
+/** ChatGPT sends reset times as Unix seconds, Anthropic as ISO strings. */
+function usageResetMs(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value < 1e12 ? value * 1000 : value
+  if (typeof value === "string") {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
 }
 
 /**

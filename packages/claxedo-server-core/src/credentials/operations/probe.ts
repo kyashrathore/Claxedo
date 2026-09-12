@@ -1,7 +1,7 @@
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { LocalCredentialItem } from "./sync"
 import type { CredentialProbe } from "./discovery"
-import { CredentialVerificationError, verifyCredential } from "./verify"
+import { CredentialVerificationError, verifyCredential, type CredentialUsageWindow } from "./verify"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 const log = Log.create({ service: "credentials-probe" })
@@ -42,7 +42,7 @@ export async function probeDiscoveredCredential(
 
   try {
     const outcome = await verifyCredential(credential, item.secret, options)
-    return verdict(outcome.health)
+    return verdict(outcome.health, outcome.usage)
   } catch (error) {
     // `CredentialVerificationError` means we could not form a verdict — an
     // unsupported provider, an unreadable secret shape, or a failed request.
@@ -55,10 +55,10 @@ export async function probeDiscoveredCredential(
   }
 }
 
-function verdict(health: string): CredentialProbe {
+function verdict(health: string, usage: CredentialUsageWindow[] | undefined): CredentialProbe {
   // A quota-capped subscription authenticated: the provider answered us and
   // will again once the window rolls over. That is working, not broken.
-  if (health === "ok") return { state: "working" }
+  if (health === "ok") return { state: "working", ...(usage?.length ? { usage } : {}) }
   if (health === "rate_capped") return { state: "working" }
   if (health === "auth_failed") {
     return { state: "broken", reason: "The provider rejected this credential." }

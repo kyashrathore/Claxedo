@@ -78,6 +78,7 @@ configureSettingsAppPorts({
   DialogCustomProvider,
   discoverAIConnections: AIConnectApi.discoverAIConnections,
   saveDiscoveredAIConnections: AIConnectApi.saveDiscoveredAIConnections,
+  verifyAIConnection: AIConnectApi.verifyAIConnection,
   useServerIsLocal: () => useServer().isLocal,
   groupDiscoveryItems: AIConnectState.groupDiscoveryItems,
   localHarnessStatuses: AIConnectState.localHarnessStatuses,

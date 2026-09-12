@@ -27,6 +27,11 @@ export const ProviderSetupRow: Component<{
   note?: string
   /** Which credential this harness runs on right now, in words. */
   inUse?: string
+  /** What the provider last said about that credential, in words. */
+  live?: string
+  /** Asks the provider now; the row reads "Checking…" until it answers. */
+  onCheck?: () => void | Promise<void>
+  checking?: boolean
   /** Saves the login a scan found on this machine; offered while the row reads detected. */
   onUseLogin?: () => void | Promise<void>
   onConnected?: () => void | Promise<void>
@@ -67,6 +72,9 @@ export const ProviderSetupRow: Component<{
             <Show when={props.inUse}>
               {(inUse) => <span class="text-12-regular text-text-base" data-component="provider-in-use">{inUse()}</span>}
             </Show>
+            <Show when={props.live}>
+              {(live) => <span class="text-12-regular text-text-weak" data-component="provider-live">{live()}</span>}
+            </Show>
             <Show when={!expanded() && props.detail}>
               {(detail) => <span class="text-12-regular text-text-weak">{detail()}</span>}
             </Show>
@@ -75,6 +83,11 @@ export const ProviderSetupRow: Component<{
         <div class="flex shrink-0 items-center gap-2">
           <Show when={showStatus()}>
             <Tag>{providerSetupStatusLabel(props.status, language)}</Tag>
+          </Show>
+          <Show when={props.onCheck}>
+            <Button size="large" variant="ghost" disabled={props.checking} data-action="settings-provider-check" onClick={() => void props.onCheck?.()}>
+              {props.checking ? language.t("settings.providers.agents.checking") : language.t("settings.providers.agents.check")}
+            </Button>
           </Show>
           <Show when={!connected() && props.status === "detected" && props.onUseLogin}>
             <Button size="large" variant="primary" disabled={usingLogin()} data-action="settings-provider-use-login" onClick={() => void useLogin()}>

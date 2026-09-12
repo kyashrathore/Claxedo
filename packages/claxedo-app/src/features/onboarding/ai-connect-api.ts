@@ -1,6 +1,6 @@
 import { claxedoCredentialRequest, type ClaxedoCredentialRequestInput } from "@/platform/api/credential-request"
 import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
-import type { AICredentialVerification, AIDiscoveryItem, AIDiscoveryProbe } from "./ai-connect-state"
+import type { AICredentialVerification, AIDiscoveryItem, AIDiscoveryProbe, AIUsageWindow } from "./ai-connect-state"
 
 export type AIConnectRequest = (input?: ClaxedoCredentialRequestInput, init?: RequestInit) => Promise<Response>
 
@@ -8,6 +8,8 @@ export type AIVerificationResult = {
   credentialId: string
   providerId: string
   result: AICredentialVerification
+  /** The plan's windows, when the provider's check was a usage read. */
+  usage?: AIUsageWindow[]
 }
 
 /**
@@ -101,9 +103,11 @@ export async function verifyAIConnection(input: {
     credentialId: input.credentialId,
     action: "verify",
   }, { method: "POST" })
-  const result = readField(await res.json(), "result")
+  const body: unknown = await res.json()
+  const result = readField(body, "result")
   if (!isVerificationResult(result)) throw new Error("Credential verification returned an invalid response")
-  return { credentialId: input.credentialId, providerId: input.providerId, result }
+  const usage = redactedUsage(readField(body, "usage"))
+  return { credentialId: input.credentialId, providerId: input.providerId, result, ...(usage ? { usage } : {}) }
 }
 
 export async function verifyProviderAIConnections(input: {
@@ -156,9 +160,23 @@ function redactedDiscoveryItem(value: unknown): AIDiscoveryItem[] {
 
 function redactedProbe(value: unknown): AIDiscoveryProbe | undefined {
   const state = readString(value, "state")
-  if (state === "working") return { state: "working" }
+  if (state === "working") {
+    const usage = redactedUsage(readField(value, "usage"))
+    return { state: "working", ...(usage ? { usage } : {}) }
+  }
   if (state !== "broken" && state !== "unknown") return undefined
   return { state, reason: readString(value, "reason") ?? "" }
+}
+
+function redactedUsage(value: unknown): AIUsageWindow[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const windows = value.flatMap((entry): AIUsageWindow[] => {
+    const window = readString(entry, "window")
+    const usedPercent = readFiniteNumber(entry, "usedPercent")
+    if (window === undefined || usedPercent === undefined) return []
+    return [{ window, usedPercent, resetsAt: readFiniteNumber(entry, "resetsAt") ?? null }]
+  })
+  return windows.length ? windows : undefined
 }
 
 function redactedCredentialId(value: unknown): CredentialRef | undefined {

@@ -36,7 +36,7 @@ function codexSecret(access = "access_old") {
  */
 function transport(input: {
   token?: { ok?: boolean; body?: unknown }
-  probe?: { ok?: boolean; status?: number; body?: string }
+  probe?: { ok?: boolean; status?: number; body?: string; json?: unknown }
 }) {
   const calls: Array<{
     url: string
@@ -69,6 +69,7 @@ function transport(input: {
       ok: probe.ok ?? true,
       status: probe.status ?? (probe.ok === false ? 400 : 200),
       text: async () => probe.body ?? "",
+      json: async () => probe.json ?? {},
     } as unknown as Response
   }) as unknown as typeof fetch
   return {
@@ -173,7 +174,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
       now: () => NOW,
     })
 
-    expect(outcome).toEqual({ health: "ok" })
+    expect(outcome).toEqual({ health: "ok", usage: [] })
     expect(transports.tokenCalls()).toHaveLength(0)
     expect(transports.probeCalls()[0].authorization).toBe("Bearer access_old")
   })
@@ -229,10 +230,37 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
     )
 
     const probe = transports.probeCalls()[0]
-    expect(outcome).toEqual({ health: "ok" })
+    expect(outcome).toEqual({ health: "ok", usage: [] })
+    expect(probe.url).toBe("https://api.anthropic.com/api/oauth/usage")
     expect(probe.headers.Authorization).toBe("Bearer sk-ant-oat01-setup-token-value")
     expect(probe.headers["anthropic-beta"]).toBe("oauth-2025-04-20")
     expect(probe.headers["x-api-key"]).toBeUndefined()
+  })
+
+  test("a subscription token's check is the usage read, and it reports the plan's windows", async () => {
+    const transports = transport({
+      probe: {
+        json: {
+          five_hour: { utilization: 12.4, resets_at: "2026-09-12T18:00:00Z" },
+          seven_day: { utilization: 40, resets_at: "2026-09-15T00:00:00Z" },
+          seven_day_opus: null,
+        },
+      },
+    })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "api_key" }),
+      "sk-ant-oat01-setup-token-value",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({
+      health: "ok",
+      usage: [
+        { window: "session", usedPercent: 12, resetsAt: Date.parse("2026-09-12T18:00:00Z") },
+        { window: "weekly", usedPercent: 40, resetsAt: Date.parse("2026-09-15T00:00:00Z") },
+      ],
+    })
   })
 
   /**
@@ -303,26 +331,67 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
     expect(probe.headers["anthropic-beta"]).toBe("oauth-2025-04-20")
   })
 
-  // Pinned against what chatgpt.com/backend-api/codex/responses actually
-  // enforces (observed 2026-07-25): a string `input` is "Input must be a list",
-  // store true is "Store must be set to false", stream false is "Stream must be
-  // set to true", and max_output_tokens is "Unsupported parameter". Each of
-  // those is a 400 that maps to a hard error, so a valid ChatGPT subscription
-  // could never verify.
-  test("sends the Codex endpoint the request shape it accepts", async () => {
-    const transports = transport({})
+  test("a ChatGPT login is checked with the usage read Codex's own status screen makes", async () => {
+    const transports = transport({
+      probe: {
+        json: {
+          rate_limit: {
+            // Free plans get only the weekly window, in the primary slot.
+            primary_window: { used_percent: 63.5, limit_window_seconds: 604_800, reset_at: 1_757_700_000 },
+            secondary_window: null,
+          },
+        },
+      },
+    })
 
-    await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), {
+    const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), {
       fetch: transports.stub,
       now: () => NOW,
     })
 
     const probe = transports.probeCalls()[0]
-    expect(probe.url).toBe("https://chatgpt.com/backend-api/codex/responses")
-    expect(Array.isArray(probe.body!.input)).toBe(true)
-    expect(probe.body!.stream).toBe(true)
-    expect(probe.body!.store).toBe(false)
-    expect(probe.body).not.toHaveProperty("max_output_tokens")
+    expect(probe.url).toBe("https://chatgpt.com/backend-api/wham/usage")
+    expect(probe.headers.Authorization).toBe("Bearer access_old")
+    expect(probe.headers["ChatGPT-Account-Id"]).toBe("acct_1")
+    expect(probe.body).toBeUndefined()
+    expect(outcome).toEqual({
+      health: "ok",
+      usage: [{ window: "weekly", usedPercent: 64, resetsAt: 1_757_700_000_000 }],
+    })
+  })
+
+  test("both ChatGPT windows are named by their length, whichever slot carries them", async () => {
+    const transports = transport({
+      probe: {
+        json: {
+          rate_limit: {
+            primary_window: { used_percent: 5, limit_window_seconds: 18_000, reset_at: 1_757_600_000 },
+            secondary_window: { used_percent: 41, limit_window_seconds: 604_800, reset_at: 1_757_700_000 },
+          },
+        },
+      },
+    })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome.usage).toEqual([
+      { window: "session", usedPercent: 5, resetsAt: 1_757_600_000_000 },
+      { window: "weekly", usedPercent: 41, resetsAt: 1_757_700_000_000 },
+    ])
+  })
+
+  test("a usage read the provider rejects is a verdict on the login, not on the read", async () => {
+    const transports = transport({ probe: { ok: false, status: 401 } })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), codexSecret(), {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome).toEqual({ health: "auth_failed" })
   })
 
   test("keeps the public Responses shape for plain OpenAI API keys", async () => {

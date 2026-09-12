@@ -233,6 +233,35 @@ describe("credential routes", () => {
     })
   })
 
+  test("hands back the plan's usage windows when the provider reports them", async () => {
+    const row = {
+      ...(await credentials().listCredentials())[0],
+      provider_id: "codex-app-server",
+      kind: "oauth_token" as const,
+      health: null,
+    }
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async () => row),
+      resolveCredentialSecretById: vi.fn(async () => JSON.stringify({ tokens: { access_token: "access_1", account_id: "acct_1" } })),
+      updateCredentialHealth: vi.fn(async () => {}),
+    })
+    const request = providerFetch(() => Response.json({
+      rate_limit: { primary_window: { used_percent: 20, limit_window_seconds: 18_000, reset_at: 1_757_600_000 } },
+    }))
+    const app = CredentialRoutes(registry, { fetch: request as unknown as typeof fetch, now: () => 42 })
+
+    const response = await app.request("http://localhost/cred_1/verify", { method: "POST" })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      result: "ok",
+      health: "ok",
+      verified_at: 42,
+      usage: [{ window: "session", usedPercent: 20, resetsAt: 1_757_600_000_000 }],
+    })
+    expect(requestUrl(request.mock.calls[0][0])).toBe("https://chatgpt.com/backend-api/wham/usage")
+  })
+
   test("timestamps health when provider verification completes", async () => {
     const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
@@ -396,42 +425,6 @@ describe("credential routes", () => {
     expect(requestUrl(url)).toBe("https://api.anthropic.com/v1/messages")
     expect(new Headers(init?.headers).get("x-api-key")).toBe("sk-ant-route-secret")
     expect(jsonBody(init?.body)).toMatchObject({ max_tokens: 1 })
-  })
-
-  test("verifies Codex subscription credentials through the ChatGPT responses endpoint", async () => {
-    const row = {
-      ...(await credentials().listCredentials())[0],
-      provider_id: "codex-app-server",
-      kind: "oauth_token" as const,
-      health: null,
-    }
-    const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
-      resolveCredentialSecretById: vi.fn(async () => JSON.stringify({
-        access: "codex-access-secret",
-        account_id: "account_1",
-      })),
-      updateCredentialHealth: vi.fn(async () => {}),
-    })
-    const request = providerFetch(() => Response.json({ id: "response_1" }))
-    const app = CredentialRoutes(registry, { fetch: request as unknown as typeof fetch, now: () => 48 })
-
-    const response = await app.request("http://localhost/cred_1/verify", { method: "POST" })
-
-    expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toMatchObject({ result: "ok", health: "ok" })
-    const [url, init] = request.mock.calls[0]
-    expect(requestUrl(url)).toBe("https://chatgpt.com/backend-api/codex/responses")
-    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer codex-access-secret")
-    expect(new Headers(init?.headers).get("chatgpt-account-id")).toBe("account_1")
-    // This previously asserted `max_output_tokens: 1`, which the ChatGPT-backed
-    // Codex endpoint rejects outright ("Unsupported parameter"), along with a
-    // string `input`, `store: true`, and `stream: false`. The assertion pinned a
-    // request no live subscription could ever answer with 200.
-    const codexBody = jsonBody(init?.body)
-    expect(codexBody).toMatchObject({ stream: true, store: false })
-    expect(codexBody).toHaveProperty("input", expect.any(Array))
-    expect(codexBody).not.toHaveProperty("max_output_tokens")
   })
 
   test("redacts credential and provider secrets from every verification response", async () => {

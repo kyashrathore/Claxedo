@@ -390,6 +390,30 @@ returns `account_id`, `label`, `health`, `expires_at`, `scope`; it adds
 
 Nothing changes in the composer or on the session screen.
 
+**Landed 2026-09-12 (commits `87e5a50236` and the live-check commit that
+follows it):** every harness row now says which credential it runs on and
+can ask the provider about it.
+
+- *In use.* `GET /credentials/effective` returns the rows the fanout would
+  send for a scope, one per provider and without secrets, read from the
+  same `selectCredentialsForScope` the fanout uses. The row reads "In use:
+  <label>" for a stored row or "In use: this computer's login" when the
+  fanout has nothing for that provider. A host that cannot enumerate its
+  store (the hosted KV adapter) answers 501 and the line is not shown.
+- *Check.* One verifier answers both tiers. A stored row is checked by
+  `POST /credentials/:id/verify`; the machine login is checked by the scan,
+  which probes what it finds with the same `verifyCredential`. For a
+  subscription token the probe is the vendor's usage read, the call each
+  CLI's own status screen makes: `GET chatgpt.com/backend-api/wham/usage`
+  for a ChatGPT login and `GET api.anthropic.com/api/oauth/usage` for a
+  Claude OAuth token (a pasted `claude setup-token` included). It spends no
+  quota and returns the plan's windows, which the row shows as "Working ·
+  Session 12% used · Weekly 40% used · Checked just now". API keys have no
+  usage read and keep the minimal completion (Anthropic, OpenAI) or the
+  key-introspection route (Cursor). A rejected row is written back as
+  `health: auth_failed`, `status: error`, and the fanout stops sending it,
+  so the row's "In use" line flips back to the machine login on the spot.
+
 ### End-to-end flow after the change
 
 - A. In Settings → Providers, under the Codex row, the user clicks
@@ -562,6 +586,18 @@ What the steps mean:
     (`coalesce(expires_at, max) desc`), so a pasted key outranks an OAuth
     login. Moot once the active mark replaces the order; noted so the
     backfill does not enshrine it.
+15. **The Codex machine-login probe was inconclusive on a working login.**
+    The scan probed a ChatGPT login with a streamed completion against
+    `chatgpt.com/backend-api/codex/responses`; that endpoint answered
+    something other than 200/401/402/429 and the verifier mapped it to
+    "Couldn't reach the provider", so the implicit tier could never be
+    shown working. Replaced by the usage read (section 7); the same login
+    now reports "Working · Weekly 1% used". Both tiers were then exercised
+    live through the Providers page: the machine login through the scan,
+    and a stored placeholder Cursor key through `verify`, which the real
+    `api.cursor.com/v1/me` rejected ("Rejected by the provider") and which
+    the fanout then dropped. A stored subscription token was not exercised
+    live: none exists on this machine (see the Claude note above).
 
 The Claude leg is blocked on this machine: the CLI's own `/login` has
 expired ("OAuth session expired and could not be refreshed" in a bare
@@ -579,6 +615,10 @@ pasted in Settings → Claude → Connect, the same four steps apply.
   `OPENAI_API_KEY`; moot for our spawns after the env strip.
 - The field names in Claude Code's `~/.claude.json` account record; only
   needed if the keychain login is ever listed, which finding 2 rules out.
+- The usage read for a *stored* subscription token end to end (a pasted
+  `claude setup-token`, or a ChatGPT login synced as a row). The request
+  shapes are pinned by tests against what the CLIs themselves send; the
+  live run needs a real token on this machine.
 
 ## Phases and acceptance criteria
 
@@ -623,7 +663,9 @@ Acceptance:
       migrates to the same winner the old fanout returned.
 - [ ] `bun run test:architecture-ratchets` green; the affected packages' own
       `scripts.typecheck` and test scripts green.
-Progress:
+Progress: the Providers page's "In use" line and the live check (section
+7, "Landed") are in; they are the surface the account list and Make active
+will extend. Nothing else in this phase has started.
 
 ### Phase 2: Claude accounts
 

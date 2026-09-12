@@ -54,13 +54,14 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/features/settings/app-ports", async () => {
   const { useProviders } = await import("@/app/providers/use-providers")
-  const { discoverAIConnections } = await import("@/features/onboarding/ai-connect-api")
+  const { discoverAIConnections, verifyAIConnection } = await import("@/features/onboarding/ai-connect-api")
   const { groupDiscoveryItems, localHarnessChecks, localHarnessStatuses } = await import(
     "@/features/onboarding/ai-connect-state"
   )
   return {
     useProviders,
     discoverAIConnections,
+    verifyAIConnection,
     groupDiscoveryItems,
     localHarnessStatuses,
     localHarnessChecks: () => localHarnessChecks,
@@ -164,6 +165,14 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
   }
   if (url.pathname === "/api/claxedo/credentials/discover") {
     return new Response(JSON.stringify({ discovery_id: "disc_1", items: state.discoveryItems }))
+  }
+  if (url.pathname.endsWith("/verify")) {
+    return new Response(JSON.stringify({
+      result: "ok",
+      health: "ok",
+      verified_at: 7,
+      usage: [{ window: "session", usedPercent: 12, resetsAt: null }, { window: "weekly", usedPercent: 40, resetsAt: null }],
+    }))
   }
   if (url.pathname.startsWith("/api/claxedo/credentials/provider/")) {
     state.credentialDeletes.push({
@@ -424,6 +433,41 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-in-use"]')?.textContent).toBe("settings.providers.agents.inUse:ChatGPT OAuth"))
     expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent).toBe("settings.providers.agents.inUseMachine")
     expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/effective")
+  })
+
+  test("Check on a harness with a stored row asks the provider and shows its verdict with the plan's windows", async () => {
+    state.storedCredentials = [{ id: "cred_codex", provider_id: "codex-app-server", kind: "oauth_token", label: "ChatGPT OAuth" }]
+    mount()
+    await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-in-use"]')).not.toBeNull())
+    expect(agentRow("openai").querySelector('[data-component="provider-live"]')).toBeNull()
+
+    agentRow("openai").querySelector<HTMLButtonElement>('[data-action="settings-provider-check"]')!.click()
+
+    await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-live"]')).not.toBeNull())
+    const live = agentRow("openai").querySelector('[data-component="provider-live"]')!.textContent ?? ""
+    expect(live).toContain("settings.providers.live.ok")
+    expect(live).toContain("settings.providers.live.window:settings.providers.window.session|12")
+    expect(live).toContain("settings.providers.live.window:settings.providers.window.weekly|40")
+    expect(live).toContain("settings.providers.live.checkedNow")
+    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/cred_codex/verify")
+  })
+
+  test("Check on a harness running the machine login re-scans, and the row reads the scan's verdict", async () => {
+    state.discoveryItems = [{
+      provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json",
+      probe: { state: "working", usage: [{ window: "weekly", usedPercent: 64, resetsAt: null }] },
+    }]
+    mount()
+    await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-in-use"]')).not.toBeNull())
+
+    agentRow("openai").querySelector<HTMLButtonElement>('[data-action="settings-provider-check"]')!.click()
+
+    await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-live"]')).not.toBeNull())
+    const live = agentRow("openai").querySelector('[data-component="provider-live"]')!.textContent ?? ""
+    expect(live).toContain("settings.providers.live.ok")
+    expect(live).toContain("settings.providers.live.window:settings.providers.window.weekly|64")
+    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/discover")
+    expect(state.credentialCalls.some((call) => call.endsWith("/verify"))).toBe(false)
   })
 
   test("Connect opens an inset card in the row, named for the harness, that its own close button dismisses", async () => {

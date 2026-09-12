@@ -96,6 +96,30 @@ describe("AI connect API", () => {
     ])
     expect(stub.calls[1].input).toMatchObject({ credentialId: "cred-openai", action: "verify" })
   })
+
+  test("keeps the plan's usage windows a verification reports, and drops malformed ones", async () => {
+    const stub = requests([
+      Response.json({ credentials: [{ id: "cred-codex", provider_id: "codex-app-server" }] }),
+      Response.json({
+        result: "ok",
+        usage: [
+          { window: "session", usedPercent: 12, resetsAt: 1_757_600_000_000 },
+          { window: "weekly", usedPercent: 40 },
+          { window: "broken" },
+        ],
+      }),
+    ])
+
+    await expect(verifyProviderAIConnections({ providerId: "codex-app-server", request: stub.request })).resolves.toEqual([{
+      credentialId: "cred-codex",
+      providerId: "codex-app-server",
+      result: "ok",
+      usage: [
+        { window: "session", usedPercent: 12, resetsAt: 1_757_600_000_000 },
+        { window: "weekly", usedPercent: 40, resetsAt: null },
+      ],
+    }])
+  })
 })
 
 /** The JSON a fetch call carried. A non-string body is not something we send. */
