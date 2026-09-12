@@ -121,6 +121,8 @@ export const dict = {
 
   "ui.imagePreview.alt": "ตัวอย่างรูปภาพ",
   "ui.scrollView.ariaLabel": "เนื้อหาที่เลื่อนได้",
+  "ui.scrollableOutput.showAll": "แสดงทั้งหมด",
+  "ui.scrollableOutput.showLess": "แสดงน้อยลง",
 
   "ui.tool.read": "อ่าน",
   "ui.tool.loaded": "โหลดแล้ว",

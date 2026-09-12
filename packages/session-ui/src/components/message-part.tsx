@@ -36,6 +36,7 @@ import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type UiI18n, useI18n } from "@opencode-ai/ui/context/i18n"
 import { BasicTool, GenericTool, shellExitCode, ToolExitCode } from "./basic-tool"
+import { ScrollableOutput } from "./scrollable-output"
 import { groupParts, isHiddenTool, isPendingQuestion, sameGroups, type PartGroup, type PartRef } from "./part-groups"
 import { assistantMessageSettled, countFoldableGroups, foldedGroupKeys, turnFoldDecision } from "./turn-fold"
 import { TurnFoldRow } from "./turn-fold-row"
@@ -1975,20 +1976,13 @@ ToolRegistry.register({
 ToolRegistry.register({
   name: "list",
   render(props) {
-    const i18n = useI18n()
     const info = createMemo(() => getToolInfo("list", props.input))
     return (
       <BasicTool {...props} icon={info().icon} trigger={{ title: info().title, subtitle: info().subtitle }}>
         <Show when={props.output}>
-          <div
-            data-component="tool-output"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-          >
+          <ScrollableOutput component="tool-output">
             <Markdown text={props.output!} />
-          </div>
+          </ScrollableOutput>
         </Show>
       </BasicTool>
     )
@@ -1998,7 +1992,6 @@ ToolRegistry.register({
 ToolRegistry.register({
   name: "glob",
   render(props) {
-    const i18n = useI18n()
     const info = createMemo(() => getToolInfo("glob", props.input))
     return (
       <BasicTool
@@ -2007,15 +2000,9 @@ ToolRegistry.register({
         trigger={{ title: info().title, subtitle: info().subtitle, args: info().args }}
       >
         <Show when={props.output}>
-          <div
-            data-component="tool-output"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-          >
+          <ScrollableOutput component="tool-output">
             <Markdown text={props.output!} />
-          </div>
+          </ScrollableOutput>
         </Show>
       </BasicTool>
     )
@@ -2025,7 +2012,6 @@ ToolRegistry.register({
 ToolRegistry.register({
   name: "grep",
   render(props) {
-    const i18n = useI18n()
     const info = createMemo(() => getToolInfo("grep", props.input))
     return (
       <BasicTool
@@ -2034,15 +2020,9 @@ ToolRegistry.register({
         trigger={{ title: info().title, subtitle: info().subtitle, args: info().args }}
       >
         <Show when={props.output}>
-          <div
-            data-component="tool-output"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-          >
+          <ScrollableOutput component="tool-output">
             <Markdown text={props.output!} />
-          </div>
+          </ScrollableOutput>
         </Show>
       </BasicTool>
     )
@@ -2209,17 +2189,11 @@ ToolRegistry.register({
               />
             </TooltipV2>
           </div>
-          <div
-            data-slot="bash-scroll" class="ui-bash-scroll"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-          >
+          <ScrollableOutput slot="bash-scroll" class="ui-bash-scroll">
             <pre data-slot="bash-pre">
               <code>{text()}</code>
             </pre>
-          </div>
+          </ScrollableOutput>
         </div>
       </BasicTool>
       <Show when={localUrl()}>
@@ -2719,15 +2693,9 @@ ToolRegistry.register({
     return (
       <BasicTool {...props} icon="brain" trigger={trigger()}>
         <Show when={props.output}>
-          <div
-            data-component="tool-output"
-            data-scrollable
-            tabIndex={0}
-            role="region"
-            aria-label={i18n.t("ui.scrollView.ariaLabel")}
-          >
+          <ScrollableOutput component="tool-output">
             <Markdown text={props.output!} />
-          </div>
+          </ScrollableOutput>
         </Show>
       </BasicTool>
     )

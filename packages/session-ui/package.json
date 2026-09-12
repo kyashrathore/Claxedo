@@ -15,6 +15,7 @@
     "./message-nav": "./src/components/message-nav.tsx",
     "./message-part": "./src/components/message-part.tsx",
     "./review-code-view": "./src/components/review-code-view.tsx",
+    "./scrollable-output": "./src/components/scrollable-output.tsx",
     "./session-retry": "./src/components/session-retry.tsx",
     "./subagent-chip": "./src/components/subagent-chip.tsx",
     "./turn-fold-row": "./src/components/turn-fold-row.tsx",

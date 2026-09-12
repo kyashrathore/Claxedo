@@ -126,6 +126,8 @@ export const dict = {
 
   "ui.imagePreview.alt": "Bildvorschau",
   "ui.scrollView.ariaLabel": "scrollbarer Inhalt",
+  "ui.scrollableOutput.showAll": "Alles anzeigen",
+  "ui.scrollableOutput.showLess": "Weniger anzeigen",
 
   "ui.tool.read": "Lesen",
   "ui.tool.loaded": "Geladen",

@@ -119,6 +119,8 @@ export const dict = {
 
   "ui.imagePreview.alt": "Предпросмотр изображения",
   "ui.scrollView.ariaLabel": "прокручиваемый контент",
+  "ui.scrollableOutput.showAll": "Показать всё",
+  "ui.scrollableOutput.showLess": "Свернуть",
 
   "ui.tool.read": "Чтение",
   "ui.tool.loaded": "Загружено",

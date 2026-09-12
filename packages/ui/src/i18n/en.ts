@@ -128,6 +128,8 @@ export const dict: Record<string, string> = {
 
   "ui.imagePreview.alt": "Image preview",
   "ui.scrollView.ariaLabel": "scrollable content",
+  "ui.scrollableOutput.showAll": "Show all",
+  "ui.scrollableOutput.showLess": "Show less",
 
   "ui.tool.read": "Read",
   "ui.tool.loaded": "Loaded",

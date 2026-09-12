@@ -126,6 +126,8 @@ export const dict = {
 
   "ui.imagePreview.alt": "Görsel önizleme",
   "ui.scrollView.ariaLabel": "kaydırılabilir içerik",
+  "ui.scrollableOutput.showAll": "Tümünü göster",
+  "ui.scrollableOutput.showLess": "Daha az göster",
 
   "ui.tool.read": "Oku",
   "ui.tool.loaded": "Yüklendi",

@@ -99,6 +99,8 @@ export const dict: Record<Keys, string> = {
 
   "ui.imagePreview.alt": "Bildeforhåndsvisning",
   "ui.scrollView.ariaLabel": "rullbart innhold",
+  "ui.scrollableOutput.showAll": "Vis alt",
+  "ui.scrollableOutput.showLess": "Vis mindre",
 
   "ui.tool.read": "Les",
   "ui.tool.loaded": "Lastet",

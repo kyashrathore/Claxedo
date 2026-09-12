@@ -123,6 +123,8 @@ export const dict = {
 
   "ui.imagePreview.alt": "圖片預覽",
   "ui.scrollView.ariaLabel": "可捲動內容",
+  "ui.scrollableOutput.showAll": "顯示全部",
+  "ui.scrollableOutput.showLess": "收起",
 
   "ui.tool.read": "讀取",
   "ui.tool.loaded": "已載入",

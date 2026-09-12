@@ -409,7 +409,6 @@
 
   &[data-scrollable] {
     height: auto;
-    max-height: 240px;
     overflow-y: auto;
 
     /* Always painted, not hover-revealed: this block carries no other overflow cue,
@@ -505,7 +504,6 @@
     width: 100%;
     overflow-y: auto;
     overflow-x: hidden;
-    max-height: 240px;
 
     /* Discoverable scrollability (T20): thin transparent-track scrollbar that surfaces
        on hover instead of the fully hidden bar. */
@@ -1756,5 +1754,33 @@ body:not([data-new-layout]) {
 
   .ui-tool-loaded-file {
     color: var(--text-weak);
+  }
+}
+
+/* 240px shows a dozen lines of output before the reader has to scroll or reveal the rest. */
+.ui-scrollable-output {
+  max-height: 240px;
+  overflow-y: auto;
+
+  &[data-revealed="true"] {
+    max-height: none;
+  }
+}
+
+.ui-scrollable-output-toggle {
+  align-self: flex-start;
+  margin: 0;
+  padding: 4px 0 0;
+  border: none;
+  background: none;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-large);
+  color: var(--text-weak);
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    color: var(--text-strong);
   }
 }

@@ -124,6 +124,8 @@ export const dict = {
 
   "ui.imagePreview.alt": "Pregled slike",
   "ui.scrollView.ariaLabel": "sadržaj za pomjeranje",
+  "ui.scrollableOutput.showAll": "Prikaži sve",
+  "ui.scrollableOutput.showLess": "Prikaži manje",
 
   "ui.tool.read": "Čitanje",
   "ui.tool.loaded": "Učitano",

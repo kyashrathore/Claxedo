@@ -96,6 +96,8 @@ export const dict = {
 
   "ui.imagePreview.alt": "이미지 미리보기",
   "ui.scrollView.ariaLabel": "스크롤 가능한 콘텐츠",
+  "ui.scrollableOutput.showAll": "전체 보기",
+  "ui.scrollableOutput.showLess": "간략히 보기",
 
   "ui.tool.read": "읽기",
   "ui.tool.loaded": "로드됨",

@@ -22,6 +22,7 @@ import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import { formatDuration } from "./format-duration"
+import { ScrollableOutput } from "./scrollable-output"
 
 export type TriggerTitle = {
   title: string
@@ -656,9 +657,9 @@ export function GenericTool(props: {
         {/* Only pass children when there is output, so BasicTool's chevron stays hidden
             (and the row stays non-interactive) for tools that produced nothing. */}
         {output() ? (
-          <div data-component="tool-output" data-scrollable tabIndex={0} role="region">
+          <ScrollableOutput component="tool-output">
             <pre>{output()}</pre>
-          </div>
+          </ScrollableOutput>
         ) : undefined}
       </BasicTool>
     </div>
