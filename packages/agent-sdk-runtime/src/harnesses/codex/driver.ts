@@ -41,7 +41,8 @@ import {
 } from "../shared/permission-modes"
 import { requireCodexExecutable } from "./executable"
 import { CodexAppServerProcess } from "./app-server-process"
-import { codexChatgptAuthTokens, refreshCodexChatgptAuth, sourceAuthValue, sourceCodexAuthValue } from "./auth-file"
+import { refreshCodexChatgptAuth } from "./auth-file"
+import { CodexProcessAuth } from "./process-auth"
 import { codexConfigOptions, fetchCodexModels } from "./model-options"
 import { handleCodexServerRequest } from "./server-request"
 import { CodexGoalController } from "./goal"
@@ -110,8 +111,7 @@ export function codexPluginLaunch(launch: unknown): CodexPluginLaunch | undefine
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
   readonly interactions = { permissions: true, questions: true } as const
-  private auth: SdkRuntimeAuth = {}
-  private codexAuth: JsonRecord | undefined
+  private readonly auth = new CodexProcessAuth((proc) => this.process === proc)
   private process: CodexAppServerProcess | null = null
   /** Releases the app-server after its activity leases expire. */
   private readonly idleMs = codexIdleTimeoutMs()
@@ -121,10 +121,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   })
   private processStartup: Promise<CodexAppServerProcess> | null = null
   private processStartupAbort: AbortController | null = null
-  private processAuthSync: Promise<void> | null = null
-  private authRevision = 0
-  private processAuthRevision = -1
-  private processAuthWasExplicit = false
   private processGoalUnsubscribe: (() => void) | null = null
   private lifecycleRevision = 0
   private disposed = false
@@ -161,35 +157,18 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   setAuth(keys: SdkRuntimeAuth) {
-    const previous = this.authSignature()
-    this.auth = {
-      ...this.auth,
-      ...(keys.openai !== undefined ? { openai: keys.openai || undefined } : {}),
-    }
-    if (this.authSignature() !== previous) {
-      this.authRevision++
-      this.modelSource.invalidate()
-    }
+    if (this.auth.mergeKeys(keys)) this.modelSource.invalidate()
   }
 
   async applyConfig(config: Record<string, unknown>) {
     const nextPluginLaunch = codexPluginLaunch(config.launch)
     await this.applyPluginLaunch(nextPluginLaunch)
-    const previous = this.authSignature()
     const auth = stringRecord(config.auth)
-    const source = auth?.["codex-app-server"] ?? auth?.openai
-    this.codexAuth = sourceCodexAuthValue(source)
-    this.auth = {
-      openai: sourceAuthValue(source),
-    }
+    if (this.auth.replaceSource(auth?.["codex-app-server"] ?? auth?.openai)) this.modelSource.invalidate()
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.firstPartyMcp = firstPartyMcpProvider(config)
-    if (this.authSignature() !== previous) {
-      this.authRevision++
-      this.modelSource.invalidate()
-    }
     const proc = this.process ?? (this.processStartup ? await this.processStartup : null)
-    if (proc?.alive) await this.syncProcessAuth(proc)
+    if (proc?.alive) await this.auth.sync(proc)
   }
 
   /** Keep native session tools and MCP credentials consistent on start and resume. */
@@ -592,7 +571,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       this.processStartup = pending
     }
     const proc = this.processStartup ? await this.processStartup : this.process!
-    await this.syncProcessAuth(proc)
+    await this.auth.sync(proc)
     return proc
   }
 
@@ -625,61 +604,15 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.process = started
     this.processGoalUnsubscribe?.()
     this.processGoalUnsubscribe = started.onMessage((message) => this.goalController.handleProcessMessage(message))
-    this.processAuthRevision = -1
-    this.processAuthWasExplicit = false
+    this.auth.forgetProcess()
     this.processError = null
-    await this.syncProcessAuth(started)
+    await this.auth.sync(started)
     if (this.disposed || lifecycleRevision !== this.lifecycleRevision) {
       await started.dispose()
       if (this.process === started) this.process = null
       throw new Error("Codex app-server driver was disposed during startup")
     }
     return started
-  }
-
-  private async syncProcessAuth(proc: CodexAppServerProcess): Promise<void> {
-    if (this.processAuthSync) await this.processAuthSync
-    if (this.process !== proc || !proc.alive || this.processAuthRevision === this.authRevision) return
-    const revision = this.authRevision
-    const params = this.loginParams()
-    const pending = (async () => {
-      try {
-        if (params) await proc.request("account/login/start", params)
-        else if (this.processAuthWasExplicit) {
-          await proc.request("account/logout", null)
-        }
-      } catch (err) {
-        throw new Error(`Codex auth could not initialize: ${errorMessage(err)}`, { cause: err })
-      }
-      if (this.process === proc) {
-        this.processAuthWasExplicit = !!params
-        if (revision === this.authRevision) this.processAuthRevision = revision
-      }
-    })()
-    const sync = pending.finally(() => {
-      if (this.processAuthSync === sync) this.processAuthSync = null
-    })
-    this.processAuthSync = sync
-    await this.processAuthSync
-    if (this.process === proc && proc.alive && this.processAuthRevision !== this.authRevision) {
-      await this.syncProcessAuth(proc)
-    }
-  }
-
-  private loginParams() {
-    if (this.auth.openai) return { type: "apiKey", apiKey: this.auth.openai }
-    const tokens = codexChatgptAuthTokens(this.codexAuth)
-    if (!tokens) return undefined
-    return {
-      type: "chatgptAuthTokens",
-      accessToken: tokens.access,
-      chatgptAccountId: tokens.accountId,
-      chatgptPlanType: tokens.planType ?? null,
-    }
-  }
-
-  private authSignature() {
-    return JSON.stringify(this.loginParams() ?? null)
   }
 
   /**
@@ -698,11 +631,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       permissionModeId: (sessionId) => this.permissionSelection.currentId(sessionId),
       refreshTokens: async () => {
         const refreshed = await refreshCodexChatgptAuth({
-          auth: this.codexAuth,
+          auth: this.auth.codexAuth,
           home: this.codexHome,
           fetch: this.options.fetch,
         })
-        this.codexAuth = refreshed.auth
+        this.auth.codexAuth = refreshed.auth
         return {
           access: refreshed.login.accessToken,
           accountId: refreshed.login.chatgptAccountId,

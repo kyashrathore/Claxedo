@@ -7,50 +7,15 @@ const root = path.resolve(import.meta.dirname)
 describe("agent-sdk-runtime architecture ratchets", () => {
   test("high-churn orchestration owners cannot grow", () => {
     const ceilings: Record<string, number> = {
-      // Re-measured at the Goal-mode merge into dev: these owners now carry the
-      // runtime Goal surface (mutations, publication, provider-turn projection)
-      // on top of the decomposed process/turn helpers reviewed before it.
-      // Further extraction (e.g. a PiGoalController) shrinks them; growth fails.
-      //
-      // Re-measured again where the Cloudflare multiplayer branch merged in.
-      // sdk-runtime-adapter.ts threads the host's durable turn admission fence
-      // through every producer write. runtime.ts threads the same fence
-      // but stays below its previous ceiling because the durable turn record
-      // moved out to runtime/turn-record.ts.
-      //
-      // Re-measured again for the resolved-model contract: the ACP adapter and
-      // the native-SDK adapter each state their own config-options payload, so
-      // both gained the one small producer that names the model their harness
-      // reported. Moving either producer to a shared owner is not possible —
-      // ACP options keep the agent's protocol shape and the SDK's do not.
-      // Re-measured for the turn author travelling with its prompt and the
-      // turn message-id owner: the runtime hands the harness the turn's author
-      // and mints the reply id through agent-event-runtime's convention.
-      // Re-measured after the native-Pi cutover and the Tier B dead-code sweep:
-      // exact line counts, no headroom, per the ratchet policy.
-      // Re-measured for `CodexHarnessAdapter.dispose()` awaiting real process
-      // exit: the driver now hands back a promise that resolves when every
-      // app-server it owns is gone, which is what its callers were already
-      // assuming. Four of the five extra lines are that await and the comments
-      // naming the teardowns nothing waits on; the fifth imports the shared
-      // `stringRecord` reader that replaced this file's config cast. Owner
-      // unchanged.
-      // Re-measured for host-owned subagents: the codex driver raises the
-      // observation that binds a completed `create_subagent` MCP item to its
-      // child from the one place thread notifications are projected. The
-      // classification and the observation shape live in
-      // `harnesses/codex/host-subagent.ts`; the three lines here are its import
-      // and the call.
-      // Re-measured for the per-thread first-party MCP config. The Codex
-      // app-server reads MCP servers from the `config` override on
-      // `thread/start` and `thread/resume`, and the entry names the Claxedo
-      // session, so the driver — the only owner that holds both the provider
-      // and the request — states it; `first-party-mcp.ts` owns the provider
-      // shape and validation. `sdk-runtime-adapter.ts` gains the one line that
-      // hands the driver the session id its thread will serve.
-      "runtime.ts": 980,
+      // Reviewed line counts for the orchestration owners that attract every
+      // new feature. Each is the file's exact length at its last review, with
+      // no headroom, so the next feature must name an owner rather than append.
+      // `runtime.ts` delegates the Goal surface to `runtime/goal-controller.ts`
+      // and `harnesses/codex/driver.ts` delegates app-server login state to
+      // `harnesses/codex/process-auth.ts`.
+      "runtime.ts": 840,
       "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 683,
+      "harnesses/codex/driver.ts": 651,
       "harnesses/shared/sdk-runtime-adapter.ts": 875,
       "harnesses/pi/index.ts": 12,
     }

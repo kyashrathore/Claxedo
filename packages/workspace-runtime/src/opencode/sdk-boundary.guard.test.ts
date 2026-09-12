@@ -6,7 +6,8 @@
  * import, still reaches it. These greps keep it out of first-party source.
  */
 import { describe, expect, test } from "bun:test"
-import { execFileSync } from "node:child_process"
+import * as fs from "node:fs"
+import * as os from "node:os"
 import * as path from "node:path"
 
 const repoRoot = path.resolve(import.meta.dir, "../../../..")
@@ -25,23 +26,55 @@ const PENDING_DELETION: string[] = []
 const NEVER_SOURCE = ["node_modules", "dist", "out", ".artifacts", "dist-node", ".claude", "patches"]
 
 /** Only real source can import anything. */
-const SOURCE_GLOBS = ["*.ts", "*.tsx", "*.js", "*.mjs", "*.cjs"]
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".mjs", ".cjs"]
 
-function search(pattern: string, extraExcludes: readonly string[] = []): string[] {
-  const args = ["--fixed-strings", "--line-number", "--no-heading", pattern, "."]
-  for (const glob of SOURCE_GLOBS) args.push("--glob", glob)
-  for (const dir of NEVER_SOURCE) args.push("--glob", `!**/${dir}/**`)
-  // Exact paths: a `**/opencode/**` glob would also exclude the canonical owner.
-  for (const dir of [...PENDING_DELETION, ...extraExcludes]) args.push("--glob", `!${dir}/**`)
-  try {
-    const out = execFileSync("rg", args, { cwd: repoRoot, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 })
-    return out.split("\n").filter(Boolean)
-  } catch (error) {
-    // rg exits 1 with no output when nothing matches, which is the pass case.
-    const status = (error as { status?: number }).status
-    if (status === 1) return []
-    throw error
+/**
+ * Hidden entries are skipped the way a source search would: build state and
+ * tool caches live in dotted directories, and none of them is first-party code.
+ */
+function sourceFiles(root: string, excluded: ReadonlySet<string>): string[] {
+  const found: string[] = []
+  const walk = (relative: string) => {
+    for (const entry of fs.readdirSync(path.join(root, relative), { withFileTypes: true })) {
+      if (entry.name.startsWith(".")) continue
+      const child = relative ? `${relative}/${entry.name}` : entry.name
+      if (entry.isDirectory()) {
+        if (NEVER_SOURCE.includes(entry.name) || excluded.has(child)) continue
+        walk(child)
+        continue
+      }
+      if (entry.isFile() && SOURCE_EXTENSIONS.includes(path.extname(entry.name))) found.push(child)
+    }
   }
+  walk("")
+  return found
+}
+
+/**
+ * Fixed-string search over first-party source, reported as `./path:line:text`.
+ *
+ * Deliberately not `rg`: the guard is the only thing standing between the
+ * repository and a deep SDK import, and a machine without ripgrep on PATH
+ * would turn every gate below into an error instead of a verdict.
+ */
+function search(pattern: string, extraExcludes: readonly string[] = [], root = repoRoot): string[] {
+  const excluded = new Set([...PENDING_DELETION, ...extraExcludes])
+  const hits: string[] = []
+  for (const file of sourceFiles(root, excluded)) {
+    for (const [index, line] of readLines(path.join(root, file)).entries()) {
+      if (line.includes(pattern)) hits.push(`./${file}:${index + 1}:${line}`)
+    }
+  }
+  return hits
+}
+
+const lineCache = new Map<string, string[]>()
+function readLines(file: string): string[] {
+  const cached = lineCache.get(file)
+  if (cached) return cached
+  const lines = fs.readFileSync(file, "utf8").split("\n")
+  lineCache.set(file, lines)
+  return lines
 }
 
 /** Hits inside this package's own docs/tests, which must NAME the hazard. */
@@ -54,6 +87,32 @@ function isSelfReference(line: string): boolean {
 }
 
 describe("public SDK boundary", () => {
+  test("the scan reports a planted deep import and stays out of build output", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "sdk-boundary-scan-"))
+    try {
+      const violation = 'import { EmbeddedHost } from "@opencode-ai/sdk/dist/internal/host"\n'
+      for (const file of [
+        "packages/app/src/deep.ts",
+        "packages/app/src/nested/deep.tsx",
+        "packages/app/dist/bundled.js",
+        "packages/app/node_modules/vendor/index.js",
+        "packages/app/.turbo/cached.mjs",
+        "packages/excluded/src/deep.ts",
+        "packages/app/src/notes.md",
+      ]) {
+        fs.mkdirSync(path.join(root, path.dirname(file)), { recursive: true })
+        fs.writeFileSync(path.join(root, file), violation)
+      }
+
+      expect(search("dist/internal", ["packages/excluded"], root)).toEqual([
+        `./packages/app/src/deep.ts:1:${violation.trimEnd()}`,
+        `./packages/app/src/nested/deep.tsx:1:${violation.trimEnd()}`,
+      ])
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   test("nothing deep-imports the SDK's unexported internal host", () => {
     const hits = [...search("dist/internal"), ...search("internal/host")].filter((line) => !isSelfReference(line))
     expect(hits).toEqual([])

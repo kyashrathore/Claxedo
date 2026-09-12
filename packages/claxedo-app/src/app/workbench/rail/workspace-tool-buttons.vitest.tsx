@@ -1,8 +1,13 @@
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { WorkspaceToolButtons } from "./workspace-tool-buttons"
+import { SEMANTIC_ICON, type SemanticIconConcept } from "@/ui/semantic-icon"
+import { codexIconLibrary } from "@/ui/icons/codex"
 
 afterEach(() => cleanup())
+
+const spriteHref = (concept: SemanticIconConcept) =>
+  `#codex-icon-sprite-${codexIconLibrary.resolve(SEMANTIC_ICON[concept])}`
 
 describe("WorkspaceToolButtons", () => {
   test("hides files, changes, and processes when workspace tools are unavailable", () => {
@@ -41,15 +46,15 @@ describe("WorkspaceToolButtons", () => {
     const changes = screen.getByRole("button", { name: "Close Changes" })
     const processes = screen.getByRole("button", { name: "Open Processes" })
 
-    // The `codex-icon-sprite-` prefix is the lazy inline sprite's namespace
-    // (48f98d84a): symbol ids are prefixed with the sprite id when the sheet is
-    // inlined, so hrefs resolve against the inlined copy rather than the fetch
-    // URL. Anchored on the full id so a prefix regression cannot slip past.
-    expect(files.querySelector("use")?.getAttribute("href")).toMatch(/#codex-icon-sprite-codex-20-057$/)
-    // The boxed ±, shared with `review` — see the note on the `changes` entry in
-    // `@/ui/icons/codex`. It was codex-20-120 until 5197e0704 re-pointed it.
-    expect(changes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-icon-sprite-codex-20-071$/)
-    expect(processes.querySelector("use")?.getAttribute("href")).toMatch(/#codex-icon-sprite-codex-20-050$/)
+    // Which concept each button draws, not which artwork the library currently
+    // maps it to — a re-pointed glyph is an icon-library decision, while a
+    // button reaching for the wrong concept is this component's regression.
+    // The literal `codex-icon-sprite-` prefix is the lazy inline sprite's
+    // namespace: symbol ids carry the sprite id once the sheet is inlined, so
+    // hrefs resolve against the inlined copy rather than the fetch URL.
+    expect(files.querySelector("use")?.getAttribute("href")).toBe(spriteHref("files"))
+    expect(changes.querySelector("use")?.getAttribute("href")).toBe(spriteHref("changes"))
+    expect(processes.querySelector("use")?.getAttribute("href")).toBe(spriteHref("processes"))
     expect(files.className).toContain("!size-3.5")
     expect(files).toHaveAttribute("data-icon-interaction", "binary")
     expect(files).toHaveAttribute("aria-pressed", "false")

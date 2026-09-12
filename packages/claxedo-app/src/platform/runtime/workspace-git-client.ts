@@ -4,8 +4,6 @@ import {
   type GitWorktreeStatus,
   WorkspaceRuntimeClientError,
 } from "@claxedo/workspace-runtime/client"
-import { asRecord } from "@claxedo/helpers/guards"
-import { jsonRecord } from "@claxedo/helpers"
 
 export type { GitCommitSummary, GitStatusEntry, GitWorktreeStatus }
 
@@ -71,9 +69,12 @@ async function withGitError<T>(call: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * The runtime client already read the `{ error: { code, message } }` envelope;
+ * `http_<status>` is the code it synthesizes when the response carried none,
+ * which is this client's `git_request_failed`.
+ */
 function workspaceGitError(error: WorkspaceRuntimeClientError) {
-  const reported = asRecord(jsonRecord(error.body)?.error)
-  const code = typeof reported?.code === "string" ? reported.code : "git_request_failed"
-  const message = typeof reported?.message === "string" ? reported.message : error.message
-  return new WorkspaceGitError(code, error.status, message)
+  const code = /^http_\d+$/.test(error.code) ? "git_request_failed" : error.code
+  return new WorkspaceGitError(code, error.status, error.message)
 }

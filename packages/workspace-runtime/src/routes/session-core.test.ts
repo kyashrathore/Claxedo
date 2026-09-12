@@ -108,6 +108,21 @@ function adapter(input: {
   }
 }
 
+/**
+ * Every route fixture needs the binding its host would resolve; a fixture
+ * without one fails the prompt routes' permission read long before the
+ * behaviour under test runs.
+ */
+function fixtureExecutionBinding(workspaceId = "workspace-test") {
+  return (_c: unknown, directory: RuntimeDirectory, sessionId: string): AgentExecutionBinding => ({
+    sessionId,
+    workspaceId,
+    directory: directory ?? "",
+    connectionId: "native:codex",
+    upstreamSessionId: sessionId,
+  })
+}
+
 function managedRoutes(input: {
   policy: SessionAccessPolicy
   adapter: AgentHarnessAdapter
@@ -119,7 +134,7 @@ function managedRoutes(input: {
   const routes = createSessionRoutes({
     resolveAdapter: () => input.adapter,
     resolveDirectory: () => "/workspace",
-    resolveExecutionBinding: (_c, directory, sessionId) => ({ sessionId, directory: directory ?? "", workspaceId: "ws_1", connectionId: "native:codex", upstreamSessionId: sessionId }),
+    resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
     ...(input.listSessions ? { listSessions: input.listSessions } : {}),
     ...(input.runtime ? { resolveRuntime: () => input.runtime } : {}),
     ...(input.afterMessageCheckpoint ? { afterMessageCheckpoint: input.afterMessageCheckpoint } : {}),
@@ -619,13 +634,7 @@ describe("createSessionRoutes message paging", () => {
     const snapshot = { messages: [first, second], maxEventOrdinal: 14 }
     const app = createSessionRoutes({
       resolveAdapter: () => adapter(),
-      resolveExecutionBinding: (_c, directory, sessionId) => ({
-        sessionId,
-        workspaceId: "workspace-test",
-        directory: directory ?? "",
-        connectionId: "native:codex",
-        upstreamSessionId: sessionId,
-      }),
+      resolveExecutionBinding: fixtureExecutionBinding(),
       resolveDirectory: () => "/workspace",
       getMessageSnapshot: () => snapshot,
       getMessagePage: () => {
@@ -730,13 +739,7 @@ function routes(input: {
 }) {
   return createSessionRoutes({
     resolveAdapter: () => input.adapter,
-    resolveExecutionBinding: (_c, directory, sessionId) => ({
-      sessionId,
-      workspaceId: "workspace-test",
-      directory: directory ?? "",
-      connectionId: "native:codex",
-      upstreamSessionId: sessionId,
-    }),
+    resolveExecutionBinding: fixtureExecutionBinding(),
     resolveDirectory: () => undefined,
     sessionBus: {
       publish: (event) => input.busEvents?.push(event),
@@ -1337,6 +1340,7 @@ describe("createSessionRoutes directory-less sessions", () => {
         },
       }),
       resolveRuntime: () => runtime,
+      resolveExecutionBinding: fixtureExecutionBinding(),
       resolveDirectory: () => undefined,
       sessionBus: {
         publish: (event) => busEvents.push(event),
@@ -1436,6 +1440,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     const app = createSessionRoutes({
       resolveAdapter: () => adapter(),
       resolveRuntime: () => runtime,
+      resolveExecutionBinding: fixtureExecutionBinding(),
       resolveDirectory: () => undefined,
       sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: (event) => events.push(event),
@@ -1808,6 +1813,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     const app = createSessionRoutes({
       resolveAdapter: () => integrationAdapter,
       resolveRuntime: () => runtime,
+      resolveExecutionBinding: fixtureExecutionBinding(),
       resolveDirectory: () => "/work",
       sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: (event) => events.push(event),
@@ -1973,7 +1979,7 @@ test("delete publishes the removed identity only after durable deletion succeeds
     const app = createSessionRoutes({
       resolveAdapter: () => a,
       resolveDirectory: () => "/workspace",
-      resolveExecutionBinding: (_c, directory, sessionId) => ({ sessionId, directory: directory ?? "", workspaceId: "ws", connectionId: "native:codex", upstreamSessionId: sessionId }),
+      resolveExecutionBinding: fixtureExecutionBinding("ws"),
       afterDeleteSession: () => { order.push("store"); if (fail) throw new Error("store deletion failed") },
       sessionBus: { publish() {}, subscribe: () => () => {} },
       publishGlobal: (event) => { order.push("event"); events.push(event) },

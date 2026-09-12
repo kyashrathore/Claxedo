@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { WorkspaceRuntimeClientError } from "@claxedo/workspace-runtime/client"
+import { workspaceRuntimeClientError } from "@claxedo/workspace-runtime/client"
 import {
   createWorkspaceGitClient,
   isWorkspaceGitError,
@@ -30,8 +30,11 @@ function fakeRuntime(overrides: Partial<WorkspaceGitRuntime["git"]> = {}) {
   return { runtime, calls }
 }
 
+/** The runtime client's own producer, so the fixture cannot drift from it. */
 function runtimeFailure(statusCode: number, body: string) {
-  return () => Promise.reject(new WorkspaceRuntimeClientError(statusCode, body))
+  return async (): Promise<never> => {
+    throw await workspaceRuntimeClientError("git", new Response(body, { status: statusCode }))
+  }
 }
 
 describe("workspace git client", () => {
@@ -85,6 +88,18 @@ describe("workspace git client", () => {
 
   test("a runtime failure without a JSON error body is reported as git_request_failed with the transport message", async () => {
     const { runtime } = fakeRuntime({ status: runtimeFailure(503, "<html>bad gateway</html>") })
+    const client = createWorkspaceGitClient(runtime)
+
+    const error = await client.status().catch((error: unknown) => error)
+    expect(isWorkspaceGitError(error) && [error.code, error.status, error.message]).toEqual([
+      "git_request_failed",
+      503,
+      "<html>bad gateway</html>",
+    ])
+  })
+
+  test("a runtime failure with no body at all still carries the runtime's synthesized message", async () => {
+    const { runtime } = fakeRuntime({ status: runtimeFailure(503, "") })
     const client = createWorkspaceGitClient(runtime)
 
     const error = await client.status().catch((error: unknown) => error)

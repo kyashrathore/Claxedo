@@ -128,9 +128,27 @@ export function createNewSessionWorkspaceState(input: {
   // inventories list that root among `sandboxes` (both groupings push every
   // workspace's directory, the root's included). Without this filter the root
   // appears twice and the hosted picker offers two identical "main" rows.
+  // One option per workspace, whichever ref form named it: an id-keyed
+  // bootstrap row and a directory-keyed snapshot row can be the same workspace,
+  // and `sandboxes` may carry either. The directory is the ref the rest of the
+  // composer addresses a workspace by, so it wins — except where a project's
+  // workspaces share one, as every hosted cloud row sits in "/workspace"; there
+  // only the id tells them apart, and collapsing on directory would offer a
+  // single row for all of them.
+  const perDirectory = Object.values(workspaces).reduce((counts, workspace) => {
+    const directory = workspace?.directory
+    if (directory) counts.set(directory, (counts.get(directory) ?? 0) + 1)
+    return counts
+  }, new Map<string, number>())
   const directories = [...new Set([
     ...(input.sandboxes ?? []), ...Object.keys(workspaces),
-  ].map((ref) => projectWorkspaceForRef(workspaces, ref)?.directory ?? ref))]
+  ].map((ref) => {
+    const workspace = projectWorkspaceForRef(workspaces, ref)
+    const directory = workspace?.directory
+    if (!directory) return ref
+    if ((perDirectory.get(directory) ?? 0) < 2) return directory
+    return workspace?.id ?? workspace?.workspaceId ?? ref
+  }))]
   const candidates = [MAIN_WORKTREE, ...directories.filter((value) => value !== input.projectRoot && value !== MAIN_WORKTREE)]
   const options = candidates.filter((value) => {
     const workspace = projectWorkspaceForRef(workspaces, directoryFor(value))

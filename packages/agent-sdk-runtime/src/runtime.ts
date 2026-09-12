@@ -4,7 +4,7 @@ import {
   connectionIdForHarness,
   type AgentExecutionBinding,
 } from "@claxedo/agent-runtime-contract"
-import { agentRuntimeEvent, assistantMessageIdForTurn, type AgentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { assistantMessageIdForTurn, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type {
   AgentMessage,
   AgentPermission,
@@ -20,9 +20,8 @@ import type {
   SessionHarness,
   AgentTurnOutcome,
 } from "./index"
-import type { AgentGoalMutationResult, AgentGoalResource, AgentHarnessAdapter } from "./adapter-contract"
-import { requireGoalResource } from "./adapter-contract"
-import { GoalCapabilityError, hasAdapterCapability, requireGoalAction, type GoalAction, type GoalCapabilities } from "./capabilities"
+import type { AgentHarnessAdapter } from "./adapter-contract"
+import { hasAdapterCapability } from "./capabilities"
 import { buildSession, eventSessionId, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
@@ -36,7 +35,7 @@ import { turnStartRecord } from "./runtime/turn-record"
 import { assertSessionCreateBindingScope, normalizeDirectory as runtimeDirectory, requireExecutionBinding } from "./runtime/execution-binding"
 import { executeHandoffTransaction } from "./runtime/handoff-transaction"
 import { createRuntimeLifecycle } from "./runtime/lifecycle"
-import { createGoalStartAdmission } from "./runtime/goal-start-admission"
+import { createRuntimeGoalController } from "./runtime/goal-controller"
 
 export {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
@@ -65,15 +64,11 @@ export type {
   AgentRuntimeTurnStartResult,
   CreateAgentRuntimeInput,
 } from "./runtime/contracts"
-import {
-  AgentRuntimeGoalError,
-  AgentRuntimeTurnAdmissionError,
-} from "./runtime/contracts"
+import { AgentRuntimeTurnAdmissionError } from "./runtime/contracts"
 import type {
   AgentHarnessFactory,
   AgentRuntimeAbortResult,
   AgentRuntimeEventEnvelope,
-  AgentRuntimeGoalStartInput,
   AgentRuntimeHealth,
   AgentRuntimeInteractionResult,
   AgentRuntimePermissionDecision,
@@ -109,7 +104,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   // the status of the turn that is actually running.
   const activeTurnAdmissions = new Map<string, object>()
   const activeTurnLeases = new Map<string, string>()
-  const goalStartAdmissions = createGoalStartAdmission()
 
   const adapterFor = async (harness: SessionHarness) => {
     const harnessKey = key(harness)
@@ -528,91 +522,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     })
   }
 
-  const goalResourceReadContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
-    const session = store.getSession(sessionId)
-    if (!session) {
-      throw new AgentRuntimeGoalError("goal_session_not_found", `Session ${sessionId} not found`)
-    }
-    const directory = session.directory ?? undefined
-    if (
-      requestedDirectory !== undefined &&
-      runtimeDirectory(requestedDirectory) !== runtimeDirectory(directory)
-    ) {
-      throw new AgentRuntimeGoalError("goal_scope_mismatch", `Session ${sessionId} does not belong to this directory`)
-    }
-    const adapter = await adapterForSession(sessionId)
-    const coarse = await adapter.readHarnessCapabilities(directory, { sessionId })
-    let resource: AgentGoalResource
-    try {
-      resource = requireGoalResource(adapter)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Goal resource is unavailable"
-      throw new AgentRuntimeGoalError("goal_unavailable", message)
-    }
-    return { adapter, directory, harness: coarse.harness, resource }
-  }
-
-  const goalResourceContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
-    const context = await goalResourceReadContext(sessionId, requestedDirectory)
-    const capabilities = await context.resource.readCapabilities(sessionId, context.directory)
-    return { ...context, capabilities }
-  }
-
-  const availableGoalContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
-    const context = await goalResourceContext(sessionId, requestedDirectory)
-    const { capabilities } = context
-    if (!capabilities.implemented || !capabilities.available) {
-      throw new AgentRuntimeGoalError(
-        "goal_unavailable",
-        capabilities.unavailableReason ?? `${context.harness} Goal is unavailable`,
-      )
-    }
-    return context
-  }
-
-  // One fan-out for every Goal state a subscriber may observe, whichever side
-  // produced it: a mutation this runtime performed, or a provider-originated
-  // update that reached the event hub. Deduping by snapshot signature — the
-  // same policy adapters apply on the hub side — keeps a mutation that is also
-  // mirrored onto the hub from publishing the same state twice.
-  const publishedGoalSignatures = new Map<string, string>()
-
-  const publishGoalSnapshot = (
-    sessionId: string,
-    directory: RuntimeDirectory,
-    goal: RuntimeGoalSnapshot | null,
-  ) => {
-    const signature = JSON.stringify(goal ?? null)
-    if (publishedGoalSignatures.get(sessionId) === signature) return
-    publishedGoalSignatures.set(sessionId, signature)
-    publish({
-      sessionId,
-      directory,
-      payload: goal
-        ? agentRuntimeEvent.goalUpdated({ sessionId, goal })
-        : agentRuntimeEvent.goalCleared({ sessionId }),
-    })
-  }
-
-  const publishGoalResult = (
-    sessionId: string,
-    directory: RuntimeDirectory,
-    result: AgentGoalMutationResult,
-  ) => {
-    if (!result.ok) return
-    publishGoalSnapshot(sessionId, directory, result.goal ?? null)
-  }
-
-  const unsubscribeGoalBridge = eventHub.subscribeRuntime((event) => {
-    if (event.payload.type !== "goal-updated" && event.payload.type !== "goal-cleared") return
-    const session = store.getSession(event.sessionId)
-    publishGoalSnapshot(
-      event.sessionId,
-      session ? session.directory ?? undefined : event.directory,
-      event.payload.type === "goal-updated" ? event.payload.goal : null,
-    )
-  })
-
   const completeCancellation = (sessionId: string, directory?: RuntimeDirectory) => {
     store.finishTurn({
       sessionId,
@@ -632,32 +541,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     }
   }
 
-  /**
-   * The single Goal mutation path. `stop` is deliberately ungated: it is the
-   * safety valve that must end a running Goal even on a harness that offers no
-   * pause/resume/delete, so it is not one of `GOAL_ACTIONS`.
-   */
-  const runGoalMutation = async (
-    sessionId: string,
-    mutation: GoalAction | "stop",
-    requestedDirectory?: RuntimeDirectory,
-  ): Promise<AgentGoalMutationResult> => {
-    const context = await availableGoalContext(sessionId, requestedDirectory)
-    if (mutation !== "stop") {
-      try {
-        requireGoalAction(context.capabilities, mutation)
-      } catch (error) {
-        const message = error instanceof GoalCapabilityError ? error.message : `Goal action '${mutation}' is unavailable`
-        throw new AgentRuntimeGoalError("goal_action_unavailable", message)
-      }
-    }
-    const result = await context.resource[mutation](sessionId, context.directory) as AgentGoalMutationResult
-    if (result.ok && mutation !== "resume" && store.getSession(sessionId)?.status === "busy") {
-      completeCancellation(sessionId, context.directory)
-    }
-    publishGoalResult(sessionId, context.directory, result)
-    return result
-  }
+  const goals = createRuntimeGoalController({
+    store,
+    adapterForSession,
+    publish,
+    subscribeRuntime: eventHub.subscribeRuntime,
+    completeCancellation,
+  })
 
   return {
     sessions: resource({
@@ -732,7 +622,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const adapter = await adapterForSession(sessionId)
         await adapter.deleteSession(executionBinding(sessionId, directory))
         store.deleteSession(sessionId)
-        publishedGoalSignatures.delete(sessionId)
+        goals.forgetSession(sessionId)
       },
     }),
     turns: resource({
@@ -825,51 +715,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return result
       },
     }),
-    goals: resource({
-      async capabilities(sessionId: string, directory?: RuntimeDirectory): Promise<GoalCapabilities> {
-        return (await goalResourceContext(sessionId, directory)).capabilities
-      },
-      async read(sessionId: string, directory?: RuntimeDirectory): Promise<RuntimeGoalSnapshot | null> {
-        const context = await goalResourceReadContext(sessionId, directory)
-        return await context.resource.read(sessionId, context.directory)
-      },
-      async start(input: AgentRuntimeGoalStartInput, directory?: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>> {
-        if (typeof input?.objective !== "string") {
-          throw new AgentRuntimeGoalError("goal_invalid_objective", "Goal objective must be a string")
-        }
-        const objective = input.objective.trim()
-        if (!objective || objective.length > 4_000) {
-          throw new AgentRuntimeGoalError(
-            "goal_invalid_objective",
-            "Goal objective must contain between 1 and 4,000 characters",
-          )
-        }
-        return await goalStartAdmissions.run(input.sessionId, async () => {
-          const context = await availableGoalContext(input.sessionId, directory)
-          if (await context.resource.read(input.sessionId, context.directory)) {
-            throw new AgentRuntimeGoalError("goal_already_exists", `Session ${input.sessionId} already has a Goal`)
-          }
-          const result = await context.resource.start(input.sessionId, { objective }, context.directory)
-          publishGoalResult(input.sessionId, context.directory, result)
-          return result
-        })
-      },
-      async pause(sessionId: string, directory?: RuntimeDirectory) {
-        return await runGoalMutation(sessionId, "pause", directory)
-      },
-      async resume(sessionId: string, directory?: RuntimeDirectory) {
-        return await runGoalMutation(sessionId, "resume", directory)
-      },
-      async stop(sessionId: string, directory?: RuntimeDirectory): Promise<AgentGoalMutationResult> {
-        return await runGoalMutation(sessionId, "stop", directory)
-      },
-      async delete(sessionId: string, directory?: RuntimeDirectory): Promise<AgentGoalMutationResult<null>> {
-        const result = await runGoalMutation(sessionId, "delete", directory)
-        // Delete leaves no goal; the adapter contract says so, and the shared
-        // mutation path returns the wider union every action shares.
-        return result.ok ? { ok: true, goal: null } : result
-      },
-    }),
+    goals: resource(goals.resource),
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
         if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
@@ -972,9 +818,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           : [...new Set(adapters.values())].map((adapter) => Promise.resolve().then(() => adapter.dispose()))),
         () => {
           activeTurnAdmissions.clear()
-          goalStartAdmissions.clear()
-          publishedGoalSignatures.clear()
-          unsubscribeGoalBridge()
+          goals.dispose()
           for (const subscriber of subscribers) subscriber.close()
         },
       )

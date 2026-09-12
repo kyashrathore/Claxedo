@@ -1777,7 +1777,10 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/sessionStatusCacheQueryOptions/)
     expect(text).toMatch(/sessionTodoCacheQueryOptions/)
     expect(text).toMatch(/sessionRequestsCacheQueryOptions/)
-    expect(text).toMatch(/dispatchSessionTodoEvent/)
+    // The dock is presentation: an idle session hides it, and nothing here may
+    // dispatch an empty todo list, which would erase canonical task data that
+    // survives a reload.
+    expect(text).not.toMatch(/dispatchSessionTodoEvent/)
     expect(text).toMatch(/useQueries/)
     expect(text).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(id, "todo"\)/)
     expect(text).not.toMatch(/@solidjs\/router/)

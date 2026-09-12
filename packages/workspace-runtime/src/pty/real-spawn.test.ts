@@ -14,16 +14,18 @@ import type { WSContext } from "hono/ws"
  * shipping and working: spawn a real /bin/sh through the real `Pty.create`
  * entrypoint, prove bytes flow both ways, resize the real pty, and see a clean
  * exit.
- *
- * Runs under `node --test` (see package.json), NOT under `bun test`: Bun's
- * runtime cannot service the pty's data socket (verified against both
- * node-pty@1.1.0 and @lydell/node-pty — the shell answers one prompt and dies
- * with SIGHUP), and every production entrypoint of this package runs under
- * Node. Skipped on Windows: CI for this package is POSIX, and the conpty path
- * needs a Windows host to mean anything.
  */
 
-const posix = process.platform !== "win32"
+const unsupportedRunner =
+  typeof (globalThis as { Bun?: unknown }).Bun === "undefined"
+    ? undefined
+    // Verified against both node-pty@1.1.0 and @lydell/node-pty: under Bun the
+    // shell answers one prompt and dies with SIGHUP. Every production
+    // entrypoint of this package runs under Node, which `node --test` matches.
+    : "Bun cannot service the pty data socket; this suite runs under `node --test`"
+
+const unsupportedPlatform =
+  process.platform === "win32" ? "the conpty path needs a Windows host to mean anything" : undefined
 
 const previousHistoryDir = process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
 
@@ -51,20 +53,26 @@ async function waitFor(check: () => boolean, timeoutMs = 15_000) {
   }
 }
 
-beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "pty-real-spawn-"))
-  process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = path.join(tmpDir, "history")
-})
+const unsupported = unsupportedPlatform ?? unsupportedRunner
 
-afterEach(async () => {
-  const { Pty } = await import("./index")
-  await Pty.dispose()
-  if (previousHistoryDir === undefined) delete process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
-  else process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = previousHistoryDir
-  await fs.rm(tmpDir, { recursive: true, force: true })
-})
+// Bun's `node:test` shim honours neither the `skip` option nor a hook's scope,
+// so an unrunnable environment has to be answered by registering a different
+// suite rather than by marking this one skipped.
+if (unsupported) void test(`real pty spawn (no mocks): ${unsupported}`, { skip: unsupported }, () => {})
+else void describe("real pty spawn (no mocks)", () => {
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "pty-real-spawn-"))
+    process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = path.join(tmpDir, "history")
+  })
 
-void describe("real pty spawn (no mocks)", { skip: !posix }, () => {
+  afterEach(async () => {
+    const { Pty } = await import("./index")
+    await Pty.dispose()
+    if (previousHistoryDir === undefined) delete process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
+    else process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = previousHistoryDir
+    await fs.rm(tmpDir, { recursive: true, force: true })
+  })
+
   void test("removing a terminal terminates its separate child process group without affecting a neighbor", { timeout: 30_000 }, async () => {
     const { Pty } = await import("./index")
     const launcher = path.join(tmpDir, "child-launcher.cjs")

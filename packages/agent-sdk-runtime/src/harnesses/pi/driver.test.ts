@@ -1,9 +1,10 @@
 import { describe, expect, spyOn, test } from "bun:test"
 import fs from "node:fs/promises"
+import { readFileSync } from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { PiHarnessAdapter } from "./index"
-import { resolvePiExecutable } from "./executable"
+import { PI_VERSION, piPackageRoot, resolvePiExecutable } from "./executable"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
@@ -97,6 +98,21 @@ test.each(["resolve", "reject"] as const)(
   },
 )
 
+/**
+ * The adapter refuses any binary whose `--version` is not the pinned one, so a
+ * machine carrying a different Pi cannot run the live catalog probe at all.
+ * A binary outside the npm package has no readable version and is attempted:
+ * only a proven mismatch is skipped, never an unknown.
+ */
+function unpinnedPi(): string | undefined {
+  const binary = resolvePiExecutable()
+  if (!binary) return `no Pi executable found; expected ${PI_VERSION}`
+  const root = piPackageRoot(binary)
+  if (!root) return undefined
+  const installed = (JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")) as { version?: string }).version
+  return installed && installed !== PI_VERSION ? `Pi ${installed} is installed, pinned ${PI_VERSION}` : undefined
+}
+
 const prompt = (text: string): PromptInput => ({
   parts: [{ type: "text", text }],
   agent: "build",
@@ -161,7 +177,7 @@ describe("native Pi through the shared adapter", () => {
       await f.cleanup()
     }
   })
-  test.skipIf(!resolvePiExecutable())("lists Pi's catalog when get_available_models is empty", async () => {
+  test.skipIf(unpinnedPi() !== undefined)("lists Pi's catalog when get_available_models is empty", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-catalog-probe-"))
     const agentDir = path.join(root, "agent")
     await fs.mkdir(agentDir)
