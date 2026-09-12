@@ -345,21 +345,20 @@ Calls the fix wave had made on its own, now made deliberately:
 | # | Now | Why |
 |---|---|---|
 | D9 | Fixed | On a local session every attachment — video, audio, any binary, images too — is written into the workspace under `.claxedo/attachments/` (content-addressed, with its own `.gitignore`) and the prompt carries its path on one line; a hosted session gets image and PDF blocks where the API takes them and a refusal that names the harness and the type otherwise. Found underneath: three drivers had been reducing every prompt to text, so a pasted image never reached Claude, Codex or Cursor at all. Claude now gets image/document blocks, Codex `localImage`, Cursor images, ACP the block its capabilities negotiated |
-| D10 | Fixed | A prompt sent while a turn runs carries `delivery: "steer"`; the runtime hands it to the active turn where the harness can take one (Claude through streaming input, Codex `turn/steer` against the active turn id, Pi its rpc steer, the OpenCode engine its own steer) and queues it otherwise (Cursor). The route answers which; the composer sends instead of stopping and shows "Queued"; a queued prompt is persisted and re-issued after a restart. Verified live against Codex; Claude's case drives the real CLI with the model stubbed because this machine's Claude CLI cannot authenticate |
+| D10 | Fixed | A prompt sent while a turn runs carries `delivery: "steer"`; the runtime hands it to the active turn where the harness can take one (Claude through streaming input, Codex `turn/steer` against the active turn id, Pi its rpc steer, the OpenCode engine its own steer) and queues it otherwise (Cursor). The route answers which; the composer sends instead of stopping and shows "Queued"; a queued prompt is persisted and re-issued after a restart. Verified live against Codex and, once the CLI was signed in, against Claude: the steer lands in the running turn at ~3 s and the turn completes at ~9 s, twice |
 | D14 | Fixed | streamed text was reconciled per turn while a snapshot covers one message; it is now keyed by the stream's owner and the message id, so a second message is never re-emitted in full and a child's repeated snapshot emits once; a genuinely diverging snapshot emits only past the common prefix and reports a diagnostic |
 | D17 | Fixed | an abort names the turn the composer started; the runtime ignores one naming a turn that is no longer active |
 | D19 | Fixed | the fold is decided before the first paint: a warm switch restores the counts the last visit rendered, a cold one counts them from the seed's own cached page; the session title latches once named |
 | D20 | Measured, band kept | a rendered frame is coherent however far it moved; blank area appears only on skipped frames, from about 5,600 px per frame; six rows is the only band inside the 60 Hz budget at ordinary speed, so it stays, and the harness scenario keeps the number re-measurable |
 | cloud order | Fixed | both signed authority stores carry `last_human_turn_at`, stamped inside turn admission only for a human actor |
-| native autolink | Fixed | the Rust renderer links the same closed scheme list, and comrak's dangerous-url scanner no longer blanks a `file://` href |
+| native autolink | Fixed | the Rust renderer links the same closed scheme list, and comrak's dangerous-url scanner no longer blanks a `file://` href or a `file://` image source |
+| queue order | Fixed | several prompts queued for one session start in the order they were sent: the runtime wakes only the longest-waiting prompt when a turn ends, and a prompt that arrives while others wait joins the back of the line. Prompts a dead process left queued are re-issued as the runtime boots, or the moment its config snapshot applies, with no inbound request; a pass the runtime cannot yet take is retried rather than counted |
 
 Also: an unmapped `post_turn_summary` from Claude Code 2.1 was logged as an adapter error on every turn and is now an informational diagnostic.
 
 ### Still open
 
-- **Claude steering is verified only with the model stubbed**: this machine's Claude CLI holds no refreshable credential, so the real-model run is the one acceptance check not taken; the opt-in live test (`CLAXEDO_LIVE_HARNESS=1`) runs it wherever a signed-in CLI exists.
-- Several prompts queued at once for one session start in no guaranteed order; a queued prompt is re-issued on the first request after boot, so a runtime that never receives a request never re-issues it.
-- A markdown image whose source is a `file://` URL is still blanked by comrak in the native renderer.
+- A woken queued prompt whose start fails before admission (the runtime has no adapter for the session, or is disposing) leaves the prompts queued behind it waiting until the session's next turn ends; their rows are durable and re-issued at the next boot. Handing the session on from that failure needs a signal the `whenIdle` / `start` split does not carry.
 - Commits 455ba55814 … eae253dfd5 remain non-building in isolation on the pushed history.
 
 ### Gates, 2026-09-12 (end of the third pass)
@@ -374,10 +373,10 @@ credential and settings work; ceilings measured at a clean checkout.
 | every package typecheck, claxedo-app `tsgo -b` and `typecheck:e2e` | clean |
 | claxedo-app `bun test` / `vitest` / `test:architecture` | 5564 / 1424 / 252 pass, 0 fail |
 | claxedo-server-core / claxedo-server / claxedo-local-server (vitest) | 651 / 2500 (3 skipped: Pi 0.85.1 vs the 0.85.0 pin, no real ACP binary) / 431 pass |
-| workspace-runtime / agent-sdk-runtime / agent-event-runtime / agent-runtime-contract / session-ui / ui | 1140 / 701 / 229 / 40 / 267 / 67 pass |
+| workspace-runtime / agent-sdk-runtime / agent-event-runtime / agent-runtime-contract / session-ui / ui | 1144 / 706 / 229 / 40 / 267 / 67 pass |
 | native renderer `cargo test` | 12 pass |
 | e2e, build-preview mode | `core-busy-abort-errors` 11, `core-harness-rendering-matrix` 30, `core-claude-native-sdk-rail` 3, `core-source-control` 12, `core-cloud-provisioning` 5, `core-sidebar-tree` 23 |
-| live | Codex steer end to end (5 runs); Claude with the model stubbed through the real CLI; Pi and Cursor skipped for want of a pinned binary and a key |
+| live | Codex steer end to end (5 runs); Claude steer end to end with the real model (2 runs); Pi and Cursor skipped for want of a pinned binary and a key |
 
 ## D1 — The `skill` tool row is a dead click target
 
