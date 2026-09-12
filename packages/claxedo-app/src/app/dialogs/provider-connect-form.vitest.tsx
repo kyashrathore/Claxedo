@@ -79,7 +79,7 @@ describe("ProviderConnectForm with a segmented picker", () => {
       { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
       { type: "api", label: "API Key" },
     ]
-    render(() => <ProviderConnectForm provider="codex-app-server" harness="codex" hideHeading methodPicker="segmented" />)
+    render(() => <ProviderConnectForm provider="claude-sdk" harness="codex" hideHeading methodPicker="segmented" />)
     await waitFor(() => expect(document.querySelectorAll('[data-action="provider-connect-method"]')).toHaveLength(2))
     expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).not.toBeNull()
     expect(document.querySelector("form")).toBeNull()
