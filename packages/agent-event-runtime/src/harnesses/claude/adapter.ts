@@ -41,7 +41,8 @@ export type ClaudeSdkAdapterState = {
   tasks?: Record<string, ClaudeTrackedTask>
   blocksByIndex: Record<string, ClaudeBlockState>
   toolsById: Record<string, ClaudeBlockState>
-  emittedAssistantText: string
+  streamedAssistantTextByOwner: Record<string, string>
+  reconciledAssistantTextByMessageId: Record<string, string>
   /** The session root reported by `init`; the only place a read path can be tested against a workspace. */
   cwd?: string
   lastKnownContextWindow?: number
@@ -373,6 +374,36 @@ function claudeHostSubagentObservations(
 
 export function claudeChildCorrelationKey(value: unknown) {
   return text(asRecord(value)?.parent_tool_use_id)
+}
+
+function claudeStreamOwner(message: Record<string, unknown>) {
+  return claudeChildCorrelationKey(message) ?? ""
+}
+
+function withoutKey(row: Record<string, string>, key: string) {
+  return Object.fromEntries(Object.entries(row).filter(([name]) => name !== key))
+}
+
+function commonPrefixLength(shown: string, snapshot: string) {
+  const limit = Math.min(shown.length, snapshot.length)
+  let shared = 0
+  while (shared < limit && shown[shared] === snapshot[shared]) shared += 1
+  return shared
+}
+
+/**
+ * Invariant: the projection holds exactly one copy of an assistant message's
+ * text. The harness delivers that text twice — as streamed `text_delta`s and
+ * again as a cumulative snapshot on the completed message — so the snapshot may
+ * only contribute what streaming has not already shown for that same message:
+ * its tail when it continues the streamed text, nothing when it equals it, and
+ * only the part past the common prefix when the two disagree. Emitting a
+ * disagreeing snapshot whole is what showed replies twice.
+ */
+function reconcileAssistantSnapshot(shown: string, snapshot: string): { delta: string; divergedAt?: number } {
+  if (snapshot.startsWith(shown)) return { delta: snapshot.slice(shown.length) }
+  const shared = commonPrefixLength(shown, snapshot)
+  return { delta: snapshot.slice(shared), divergedAt: shared }
 }
 
 export function claudeSubagentObservations(value: unknown, ledger: ClaudeTaskLedger): ClaudeSubagentObservation[] {
@@ -732,7 +763,7 @@ function permissionFromToolUse(message: Record<string, unknown>, context: Harnes
 export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): HarnessEventAdapter<ClaudeSdkAdapterState> {
   return {
     name: "claude-sdk",
-    createInitialState: () => ({ blocksByIndex: {}, toolsById: {}, emittedAssistantText: "", tasks: Object.fromEntries(initialTasks.map((task) => [task.id, task])) }),
+    createInitialState: () => ({ blocksByIndex: {}, toolsById: {}, streamedAssistantTextByOwner: {}, reconciledAssistantTextByMessageId: {}, tasks: Object.fromEntries(initialTasks.map((task) => [task.id, task])) }),
     translate({ state, event, context }) {
       const rawMessage = sdkMessage(event)
 
@@ -849,10 +880,14 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
                   const deltaText = text(row.text)
                   if (!deltaText) return []
                   const block = state.blocksByIndex[String(stream.index)]
+                  const owner = claudeStreamOwner(rawMessage)
                   return {
                     state: {
                       ...state,
-                      emittedAssistantText: `${state.emittedAssistantText}${deltaText}`,
+                      streamedAssistantTextByOwner: {
+                        ...state.streamedAssistantTextByOwner,
+                        [owner]: `${state.streamedAssistantTextByOwner[owner] ?? ""}${deltaText}`,
+                      },
                       blocksByIndex: block
                         ? { ...state.blocksByIndex, [String(stream.index)]: { ...block, emittedText: true } }
                         : state.blocksByIndex,
@@ -909,10 +944,14 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
               const index = String(stream.index)
               const block = state.blocksByIndex[index]
               if (block?.type === "text" && block.fallbackText && !block.emittedText) {
+                const owner = claudeStreamOwner(rawMessage)
                 return {
                   state: {
                     ...state,
-                    emittedAssistantText: `${state.emittedAssistantText}${block.fallbackText}`,
+                    streamedAssistantTextByOwner: {
+                      ...state.streamedAssistantTextByOwner,
+                      [owner]: `${state.streamedAssistantTextByOwner[owner] ?? ""}${block.fallbackText}`,
+                    },
                     blocksByIndex: { ...state.blocksByIndex, [index]: { ...block, emittedText: true } },
                   },
                   events: [{ type: "text-delta", delta: block.fallbackText }],
@@ -1005,13 +1044,10 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
           const toolsById = Object.fromEntries(completeTools.map(({ tool }) => [tool.toolCallId, tool]))
           const snapshot = assistantSnapshotText(rawMessage)
           const childOwned = !!claudeChildCorrelationKey(rawMessage)
-          const deltaText = childOwned
-            ? snapshot
-            : snapshot.startsWith(state.emittedAssistantText)
-              ? snapshot.slice(state.emittedAssistantText.length)
-              : state.emittedAssistantText.endsWith(snapshot)
-                ? ""
-                : snapshot
+          const messageId = text(message.message.id)
+          const owner = claudeStreamOwner(rawMessage)
+          const shown = `${(messageId ? state.reconciledAssistantTextByMessageId[messageId] : undefined) ?? ""}${state.streamedAssistantTextByOwner[owner] ?? ""}`
+          const reconciliation = snapshot ? reconcileAssistantSnapshot(shown, snapshot) : undefined
           // Every assistant message carries its API request's usage. The turn's
           // `result` usage stays authoritative (it replaces this observation),
           // but accumulating per request means a turn that dies before `result`
@@ -1040,12 +1076,31 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
             state: {
               ...state,
               toolsById: { ...state.toolsById, ...toolsById },
-              ...(snapshot && !childOwned ? { emittedAssistantText: snapshot } : {}),
+              ...(reconciliation
+                ? {
+                    streamedAssistantTextByOwner: withoutKey(state.streamedAssistantTextByOwner, owner),
+                    ...(messageId
+                      ? { reconciledAssistantTextByMessageId: { ...state.reconciledAssistantTextByMessageId, [messageId]: snapshot } }
+                      : {}),
+                  }
+                : {}),
               ...(turnUsageByRequestId ? { turnUsageByRequestId } : {}),
             },
             events: [
               ...completeToolEvents,
-              ...(deltaText ? [{ type: "text-delta", delta: deltaText } satisfies AgentRuntimeEvent] : []),
+              ...(reconciliation?.divergedAt === undefined ? [] : [diagnosticForEvent({
+                code: "claude_sdk.assistant_snapshot_divergence",
+                message: "assistant snapshot diverges from the streamed text; emitting only the unseen suffix",
+                severity: "warn",
+                event,
+                details: {
+                  ...(messageId ? { messageId } : {}),
+                  divergedAt: reconciliation.divergedAt,
+                  shownLength: shown.length,
+                  snapshotLength: snapshot.length,
+                },
+              })]),
+              ...(reconciliation?.delta ? [{ type: "text-delta", delta: reconciliation.delta } satisfies AgentRuntimeEvent] : []),
               ...provisionalUsage,
             ],
           }
@@ -1059,7 +1114,8 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
               ...state,
               blocksByIndex: {},
               toolsById: {},
-              emittedAssistantText: "",
+              streamedAssistantTextByOwner: {},
+              reconciledAssistantTextByMessageId: {},
               turnUsageByRequestId: {},
               ...(nextContextWindow ? { lastKnownContextWindow: nextContextWindow } : {}),
             },

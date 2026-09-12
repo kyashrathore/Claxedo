@@ -145,7 +145,85 @@ describe("claudeSdkAdapter", () => {
         message: { id: "message-1", content: [{ type: "text", text: "Hi there" }] },
       },
     }).events).toMatchObject([{ type: "text-delta", delta: " there" }])
-    expect(restored.snapshot().adapterState.emittedAssistantText).toBe("Hi there")
+    expect(restored.snapshot().adapterState.reconciledAssistantTextByMessageId["message-1"]).toBe("Hi there")
+  })
+
+  function assistantTextSession() {
+    const agent = runtime()
+    const projection = createClientPresentationProjection({ sessionId: "session-1", directory: "/repo", assistantMessageId: "reply-1" })
+    const textByPart = new Map<string, string>()
+    const diagnosticCodes: string[] = []
+    const ingest = (payload: unknown) => {
+      const events = agent.ingest({ source: "claude.sdk.message", payload }).events
+      for (const event of events) if (event.type === "diagnostic") diagnosticCodes.push(event.diagnostic.code)
+      for (const envelope of events.flatMap((event) => projection.ingest(event))) {
+        const row = envelope.payload
+        if (row.type === "message.part.updated" && row.properties.part.type === "text") {
+          textByPart.set(row.properties.part.id, row.properties.part.text)
+        }
+        if (row.type === "message.part.delta" && textByPart.has(row.properties.partID)) {
+          textByPart.set(row.properties.partID, `${textByPart.get(row.properties.partID) ?? ""}${row.properties.delta}`)
+        }
+      }
+      return events
+    }
+    return { ingest, diagnosticCodes, assistantText: () => [...textByPart.values()].join("") }
+  }
+
+  function textDelta(text: string) {
+    return { type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } } }
+  }
+
+  test("reconciles a turn's second assistant message against its own streamed text", () => {
+    const session = assistantTextSession()
+
+    session.ingest(textDelta("Hello"))
+    expect(session.ingest({
+      type: "assistant",
+      uuid: "assistant-a",
+      message: { id: "message-a", content: [{ type: "text", text: "Hello" }] },
+    })).toEqual([])
+
+    session.ingest(textDelta("Wor"))
+    expect(session.ingest({
+      type: "assistant",
+      uuid: "assistant-b",
+      message: { id: "message-b", content: [{ type: "text", text: "World" }] },
+    })).toMatchObject([{ type: "text-delta", delta: "ld" }])
+
+    expect(session.assistantText()).toBe("HelloWorld")
+    expect(session.diagnosticCodes).toEqual([])
+  })
+
+  test("emits a child message's text once when its snapshot arrives twice", () => {
+    const session = assistantTextSession()
+    const childMessage = {
+      type: "assistant",
+      uuid: "assistant-child",
+      parent_tool_use_id: "tool-agent-parent-1",
+      message: { id: "message-child", content: [{ type: "text", text: "Child reply" }] },
+    }
+
+    expect(session.ingest(childMessage)).toMatchObject([{ type: "text-delta", delta: "Child reply" }])
+    expect(session.ingest(childMessage)).toEqual([])
+
+    expect(session.assistantText()).toBe("Child reply")
+  })
+
+  test("a snapshot diverging from the streamed text emits only its unseen suffix", () => {
+    const session = assistantTextSession()
+
+    session.ingest(textDelta("Hello wrold"))
+    expect(session.ingest({
+      type: "assistant",
+      uuid: "assistant-1",
+      message: { id: "message-1", content: [{ type: "text", text: "Hello world" }] },
+    })).toMatchObject([
+      { type: "diagnostic", diagnostic: { code: "claude_sdk.assistant_snapshot_divergence", severity: "warn" } },
+      { type: "text-delta", delta: "orld" },
+    ])
+
+    expect(session.assistantText()).toBe("Hello wroldorld")
   })
 
   test("maps reasoning deltas, streamed tool inputs, and tool results", () => {
