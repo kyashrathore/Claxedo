@@ -1,5 +1,11 @@
 import { For, Show, type JSX } from "solid-js"
-import { TASKS_BOUNDS, type ConfigurationSlot, type SessionReference, type TaskStatus } from "../contracts"
+import {
+  TASKS_BOUNDS,
+  type ConfigurationSlot,
+  type SessionReference,
+  type TaskSessionLinkView,
+  type TaskStatus,
+} from "../contracts"
 import { StatusMenu } from "./status-menu"
 import { SLOT_LABELS, TASK_STATUS_LABELS, type TaskDetailView } from "./view-model"
 
@@ -23,6 +29,12 @@ export type TaskDetailProps = {
   onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void
   onOpenSession: (sessionRef: SessionReference) => void
   onStart: (input: { slot: ConfigurationSlot; attempt: number }) => void
+  /**
+   * Hands the attempt's first message over again. Offered only where the host
+   * reports the message absent from a live session, because a resend on any
+   * weaker evidence would give the session a second copy of it.
+   */
+  onSendTask: (link: TaskSessionLinkView) => void
   onArchive: () => void
   onRestore: () => void
   /** The subtasks section, rendered by the caller so the detail owns no data fetch. */
@@ -112,6 +124,18 @@ export function TaskDetail(props: TaskDetailProps) {
             {(slot) => {
               const group = () => props.view.groups.find((entry) => entry.slot === slot)
               const current = () => group()?.current
+              const live = () => {
+                const link = current()
+                return link?.liveness === "live" ? link : undefined
+              }
+              const unsent = () => {
+                const link = live()
+                return link?.handoff === "pending" ? link : undefined
+              }
+              const handoffNotice = () => {
+                if (unsent()) return "Task not sent yet"
+                return live()?.handoff === "unknown" ? "Delivery unknown" : undefined
+              }
               return (
                 <div class="tsk-surface tsk-stack tsk-panel" data-testid={`task-slot-${slot}`}>
                   <div class="tsk-row tsk-spread">
@@ -130,6 +154,26 @@ export function TaskDetail(props: TaskDetailProps) {
                         >
                           Open
                         </button>
+                      </Show>
+                      <Show when={handoffNotice()}>
+                        {(notice) => (
+                          <span class="tsk-muted" data-testid={`task-slot-handoff-${slot}`}>
+                            {notice()}
+                          </span>
+                        )}
+                      </Show>
+                      <Show when={unsent()}>
+                        {(link) => (
+                          <button
+                            type="button"
+                            class="tsk-button"
+                            data-testid={`task-slot-send-${slot}`}
+                            disabled={props.busy || task().archivedAt !== null}
+                            onClick={() => props.onSendTask(link())}
+                          >
+                            Send task
+                          </button>
+                        )}
                       </Show>
                       <Show when={current() === undefined}>
                         <button

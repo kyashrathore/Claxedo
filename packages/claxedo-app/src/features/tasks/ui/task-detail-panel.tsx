@@ -1,5 +1,11 @@
 import { Show, createMemo, createSignal } from "solid-js"
-import { CONFIGURATION_SLOTS, type ConfigurationSlot, type Task, type TaskStatus } from "@claxedo/tasks"
+import {
+  CONFIGURATION_SLOTS,
+  type ConfigurationSlot,
+  type Task,
+  type TaskSessionLinkView,
+  type TaskStatus,
+} from "@claxedo/tasks"
 import { TaskDetail, TaskSubtasks, groupLinksBySlot } from "@claxedo/tasks/solid"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
@@ -24,6 +30,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   const detail = useTaskDetail(props.scope, () => props.taskId)
   const children = useTaskChildren(props.scope, () => props.taskId)
   const [busy, setBusy] = createSignal(false)
+  const [sendError, setSendError] = createSignal<string | undefined>()
 
   const task = () => detail.data?.task
   const groups = createMemo(() => groupLinksBySlot(detail.data?.links ?? []))
@@ -45,6 +52,46 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   const setStatus = (input: { taskId: string; revision: number; status: TaskStatus }) =>
     void mutate(() => client().command({ clientRequestId: uuid(), command: { type: "task.set_status", input } }), input.taskId)
 
+  /**
+   * The attempt's first message, handed over again after a Start that linked
+   * the session but never delivered it.
+   *
+   * The request names the attempt the slot already holds, which the server
+   * answers from the stored link: it submits the text persisted at Start, so
+   * none is sent here, and it creates nothing. The preview is taken only
+   * because the route requires a digest — the recovery itself does not read it.
+   *
+   * The refusal stays in a signal of its own rather than the store's edit
+   * channel: a Send neither saves nor rebases what the user has typed.
+   */
+  const sendTask = async (current: Task, link: TaskSessionLinkView) => {
+    const request = {
+      taskRevision: current.revision,
+      presetId: link.presetId,
+      presetRevision: link.presetRevision,
+      slot: link.slot,
+      attempt: link.attempt,
+      continueFromPrevious: false,
+    }
+    setBusy(true)
+    setSendError(undefined)
+    try {
+      const previewed = await client().startPreview(current.id, request)
+      await client().start(current.id, {
+        ...request,
+        clientRequestId: uuid(),
+        previewDigest: previewed.preview.digest,
+        handoffText: null,
+      })
+    } catch (error) {
+      setSendError(refusalOf(error).message)
+    } finally {
+      setBusy(false)
+      invalidate.task(current.id)
+      await invalidate.everything()
+    }
+  }
+
   return (
     <Show when={task()} fallback={<p class="tsk-empty">Select a task.</p>}>
       {(current) => {
@@ -65,7 +112,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             edit={{ title: draft().title, description: draft().description }}
             dirty={props.store.editDirty(current())}
             busy={busy()}
-            error={props.store.state.taskErrors[current().id]}
+            error={sendError() ?? props.store.state.taskErrors[current().id]}
             conflict={props.store.state.taskConflicts[current().id]}
             projectLabel={projects().find((project) => project.id === current().projectId)?.label ?? current().projectId}
             onEditChange={(edit) =>
@@ -94,6 +141,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             onStatusChange={setStatus}
             onOpenSession={(session) => openSession(session)}
             onStart={(input) => props.onStart({ task: current(), slot: input.slot, attempt: input.attempt })}
+            onSendTask={(link) => void sendTask(current(), link)}
             onArchive={() =>
               void mutate(
                 () =>

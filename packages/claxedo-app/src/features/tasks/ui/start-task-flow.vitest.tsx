@@ -151,6 +151,7 @@ function mount(input: {
             presetNameAtStart: preset.name,
             createdAt: 5,
             liveness: "live",
+            handoff: "sent",
           },
           created: true,
         })

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
-import type { SessionLiveness, Task, TaskSessionLinkView } from "@claxedo/tasks"
+import type { SessionHandoffState, SessionLiveness, Task, TaskSessionLinkView } from "@claxedo/tasks"
 import { TaskDetail, groupLinksBySlot } from "@claxedo/tasks/solid"
 
 afterEach(cleanup)
@@ -24,8 +24,15 @@ function task(overrides: Partial<Task> = {}): Task {
   }
 }
 
-function link(attempt: number, liveness: SessionLiveness): TaskSessionLinkView {
+// The host can only read a handoff out of a session it still has, so anything
+// but `live` reports `unknown` whatever was sent to it.
+function link(
+  attempt: number,
+  liveness: SessionLiveness,
+  handoff: SessionHandoffState = liveness === "live" ? "sent" : "unknown",
+): TaskSessionLinkView {
   return {
+    handoff,
     taskId: "tsk_1",
     slot: "primary",
     attempt,
@@ -42,6 +49,7 @@ function link(attempt: number, liveness: SessionLiveness): TaskSessionLinkView {
 function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> = {}) {
   const onStart = vi.fn()
   const onOpenSession = vi.fn()
+  const onSendTask = vi.fn()
   render(() => (
     <TaskDetail
       view={{ task: task(overrides), children: [], groups: groupLinksBySlot(links), configuredSlots: ["primary"] }}
@@ -54,12 +62,13 @@ function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> =
       onStatusChange={() => {}}
       onOpenSession={onOpenSession}
       onStart={onStart}
+      onSendTask={onSendTask}
       onArchive={() => {}}
       onRestore={() => {}}
       subtasks={<div data-testid="subtasks-slot" />}
     />
   ))
-  return { onStart, onOpenSession }
+  return { onStart, onOpenSession, onSendTask }
 }
 
 describe("task detail linked sessions", () => {
@@ -111,5 +120,16 @@ describe("task detail linked sessions", () => {
     mount([link(1, "archived")], { archivedAt: 99 })
 
     expect(screen.getByTestId("task-slot-start-again-primary")).toBeDisabled()
+  })
+
+  // The server refuses every Start against an archived task, the recovery one
+  // included, so the notice stays and the control it offers cannot be pressed.
+  test("an archived task cannot resend the message its live session never got", () => {
+    const { onSendTask } = mount([link(1, "live", "pending")], { archivedAt: 99 })
+
+    expect(screen.getByTestId("task-slot-handoff-primary").textContent).toBe("Task not sent yet")
+    expect(screen.getByTestId("task-slot-send-primary")).toBeDisabled()
+    fireEvent.click(screen.getByTestId("task-slot-send-primary"))
+    expect(onSendTask).not.toHaveBeenCalled()
   })
 })
