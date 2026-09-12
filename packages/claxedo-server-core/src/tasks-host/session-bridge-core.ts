@@ -17,6 +17,7 @@ import {
   type StartPreview,
   type StartPreviewCommand,
   type StartedSession,
+  type Task,
   type TasksActor,
   type TasksErrorDetail,
   type TasksResult,
@@ -32,6 +33,13 @@ export type TasksRuntimeTarget = {
   request(path: string, init?: RequestInit): Promise<Response>
 }
 
+/**
+ * The workspace a Start will run in, or why this host has none for it. A
+ * refusal carries its own sentence because only the host knows what it looked
+ * at — which workspaces a project has, and which of them it can reach.
+ */
+export type TasksTargetChoice = { target: TasksRuntimeTarget } | { detail: string }
+
 export type TasksSessionReservation =
   | { ok: true; headers: Record<string, string> }
   | { ok: false; error: TasksErrorDetail }
@@ -46,6 +54,13 @@ export type TasksSessionReservation =
 export type TasksSessionHost = {
   /** The workspace's runtime, or null when this host cannot reach one for it. */
   target(workspaceId: string): Promise<TasksRuntimeTarget | null>
+  /**
+   * Where a task with no workspace preference runs. A task names a project;
+   * naming a workspace inside it is optional, and most tasks created from the
+   * UI never do, so the host resolves the project's own workspace instead of
+   * the Start refusing for a choice nobody was asked to make.
+   */
+  projectTarget(projectId: string): Promise<TasksTargetChoice>
   sessionMetas(
     sessionIds: readonly string[],
   ): Promise<ReadonlyMap<string, { workspaceID?: string; archived?: number }>>
@@ -221,12 +236,47 @@ function previousSessionOf(command: StartPreviewCommand | StartCommand): Session
   return command.continueFromPrevious ? (command.currentLink?.sessionRef ?? null) : null
 }
 
+async function startTarget(host: TasksSessionHost, task: Task): Promise<TasksTargetChoice> {
+  if (!task.workspaceId) return host.projectTarget(task.projectId)
+  const target = await host.target(task.workspaceId)
+  return target ? { target } : { detail: `Workspace ${task.workspaceId} is not reachable from this host` }
+}
+
+/**
+ * Which of a project's workspaces a task without a preference starts in.
+ *
+ * The project's own root workspace is the answer wherever there is one. Past
+ * that the rows are worktrees and clones of one repository, and picking the
+ * oldest or the first would silently run the task somewhere the user did not
+ * choose — so an unresolved choice is handed back to them by name.
+ */
+export function chooseProjectWorkspace(
+  projectId: string,
+  workspaces: readonly Workspace[],
+): { workspace: Workspace } | { detail: string } {
+  const candidates = workspaces.filter((workspace) => (workspace.project_id ?? workspace.id) === projectId)
+  const only = candidates.length === 1 ? candidates.at(0) : undefined
+  if (only) return { workspace: only }
+  if (candidates.length === 0) {
+    return { detail: `Project ${projectId} has no workspace this host can start a session in` }
+  }
+  const root = candidates.find((workspace) => workspace.id === projectId)
+  if (root) return { workspace: root }
+  const checkouts = candidates.filter((workspace) => !workspace.repo_root || workspace.repo_root === workspace.directory)
+  const checkout = checkouts.length === 1 ? checkouts.at(0) : undefined
+  if (checkout) return { workspace: checkout }
+  const names = candidates.map((workspace) => workspace.workspace_name || workspace.directory).join(", ")
+  return {
+    detail: `Project ${projectId} has ${candidates.length} workspaces (${names}); name one on the task before starting`,
+  }
+}
+
 async function resolveStart(
   host: TasksSessionHost,
   command: StartPreviewCommand | StartCommand,
 ): Promise<ResolvedStart | Refusal> {
   const placement = command.preset.execution.placement
-  const target = command.task.workspaceId ? await host.target(command.task.workspaceId) : null
+  const choice = await startTarget(host, command.task)
   const blockers: StartBlocker[] = []
   if (placement === "cloud") {
     blockers.push({
@@ -234,14 +284,8 @@ async function resolveStart(
       detail: "This host starts sessions in the task's own workspace; an isolated cloud root is not available yet",
     })
   }
-  if (!target) {
-    blockers.push({
-      code: "source_unavailable",
-      detail: command.task.workspaceId
-        ? `Workspace ${command.task.workspaceId} is not reachable from this host`
-        : "This task has no workspace to start a session in",
-    })
-  }
+  if (!("target" in choice)) blockers.push({ code: "source_unavailable", detail: choice.detail })
+  const target = "target" in choice ? choice.target : null
 
   const handoff = target && blockers.length === 0 ? await readHandoff(host, target, previousSessionOf(command)) : null
   let composed

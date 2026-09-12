@@ -86,13 +86,13 @@ function preset(): Preset {
   }
 }
 
-function task(workspaceId: string): Task {
+function task(input: { workspaceId: string | null; projectId?: string }): Task {
   return {
     id: "tsk_1",
     revision: 4,
     scopeId: "local",
-    projectId: "prj_1",
-    workspaceId,
+    projectId: input.projectId ?? "prj_1",
+    workspaceId: input.workspaceId,
     parentTaskId: null,
     title: "Fix the importer",
     description: "The CSV importer drops the last row.",
@@ -119,10 +119,10 @@ function link(sessionRef: { sessionId: string; workspaceId: string | null }): Ta
   }
 }
 
-function startCommand(input: { workspaceId: string; digest: string }): StartCommand {
+function startCommand(input: { workspaceId: string | null; projectId?: string; digest: string }): StartCommand {
   return {
     actor: { scopeId: "local", ownerId: "local" },
-    task: task(input.workspaceId),
+    task: task(input),
     preset: preset(),
     slot: "primary",
     attempt: 1,
@@ -178,7 +178,22 @@ async function harness(input: { offeredModelId?: string } = {}) {
   const request = (pathname: string) => Promise.resolve(runtime.app.request(
     `http://runtime.test${pathname}${pathname.includes("?") ? "&" : "?"}directory=${encodeURIComponent(workspace!.directory)}`,
   ))
-  return { root, project, workspaceId: workspace!.id, bridge: createLocalTasksSessionBridge(), request, ...fixture }
+  return {
+    root,
+    project,
+    workspaceId: workspace!.id,
+    projectId: workspace!.project_id ?? workspace!.id,
+    bridge: createLocalTasksSessionBridge(),
+    request,
+    ...fixture,
+  }
+}
+
+async function registerWorkspace(input: { workspaceId: string; projectId: string }) {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "tasks-session-bridge-sibling-"))
+  await promisify(execFile)("git", ["init", "-q"], { cwd: directory })
+  await ensureWorkspace({ workspaceId: input.workspaceId, project_id: input.projectId, directory })
+  return directory
 }
 
 const roots: string[] = []
@@ -201,7 +216,7 @@ describe("local tasks session bridge", () => {
 
     const previewed = await host.bridge.preview({
       actor: { scopeId: "local", ownerId: "local" },
-      task: task(host.workspaceId),
+      task: task({ workspaceId: host.workspaceId }),
       preset: preset(),
       slot: "primary",
       attempt: 1,
@@ -253,7 +268,7 @@ describe("local tasks session bridge", () => {
     roots.push(host.root)
     const previewCommand = {
       actor: { scopeId: "local", ownerId: "local" },
-      task: task(host.workspaceId),
+      task: task({ workspaceId: host.workspaceId }),
       preset: preset(),
       slot: "primary" as const,
       attempt: 1,
@@ -295,6 +310,67 @@ describe("local tasks session bridge", () => {
     expect(host.created[1]?.instructions).toContain("Fix the importer")
   })
 
+  test("starts a task with no workspace preference in its project's own workspace", async () => {
+    const host = await harness()
+    roots.push(host.root)
+    const previewed = await host.bridge.preview({
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: null, projectId: host.projectId }),
+      preset: preset(),
+      slot: "primary",
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+    })
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.available).toBe(true)
+
+    const started = await host.bridge.start(startCommand({
+      workspaceId: null,
+      projectId: host.projectId,
+      digest: previewed.preview.digest,
+    }))
+    expect(started).toMatchObject({ ok: true })
+    if (!started.ok) return
+    expect(started.session.sessionRef.workspaceId).toBe(host.workspaceId)
+    expect(host.created).toHaveLength(1)
+  })
+
+  test("refuses to guess when a project holds two workspaces and neither is its root", async () => {
+    const host = await harness()
+    roots.push(host.root)
+    roots.push(await registerWorkspace({ workspaceId: "ws_left", projectId: "prj_ambiguous" }))
+    roots.push(await registerWorkspace({ workspaceId: "ws_right", projectId: "prj_ambiguous" }))
+
+    const previewed = await host.bridge.preview({
+      actor: { scopeId: "local", ownerId: "local" },
+      task: task({ workspaceId: null, projectId: "prj_ambiguous" }),
+      preset: preset(),
+      slot: "primary",
+      attempt: 1,
+      continueFromPrevious: false,
+      currentLink: null,
+      currentState: null,
+    })
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.available).toBe(false)
+    expect(previewed.preview.blockers).toEqual([{
+      code: "source_unavailable",
+      detail: expect.stringContaining("prj_ambiguous has 2 workspaces"),
+    }])
+
+    const started = await host.bridge.start(startCommand({
+      workspaceId: null,
+      projectId: "prj_ambiguous",
+      digest: previewed.preview.digest,
+    }))
+    expect(started).toMatchObject({ ok: false, error: { code: "unsupported" } })
+    expect(host.created).toEqual([])
+  })
+
   test("refuses a start whose preview digest no longer describes the configuration", async () => {
     const host = await harness()
     roots.push(host.root)
@@ -308,7 +384,7 @@ describe("local tasks session bridge", () => {
     roots.push(host.root)
     const previewed = await host.bridge.preview({
       actor: { scopeId: "local", ownerId: "local" },
-      task: task(host.workspaceId),
+      task: task({ workspaceId: host.workspaceId }),
       preset: preset(),
       slot: "primary",
       attempt: 1,
@@ -331,7 +407,7 @@ describe("local tasks session bridge", () => {
     }
     const previewed = await host.bridge.preview({
       actor: { scopeId: "local", ownerId: "local" },
-      task: task(host.workspaceId),
+      task: task({ workspaceId: host.workspaceId }),
       preset: cloud,
       slot: "primary",
       attempt: 1,
@@ -356,7 +432,7 @@ describe("local tasks session bridge", () => {
     roots.push(host.root)
     const previewed = await host.bridge.preview({
       actor: { scopeId: "local", ownerId: "local" },
-      task: task(host.workspaceId),
+      task: task({ workspaceId: host.workspaceId }),
       preset: preset(),
       slot: "primary",
       attempt: 1,

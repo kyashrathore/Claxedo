@@ -1,14 +1,16 @@
 import type { PrivateSessionAuthority, PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
 import {
+  chooseProjectWorkspace,
   createTasksSessionBridge,
+  type TasksRuntimeTarget,
   type TasksSessionReservation,
 } from "@claxedo/server-core/tasks-host/session-bridge-core"
 import {
   createWorkspaceRuntimeClient,
   type WorkspaceRuntimeClientOptions,
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
-import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { listWorkspaces, resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { tasksErrorDetail, type TasksActor, type TasksSessionBridgePort } from "@claxedo/tasks"
 import { isComposedAuthorityPort } from "../authority/composed-authority"
 import type { ControlPlaneServices } from "../authority/services"
@@ -38,14 +40,15 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
   return createTasksSessionBridge({
     async target(workspaceId) {
       const workspace = await resolveWorkspace({ workspaceId }).catch(() => undefined)
-      if (!workspace) return null
-      try {
-        const client = createWorkspaceRuntimeClient({ workspace, options: input.runtimeClient })
-        return { workspace, request: (path, init) => client.request(path, init) }
-      } catch {
-        // A workspace this composition cannot dispatch to — no sandbox manager,
-        // no relay, no local runtime in a Worker — is unreachable, not a fault.
-        return null
+      return workspace ? dispatchTarget(workspace, input.runtimeClient) : null
+    },
+
+    async projectTarget(projectId) {
+      const chosen = chooseProjectWorkspace(projectId, await listWorkspaces().catch(() => []))
+      if (!("workspace" in chosen)) return chosen
+      const target = dispatchTarget(chosen.workspace, input.runtimeClient)
+      return target ? { target } : {
+        detail: `Workspace ${chosen.workspace.id} is not reachable from this control plane`,
       }
     },
 
@@ -92,4 +95,15 @@ export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeIn
       model: created.model,
     }),
   })
+}
+
+function dispatchTarget(workspace: Workspace, options: WorkspaceRuntimeClientOptions): TasksRuntimeTarget | null {
+  try {
+    const client = createWorkspaceRuntimeClient({ workspace, options })
+    return { workspace, request: (path, init) => client.request(path, init) }
+  } catch {
+    // A workspace this composition cannot dispatch to — no sandbox manager, no
+    // relay, no local runtime in a Worker — is unreachable, not a fault.
+    return null
+  }
 }

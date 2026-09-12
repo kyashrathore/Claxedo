@@ -3,13 +3,14 @@ import type { ConfigurationSlot, Preset, SessionReference, StartCommand, Task } 
 import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import type { ControlPlaneServices } from "../authority/services"
 
-const mock = vi.hoisted(() => ({
-  workspace: { id: "ws_cloud", kind: "cloud", directory: "/workspace", org_id: "org" },
-  request: vi.fn(),
-}))
+const mock = vi.hoisted(() => {
+  const workspace = { id: "ws_cloud", kind: "cloud", directory: "/workspace", org_id: "org", project_id: "prj_1" }
+  return { workspace, workspaces: [workspace], request: vi.fn() }
+})
 vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   resolveWorkspace: async ({ workspaceId }: { workspaceId: string }) =>
     workspaceId === "ws_cloud" ? mock.workspace : undefined,
+  listWorkspaces: async () => mock.workspaces,
 }))
 vi.mock("@claxedo/server-core/workspace/http/workspace-runtime-client", () => ({
   createWorkspaceRuntimeClient: () => ({ request: mock.request }),
@@ -245,6 +246,28 @@ describe("hosted tasks session bridge", () => {
     expect(host.calls.filter((call) => call.path.startsWith("/session?"))).toHaveLength(1)
     expect(host.calls.filter((call) => call.path.endsWith("/prompt_async"))).toHaveLength(1)
     expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledTimes(2)
+  })
+
+  test("starts a task with no workspace preference in its project's workspace", async () => {
+    const host = runtime()
+    const composition = services()
+    const kit = bridge(composition)
+    const unplaced = { ...task(), workspaceId: null }
+
+    const previewed = await kit.preview({ ...previewCommand(), task: unplaced })
+    expect(previewed).toMatchObject({ ok: true })
+    if (!previewed.ok) return
+    expect(previewed.preview.available).toBe(true)
+
+    const started = await kit.start({ ...startCommand(previewed.preview.digest), task: unplaced })
+    expect(started).toMatchObject({ ok: true })
+    if (!started.ok) return
+    expect(started.session.sessionRef.workspaceId).toBe("ws_cloud")
+    expect(host.calls.filter((call) => call.path.startsWith("/session?"))).toHaveLength(1)
+    expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workspaceId: "ws_cloud" }),
+    )
   })
 
   test("refuses a start whose preview digest no longer describes the configuration", async () => {
