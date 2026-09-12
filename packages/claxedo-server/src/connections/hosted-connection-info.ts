@@ -17,12 +17,14 @@ import {
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { hostedSandboxNetworkPolicy } from "@claxedo/sandbox-manager"
 
 export async function hostedConnectionInfo(
   services: ControlPlaneServices | undefined,
   options: WorkspaceRouteOptions,
   auth: SignedControlPlaneAuth,
   workspaceId: string,
+  controlPlaneUrl: string,
   previousJti?: string,
 ) {
   const authority = requireAuthority(services)
@@ -105,6 +107,13 @@ export async function hostedConnectionInfo(
   }
   const ensured = await hostManager.ensure(workspaceId, {
     homeRegion,
+    net: hostedSandboxNetworkPolicy({
+      controlPlane: [relayUrl, controlPlaneUrl],
+      source: typeof result.workspace.repo_url === "string"
+        ? { kind: "git", repoUrl: result.workspace.repo_url }
+        : { kind: "empty" },
+      extraHosts: options.sandboxEgressExtraHosts,
+    }),
     ...(preparation?.secrets?.length ? { secrets: preparation.secrets } : {}),
   })
   captureWorkspaceTelemetry({

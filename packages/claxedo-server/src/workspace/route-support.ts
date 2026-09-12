@@ -72,6 +72,7 @@ export type WorkspaceRouteOptions = {
   relayUrl?: string
   relayUrls?: ClaxedoRegionMap<string>
   defaultHomeRegion?: ClaxedoRegion
+  sandboxEgressExtraHosts?: string[]
   runtimeAccessTokenSigner?: RuntimeAccessTokenSigner
   hostTunnelTokenSigner?: HostTunnelTokenSigner
   connectionRateLimiter?: ConnectionRateLimiter

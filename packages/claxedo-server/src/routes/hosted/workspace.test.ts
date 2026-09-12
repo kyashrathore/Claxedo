@@ -409,7 +409,10 @@ describe("hosted connection", () => {
     const { app, capture } = buildApp({ authority: authority, sandboxManager })
     const res = await app.fetch(get("/ws_1/connection"))
     expect(res.status).toBe(200)
-    expect(sandboxManager.ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "apac-south" })
+    expect(sandboxManager.ensure).toHaveBeenCalledWith("ws_1", {
+      homeRegion: "apac-south",
+      net: expect.objectContaining({ mode: "restricted", hosts: expect.arrayContaining(["api.anthropic.com"]) }),
+    })
     expect(capture).toHaveBeenCalledWith("user_1", "workspace.connection.requested", {
       workspaceId: "ws_1",
       access: "cloud",

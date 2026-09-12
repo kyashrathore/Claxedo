@@ -242,7 +242,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       if (controlPlaneLimit) return c.json(controlPlaneLimit.body, controlPlaneLimit.status)
       const rateLimit = await connectionRateLimitError(services, connectionRateLimiter, auth, workspaceId)
       if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
-      const result = await hostedConnectionInfo(services, options, auth, workspaceId, previousJti)
+      const result = await hostedConnectionInfo(services, options, auth, workspaceId, new URL(c.req.url).origin, previousJti)
       if ("error" in result)
         return c.json({ error: result.error }, result.status)
       if ("status" in result.connection && result.connection.status === "provisioning") {

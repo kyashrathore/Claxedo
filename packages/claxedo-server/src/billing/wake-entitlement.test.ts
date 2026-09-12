@@ -49,6 +49,7 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
       { ...options, requireCloudWorkspaceEntitlement },
       auth,
       "ws_1",
+      "https://control.test",
     )
     expect(result).toMatchObject({ status: 402, error: { code: "billing_entitlement_required" } })
     expect(requireCloudWorkspaceEntitlement).toHaveBeenCalledTimes(1)
@@ -66,6 +67,7 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
       { ...options, requireCloudWorkspaceEntitlement },
       auth,
       "ws_1",
+      "https://control.test",
     )
     expect(result).toMatchObject({ status: 503, error: { code: "billing_state_unavailable" } })
     expect(ensure).not.toHaveBeenCalled()
@@ -84,6 +86,7 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
       { ...options, requireCloudWorkspaceEntitlement },
       auth,
       "ws_1",
+      "https://control.test",
     )
     expect(requireCloudWorkspaceEntitlement).toHaveBeenCalledTimes(1)
     expect(ensure).toHaveBeenCalledTimes(1)
@@ -97,7 +100,7 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
       epoch: 1,
       homeRegion: "us-east",
     }))
-    const result = await hostedConnectionInfo(services(ensure), { ...options }, auth, "ws_1")
+    const result = await hostedConnectionInfo(services(ensure), { ...options }, auth, "ws_1", "https://control.test")
     expect(ensure).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({ connection: { status: "provisioning" } })
   })

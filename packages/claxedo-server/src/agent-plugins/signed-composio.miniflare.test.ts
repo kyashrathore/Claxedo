@@ -497,7 +497,7 @@ describe("signed Composio Gmail on Miniflare", () => {
       provisionRuntime: async (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => {
         await provisionForMint(workspaceId, preparation)
       },
-    }, auth, "ws_cloud_mint")
+    }, auth, "ws_cloud_mint", "https://control.test")
 
     expect(local).toMatchObject({ connection: { access: "user-hosted", runtimeAccessToken: "runtime-token" } })
     expect(cloud).toMatchObject({ connection: { access: "cloud", runtimeAccessToken: "runtime-token" } })
