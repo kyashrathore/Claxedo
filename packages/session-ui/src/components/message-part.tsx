@@ -47,6 +47,7 @@ import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ToolErrorCard } from "./tool-error-card"
+import { QuestionCard } from "./question-card"
 import { isQuestionDeclined } from "./question-result"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
@@ -1587,7 +1588,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
         <Switch>
           <Match when={toolError()}>
             {(error) => {
-              if (part().tool === "question" && isQuestionDeclined(error())) {
+              if (part().tool === "question" && isQuestionDeclined(partMetadata())) {
                 return (
                   <div style="width: 100%; display: flex; justify-content: flex-end;">
                     <span class="text-13-regular text-text-weak cursor-default">
@@ -2683,49 +2684,14 @@ ToolRegistry.register({
 ToolRegistry.register({
   name: "question",
   render(props) {
-    const i18n = useI18n()
     const questions = createMemo((): AgentQuestionInfo[] =>
       Array.isArray(props.input.questions) ? props.input.questions : [],
     )
     const answers = createMemo((): AgentQuestionAnswer[] =>
       Array.isArray(props.metadata.answers) ? props.metadata.answers : [],
     )
-    const completed = createMemo(() => answers().length > 0)
 
-    const subtitle = createMemo(() => {
-      const count = questions().length
-      if (count === 0) return ""
-      if (completed()) return i18n.t("ui.question.subtitle.answered", { count })
-      return `${count} ${i18n.t(count > 1 ? "ui.common.question.other" : "ui.common.question.one")}`
-    })
-
-    return (
-      <BasicTool
-        {...props}
-        defaultOpen={completed()}
-        icon="bubble-5"
-        trigger={{
-          title: i18n.t("ui.tool.questions"),
-          subtitle: subtitle(),
-        }}
-      >
-        <Show when={completed()}>
-          <div data-component="question-answers" class="ui-question-answers">
-            <For each={questions()}>
-              {(q, i) => {
-                const answer = () => answers()[i()] ?? []
-                return (
-                  <div data-slot="question-answer-item">
-                    <div data-slot="question-text" class="ui-question-text">{q.question}</div>
-                    <div data-slot="answer-text" class="ui-answer-text">{answer().join(", ") || i18n.t("ui.question.answer.none")}</div>
-                  </div>
-                )
-              }}
-            </For>
-          </div>
-        </Show>
-      </BasicTool>
-    )
+    return <QuestionCard questions={questions()} answers={answers()} />
   },
 })
 

@@ -4,6 +4,7 @@ import {
   type RuntimeGoalSnapshot,
 } from "@claxedo/agent-event-runtime"
 import {
+  CLAUDE_QUESTION_DISMISSED,
   claudeChildCorrelationKey,
   claudeSdkAdapter,
   claudeSubagentObservations,
@@ -422,7 +423,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
             options.signal.addEventListener("abort", cancel, { once: true })
             if (options.signal.aborted) cancel()
           })
-          if (!answers) return { behavior: "deny", message: "User dismissed the question" }
+          if (!answers) return { behavior: "deny", message: CLAUDE_QUESTION_DISMISSED }
           if (answers.length !== questions.length) throw new Error("Claude question reply must answer each question")
           return {
             behavior: "allow",

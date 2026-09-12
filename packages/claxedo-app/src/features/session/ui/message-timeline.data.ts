@@ -16,6 +16,7 @@ import {
   foldedGroupKeys,
   groupParts,
   isHiddenTool,
+  isPendingQuestion,
   isSubagentToolPart,
   turnFoldDecision,
   type PartRef,
@@ -490,8 +491,7 @@ function lastKnownPartActivity(parts: Part[]): number | undefined {
 function renderablePart(part: Part, showReasoning = true) {
   if (part.type === "tool") {
     if (isHiddenTool(part)) return false
-    if (part.tool === "question") return part.state.status !== "pending" && part.state.status !== "running"
-    return true
+    return !isPendingQuestion(part)
   }
   if (part.type === "text") return !!part.text?.trim()
   if (part.type === "reasoning") return showReasoning && !!part.text?.trim()

@@ -15,6 +15,7 @@ import { toolDisplayFromInput } from "../tool-display"
 import { imageAttachment } from "../tool-attachments"
 import { hostSubagentBinding, hostSubagentObservation, isHostSubagentTool } from "../host-subagent"
 import { optionLabels, pathFields, text } from "../../value"
+import { isClaudeQuestionDecline } from "./question-decline"
 import { applyClaudeTaskResult, type ClaudeTrackedTask } from "./task-tracking"
 import type { ClaudeTaskLedger, ClaudeTaskRecord } from "./task-ledger"
 
@@ -956,7 +957,14 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
             }
             const display = toolDisplay(tool.toolName, tool.input ?? {})
             if (result.isError) {
-              return [{ type: "tool-error", toolCallId: result.toolCallId, error: result.text, display, metadata }]
+              const declined = isQuestionTool(tool.toolName) && isClaudeQuestionDecline(result.text)
+              return [{
+                type: "tool-error",
+                toolCallId: result.toolCallId,
+                error: result.text,
+                display,
+                metadata: { ...metadata, ...(declined ? { question: { declined: true } } : {}) },
+              }]
             }
             const nextTasks = applyClaudeTaskResult(tasks, tool.toolName, tool.input ?? {}, result.structured)
             if (nextTasks) {

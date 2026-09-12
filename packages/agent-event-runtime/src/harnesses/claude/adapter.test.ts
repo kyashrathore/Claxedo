@@ -452,8 +452,59 @@ describe("claudeSdkAdapter", () => {
     })
 
     expect(part).toMatchObject({ type: "tool", tool: "question", state: { status: "error", error: "User dismissed the question" } })
-    expect(questionMetadata(part)).toMatchObject({ claude: { itemType: "dynamic_tool_call" } })
+    expect(questionMetadata(part)).toMatchObject({ claude: { itemType: "dynamic_tool_call" }, question: { declined: true } })
     expect(questionMetadata(part)).not.toHaveProperty("answers")
+  })
+
+  test("records the CLI's own rejection of the question as a decline too", () => {
+    const part = askUserQuestionSession({
+      content: {
+        type: "tool_result",
+        tool_use_id: "ask-1",
+        content: "The user doesn't want to proceed with this tool use. The tool use was rejected.",
+        is_error: true,
+      },
+      toolUseResult: undefined,
+    })
+
+    expect(questionMetadata(part)).toMatchObject({ question: { declined: true } })
+  })
+
+  test("leaves an AskUserQuestion that actually failed undeclined", () => {
+    const part = askUserQuestionSession({
+      content: {
+        type: "tool_result",
+        tool_use_id: "ask-1",
+        content: "Claude AskUserQuestion requires a non-empty questions array",
+        is_error: true,
+      },
+      toolUseResult: undefined,
+    })
+
+    expect(part).toMatchObject({ state: { status: "error" } })
+    expect(questionMetadata(part)).not.toHaveProperty("question")
+  })
+
+  test("a rejected Bash call is not a declined question", () => {
+    const agent = runtime()
+    const projection = createClientPresentationProjection({ sessionId: "session-1", directory: "/repo", assistantMessageId: "reply-1" })
+    const ingest = (payload: unknown) =>
+      agent.ingest({ source: "claude.sdk.message", payload }).events.flatMap((event) => projection.ingest(event))
+    ingest({ type: "assistant", message: { content: [{ type: "tool_use", id: "bash-1", name: "Bash", input: { command: "rm -rf build" } }] } })
+    const envelopes = ingest({
+      type: "user",
+      message: { content: [{ type: "tool_result", tool_use_id: "bash-1", content: "The user doesn't want to proceed with this tool use.", is_error: true }] },
+    })
+
+    const part = envelopes
+      .map((envelope) => envelope.payload)
+      .filter((payload): payload is Extract<typeof payload, { type: "message.part.updated" }> => payload.type === "message.part.updated")
+      .map((payload) => payload.properties.part)
+      .filter((part): part is Extract<typeof part, { type: "tool" }> => part.type === "tool")
+      .at(-1)
+
+    expect(part).toMatchObject({ tool: "bash", state: { status: "error" } })
+    expect(part?.state.status === "error" ? part.state.metadata : undefined).not.toHaveProperty("question")
   })
 
   const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="

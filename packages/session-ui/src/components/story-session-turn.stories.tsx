@@ -1,5 +1,5 @@
 // @ts-nocheck
-import * as mod from "./session-turn"
+import * as mod from "./story-session-turn"
 import { create } from "@opencode-ai/ui/storybook/scaffold"
 
 const story = create({ title: "UI/SessionTurn", mod })
