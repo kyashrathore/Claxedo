@@ -6,6 +6,12 @@ Owner: Yash Rathore
 Decision 2026-09-12: the active account is chosen per provider in Settings,
 not per session. An earlier draft of this document proposed a per-session
 picker; that model is recorded under Non-goals.
+Revised 2026-09-12, evening: Settings → Providers changed underneath this
+plan the same day (commit `85f1d007c8`). The three native harnesses now
+connect inline in an inset card with the server's methods, Claude's
+subscription token is one of those methods, and a login found on the
+machine is saved from its row. Sections 5 and 7 describe the accounts UI on
+that surface; the phase lists mark what already landed.
 
 ## Summary
 
@@ -300,11 +306,16 @@ Three ways to give the Claude CLI a second login were weighed:
 | b. `CLAUDE_CONFIG_DIR` per account, CLI refreshes itself | by the CLI | no, needs files on disk | not adopted |
 | c. Our own OAuth client against Claude Code's endpoints | by us | yes | not adopted, unpublished contract |
 
-The provider-auth service gains a `token` method for `anthropic` and
-`claude-sdk` next to the existing API-key method: the user runs
-`claude setup-token` while logged in to the second account and pastes the
-result. It is stored as `kind: "oauth_token"` with an `account_id` and
-label. The driver already maps it to `CLAUDE_CODE_OAUTH_TOKEN` (`auth.ts:30`).
+Landed 2026-09-12: the provider-auth service offers a `token` method for
+`anthropic` and `claude-sdk` ahead of the API-key method, carrying the
+command that mints it, and the inline connect card renders it with a
+copyable `claude setup-token` field. The pasted value is stored as
+`kind: "api_key"`; the driver reads the secret's shape and sends an
+`sk-ant-oat…` value as `CLAUDE_CODE_OAUTH_TOKEN` (`auth.ts:30`), and the
+verifier does the same. What Phase 2 adds is identity: the paste path
+writes an `account_id` fingerprint (a hash prefix plus the last four
+characters), so a second pasted token is a second row rather than an
+overwrite, and the row's label names it.
 
 What the docs say about the token
 (https://code.claude.com/docs/en/authentication#generate-a-long-lived-token):
@@ -334,21 +345,29 @@ harness legitimately reads.
 
 ### 7. Settings → Providers
 
-Owner: `packages/claxedo-app/src/features/settings/ui/harness-providers-section.tsx`,
-`provider-setup-row.tsx`, `provider-settings-logic.ts`,
+Owner: `packages/claxedo-app/src/features/settings/ui/agents-section.tsx`,
+`provider-setup-row.tsx`, `provider-detect.ts`,
 `packages/claxedo-local-server/src/credentials/routes/credential.ts`.
 
-Today each harness section renders one `ProviderSetupRow` per provider with
-a single status (connected, detected, broken, missing) and an inline connect
-form. The row stays exactly that when the provider has one credential.
+Today the Agents section renders one row per native harness (Claude, Codex,
+Cursor) with a single status (connected, detected, broken, missing). Connect
+opens an inset card in the row, named "Connect Codex", with the server's
+methods as a segmented control and one close control; a login the scan found
+on this machine is saved from the row with **Use this login**. Pi and
+OpenCode keep their per-provider rows in their own sections. A harness with
+one credential looks exactly like that.
 
-When a provider has two or more credentials the row expands to an account
-list. Each account shows its label, account id or email, health, expiry, and
-whether it is shared with sandboxes. The active one carries an **Active**
-tag; every other one has a **Make active** button. An **Add account** action
-opens the same connect flows the row has today (API key form, sync from
-local logins, and for Claude the new token paste). A provider whose active
-row was deleted shows "Choose an account" in place of the status.
+When a harness has two or more credentials across its bound provider ids,
+the row lists them under its status: each account shows its label, account
+id or email, health, expiry, and whether it is shared with sandboxes. The
+active one carries an **Active** tag; every other one has a **Make active**
+button. **Add account** opens the same inset card, so a second ChatGPT login
+or a second Claude token arrives through the flow the row already has. A
+harness whose active row was deleted shows "Choose an account" in place of
+its status, and its Connect button stays.
+
+Accounts do not touch Settings → Models: visibility is per provider/model
+pair and follows the pair whichever account runs it.
 
 New route: `POST /credentials/:id/activate`. `GET /credentials` already
 returns `account_id`, `label`, `health`, `expires_at`, `scope`; it adds
@@ -358,8 +377,8 @@ Nothing changes in the composer or on the session screen.
 
 ### End-to-end flow after the change
 
-- A. In Settings → Providers → Codex, the user clicks **Make active** on
-  the work account.
+- A. In Settings → Providers, under the Codex row, the user clicks
+  **Make active** on the work account.
   - A.1 `POST /credentials/<work id>/activate` → `setActiveCredential`
     clears and sets the mark in one transaction.
   - A.2 The server rebuilds the snapshot; `resolveSecretsForScope` returns
@@ -420,7 +439,8 @@ Each phase is a reviewable slice with its own gate.
 - Native adapters wait for active turns before `applyConfig`.
 - Codex refresh writes back to the registry when the registry supplied auth.
 - Env strip for Codex.
-- Settings account list with Make active, Active tag, Choose an account.
+- The account list under the Codex row with Make active, Active tag, Choose
+  an account; Add account reusing the inset card.
 
 Acceptance:
 - [ ] Two ChatGPT accounts synced; Settings lists both under Codex with one
@@ -444,8 +464,10 @@ Progress:
 
 ### Phase 2: Claude accounts
 
-- Claude sync sets `account_id`; provider-auth `token` method; env strip
-  for Claude; Settings account list for Claude.
+- Claude sync sets `account_id`; the paste path fingerprints a token or key
+  into `account_id`; env strip for Claude; the account list under the
+  Claude row. (The provider-auth `token` method and its inline card landed
+  2026-09-12 in `85f1d007c8`.)
 
 Acceptance:
 - [ ] Machine login plus one `setup-token` account listed under Claude; Make
