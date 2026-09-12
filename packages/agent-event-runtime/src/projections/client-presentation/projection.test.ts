@@ -641,7 +641,7 @@ describe("createClientPresentationProjection", () => {
         attachments: [
           { type: "file", sessionID: "session-1", messageID: "msg_turn_1_r", mime: "image/png", filename: "screenshot.png", url: `data:image/png;base64,${png}` },
           { type: "file", sessionID: "session-1", messageID: "msg_turn_1_r", mime: "image/jpeg", filename: "image.jpg", url: "data:image/jpeg;base64,/9j/4AAQ" },
-          { type: "file", mime: "image/webp", filename: "image.webp", url: "file://docs/shot.webp", location: { kind: "workspace-file", path: "docs/shot.webp" } },
+          { type: "file", mime: "image/webp", filename: "image.webp", url: "docs/shot.webp", location: { kind: "workspace-file", path: "docs/shot.webp" } },
           { type: "file", mime: "image/png", filename: "image.png", url: "file:///tmp/huge.png", location: { kind: "unretained", bytes: 346_112 } },
         ],
       },

@@ -8,6 +8,7 @@ import {
   resolveWorkspaceFile,
   searchWorkspaceFiles,
   warmWorkspaceSearchIndex,
+  workspaceFileContentType,
   workspaceFileStatus,
   workspaceRawFile,
 } from "../workspace-files/file"
@@ -94,7 +95,13 @@ export function FileRoutes(options: Options = {}) {
         return new Response(webStreamFrom(raw.stream), {
           headers: {
             "content-length": String(raw.size),
-            "content-type": "application/octet-stream",
+            "content-type": workspaceFileContentType(full),
+            // The workspace serves its own pages from this origin, and an SVG is a
+            // document that can carry script. `nosniff` holds the browser to the type
+            // above, and the sandbox denies whatever a document among these bytes
+            // would otherwise run as this origin.
+            "x-content-type-options": "nosniff",
+            "content-security-policy": "default-src 'none'; sandbox",
           },
         })
       } catch {

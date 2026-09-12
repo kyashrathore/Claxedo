@@ -87,6 +87,16 @@ export async function readWorkspaceFileContent(file: string) {
   }
 }
 
+/**
+ * What a byte stream of this file should be labelled as. Only image types are
+ * recognised: they are the ones a page renders by type, and a stream labelled
+ * `application/octet-stream` renders as nothing once the response says nosniff.
+ */
+export function workspaceFileContentType(file: string) {
+  const extension = path.extname(file).slice(1).toLowerCase()
+  return IMAGE_MIME_BY_EXTENSION[extension] ?? "application/octet-stream"
+}
+
 export async function workspaceRawFile(file: string) {
   const stat = await fs.promises.stat(file)
   if (!stat.isFile()) return undefined

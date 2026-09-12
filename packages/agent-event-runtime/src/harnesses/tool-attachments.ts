@@ -37,6 +37,24 @@ export function workspaceRelativePath(root: string | undefined, sourcePath: stri
   return rest.join("/")
 }
 
+/** Base64 spends four characters per three bytes, and pads the last group out. */
+function decodedBase64Bytes(payload: string) {
+  const padding = payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0
+  return Math.max(0, Math.floor((payload.length * 3) / 4) - padding)
+}
+
+/**
+ * The size of the image, not of the encoding that carried it — a view reports this
+ * as the file size, and base64 is a third larger than what it stands for.
+ */
+export function attachmentBytes(data: string) {
+  if (!data.startsWith("data:")) return decodedBase64Bytes(data)
+  const comma = data.indexOf(",")
+  if (comma < 0) return 0
+  const payload = data.slice(comma + 1)
+  return data.slice(0, comma).includes(";base64") ? decodedBase64Bytes(payload) : payload.length
+}
+
 /**
  * The one place a harness turns image bytes into an attachment. A path inside
  * the workspace drops the bytes; anything else keeps them only under the bound.
@@ -53,14 +71,15 @@ export function imageAttachment(input: {
   if (relative && input.sourcePath) {
     return { kind: "workspace-file", mime: input.mime, path: relative, sourcePath: input.sourcePath, ...named }
   }
-  const url = attachmentUrl(input.mime, input.data)
-  if (url.length <= TOOL_ATTACHMENT_INLINE_MAX_BYTES) {
-    return { kind: "inline", mime: input.mime, url, ...named }
+  // Measured on the payload rather than on the url: building the url to measure it
+  // copies a 20 MB image that the bound is about to refuse.
+  if (input.data.length <= TOOL_ATTACHMENT_INLINE_MAX_BYTES) {
+    return { kind: "inline", mime: input.mime, url: attachmentUrl(input.mime, input.data), ...named }
   }
   return {
     kind: "unretained",
     mime: input.mime,
-    bytes: url.length,
+    bytes: attachmentBytes(input.data),
     ...(input.sourcePath ? { sourcePath: input.sourcePath } : {}),
     ...named,
   }

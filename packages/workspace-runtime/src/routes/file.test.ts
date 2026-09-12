@@ -42,6 +42,24 @@ describe("FileRoutes raw file streaming", () => {
     })
   })
 
+  test("labels a raw image by its own type so a page can render it, and refuses to be sniffed", async () => {
+    const app = new Hono().route("/", FileRoutes())
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    await fs.mkdir(path.join(tmp, "docs"), { recursive: true })
+    await fs.writeFile(path.join(tmp, "docs", "shot.PNG"), png)
+    await fs.writeFile(path.join(tmp, "docs", "logo.svg"), "<svg xmlns=\"http://www.w3.org/2000/svg\"/>")
+
+    const image = await app.request("http://localhost/file/raw?path=docs/shot.PNG")
+    expect(image.status).toBe(200)
+    expect(image.headers.get("content-type")).toBe("image/png")
+    expect(image.headers.get("x-content-type-options")).toBe("nosniff")
+    expect(await bytes(image)).toEqual(png)
+
+    const svg = await app.request("http://localhost/file/raw?path=docs/logo.svg")
+    expect(svg.headers.get("content-type")).toBe("image/svg+xml")
+    expect(svg.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox")
+  })
+
   test("streams raw file bytes without changing the JSON content route", async () => {
     const app = new Hono().route("/", FileRoutes())
     await fs.writeFile(path.join(tmp, "large.bin"), new Uint8Array([1, 2, 3, 4, 5]))

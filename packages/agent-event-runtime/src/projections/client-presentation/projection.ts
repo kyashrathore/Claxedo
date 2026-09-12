@@ -664,13 +664,15 @@ function attachmentFilename(attachment: RuntimeToolAttachment) {
 }
 
 /**
- * The locator spelling the workbench already uses for a file part it did not
- * inline: `file://` plus the path. Nothing fetches it — `location` is what a
- * view reads — but it keeps `url` naming the file rather than lying about
- * carrying it.
+ * Names a file the part did not inline. Nothing fetches this — `location` carries
+ * what the file route is asked for — but `file://` is followed by an authority, so
+ * a workspace-relative path spelled into one turns its first segment into a host:
+ * `file://docs/shot.webp` names the host `docs`. Only an absolute path takes the
+ * scheme; a relative one stays a relative reference.
  */
 function fileLocator(path: string) {
-  return `file://${path.split("/").map(encodeURIComponent).join("/")}`
+  const encoded = path.split("/").map(encodeURIComponent).join("/")
+  return path.startsWith("/") ? `file://${encoded}` : encoded
 }
 
 function attachmentPart(ctx: CompatContext, id: string, attachment: RuntimeToolAttachment) {
