@@ -106,8 +106,45 @@ set its id in `wrangler.toml`. A nonempty registration requires this binding.
 Omitting `egress` preserves registrations; sending `egress: []` clears them.
 Malformed registrations return 400. Every intercepted request reads KV, so
 rotation needs no runtime token renewal. KV propagation delays apply.
+A request to a registered host that carries no `claxedo-broker:` placeholder is
+forwarded exactly as sent, with no credential attached and no response
+scrubbing: `git clone`, `npm install` and `curl` reach the same hosts as a
+brokered client, and refusing them would break the sandbox the moment a token
+for that host is registered. A request that does carry a placeholder must match
+a live registration for that host over HTTPS on port 443, or it is refused.
 The handler rejects unmatched placeholders and redirects; it does not redact
 response bodies or restrict unrelated destinations.
+
+### Interception is whole-container, and cannot be narrowed
+
+`Sandbox.interceptHttps = true` plus `setOutboundByHosts` puts EVERY outbound
+request from the container through this Worker, not only the registered hosts.
+This is a property of `@cloudflare/containers` as bundled in
+`@cloudflare/sandbox` 0.12.9, not a choice here:
+
+- `shouldInterceptAllOutbound()` returns true as soon as
+  `outboundByHostOverrides` is non-empty, and `setOutboundByHosts` is the only
+  runtime API that registers a host — so the first registration promotes the
+  container to intercept-all.
+- The promotion latches in `hasInterceptAllRegistration` and stays until the
+  instance restarts.
+- Under intercept-all with `interceptHttps`, the SDK installs
+  `interceptOutboundHttps('*')` and `interceptAllOutboundHttp`.
+- Per-host interception exists only for the STATIC `outboundByHost` class
+  registry, which is fixed at deploy time and cannot carry per-sandbox
+  registrations read from KV.
+
+Unregistered hosts still reach the internet — `ContainerProxy` falls through to
+`fetch(request)` on the `enableInternet` path — but they do so through a
+Worker-terminated TLS connection.
+
+Only Node and Bun HTTPS clients have been exercised against this
+(Appendix E item 3, local probe). The CLIs baked into `Dockerfile` —
+`claude`, `codex`, `gemini`, `pi`, `cursor-agent`, `amp`, `droid` — were not
+probed, and an agent CLI that pins its own CA bundle or ships its own TLS stack
+will fail against an intercepted connection in a way no local test here shows.
+That is why deployed acceptance is still required before this adapter is called
+complete.
 
 The former `/egress` JWT route and signing secret are removed. Deploy the
 Worker and matching driver together, then destroy and recreate existing

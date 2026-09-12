@@ -330,7 +330,18 @@ Each item is a live experiment with a written result in Appendix B.
 2. A Vercel `transform` overwrites a header the client sent.
 3. Cloudflare 0.12.x outbound handlers intercept HTTPS from Bun and Node
    clients in our runtime image; `setOutboundByHost` changes a running
-   sandbox.
+   sandbox. Interception cannot be narrowed to the registered hosts:
+   `@cloudflare/containers` promotes the container to intercept-all the moment
+   `setOutboundByHosts` registers one host, latches that promotion until the
+   instance restarts, and installs `interceptOutboundHttps('*')` under
+   `interceptHttps`; per-host interception is reachable only from the static,
+   deploy-time `outboundByHost` class registry, which cannot carry per-sandbox
+   registrations. So every HTTPS connection the container makes terminates at
+   our Worker. The local probe exercised only Node and Bun clients; the CLIs
+   baked into the runtime image — `claude`, `codex`, `gemini`, `pi`,
+   `cursor-agent`, `amp`, `droid` — were not probed, and one that pins its own
+   CA bundle or ships its own TLS stack fails against an intercepted
+   connection. **That is the reason deployed acceptance is still required.**
 4. Codex on a ChatGPT subscription through a proxy: `chatgpt_base_url` with
    a dummy local login, or the `model_providers` form with
    `requires_openai_auth=false`. exe.dev's LLM integration proves the shape

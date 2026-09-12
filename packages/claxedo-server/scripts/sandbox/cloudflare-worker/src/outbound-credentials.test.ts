@@ -24,10 +24,38 @@ test("same-host credentials are selected by their named placeholder", async () =
   const upstream = vi.fn(async (input: Request) => new Response(input.headers.get("Authorization")))
   const options = { registrations: async () => [registration, { ...registration, name: "OTHER", value: "Bearer other-secret" }], fetch: upstream }
   expect(await (await forwardCredential(request(credentialPlaceholder("OTHER")), options)).text()).toBe("Bearer other-secret")
-  for (const input of [request("Bearer unknown"), request(undefined, "https://elsewhere.test/"), request(undefined, "http://api.vendor.test/")]) {
+  for (const input of [request(undefined, "https://elsewhere.test/"), request(undefined, "http://api.vendor.test/")]) {
     expect((await forwardCredential(input, options)).status).toBe(403)
   }
   expect(upstream).toHaveBeenCalledTimes(1)
+})
+
+test("a request to a registered host carrying no placeholder is forwarded untouched", async () => {
+  // `git clone`, `npm i github:…` and `curl` all reach a host the moment a
+  // token for it is registered. Answering 403 to everything that is not our
+  // placeholder broke every one of them inside a hosted sandbox.
+  const upstream = vi.fn(async (input: Request) => new Response(input.headers.get("Authorization") ?? "none"))
+  const options = { registrations: async () => [registration], fetch: upstream }
+
+  for (const input of [
+    request("Bearer somebody-elses-token"),
+    new Request("https://api.vendor.test/v1/models"),
+    new Request("http://api.vendor.test/plain"),
+  ]) {
+    const response = await forwardCredential(input, options)
+    expect(response.status).toBe(200)
+  }
+  expect(upstream).toHaveBeenCalledTimes(3)
+  expect(upstream.mock.calls[0][0].headers.get("Authorization")).toBe("Bearer somebody-elses-token")
+  expect(upstream.mock.calls[0][0].headers.get("Cookie")).toBe("session=private")
+})
+
+test("a placeholder that matches no registration is still refused", async () => {
+  const upstream = vi.fn(async () => new Response("forwarded"))
+  const options = { registrations: async () => [registration], fetch: upstream }
+
+  expect((await forwardCredential(request(credentialPlaceholder("WITHDRAWN")), options)).status).toBe(403)
+  expect(upstream).not.toHaveBeenCalled()
 })
 
 test("redirects cannot carry credentials to another destination", async () => {

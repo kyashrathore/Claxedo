@@ -12,6 +12,7 @@ import {
   type SandboxProcess,
 } from "@cloudflare/sandbox"
 import { credentialPlaceholder, forwardCredential, parseRegistrations, type EgressRegistration } from "./outbound-credentials"
+import { asWorkerRecord, stringMap } from "./worker-json"
 
 // Cloudflare routes intercepted container HTTP(S) through this Worker
 // Entrypoint. Without the export, the local sidecar accepts TLS and then has no
@@ -22,11 +23,14 @@ export { ContainerProxy }
 // attach this Worker's Dockerfile to the Durable Object class. The process
 // operations `this` is passed to live on the ambient `@cloudflare/sandbox`
 // declaration, so no call site re-asserts `this`.
+/** Registration and dispatch must name the same handler; a literal on each side is a silent 520. */
+const CREDENTIAL_OUTBOUND_HANDLER = "credential"
+
 export class Sandbox extends CloudflareSandbox {
   static {
     // The SDK registers handlers through an inherited setter, not a static field.
     Object.assign(this, { outboundHandlers: {
-      credential: (request: Request, env: Env, ctx: { params: { sandboxId: string } }) =>
+      [CREDENTIAL_OUTBOUND_HANDLER]: (request: Request, env: Env, ctx: { params: { sandboxId: string } }) =>
         forwardCredential(request, { registrations: () => readRegistrations(env, ctx.params.sandboxId) }),
     } })
   }
@@ -34,9 +38,15 @@ export class Sandbox extends CloudflareSandbox {
 
   private workspaceRuntimeEnsure?: Promise<boolean>
 
-  ensureWorkspaceRuntime(command: string, env: Record<string, string>, port: number) {
+  /**
+   * `reuseRunning: false` is how a caller says the boot env changed. A running
+   * process keeps the environment it was spawned with, so a credential
+   * registered after boot never becomes its placeholder env var until the
+   * process itself is replaced.
+   */
+  ensureWorkspaceRuntime(command: string, env: Record<string, string>, port: number, options: { reuseRunning: boolean }) {
     if (this.workspaceRuntimeEnsure) return this.workspaceRuntimeEnsure
-    const operation = ensureRuntimeProcess(this, command, env, port)
+    const operation = ensureRuntimeProcess(this, command, env, port, options)
     this.workspaceRuntimeEnsure = operation
     return operation.finally(() => {
       if (this.workspaceRuntimeEnsure === operation) this.workspaceRuntimeEnsure = undefined
@@ -146,6 +156,10 @@ async function unregisterSandbox(env: Env, sandboxId: string) {
   })
 }
 
+function registrationNames(registrations: EgressRegistration[]) {
+  return registrations.map((row) => row.name).sort().join("\u0000")
+}
+
 async function readRegistrations(env: Env, sandboxId: string): Promise<EgressRegistration[]> {
   if (!env.EGRESS_SECRETS) return []
   const raw = await env.EGRESS_SECRETS.get(sandboxId)
@@ -233,14 +247,18 @@ async function stopRuntimeProcess(sandbox: SandboxOperations) {
   await bounded(sandbox.cleanupCompletedProcesses(), "workspace-runtime process cleanup")
 }
 
-async function ensureRuntimeProcess(
+export async function ensureRuntimeProcess(
   sandbox: SandboxOperations,
   command: string,
   env: Record<string, string>,
   port: number,
+  options: { reuseRunning: boolean },
 ) {
   const existing = await runtimeProcess(sandbox)
-  if (existing && ["starting", "running"].includes(existing.status) && await runtimeReady(existing, port, 5_000)) return true
+  if (
+    options.reuseRunning && existing && ["starting", "running"].includes(existing.status)
+    && await runtimeReady(existing, port, 5_000)
+  ) return true
   if (existing) {
     const status = await bounded(existing.getStatus(), "workspace-runtime process status")
     if (["starting", "running"].includes(status)) {
@@ -406,6 +424,7 @@ export default {
             return json({ error: "ensure-runtime restore requires one absolute directory and a backupId" }, 400)
           }
 
+          const previous = await readRegistrations(env, sandboxId)
           let registrations: EgressRegistration[]
           if (body.egress !== undefined) {
             try {
@@ -418,11 +437,15 @@ export default {
             }
             await env.EGRESS_SECRETS?.put(sandboxId, JSON.stringify(registrations))
           } else {
-            registrations = await readRegistrations(env, sandboxId)
+            registrations = previous
           }
+          // Which placeholders the runtime's environment must carry. Only the
+          // NAMES matter: a rotated value keeps the same placeholder, so it
+          // needs no new process, while an added or dropped name does.
+          const placeholdersChanged = registrationNames(previous) !== registrationNames(registrations)
           await sandbox.setOutboundByHosts(Object.fromEntries(
             registrations.flatMap((row) => row.hosts.map((host) =>
-              [host, { method: "credential", params: { sandboxId } }],
+              [host, { method: CREDENTIAL_OUTBOUND_HANDLER, params: { sandboxId } }],
             )),
           ))
           for (const row of registrations) containerEnv[row.name] = credentialPlaceholder(row.name)
@@ -437,7 +460,7 @@ export default {
           // single-flight promise. Catalog refreshes and execution retries can
           // overlap, but they must join one process launch rather than cancel
           // each other's container operations.
-          if (!await sandbox.ensureWorkspaceRuntime(command, containerEnv, port)) {
+          if (!await sandbox.ensureWorkspaceRuntime(command, containerEnv, port, { reuseRunning: !placeholdersChanged })) {
             return json({ ready: false, error: "workspace-runtime did not become ready" }, 503)
           }
           // Register only once the sandbox is really up, and carry the labels
@@ -488,25 +511,3 @@ function directoryRestore(input: unknown) {
   return { backupId: restore.backupId, directory }
 }
 
-
-// ── Boundary narrowing ───────────────────────────────────────────────────────
-// This Worker is deployed with `npm ci && wrangler deploy` from its own
-// package.json, which declares no workspace dependency, so it cannot import
-// `@claxedo/helpers/guards`. The two object checks are scoped to the Worker.
-
-function isWorkerRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function asWorkerRecord(value: unknown): Record<string, unknown> | undefined {
-  return isWorkerRecord(value) ? value : undefined
-}
-
-/** Only the string entries of an object; a non-string env or label value is not one. */
-function stringMap(value: unknown): Record<string, string> {
-  const record = asWorkerRecord(value)
-  if (!record) return {}
-  return Object.fromEntries(
-    Object.entries(record).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  )
-}
