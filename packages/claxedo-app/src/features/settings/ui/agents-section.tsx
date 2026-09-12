@@ -181,11 +181,16 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
    * app-server, so the list names the account and says the switch is not here
    * yet rather than offering one that damages the machine's login.
    */
-  const accounts = (check: LocalHarnessCheck) =>
-    harnessAccounts({ providerIds: providerIds(check) }, stored()).map((row) => {
+  const accounts = (check: LocalHarnessCheck) => {
+    const connect = AGENT_CONNECT_PROVIDER[check.id]
+    return harnessAccounts(
+      { providerIds: providerIds(check), ...(connect === undefined ? {} : { connectProviderId: connect }) },
+      stored(),
+    ).map((row) => {
       const identity = accountIdentity(row)
       return {
         id: row.id,
+        ids: row.ids,
         name: row.label ?? row.kind ?? row.providerId,
         isActive: row.isActive,
         ...(identity === undefined ? {} : { detail: identity }),
@@ -199,15 +204,24 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
         }),
       }
     })
+  }
 
-  const activate = async (id: string) => {
-    setActivating(id)
+  /**
+   * One account is one row per binding and the route marks one row, so a switch
+   * is a write each. A write that fails leaves the account marked on some
+   * bindings and not others; the re-read below then shows it as not active,
+   * which is what it is until every binding agrees.
+   */
+  const activate = async (ids: readonly string[]) => {
+    const [first] = ids
+    if (first === undefined) return
+    setActivating(first)
     try {
-      await activateCredential(id)
-      await readStored()
+      for (const id of ids) await activateCredential(id)
     } catch (err: unknown) {
       fail(err)
     } finally {
+      await readStored().catch(() => undefined)
       setActivating(undefined)
     }
   }
@@ -338,7 +352,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
                 inUse={inUseLabel(check)}
                 live={liveLabel(check)}
                 accounts={accounts(check)}
-                onActivate={check.id === "claude" ? (id) => activate(id) : undefined}
+                onActivate={check.id === "claude" ? (ids) => activate(ids) : undefined}
                 activateNote={check.id === "codex" ? language.t("settings.providers.agents.switchLater") : undefined}
                 activating={activating()}
                 onCheck={() => runCheck(check)}

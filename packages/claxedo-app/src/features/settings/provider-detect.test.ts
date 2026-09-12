@@ -108,17 +108,51 @@ function account(partial: Partial<StoredCredential> & { id: string; providerId: 
   return { isActive: false, ...partial }
 }
 
+const CLAUDE_BINDINGS = { providerIds: ["claude-acp", "claude-sdk"], connectProviderId: "claude-sdk" }
+
 describe("harnessAccounts", () => {
   test("every binding of the harness, including the one its connect card stores under, active first", () => {
     const rows = [
-      account({ id: "acp", providerId: "claude-acp" }),
+      account({ id: "acp", providerId: "claude-acp", accountId: "acc_scanned" }),
       account({ id: "openai", providerId: "openai" }),
       account({ id: "sdk_second", providerId: "claude-sdk" }),
       account({ id: "sdk_active", providerId: "claude-sdk", isActive: true }),
     ]
 
-    expect(harnessAccounts({ providerIds: ["claude-acp", "claude-sdk"] }, rows).map((row) => row.id))
+    expect(harnessAccounts(CLAUDE_BINDINGS, rows).map((row) => row.id))
       .toEqual(["sdk_active", "acp", "sdk_second"])
+  })
+
+  test("one login saved under both bindings is one account, keyed by the connect provider's row", () => {
+    const rows = [
+      account({ id: "acp", providerId: "claude-acp", accountId: "acc_1", isActive: true, expiresAt: 99 }),
+      account({ id: "sdk", providerId: "claude-sdk", accountId: "acc_1", isActive: true, health: "ok", lastValidatedAt: 7 }),
+    ]
+
+    const accounts = harnessAccounts(CLAUDE_BINDINGS, rows)
+
+    expect(accounts).toHaveLength(1)
+    expect(accounts[0]).toMatchObject({ id: "sdk", ids: ["sdk", "acp"], isActive: true })
+    // The check and the expiry are the account's, whichever binding recorded them.
+    expect(accounts[0]).toMatchObject({ health: "ok", lastValidatedAt: 7, expiresAt: 99 })
+  })
+
+  test("an account marked on one binding and not the other is not active", () => {
+    const rows = [
+      account({ id: "acp", providerId: "claude-acp", accountId: "acc_1", isActive: false }),
+      account({ id: "sdk", providerId: "claude-sdk", accountId: "acc_1", isActive: true }),
+    ]
+
+    expect(harnessAccounts(CLAUDE_BINDINGS, rows)).toMatchObject([{ id: "sdk", ids: ["sdk", "acp"], isActive: false }])
+  })
+
+  test("rows the provider never named stand alone rather than collapsing together", () => {
+    const rows = [
+      account({ id: "first", providerId: "claude-sdk" }),
+      account({ id: "second", providerId: "claude-sdk" }),
+    ]
+
+    expect(harnessAccounts(CLAUDE_BINDINGS, rows).map((row) => row.ids)).toEqual([["first"], ["second"]])
   })
 
   test("a harness with nothing stored lists nothing", () => {

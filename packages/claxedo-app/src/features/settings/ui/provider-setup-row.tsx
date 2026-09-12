@@ -17,6 +17,8 @@ export function providerSetupStatusLabel(status: ProviderSetupStatus, language: 
 /** One stored account under a harness row, already in words. */
 export type ProviderAccount = {
   id: string
+  /** Every stored row holding this account, one per binding of the harness. */
+  ids: readonly string[]
   name: string
   /** The account's identity at the provider, or a pasted key's last characters. */
   detail?: string
@@ -44,7 +46,7 @@ export const ProviderSetupRow: Component<{
   /** Every account stored for this harness, active first. */
   accounts?: readonly ProviderAccount[]
   /** Offers Make active on each inactive account; absent leaves the list read-only. */
-  onActivate?: (credentialId: string) => void | Promise<void>
+  onActivate?: (credentialIds: readonly string[]) => void | Promise<void>
   /** Why a read-only list offers no switch yet. */
   activateNote?: string
   /** The account whose switch is in flight. */
@@ -159,7 +161,7 @@ export const ProviderSetupRow: Component<{
                     variant="ghost"
                     disabled={props.activating !== undefined}
                     data-action="settings-provider-activate"
-                    onClick={() => void props.onActivate?.(account.id)}
+                    onClick={() => void props.onActivate?.(account.ids)}
                   >
                     {props.activating === account.id
                       ? language.t("settings.providers.agents.makingActive")

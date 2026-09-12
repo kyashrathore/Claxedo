@@ -48,6 +48,8 @@ const state = vi.hoisted(() => ({
   storedCredentials: [] as Array<Record<string, unknown>>,
   /** Every account id activate was called for, in order. */
   activated: [] as string[],
+  /** Account ids the activate route refuses. */
+  activateFails: [] as string[],
   /** What a machine scan finds, as the discovery route reports it. */
   discoveryItems: [] as Array<Record<string, unknown>>,
   credentialCalls: [] as string[],
@@ -171,7 +173,13 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
   if (url.pathname.endsWith("/activate")) {
     const id = decodeURIComponent(url.pathname.split("/").at(-2) ?? "")
     state.activated.push(id)
-    state.storedCredentials = state.storedCredentials.map((row) => ({ ...row, is_active: row.id === id }))
+    if (state.activateFails.includes(id)) {
+      return new Response(JSON.stringify({ error: { code: "credential_not_activatable", message: "refused" } }), { status: 409 })
+    }
+    // The route marks one row and clears the mark for that row's provider only.
+    const target = state.storedCredentials.find((row) => row.id === id)
+    state.storedCredentials = state.storedCredentials.map((row) =>
+      row.provider_id === target?.provider_id ? { ...row, is_active: row.id === id } : row)
     return new Response(JSON.stringify({ credential: state.storedCredentials.find((row) => row.id === id) }))
   }
   if (url.pathname === "/api/claxedo/credentials/discover") {
@@ -267,6 +275,7 @@ beforeEach(() => {
   state.dialogs.length = 0
   state.storedCredentials = []
   state.activated.length = 0
+  state.activateFails.length = 0
   state.discoveryItems = []
   state.projects = [LOCAL_PROJECT, CLOUD_PROJECT]
   state.catalogs = {
@@ -581,5 +590,58 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(agentRow("openai").querySelector('[data-action="settings-provider-activate"]')).toBeNull()
     expect(agentRow("openai").querySelector('[data-component="provider-activate-note"]')?.textContent)
       .toBe("settings.providers.agents.switchLater")
+  })
+
+  test("a login saved under both bindings is one account, keyed by the connect provider's row", async () => {
+    state.storedCredentials = [
+      { id: "acp_old", provider_id: "claude-acp", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+      { id: "sdk_old", provider_id: "claude-sdk", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+      { id: "acp_new", provider_id: "claude-acp", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
+      { id: "sdk_new", provider_id: "claude-sdk", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
+    ]
+    mount()
+
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_old", "sdk_new"]))
+    expect(accountRow("anthropic", "sdk_old").getAttribute("data-active")).toBe("true")
+    expect(accountRow("anthropic", "sdk_new").getAttribute("data-active")).toBe("false")
+  })
+
+  test("Make active marks every binding of the account it was clicked on", async () => {
+    state.storedCredentials = [
+      { id: "acp_old", provider_id: "claude-acp", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+      { id: "sdk_old", provider_id: "claude-sdk", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+      { id: "acp_new", provider_id: "claude-acp", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
+      { id: "sdk_new", provider_id: "claude-sdk", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
+    ]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toHaveLength(2))
+
+    accountRow("anthropic", "sdk_new").querySelector<HTMLButtonElement>('[data-action="settings-provider-activate"]')!.click()
+
+    await waitFor(() => expect(accountRow("anthropic", "sdk_new").getAttribute("data-active")).toBe("true"))
+    expect(state.activated).toEqual(["sdk_new", "acp_new"])
+    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/sdk_new/activate")
+    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/acp_new/activate")
+    expect(accountRow("anthropic", "sdk_old").getAttribute("data-active")).toBe("false")
+  })
+
+  test("a switch that half-lands leaves the account reading as not active", async () => {
+    state.storedCredentials = [
+      { id: "acp_old", provider_id: "claude-acp", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+      { id: "sdk_old", provider_id: "claude-sdk", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+      { id: "acp_new", provider_id: "claude-acp", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
+      { id: "sdk_new", provider_id: "claude-sdk", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
+    ]
+    state.activateFails = ["acp_new"]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toHaveLength(2))
+
+    accountRow("anthropic", "sdk_new").querySelector<HTMLButtonElement>('[data-action="settings-provider-activate"]')!.click()
+
+    await waitFor(() => expect(state.activated).toEqual(["sdk_new", "acp_new"]))
+    // The SDK binding moved, the ACP binding was refused: neither account has
+    // every binding, so neither claims the tag.
+    await waitFor(() => expect(accountRow("anthropic", "sdk_new").getAttribute("data-active")).toBe("false"))
+    expect(accountRow("anthropic", "sdk_old").getAttribute("data-active")).toBe("false")
   })
 })

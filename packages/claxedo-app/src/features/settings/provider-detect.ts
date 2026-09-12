@@ -116,18 +116,55 @@ export function accountIdentity(row: StoredCredential): string | undefined {
 }
 
 /**
+ * One account, however many of the harness's bindings store it.
+ *
+ * `ids` are those rows, the connect provider's first, and `id` is that first
+ * one — the row the list is keyed by and the one whose fields the account
+ * shows.
+ */
+export type HarnessAccount = StoredCredential & { ids: string[] }
+
+/**
  * The accounts one harness row lists, active first.
  *
- * Across every provider id the harness binds, including the one its connect
- * card stores under, because a single Claude login is stored twice — once per
- * binding — and the list is of accounts, not of bindings.
+ * One Claude login is saved once per binding — `claude-acp` and `claude-sdk`
+ * are two rows carrying the same `account_id` — so listing rows would show the
+ * account twice and let a switch mark one binding while the other kept the old
+ * account. Rows are grouped by the identity their provider gave them, an
+ * unnamed row standing alone, and a group counts as active only when every one
+ * of its rows is.
  */
 export function harnessAccounts(
-  check: { providerIds: readonly string[] },
+  check: { providerIds: readonly string[]; connectProviderId?: string },
   rows: readonly StoredCredential[],
-): StoredCredential[] {
-  const bound = rows.filter((row) => check.providerIds.includes(row.providerId))
-  return [...bound.filter((row) => row.isActive), ...bound.filter((row) => !row.isActive)]
+): HarnessAccount[] {
+  const groups = new Map<string, StoredCredential[]>()
+  for (const row of rows) {
+    if (!check.providerIds.includes(row.providerId)) continue
+    const identity = row.accountId ?? row.id
+    groups.set(identity, [...(groups.get(identity) ?? []), row])
+  }
+
+  const accounts = [...groups.values()].flatMap((members) => {
+    const ordered = [
+      ...members.filter((row) => row.providerId === check.connectProviderId),
+      ...members.filter((row) => row.providerId !== check.connectProviderId),
+    ]
+    const first = ordered[0]
+    if (first === undefined) return []
+    const health = ordered.find((row) => row.health !== undefined)?.health
+    const lastValidatedAt = ordered.find((row) => row.lastValidatedAt !== undefined)?.lastValidatedAt
+    const expiresAt = ordered.find((row) => row.expiresAt !== undefined)?.expiresAt
+    return [{
+      ...first,
+      ids: ordered.map((row) => row.id),
+      isActive: ordered.every((row) => row.isActive),
+      ...(health === undefined ? {} : { health }),
+      ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
+      ...(expiresAt === undefined ? {} : { expiresAt }),
+    }]
+  })
+  return [...accounts.filter((account) => account.isActive), ...accounts.filter((account) => !account.isActive)]
 }
 
 /** Mark one stored account as the one its provider runs on. */
