@@ -724,7 +724,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       return props.shouldAnchorBottom()
     },
     scrollEndThreshold: 80,
-    overscan: 50,
+    get overscan() { return renderOverscan() },
     paddingEnd: 64,
     // A getter, not a stable closure: the virtualizer memoizes the extractor's
     // output keyed on the extractor's IDENTITY plus the computed range/count
