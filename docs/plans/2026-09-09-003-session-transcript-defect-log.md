@@ -1,6 +1,6 @@
 # Session transcript, composer, and navigation defect log
 
-Status: observations only. Nothing here has been changed.
+Status: observations, then three verification passes (2026-09-10, -11, -12); the last one reviewed the fixes themselves.
 
 Reported by the user on 2026-09-09 while driving a live session. Each entry names
 the canonical owner, the evidence, and whether the behavior is a defect or an
@@ -46,7 +46,7 @@ rather than by reading the diff:
 | D23/D27 | a running tool names itself and opens | all three `pending()` guards removed together |
 | D18 | an interrupted turn keeps its fold control | control and default separated; a reader can re-collapse |
 | D13 | the disabled rich-staging module deleted | its paint cache was write-only; the 8 paint tests still pass |
-| D28 | a non-zero exit is no longer a failure | Codex/Cursor keep only their own verdict; Claude never had it |
+| D28 | ~~a non-zero exit is no longer a failure~~ | Reopened 2026-09-12: the Claude evidence was wrong and the Codex change was a no-op; see the correction under "D28's matrix" |
 | D5 | folding a running turn can be turned off | a Settings row plus all 17 locales |
 
 Two defects were found while measuring and are closed with them:
@@ -162,23 +162,32 @@ Every site that turns a process result into a failure, and what it reads:
 | Cursor | `cursor/adapter.ts:352-358` | `status === "error"` | nested `value.exitCode !== 0` |
 | Claude | `claude/adapter.ts:220` | `is_error` | — (the SDK folds both into `is_error`) |
 
-Correction: the row for Claude above, and the entry's claim that "Claude Code
-sets `is_error` for a non-zero Bash exit, so the observable behavior matches",
-are both refuted by the logs. Across 9,915 bash `tool_result` blocks in the local
-sessions, `is_error` is false on every one. Claude Code does not flag a non-zero
-exit at all — it adds `returnCodeInterpretation`, whose observed value is
-"No matches found". So D28 never affected the Claude harness.
+Correction (2026-09-12, replacing the 2026-09-10 paragraph that stood here):
+the 2026-09-10 pass claimed `is_error` is false on every local bash
+`tool_result` and closed D28 on that. Re-measured on 2026-09-12 across the
+local Claude Code logs for this repo, `is_error` is true on 594 of 27,172 Bash
+results in the first 400 transcripts (a full-corpus count by the reviewer:
+1,417 of 80,668), and those results begin with `Exit code N`. Claude Code
+therefore does distinguish the two meanings itself: a non-zero exit that is a
+normal negative answer gets `is_error: false` plus `returnCodeInterpretation`
+("No matches found", "Files differ"); a genuine failure gets `is_error: true`.
+The Claude adapter, which reads `is_error`, is right as it stands.
 
-That makes the fix symmetric after all, and it landed: Codex and Cursor stop
-inferring failure from the exit code and keep only the verdict the harness
-itself supplies — Cursor's `status === "error"`, and Codex's
-`CommandExecutionStatus`, which distinguishes `completed` from `failed` beside
-the code it reports. Codex's bare `process/exited` notification carries no
-verdict at all, only a code, so it now always completes; the code stays in
-`metadata.codex.exitCode` for the row to show.
+Codex is the opposite: across 16,529 completed command items in 202 local
+rollouts, `CommandExecutionStatus` is a pure function of the exit code
+(`completed` iff 0, `failed` otherwise), so "keep only Codex's own verdict"
+changed nothing on `item/completed`, and the relaxed `process/exited` path
+reported every crash (127, 137) as a plain success while no renderer reads
+`metadata.codex.exitCode`. Cursor's shell contract was never measured.
 
-What remains open is presentation, not classification: a completed call that
-exited non-zero should still say so, which is D22's other half.
+Landed on 2026-09-12 instead: `process/exited` fails on a non-zero code again
+so Codex's two paths agree; `item/completed` handles `declined` explicitly and
+carries `exitCode` on its metadata; Cursor infers failure from `status ===
+"error"` or a non-zero nested exit code, with tests on both axes. D28 is
+therefore **open for Codex and Cursor** — those harnesses cannot separate "the
+tool answered no" from "the tool failed" at the source — and closed by the
+harness's own design for Claude. The honest next step is D22's other half:
+render the exit code on a completed shell row.
 
 ### R1 is blocked behind its precondition
 
@@ -190,6 +199,154 @@ answers into the tool's `updatedInput`, but whether that reaches the part was no
 established, so the alias is deliberately not applied yet.
 
 ---
+
+## Status, 2026-09-11
+
+Full re-verification. Method: code inspection at each named owner, the focused
+unit tests (`directory-event-projector.test.ts`, `turn-fold.test.ts`,
+`part-groups.test.ts`, `basic-tool.test.ts` — all green), and live reproduction
+in Storybook — the transcript lab on the three captured sessions, and the
+timeline playground fed a fabricated `opencode export` fixture built to exercise
+each defect state (running calls, an interrupted turn, an answered question
+among work, a lone skill row, a 60-line output, a tool error).
+
+| # | Defect | Status | Evidence |
+|---|--------|--------|----------|
+| D1 | skill row dead click | Fixed | Renderer spreads `{...props}` and renders `props.output` in a scrollable region; clicking "Playwriter" in the playground opens the output |
+| D2 | capitalised tool names never group | Fixed | `canonicalToolName` canonicalises once at the contract boundary (`Agent`→`task`, `LS`→`list`); the matrix spec now asserts the real behavior |
+| D3 | `skill` splits a work run | Fixed | `isWorkGroupTool` is named by exclusion — `skill`, `sendmessage`, `toolsearch` all join work runs |
+| D4 | fold swallows subagent cards | Fixed | `agents` groups and standalone spawns are non-foldable; the chip stays visible under the collapsed fold in the lab |
+| D5 | running-turn fold, no off switch | Fixed | Settings → General row + all locales; consumed at `message-timeline.tsx` |
+| D6 | can't-fail spec | Fixed | Spec rewritten with a distinguishing assertion against the GenericTool title |
+| D7 | subagent opens one-off right split | Fixed | `openSubagent` routes through `workspacePanel.open`; `splitContent` has no transcript caller left |
+| D8 | subagent card overflows column | Never reproduced | Log's own measurement stands; lab chips render contained |
+| D9 | videos can't be pasted | Still present | `attachmentMime` unchanged — video sniffs binary → dropped with the generic toast. Feature gap, not a filter bug |
+| D10 | send mid-turn aborts instead of steer | Still present | `admitPromptSubmission` returns `abort-active` before the text is considered; no caller passes `delivery` |
+| D11 | session jumps to top on click | Fixed, redesigned | `session.idle` no longer bumps the row and the rail requests `created_desc`, so a row never moves; the hold-while-aiming and the banded list were built and then deleted (28a3aacb33). See the 2026-09-12 status for what that leaves behind |
+| D12 | blocks keep growing after paint | Still present | `markdown-progressive.ts` unchanged: 8 initial rows, +4/frame after 260 ms |
+| D13 | dead rich-staging module | Fixed | Module deleted |
+| D14 | assistant text emitted twice | Still present | Branch-4 fallback unchanged — a non-continuation snapshot re-emits the whole text; child messages always emit the full snapshot |
+| D15 | resolved question flashes on nav-back | Still present | "Absent means keep" + `mergeBusySessionStatus` help, but a stale *defined* question list still re-seeds the cache |
+| D16 | composer images leak across threads | Still present | `attachments.ts` and `browser-panel.tsx` still `prompt.set()` on the ambient scope; new threads still share the per-directory draft |
+| D17 | late abort kills wrong turn | Still present | `session.abort({sessionID, directory})` carries no turn id |
+| D18 | interrupted turn loses fold control | Fixed | `explainsItself` keeps the control and defaults the turn unfolded; verified live — an interrupted turn renders "Worked for 5s" expanded |
+| D19 | session switch shifts content | Still present | Cold-mount `renderOverscan` is still 1 and the fold still resolves from post-mount data |
+| D20 | blank regions on fast scroll | Still present | `overscan: 50` still dead; effective band still 1–6 rows |
+| D21 | hidden scrollbar / silent clip | Fixed | `[data-scrollable]` has an always-painted thin bar; `.ui-bash-scroll` keeps the hover-reveal thin bar. The 240px cap itself is R2 |
+| D22 | aborted/failed card too heavy | Fixed | Card is hairline + transparent + dimmed accent; verified live |
+| D23/D27 | bare "Running" row, unclickable | Fixed, one residual | A running row names its command and toggles open/closed on click — verified live. **Residual:** a call whose input never landed still renders the bare verb; needs an interrupted trace |
+| D24 | expanded card survives fold | Fixed | `foldedGroupKeys` exempts the live group only on auto-fold; an explicit fold hides it |
+| D25 | "Thinking…" flaps on send | Still present | The dispatcher still writes server `idle` unconditionally; `hasPendingPrompt` is never consulted outside `submit/` |
+| D26 | TextShimmer repaints per instance | Fixed | The swept copy mounts only while sweeping — measured 2 swept vs 6 base spans with two running rows, 0 swept at rest |
+| D28 | non-zero exit = tool error | Reopened 2026-09-12 | Claude already separates the two meanings (`is_error` + `returnCodeInterpretation`); Codex's status equals its exit code, so the harness cannot; see the 2026-09-12 correction |
+| D29 | opening a panel switches to another | Still present | `workspacePanelTopLevelOpenTarget` unchanged — still forces `focus: review` and `navigator ?? "files"` |
+| D30 | localhost URL not openable / tab vanishes | Still present | Transcript anchors are raw `<a target="_blank">`; nothing routes to `openBrowserTab`/`platform.openLink`. The vanish half rides on D29 |
+| D31 | only `http(s)` linkified | Still present | Both patterns still hardcode `https?` (`markdown.tsx`, `message-part.tsx`) |
+| D32 | subagent chips → phantom rows, dead "Thinking" tabs, unclickable chip | Still present | Confirmed by end-to-end code trace (10 findings): child lifecycle events never publish, task-only rows poison the child buffer, ambient tasks mint phantom rows, ambiguous association forks rows, batched results double-spawn, no terminal sweep at turn end |
+| R1 | question should persist as its own card | Still present | `question` sits in `STANDALONE_TOOLS` but is still foldable as a standalone part — the answered question lands inside the turn fold (verified live), and it still uses `BasicTool` chrome |
+| R2 | show complete tool output | Still present | `max-height: 240px` untouched; measured `clientHeight 240` vs `scrollHeight 1512` |
+
+Tally: 18 closed, 14 still present, 1 never reproduced. The open cluster that
+hurts most is the interactive loop — D10 → D17 → D25 (send aborts, a late abort
+kills the next turn, the status row flaps) — plus the ambient-state leaks
+D15/D16/D29/D30, and the D32 subagent pipeline, which is the largest confirmed
+source of dead UI.
+
+### Found while reproducing
+
+`timeline-playground.stories.tsx` could not render at all: `USER_VARIANTS` calls
+`partIds()` at module scope before `const SESSION_ID` initializes — a TDZ crash
+introduced in 4cc48881ad. Fixed by moving the `SESSION_ID` declaration above its
+first caller (declaration order only, no behavior change).
+
+---
+
+## Status, 2026-09-12
+
+Third pass, with a different question: not "is the mechanism addressed" but
+"is the code that addressed it sound". Every fix-wave commit (15e8437dc5 …
+8ae58af004) went through a design review against CLAUDE.md, with each claim
+re-verified at the owner; the working tree was then fixed where the review
+held. Gates at the end of this section.
+
+### Rows that changed status
+
+| # | Was | Now | Why |
+|---|---|---|---|
+| D2 | Fixed | Fixed, one regression repaired | `askuserquestion → question` routed Claude questions to a renderer gated on `metadata.answers`, which the Claude adapter never set (the R1 note above predicted it). The adapter now reconstructs the answers from `tool_use_result.answers`; `reconstructQuestionAnswers` moved to the contract as the one owner. `multiedit → edit` had the same shape (an empty diff) and is removed from the alias table |
+| D3 | Fixed | Fixed, one regression repaired | naming work by exclusion admitted every tool into a run, but the run's header only counted shell/edit/web members, so two skills or two MCP calls read "Worked" with a terminal icon. `work-group-summary.ts` now names the other members |
+| D11 | Fixed | Fixed, redesigned; residue | the rail requests `created_desc`, so a row never moves. The banded list, the hold-while-aiming, the `last_human_turn_at` column, its migration and the server `band` filter were built for this and then deleted or orphaned — see "Left for the owner" |
+| D16 | Still present | Fixed (writer half) | an attachment resolved the draft after its file read finished, so a switch mid-read put the image in the next session. `add()` pins the composer's scope before the read. The shared per-directory draft is now a per-provider draft id; no production composer mounted without a surface id, so that half was latent |
+| D23/D27 | Fixed | Fixed, one regression repaired | a running row's chevron opened an empty panel for every renderer that gates its body on `output`; `hasChildren` now asks whether anything resolved |
+| D25 | Still present | Fixed | the stale idle was a `/session/status` read that omits idle sessions, written by the rail batch and the pane hydration through `applyDirectorySessionMeta`. A server idle for a session with a prompt still in flight is ignored; the registry moved to a leaf module so the dispatcher can read it |
+| D28 | Fixed | Reopened | see the correction under "D28's matrix" |
+| D29 | Still present | Fixed | the top-level open and the full-width seed both had no term for the surface the user chose; `workspacePanelChosenSurface` reads the panel's working set |
+| D30/D31 | Still present | Fixed, two residuals | every transcript anchor dispatches `claxedo:open-link`; the app routes loopback to a Browser tab, `file://` to the OS path opener, the rest to `platform.openLink`; both linkifiers share one scheme list; the sanitizer keeps DOMPurify's default schemes plus the app's. Residuals: a bare non-http URL in prose is still marked's autolink (http/www only), and the desktop `open-link` gate still drops `claxedo://` and `vscode://` — a security-policy call, not widened here |
+| D32 | Still present | Mostly fixed | findings 2, 4, 5, 6, 7, 8 confirmed by red tests and fixed; 3's cause confirmed but its remedy already existed; 9 and 10 fall out of the phantom producers going away. Open: a completed non-agent background task still mints one terminal row, because `task_notification` carries no agent marker — needs a per-turn task ledger in the Claude driver |
+| R1 | Still present | Half done | an answered question is exempt from the fold and no longer counts toward it; it still uses `BasicTool` chrome |
+
+Found in the review and fixed in the same pass: a docked subagent tab hid the
+permission and question docks (the read-only gate removed the whole composer
+region), so a blocked subagent could never be answered; a rejected delegation
+rendered as an empty chip row instead of an error card; the e2e suite still
+targeted the deleted task card, and two absence checks were green for any
+input; four `ui.basicTool.*` keys existed in English only; `TextShimmer` had
+lost its fade-in; eighteen lint errors from the fix wave.
+
+### Left for the owner
+
+These are product or policy calls the fix wave made on its own, or debt it
+left, and none is changed here:
+
+- **The session list no longer knows recency.** Each section shows its five
+  newest-created sessions; a session created last month and used ten minutes
+  ago is not in that page, and an agent-spawned session lands at the top and
+  shifts every row. The `last_human_turn_at` column (migration
+  `20260910000100`), three `created_at` indexes, the server `band` filter and
+  the app's `lastHumanTurn` plumbing survive with no reader, and the control
+  plane's sync path never writes the column. Either wire the column and order
+  by it, or delete it with a migration.
+- **The abort path was rewritten inside 4cc48881ad** with no mention: the
+  optimistic idle and the todo clear on Stop are gone, the signed-control-plane
+  branch is gone (every abort now calls `session.status`, `permission.list`,
+  `question.list`), and failures toast instead of being swallowed.
+- **Tool attachments render only in the `read` renderer**; Codex, Pi and
+  every other Claude tool's images are computed, persisted and dropped. Also:
+  a multi-image result shares one `sourcePath` and loses its bytes, and
+  `/file/raw` serves `application/octet-stream`.
+- **`transcript-lab-fixture.json` is 1.27 MB of the owner's own transcripts**
+  with the home path in it 896 times; the generator has no redaction and the
+  storybook workflow builds it.
+- The `final-message` fold shape is reachable only from the storybook lab.
+- D24's auto-fold half: a card the reader expanded stays open in the live
+  group while the control reads folded.
+- `timelineFoldWhileRunning` still defaults on; D5 added a switch only.
+- The chip replaced the card without its cmd/middle-click anchor; subagent
+  tabs live in the workspace-scoped working set and outlive their session;
+  their label freezes at first click; there is no narrow-viewport behaviour.
+- Commits 455ba55814 … eae253dfd5 do not build in isolation (`canonicalToolName`
+  landed nine commits after its first import); they are pushed.
+- Several e2e mocks hardcode `sort: "updated_desc"` and
+  `core-claude-native-sdk-rail.spec.ts` still asserts the row moving to the top.
+
+### Gates, 2026-09-12
+
+Run on the working tree, which also held another session's uncommitted
+models-settings refactor; failures are attributed by file.
+
+| Gate | Result |
+|---|---|
+| root `bun run lint` | 161 errors, down from 194; none in a file this pass touched (the 18 from the fix wave and the 11 dead identifiers in `message-part.tsx` are gone; the rest predate 2026-09-10) |
+| `bun run test:architecture-ratchets` | passes at a clean checkout of the branch head (app-local 1010 / 38, desktop-renderer-unsigned 1061 / 57, ceilings recorded to those numbers) |
+| claxedo-app `bun run test:architecture` | 252 pass |
+| claxedo-app `tsgo -b`, claxedo-desktop, session-ui, ui, agent-* typechecks | clean |
+| session-ui / ui / agent-runtime-contract / agent-event-runtime | 255 / 61 / 40 / 208 pass, 0 fail |
+| agent-sdk-runtime | 660 pass; 2 pre-existing failures (the churn ratchet on `runtime.ts` and `codex/driver.ts`, both over their ceiling at the previous head; the Pi catalog test) |
+| workspace-runtime | 1108 pass; 10 pre-existing failures (5 SDK-boundary guards that need the `rg` shim, 2 real-pty spawns, 3 directory-less session routes red at the previous head) |
+| claxedo-server-core (vitest) | 579 pass; 3 files failed to load a stale local `agent-event-runtime` dist and pass (60 tests) once the contract and event runtime are rebuilt in publish order |
+| claxedo-app `bun test` | 5501 pass; 3 pre-existing failures (route audit, two git-client cases) |
+| claxedo-app `vitest` | 1384 pass; 2 pre-existing failures (icon sprite id from 12e21d992e, hosted workspace chip) |
+| e2e `core-harness-rendering-matrix.spec.ts` | 30 pass under Playwright; the two real-harness specs were updated but not run |
 
 ## D1 — The `skill` tool row is a dead click target
 
@@ -1614,5 +1771,171 @@ had in mind is not recorded anywhere in the code.
 
 Related: D30 (an `http` localhost URL was also not clickable), which suggests the
 missing piece is the click routing, not just the pattern.
+
+Read.
+
+---
+
+## D32 — Subagent chips spawn phantom rows, dead "Thinking" tabs, and unclickable chips
+
+**Reported by the user:**
+
+> clicking a subagent chip opens a tab that is stuck on "Thinking" — and there
+> are six chips; are there really six subagents? One chip can't be clicked at
+> all.
+
+**Impact:** Clicking a chip opens a child-session tab whose transcript is
+permanently empty — the user sees "Thinking" forever even though the subagent
+finished. The chip row itself overstates the count: phantom rows render their
+own chips, so the transcript claims more subagents than ever spawned, and some
+of those chips are dead.
+
+This is one user-visible bug with a pipeline of causes. All ten findings below
+are confirmed by tracing the code, not guessed from symptoms.
+
+### How the pipeline works today
+
+`ClaudeDriver.runQuery` iterates SDK messages → `ingestClaudeSdkMessage` runs
+two lanes per message (`driver.ts:647-674`):
+
+- **Observation lane** — `claudeSubagentObservations(message)`
+  (`agent-event-runtime/.../claude/adapter.ts:343`) extracts spawn/task/result
+  observations → `observeSubagent` (`sdk-runtime-adapter.ts:579`) → the
+  admission boundary (`subagent-admission.ts`) resolves which *row* the
+  observation belongs to, allocates a `childSessionId`, persists to
+  `session_subagent`, and publishes `subagent-updated` via `router.project` →
+  parent projector → `publishRuntime` → SSE → `applySubagentRuntimeEventEnvelope`
+  → `subagentRegistry.apply` → chips re-render.
+- **Transcript lane** — `runtime.ingest` translates the message into runtime
+  events → `router.project(event, source, route)` — child route when
+  `parent_tool_use_id` is set. `createChildEventRouter` buffers unresolved child
+  events (256 events / 1 MB / 30 s), replays them once `observeSubagent` calls
+  `router.associate(toolCallId → child target)`, and drops + poisons them after
+  TTL/limits/dispose.
+
+The child's seeded turn: `observeSubagent` calls `store.startTurn` for the child
+session (user message with the task description + assistant message +
+`status: 'busy'`). Routed events append parts to that assistant message.
+`store.finishTurn` runs only when `subagentOutcome()` sees a terminal
+observation (`subagent-transcript.ts:56`).
+
+UI: chip click → `claxedo:open-subagent` →
+`workspacePanel.open({focus: {kind: "subagent", sessionId}})` →
+`openSubagentWorkspaceTab` → `SessionPaneScope` + `SessionPage` docked in the
+panel. The child's `statusQuery` reads `busy` → the timeline shows the
+`Thinking` row because the turn is busy with no assistant parts.
+
+### Confirmed defects
+
+1. **The "Thinking" tab is a child session with an empty transcript.** The row
+   isn't centered — it's left-aligned inside the centered `md:max-w-192 mx-auto`
+   column; it *looks* centered because the pane is otherwise empty (the seeded
+   user message renders a near-invisible empty bubble when the observation had
+   no `description` — `sdk-runtime-adapter.ts:644` passes `parts: []`). The real
+   bug is why it's empty.
+
+2. **Child turn lifecycle events are dropped.** `sdk-runtime-adapter.ts:564`
+   sets `onEvent: () => {}` on the child projector, and the `store.startTurn` /
+   `store.finishTurn` return values at lines 636/672 are discarded. The store
+   does not self-publish — only `eventHub.publishRuntime` feeds
+   `/api/wr/runtime-events` (`events.ts:42`+). Consequences:
+   - No `session.status` event ever fires for the child → its status is stale in
+     the UI (stuck `busy`; "Thinking" can persist after the row completes).
+   - The child assistant message's `time.completed` never publishes → the live
+     UI sees a permanently unfinished turn.
+   - The seeded user message never publishes (masked by refetch-on-open, so
+     usually invisible).
+
+3. **Task-only rows never bind `parent_tool_use_id`.** A row whose first
+   observation is `background_tasks_changed` or a `task_*` event without
+   `tool_use_id` binds only the `task_id` key. Nested messages carry the *Task
+   tool_use id* → never match → buffered 30 s →
+   `child_event_route_buffer_expired` → **poisoned**: the child transcript is
+   permanently empty → the tab is "Thinking" forever even while the chip's
+   status updates (`child-event-routing.ts:130,160-164`).
+
+4. **Non-agent tasks become subagent rows.** `taskObservation` ignores
+   `task_type`, `ambient`, and `skip_transcript` (`adapter.ts:389-433`).
+   `local_bash` background commands, workflows, and internal housekeeping tasks
+   all get `transcript: {kind: "messages"}` rows. Those without a `tool_use_id`
+   are ambient → they render in the "Background subagents" section
+   (`message-timeline.tsx:1958-1967`) — phantom chips whose seeded child
+   sessions can never receive routed events → permanent "working" + "Thinking".
+
+5. **`background_tasks_changed` is handled as an edge stream, but the SDK
+   defines it as a replace-level snapshot** (`adapter.ts:417-429`). Every member
+   emits `status: "running"`; a task that *leaves* the set is never marked
+   terminal or removed → stale "working" rows forever. It can also fire before
+   the assistant snapshot carrying the spawn, creating a task-keyed row before
+   the tool-keyed row exists.
+
+6. **Ambiguous association silently forks a new row.**
+   `sole(associationMatches)` (`subagent-admission.ts:289-294`) returns
+   `undefined` when an observation's keys match two different rows →
+   `deterministicKey` mints a *third* row. Concretely: if `task_started` carries
+   `[stable:task-N → row-B, tool:X → row-A]`, it creates row
+   `subagent_hash(stable:task-N)` — three rows for one agent, each with its own
+   seeded child session.
+
+7. **`tool_use_result.agentId` is stamped on every `tool_result` block in the
+   message** (`adapter.ts:374`). A user message batching multiple tool results
+   produces an agent observation per block — each gets a "spawn" edge on the
+   agent's row. For batched parallel Task results sharing one `agentId`, the
+   second resolves via provider association into the *first* row → the first
+   chip renders twice (no dedup in `SubagentChipRow` — `subagent-chip.tsx:106-108`
+   flatMaps without deduping) and the second spawn row is stuck "working"
+   forever.
+
+8. **No live sweep when the parent turn ends.** `reconcileOrphanedSubagents`
+   runs only at store construction (`store.ts:589`). `router.dispose()` at turn
+   end drops unresolved buffers, and post-turn `task_notification`s for
+   background agents only arrive on the *next* query — a row whose terminal
+   event is missed or deferred stays "working" for the life of the process →
+   **status never changes**.
+
+9. **"Can't click."** The chip renders a `<span>` (not a button) when
+   `resolution !== "ready"` (`subagent-chip.tsx:126,142-155`). That requires no
+   `childSessionId` or transcript kind `none`/`unknown`
+   (`subagent-presentation.ts:120-126`). For claude rows every observation is
+   openable so a child is allocated — *except* rows created by transcript-less
+   events (status-only/host events hitting a missing row) or hydrated rows
+   persisted with `transcript_kind = 'none'`. The unclickable chip is almost
+   certainly one of these degraded rows — consistent with the phantom-row
+   producers above.
+
+10. **On "are there really six"** — OS process count is meaningless (harness +
+    probe + MCP processes exist regardless; `driver.ts:307,523`). The
+    authoritative count is `GET /session/:id/subagents` / the `session_subagent`
+    table. Every local `state.db` under `~/.claxedo` was checked — none contain
+    the session (it likely ran in an unreachable workspace store, or was
+    cleaned). Given findings 4–7, six chips can correspond to fewer real
+    spawns — the "Claude-Agent / Delegated task" chip is the fallback
+    label/description (`subagent-presentation.ts:116-117`), i.e., a row that
+    never received a spawn observation carrying `subagent_type`/`description` —
+    a phantom/split row, not a real spawn.
+
+### Proposed fix direction (not implemented)
+
+1. **`adapter.ts`**: filter `taskObservation`/`background_tasks_changed` to
+   `local_agent` (skip `ambient`/`skip_transcript` tasks); treat
+   `background_tasks_changed` as a snapshot — mark rows not in the set as
+   terminal instead of only adding members; in the `user`-message branch, stamp
+   `providerId` only on the block that actually is the agent result.
+2. **`subagent-admission.ts`**: when `sole(associationMatches)` is ambiguous,
+   prefer an explicit merge order (provider → stable → tool) or emit a
+   diagnostic rather than minting a new row.
+3. **`sdk-runtime-adapter.ts`**: emit the child's `startTurn`/`finishTurn`
+   events on `publishRuntime` (or the compat lane) so the child session's
+   status/completion is live; when a row has only a task-id binding, also
+   associate the spawn `toolCallId` once known so buffered child events replay
+   instead of expiring.
+4. **`sdk-runtime-adapter.ts`**: on parent turn end, terminalize children still
+   `running` (or at least emit a status sweep) rather than leaving them until
+   next process start.
+5. **`subagent-chip.tsx`**: dedupe chips by `subagentKey`.
+
+Regression tests to add: parallel Task results in one user message,
+`background_tasks_changed` membership removal, task row without `tool_use_id`,
+and the child `finishTurn` event emission.
 
 Read.
