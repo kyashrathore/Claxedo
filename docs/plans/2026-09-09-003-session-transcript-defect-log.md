@@ -79,12 +79,12 @@ D13 are wrong, and both hid the defects they were built to show:
 
 ### Refuted or refined by measurement
 
-- **D21 is already fixed and survives being broken.** `[data-scrollable]` now
-  carries an always-painted thin bar, and its thumb token is genuinely
-  theme-aware (`alpha-dark-20` light, `alpha-light-20` dark), so it does not
-  vanish in dark mode. `overflow-x: auto` is set, so the long-line half of the
-  entry does not reproduce either. The 240px cap itself is untouched — that is
-  R2, and it is open.
+- **D21 was fixed by the same commit that measured it (4cc48881ad).** That
+  commit changed `[data-scrollable]` from `scrollbar-width: none` to an
+  always-painted thin bar with a theme token for the thumb, and set
+  `overflow-x: auto`, so neither half of the entry reproduces afterwards. The
+  earlier wording here presented that state as pre-existing; it was not. The
+  240px cap itself is untouched — that is R2, and it is open.
 - **D2 is already fixed at the canonical owner.** The client-presentation
   projection lowercases `toolName` once at `tool-start`, and every other case
   reads the canonicalised name back out, so no path leaks harness casing.
@@ -222,7 +222,7 @@ among work, a lone skill row, a 60-line output, a tool error).
 | D8 | subagent card overflows column | Never reproduced | Log's own measurement stands; lab chips render contained |
 | D9 | videos can't be pasted | Still present | `attachmentMime` unchanged — video sniffs binary → dropped with the generic toast. Feature gap, not a filter bug |
 | D10 | send mid-turn aborts instead of steer | Still present | `admitPromptSubmission` returns `abort-active` before the text is considered; no caller passes `delivery` |
-| D11 | session jumps to top on click | Fixed, redesigned | `session.idle` no longer bumps the row and the rail requests `created_desc`, so a row never moves; the hold-while-aiming and the banded list were built and then deleted (28a3aacb33). See the 2026-09-12 status for what that leaves behind |
+| D11 | session jumps to top on click | Fixed, redesigned | the session list orders by when the reader last spoke to it (`last_human_turn_at DESC NULLS LAST, created_at DESC`), so a row moves on their own send and on nothing else; the hold-while-aiming and the banded list were built and then deleted |
 | D12 | blocks keep growing after paint | Still present | `markdown-progressive.ts` unchanged: 8 initial rows, +4/frame after 260 ms |
 | D13 | dead rich-staging module | Fixed | Module deleted |
 | D14 | assistant text emitted twice | Still present | Branch-4 fallback unchanged — a non-continuation snapshot re-emits the whole text; child messages always emit the full snapshot |
@@ -271,19 +271,26 @@ held. Gates at the end of this section.
 
 ### Rows that changed status
 
+Two passes on 2026-09-12: a review pass that repaired what the review held,
+and a second pass that took every remaining row and every owner call as
+work to finish. Status after both:
+
 | # | Was | Now | Why |
 |---|---|---|---|
 | D2 | Fixed | Fixed, one regression repaired | `askuserquestion → question` routed Claude questions to a renderer gated on `metadata.answers`, which the Claude adapter never set (the R1 note above predicted it). The adapter now reconstructs the answers from `tool_use_result.answers`; `reconstructQuestionAnswers` moved to the contract as the one owner. `multiedit → edit` had the same shape (an empty diff) and is removed from the alias table |
 | D3 | Fixed | Fixed, one regression repaired | naming work by exclusion admitted every tool into a run, but the run's header only counted shell/edit/web members, so two skills or two MCP calls read "Worked" with a terminal icon. `work-group-summary.ts` now names the other members |
-| D11 | Fixed | Fixed, redesigned; residue | the rail requests `created_desc`, so a row never moves. The banded list, the hold-while-aiming, the `last_human_turn_at` column, its migration and the server `band` filter were built for this and then deleted or orphaned — see "Left for the owner" |
+| D11 | Fixed | Fixed, redesigned | the rail requests `human_turn_desc`: `last_human_turn_at DESC NULLS LAST, created_at DESC`, with a keyset cursor and an index that serves it. The control plane's sync path writes the column, the submit path is its only client-side writer, and the `band` filter is deleted. A click, an agent's turn, a wake, a subagent, a scheduled run and a turn completing all move nothing |
+| D12 | Still present | Fixed | the list stager is deleted: a settled block painted eight rows and grew afterwards, a streaming block was re-truncated on every delta, and nothing measured depended on it. A test counts zero row removals after first paint |
+| D15 | Still present | Fixed | the requests writer records every id it removes; a hydration read cannot re-open an id this client saw removed, a read that stops listing it retires the guard, and a server that asks the same id again re-opens it |
 | D16 | Still present | Fixed (writer half) | an attachment resolved the draft after its file read finished, so a switch mid-read put the image in the next session. `add()` pins the composer's scope before the read. The shared per-directory draft is now a per-provider draft id; no production composer mounted without a surface id, so that half was latent |
+| D20 | Still present | Contradiction removed, band unchanged | the virtualizer's `overscan: 50` never applied because the range extractor rendered one to six rows; the option now reads the same signal. Widening the band is tuning that needs a measurement this pass did not take |
 | D23/D27 | Fixed | Fixed, one regression repaired | a running row's chevron opened an empty panel for every renderer that gates its body on `output`; `hasChildren` now asks whether anything resolved |
 | D25 | Still present | Fixed | the stale idle was a `/session/status` read that omits idle sessions, written by the rail batch and the pane hydration through `applyDirectorySessionMeta`. A server idle for a session with a prompt still in flight is ignored; the registry moved to a leaf module so the dispatcher can read it |
-| D28 | Fixed | Reopened | see the correction under "D28's matrix" |
+| D28 | Fixed | Reopened for Codex and Cursor | see the correction under "D28's matrix"; the classification is honest again on both Codex paths and the exit code travels on the completion metadata, but no renderer shows it yet (D22's other half) |
 | D29 | Still present | Fixed | the top-level open and the full-width seed both had no term for the surface the user chose; `workspacePanelChosenSurface` reads the panel's working set |
-| D30/D31 | Still present | Fixed, two residuals | every transcript anchor dispatches `claxedo:open-link`; the app routes loopback to a Browser tab, `file://` to the OS path opener, the rest to `platform.openLink`; both linkifiers share one scheme list; the sanitizer keeps DOMPurify's default schemes plus the app's. Residuals: a bare non-http URL in prose is still marked's autolink (http/www only), and the desktop `open-link` gate still drops `claxedo://` and `vscode://` — a security-policy call, not widened here |
-| D32 | Still present | Mostly fixed | findings 2, 4, 5, 6, 7, 8 confirmed by red tests and fixed; 3's cause confirmed but its remedy already existed; 9 and 10 fall out of the phantom producers going away. Open: a completed non-agent background task still mints one terminal row, because `task_notification` carries no agent marker — needs a per-turn task ledger in the Claude driver |
-| R1 | Still present | Half done | an answered question is exempt from the fold and no longer counts toward it; it still uses `BasicTool` chrome |
+| D30/D31 | Still present | Fixed | every transcript anchor dispatches `claxedo:open-link`; the app routes loopback to a Browser tab, `file://` to the OS path opener, the rest to `platform.openLink`; both linkifiers and a marked inline extension share one scheme list, so a bare `file://`, `vscode://` or `claxedo://` in prose is a link too; the sanitizer keeps DOMPurify's default schemes plus the app's; the desktop's `open-link` channel accepts `claxedo:` and `vscode:` as a named list while `window.open` and navigation stay closed. Residual: the desktop's native Rust renderer (comrak) still autolinks only http/www/email |
+| D32 | Still present | Fixed | findings 2, 4, 5, 6, 7, 8 by red tests; 9 and 10 fall out of the phantom producers going away; the last one — a non-agent background task's `task_notification` minting a row — closed by a per-turn task ledger the driver hands the adapter, which also settles a row that leaves `background_tasks_changed` and brings `paused` back |
+| R1 | Still present | Fixed | an answered question is exempt from the fold and renders as its own hairline card: each question a label, each selection a mark, a typed answer verbatim; the dismissal is a metadata fact the driver and adapter agree on, not an English string the renderer sniffs |
 
 Found in the review and fixed in the same pass: a docked subagent tab hid the
 permission and question docks (the read-only gate removed the whole composer
@@ -291,62 +298,79 @@ region), so a blocked subagent could never be answered; a rejected delegation
 rendered as an empty chip row instead of an error card; the e2e suite still
 targeted the deleted task card, and two absence checks were green for any
 input; four `ui.basicTool.*` keys existed in English only; `TextShimmer` had
-lost its fade-in; eighteen lint errors from the fix wave.
+lost its fade-in; every oxlint error in the repository, including the eighteen
+from the fix wave; every test that was red on `dev` before this branch —
+among them the live first-party MCP subagent file, whose `create_subagent`
+was refused with `permission_ceiling_unsupported` because a parent on a
+harness with no permission-mode surface read as an `ask` ceiling it never
+had, and three sidebar e2e cases that filtered the workspace header by an id
+it never emits.
 
-### Left for the owner
+### Decided in the second pass
 
-These are product or policy calls the fix wave made on its own, or debt it
-left, and none is changed here:
+Calls the fix wave had made on its own, now made deliberately:
 
-- **The session list no longer knows recency.** Each section shows its five
-  newest-created sessions; a session created last month and used ten minutes
-  ago is not in that page, and an agent-spawned session lands at the top and
-  shifts every row. The `last_human_turn_at` column (migration
-  `20260910000100`), three `created_at` indexes, the server `band` filter and
-  the app's `lastHumanTurn` plumbing survive with no reader, and the control
-  plane's sync path never writes the column. Either wire the column and order
-  by it, or delete it with a migration.
-- **The abort path was rewritten inside 4cc48881ad** with no mention: the
-  optimistic idle and the todo clear on Stop are gone, the signed-control-plane
-  branch is gone (every abort now calls `session.status`, `permission.list`,
-  `question.list`), and failures toast instead of being swallowed.
-- **Tool attachments render only in the `read` renderer**; Codex, Pi and
-  every other Claude tool's images are computed, persisted and dropped. Also:
-  a multi-image result shares one `sourcePath` and loses its bytes, and
-  `/file/raw` serves `application/octet-stream`.
-- **`transcript-lab-fixture.json` is 1.27 MB of the owner's own transcripts**
-  with the home path in it 896 times; the generator has no redaction and the
-  storybook workflow builds it.
-- The `final-message` fold shape is reachable only from the storybook lab.
-- D24's auto-fold half: a card the reader expanded stays open in the live
-  group while the control reads folded.
-- `timelineFoldWhileRunning` still defaults on; D5 added a switch only.
-- The chip replaced the card without its cmd/middle-click anchor; subagent
-  tabs live in the workspace-scoped working set and outlive their session;
-  their label freezes at first click; there is no narrow-viewport behaviour.
-- Commits 455ba55814 … eae253dfd5 do not build in isolation (`canonicalToolName`
-  landed nine commits after its first import); they are pushed.
-- Several e2e mocks hardcode `sort: "updated_desc"` and
-  `core-claude-native-sdk-rail.spec.ts` still asserts the row moving to the top.
+- **Session order** is when the reader last spoke to the session, then
+  creation. The column, its migration, the server sort and the client key are
+  one path; the dead inventory row pipeline in the rail is gone.
+- **Stop** dispatches its idle and clears the todo list before the network
+  call again, the post-abort reads are best-effort, and the signed-control-plane
+  skip is gone for good — the workspace runtime serves those routes on every
+  deployment. A Stop that claims a prompt still on the wire is no longer undone
+  by the busy the send re-arms when its request returns.
+- **Attachments** render once in the tool row for every tool; a multi-image
+  result keeps each image's own bytes; `bytes` is the decoded size; a relative
+  locator is well-formed; `/file/raw` serves the file's type with `nosniff`
+  and a sandboxing CSP.
+- **The lab fixture** is redacted by its generator (home path and user name),
+  pinned so it regenerates byte-identically, and the package's wildcard export
+  that made every story a public subpath is replaced by the fourteen
+  components in use.
+- **The `final-message` fold shape** is deleted; `SessionTurn` moves beside
+  the stories that are its only callers.
+- **Subagent tabs** belong to their parent session and close with a deleted
+  child or parent; their label follows the row; below the medium breakpoint a
+  chip navigates the pane; the chip keeps anchor semantics when a href exists;
+  the docked child shows its heading and takes focus.
+- **D24's auto-fold half is kept as designed**: while a turn is running and
+  folded on its own, the live group stays visible, expanded cards included,
+  because the reader is watching it; an explicit fold hides everything.
+- **`timelineFoldWhileRunning` stays on by default**; the switch is the
+  opt-out.
+- **History is not rewritten**: commits 455ba55814 … eae253dfd5 still do not
+  build in isolation; they are pushed.
 
-### Gates, 2026-09-12
+### Still open
 
-Run on the working tree, which also held another session's uncommitted
-models-settings refactor; failures are attributed by file.
+- **A cloud (registry-authoritative) workspace orders by creation**: the
+  signed authority stores (`session_history` in the sqlite adapter, `sessions`
+  in the D1 adapter) have no last-human-turn column, so every row keys on
+  "never prompted". Adding the column to both stores and writing it from the
+  session-registration path finishes the order there.
+- **D9** (video attachments) is a contract change, not a filter; **D10/D17**
+  need a runtime that can steer or queue a prompt into a running turn and an
+  abort scoped to a turn — the SDK runtime refuses a second prompt while one is
+  in flight; **D14** needs a captured trace of a duplicating turn; **D19**
+  needs the fold to resolve from cached data before first paint; **D20**'s band
+  needs a measurement.
+
+### Gates, 2026-09-12 (end of the second pass)
+
+Run on the working tree, which also holds another session's uncommitted
+models-settings refactor; ceilings were measured at a clean checkout.
 
 | Gate | Result |
 |---|---|
-| root `bun run lint` | 161 errors, down from 194; none in a file this pass touched (the 18 from the fix wave and the 11 dead identifiers in `message-part.tsx` are gone; the rest predate 2026-09-10) |
-| `bun run test:architecture-ratchets` | passes at a clean checkout of the branch head (app-local 1010 / 38, desktop-renderer-unsigned 1061 / 57, ceilings recorded to those numbers) |
+| root `bun run lint` | 0 errors (from 194 at the start of the day) |
+| `bun run test:architecture-ratchets` | passes; app-local 1011 / 38, desktop-renderer-unsigned 1062 / 57 at a clean checkout of the branch head |
 | claxedo-app `bun run test:architecture` | 252 pass |
-| claxedo-app `tsgo -b`, claxedo-desktop, session-ui, ui, agent-* typechecks | clean |
-| session-ui / ui / agent-runtime-contract / agent-event-runtime | 255 / 61 / 40 / 208 pass, 0 fail |
-| agent-sdk-runtime | 660 pass; 2 pre-existing failures (the churn ratchet on `runtime.ts` and `codex/driver.ts`, both over their ceiling at the previous head; the Pi catalog test) |
-| workspace-runtime | 1108 pass; 10 pre-existing failures (5 SDK-boundary guards that need the `rg` shim, 2 real-pty spawns, 3 directory-less session routes red at the previous head) |
-| claxedo-server-core (vitest) | 579 pass; 3 files failed to load a stale local `agent-event-runtime` dist and pass (60 tests) once the contract and event runtime are rebuilt in publish order |
-| claxedo-app `bun test` | 5501 pass; 3 pre-existing failures (route audit, two git-client cases) |
-| claxedo-app `vitest` | 1384 pass; 2 pre-existing failures (icon sprite id from 12e21d992e, hosted workspace chip) |
-| e2e `core-harness-rendering-matrix.spec.ts` | 30 pass under Playwright; the two real-harness specs were updated but not run |
+| every package typecheck, claxedo-app `tsgo -b` and `typecheck:e2e` | clean |
+| claxedo-app `bun test` / `vitest` | 5538 / 1409 pass, 0 fail |
+| claxedo-server-core (vitest) | 645 pass |
+| workspace-runtime | 1119 pass under bun; the pty suite passes under the node runner it belongs to |
+| agent-sdk-runtime / agent-event-runtime / agent-runtime-contract / session-ui / ui | 663 / 225 / 40 / 267 / 66 pass |
+| claxedo-local-server (vitest) | the live MCP subagent file 9 of 9; one failure in `provider-routes.test.ts` belongs to the other session's in-flight credential edit |
+| e2e, build-preview mode | `core-harness-rendering-matrix` 30, `core-busy-abort-errors` 10 (three runs), `core-claude-native-sdk-rail` 3, `core-source-control` 12, `core-cloud-provisioning` 5, `core-sidebar-tree` 23 (two runs); the real-harness specs were updated but not run |
 
 ## D1 — The `skill` tool row is a dead click target
 
