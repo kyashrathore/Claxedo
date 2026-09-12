@@ -228,10 +228,16 @@ export function createSqlitePrivateSessionAuthority(input: {
     }
     return db.transaction(() => {
       const existing = registration(db, intent.operationId)
-      if (existing) {
+      if (existing && existing.state !== "compensated") {
         sameRegistration(existing, intent, actor.token_identifier)
         return result(existing, false)
       }
+      // A completed compensation keeps its row as the terminal record of the
+      // undo only until a reservation needs either identifier back.
+      db.prepare(`
+        DELETE FROM session_registration_operations
+        WHERE state = 'compensated' AND (session_id = ? OR operation_id = ?)
+      `).run(intent.sessionId, intent.operationId)
       const sessionCollision = db.prepare(`SELECT operation_id FROM session_registration_operations WHERE session_id = ?`)
         .get(intent.sessionId)
       if (sessionCollision || session(db, intent.sessionId)) {

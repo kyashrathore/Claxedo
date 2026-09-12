@@ -30,6 +30,7 @@ export type PrivateSessionAuthorityConformanceReport = {
     reserved: true
     reconciled: true
     compensated: true
+    released: true
   }
   access: {
     deniedBeforeGrant: true
@@ -62,6 +63,17 @@ export async function exercisePrivateSessionAuthorityConformance(
     title: "provider-neutral contract",
   })
   invariant(reserved.state === "reserved" && reserved.changed, "reservation did not enter reserved state")
+  const retried = await authority.reserveSession(creator.auth, {
+    operationId,
+    sessionId,
+    workspaceId,
+    kind: "create",
+    title: "provider-neutral contract",
+  })
+  invariant(
+    !retried.changed && retried.state === "reserved" && retried.sessionId === sessionId,
+    "an unchanged reservation retry was not idempotent",
+  )
   invariant(
     asArray(await authority.listSessions(creator.auth, { workspaceId })).length === 0,
     "a reservation became visible before runtime registration",
@@ -238,9 +250,68 @@ export async function exercisePrivateSessionAuthorityConformance(
   })
   invariant(compensated.state === "compensated", "compensation did not reach its terminal state")
 
+  const releasedOperationId = `${compensatedOperationId}_after_release`
+  const released = await authority.reserveSession(creator.auth, {
+    operationId: releasedOperationId,
+    sessionId: compensatedSessionId,
+    workspaceId,
+    kind: "create",
+  })
+  invariant(
+    released.changed && released.state === "reserved" && released.sessionId === compensatedSessionId,
+    "a completed compensation kept holding its session identifier",
+  )
+
+  const releasedAgain = {
+    ...creator.runtime,
+    operationId: releasedOperationId,
+    sessionId: compensatedSessionId,
+    workspaceId,
+    reason: "the session created for the retry was removed again",
+  }
+  await authority.beginSessionCompensation(releasedAgain)
+  await authority.completeSessionCompensation(releasedAgain)
+  const restarted = await authority.reserveSession(creator.auth, {
+    operationId: releasedOperationId,
+    sessionId: compensatedSessionId,
+    workspaceId,
+    kind: "create",
+  })
+  invariant(
+    restarted.changed && restarted.state === "reserved",
+    "a compensated operation could not be reserved again under its own identifier",
+  )
+
+  const pendingSessionId = "ses_private_session_compensation_pending_contract"
+  const pendingOperationId = "op_private_session_compensation_pending_contract"
+  await authority.reserveSession(creator.auth, {
+    operationId: pendingOperationId,
+    sessionId: pendingSessionId,
+    workspaceId,
+    kind: "create",
+  })
+  await authority.beginSessionCompensation({
+    ...creator.runtime,
+    operationId: pendingOperationId,
+    sessionId: pendingSessionId,
+    workspaceId,
+    reason: "runtime deletion was requested",
+  })
+  invariant(
+    await rejects(() =>
+      authority.reserveSession(creator.auth, {
+        operationId: `${pendingOperationId}_while_pending`,
+        sessionId: pendingSessionId,
+        workspaceId,
+        kind: "create",
+      }),
+    ),
+    "a compensation that had only begun released its session identifier",
+  )
+
   return {
     scenarios: PRIVATE_SESSION_AUTHORITY_CONFORMANCE_SCENARIOS,
-    lifecycle: { reserved: true, reconciled: true, compensated: true },
+    lifecycle: { reserved: true, reconciled: true, compensated: true, released: true },
     access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
     attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
   }
