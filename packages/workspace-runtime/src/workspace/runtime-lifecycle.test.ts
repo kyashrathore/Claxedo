@@ -534,4 +534,97 @@ describe("workspace runtime public lifecycle", () => {
     } })
     expect(store.getSession("unbound")).toBeNull()
   })
+  test("a prompt the previous process left queued starts as the runtime boots, with no request", async () => {
+    const queue = await queuedPromptLeftBehind("workspace-queued-boot-")
+    const prompts: string[] = []
+    const host = createWorkspaceHost({
+      target: queue.target,
+      storeRoot: queue.storeRoot,
+      harness: { kind: "native", harnessId: "claude" },
+      harnesses: [{ match: () => true, create: () => queuedPromptAdapter(prompts) }],
+    })
+    cleanups.push(() => host.dispose())
+
+    host.mount(new Hono(), { exposure: loopbackWorkspaceRuntimeExposure() })
+
+    await until(() => prompts.length > 0)
+    expect(prompts).toEqual(["then run the tests"])
+    await host.dispose()
+    const restarted = new RuntimeStore(queue.storeRoot)
+    cleanups.push(() => restarted.close())
+    expect(restarted.listQueuedPrompts()).toEqual([])
+  })
+
+  test("a runtime that learns its harness from a config snapshot re-issues the queue when it applies", async () => {
+    const queue = await queuedPromptLeftBehind("workspace-queued-apply-")
+    const prompts: string[] = []
+    const host = createWorkspaceHost({
+      target: queue.target,
+      storeRoot: queue.storeRoot,
+      harnesses: [{ match: () => true, create: () => queuedPromptAdapter(prompts) }],
+    })
+    cleanups.push(() => host.dispose())
+    host.mount(new Hono(), { exposure: loopbackWorkspaceRuntimeExposure() })
+    expect(prompts).toEqual([])
+
+    await host.apply({
+      version: 3, mcp: {}, auth: {}, connections: [],
+      defaultHarness: { kind: "native", harnessId: "claude" },
+    })
+
+    await until(() => prompts.length > 0)
+    expect(prompts).toEqual(["then run the tests"])
+  })
 })
+
+/** A store left behind by a process that died holding a queued prompt. */
+async function queuedPromptLeftBehind(prefix: string) {
+  const directory = await mkdtemp(join(tmpdir(), prefix))
+  roots.push(directory)
+  const storeRoot = join(directory, "state")
+  const target = { workspaceId: "ws-queued", directory }
+  const died = new RuntimeStore(storeRoot)
+  died.bindSession({
+    sessionId: "local", directory, workspaceId: target.workspaceId,
+    connectionId: "native:claude", agentSessionId: "local", upstreamSessionId: "local",
+  })
+  died.updateSessionConfig("local", {
+    harness: { id: "claude", access: "native" }, model: null, variant: null, agent: null,
+  }, { directory })
+  died.queuePrompt({
+    sessionId: "local",
+    messageId: "msg_queued",
+    parts: [{ type: "text", text: "then run the tests" }],
+    delivery: "queue",
+  })
+  died.close()
+  return { target, storeRoot, directory }
+}
+
+/** A harness that only records the prompt text each turn was given. */
+function queuedPromptAdapter(prompts: string[]): AgentHarnessAdapter {
+  return {
+    getSession: async (binding) => ({ id: binding.sessionId }),
+    createSession: async (_directory, _title, id) => ({ id: id ?? "local" }),
+    updateSession: async (binding) => ({ id: binding.sessionId }),
+    getSessionConfig: async () => ({ harness: { id: "claude", access: "native" }, agent: null, variant: null }),
+    updateSessionConfig: async (_binding, update) => ({
+      harness: update.harness ?? { id: "claude", access: "native" }, agent: null, variant: null,
+    }),
+    deleteSession: async () => {},
+    readHarnessCapabilities: () => ({ harness: "claude" }) as never,
+    executeTurn: (_binding, input) => {
+      prompts.push(input.parts.map((part) => ("text" in part ? part.text : "")).join(""))
+      return (async function* () {})()
+    },
+    getMessages: async () => [],
+    dispose: () => {},
+  }
+}
+
+async function until(condition: () => boolean) {
+  for (let attempt = 0; attempt < 400 && !condition(); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  if (!condition()) throw new Error("condition never held")
+}

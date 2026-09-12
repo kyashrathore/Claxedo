@@ -437,8 +437,8 @@ type Opts = {
   createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string, create?: { parentID?: string; permissionCeiling?: SessionConfig["permissionCeiling"] }) => Promise<{ id: string }>
   /** Host-owned child sessions: admission on the parent, idempotent ids, completion wakes. */
   childSessions?: ChildSessionHost
-  /** Durable prompts waiting for a running turn, re-issued after a restart. */
-  queuedPrompts?: QueuedPromptHost
+  /** Where a prompt admitted behind a running turn is persisted while it waits. */
+  queuedPrompts?: Pick<QueuedPromptHost, "queue">
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
   /** Workspace inventory, unfiltered by caller-supplied session IDs; routes validate ownership. */
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
@@ -1228,11 +1228,10 @@ export function createSessionRoutes(opts: Opts) {
     sensitive: sensitiveSessionBusEvent,
   })
   sessionEventSource.open({ mode: "unmanaged-local", connectionId: "local-replay" })
-  // Wakes and queued prompts left by a previous process are re-issued on the
-  // first request, once the host has a store and adapters to deliver them with.
+  // Wakes left by a previous process are re-issued on the first request, once
+  // the host has a store and adapters to deliver them with.
   app.use("*", async (_c, next) => {
     void opts.childSessions?.recover()
-    void opts.queuedPrompts?.recover()
     await next()
   })
   app

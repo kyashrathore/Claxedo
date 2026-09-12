@@ -19,7 +19,11 @@ export type QueuedPromptHost = {
    * handle is released by the caller once the prompt becomes a turn.
    */
   queue(input: { sessionId: string; body: SessionPromptBody } & QueuedPromptRequester): { release: () => void }
-  /** Re-issues every prompt still queued, once, after a restart. */
+  /**
+   * Re-issues every prompt still queued, once, after a restart. Safe to call
+   * from each signal that the runtime can start a turn: a pass that already
+   * re-issued a row deleted it, and a pass that failed re-issued nothing.
+   */
   recover(): Promise<void>
 }
 
@@ -83,6 +87,9 @@ export function createQueuedPromptHost(input: {
           if (!decided) release(row)
         }
       })().catch((error) => {
+        // The runtime could not take the row this pass stopped on — it has no
+        // harness yet, most often — so the pass does not count as having run.
+        recovered = undefined
         console.error("queued prompt recovery failed", error)
       })
       return recovered

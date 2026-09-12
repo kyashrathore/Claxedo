@@ -43,7 +43,7 @@ import { runGit } from "../git"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import type { ProcessObserver } from "../managed-processes/process-observer"
 import { RuntimeStore, type QueuedPromptRecord } from "../store"
-import { assertTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
+import { assertTarget, withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
 import { normalizeRuntimeSnapshot, requestedSessionHarness, RUNTIME_NATIVE_HARNESS_IDS, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeSnapshot } from "../routes/config"
 import { num, parseRecord, rec, str } from "../json-value"
 import { AgentRuntimeContractError, assertAgentExecutionBinding } from "@claxedo/agent-runtime-contract"
@@ -726,6 +726,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     options.connectionProviders ?? [createAcpConnectionProvider()],
   )
   let sessionConfigStore: WorkspaceRuntimeStore | undefined
+  let reissueQueuedPrompts: (() => void) | undefined
   let closing = false
   let disposal: Promise<void> | undefined
   const pendingRequests = new Set<Promise<void>>()
@@ -1391,6 +1392,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         ...(next.defaultHarness ? { harness: next.defaultHarness } : {}),
       }
       await persistRuntimeConfigApplyStatus({ receiptDir, status: configApply })
+      // The runtime can run a turn from here, which is the earliest a prompt
+      // left queued by the previous process can become one.
+      reissueQueuedPrompts?.()
     } catch (cause) {
       // A partial apply leaves the runtime in an unknown state, so no snapshot
       // counts as live: the next push of this same snapshot must retry in full
@@ -1566,7 +1570,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         return new Response(body, { headers: sseHeaders() })
       })
 
-      app.route("/", SessionRoutes((input) => adapterForSession(input), {
+      const sessions = SessionRoutes((input) => adapterForSession(input), {
         eventHub,
         sessionAccessPolicy,
         resolveRuntime: (input) => runtimeForSession(input),
@@ -1758,7 +1762,18 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           store().deleteSession(sessionId)
           hostOptions.transcripts?.resolver.invalidateParent?.(hostOptions.transcripts.workspaceId, sessionId)
         },
-      }))
+      })
+      app.route("/", sessions.routes)
+      // No request carries this work, so the workspace target a session route
+      // would have bound is bound here instead.
+      reissueQueuedPrompts = () => {
+        const reissue = () => void sessions.recoverQueuedPrompts()
+        if (hostOptions.target) withWorkspaceTarget(hostOptions.target, reissue)
+        else reissue()
+      }
+      // A host told its harness at construction can start a queued prompt now;
+      // one that waits for a config snapshot re-issues them when it applies.
+      if (runner) reissueQueuedPrompts()
     },
     hasSession(sessionId: string) {
       return !!store().getSession(sessionId)

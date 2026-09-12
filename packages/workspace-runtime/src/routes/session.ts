@@ -321,7 +321,7 @@ export function SessionRoutes(
     })
   }
 
-  return createSessionRoutes({
+  const routes = createSessionRoutes({
     requestedSessionHarness: (c) => requestedHarness(c),
     resolveAdapter: async (c, input) => {
       const harness = requestedHarness(c)
@@ -454,4 +454,13 @@ export function SessionRoutes(
         })
       : undefined,
   })
+  return {
+    routes,
+    /**
+     * Re-issue the prompts this runtime's store was still holding when its
+     * previous process ended. The host calls it as it boots: nothing is
+     * waiting for these prompts any more, so no request will ask for them.
+     */
+    recoverQueuedPrompts: () => queuedPrompts?.recover() ?? Promise.resolve(),
+  }
 }

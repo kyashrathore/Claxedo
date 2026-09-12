@@ -96,10 +96,10 @@ function hostFor(runtimeStore: RuntimeStore, runtime: AgentRuntime, directory: s
   })
 }
 
-function queued(runtimeStore: RuntimeStore) {
+function queued(runtimeStore: RuntimeStore, messageId = "msg_survivor") {
   return runtimeStore.queuePrompt({
     sessionId: "session_1",
-    messageId: "msg_survivor",
+    messageId,
     parts: [{ type: "text", text: "then run the tests" }],
     agent: "build",
     model: { providerID: "test", modelID: "fixture" },
@@ -134,6 +134,25 @@ test("a prompt queued by a process that died is started by the next runtime", as
     author: { id: "pub_1", name: "Yash", kind: "human" },
   })
   expect(restarted.listQueuedPrompts()).toEqual([])
+})
+
+test("two prompts one session was holding are re-issued in the order they were queued", async () => {
+  const directory = root()
+  const died = store(directory)
+  queued(died, "msg_first")
+  queued(died, "msg_second")
+  died.close()
+
+  const restarted = store(directory)
+  const starts: AgentRuntimeTurnStartInput[] = []
+  await hostFor(
+    restarted,
+    runtimeDouble({ starts, deliveries: ["start", "queue"], idle: () => new Promise<void>(() => {}) }),
+    "/workspace",
+  ).recover()
+
+  expect(starts.map((turn) => turn.messageId)).toEqual(["msg_first", "msg_second"])
+  expect(restarted.listQueuedPrompts().map((row) => [row.seq, row.messageId])).toEqual([[2, "msg_second"]])
 })
 
 test("a recovered prompt the runtime queues again stays durable until it starts", async () => {
@@ -193,6 +212,32 @@ test("recovery re-issues each prompt once, however many requests ask for it", as
   await host.recover()
 
   expect(starts).toHaveLength(1)
+})
+
+test("a pass the runtime could not take a prompt for does not count as recovery", async () => {
+  const runtimeStore = store(root())
+  queued(runtimeStore)
+  const attempts: string[] = []
+  let harness = false
+  const host = createQueuedPromptHost({
+    store: () => port(runtimeStore, "/workspace"),
+    startTurn: async (input) => {
+      attempts.push(input.sessionId)
+      if (!harness) throw new Error("the runtime has no harness yet")
+      input.onDelivery("start")
+    },
+  })
+
+  await host.recover()
+
+  expect(attempts).toEqual(["session_1"])
+  expect(runtimeStore.listQueuedPrompts()).toHaveLength(1)
+
+  harness = true
+  await host.recover()
+
+  expect(attempts).toEqual(["session_1", "session_1"])
+  expect(runtimeStore.listQueuedPrompts()).toEqual([])
 })
 
 test("a store that cannot persist queued prompts leaves the queue in the request", async () => {

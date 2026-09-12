@@ -38,22 +38,33 @@ export function createTurnAdmissions(
   const leases = new Map<string, string>()
   const waiting = new Map<string, Array<() => void>>()
 
-  const wakeWaiters = (sessionId: string) => {
+  /**
+   * Wake the waiter that has been waiting longest, and only that one: the turn
+   * it claims through `turns.start` cannot be taken by a prompt queued after
+   * it, so the prompts a session is holding run in the order they arrived.
+   */
+  const handOff = (sessionId: string) => {
     if (active.has(sessionId)) return
-    for (const resolve of waiting.get(sessionId)?.splice(0) ?? []) resolve()
-    waiting.delete(sessionId)
+    const queue = waiting.get(sessionId)
+    const next = queue?.shift()
+    if (queue?.length === 0) waiting.delete(sessionId)
+    next?.()
   }
 
   return {
     /**
-     * Resolves once no turn holds this session, for a caller holding a prompt
-     * that waits for the running turn. Every waiter is woken and each claims
-     * through `turns.start`, so a caller that gives up cannot strand the rest.
+     * Resolves once this waiter owns the session's next turn, for a caller
+     * holding a prompt that waits for the running turn.
+     *
+     * A waiter that is woken and then never claims leaves the ones behind it
+     * waiting for the session's next turn to end.
      */
     whenIdle(sessionId: string) {
-      if (!active.has(sessionId)) return Promise.resolve()
+      const queue = waiting.get(sessionId)
+      if (!active.has(sessionId) && !queue?.length) return Promise.resolve()
       return new Promise<void>((resolve) => {
-        waiting.set(sessionId, [...(waiting.get(sessionId) ?? []), resolve])
+        if (queue) queue.push(resolve)
+        else waiting.set(sessionId, [resolve])
       })
     },
     active(sessionId: string) {
@@ -79,19 +90,23 @@ export function createTurnAdmissions(
             leases.delete(sessionId)
             store.releaseTurnLease(sessionId, leaseId)
           }
-          if (active.get(sessionId) === claimed) active.delete(sessionId)
-          wakeWaiters(sessionId)
+          // Publication and turn finalization both release this turn. Only the
+          // call that ends it may hand the session on, or one turn would wake
+          // two waiters and they would race for the claim.
+          if (active.get(sessionId) !== claimed) return
+          active.delete(sessionId)
+          handOff(sessionId)
         },
       }
     },
     discard(sessionId: string) {
-      active.delete(sessionId)
+      const ended = active.delete(sessionId)
       const leaseId = leases.get(sessionId)
       if (leaseId) {
         leases.delete(sessionId)
         store.releaseTurnLease(sessionId, leaseId)
       }
-      wakeWaiters(sessionId)
+      if (ended) handOff(sessionId)
     },
     clear() {
       active.clear()

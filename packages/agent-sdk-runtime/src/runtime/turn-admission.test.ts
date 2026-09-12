@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createAgentRuntime } from "../runtime"
+import { createTurnAdmissions } from "./turn-admission"
 import type { AgentHarnessFactory } from "../runtime"
 import type { AgentHarnessAdapter } from "../adapter-contract"
 import { createMemoryRuntimeStore } from "../stores/memory"
@@ -23,6 +24,27 @@ function openTurn(sessionId: string): TurnControl {
       },
     },
   }
+}
+
+function open(controls: TurnControl[]) {
+  const control = openTurn("ses_busy")
+  controls.push(control)
+  return control
+}
+
+/** Finish each turn as the session hands it on, so the next waiter can start. */
+async function finishInOrder(controls: TurnControl[], count: number) {
+  for (let index = 0; index < count; index++) {
+    await until(() => controls.length > index)
+    controls[index].finish()
+  }
+}
+
+async function until(condition: () => boolean) {
+  for (let attempt = 0; attempt < 400 && !condition(); attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  if (!condition()) throw new Error("condition never held")
 }
 
 function harness(options: {
@@ -127,6 +149,40 @@ describe("prompts for a session that is already running a turn", () => {
     await runtime.dispose()
   })
 
+  test("prompts queued for one session start in the order they were queued", async () => {
+    const turns: string[] = []
+    const controls: TurnControl[] = []
+    const { runtime, sessionId } = await session(harness({ turns, open: () => open(controls) }))
+    await runtime.turns.start({ sessionId, messageId: "msg_first", text: "start the work" })
+
+    const queued = ["a", "b", "c"].map((text) => runtime.turns.whenIdle(sessionId)
+      .then(() => runtime.turns.start({ sessionId, messageId: `msg_${text}`, text })))
+
+    await finishInOrder(controls, 4)
+    await Promise.all(queued)
+    expect(turns).toEqual(["start the work", "a", "b", "c"])
+    await runtime.dispose()
+  })
+
+  test("a prompt queued while an earlier queued one runs still starts behind it", async () => {
+    const turns: string[] = []
+    const controls: TurnControl[] = []
+    const { runtime, sessionId } = await session(harness({ turns, open: () => open(controls) }))
+    await runtime.turns.start({ sessionId, messageId: "msg_first", text: "start the work" })
+    const queued = ["a", "b"].map((text) => runtime.turns.whenIdle(sessionId)
+      .then(() => runtime.turns.start({ sessionId, messageId: `msg_${text}`, text })))
+
+    controls[0].finish()
+    await until(() => turns.includes("a"))
+    const late = runtime.turns.whenIdle(sessionId)
+      .then(() => runtime.turns.start({ sessionId, messageId: "msg_late", text: "late" }))
+
+    await finishInOrder(controls, 4)
+    await Promise.all([...queued, late])
+    expect(turns).toEqual(["start the work", "a", "b", "late"])
+    await runtime.dispose()
+  })
+
   test("a steer the harness cannot take is queued, not refused", async () => {
     const turns: string[] = []
     const control = openTurn("ses_busy")
@@ -166,6 +222,53 @@ describe("prompts for a session that is already running a turn", () => {
 
     control.finish()
     await runtime.dispose()
+  })
+})
+
+describe("handing an idle session to the prompts waiting for it", () => {
+  function running(woken: string[]) {
+    const turns = createTurnAdmissions({ acquireTurnLease: () => "lease", releaseTurnLease: () => {} })
+    const claimed = turns.claim("ses", { turnId: "msg_first", assistantMessageId: "asst_first" })!
+    const wait = (name: string) => void turns.whenIdle("ses").then(() => woken.push(name))
+    wait("a")
+    wait("b")
+    return { turns, claimed, wait }
+  }
+
+  async function settle() {
+    for (let tick = 0; tick < 5; tick++) await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  test("a prompt that starts waiting after the turn ended still waits behind the queue", async () => {
+    const woken: string[] = []
+    const session = running(woken)
+
+    session.claimed.release()
+    session.wait("late")
+    await settle()
+
+    expect(woken).toEqual(["a"])
+  })
+
+  test("a second cancellation does not wake a waiter the first one did not", async () => {
+    const woken: string[] = []
+    const session = running(woken)
+
+    session.turns.discard("ses")
+    session.turns.discard("ses")
+    await settle()
+
+    expect(woken).toEqual(["a"])
+  })
+
+  test("disposal releases every prompt still waiting", async () => {
+    const woken: string[] = []
+    const session = running(woken)
+
+    session.turns.clear()
+    await settle()
+
+    expect(woken).toEqual(["a", "b"])
   })
 })
 

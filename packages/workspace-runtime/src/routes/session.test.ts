@@ -61,7 +61,7 @@ function SessionRoutes(
       upstreamSessionId: sessionId,
     }),
     ...options,
-  })
+  }).routes
 }
 
 function adapter(input: {

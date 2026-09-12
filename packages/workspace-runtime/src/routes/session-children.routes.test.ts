@@ -101,7 +101,7 @@ function fixture(input: { parentMode?: string } = {}) {
   eventHub.subscribeRuntime((event) => {
     runtimeEvents.push(event)
   })
-  const app = SessionRoutes(() => adapter, {
+  const { routes: app } = SessionRoutes(() => adapter, {
     eventHub,
     afterCreateSession: ({ session }) => { calls.projected.push(session) },
     resolveExecutionBinding: ({ directory, sessionId }) => ({
@@ -397,7 +397,7 @@ describe("POST /session with parentID", () => {
     expect(missing.status).toBe(404)
     expect(await missing.json()).toMatchObject({ error: { code: "parent_session_not_found" } })
 
-    const bare = SessionRoutes(() => ({ ...({} as AgentHarnessAdapter) }), {})
+    const { routes: bare } = SessionRoutes(() => ({ ...({} as AgentHarnessAdapter) }), {})
     const unsupported = await bare.request(`http://localhost/session?directory=${encodeURIComponent(DIRECTORY)}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
