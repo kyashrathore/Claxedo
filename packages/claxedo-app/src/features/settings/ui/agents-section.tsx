@@ -182,20 +182,23 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
    * yet rather than offering one that damages the machine's login.
    */
   const accounts = (check: LocalHarnessCheck) =>
-    harnessAccounts({ providerIds: providerIds(check) }, stored()).map((row) => ({
-      id: row.id,
-      name: row.label ?? row.kind ?? row.providerId,
-      isActive: row.isActive,
-      ...(accountIdentity(row) === undefined ? {} : { detail: accountIdentity(row)! }),
-      ...(row.health !== undefined && isHealth(row.health) && row.lastValidatedAt !== undefined
-        ? { live: liveText({ at: row.lastValidatedAt, verdict: row.health }) }
-        : {}),
-      ...(row.expiresAt === undefined ? {} : {
-        expiry: language.t("settings.providers.agents.accountExpires", {
-          when: formatRelativeTime(row.expiresAt, language.locale()),
+    harnessAccounts({ providerIds: providerIds(check) }, stored()).map((row) => {
+      const identity = accountIdentity(row)
+      return {
+        id: row.id,
+        name: row.label ?? row.kind ?? row.providerId,
+        isActive: row.isActive,
+        ...(identity === undefined ? {} : { detail: identity }),
+        ...(row.health !== undefined && isHealth(row.health) && row.lastValidatedAt !== undefined
+          ? { live: liveText({ at: row.lastValidatedAt, verdict: row.health }) }
+          : {}),
+        ...(row.expiresAt === undefined ? {} : {
+          expiry: language.t("settings.providers.agents.accountExpires", {
+            when: formatRelativeTime(row.expiresAt, language.locale()),
+          }),
         }),
-      }),
-    }))
+      }
+    })
 
   const activate = async (id: string) => {
     setActivating(id)
