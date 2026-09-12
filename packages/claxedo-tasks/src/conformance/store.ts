@@ -128,7 +128,7 @@ const TASK_LIST = { ...LIST, projectId: "project-alpha", status: null, parent: "
 class ConformanceRollback extends Error {}
 
 /** A promise the case resolves itself, to hold one unit open while it opens a second. */
-function gate(): { opened: Promise<void>; open: () => void } {
+export function gate(): { opened: Promise<void>; open: () => void } {
   let open = () => {}
   const opened = new Promise<void>((resolve) => {
     open = resolve
@@ -141,7 +141,7 @@ function gate(): { opened: Promise<void>; open: () => void } {
  * report the second one's rejection as unhandled while the first is still in
  * flight, so each is turned into a value the moment it is started.
  */
-function settle<T>(unit: Promise<T>): Promise<{ value: T } | { failure: unknown }> {
+export function settle<T>(unit: Promise<T>): Promise<{ value: T } | { failure: unknown }> {
   return unit.then(
     (value) => ({ value }),
     (failure: unknown) => ({ failure }),

@@ -5,7 +5,7 @@ import type {
   TasksCommandResponse,
   TasksCommandResult,
 } from "./contracts"
-import { refuse } from "./errors"
+import { TasksError, refuse } from "./errors"
 import { hashRequest } from "./hash"
 import type { TasksAuthorizationPort } from "./ports/authorization"
 import type { TasksCapabilitiesPort } from "./ports/capabilities"
@@ -115,20 +115,20 @@ export function createTasksCommands(deps: TasksCommandsDeps): TasksCommands {
   return {
     async execute(actor, request) {
       const requestHash = await hashRequest(request.command)
-      if (await deps.store.receipts.get(actor.scopeId, request.clientRequestId)) {
-        return replay(actor, request, requestHash)
-      }
+      const committedAlready = () => deps.store.receipts.get(actor.scopeId, request.clientRequestId)
 
-      // The receipt is written inside the unit it describes, so a racing
-      // duplicate discovers the taken key and rolls its own work back rather
-      // than committing the same command twice. An adapter that cannot decide
-      // the key until it commits reports the same collision afterwards, once
-      // every operation in the unit has already answered — a duplicate is
-      // still the committed command, so it replays; a revision or origin this
-      // unit lost to a real competitor is a refusal.
+      // The receipt is read and written inside the unit it describes, so a
+      // duplicate an arbitrated store admits only after the first one
+      // committed finds the taken key instead of running its command against
+      // a revision that commit has already moved. An adapter that cannot
+      // decide the key until it commits reports the same collision
+      // afterwards, once every operation in the unit has already answered — a
+      // duplicate is still the committed command, so it replays; a revision or
+      // origin this unit lost to a real competitor is a refusal.
       let raced = false
       const result = await deps.store
         .transaction(async (operations) => {
+          if (await operations.receipts.get(actor.scopeId, request.clientRequestId)) return undefined
           const committed = await run(actor, request.command, operations)
           const stored = await operations.receipts.put({
             scopeId: actor.scopeId,
@@ -144,11 +144,19 @@ export function createTasksCommands(deps: TasksCommandsDeps): TasksCommands {
           }
           return committed
         })
-        .catch((cause: unknown) => {
+        .catch(async (cause: unknown) => {
           if (raced) return undefined
           if (cause instanceof TasksStoreConflict) {
             if (cause.kind === "duplicate-receipt") return undefined
             refuse("conflict", cause.message)
+          }
+          // A store that answers reads from committed rows can let a duplicate
+          // past the receipt read and then move the revision under it before
+          // the command reads the task. The mutation it asked for is the one
+          // that committed, so the refusal is its own earlier commit rather
+          // than a competitor and the receipt answers it.
+          if (cause instanceof TasksError && cause.detail.code === "stale_revision" && (await committedAlready())) {
+            return undefined
           }
           throw cause
         })

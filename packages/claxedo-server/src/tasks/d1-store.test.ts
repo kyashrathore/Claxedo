@@ -13,7 +13,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 
-import { tasksStoreConformance, CONFORMANCE_SCOPES } from "@claxedo/tasks/conformance"
+import { tasksStoreConformance, tasksCommandReplayConformance, CONFORMANCE_SCOPES } from "@claxedo/tasks/conformance"
 import {
   TasksError,
   TasksStoreConflict,
@@ -119,6 +119,7 @@ function commandsOver(database: D1Database) {
     sessionState: () => Promise.reject(new Error(UNREACHABLE)),
     preview: () => Promise.reject(new Error(UNREACHABLE)),
     start: () => Promise.reject(new Error(UNREACHABLE)),
+    handoff: () => Promise.reject(new Error(UNREACHABLE)),
   }
   return createTasksCommands({
     store: createD1TasksStore({ database }),
@@ -143,6 +144,14 @@ const createRequest: TasksCommandRequest = {
 
 describe("D1 TasksStorePort conformance", () => {
   for (const testCase of tasksStoreConformance(async () => ({ store: createD1TasksStore({ database: await database() }) }))) {
+    test(testCase.name, testCase.run)
+  }
+})
+
+describe("D1 Tasks command replay conformance", () => {
+  for (const testCase of tasksCommandReplayConformance(async () => ({
+    store: createD1TasksStore({ database: await database() }),
+  }))) {
     test(testCase.name, testCase.run)
   }
 })

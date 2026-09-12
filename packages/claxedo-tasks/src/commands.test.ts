@@ -23,6 +23,14 @@ const createTask: TasksCommand = {
   input: { projectId: PROJECT, title: "Ship the thing", description: "", workspaceId: null, parentTaskId: null },
 }
 
+function deferred(): { reached: Promise<void>; reach: () => void } {
+  let reach = () => {}
+  const reached = new Promise<void>((resolve) => {
+    reach = resolve
+  })
+  return { reached, reach }
+}
+
 describe("tasks commands", () => {
   let store: TasksStorePort
   let authorization: FakeAuthorization
@@ -157,5 +165,70 @@ describe("tasks commands", () => {
       command: createTask,
     })
     expect(other.replayed).toBe(false)
+  })
+
+  test("a duplicate the store admits after the commit replays without running its command", async () => {
+    const created = await commands.execute(ACTOR, { clientRequestId: "request-task", command: createTask })
+    const taskId = created.result.type === "task.create" ? created.result.task.id : ""
+    const edit: TasksCommand = {
+      type: "task.edit",
+      input: { taskId, revision: 1, title: "Renamed", description: "", workspaceId: null },
+    }
+
+    const over = (port: TasksStorePort) =>
+      createTasksCommands({
+        store: port,
+        clock: fakeClock(),
+        ids: fakeIds(),
+        capabilities: fakeCapabilities(),
+        authorization,
+        bridge: fakeBridge(),
+      })
+    const asking = (announce: () => void, port: TasksStorePort): TasksStorePort => ({
+      ...port,
+      transaction: (work) => {
+        announce()
+        return port.transaction(work)
+      },
+    })
+
+    // Both requests are queued behind a unit this test holds open, so the
+    // duplicate is the one the store admits second rather than whichever
+    // request happened to reach the queue first.
+    const blocking = deferred()
+    const held = store.transaction(() => blocking.reached)
+
+    const winner = deferred()
+    const first = over(asking(winner.reach, store)).execute(ACTOR, { clientRequestId: "request-edit", command: edit })
+    await winner.reached
+
+    let reads = 0
+    const duplicate = deferred()
+    const counted: TasksStorePort = {
+      ...store,
+      transaction: (work) =>
+        store.transaction((operations) =>
+          work({
+            ...operations,
+            tasks: {
+              ...operations.tasks,
+              get: (scopeId, id) => {
+                reads += 1
+                return operations.tasks.get(scopeId, id)
+              },
+            },
+          }),
+        ),
+    }
+    const second = over(asking(duplicate.reach, counted)).execute(ACTOR, { clientRequestId: "request-edit", command: edit })
+    await duplicate.reached
+    blocking.reach()
+    await held
+
+    const answers = await Promise.all([first, second])
+    expect(answers.filter((answer) => answer.replayed)).toHaveLength(1)
+    expect(answers[0]?.result).toEqual(answers[1]?.result)
+    expect(reads).toBe(0)
+    expect((await store.tasks.get(ACTOR.scopeId, taskId))?.revision).toBe(2)
   })
 })

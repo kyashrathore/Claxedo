@@ -1,9 +1,16 @@
 import { describe, expect, test } from "bun:test"
+import { tasksCommandReplayConformance } from "../conformance/commands"
 import { CONFORMANCE_SCOPES, tasksStoreConformance } from "../conformance/store"
 import { createMemoryTasksStore } from "./memory"
 
 describe("memory tasks store", () => {
   for (const conformanceCase of tasksStoreConformance(async () => ({ store: createMemoryTasksStore() }))) {
+    test(conformanceCase.name, async () => {
+      await conformanceCase.run()
+    })
+  }
+
+  for (const conformanceCase of tasksCommandReplayConformance(async () => ({ store: createMemoryTasksStore() }))) {
     test(conformanceCase.name, async () => {
       await conformanceCase.run()
     })

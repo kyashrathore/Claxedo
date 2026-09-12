@@ -19,7 +19,7 @@ const previousDataDir = process.env.CLAXEDO_DATA_DIR
 
 const { ClaxedoDB } = await import("../platform/db/index")
 const { createSqliteTasksStore } = await import("./sqlite-store")
-const { tasksStoreConformance, CONFORMANCE_SCOPES } = await import("@claxedo/tasks/conformance")
+const { tasksStoreConformance, tasksCommandReplayConformance, CONFORMANCE_SCOPES } = await import("@claxedo/tasks/conformance")
 
 /**
  * A fresh database file per case, rather than a DELETE sweep between them: the
@@ -45,6 +45,15 @@ afterAll(async () => {
 
 describe("SQLite TasksStorePort conformance", () => {
   for (const testCase of tasksStoreConformance(async () => {
+    freshDatabase()
+    return { store: createSqliteTasksStore() }
+  })) {
+    test(testCase.name, testCase.run)
+  }
+})
+
+describe("SQLite Tasks command replay conformance", () => {
+  for (const testCase of tasksCommandReplayConformance(async () => {
     freshDatabase()
     return { store: createSqliteTasksStore() }
   })) {
