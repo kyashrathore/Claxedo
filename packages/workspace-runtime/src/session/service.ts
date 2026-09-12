@@ -1,7 +1,12 @@
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/projections/client-presentation"
 import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError, resolveTurnSystem } from "@claxedo/agent-sdk-runtime"
-import { AgentRuntimeContractError, assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import {
+  AgentRuntimeContractError,
+  assertAgentExecutionBinding,
+  type AgentExecutionBinding,
+  type AgentRuntimeError,
+} from "@claxedo/agent-runtime-contract"
 import type {
   AgentMessage,
   AgentRuntime,
@@ -256,6 +261,52 @@ function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
   }
 }
 
+export const SESSION_TURN_REFUSAL_CODES = ["session_configuration_unavailable"] as const
+
+export type SessionTurnRefusalCode = (typeof SESSION_TURN_REFUSAL_CODES)[number]
+
+/**
+ * Raised only while nothing has been asked to execute, which is what lets a
+ * caller resubmit the same message id: the cause is external to the turn and
+ * may be gone by the retry. Any refusal added here must keep that guarantee —
+ * an error thrown once the harness is running is an ordinary turn failure and
+ * must not become a `SessionTurnRefusedError`.
+ */
+export class SessionTurnRefusedError extends AgentRuntimeContractError {
+  constructor(readonly refusal: SessionTurnRefusalCode, detail: AgentRuntimeError) {
+    super(detail)
+    this.name = "SessionTurnRefusedError"
+  }
+}
+
+export function sessionTurnRefusal(error: unknown): SessionTurnRefusalCode | undefined {
+  return error instanceof SessionTurnRefusedError ? error.refusal : undefined
+}
+
+/**
+ * `data.code` is what tells a submitter the turn can be retried under the same
+ * message id; the classified sentence beside it cannot say that, and a
+ * fire-and-forget submitter has already been answered by the time this is
+ * published.
+ */
+export function sessionTurnRefused(
+  refusal: SessionTurnRefusalCode,
+  message: string,
+  sessionId: string,
+): CompatEvent {
+  return {
+    id: `session.error:${sessionId}`,
+    type: "session.error",
+    properties: {
+      sessionID: sessionId,
+      error: {
+        name: "SessionTurnRefusedError",
+        data: { ...firstTurnErrorData(message), code: refusal },
+      },
+    },
+  }
+}
+
 /**
  * The config read is unconditional, and a failure refuses the turn: a session's
  * retained instructions live only there, so skipping the read whenever the
@@ -273,7 +324,7 @@ async function promptForSession(
   try {
     config = (await adapter.getSessionConfig(binding)) ?? undefined
   } catch (cause) {
-    throw new AgentRuntimeContractError({
+    throw new SessionTurnRefusedError("session_configuration_unavailable", {
       code: "upstream_error",
       connectionId: binding.connectionId,
       message: `Session ${binding.sessionId} configuration is unavailable, so its instructions cannot be applied: ${

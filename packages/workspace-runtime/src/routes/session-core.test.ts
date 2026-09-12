@@ -2033,16 +2033,49 @@ describe("createSessionRoutes session instructions", () => {
       },
       executeTurn: (_binding, prompt) => (async function* () {
         turns.push(prompt.system)
+        notify()
       })(),
+    }
+    const events: CompatEnvelope[] = []
+    const watchers = new Set<() => void>()
+    function notify() {
+      for (const watcher of watchers) watcher()
+    }
+    // prompt_async answers before its turn runs, so every assertion about what
+    // the detached turn did has to wait for the turn itself rather than a timer.
+    function settled(done: () => boolean) {
+      return new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          watchers.delete(check)
+          reject(new Error("detached prompt_async turn never reached the expected state"))
+        }, 1_000)
+        const check = () => {
+          if (!done()) return
+          watchers.delete(check)
+          clearTimeout(timer)
+          resolve()
+        }
+        watchers.add(check)
+        check()
+      })
     }
     const app = createSessionRoutes({
       resolveAdapter: () => fixture,
       resolveDirectory: () => "/workspace",
       resolveExecutionBinding: fixtureExecutionBinding("ws_1"),
       sessionBus: { publish() {}, subscribe: () => () => {} },
-      publishGlobal() {},
+      publishGlobal(event) {
+        events.push(event)
+        notify()
+      },
     })
-    return { app, creates, turns, configRead }
+    return { app, creates, turns, configRead, events, settled }
+  }
+
+  function refusals(events: CompatEnvelope[]) {
+    return events
+      .filter((event) => event.payload.type === "session.error")
+      .map((event) => (event.payload as { properties: { error?: { data?: { code?: string } } } }).properties.error?.data?.code)
   }
 
   function create(app: ReturnType<typeof createSessionRoutes>, body: Record<string, unknown>) {
@@ -2059,6 +2092,20 @@ describe("createSessionRoutes session instructions", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         parts: [{ type: "text", text: "go" }],
+        agent: "build",
+        model: { providerID: "test", modelID: "fixture" },
+        variant: "fixture",
+      }),
+    })
+  }
+
+  function promptAsync(app: ReturnType<typeof createSessionRoutes>, id: string, messageID: string) {
+    return app.request(`http://localhost/session/${id}/prompt_async`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        parts: [{ type: "text", text: "go" }],
+        messageID,
         agent: "build",
         model: { providerID: "test", modelID: "fixture" },
         variant: "fixture",
@@ -2131,5 +2178,28 @@ describe("createSessionRoutes session instructions", () => {
     configRead.fails = true
     expect((await promptTurn(app, "ses_unreadable")).status).toBe(500)
     expect(turns).toEqual([])
+  })
+
+  // prompt_async admits a message id and answers 204 before the turn runs, so a
+  // refusal that leaves the admission behind answers the retry 204 as well and
+  // the submitted message never executes at all.
+  test("a config-read refusal frees the message id, and the same id then runs once with the retained block", async () => {
+    const { app, turns, configRead, events, settled } = instructionRoutes({ instructionChannel: true })
+    expect((await create(app, { id: "ses_recover", instructions: "Answer only in haiku." })).status).toBe(201)
+
+    configRead.fails = true
+    expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)
+    await settled(() => refusals(events).length > 0)
+    expect(refusals(events)).toEqual(["session_configuration_unavailable"])
+    expect(turns).toEqual([])
+
+    configRead.fails = false
+    expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)
+    await settled(() => turns.length > 0)
+    expect(turns).toEqual(["Answer only in haiku."])
+
+    expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(turns).toEqual(["Answer only in haiku."])
   })
 })

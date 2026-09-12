@@ -12,6 +12,7 @@ import {
   runRuntimePromptTurn,
   runSessionPromptTurn,
   sessionPromptReply,
+  sessionTurnRefusal,
   type RuntimeSessionBusEvent,
 } from "./service"
 
@@ -88,6 +89,9 @@ describe("session service", () => {
       connectionId: "native:codex",
       message: "Session s1 configuration is unavailable, so its instructions cannot be applied: session config store unreachable",
     })
+    // The refusal code is what frees the message id for a retry: without it the
+    // failure is indistinguishable from one raised while the harness was running.
+    expect(sessionTurnRefusal(refusal)).toBe("session_configuration_unavailable")
     expect(executed).toBe(false)
   })
 
