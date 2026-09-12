@@ -521,13 +521,59 @@ what did not, and what each miss changes.
     shared but whose other one is loses sandbox auth until they consent.
     Kept, with the Settings row saying why.
 
+### Live explicit-path test (2026-09-12, Codex)
+
+Run against the local server with a scratch workspace, one prompt per step,
+the machine's `~/.codex/auth.json` backed up first.
+
+| Step | Registry | Result |
+| --- | --- | --- |
+| Baseline | no Codex rows | turn answers "OK" on the machine login |
+| Invalid key stored (`codex-app-server`, `api_key`) | one row | 401 "Codex authentication failed": the stored key is used, the machine login is not |
+| Machine login imported through discovery, invalid key still present | three rows | still 401 |
+| All rows deleted | none | still 401 |
+| Server restarted after restoring the backup | none | "OK" again |
+
+What the steps mean:
+
+12. **The app-server persists an explicit login into the CLI's own file.**
+    After `account/login/start` with the stored key, `~/.codex/auth.json`
+    read `{"auth_mode": "apikey", "OPENAI_API_KEY": "sk-explicit-…"}`; the
+    ChatGPT tokens were gone. Deleting the rows did not bring them back:
+    `account/logout` left the file as it was, and the app-server kept the
+    API-key login in memory until its process was restarted. The two
+    copies under `~/.codex/accounts/` carry refresh tokens the CLI had
+    since rotated, so without the backup the machine login was lost.
+    Change: every explicit Codex login runs with a Claxedo-owned
+    `CODEX_HOME` (one directory per stored account, `config.toml` linked
+    from the user's), never the user's `~/.codex`. This reverses section 4's
+    "no per-account home": the file the app-server writes must be ours.
+    The `codexHome` option the factory never passes is the seam. Returning
+    to the machine login means restarting the app-server on the user's
+    home, not sending `account/logout`.
+13. **Importing the Codex machine login does not work either.** Both
+    discovered copies probed "expired and couldn't be renewed": our refresh
+    call gets 401 because the CLI has rotated the refresh token since those
+    copies were written, and the rows land with `expires_at` in the past,
+    which `credentialAvailableForScope` excludes, so the fanout never sends
+    them. Finding 2 therefore covers Codex too: the machine login is the
+    implicit tier for every harness and is never imported as a row.
+14. **The preference order favours a row with no expiry**
+    (`coalesce(expires_at, max) desc`), so a pasted key outranks an OAuth
+    login. Moot once the active mark replaces the order; noted so the
+    backfill does not enshrine it.
+
+The Claude leg is blocked on this machine: the CLI's own `/login` has
+expired ("OAuth session expired and could not be refreshed" in a bare
+shell), and only the user can mint a `claude setup-token`. Once one is
+pasted in Settings → Claude → Connect, the same four steps apply.
+
 ### Still unverified
 
-- What `account/logout` does to the app-server's own `auth.json`. The
-  driver sends it when an explicit login is replaced by none
-  (`processAuthWasExplicit`), which is exactly the return to the machine
-  login. If it deletes the file, the safe move is to restart the
-  app-server process instead. Verify before Phase 1 closes.
+- `account/logout` leaves `auth.json` as the last login wrote it (seen
+  live: the API-key login stayed). What is still unverified is whether a
+  ChatGPT login through the app-server also rewrites the file; the
+  per-account home in finding 12 makes the answer irrelevant.
 - Whether a Codex thread started under one account resumes under another.
 - Whether the app-server honours `account/login/start` over an ambient
   `OPENAI_API_KEY`; moot for our spawns after the env strip.
@@ -547,6 +593,9 @@ Each phase is a reviewable slice with its own gate.
   and `providerPreference` deleted.
 - The implicit machine login as the default choice when no row is active;
   `config.auth` documented as part of that tier.
+- A Claxedo-owned `CODEX_HOME` per stored Codex account, passed through the
+  factory's `codexHome`; the user's `~/.codex` is only ever used by the
+  implicit tier, and returning to it restarts the app-server.
 - The Codex OAuth callback upserts by account id instead of wiping the
   provider; credential routes call `fanOutConfig`; the accounts list deletes
   by id.
