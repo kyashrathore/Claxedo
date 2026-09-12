@@ -259,7 +259,7 @@ function startPreviewOf(ctx: DecodeContext, value: unknown, path: string): Start
   }
 }
 
-function pageOf<T>(ctx: DecodeContext, value: unknown, path: string, item: (entry: unknown, itemPath: string) => T): Page<T> {
+function decodePage<T>(ctx: DecodeContext, value: unknown, path: string, item: (entry: unknown, itemPath: string) => T): Page<T> {
   const row = ctx.read.record(value, path)
   const items = ctx.read.array(row?.items, `${path}.items`) ?? []
   return {
@@ -280,12 +280,12 @@ export function decodeTask(value: unknown): Parsed<Task> {
 
 export function decodePresetPage(value: unknown): Parsed<Page<Preset>> {
   const ctx = decodeContext()
-  return finishDecode(ctx, () => pageOf(ctx, value, "page", (entry, path) => presetOf(ctx, entry, path)))
+  return finishDecode(ctx, () => decodePage(ctx, value, "page", (entry, path) => presetOf(ctx, entry, path)))
 }
 
 export function decodeTaskSummaryPage(value: unknown): Parsed<Page<TaskSummary>> {
   const ctx = decodeContext()
-  return finishDecode(ctx, () => pageOf(ctx, value, "page", (entry, path) => taskSummaryOfValue(ctx, entry, path)))
+  return finishDecode(ctx, () => decodePage(ctx, value, "page", (entry, path) => taskSummaryOfValue(ctx, entry, path)))
 }
 
 export function decodeTaskDetail(value: unknown): Parsed<{ task: Task; links: readonly TaskSessionLinkView[] }> {

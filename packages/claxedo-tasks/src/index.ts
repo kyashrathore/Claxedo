@@ -45,6 +45,18 @@ export { validateReparent, validateTaskDraft, validateTaskEdit } from "./tasks/m
 export { createTasksService, type TaskMutation, type TasksService, type TasksServiceDeps } from "./tasks/service"
 export { createTasksCommands, type TasksCommands, type TasksCommandsDeps } from "./commands"
 
+export {
+  START_ORIGIN_PREFIX,
+  startDigest,
+  startFirstMessage,
+  startInstructions,
+  startOriginId,
+  type StartDigestInput,
+  type StartFirstMessageInput,
+  type StartInstructions,
+  type StartInstructionsInput,
+} from "./start"
+
 export { createMemoryTasksStore } from "./stores/memory"
 export {
   TASKS_STORE_CONFORMANCE_SCOPE,
