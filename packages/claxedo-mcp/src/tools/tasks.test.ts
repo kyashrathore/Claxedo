@@ -258,6 +258,17 @@ describe("task_list", () => {
     expect(service.calls).toEqual([{ method: "GET", path: "/api/claxedo/tasks/tasks?projectId=prj_root" }])
   })
 
+  test("refuses a project outside a confined grant without sending it", async () => {
+    const service = tasksService()
+    const { url } = await listen({ service, grantedProject: "prj_root" })
+
+    expect(await call(await connect(url), "task_list", { project: "prj_other" })).toEqual({
+      text: "This session's Tasks grant is confined to project prj_root; it cannot work in prj_other.",
+      isError: true,
+    })
+    expect(service.calls).toEqual([])
+  })
+
   test("a named project is used as given, and the project route is never read", async () => {
     const service = tasksService()
     const { url, localCalls } = await listen({ service })

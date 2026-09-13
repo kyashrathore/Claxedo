@@ -329,10 +329,18 @@ function tasksClient(ctx: McpToolContext): TasksClient {
 /**
  * The project a task belongs to: the one named, the one this grant is confined
  * to, or the one this session's own workspace sits in.
+ *
+ * A named project outside a confined grant is refused here by name. The
+ * control plane refuses it too, but sending it would put a project this
+ * session was never given into the account's audit trail and answer the model
+ * with a forbidden it cannot act on.
  */
 async function projectOf(ctx: McpToolContext, requested: string | undefined): Promise<string> {
-  if (requested) return requested
   const granted = ctx.client.tasks?.projectId
+  if (granted && requested && requested !== granted) {
+    throw new RefusalSentence(`This session's Tasks grant is confined to project ${granted}; it cannot work in ${requested}.`)
+  }
+  if (requested) return requested
   if (granted) return granted
   const target = toolTarget(ctx, {})
   let response: Response
