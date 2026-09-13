@@ -509,8 +509,13 @@ function touchCredential(id: string, org?: CredentialOrgScope) {
 /**
  * Replace stored secret material in place, keeping the credential's identity,
  * scope, and consent. Used when an OAuth credential is renewed during
- * verification — `putCredential` would be the wrong tool: it resets health and
- * re-runs the exclusive-kind replacement logic for what is the same login.
+ * verification — `putCredential` would be the wrong tool: it re-runs the
+ * exclusive-kind replacement logic for what is the same login.
+ *
+ * The stored verdict was reached against the secret being replaced, so it
+ * cannot survive the swap: the row is unchecked until something checks the new
+ * material. A caller that already knows the renewed secret works writes its own
+ * verdict after this returns.
  */
 export async function updateCredentialSecret(
   id: string,
@@ -534,6 +539,10 @@ export async function updateCredentialSecret(
       expires_at: expiresAt ?? credential.expires_at ?? null,
       updated_at: now(),
       revision: credential.revision + 1,
+      health: null,
+      last_validated_at: null,
+      last_error: null,
+      status: "available",
     })
     .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
     .run())
@@ -554,6 +563,30 @@ export function updateCredentialScope(
       scope,
       source: scope === "shared" ? "managed" : "local_only",
       consent_json: JSON.stringify({ at: consentAt, surface: "scope_change" }),
+      updated_at: now(),
+    })
+    .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
+    .run())
+  return true
+}
+
+/**
+ * Rename a credential. The name is the only thing that changes: the secret a
+ * binding resolves is the same one, so `revision` stays put and a holder of the
+ * old revision is not superseded, and the stored verdict still describes the
+ * material it was reached against.
+ */
+export function updateCredentialLabel(
+  id: string,
+  label: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): boolean {
+  const credential = getCredential(id, org)
+  if (!credential) return false
+  ClaxedoDB.use((db) => db
+    .update(ClaxedoProviderCredentialTable)
+    .set({
+      label,
       updated_at: now(),
     })
     .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))

@@ -105,6 +105,7 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       }
       return stored
     },
+    updateCredentialLabel: async (id, label, org) => (await credentialRegistry()).updateCredentialLabel(id, label, org),
     saveDiscoveredCredentials: async (input, org) => {
       const saved = await (await import("@claxedo/server-core/credentials/operations/discovery")).credentialDiscovery.save(input, org)
       await syncOpenCodeCredentials(org)

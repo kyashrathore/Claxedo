@@ -1,4 +1,5 @@
 import { jsonRecord, jsonText } from "@claxedo/server-core/platform/runtime/lib/json"
+import { emailFromClaims } from "@claxedo/server-core/credentials/secret-material"
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import { isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -247,11 +248,15 @@ function codexCredential(local: unknown) {
   const account_id = bundle?.tokens.account_id
   const expires = jwtExp(access) ?? Date.now() + 55 * 60 * 1000
   if (!refresh || !access) return undefined
+  // The user picks between several Codex logins by who they are, and only the
+  // token's own claims know that; `itemOrigin` reads the label, so every codex
+  // caller passes an explicit origin rather than letting an address decide one.
+  const email = emailFromClaims(bundle)
   return {
     provider_id: "codex-app-server",
     kind: "oauth_token" as const,
     source: "local_only" as const,
-    label: "Synced from local Codex auth",
+    label: email ?? "Synced from local Codex auth",
     ...(account_id ? { account_id } : {}),
     ...(expires ? { fresh_until: expires } : {}),
     secret: JSON.stringify({

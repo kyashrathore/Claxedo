@@ -23,6 +23,8 @@ const {
   updateCredentialStatus,
   updateCredentialHealth,
   updateCredentialScope,
+  updateCredentialSecret,
+  updateCredentialLabel,
   deleteCredential,
   deleteCredentialsByProvider,
   selectCredentialsForScope,
@@ -390,6 +392,62 @@ describe("credential registry", () => {
     expect(reconnected.id).toBe(cred.id)
     expect(reconnected).toMatchObject({ health: null, status: "available", last_validated_at: null })
     expect(getCredential(cred.id)).toMatchObject({ health: null, status: "available", last_validated_at: null })
+  })
+
+  test("replacing the secret supersedes the verdict reached against the old one", async () => {
+    const credential = await putCredential({
+      provider_id: "verify-refresh-test",
+      kind: "oauth_token",
+      source: "managed",
+      secret: "stale-token",
+    })
+    updateCredentialHealth(credential.id, "auth_failed", 1234)
+
+    expect(await updateCredentialSecret(credential.id, "renewed-token")).toBe(true)
+
+    expect(getCredential(credential.id)).toMatchObject({
+      health: null,
+      status: "available",
+      last_validated_at: null,
+      last_error: null,
+      revision: credential.revision + 1,
+    })
+    expect(await resolveSecretById(credential.id)).toBe("renewed-token")
+  })
+
+  test("renaming a credential touches nothing the auth material is judged by", async () => {
+    const credential = await putCredential({
+      provider_id: "rename-test",
+      kind: "api_key",
+      source: "managed",
+      label: "Work key",
+      secret: "rename-secret",
+    })
+    updateCredentialHealth(credential.id, "auth_failed", 1234)
+
+    expect(updateCredentialLabel(credential.id, "Personal key")).toBe(true)
+
+    expect(getCredential(credential.id)).toMatchObject({
+      label: "Personal key",
+      health: "auth_failed",
+      status: "error",
+      last_validated_at: 1234,
+      revision: credential.revision,
+    })
+  })
+
+  test("renaming a credential another org owns writes nothing", async () => {
+    const credential = await putCredential({
+      provider_id: "rename-org-test",
+      kind: "api_key",
+      source: "managed",
+      label: "Only name",
+      secret: "rename-org-secret",
+    })
+
+    expect(updateCredentialLabel(credential.id, "Renamed by a stranger", "some-other-org")).toBe(false)
+
+    expect(getCredential(credential.id)).toMatchObject({ label: "Only name" })
   })
 
   test("a rejected account keeps its verdict when another key is added beside it", async () => {

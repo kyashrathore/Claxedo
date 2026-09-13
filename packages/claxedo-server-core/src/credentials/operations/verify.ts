@@ -1,4 +1,4 @@
-import { jsonNumber, jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { jsonNumber, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { CredentialVerificationError } from "../verification-error"
 import {
@@ -34,6 +34,11 @@ export type CredentialVerificationOutcome = {
   refreshed?: RefreshedCredentialSecret
   /** Present only when the probe was a usage read, so API keys never carry it. */
   usage?: CredentialUsageWindow[]
+  /**
+   * The address the subscription is signed in as, when the provider will say.
+   * A key authenticates a project, not a person, so it never carries one.
+   */
+  accountEmail?: string
 }
 
 export async function verifyCredential(
@@ -91,11 +96,16 @@ export async function verifyCredential(
   }
   const auth = credentialSecretMaterial({ kind: credential.kind, secret: material })
   if (!auth) throw new CredentialVerificationError("Credential secret has an unsupported shape")
+  const anthropicSubscription = anthropic && auth.form === "subscription"
   const probe = providerProbe(auth, anthropic, cursor, openai && auth.form === "subscription")
-  const outcome = (health: CredentialHealth, usage?: CredentialUsageWindow[]): CredentialVerificationOutcome => ({
+  const outcome = (
+    health: CredentialHealth,
+    detail: { usage?: CredentialUsageWindow[]; accountEmail?: string } = {},
+  ): CredentialVerificationOutcome => ({
     health,
     ...(refreshed ? { refreshed } : {}),
-    ...(usage ? { usage } : {}),
+    ...(detail.usage ? { usage: detail.usage } : {}),
+    ...(detail.accountEmail ? { accountEmail: detail.accountEmail } : {}),
   })
   const response = await (options.fetch ?? globalThis.fetch)(probe.url, probe.init).catch(() => {
     throw new CredentialVerificationError("Credential provider request failed")
@@ -103,7 +113,10 @@ export async function verifyCredential(
   if (response.ok) {
     if (probe.usage) {
       const body: unknown = await response.json().catch(() => undefined)
-      return outcome("ok", probe.usage(body))
+      const accountEmail = anthropicSubscription
+        ? await anthropicAccountEmail(auth.token, options.fetch)
+        : auth.email
+      return outcome("ok", { usage: probe.usage(body), ...(accountEmail ? { accountEmail } : {}) })
     }
     // The OpenAI probe must stream; drop the body rather than leave an open SSE
     // connection for a completion we never read.
@@ -122,6 +135,35 @@ export async function verifyCredential(
   if (response.status === 429) return outcome("rate_capped")
   if (response.status === 401 || response.status === 403) return outcome("auth_failed")
   throw new CredentialVerificationError("Credential provider verification failed")
+}
+
+/**
+ * The address an Anthropic subscription is signed in as.
+ *
+ * Only the usage read decides health; this route is asked afterwards and its
+ * answer is never a verdict. `/api/oauth/profile` is not granted to every
+ * subscription — some plans answer 403 or 404 to a token the usage read has
+ * just accepted — so a non-ok status, an unparseable body or a transport fault
+ * all leave the account unnamed rather than marking a working token as
+ * rejected. Where the account lives in the body also varies, hence the four
+ * spellings.
+ */
+async function anthropicAccountEmail(token: string, fetchImpl: typeof fetch | undefined) {
+  const response = await (fetchImpl ?? globalThis.fetch)("https://api.anthropic.com/api/oauth/profile", {
+    method: "GET",
+    signal: AbortSignal.timeout(10_000),
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${token}`,
+      "anthropic-beta": "oauth-2025-04-20",
+    },
+  }).catch(() => undefined)
+  if (!response?.ok) return undefined
+  const body = jsonRecord(await response.json().catch(() => undefined))
+  const account = jsonRecord(body?.account)
+  return [account?.email_address, account?.email, body?.email_address, body?.email]
+    .map(jsonString)
+    .find((item) => item !== undefined)
 }
 
 /**

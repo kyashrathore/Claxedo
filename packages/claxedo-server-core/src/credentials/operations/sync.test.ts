@@ -433,6 +433,57 @@ describe("syncLocalCredentials", () => {
   })
 
   /**
+   * The account name is the only thing that tells two Codex logins apart on the
+   * picker, and the file name is not it — the accounts directory is read as a
+   * glob so the address never reaches `origin`. The claims are the one place
+   * this can be known without asking OpenAI.
+   */
+  test("labels a Codex login with the address its claims name, leaving the origin a glob", async () => {
+    const accountsDir = path.join(process.env.HOME!, ".codex", "accounts")
+    mkdirSync(accountsDir, { recursive: true })
+    const idToken = `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify({
+      email: "signed-in@example.com",
+      chatgpt_account_id: "named-account",
+    })).toString("base64url")}.signature`
+    await fs.writeFile(path.join(accountsDir, "signed-in@example.com.auth.json"), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: {
+        id_token: idToken,
+        access_token: "access-named",
+        refresh_token: "refresh-named",
+        account_id: "named-account",
+      },
+      last_refresh: "2026-04-22T00:00:00.000Z",
+    }))
+
+    const discovered = (await collectLocalCredentialItems())
+      .filter((item) => item.provider_id === "codex-app-server")
+
+    expect(discovered.map((item) => item.label)).toEqual(["signed-in@example.com"])
+    expect(discovered.map((item) => item.origin)).toEqual(["~/.codex/accounts/*.auth.json"])
+  })
+
+  test("keeps the generic label for a Codex login whose claims name no address", async () => {
+    const codexDir = path.join(process.env.HOME!, ".codex")
+    mkdirSync(codexDir, { recursive: true })
+    await fs.writeFile(path.join(codexDir, "auth.json"), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: {
+        access_token: "anonymous-access",
+        refresh_token: "anonymous-refresh",
+        account_id: "anonymous-account",
+      },
+      last_refresh: "2026-04-22T00:00:00.000Z",
+    }))
+
+    const discovered = (await collectLocalCredentialItems())
+      .filter((item) => item.provider_id === "codex-app-server")
+
+    expect(discovered.map((item) => item.label)).toEqual(["Synced from local Codex auth"])
+    expect(discovered.map((item) => item.origin)).toEqual(["~/.codex/auth.json"])
+  })
+
+  /**
    * The Keychain item is not ours and is not only ours: `Claude Code-credentials`
    * holds the user's Claude login next to an `mcpOAuth` map of access tokens
    * belonging to unrelated third-party MCP servers, and Claude Code rewrites the

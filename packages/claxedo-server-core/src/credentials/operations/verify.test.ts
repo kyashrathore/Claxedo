@@ -4,6 +4,7 @@ import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 const NOW = 1_700_000_000_000
 const TOKEN_URL = "https://auth.openai.com/oauth/token"
+const PROFILE_URL = "https://api.anthropic.com/api/oauth/profile"
 
 function credential(input: Partial<CredentialMetadata> = {}): CredentialMetadata {
   return {
@@ -32,12 +33,15 @@ function codexSecret(access = "access_old") {
 }
 
 /**
- * One stub for both hops: the token endpoint and the provider probe. Recording
- * both is the point — the bug this covers was a probe that never happened.
+ * One stub for all three hops: the token endpoint, the provider probe and
+ * Anthropic's profile read. Recording every one is the point — the bug this
+ * covers was a probe that never happened, and the profile read must stay off
+ * the verdict while still being visible to an assertion.
  */
 function transport(input: {
   token?: { ok?: boolean; body?: unknown }
   probe?: { ok?: boolean; status?: number; body?: string; json?: unknown }
+  profile?: { ok?: boolean; status?: number; json?: unknown }
 }) {
   const calls: Array<{
     url: string
@@ -65,6 +69,15 @@ function transport(input: {
         text: async () => "",
       } as unknown as Response
     }
+    if (target === PROFILE_URL) {
+      const profile = input.profile ?? {}
+      return {
+        ok: profile.ok ?? true,
+        status: profile.status ?? (profile.ok === false ? 403 : 200),
+        text: async () => "",
+        json: async () => profile.json ?? {},
+      } as unknown as Response
+    }
     const probe = input.probe ?? {}
     return {
       ok: probe.ok ?? true,
@@ -77,7 +90,8 @@ function transport(input: {
     stub,
     calls,
     tokenCalls: () => calls.filter((call) => call.url === TOKEN_URL),
-    probeCalls: () => calls.filter((call) => call.url !== TOKEN_URL),
+    probeCalls: () => calls.filter((call) => call.url !== TOKEN_URL && call.url !== PROFILE_URL),
+    profileCalls: () => calls.filter((call) => call.url === PROFILE_URL),
   }
 }
 
@@ -497,6 +511,94 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
         now: () => NOW,
       }),
     ).rejects.toBeInstanceOf(CredentialVerificationError)
+  })
+})
+
+describe("verifyCredential — naming the account", () => {
+  function jwt(claims: Record<string, unknown>) {
+    return `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`
+  }
+
+  test("a ChatGPT subscription is named from its own claims, with no extra request", async () => {
+    const transports = transport({})
+    const secret = JSON.stringify({
+      type: "codex_auth",
+      tokens: {
+        id_token: jwt({ email: "chatgpt@example.com", chatgpt_account_id: "acct_1" }),
+        access_token: "access_old",
+        refresh_token: "refresh_old",
+        account_id: "acct_1",
+      },
+    })
+
+    const outcome = await verifyCredential(credential({ expires_at: NOW + 60_000 }), secret, {
+      fetch: transports.stub,
+      now: () => NOW,
+    })
+
+    expect(outcome).toEqual({ health: "ok", usage: [], accountEmail: "chatgpt@example.com" })
+    expect(transports.probeCalls()).toHaveLength(1)
+  })
+
+  test("an Anthropic subscription is named from the profile read", async () => {
+    const transports = transport({ profile: { json: { account: { email_address: "claude@example.com" } } } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" } }),
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "ok", usage: [], accountEmail: "claude@example.com" })
+    expect(transports.profileCalls()[0].headers.Authorization).toBe("Bearer sk-ant-oat01-keychain")
+    expect(transports.profileCalls()[0].headers["anthropic-beta"]).toBe("oauth-2025-04-20")
+  })
+
+  /**
+   * `/api/oauth/profile` is not granted to every subscription. A token the
+   * usage read has just accepted is a working token, so a refusal there may
+   * only cost the account its name — never turn a working credential into
+   * `auth_failed`, which is what makes the user reconnect a good login.
+   */
+  test("a refused profile read leaves the usage read's verdict alone", async () => {
+    const transports = transport({
+      profile: { ok: false, status: 403, json: { account: { email_address: "refused@example.com" } } },
+    })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" } }),
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "ok", usage: [] })
+    expect(transports.profileCalls()).toHaveLength(1)
+  })
+
+  test("a rejected token is never asked who it belongs to", async () => {
+    const transports = transport({ probe: { ok: false, status: 401 } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
+      JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-oat01-revoked" } }),
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "auth_failed" })
+    expect(transports.calls.map((call) => call.url)).toEqual(["https://api.anthropic.com/api/oauth/usage"])
+  })
+
+  test("an API key names no account", async () => {
+    const transports = transport({ profile: { json: { email: "leaked@example.com" } } })
+
+    const outcome = await verifyCredential(
+      credential({ provider_id: "anthropic", kind: "api_key" }),
+      "sk-ant-api03-console-key",
+      { fetch: transports.stub, now: () => NOW },
+    )
+
+    expect(outcome).toEqual({ health: "ok" })
+    expect(transports.profileCalls()).toHaveLength(0)
   })
 })
 

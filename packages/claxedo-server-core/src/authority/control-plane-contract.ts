@@ -107,6 +107,8 @@ export type ControlPlaneCredentials = {
   updateCredentialScope?: (id: string, scope: CredentialScope, consentAt: number, org?: string) => Promise<boolean>
   /** Persist renewed secret material for an existing credential (OAuth refresh). */
   updateCredentialSecret?: (id: string, secret: string, expiresAt?: number, org?: string) => Promise<boolean>
+  /** Rename a credential, leaving the auth material it stores untouched. */
+  updateCredentialLabel?: (id: string, label: string, org?: string) => Promise<boolean>
   syncLocalCredentials: (providerIds?: string[], org?: string) => Promise<CredentialSyncResult>
 }
 
