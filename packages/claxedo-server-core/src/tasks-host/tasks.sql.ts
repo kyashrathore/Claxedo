@@ -38,6 +38,8 @@ export const ClaxedoTaskTable = sqliteTable(
     number: integer().notNull(),
     workspace_id: text(),
     parent_task_id: text(),
+    created_from_session_id: text(),
+    created_from_workspace_id: text(),
     title: text().notNull(),
     description: text().notNull(),
     status: text().notNull(),

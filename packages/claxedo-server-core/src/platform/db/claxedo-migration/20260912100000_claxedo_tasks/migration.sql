@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS `claxedo_task` (
 	`number` integer NOT NULL,
 	`workspace_id` text,
 	`parent_task_id` text,
+	`created_from_session_id` text,
+	`created_from_workspace_id` text,
 	`title` text NOT NULL,
 	`description` text NOT NULL,
 	`status` text NOT NULL,

@@ -224,6 +224,7 @@ function task(id: string): Task {
     number: 1,
     workspaceId: null,
     parentTaskId: null,
+    createdFrom: null,
     title: `Fix ${id}`,
     description: "",
     status: "todo",

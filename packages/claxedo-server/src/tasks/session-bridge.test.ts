@@ -175,6 +175,7 @@ function task(): Task {
     number: 1,
     workspaceId: "ws_cloud",
     parentTaskId: null,
+    createdFrom: null,
     title: "Fix the importer",
     description: "The CSV importer drops the last row.",
     status: "todo",

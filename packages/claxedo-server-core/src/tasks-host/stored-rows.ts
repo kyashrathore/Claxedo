@@ -46,6 +46,8 @@ export type StoredTaskColumns = {
   number: number
   workspace_id: string | null
   parent_task_id: string | null
+  created_from_session_id: string | null
+  created_from_workspace_id: string | null
   title: string
   description: string
   status: string
@@ -124,6 +126,8 @@ export function taskColumns(task: Task): StoredTaskColumns {
     number: task.number,
     workspace_id: task.workspaceId,
     parent_task_id: task.parentTaskId,
+    created_from_session_id: task.createdFrom?.sessionId ?? null,
+    created_from_workspace_id: task.createdFrom?.workspaceId ?? null,
     title: task.title,
     description: task.description,
     status: task.status,
@@ -135,6 +139,13 @@ export function taskColumns(task: Task): StoredTaskColumns {
 }
 
 export function taskOfColumns(row: StoredTaskColumns): Task {
+  // A workspace without its session is a half-written origin, not "created
+  // from the workspace": the pair is stored and read together, and a session
+  // that belongs to no workspace stores a null workspace.
+  const createdFrom: SessionReference | null =
+    row.created_from_session_id === null
+      ? null
+      : { sessionId: row.created_from_session_id, workspaceId: row.created_from_workspace_id }
   const decoded = decodeTask({
     id: row.task_id,
     revision: row.revision,
@@ -143,6 +154,7 @@ export function taskOfColumns(row: StoredTaskColumns): Task {
     number: row.number,
     workspaceId: row.workspace_id,
     parentTaskId: row.parent_task_id,
+    createdFrom,
     title: row.title,
     description: row.description,
     status: row.status,

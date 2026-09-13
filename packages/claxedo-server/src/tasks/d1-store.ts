@@ -64,7 +64,7 @@ export type D1TasksStoreInput = Readonly<{ database: D1Database }>
 const PRESET_COLUMNS =
   "scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations, archived_at, created_at, updated_at"
 const TASK_COLUMNS =
-  "scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
+  "scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, created_from_session_id, created_from_workspace_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
 const LINK_COLUMNS =
   "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, handoff_text, created_at"
 const RECEIPT_COLUMNS = "scope_id, client_request_id, command_name, request_hash, result, created_at"
@@ -96,6 +96,8 @@ function taskValues(task: Task): unknown[] {
     row.number,
     row.workspace_id,
     row.parent_task_id,
+    row.created_from_session_id,
+    row.created_from_workspace_id,
     row.title,
     row.description,
     row.status,

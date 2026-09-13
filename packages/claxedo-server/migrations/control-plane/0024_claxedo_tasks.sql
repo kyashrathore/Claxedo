@@ -41,6 +41,8 @@ create table tasks (
   number integer not null,
   workspace_id text,
   parent_task_id text,
+  created_from_session_id text,
+  created_from_workspace_id text,
   title text not null,
   description text not null,
   status text not null,

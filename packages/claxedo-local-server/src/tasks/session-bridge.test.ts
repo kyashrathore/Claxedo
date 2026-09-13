@@ -114,6 +114,7 @@ function task(input: { workspaceId: string | null; projectId?: string }): Task {
     number: 1,
     workspaceId: input.workspaceId,
     parentTaskId: null,
+    createdFrom: null,
     title: "Fix the importer",
     description: "The CSV importer drops the last row.",
     status: "todo",
