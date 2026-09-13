@@ -45,6 +45,7 @@ type FakeSession = {
 type FakeHarnessCapabilities = {
   modelSelection?: { status: string; models?: Array<{ providerId: string; modelId: string; name: string }> }
   effortLevels?: { status: string; models: Array<{ modelID: string; levels: string[] }> }
+  instructionChannel?: "turn-system-prompt" | "thread-start" | "prompt-prefix" | "none"
 }
 
 type FakeRow = {
@@ -155,6 +156,9 @@ function fakeRuntime(options: {
       const active = childrenOf(parentID).filter((row) => ["pending", "running", "paused"].includes(row.status))
       if (active.length >= 4) {
         return c.json(error("subagent_child_cap_reached", `Session ${parentID} already has ${active.length} active children (limit 4)`), 409)
+      }
+      if (body.instructions && options.harnessCapabilities?.instructionChannel === "none") {
+        return c.json(error("session_instructions_unsupported", "This harness takes no standing instructions"), 501)
       }
       const ceiling = narrower(MODE_LEVELS[parent.permissionMode], body.permissionCeiling)
       const requested = body.permissionMode
@@ -649,6 +653,26 @@ describe("subagent tools", () => {
     expect(runtime.prompts).toEqual([
       { sessionId: created.sessionId, text: "Check it", model: { providerID: "openai", id: "gpt-5" } },
     ])
+  })
+
+  test("a harness with no instruction channel gets the block at the head of the child's first prompt", async () => {
+    const runtime = fakeRuntime({ harnessCapabilities: { instructionChannel: "none" } })
+    const url = await mount(runtime)
+    runtime.seed("parent", { group: GROUP, instructions: "Read before you write." })
+    const client = await asRuntime(url, "parent")
+
+    const created = jsonOf(await call(client, "create_subagent", {
+      configuration: "review",
+      prompt: "Check it",
+      mode: "async",
+    }))
+    expect((await runtime.config(String(created.sessionId))).instructions).toBe("")
+    expect(runtime.prompts).toHaveLength(1)
+    const prompt = runtime.prompts[0]!
+    expect(prompt.sessionId).toBe(created.sessionId)
+    expect(prompt.text).toContain("Read before you write.")
+    expect(prompt.text).toContain("review configuration")
+    expect(prompt.text.endsWith("\n\nCheck it")).toBe(true)
   })
 
   test("a configuration this session's group does not name is refused with the ones it has", async () => {

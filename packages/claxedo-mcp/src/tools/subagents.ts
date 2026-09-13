@@ -5,6 +5,8 @@ import {
   parseHarnessEffortLevels,
   parseSessionModelGroup,
   sessionVariantForEffort,
+  HARNESS_INSTRUCTION_CHANNELS,
+  type HarnessInstructionChannel,
   type SessionHarness,
   type SessionModelGroup,
 } from "@claxedo/agent-runtime-contract"
@@ -135,10 +137,16 @@ async function createSubagent(
   const parent = requireParentSession(ctx)
   const config = await parentSessionConfig(ctx, parent)
   const choice = resolveChoice(args, config.group)
-  await refuseUnsupportedChoice(ctx, choice)
-  const child = await createChildSession(ctx, parent, args, choice, childInstructions(config.instructions, choice))
+  const { instructionChannel } = await refuseUnsupportedChoice(ctx, choice)
+  const instructions = childInstructions(config.instructions, choice)
+  // A harness with no instruction channel refuses a create that carries one;
+  // the block then rides at the head of the child's first prompt, the same
+  // delivery the runtime gives a prompt-prefix harness.
+  const carries = instructionChannel !== "none"
+  const child = await createChildSession(ctx, parent, args, choice, carries ? instructions : undefined)
+  const task = args.role ? `Role: ${args.role}\n\n${args.prompt}` : args.prompt
   try {
-    await promptChild(ctx, child.sessionId, args.role ? `Role: ${args.role}\n\n${args.prompt}` : args.prompt)
+    await promptChild(ctx, child.sessionId, carries ? task : `${instructions}\n\n${task}`)
   } catch (error) {
     const refusal = refusalMessage(error)
     if (!refusal) throw error
@@ -168,7 +176,7 @@ async function createChildSession(
   parentID: string,
   args: { role?: string; permissionMode?: string; clientRequestId?: string },
   choice: Choice,
-  instructions: string,
+  instructions: string | undefined,
 ): Promise<{ subagentKey: string; sessionId: string }> {
   // A credential that declares no level leaves `permissionCeiling` off rather
   // than falling back to `ask` the way a parentless `session_create` must: the
@@ -180,7 +188,7 @@ async function createChildSession(
     ...(args.role ? { role: args.role, title: args.role } : {}),
     ...(choice.model ? { model: choice.model } : {}),
     ...sessionVariantForEffort(choice.effort),
-    instructions,
+    ...(instructions ? { instructions } : {}),
     ...(args.permissionMode ? { permissionMode: args.permissionMode } : {}),
     ...(args.clientRequestId ? { clientRequestId: args.clientRequestId } : {}),
     ...(ceiling ? { permissionCeiling: ceiling } : {}),
@@ -272,9 +280,13 @@ function contradiction(field: string, requested: string | undefined, resolved: s
 /**
  * What the harness registered for this workspace says about the choice. An
  * unregistered harness answers through the capability read's own refusal, so
- * only the model and the effort are judged here.
+ * only the model and the effort are judged here; the instruction channel is
+ * returned for the caller to deliver the block the way this harness takes it.
  */
-async function refuseUnsupportedChoice(ctx: McpToolContext, choice: Choice): Promise<void> {
+async function refuseUnsupportedChoice(
+  ctx: McpToolContext,
+  choice: Choice,
+): Promise<{ instructionChannel: HarnessInstructionChannel | undefined }> {
   const body = record(await getRuntimeJson(ctx, "/session/capabilities", harnessQuery(choice.harness)))
   const selection = record(body?.modelSelection)
   if (choice.model && selection?.status === "unsupported") {
@@ -295,6 +307,7 @@ async function refuseUnsupportedChoice(ctx: McpToolContext, choice: Choice): Pro
     effort: choice.effort,
   })
   if (refusal) throw new McpHttpError(400, "subagent_effort_unsupported", refusal)
+  return { instructionChannel: oneOf(body?.instructionChannel, HARNESS_INSTRUCTION_CHANNELS) }
 }
 
 async function parentSessionConfig(ctx: McpToolContext, parent: string): Promise<ParentSessionConfig> {
