@@ -40,6 +40,48 @@ const PROVIDER_BY_REGISTRY_ID: Readonly<Record<string, string>> = {
 }
 
 /**
+ * The process environment variables the engine reads a credential for each
+ * bound provider out of.
+ *
+ * `Integration.connection.active` puts an env connection ahead of nothing else
+ * for a provider with no stored credential, and `ModelResolver.load` then
+ * substitutes that key for the overlay's placeholder. The engine runs inside
+ * the Claxedo server process, whose environment nothing scrubs, so on a machine
+ * exporting these the operator's real key is what reaches the broker URL — and
+ * the broker refuses it as `runtime_token_required`.
+ *
+ * Withheld only for providers this reconcile bound: the operator chose an
+ * account for those, and every other harness's implicit tier goes on reading
+ * the rest of the environment.
+ */
+const ENGINE_PROVIDER_ENV: Readonly<Record<string, readonly string[]>> = {
+  anthropic: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
+  openai: ["OPENAI_API_KEY"],
+  openrouter: ["OPENROUTER_API_KEY"],
+  google: ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+  groq: ["GROQ_API_KEY"],
+  xai: ["XAI_API_KEY"],
+}
+
+/** What this process removed, so an account the operator drops hands it back. */
+const withheldEnv = new Map<string, string>()
+
+function withholdEngineProviderEnv(providers: readonly string[]) {
+  const withhold = new Set(providers.flatMap((providerID) => ENGINE_PROVIDER_ENV[providerID] ?? []))
+  for (const [name, value] of withheldEnv) {
+    if (withhold.has(name)) continue
+    process.env[name] = value
+    withheldEnv.delete(name)
+  }
+  for (const name of withhold) {
+    const value = process.env[name]
+    if (value === undefined) continue
+    withheldEnv.set(name, value)
+    delete process.env[name]
+  }
+}
+
+/**
  * Whether a second registry row for the same engine provider replaces the one
  * already written.
  *
@@ -146,9 +188,10 @@ export async function reconcileCredentialsIntoSdk(
     overlays[providerID] = overlay
   }
   const removed = await removeStoredCredentials(runtime)
+  const bound = Object.keys(overlays)
+  withholdEngineProviderEnv(bound)
   await runtime.bindProviders(overlays)
   renewAt = projectionRenewalDueAt(auth, projectedAt)
-  const bound = Object.keys(overlays)
   log.info("OpenCode SDK providers bound to the credential broker", { bound: bound.length, removed: removed.length })
   return { bound, removed }
 }

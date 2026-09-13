@@ -40,8 +40,15 @@ function fakeRuntime(connections: { id: string; label: string }[] = []) {
   }
 }
 
+const PROVIDER_ENV = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY"] as const
+const savedEnv = Object.fromEntries(PROVIDER_ENV.map((name) => [name, process.env[name]]))
+
 describe("OpenCode SDK credential bridge", () => {
   afterEach(() => {
+    for (const name of PROVIDER_ENV) {
+      if (savedEnv[name] === undefined) delete process.env[name]
+      else process.env[name] = savedEnv[name]
+    }
     disposeAgentConfig()
     loaded.mockReset()
     construct.mockReset()
@@ -150,6 +157,44 @@ describe("OpenCode SDK credential bridge", () => {
     await reconcileCredentialsIntoSdk()
 
     expect(fake.bound[0].anthropic).toMatchObject({ apiKey: "exact-placeholder" })
+  })
+
+  test("a bound provider's own environment variable is withheld from the engine's process", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    // `ModelResolver.load` resolves an env connection ahead of the overlay and
+    // substitutes its key for the placeholder, so the operator's real key would
+    // be the value sent to the broker URL — which refuses it.
+    process.env.ANTHROPIC_API_KEY = "sk-ant-api03-operator-own"
+    process.env.ANTHROPIC_AUTH_TOKEN = "operator-own-oauth"
+    process.env.OPENAI_API_KEY = "sk-operator-openai"
+    configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
+
+    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
+    await reconcileCredentialsIntoSdk()
+
+    expect(process.env.ANTHROPIC_API_KEY).toBeUndefined()
+    expect(process.env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
+    // Nobody chose an OpenAI account, so the engine keeps its own auth for it
+    // and every other harness keeps the implicit tier.
+    expect(process.env.OPENAI_API_KEY).toBe("sk-operator-openai")
+  })
+
+  test("an account the operator removes hands the environment back", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    process.env.ANTHROPIC_API_KEY = "sk-ant-api03-operator-own"
+    let auth: Record<string, ProviderProjection> = { "claude-sdk": brokerProjection }
+    configureAgentConfig({ projectAuth: async () => auth })
+
+    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
+    await reconcileCredentialsIntoSdk()
+    expect(process.env.ANTHROPIC_API_KEY).toBeUndefined()
+
+    auth = {}
+    await reconcileCredentialsIntoSdk()
+
+    expect(process.env.ANTHROPIC_API_KEY).toBe("sk-ant-api03-operator-own")
   })
 
   test("the engine's placeholders are re-projected when they are half spent, and not before", async () => {
