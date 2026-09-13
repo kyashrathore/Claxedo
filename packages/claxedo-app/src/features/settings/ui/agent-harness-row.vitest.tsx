@@ -156,6 +156,55 @@ describe("AgentHarnessRow accounts", () => {
     expect(checked).toEqual(["machine"])
   })
 
+  test("when the row was read sits in its own right-hand column, outside the sentence", () => {
+    row({ accounts: [account({ detail: "Weekly 64% used", checked: "Checked 5 minutes ago" })] })
+
+    expect(entry("cred_1").querySelector('[data-slot="radio-list-item-description"]')?.textContent)
+      .toBe("Weekly 64% used")
+    const checked = entry("cred_1").querySelector('[data-component="agent-account-checked"]')!
+    expect(checked.textContent).toBe("Checked 5 minutes ago")
+    // The actions hold their width at rest, so the time beside them is in the
+    // same column on every row and neither moves when the pointer arrives.
+    expect(checked.nextElementSibling?.getAttribute("data-component")).toBe("agent-account-actions")
+    expect(entry("cred_1").querySelector('[data-component="agent-account-actions"]')!.className)
+      .toContain("min-w-11")
+  })
+
+  test("a row nothing has read carries no time at all", () => {
+    row()
+
+    expect(entry("cred_1").querySelector('[data-component="agent-account-checked"]')).toBeNull()
+  })
+
+  test("what the label does not say hangs off a hint beside it, and pressing the hint chooses nothing", () => {
+    const chosen: string[] = []
+    row({
+      accounts: [account({ selected: true }), machineLogin({ note: "Works with Cursor ACP · the SDK needs a key" })],
+      onSelect: (item) => void chosen.push(item.key),
+    })
+
+    const hint = entry("machine").querySelector<HTMLElement>('[data-component="agent-account-note"] [aria-label]')!
+    expect(hint.getAttribute("aria-label")).toBe("Works with Cursor ACP · the SDK needs a key")
+    expect(entry("machine").querySelector('[data-slot="radio-list-item-description"]')?.textContent)
+      .not.toContain("Works with Cursor ACP")
+
+    fireEvent.click(hint)
+
+    expect(chosen).toEqual([])
+    expect(entry("cred_1").querySelector('[data-component="agent-account-note"]')).toBeNull()
+  })
+
+  test("every entry says where a turn on it can run, and this computer's login says it runs nowhere else", () => {
+    row({ accounts: [account(), machineLogin()] })
+
+    const reach = (key: string) =>
+      entry(key).querySelector('[data-component="agent-account-reach"] [data-reach]')
+    expect(reach("cred_1")?.getAttribute("data-reach")).toBe("local-and-cloud")
+    expect(reach("cred_1")?.textContent).toBe("settings.providers.agents.reachLocalCloud")
+    expect(reach("machine")?.getAttribute("data-reach")).toBe("local-only")
+    expect(reach("machine")?.textContent).toBe("settings.providers.agents.reachLocalOnly")
+  })
+
   test("an id the reader cannot match to an account is a tooltip, never a line", () => {
     row({ accounts: [account({ identity: "f050517a-3e46-4798-a274-1d3a34084f2a" })] })
 

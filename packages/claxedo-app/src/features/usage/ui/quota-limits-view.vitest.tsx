@@ -88,13 +88,47 @@ describe("quota limits view", () => {
       .toMatchObject({ account: "work@example.com" })
   })
 
-  test("draws a bar per window with its age, and marks the account the harness runs on", async () => {
-    await renderView({ snapshot })
+  test("draws a bar per window, dates the card once in its header, and marks the account the harness runs on", async () => {
+    const { container } = await renderView({ snapshot })
     expect(screen.getByRole("progressbar", { name: "work@example.com Session: 25% used" })).toHaveAttribute("value", "25")
     expect(screen.getByRole("progressbar", { name: "personal@example.com Session: 90% used" })).toHaveAttribute("value", "90")
     expect(screen.getAllByText("In use")).toHaveLength(2)
-    expect(screen.getAllByText(/as of 1 minute ago/).length).toBeGreaterThan(0)
     expect(screen.getByText("From your connected accounts")).toBeInTheDocument()
+    // The two windows of one card were read together; the age belongs to the
+    // card, so it is said once, in the header, not under every bar.
+    const card = container.querySelector('[data-account="cred_work"]')!
+    expect(within(card as HTMLElement).getAllByText(/as of 1 minute ago/)).toHaveLength(1)
+    expect(card.querySelector("header .usage-quota-as-of")).not.toBeNull()
+  })
+
+  test("a vendor's fraction of a percent reads as whole percent everywhere the card spells one", async () => {
+    await renderView({ snapshot: {
+      accounts: [{
+        harness: "claude",
+        credentialId: "cred_fraction",
+        label: "work@example.com",
+        inUse: true,
+        windows: [{ window: "session", usedPercent: 72.68615984405457, resetsAt: null }],
+      }],
+    } })
+    expect(screen.getByRole("progressbar", { name: "work@example.com Session: 73% used" })).toBeInTheDocument()
+    expect(screen.getByText("27% left")).toBeInTheDocument()
+    expect(screen.getByText("27% left on Session")).toBeInTheDocument()
+  })
+
+  test("each card says where a turn on that account can run, and an agent Claxedo cannot run says nothing", async () => {
+    const { container } = await renderView({ snapshot: {
+      accounts: [
+        ...snapshot.accounts,
+        { harness: "gemini", otherAgent: true, label: "Gemini CLI", inUse: false, windows: [] },
+      ],
+    } })
+    const reach = (key: string) =>
+      container.querySelector(`[data-account="${key}"] [data-component="usage-quota-reach"]`)
+    expect(reach("cred_work")?.textContent).toBe("Local & cloud")
+    expect(reach("cred_work")?.getAttribute("data-reach")).toBe("local-and-cloud")
+    expect(reach("codex-2")?.textContent).toBe("Local only")
+    expect(container.querySelector('[data-account="gemini-3"] [data-component="usage-quota-reach"]')).toBeNull()
   })
 
   test("the tab states no whole-read verdict of its own", async () => {

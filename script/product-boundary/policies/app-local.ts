@@ -358,7 +358,12 @@ export const appLocal: Policy = {
   // The connect card reads it beside harness-catalog.ts, already in this
   // closure, and it imports nothing.
   // No new package edge. Measured 1017 / 38.
-  ceilings: { modules: 1017, packages: 38 },
+  // +1 module (2026-09-13): lib/percent.ts, the single owner of how a usage
+  // percentage is read. The vendors report the fraction they measured, and the
+  // Settings agent rows and the Usage quota cards each spelled it out in full;
+  // both round through here now. It imports nothing.
+  // No new package edge. Measured 1018 / 38.
+  ceilings: { modules: 1018, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -1,9 +1,11 @@
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { For, Show, createMemo } from "solid-js"
 import type { QuotaAccount, QuotaSnapshot } from "@claxedo/usage-contract"
-import { harnessIcon, harnessLabel } from "@/platform/identity/harness-catalog"
+import { accountReach, ACCOUNT_REACH_KEYS, harnessIcon, harnessLabel } from "@/platform/identity/harness-catalog"
 import { useLanguage } from "@/platform/i18n/provider"
 import { formatRelativeTime } from "@/lib/relative-time"
+import { percentText, readPercent } from "@/lib/percent"
 
 /**
  * A word the card shows. `key` is a dictionary entry; `text` is a string only
@@ -19,6 +21,10 @@ type Card = {
   label: string
   plan?: string
   inUse: boolean
+  /** Set where the account is this computer's own login rather than a stored row. */
+  machineLogin: boolean
+  /** An agent Claxedo cannot send a turn to; where it runs is not the reader's to choose. */
+  otherAgent: boolean
   refusedKey?: string
   usageError?: string
   windows: Bar[]
@@ -68,6 +74,8 @@ function card(account: QuotaAccount, index: number): Card {
     label: account.label ?? "This computer's login",
     ...(account.plan === undefined ? {} : { plan: account.plan }),
     inUse: account.inUse,
+    machineLogin: account.machineLogin === true,
+    otherAgent: account.otherAgent === true,
     ...(refusedKey === undefined ? {} : { refusedKey }),
     ...(account.usageError === undefined ? {} : { usageError: account.usageError }),
     // A refusal outranks whatever the plan last read: the account cannot spend
@@ -77,7 +85,7 @@ function card(account: QuotaAccount, index: number): Card {
       ? []
       : account.windows.map((window) => ({
         name: windowName(window.window),
-        percent: Math.max(0, Math.min(100, Math.round(window.usedPercent))),
+        percent: Math.max(0, Math.min(100, window.usedPercent)),
         resetsAt: window.resetsAt,
       })),
     ...(account.usageAt === undefined ? {} : { usageAt: account.usageAt }),
@@ -154,15 +162,26 @@ export function QuotaLimitsView(props: {
     const { constrainedWindow, remainingPercent, nearestReset, account } = quotaSummary(props.snapshot)
     if (constrainedWindow === undefined || remainingPercent === undefined) return undefined
     const summary = account === undefined
-      ? language.t("usage.quota.summary", { percent: remainingPercent, window: say(constrainedWindow) })
+      ? language.t("usage.quota.summary", { percent: readPercent(remainingPercent), window: say(constrainedWindow) })
       : language.t("usage.quota.summaryForAccount", {
-        percent: remainingPercent,
+        percent: readPercent(remainingPercent),
         window: say(constrainedWindow),
         account,
       })
     const reset = formatReset(nearestReset)
     return reset === undefined ? summary : language.t("usage.quota.summaryReset", { summary, reset })
   })
+  /** Whether a workspace in a cloud sandbox can run on this account at all. */
+  const Reach = (self: { machineLogin: boolean }) => {
+    const reach = () => accountReach(self.machineLogin)
+    return (
+      <Tooltip value={language.t(ACCOUNT_REACH_KEYS[reach()].note)} placement="top">
+        <span class="usage-quota-reach" data-component="usage-quota-reach" data-reach={reach()}>
+          {language.t(ACCOUNT_REACH_KEYS[reach()].label)}
+        </span>
+      </Tooltip>
+    )
+  }
   const note = (entry: Card): Note | undefined => {
     if (entry.refusedKey !== undefined) {
       return { text: `${language.t(entry.refusedKey)} · ${language.t("usage.quota.reconnect")}` }
@@ -202,6 +221,21 @@ export function QuotaLimitsView(props: {
                     <strong>{entry.label}</strong>
                     <Show when={entry.plan}><span>{entry.plan}</span></Show>
                     <Show when={entry.inUse}><span class="usage-quota-in-use">In use</span></Show>
+                    {/*
+                      An agent Claxedo cannot send a turn to is on this machine
+                      and nowhere else by definition, so where it runs is news
+                      about nothing the reader can act on.
+                    */}
+                    <Show when={!entry.otherAgent}>
+                      <Reach machineLogin={entry.machineLogin} />
+                    </Show>
+                    <Show when={entry.usageAt}>
+                      {(at) => (
+                        <span class="usage-quota-as-of" data-component="usage-quota-as-of">
+                          as of {formatRelativeTime(at())}
+                        </span>
+                      )}
+                    </Show>
                   </header>
                   <Show when={note(entry)}>
                     {(value) => (
@@ -223,22 +257,19 @@ export function QuotaLimitsView(props: {
                   </Show>
                   <For each={entry.windows}>{(window) => {
                     const reset = createMemo(() => formatReset(window.resetsAt))
-                    const read = createMemo(() =>
-                      entry.usageAt === undefined ? undefined : formatRelativeTime(entry.usageAt))
                     return (
                       <div class="usage-quota-window">
                         <div>
                           <span class="usage-quota-window-name">{say(window.name)}</span>
                           <span>
-                            <b>{100 - window.percent}% left</b>
+                            <b>{percentText(100 - window.percent)} left</b>
                             <Show when={reset()}> · resets {reset()}</Show>
-                            <Show when={read()}> · as of {read()}</Show>
                           </span>
                         </div>
                         <progress
                           max="100"
                           value={window.percent}
-                          aria-label={`${entry.label} ${say(window.name)}: ${window.percent}% used`}
+                          aria-label={`${entry.label} ${say(window.name)}: ${percentText(window.percent)} used`}
                         />
                       </div>
                     )

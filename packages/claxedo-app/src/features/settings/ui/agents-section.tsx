@@ -31,6 +31,7 @@ import {
 } from "@/features/settings/ui/agent-harness-row"
 import { HARNESS_CONNECT_PROVIDER, harnessIcon } from "@/platform/identity/harness-catalog"
 import { formatRelativeTime } from "@/lib/relative-time"
+import { readPercent } from "@/lib/percent"
 import { useLanguage } from "@/platform/i18n/provider"
 
 /** The entry key this computer's own login is listed under. */
@@ -194,7 +195,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       const name = WINDOW_KEY[window.window]
       return language.t("settings.providers.live.window", {
         name: name ? language.t(name) : window.window,
-        used: String(window.usedPercent),
+        used: String(readPercent(window.usedPercent)),
       })
     })
 
@@ -205,25 +206,21 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   /**
    * The second line of one entry, or nothing when the label already said it
    * all. An unchecked account says nothing here: "Not checked" is the absence
-   * of news, and every row would carry it.
+   * of news, and every row would carry it. When the read happened is not part
+   * of the sentence — the row lines that up down its own right-hand column.
    */
   const detailWords = (live: LiveCheck | undefined, origin?: string) => {
     const words = [
       ...(origin === undefined ? [] : [origin]),
       ...windowWords(live?.usage),
-      ...(live === undefined ? [] : [checkedWords(live.at)]),
     ]
     return words.length > 0 ? words.join(" · ") : undefined
   }
 
   /**
-   * The machine login's second line: how far the login reaches, then what the
-   * harness itself reported — its quota windows where it has them, and
-   * otherwise the plan and organization it named.
-   *
-   * Windows always arrive with the time they were read, whether the harness
-   * answered now or the server served what it had stored, so the age is part
-   * of the line and a stale plan cannot read as a fresh one.
+   * The machine login's second line: what the harness itself reported — its
+   * quota windows where it has them, and otherwise the plan and organization
+   * it named.
    */
   const machineWords = (login: MachineLogin, check: LocalHarnessCheck) => {
     if (login.state === "absent") return language.t("settings.providers.agents.machineNotInstalled")
@@ -232,16 +229,12 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     }
     if (login.state === "unknown") return login.detail ?? language.t("settings.providers.agents.machineUnknown")
     const windows = windowWords(login.usage)
-    const identity = windows.length > 0
-      ? windows
-      : [login.plan ? language.t("settings.providers.agents.machinePlan", { plan: login.plan }) : undefined, login.org]
-        .filter((word): word is string => word !== undefined)
-    const words = [
-      ...reachWords(login),
-      ...identity,
-      ...(login.usageAt === undefined ? [] : [checkedWords(login.usageAt)]),
-    ]
-    return words.length > 0 ? words.join(" · ") : undefined
+    if (windows.length > 0) return windows.join(" · ")
+    const identity = [
+      login.plan ? language.t("settings.providers.agents.machinePlan", { plan: login.plan }) : undefined,
+      login.org,
+    ].filter((word): word is string => word !== undefined)
+    return identity.length > 0 ? identity.join(" · ") : undefined
   }
 
   /**
@@ -273,6 +266,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
         ids: row.ids,
         label,
         ...(detail === undefined ? {} : { detail }),
+        ...(live === undefined ? {} : { checked: checkedWords(live.at) }),
         ...(refused === undefined ? {} : { refused }),
         // An id the reader cannot match to an account is worth having and not
         // worth a line, so the row carries it where a full value belongs.
@@ -284,6 +278,10 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     if (!machine) return entries
     const detail = machineWords(machine, check)
     const stranded = machine.state === "absent" ? undefined : strandedBinding(machine, check)
+    const note = [
+      ...reachWords(machine),
+      ...(stranded ? [language.t("settings.providers.agents.machineStrands", { name: check.label })] : []),
+    ].join(" · ")
     // Listed in every state, because choosing it is the withdrawal of a stored
     // account rather than a login: a user whose harness is signed out still
     // needs to be able to say "run on whatever that CLI holds" and then go and
@@ -299,10 +297,11 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
         ? machine.email
         : language.t("settings.providers.agents.machineLogin"),
       ...(detail === undefined ? {} : { detail }),
+      ...(machine.usageAt === undefined ? {} : { checked: checkedWords(machine.usageAt) }),
+      ...(note === "" ? {} : { note }),
       selected: selected === MACHINE,
       machine: true,
       ...(machine.state === "absent" || stranded ? { disabled: true } : {}),
-      ...(stranded ? { disabledReason: language.t("settings.providers.agents.machineStrands", { name: check.label }) } : {}),
     }]
   }
 

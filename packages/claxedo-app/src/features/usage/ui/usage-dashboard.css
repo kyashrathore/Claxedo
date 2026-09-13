@@ -527,6 +527,14 @@
   font-size: var(--font-size-micro);
   text-transform: uppercase;
 }
+.usage-quota-account header .usage-quota-reach {
+  cursor: help;
+}
+/* Last in the header and pushed off the rest, so every card's read time ends on
+   the same edge whatever the label and plan beside it are. */
+.usage-quota-account header .usage-quota-as-of {
+  margin-left: auto;
+}
 .usage-quota-account-note {
   margin-top: 8px;
   color: var(--text-weak);

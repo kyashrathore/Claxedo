@@ -324,9 +324,26 @@ function selectedAccount(id: string) {
     ?.getAttribute("data-account") ?? ""
 }
 
-/** The second line of one entry — usage, when it was checked, where it came from. */
+/** The second line of one entry — its usage, and where it came from. */
 function accountDetail(id: string, key: string) {
   return accountRow(id, key).querySelector('[data-slot="radio-list-item-description"]')?.textContent ?? ""
+}
+
+/** When the figures on the row were read, which sits in the row's right-hand column. */
+function accountChecked(id: string, key: string) {
+  return accountRow(id, key).querySelector('[data-component="agent-account-checked"]')?.textContent ?? ""
+}
+
+/** The sentence behind the hint beside the label, or "" where the row offers none. */
+function accountNote(id: string, key: string) {
+  return accountRow(id, key)
+    .querySelector('[data-component="agent-account-note"] [aria-label]')
+    ?.getAttribute("aria-label") ?? ""
+}
+
+/** Where the entry says a turn on it can run. */
+function accountReachTag(id: string, key: string) {
+  return accountRow(id, key).querySelector('[data-component="agent-account-reach"] [data-reach]')?.textContent ?? ""
 }
 
 /** Whether the entry's radio is ringed for a provider refusal. */
@@ -591,7 +608,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
     expect(agentAction("anthropic")).toBe("agent-add-account")
     expect(accountRefused("anthropic", "sdk_work")).toBe(false)
-    expect(accountDetail("anthropic", "sdk_work")).toContain("settings.providers.live.checkedNow")
+    expect(accountChecked("anthropic", "sdk_work")).toBe("settings.providers.live.checkedNow")
     expect(accountRow("anthropic", "sdk_work").textContent).toContain("work@acme.com")
   })
 
@@ -601,22 +618,23 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       health: "ok",
       last_validated_at: Date.now() - 2 * 60 * 60_000,
       usage_windows: [
-        { window: "session", usedPercent: 23, resetsAt: null },
-        { window: "weekly", usedPercent: 67, resetsAt: null },
+        { window: "session", usedPercent: 23.4491, resetsAt: null },
+        { window: "weekly", usedPercent: 66.5, resetsAt: null },
       ],
       usage_at: Date.now() - 5 * 60_000,
     }))
     mount()
 
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
-    // Two ages in the row; the line ends with the percentages, so it is the
-    // percentages that "Checked" dates.
+    // Two ages in the row, and the vendor's fraction of a percent is not one of
+    // the figures: the line carries what the reader acts on, at whole percent.
     expect(accountDetail("anthropic", "sdk_work")).toBe([
       "acc_work",
       "settings.providers.live.window:settings.providers.window.session|23",
       "settings.providers.live.window:settings.providers.window.weekly|67",
-      "settings.providers.live.checkedAt:5 minutes ago",
     ].join(" · "))
+    // The read's age leaves the sentence for the column every row lines up in.
+    expect(accountChecked("anthropic", "sdk_work")).toBe("settings.providers.live.checkedAt:5 minutes ago")
     expect(state.credentialCalls).not.toContain("POST /api/claxedo/credentials/sdk_work/verify")
   })
 
@@ -636,8 +654,8 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       "acc_work",
       "settings.providers.live.window:settings.providers.window.session|12",
       "settings.providers.live.window:settings.providers.window.weekly|40",
-      "settings.providers.live.checkedNow",
     ].join(" · ")))
+    expect(accountChecked("anthropic", "sdk_work")).toBe("settings.providers.live.checkedNow")
   })
 
   test("a rejected account rings its own radio and moves the action to Reconnect", async () => {
@@ -687,10 +705,9 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     }]
     mount()
     await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
-    expect(accountDetail("openai", "machine")).toBe([
-      "settings.providers.live.window:settings.providers.window.weekly|64",
-      "settings.providers.live.checkedAt:5 minutes ago",
-    ].join(" · "))
+    expect(accountDetail("openai", "machine"))
+      .toBe("settings.providers.live.window:settings.providers.window.weekly|64")
+    expect(accountChecked("openai", "machine")).toBe("settings.providers.live.checkedAt:5 minutes ago")
   })
 
   test("a machine login carrying no windows says the plan and the organization instead", async () => {
@@ -756,7 +773,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(accountDetail("cursor", "machine")).toBe("Cursor did not answer with a login status.")
   })
 
-  test("a login that drives part of its harness says which part, because one row covers both", async () => {
+  test("a login that drives part of its harness says which part behind the hint, not on the line", async () => {
     state.machineLogins = [{
       harness: "cursor",
       providerIds: ["cursor-acp", "cursor-sdk"],
@@ -765,10 +782,33 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     }]
     mount()
     await waitFor(() => expect(accountIds("cursor")).toEqual(["machine"]))
-    expect(accountDetail("cursor", "machine"))
+    expect(accountNote("cursor", "machine"))
       .toBe("settings.providers.agents.machineCursorAcp · settings.providers.agents.machineCursorSdkKey")
+    expect(accountDetail("cursor", "machine")).toBe("")
     expect(accountRow("cursor", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
       .toBe(false)
+  })
+
+  test("a login that drives every binding hangs no hint off its label", async () => {
+    state.machineLogins = [
+      { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com" },
+    ]
+    mount()
+    await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
+    expect(accountRow("openai", "machine").querySelector('[data-component="agent-account-note"]')).toBeNull()
+  })
+
+  test("every entry says where a turn on it can run: a stored account in both places, this computer's login in one", async () => {
+    state.storedCredentials = [
+      { id: "cred_codex", provider_id: "codex-app-server", kind: "oauth_token", label: "work@acme.com", account_id: "acc_1", is_active: true },
+    ]
+    state.machineLogins = [
+      { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com" },
+    ]
+    mount()
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine"]))
+    expect(accountReachTag("openai", "cred_codex")).toBe("settings.providers.agents.reachLocalCloud")
+    expect(accountReachTag("openai", "machine")).toBe("settings.providers.agents.reachLocalOnly")
   })
 
   test("this computer's login is not a choice while the harness runs on a binding it cannot drive", async () => {
@@ -785,8 +825,12 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(accountIds("cursor")).toEqual(["cred_cursor_key", "machine"]))
     const radio = accountRow("cursor", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!
     expect(radio.disabled).toBe(true)
-    expect(accountRow("cursor", "machine").getAttribute("title"))
-      .toBe("settings.providers.agents.machineStrands:Cursor")
+    // The reason travels with the reach it belongs to, behind the one hint.
+    expect(accountNote("cursor", "machine")).toBe([
+      "settings.providers.agents.machineCursorAcp",
+      "settings.providers.agents.machineCursorSdkKey",
+      "settings.providers.agents.machineStrands:Cursor",
+    ].join(" · "))
   })
 
   test("a login that drives every binding of its harness is a choice whatever is stored", async () => {
@@ -928,7 +972,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
     rowAction("openai", "cred_codex", "check").click()
 
-    await waitFor(() => expect(accountDetail("openai", "cred_codex")).toContain("settings.providers.live.checkedNow"))
+    await waitFor(() => expect(accountChecked("openai", "cred_codex")).toBe("settings.providers.live.checkedNow"))
     expect(accountRefused("openai", "cred_codex")).toBe(false)
     expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/cred_codex/verify")
   })

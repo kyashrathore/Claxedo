@@ -1,10 +1,12 @@
 import { Button } from "@opencode-ai/ui/button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { RadioList, RadioListItem } from "@opencode-ai/ui/radio-group"
-import { createSignal, For, Show, type Component } from "solid-js"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { createSignal, For, Show, type Component, type JSX } from "solid-js"
 import { ProviderConnectCard } from "@/features/settings/ui/provider-connect-card"
+import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton } from "@/ui/controls/claxedo-icon-button"
-import { harnessConnectContext } from "@/platform/identity/harness-catalog"
+import { accountReach, ACCOUNT_REACH_KEYS, harnessConnectContext } from "@/platform/identity/harness-catalog"
 import { useLanguage } from "@/platform/i18n/provider"
 
 /** One entry of the harness's account list, already in words. */
@@ -14,8 +16,16 @@ export type AgentAccount = {
   /** Every stored row holding this account; empty while the login is only on disk. */
   ids: readonly string[]
   label: string
-  /** The second line: where the login lives, its usage, when it was checked. */
+  /** The second line: where the login lives and what it has spent. */
   detail?: string
+  /**
+   * What the label does not say and the second line should not carry: how far a
+   * partial login reaches, why the entry is not a choice. It hangs off a hint
+   * beside the label rather than lengthening the sentence under it.
+   */
+  note?: string
+  /** When the figures on this row were read, in words, for the far right. */
+  checked?: string
   /** The provider's refusal, in words. The row shows it as a ring, not as text. */
   refused?: string
   /** An identity worth having on the row but not worth reading. */
@@ -25,8 +35,6 @@ export type AgentAccount = {
   machine?: boolean
   /** Listed, and not a choice. */
   disabled?: boolean
-  /** Why it is not a choice, where the label and the second line do not say. */
-  disabledReason?: string
 }
 
 /**
@@ -71,14 +79,47 @@ export const AgentHarnessRow: Component<{
   }
 
   /**
+   * A hint on the label's own line. The trigger sits inside the radio's
+   * `<label>`, where a press would otherwise choose the account, so it swallows
+   * its own.
+   */
+  const LabelHint: Component<{ value: string; component: string; children: JSX.Element }> = (self) => (
+    <Tooltip value={self.value} placement="top">
+      <span
+        class="flex items-center"
+        data-component={self.component}
+        onClick={(event) => event.preventDefault()}
+      >
+        {self.children}
+      </span>
+    </Tooltip>
+  )
+
+  /** Whether a workspace in a cloud sandbox can run on this account at all. */
+  const Reach: Component<{ account: AgentAccount }> = (self) => {
+    const reach = () => accountReach(self.account.machine === true)
+    return (
+      <LabelHint value={language.t(ACCOUNT_REACH_KEYS[reach()].note)} component="agent-account-reach">
+        <span class="text-13-regular text-text-weak" data-reach={reach()}>
+          {language.t(ACCOUNT_REACH_KEYS[reach()].label)}
+        </span>
+      </LabelHint>
+    )
+  }
+
+  /**
    * At rest a row is its label alone. The actions arrive on hover or with
    * keyboard focus, and a confirming row holds them on screen so the question
    * it just asked cannot vanish under the pointer.
+   *
+   * The cluster holds its width at rest — the widest row carries two buttons —
+   * so the read time to its left lands in the same column on every row and
+   * neither moves when the pointer arrives.
    */
   const AccountActions: Component<{ account: AgentAccount }> = (self) => (
     <Show when={self.account.ids.length > 0 || self.account.machine}>
       <span
-        class="flex shrink-0 items-center gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        class="flex shrink-0 min-w-11 items-center justify-end gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
         classList={{ "opacity-0": confirmingRemove() !== self.account.key }}
         data-component="agent-account-actions"
       >
@@ -181,8 +222,27 @@ export const AgentHarnessRow: Component<{
                   data-component="agent-account"
                   data-account={account.key}
                   data-selected={account.selected ? "true" : "false"}
-                  title={[account.refused, account.disabledReason, account.identity].filter(Boolean).join(" · ") || undefined}
-                  label={<span class="text-13-regular text-text-strong">{account.label}</span>}
+                  title={[account.refused, account.identity].filter(Boolean).join(" · ") || undefined}
+                  label={(
+                    <span class="flex flex-wrap items-center gap-1.5">
+                      <span class="text-13-regular text-text-strong">{account.label}</span>
+                      <Show when={account.note}>
+                        {(note) => (
+                          <LabelHint value={note()} component="agent-account-note">
+                            <ClaxedoIcon
+                              name="help"
+                              size="small"
+                              class="icon-weak-base"
+                              role="img"
+                              aria-hidden="false"
+                              aria-label={note()}
+                            />
+                          </LabelHint>
+                        )}
+                      </Show>
+                      <Reach account={account} />
+                    </span>
+                  )}
                   description={account.detail ?? account.refused
                     ? (
                       <>
@@ -206,6 +266,13 @@ export const AgentHarnessRow: Component<{
                       >
                         {language.t("settings.providers.agents.reconnectAccount")}
                       </Button>
+                    </Show>
+                    <Show when={account.checked}>
+                      {(checked) => (
+                        <span class="text-13-regular text-text-weak" data-component="agent-account-checked">
+                          {checked()}
+                        </span>
+                      )}
                     </Show>
                     <AccountActions account={account} />
                   </span>

@@ -25,6 +25,32 @@ export function harnessVendor(id: string): string | undefined {
   return (HARNESS_CATALOG as Record<string, { vendor: string } | undefined>)[id]?.vendor
 }
 
+/** Where a turn on one account can run. */
+export type AccountReach = "local-and-cloud" | "local-only"
+
+/**
+ * A stored account is a token Claxedo holds, so the loopback broker hands it to
+ * a turn on this computer and `sandboxBrokeredSecrets` hands it to each
+ * driver's native brokering for a turn in a cloud sandbox. This computer's own
+ * login is a file the harness wrote on this machine and nothing carries it off
+ * the machine, so a workspace on a sandbox has no such login to run on.
+ */
+export function accountReach(machineLogin: boolean): AccountReach {
+  return machineLogin ? "local-only" : "local-and-cloud"
+}
+
+/** What each reach is called, and what it means, as dictionary keys. */
+export const ACCOUNT_REACH_KEYS: Record<AccountReach, { label: string; note: string }> = {
+  "local-and-cloud": {
+    label: "settings.providers.agents.reachLocalCloud",
+    note: "settings.providers.agents.reachLocalCloudNote",
+  },
+  "local-only": {
+    label: "settings.providers.agents.reachLocalOnly",
+    note: "settings.providers.agents.reachLocalOnlyNote",
+  },
+}
+
 /**
  * What the connect card is setting up, in the words it will use.
  *
