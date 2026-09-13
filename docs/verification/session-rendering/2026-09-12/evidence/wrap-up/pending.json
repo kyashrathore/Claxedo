@@ -1,0 +1,13 @@
+{
+  "head": "edc362ab08a7393710a0ff3a99909a01ce380e17",
+  "patch": "pending-qa.patch",
+  "patch_sha256": "039f8a7ceee6136386e5014b9602735ebccc0d3d4f37e6dbddef598fbfb2c169",
+  "files": [
+    "packages/claxedo-app/e2e/playwright/core-boot-deep-links-home.spec.ts",
+    "packages/claxedo-app/e2e/playwright/core-composer-modes.spec.ts",
+    "packages/claxedo-app/e2e/playwright/core-sidebar-tree.spec.ts",
+    "packages/claxedo-app/e2e/playwright/live-real-harness-smoke.spec.ts"
+  ],
+  "untracked_prototype": "packages/claxedo-app/e2e/playwright/desktop-dev-first-interaction.spec.ts",
+  "note": "Snapshot of observed pending QA changes, not qualification or an ownership claim for every hunk. Never apply blindly over the shared worktree. Production changes and .claude/launch.json remain untouched."
+}

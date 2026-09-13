@@ -1,0 +1,546 @@
+diff --git a/packages/claxedo-app/e2e/playwright/core-boot-deep-links-home.spec.ts b/packages/claxedo-app/e2e/playwright/core-boot-deep-links-home.spec.ts
+index eba6d94c82..13a52a7dd9 100644
+--- a/packages/claxedo-app/e2e/playwright/core-boot-deep-links-home.spec.ts
++++ b/packages/claxedo-app/e2e/playwright/core-boot-deep-links-home.spec.ts
+@@ -52,10 +52,11 @@
+  *     (matches `"session_not_found"`, `"Session not found"`, or
+  *     `"Request failed: 404"`). On a match it calls `removeMissingSession()`, which
+  *     prunes both the directory-session cache row and the shared session-inventory
+- *     react-query cache entry (`removeSessionInventoryQueryData` — the same cache that
+- *     feeds the sidebar's session rows) and flips a per-session `missingSessions`
+- *     signal that `src/pages/session.tsx`'s `sessionMissing` memo reads to swap the
+- *     timeline for the `session-unavailable` placeholder.
++ *     react-query cache entry (`removeSessionInventoryQueryData`). The current
++ *     `forgetUnavailableSession` owner also removes the session-list row. For a
++ *     local missing session it invokes `onMissingSession` → `closeDeletedSession`;
++ *     shell route sync leaves the closed route. Signed scopes retain the unavailable
++ *     pane while projection repair runs.
+  *
+  * ANATOMY —
+  *   `[data-claxedo]` — shell root (`src/app/app-shell-layout.tsx:301`); it lives INSIDE
+@@ -117,9 +118,9 @@
+  *      parseable-but-structurally-invalid JSON in `claxedo.state.v5` produce a clean
+  *      boot (`[data-claxedo]` visible, no "Something went wrong" error screen, no
+  *      `pageerror` console entries) instead of a crash.
+- *   8. A session whose detail/message fetch 404s renders `session-unavailable` inside
+- *      its pane, and a subsequent fresh boot at that session's URL no longer lists it
+- *      in the sidebar (pruned from the cached session inventory).
++ *   8. A local session whose detail/message fetch 404s closes its stale pane, leaves
++ *      its deep link, and restores an editable draft. The removed session is absent
++ *      from the sidebar as well.
+  *   9. Startup gate: a session-owning route (`/s/…`, `/w/…`) reveals real content
+  *      (the resolved session pane) promptly even while `/api/claxedo/health` never
+  *      succeeds; a non-session route (`/`) never reveals its content while health
+@@ -212,7 +213,8 @@ async function seedDestination(page: Page, destination: "local" | "cloud" | "bot
+ 
+ async function seedNoProjects(page: Page) {
+   await page.addInitScript(() => {
+-    localStorage.clear()
++    // Each test already starts with fresh storage. Do not erase choices made
++    // during the test when its real reload runs this initialization again.
+     // Without a serverUrl the app targets the cross-origin default backend
+     // (127.0.0.1:3001), outside every same-origin route mock in this file.
+     ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string } }).__CLAXEDO__ = {
+@@ -389,12 +391,13 @@ test.describe("core boot, deep links, and home @core", () => {
+       await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
+       // Without a sandbox provider token the two cloud steps do not apply, so the counter reads 2.
+       await expect(page.locator("header").getByText("Step 1 of 2")).toBeVisible()
+-      await expect(page.getByRole("heading", { name: "Choose where your first task runs" })).toBeVisible()
++      await expect(page.getByRole("heading", { name: "Do you want to run cloud sessions too?" })).toBeVisible()
+       // Scoped to the setup page: the shell's own "Skip to composer" link is not a setup affordance.
+       const setupPage = page.locator('[data-component="setup-page"]')
+       await expect(setupPage.getByRole("button", { name: /^Skip/ })).toHaveCount(0)
+-      await expect(setupPage.getByRole("button", { name: "Back" })).toHaveCount(0)
+-      await page.screenshot({ path: "../../docs/plans/evidence/onboarding-home-empty.png", fullPage: true })
++      await expect(setupPage.getByRole("button", { name: "Back" })).toBeDisabled()
++      await expect(setupPage.getByRole("button", { name: "Next" })).toBeDisabled()
++      await page.screenshot({ path: "test-results/evidence/core-boot-deep-links-home/onboarding-home-empty.png", fullPage: true })
+     } else {
+       await expect(page.getByText("No projects yet. Create one to get started.")).toBeVisible({ timeout: 20_000 })
+       await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
+@@ -470,7 +473,7 @@ test.describe("core boot, deep links, and home @core", () => {
+     await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toHaveCount(0)
+     expect(credentialRequests).toBeGreaterThanOrEqual(2)
+     expect(savedSelection).toBeUndefined()
+-    await page.screenshot({ path: "../../docs/plans/evidence/onboarding-project-ai-handoff.png", fullPage: true })
++    await page.screenshot({ path: "test-results/evidence/core-boot-deep-links-home/onboarding-project-ai-handoff.png", fullPage: true })
+ 
+     const firstPrompt = "inspect this repository and suggest a first task"
+     const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
+@@ -522,6 +525,23 @@ test.describe("core boot, deep links, and home @core", () => {
+ 
+   test("saying yes to the cloud holds the user until the cloud can actually run @onboarding-enabled", async ({ page }) => {
+     await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
++    // This is a fresh installation. Clearing saved projects alone is insufficient:
++    // the runtime inventory otherwise supplies an existing local project and
++    // correctly completes the local setup while the test is asking about cloud.
++    await page.route("**/api/claxedo/bootstrap**", route => route.fulfill({
++      status: 200,
++      contentType: "application/json",
++      body: JSON.stringify({
++        healthy: true, version: "1.0.0-test",
++        path: { state: "", config: "", worktree: "", directory: "", home: "/tmp" },
++        project: [], provider: { all: [], default: {}, connected: [] }, provider_auth: {}, config: {},
++      }),
++    }))
++    await page.route("**/project**", route => {
++      const type = route.request().resourceType()
++      if (type !== "fetch" && type !== "xhr") return route.fallback()
++      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
++    })
+     await page.route("**/api/claxedo/credentials**", async (route) => {
+       await route.fulfill({
+         status: 200,
+@@ -632,7 +652,7 @@ test.describe("core boot, deep links, and home @core", () => {
+     expect(mock.requests.console.filter((entry) => entry.startsWith("pageerror:"))).toEqual([])
+   })
+ 
+-  test("a session that 404s on fetch shows session-unavailable and is pruned from the sidebar", async ({ page }) => {
++  test("a missing local session closes its stale pane and returns to an editable draft @first-interaction", async ({ page }) => {
+     const primaryUrl = (await createSessionViaFirstSend(page, "core boot missing session turn")).url
+ 
+     // Installed only after the send settles: advertising the session in the list before
+@@ -651,7 +671,7 @@ test.describe("core boot, deep links, and home @core", () => {
+       const type = route.request().resourceType()
+       return type === "fetch" || type === "xhr"
+     }
+-    await page.route(`**/session/${SESSION_ID}`, (route) => {
++    await page.route(url => url.pathname.endsWith(`/session/${SESSION_ID}`), (route) => {
+       if (!isApiCall(route) || route.request().method() !== "GET") return route.fallback()
+       return route.fulfill({
+         status: 404,
+@@ -696,9 +716,11 @@ test.describe("core boot, deep links, and home @core", () => {
+     await page.goto(primaryUrl, { waitUntil: "domcontentloaded" })
+     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+ 
+-    await expect(page.locator(`[data-testid="session-unavailable"][data-session-id="${SESSION_ID}"]`)).toBeVisible({
+-      timeout: 20_000,
+-    })
++    // Local missing sessions invoke closeDeletedSession; the unavailable card
++    // belongs to scopes that retain an unreadable session instead of closing it.
++    await expect(page).not.toHaveURL(new RegExp(SESSION_ID))
++    await expect(page.locator('[data-testid="session-content"][data-session-id="' + SESSION_ID + '"]')).toHaveCount(0)
++    await expect(page.locator('[data-component="prompt-input"]:visible')).toHaveAttribute("contenteditable", "true")
+     await expect(page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"]`)).toHaveCount(0, {
+       timeout: 45_000,
+     })
+diff --git a/packages/claxedo-app/e2e/playwright/core-composer-modes.spec.ts b/packages/claxedo-app/e2e/playwright/core-composer-modes.spec.ts
+index 588f0b0653..81d197c84c 100644
+--- a/packages/claxedo-app/e2e/playwright/core-composer-modes.spec.ts
++++ b/packages/claxedo-app/e2e/playwright/core-composer-modes.spec.ts
+@@ -108,8 +108,8 @@
+  *   13. Pasting a supported file from the clipboard adds it the same way as the button.
+  *   14. Dragging a file over the composer shows the drop overlay, which disappears on
+  *       drag-leave without adding anything; dropping the file adds the attachment.
+- *   15. Selecting an unsupported file type shows the "Unsupported attachment" toast and
+- *       adds no chip.
++ *   15. Selecting an opaque binary file with Pi shows its attachment refusal toast
++ *       and adds no chip; acceptance is owned by the selected harness.
+  *   16. The chip's remove button deletes the attachment from the prompt.
+  *   17. Clicking an attachment thumbnail opens the `ImagePreview` dialog for that image.
+  *   18. A prompt with only image attachments (no text) is a valid, submittable turn —
+@@ -199,8 +199,8 @@ async function overrideMentionAgents(page: Page) {
+       status: 200,
+       contentType: "application/json",
+       body: JSON.stringify([
+-        { id: "reviewer", name: "reviewer" },
+-        { id: "tester", name: "tester" },
++        { id: "reviewer", name: "reviewer", mode: "subagent" },
++        { id: "tester", name: "tester", mode: "subagent" },
+       ]),
+     })
+   })
+@@ -346,7 +346,7 @@ test.describe("core composer modes @core", () => {
+     expect(mock.requests.promptCount).toBe(0)
+   })
+ 
+-  test("@ mention popover keyboard nav inserts a pill and the sent message reaches the payload", async ({
++  test("@ mention popover keyboard nav inserts a pill and the sent message reaches the payload @first-interaction", async ({
+     page,
+   }) => {
+     test.setTimeout(120_000)
+@@ -355,17 +355,43 @@ test.describe("core composer modes @core", () => {
+     await seedProjects(page, [DIR])
+     const editor = await openDraftPrompt(page, DIR)
+ 
+-    await editor.click()
+-    await page.keyboard.type("@")
+-    await expect(page.locator("button").filter({ hasText: /^@reviewer$/ })).toBeVisible({ timeout: 15_000 })
+-    await expect(page.locator("button").filter({ hasText: /^@tester$/ })).toBeVisible()
++    const observation = await page.evaluateHandle(() => {
++      const events: unknown[] = []
++      const record = (event: Event) => {
++        const target = event.target instanceof HTMLElement ? event.target : undefined
++        const capture = (phase: string) => events.push({
++          phase, type: event.type, key: event instanceof KeyboardEvent ? event.key : undefined,
++          at: performance.now(), prevented: event.defaultPrevented,
++          target: target?.outerHTML.slice(0, 1500),
++          active: document.activeElement?.outerHTML.slice(0, 1500),
++          selected: [...document.querySelectorAll('[role="option"][aria-selected="true"]')].map(el => el.textContent),
++          options: [...document.querySelectorAll('[role="option"]')].map(el => ({ text: el.textContent, selected: el.getAttribute("aria-selected") })),
++          connected: target?.isConnected,
++        })
++        capture("capture")
++        setTimeout(() => capture("after-dispatch"), 0)
++      }
++      const types = ["keydown", "focusin", "focusout"]
++      for (const type of types) document.addEventListener(type, record, true)
++      return { events, stop: () => { for (const type of types) document.removeEventListener(type, record, true) } }
++    })
++    try {
++      await editor.click()
++      await page.keyboard.type("@")
++      await expect(page.locator("button").filter({ hasText: /^@reviewer$/ })).toBeVisible({ timeout: 15_000 })
++      await expect(page.locator("button").filter({ hasText: /^@tester$/ })).toBeVisible()
+ 
+-    await page.keyboard.press("ArrowDown")
+-    await page.keyboard.press("ArrowUp")
+-    await page.keyboard.press("Enter")
++      await page.keyboard.press("ArrowDown")
++      await page.keyboard.press("ArrowUp")
++      await page.keyboard.press("Enter")
+ 
+-    const pill = editor.locator('[data-type="agent"][data-name="reviewer"]')
+-    await expect(pill).toBeVisible({ timeout: 10_000 })
++      const pill = editor.locator('[data-type="agent"][data-name="reviewer"]')
++      await expect(pill).toBeVisible({ timeout: 10_000 })
++    } finally {
++      const events = await observation.evaluate(value => { value.stop(); return value.events })
++      await test.info().attach("mention-key-events", { body: JSON.stringify(events, null, 2), contentType: "application/json" })
++      await observation.dispose()
++    }
+     await expect(page.getByText("@tester", { exact: true })).toHaveCount(0)
+ 
+     // The pill already carries a trailing space; a leading space here would double it.
+@@ -380,7 +406,7 @@ test.describe("core composer modes @core", () => {
+   })
+ 
+   test(
+-    "the sent (optimistic) user message highlights an inline agent mention",
++    "the sent (optimistic) user message highlights an inline agent mention @first-interaction",
+     async ({ page }) => {
+       test.setTimeout(120_000)
+       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+@@ -402,6 +428,7 @@ test.describe("core composer modes @core", () => {
+       await expect(page.locator(SELECTORS.userMessageContent)).toHaveCount(1, { timeout: 15_000 })
+       const highlight = page.locator(SELECTORS.userMessageContent).locator('[data-highlight="agent"]')
+       await expect(highlight).toHaveText("@reviewer", { timeout: 15_000 })
++      await expectAssistantReplyVisible(page, /^ack 1: @reviewer please take a look/)
+     },
+   )
+ 
+@@ -482,28 +509,31 @@ test.describe("core composer modes @core", () => {
+     await expect(page.locator('img[alt="dropped.png"]')).toBeVisible({ timeout: 10_000 })
+   })
+ 
+-  test("unsupported file type shows a warning toast and adds nothing", async ({ page }) => {
+-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
++  test("a harness without binary inputs refuses an opaque attachment", async ({ page }) => {
++    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harness: "pi" })
+     await seedProjects(page, [DIR])
+     await openDraftPrompt(page, DIR)
+ 
+     const chooser = await openAttachPicker(page)
+     await chooser.setFiles(unsupportedFile())
+ 
+-    await expect(page.getByText("Unsupported attachment")).toBeVisible({ timeout: 10_000 })
+-    await expect(page.getByText("Only images, PDFs, or text files can be attached here.")).toBeVisible()
++    await expect(page.getByText("Pi cannot take this attachment")).toBeVisible({ timeout: 10_000 })
++    await expect(page.getByText(/Pi has no prompt input for application\/octet-stream/)).toBeVisible()
+     await expect(page.locator("img[alt=\"mystery.dat\"]")).toHaveCount(0)
+   })
+ 
+-  test("an image-only prompt with no text is a valid, submittable turn", async ({ page }) => {
++  test("a pasted image-only prompt clears after send, reload, and a new session @first-interaction", async ({ page }) => {
+     test.setTimeout(120_000)
+     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
+     await seedProjects(page, [DIR])
+     await openDraftPrompt(page, DIR)
+     const submit = page.locator(SELECTORS.submitControl).last()
+ 
+-    const chooser = await openAttachPicker(page)
+-    await chooser.setFiles(pngFile("only-image.png"))
++    await page.locator('[data-component="prompt-input"]').last().evaluate((element, base64) => {
++      const transfer = new DataTransfer()
++      transfer.items.add(new File([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], "only-image.png", { type: "image/png" }))
++      element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer }))
++    }, PNG_BASE64)
+     await expect(page.locator('img[alt="only-image.png"]')).toBeVisible({ timeout: 10_000 })
+ 
+     await expect(submit).not.toBeDisabled()
+@@ -513,9 +543,15 @@ test.describe("core composer modes @core", () => {
+     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
+     // No trailing anchor: the content slot's text also includes the row's footer.
+     await expectAssistantReplyVisible(page, /^ack 1: message 1/)
++    await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(0)
++    await page.reload()
++    await expectAssistantReplyVisible(page, /^ack 1: message 1/)
++    await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(0)
++    await openDraftPrompt(page, DIR)
++    await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(0)
+   })
+ 
+-  test("draft text, an inline pill, and an image attachment survive a full reload", async ({
++  test("draft text, an inline pill, and an image attachment survive a full reload @first-interaction", async ({
+     page,
+   }) => {
+     test.setTimeout(120_000)
+@@ -588,3 +624,67 @@ test.describe("core composer modes @core", () => {
+     await expect(editorAAgain).toHaveText("", { timeout: 30_000 })
+   })
+ })
++
++test("a dropped image belongs only to the active composer, including after reload @core @first-interaction", async ({ page }) => {
++  await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
++  await seedProjects(page, [DIR])
++  const editor = await openDraftPrompt(page, DIR)
++  await ensureComposerModelSelected(page)
++  await editor.fill("attachment isolation origin")
++  await page.locator(SELECTORS.submitControl).last().click()
++  await expectAssistantReplyVisible(page, "ack 1: attachment isolation origin")
++  await page.getByRole("button", { name: "New Session", exact: true }).last().click()
++  await expect(page.locator('[data-component="prompt-input"]:visible')).toHaveText("")
++  await page.evaluate(base64 => {
++    const transfer = new DataTransfer()
++    transfer.items.add(new File([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], "isolated-drop.png", { type: "image/png" }))
++    document.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer }))
++  }, PNG_BASE64)
++  await expect(page.locator('img[alt="isolated-drop.png"]:visible')).toHaveCount(1)
++  // Every retained composer has a document listener. Reading the persisted
++  // destinations proves hidden panes did not also consume the same drop.
++  await expect.poll(() => page.evaluate(() => Object.keys(localStorage)
++    .filter(key => key.includes("prompt"))
++    .filter(key => (localStorage.getItem(key) ?? "").includes("isolated-drop.png")).length)).toBe(1)
++  await page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"]`).first().click()
++  await expectAssistantReplyVisible(page, "ack 1: attachment isolation origin")
++  await expect(page.locator('img[alt="isolated-drop.png"]:visible')).toHaveCount(0)
++  await page.reload()
++  await expectAssistantReplyVisible(page, "ack 1: attachment isolation origin")
++  await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(0)
++})
++
++test("a paste finishing after send cannot restore the submitted image on reload @core @first-interaction", async ({ page }) => {
++  await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
++  await seedProjects(page, [DIR])
++  const editor = await openDraftPrompt(page, DIR)
++  await ensureComposerModelSelected(page)
++  await editor.fill("send while pasted image is being read")
++  await editor.evaluate((element, base64) => {
++    // oxlint-disable-next-line typescript-eslint/unbound-method -- Rebound with original.call(this, blob) below.
++    const original = FileReader.prototype.readAsDataURL
++    const state = { resume: undefined as (() => void) | undefined, completed: false }
++    Object.assign(window, { __pasteReadProbe: state })
++    FileReader.prototype.readAsDataURL = function(blob) {
++      FileReader.prototype.readAsDataURL = original
++      this.addEventListener("loadend", () => { state.completed = true })
++      state.resume = () => original.call(this, blob)
++    }
++    const transfer = new DataTransfer()
++    transfer.items.add(new File([Uint8Array.from(atob(base64), c => c.charCodeAt(0))], "late-pasted.png", { type: "image/png" }))
++    element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer }))
++  }, PNG_BASE64)
++  await expect.poll(() => page.evaluate(() => !!(window as unknown as { __pasteReadProbe: { resume?: () => void } }).__pasteReadProbe.resume)).toBe(true)
++  await page.locator(SELECTORS.submitControl).last().click()
++  await expectAssistantReplyVisible(page, "ack 1: send while pasted image is being read")
++  await page.evaluate(() => (window as unknown as { __pasteReadProbe: { resume: () => void } }).__pasteReadProbe.resume())
++  await expect.poll(() => page.evaluate(() => (window as unknown as { __pasteReadProbe: { completed: boolean } }).__pasteReadProbe.completed)).toBe(true)
++  await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(0)
++  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.includes("prompt"))
++    .some(key => (localStorage.getItem(key) ?? "").includes("late-pasted.png")))).toBe(false)
++  await page.reload()
++  await expectAssistantReplyVisible(page, "ack 1: send while pasted image is being read")
++  await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(0)
++  await openDraftPrompt(page, DIR)
++  await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(0)
++})
+diff --git a/packages/claxedo-app/e2e/playwright/core-sidebar-tree.spec.ts b/packages/claxedo-app/e2e/playwright/core-sidebar-tree.spec.ts
+index ff2f066561..65d0fc9a9c 100644
+--- a/packages/claxedo-app/e2e/playwright/core-sidebar-tree.spec.ts
++++ b/packages/claxedo-app/e2e/playwright/core-sidebar-tree.spec.ts
+@@ -76,7 +76,7 @@
+  *      stable testids; the error notice's Retry action re-fires the query.
+  *   10. The per-row Archive hover button archives the session (`PATCH
+  *       /session/{id}` with `time.archived`) and removes it from the active
+- *       view immediately; a failed archive leaves the row exactly in place
++ *       view after success; a failed archive leaves the row exactly in place
+  *       (silent no-op besides an error toast) — never optimistically removed.
+  *   11. An unpinned, collapsed sidebar peeks open when the pointer enters the
+  *       top-left hot zone, and auto-collapses once the pointer leaves the
+@@ -114,8 +114,8 @@
+  *       returns focus to its parent item, and a final Escape closes the menu
+  *       and returns focus to the trigger.
+  *
+- * OUT OF SCOPE — sending prompts / oracle-proved replies (every other `core-*`
+- *   spec); workspace lifecycle actions reachable from the header kebab
++ * Archive navigation verifies populated transcripts through the shared reply oracle.
++ * OUT OF SCOPE — workspace lifecycle actions reachable from the header kebab
+  *   (`core-workspace-lifecycle`); terminal rows (`core-terminal`); the
+  *   `permission`/`question` sub-state of the status dot, which depends on the
+  *   10s-freshness-gated background poll rather than direct SSE dispatch and is
+@@ -126,6 +126,8 @@ import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
+ import { sessionListRoute } from "../helpers/contracts/session-list"
+ import { expect, test, type Page } from "@playwright/test"
+ import { installMockRuntime } from "../helpers/mock-runtime"
++import { ensureComposerModelSelected, expectAssistantReplyVisible, selectComposerAgent, SELECTORS } from "../helpers/turn-oracle"
++import { expectRailRowVisible } from "../helpers/rail-oracle"
+ 
+ const DIR = "/tmp/e2e-core-sidebar-tree"
+ const PROJECT_ID = "proj_core_sidebar_tree"
+@@ -781,37 +783,53 @@ test.describe("core sidebar tree @core", () => {
+     await expect(page.locator('[data-testid="rail-sidebar-session-list-empty"]')).toBeVisible({ timeout: 15_000 })
+   })
+ 
+-  test("archive hover button removes the row; a failed archive is a silent no-op", async ({ page }) => {
+-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
+-    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "archive" }) })
++  test("archiving a populated OpenCode session preserves its transcript until success and keeps failed archives open", async ({ page }, testInfo) => {
++    const otherId = "ses_archive_neighbour"
++    const mock = await installMockRuntime(page, {
++      dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID,
++      projectName: "sidebar-tree", harness: "opencode",
++      otherSessions: [{ id: otherId, title: "Archive neighbour", prompt: "Neighbour prompt", reply: "Neighbour completed reply" }],
++      sessionArchive: { delayMs: 6_500, failingSessionIds: [otherId] },
++    })
+     await seedProject(page, { dir: DIR })
+-    await openTree(page, DIR)
+-
+-    const rows = page.locator('[data-testid="rail-sidebar-session-row"]')
+-    await expect(rows).toHaveCount(2, { timeout: 15_000 })
+-
+-    const target = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_archive_0"]')
+-    await target.click()
+-    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toContain("ses_archive_0")
+-    await target.hover()
+-    await target.getByRole("button", { name: /^Archive / }).click()
+-    await expect(page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_archive_0"]')).toHaveCount(0, { timeout: 15_000 })
+-    await expect(rows).toHaveCount(1)
+-    await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe("/s/ses_archive_1")
+-
+-    let sawArchivePatch = false
+-    await page.route("**/session/*", async (route) => {
+-      if (route.request().method() !== "PATCH") return route.fallback()
+-      sawArchivePatch = true
+-      return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "archive failed" }) })
++    await page.goto(`/${slug(DIR)}/session`)
++    await selectComposerAgent(page, "OpenCode")
++    await ensureComposerModelSelected(page)
++    await page.getByRole("textbox", { name: /Ask anything/i }).last().fill("Archive pending probe")
++    await page.locator(SELECTORS.submitControl).last().click()
++    const oracle = (phase: string, text: string) => expectAssistantReplyVisible(page, text, {
++      spec: "core-sidebar-tree", scenario: `archive-${phase}-${testInfo.repeatEachIndex}`,
+     })
+-    const remaining = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_archive_1"]')
++    await oracle("before", "ack 1: Archive pending probe")
++    const target = await expectRailRowVisible({ page, sessionId: SESSION_ID })
++    const archive = target.locator('[data-slot="session-navigation-archive"]')
++    await target.hover()
++    const archived = page.waitForResponse(response => response.request().method() === "PATCH" &&
++      new URL(response.url()).pathname === `/session/${SESSION_ID}` && response.status() === 200)
++    await archive.click()
++    await expect.poll(() => mock.requests.sessionUpdateBodies.filter(item => item.sessionID === SESSION_ID).length).toBe(1)
++    await expect(archive).toBeDisabled()
++    await oracle("pending", "ack 1: Archive pending probe")
++    await archived
++    await expect(target).toHaveCount(0)
++    await expect.poll(() => new URL(page.url()).pathname).toBe(`/s/${otherId}`)
++    await oracle("neighbour", "Neighbour completed reply")
++    await page.reload()
++    await oracle("reloaded", "Neighbour completed reply")
++    await expect(target).toHaveCount(0)
++    const remaining = await expectRailRowVisible({ page, sessionId: otherId })
+     await remaining.hover()
+-    await remaining.getByRole("button", { name: /^Archive / }).click()
+-    await expect.poll(() => sawArchivePatch, { timeout: 10_000 }).toBe(true)
+-    await expect(page.getByText("Error archiving session")).toBeVisible({ timeout: 10_000 })
++    const rejected = page.waitForResponse(response => response.request().method() === "PATCH" &&
++      new URL(response.url()).pathname === `/session/${otherId}` && response.status() === 500)
++    await remaining.locator('[data-slot="session-navigation-archive"]').click()
++    await rejected
++    await expect(page.getByText("Error archiving session")).toBeVisible()
+     await expect(remaining).toBeVisible()
+-    await expect(rows).toHaveCount(1)
++    await expect.poll(() => new URL(page.url()).pathname).toBe(`/s/${otherId}`)
++    await oracle("failed", "Neighbour completed reply")
++    expect(mock.requests.sessionUpdateBodies.map(item => item.sessionID)).toEqual([SESSION_ID, otherId])
++    expect(mock.requests.promptCount).toBe(1)
++    expect(mock.requests.unhandled).toEqual([])
+   })
+ 
+   test("archiving the only active session leaves its URL for the project root", async ({ page }) => {
+@@ -1047,4 +1065,62 @@ test.describe("core sidebar tree @core", () => {
+     await expect(opener).toHaveAttribute("aria-expanded", "false")
+     await expect(row).toHaveAttribute("data-active", "true", { timeout: 15_000 })
+   })
++
++  test("a terminal row stays focused after a session row click", async ({ page }) => {
++    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
++    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "snapback" }) })
++    await seedProject(page, { dir: DIR })
++    await openTree(page, DIR)
++
++    await page.locator('[data-testid="workspace-scope-new-terminal"]').first().click()
++    const terminalRow = page.locator('[data-testid="rail-sidebar-terminal-row"]').first()
++    await expect(terminalRow).toBeVisible({ timeout: 15_000 })
++
++    const sessionRow = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_snapback_1"]')
++    await expect(sessionRow).toBeVisible({ timeout: 15_000 })
++    await sessionRow.click()
++    await expect(sessionRow).toHaveAttribute("data-active", "true", { timeout: 15_000 })
++    await expect(terminalRow).toHaveAttribute("data-active", "false")
++
++    await terminalRow.click()
++    await expect(terminalRow).toHaveAttribute("data-active", "true", { timeout: 15_000 })
++
++    // 2.6s clears the longest deferred write the session click arms:
++    // `fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100`, which peaks at
++    // FAST_SESSION_SWITCH_NETWORK_QUIET_MS + 100 = 2100ms. Both of those writes
++    // navigate to the session's route, and route intent turns a session route
++    // back into a focus, so an unguarded one takes the pane off the terminal.
++    await page.waitForTimeout(2600)
++    await expect(terminalRow).toHaveAttribute("data-active", "true")
++    await expect(sessionRow).toHaveAttribute("data-active", "false")
++  })
++
++  test("a terminal row activates on a click that drifts past the drag threshold", async ({ page }) => {
++    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
++    await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "drift" }) })
++    await seedProject(page, { dir: DIR })
++    await openTree(page, DIR)
++
++    await page.locator('[data-testid="workspace-scope-new-terminal"]').first().click()
++    const terminalRow = page.locator('[data-testid="rail-sidebar-terminal-row"]').first()
++    await expect(terminalRow).toBeVisible({ timeout: 15_000 })
++
++    const sessionRow = page.locator('[data-testid="rail-sidebar-session-row"][data-session-id="ses_drift_1"]')
++    await sessionRow.click()
++    await expect(terminalRow).toHaveAttribute("data-active", "false", { timeout: 15_000 })
++
++    // A hand holding the button still drifts a few pixels. MOUSE_THRESHOLD_PX is
++    // 5, so 8px crosses it and the row's drag source captures the pointer
++    // mid-press; the press must still read as a click, not be swallowed.
++    const box = await terminalRow.boundingBox()
++    expect(box, "terminal row has no bounding box").not.toBeNull()
++    const x = box!.x + box!.width / 2
++    const y = box!.y + box!.height / 2
++    await page.mouse.move(x, y)
++    await page.mouse.down()
++    await page.mouse.move(x + 8, y, { steps: 4 })
++    await page.mouse.up()
++
++    await expect(terminalRow).toHaveAttribute("data-active", "true", { timeout: 15_000 })
++  })
+ })
+diff --git a/packages/claxedo-app/e2e/playwright/live-real-harness-smoke.spec.ts b/packages/claxedo-app/e2e/playwright/live-real-harness-smoke.spec.ts
+index 2dabc96514..8ebb4a0a82 100644
+--- a/packages/claxedo-app/e2e/playwright/live-real-harness-smoke.spec.ts
++++ b/packages/claxedo-app/e2e/playwright/live-real-harness-smoke.spec.ts
+@@ -321,7 +321,8 @@ test.describe("live real-harness smoke @live", () => {
+     testInfo.setTimeout(240_000)
+   })
+ 
+-  test.afterEach(async (_fixtures, testInfo) => {
++  // oxlint-disable-next-line eslint/no-empty-pattern -- Playwright requires fixture destructuring even when only testInfo is used.
++  test.afterEach(async ({}, testInfo) => {
+     if (testInfo.status === testInfo.expectedStatus) return
+     await testInfo.attach("claxedo-server.log", { body: serverLog, contentType: "text/plain" })
+   })
