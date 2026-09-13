@@ -144,11 +144,14 @@ describe("the hosted Worker Tasks closure", () => {
       "src/tasks/d1-store.ts",
       "src/tasks/hosted-composition.ts",
       "src/tasks/session-bridge.ts",
+      "src/tasks/session-reservation.ts",
     ])
     expect(emitted.imports).toContain("@claxedo/tasks")
-    expect(emitted.imports).toContain("@claxedo/tasks/http")
     expect(emitted.imports).toContain("@claxedo/server-core/tasks-host/session-bridge-core")
-    expect(emitted.imports).toContain("@claxedo/server-core/tasks-host/authorization")
+    // The kit's routes are mounted through the shared contribution owner, so
+    // `@claxedo/tasks/http` reaches this artifact behind that specifier rather
+    // than as one of its own imports.
+    expect(emitted.imports).toContain("@claxedo/server-core/tasks-host/contribution")
   })
 
   test("the rendered config points Wrangler at the staged migrations, never at the source directory", () => {

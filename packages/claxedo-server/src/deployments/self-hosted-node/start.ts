@@ -17,6 +17,8 @@ import { embeddedAuthEnabled } from "./embedded-auth"
 import { createDefaultLocalControlPlaneServices, startControlPlaneStack } from "./app"
 import type { ControlPlaneServices } from "../../authority/services"
 import { assertSelfHostedPosture } from "./posture"
+import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
+import { createSelfHostedTasksComposition } from "../../tasks/self-hosted-composition"
 
 export type SelfHostedStartOptions = {
   port: number
@@ -78,7 +80,7 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
   const services = createDefaultLocalControlPlaneServices()
   const agentPlugins = await import("@claxedo/local-server/agent-plugins/local-composition")
     .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition(env))
-  const tasks = await selfHostedTasksRouteContributions(services)
+  const tasks = selfHostedTasksRouteContributions(services)
   await agentPlugins.ready
   return startControlPlaneStack({
     services,
@@ -98,16 +100,9 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
  * loopback and mints one local owner for every caller, so serving it to a
  * signed multi-user self-host hands every member the same preset catalog.
  */
-export async function selfHostedTasksRouteContributions(
+export function selfHostedTasksRouteContributions(
   services: ControlPlaneServices,
-): Promise<readonly ControlPlaneRouteContribution[]> {
-  // `@claxedo/local-server/tasks/local-composition` builds its routes as the
-  // module evaluates, so a static import would compose the loopback posture
-  // inside every signed box too.
-  if (services.auth.config.enabled) {
-    const { createSelfHostedTasksComposition } = await import("../../tasks/self-hosted-composition")
-    return createSelfHostedTasksComposition({ services }).routeContributions
-  }
-  const { routeContributions } = await import("@claxedo/local-server/tasks/local-composition")
-  return routeContributions
+): readonly ControlPlaneRouteContribution[] {
+  if (services.auth.config.enabled) return createSelfHostedTasksComposition({ services }).routeContributions
+  return createLocalTasksComposition().routeContributions
 }

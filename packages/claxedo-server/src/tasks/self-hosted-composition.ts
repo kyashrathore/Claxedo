@@ -1,16 +1,10 @@
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
-import {
-  createTasksAuthorization,
-  createTasksPrincipals,
-  signedTasksAuthenticate,
-  signedTasksRuntimePrincipal,
-} from "@claxedo/server-core/tasks-host/authorization"
-import { createTasksCapabilities, randomTasksIds, systemTasksClock } from "@claxedo/server-core/tasks-host/host-ports"
+import { signedTasksIdentity, tasksRouteContribution } from "@claxedo/server-core/tasks-host/contribution"
+import { createTasksCapabilities } from "@claxedo/server-core/tasks-host/host-ports"
 import { sqliteTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
 import { createLocalTasksSessionBridge } from "@claxedo/local-server/tasks/session-bridge"
-import { createTasksSessionRelease, createTasksSessionReserve } from "./session-bridge"
-import { TASKS_ROUTE_PATH, createTasksRoutes } from "@claxedo/tasks/http"
+import { createTasksSessionRelease, createTasksSessionReserve } from "./session-reservation"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
 
@@ -44,47 +38,35 @@ export function createSelfHostedTasksComposition(
   input: SelfHostedTasksCompositionInput,
 ): SelfHostedTasksComposition {
   const authority = requireAuthority(input.services)
-  const principals = createTasksPrincipals()
+  const identity = signedTasksIdentity({
+    authority,
+    signed: (request) =>
+      signedOrError(
+        request,
+        {
+          authConfig: input.services.auth.config,
+          ...(input.services.auth.verifier ? { verifier: input.services.auth.verifier } : {}),
+          requireSigned: true,
+        },
+        input.services,
+      ),
+  })
+  const reservation = { services: input.services, principal: identity.runtimePrincipal }
   return {
     routeContributions: [
-      {
-        id: "claxedo-tasks",
-        path: TASKS_ROUTE_PATH,
-        routes: createTasksRoutes({
-          store: sqliteTasksStore,
-          authorization: createTasksAuthorization({ authority, principals }),
-          authenticate: signedTasksAuthenticate({
-            authority,
-            principals,
-            signed: (request) =>
-              signedOrError(
-                request,
-                {
-                  authConfig: input.services.auth.config,
-                  ...(input.services.auth.verifier ? { verifier: input.services.auth.verifier } : {}),
-                  requireSigned: true,
-                },
-                input.services,
-              ),
-          }),
-          bridge: createLocalTasksSessionBridge({
-            reserve: createTasksSessionReserve({
-              services: input.services,
-              principal: signedTasksRuntimePrincipal(principals),
-            }),
-            release: createTasksSessionRelease({
-              services: input.services,
-              principal: signedTasksRuntimePrincipal(principals),
-            }),
-          }),
-          // `resolveStart` in session-bridge-core refuses cloud placement on
-          // every host, so a preset naming one is refused when it is saved
-          // rather than saved and refused at Start.
-          capabilities: createTasksCapabilities({ placements: ["local"], cloudSelectedCapabilities: false }),
-          clock: systemTasksClock(),
-          ids: randomTasksIds(),
+      tasksRouteContribution({
+        store: sqliteTasksStore,
+        authorization: identity.authorization,
+        authenticate: identity.authenticate,
+        bridge: createLocalTasksSessionBridge({
+          reserve: createTasksSessionReserve(reservation),
+          release: createTasksSessionRelease(reservation),
         }),
-      },
+        // The local bridge this composition passes names no cloud target, so a
+        // preset placed in the cloud is refused when it is saved rather than
+        // saved and refused at every Start.
+        capabilities: createTasksCapabilities({ placements: ["local"], cloudSelectedCapabilities: false }),
+      }),
     ],
   }
 }

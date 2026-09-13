@@ -4,7 +4,7 @@
 // a workspace authority, or cloud provisioning, and its own closure test
 // asserts so.
 import { createLocalDaemonLifecycle, startLocalServer } from "@claxedo/local-server/self-hosted-execution"
-import { routeContributions as tasksRouteContributions } from "@claxedo/local-server/tasks/local-composition"
+import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
@@ -55,7 +55,7 @@ const server = startLocalServer({
     lifecycle,
   },
   ...(transport ? { processObserver: transport.observer } : {}),
-  routeContributions: [...agentPlugins.routeContributions, ...tasksRouteContributions],
+  routeContributions: [...agentPlugins.routeContributions, ...createLocalTasksComposition().routeContributions],
   harnessLaunch: agentPlugins.harnessLaunch,
 })
 const discovery: ClaxedoDaemonDiscovery = {

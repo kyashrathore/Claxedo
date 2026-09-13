@@ -4,10 +4,14 @@ import {
   createTasksPrincipals,
   loopbackTasksAuthenticate,
 } from "@claxedo/server-core/tasks-host/authorization"
-import { createTasksCapabilities, randomTasksIds, systemTasksClock } from "@claxedo/server-core/tasks-host/host-ports"
+import { tasksRouteContribution } from "@claxedo/server-core/tasks-host/contribution"
+import { createTasksCapabilities } from "@claxedo/server-core/tasks-host/host-ports"
 import { sqliteTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
-import { TASKS_ROUTE_PATH, createTasksRoutes } from "@claxedo/tasks/http"
 import { createLocalTasksSessionBridge } from "./session-bridge"
+
+export type LocalTasksComposition = {
+  routeContributions: readonly ControlPlaneRouteContribution[]
+}
 
 /**
  * Enabled desktop-local Tasks. Only a product entry that imports this module
@@ -20,23 +24,20 @@ import { createLocalTasksSessionBridge } from "./session-bridge"
  * organization and one of its members on a hosted deployment and the kit's
  * rules must not differ between the two.
  */
-const principals = createTasksPrincipals()
-
-export const routeContributions: readonly ControlPlaneRouteContribution[] = [
-  {
-    id: "claxedo-tasks",
-    path: TASKS_ROUTE_PATH,
-    routes: createTasksRoutes({
-      store: sqliteTasksStore,
-      authorization: createLocalTasksAuthorization(),
-      authenticate: loopbackTasksAuthenticate(principals),
-      bridge: createLocalTasksSessionBridge(),
-      // This machine runs the sessions it starts and has no cloud root to
-      // isolate: a cloud preset is refused when it is saved rather than saved
-      // and refused at Start.
-      capabilities: createTasksCapabilities({ placements: ["local"], cloudSelectedCapabilities: false }),
-      clock: systemTasksClock(),
-      ids: randomTasksIds(),
-    }),
-  },
-]
+export function createLocalTasksComposition(): LocalTasksComposition {
+  const principals = createTasksPrincipals()
+  return {
+    routeContributions: [
+      tasksRouteContribution({
+        store: sqliteTasksStore,
+        authorization: createLocalTasksAuthorization(),
+        authenticate: loopbackTasksAuthenticate(principals),
+        bridge: createLocalTasksSessionBridge(),
+        // This machine runs the sessions it starts and has no cloud root to
+        // isolate: a cloud preset is refused when it is saved rather than saved
+        // and refused at Start.
+        capabilities: createTasksCapabilities({ placements: ["local"], cloudSelectedCapabilities: false }),
+      }),
+    ],
+  }
+}

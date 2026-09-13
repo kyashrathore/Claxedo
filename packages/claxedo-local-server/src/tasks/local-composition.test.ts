@@ -13,7 +13,7 @@ import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platform/http/route-contribution"
 import { createLocalApp, type LocalAppOptions } from "../app/local-app"
-import { routeContributions } from "./local-composition"
+import { createLocalTasksComposition } from "./local-composition"
 
 const LOOPBACK = "http://127.0.0.1:4096"
 const TASKS = "/api/claxedo/tasks"
@@ -64,7 +64,7 @@ function services() {
 }
 
 function app() {
-  return createLocalApp({ services: services(), routeContributions }).app
+  return createLocalApp({ services: services(), routeContributions: createLocalTasksComposition().routeContributions }).app
 }
 
 async function command(target: ReturnType<typeof app>, clientRequestId: string, body: Record<string, unknown>) {
@@ -100,7 +100,6 @@ describe("desktop-local Tasks composition", () => {
       protocolVersion: 1,
       placements: ["local"],
       cloudSelectedCapabilities: false,
-      instructions: true,
     })
   })
 
@@ -159,7 +158,7 @@ describe("desktop-local Tasks composition", () => {
   test("the contribution itself refuses a non-loopback request", async () => {
     const bare = new Hono()
     mountControlPlaneRouteContributions({
-      contributions: routeContributions,
+      contributions: createLocalTasksComposition().routeContributions,
       mount: (contribution) => bare.route(contribution.path, contribution.routes),
     })
 

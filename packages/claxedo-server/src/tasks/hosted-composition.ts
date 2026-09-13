@@ -3,16 +3,10 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import type { WorkspaceRuntimeClientOptions } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
-import {
-  createTasksAuthorization,
-  createTasksPrincipals,
-  signedTasksAuthenticate,
-  signedTasksRuntimePrincipal,
-  type TasksRuntimePrincipal,
-} from "@claxedo/server-core/tasks-host/authorization"
-import { createTasksCapabilities, randomTasksIds, systemTasksClock } from "@claxedo/server-core/tasks-host/host-ports"
+import type { TasksRuntimePrincipal } from "@claxedo/server-core/tasks-host/authorization"
+import { signedTasksIdentity, tasksRouteContribution } from "@claxedo/server-core/tasks-host/contribution"
+import { createTasksCapabilities } from "@claxedo/server-core/tasks-host/host-ports"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { TASKS_ROUTE_PATH, createTasksRoutes } from "@claxedo/tasks/http"
 import type { TasksActor, TasksHostCapabilities, TasksSessionBridgePort } from "@claxedo/tasks"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
@@ -74,8 +68,11 @@ export function hostedTasksRuntimeClient(services: ControlPlaneServices): Worksp
  * route asks.
  */
 export function createHostedTasksComposition(input: HostedTasksCompositionInput): HostedTasksComposition {
-  const authority = requireAuthority(input.services)
-  const principals = createTasksPrincipals()
+  const identity = signedTasksIdentity({
+    authority: requireAuthority(input.services),
+    signed: (request) =>
+      signedOrError(request, { authentication: input.authentication, requireSigned: true }, input.services),
+  })
   // The same reading the workspace routes make before they will create a
   // cloud workspace at all: without a sandbox manager this deployment has no
   // isolated root to allocate.
@@ -84,32 +81,21 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
     : ["local"]
   return {
     routeContributions: [
-      {
-        id: "claxedo-tasks",
-        path: TASKS_ROUTE_PATH,
-        routes: createTasksRoutes({
-          store: createD1TasksStore({ database: input.database }),
-          authorization: createTasksAuthorization({ authority, principals }),
-          authenticate: signedTasksAuthenticate({
-            authority,
-            principals,
-            signed: (request) =>
-              signedOrError(request, { authentication: input.authentication, requireSigned: true }, input.services),
-          }),
-          bridge: input.bridge(signedTasksRuntimePrincipal(principals), (actor) => principals.authOf(actor)),
-          capabilities: createTasksCapabilities({
-            placements,
-            // A root's own machine is half of the promise; the other half is
-            // the Agent Plugins wiring that gives it its own capability set,
-            // which an artifact built without that feature does not have. A
-            // preset naming cloud placement is refused when it is saved rather
-            // than saved and refused at every Start.
-            cloudSelectedCapabilities: placements.includes("cloud") && input.cloudSelectedCapabilities === true,
-          }),
-          clock: systemTasksClock(),
-          ids: randomTasksIds(),
+      tasksRouteContribution({
+        store: createD1TasksStore({ database: input.database }),
+        authorization: identity.authorization,
+        authenticate: identity.authenticate,
+        bridge: input.bridge(identity.runtimePrincipal, (actor) => identity.principals.authOf(actor)),
+        capabilities: createTasksCapabilities({
+          placements,
+          // A root's own machine is half of the promise; the other half is the
+          // Agent Plugins wiring that gives it its own capability set, which an
+          // artifact built without that feature does not have. A preset naming
+          // cloud placement is refused when it is saved rather than saved and
+          // refused at every Start.
+          cloudSelectedCapabilities: placements.includes("cloud") && input.cloudSelectedCapabilities === true,
         }),
-      },
+      }),
     ],
   }
 }
