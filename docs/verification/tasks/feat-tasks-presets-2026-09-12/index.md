@@ -280,3 +280,25 @@ failures; root lint at its three pre-existing perf-harness errors; ratchets
 hold with both renderer ceilings raised by the three measured modules — the
 settings-section registry and the two Presets owners — to app-local 1051 / 58
 and desktop renderer 1094 / 58.
+
+## Build-time selection removed (2026-09-13)
+
+Tasks is built into the app, the desktop renderer, the desktop-bundled server,
+the self-hosted binary and the hosted Worker, and `0024_claxedo_tasks.sql` /
+`20260912100000_claxedo_tasks` are staged with every other migration. The kit
+stays embeddable through route contributions and the app's contributions
+module, which is what the owner asked for; selecting the feature in or out of a
+build was not.
+
+Removed: `CLAXEDO_BUILD_TASKS` and every reader, the
+`__CLAXEDO_TASKS_ENABLED__` define and its ambient declarations, the Worker
+`[define]` and the `migrations_dir` staging predicate, the self-hosted start
+gate, the desktop renderer and server-bundle defines, the feature-off resume
+test, and the guard tests that measured the disabled artifact. The app keeps
+the dynamic import of `app/integrations/tasks-contributions.ts` for the chunk
+boundary alone, so `features/tasks/**` still stays out of the chunks the shell
+needs before first paint.
+
+The "Build-time feature selection (T01)" section above, and the selection note
+in the source line at the top of this file, are the record of a behaviour that
+no longer exists.

@@ -5,9 +5,9 @@ const SRC = "packages/claxedo-local-server/src"
 /**
  * The desktop-local server, from the entry the desktop actually starts.
  *
- * `claxedo-desktop/scripts/claxedo-server-entry.ts` imports exactly one thing —
- * `@claxedo/local-server/self-hosted-execution` — and that import is the
- * unsigned desktop's entire server-side closure. So that subpath is the entry
+ * `claxedo-desktop/scripts/claxedo-server-entry.ts` starts the server through
+ * `@claxedo/local-server/self-hosted-execution` and mounts the feature
+ * compositions the same package publishes beside it. That subpath is the entry
  * here, rather than the package's whole `exports` surface: the package-wide
  * walk is `src/architecture/local-closure.test.ts`'s job and answers "what may
  * a consumer import", while this answers "what does the shipped product load".

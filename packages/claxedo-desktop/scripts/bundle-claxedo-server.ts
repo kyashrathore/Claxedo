@@ -7,7 +7,6 @@ import { stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode
 import { resolveTargetOsArch } from "./target-platform"
 import { runBunBuild } from "../../../script/bun-build"
 import { publishedExportsPlugin } from "../../../script/published-exports-plugin"
-import { stageMigrationJournal } from "../../../script/migration-journal"
 
 // Native modules cannot be bundled — they ship as node_modules content, and the
 // public OpenCode SDK's asset-relative graph is staged separately under
@@ -26,13 +25,6 @@ export async function bundleClaxedoServer(source: string, destination: string) {
     target: "node",
     format: "esm",
     splitting: true,
-    // Baked, so the artifact's Tasks selection cannot be changed by the
-    // environment the server is later started in. Bun folds the
-    // comparison in the entry, which is what removes the composition's
-    // dynamic import instead of leaving it behind a false branch.
-    define: {
-      "process.env.CLAXEDO_BUILD_TASKS": JSON.stringify(process.env.CLAXEDO_BUILD_TASKS === "0" ? "0" : "1"),
-    },
     // identifiers stays OFF deliberately: this closure inlines third-party
     // packages (hono, drizzle, zod, tokentracker-cli) whose freedom from
     // function/class-name reliance we cannot prove, and mangled names would
@@ -86,7 +78,7 @@ export async function bundleClaxedoServer(source: string, destination: string) {
   // symptom is an empty database on a fresh profile.
   const migrationsSource = resolveLocalServerMigrationJournal()
   for (const parent of [pending, path.join(pending, "chunks")]) {
-    stageMigrationJournal(migrationsSource, path.join(parent, "claxedo-migration"))
+    fs.cpSync(migrationsSource, path.join(parent, "claxedo-migration"), { recursive: true })
   }
 
   // @cursor/sdk ships as a webpack bundle with numeric lazy chunks (986.js, …).
