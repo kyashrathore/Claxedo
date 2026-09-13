@@ -78,9 +78,8 @@ export function providerProjectionRecord(input: unknown): Record<string, Provide
  * finishes on a valid one.
  *
  * Read from `expiresAt` rather than from a fixed interval, because the lifetime
- * belongs to the authority that minted the placeholder — a shorter one there
- * used to expire silently between two ticks of a timer sized for the old one.
- * A map carrying no bound row never needs renewing.
+ * belongs to the authority that minted the placeholder and can be shorter than
+ * any interval chosen here. A map carrying no bound row never needs renewing.
  */
 export function projectionRenewalDueAt(
   auth: Record<string, ProviderProjection>,

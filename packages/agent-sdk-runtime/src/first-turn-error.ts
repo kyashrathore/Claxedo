@@ -7,11 +7,10 @@ export type FirstTurnErrorClass = (typeof FIRST_TURN_ERROR_CLASSES)[number]
 /**
  * The broker's verdict, out of the vocabulary the broker itself writes.
  *
- * Imported rather than restated: a code this file forgot used to fall through
- * to the prose rules below, which read the 403 the broker answers both for a
- * credential it will not serve and for a route the binding does not allow — and
- * told the operator to replace a working account for a request the harness
- * should never have made.
+ * Imported rather than restated: the broker answers 403 both for a credential
+ * it will not serve and for a route the binding does not allow, and only its
+ * own table separates those two faults. The prose rules below match on message
+ * text, which cannot.
  */
 function brokerFault(message: string): FirstTurnErrorClass | undefined {
   const code = credentialBrokerErrorCode(message)
