@@ -302,3 +302,90 @@ needs before first paint.
 The "Build-time feature selection (T01)" section above, and the selection note
 in the source line at the top of this file, are the record of a behaviour that
 no longer exists.
+
+## The Tasks UI moves into the app and is rebuilt on the host's primitives (2026-09-13)
+
+The user's verdict on the surface: too many horizontal lines, no separation
+between the page heading and the table, Start / the caret / the three-dots
+barely readable as controls, a text caret rather than an icon, menus and
+popovers that are not the ones the rest of the app uses, a poor board card
+surface, a bad grouping of status + caret + a separate more-menu, and a round
+number tag in the status card header. The reference was Linear's issue list,
+board, issue page and its filter/display popovers.
+
+The ownership question was settled by the user: "UI lives in task package —
+that is anti pattern, ui should live in some folder in app. idea was just
+embeddable." So `@opencode-ai/ui` was never added to the kit.
+
+| Commit | What changed |
+|---|---|
+| `refactor(tasks): move the Tasks UI out of the kit into the app` | every Solid component, `tasks.css` and the view-model move from `packages/claxedo-tasks/src/solid/**` to `packages/claxedo-app/src/features/tasks/**`, filed by surface (`ui/{shared,list,board,detail,presets,start,dialogs}`) with each mounted test beside its subject. The kit's `./solid` subpath and its `solid-js` dependency are deleted, so it is domain + http + client + conformance and its own tests carry no Solid. `StartTaskDialog` → `StartTaskForm` and `TaskCreateDialog` → `TaskCreateForm`, because the move put them next to the containers that render them. The `ProseEditor` port folds into `features/tasks/app-ports.ts`, which is what declares it — it still crosses a real boundary, since a feature may not import the Documents editor. |
+| `feat(tasks): rebuild every Tasks surface on the host's own primitives` | every menu, popover, select, button, icon button, tag, switch and checkbox is now a `@opencode-ai/ui` component; `tasks.css` keeps layout, table and board geometry and the accents that have no primitive |
+
+Per screen, at the second commit:
+
+- **List.** Page header = title + plain muted count + New task over the one
+  hairline on the screen; the toolbar under it has none, so the first sticky
+  group header is where the table starts. A group header is the status glyph,
+  its name and a plain count on a tinted band with no rule. Rows are 36px with
+  no borders, a hover surface, a selected accent, a strong title, a muted
+  parent, and properties right-aligned in muted tabular text.
+- **Row actions.** One group at the row's right, revealed on hover, on
+  focus-within and while its own menu is open (an open menu portals focus out
+  of the row, so neither hover nor focus-within survives the press that opened
+  it). Start/Open is a `Button` and its caret an `IconButton` with the host
+  chevron, sharing one border with a hairline seam; the three-dots is an
+  `IconButton`. Both open `DropdownMenu`s.
+- **Status.** `circle-dashed`, `circle-half`, `circle-alert`, `circle-check`
+  from the host icon set, coloured from tokens. In a menu the four are a
+  `RadioGroup`, so the tick is the record and a refused change snaps back; where
+  the surface does not already say the status, the chip is the trigger.
+- **Filter and Display.** `Popover`s of labelled rows: `Select` for project,
+  status and grouping, `Switch` for subtasks, a segmented List/Board pair, and
+  the active filters as `Tag`s with a remove.
+- **Board.** Flat columns with no fill and no border; header = glyph, name,
+  plain count and a plus that appears on hover; cards on `surface-raised-strong`
+  with a hairline and a small shadow; the dashed drop target exists only while a
+  card is being dragged.
+- **Task page.** Properties is a rail of icon-and-label rows (Status, Project,
+  Preset, Workspace), sessions are hairline-separated rows rather than cards,
+  Archive is a quiet destructive link, "Add a subtask" is a link row with a plus.
+- **Dialogs and presets.** `Select` for preset, configuration and project;
+  `TextField` for the handoff text and the preset name; `Checkbox` for Continue
+  and each capability; "Where this will run" as label-and-value rows between two
+  hairlines. The placement radios stay native: the host's `RadioGroup` is a
+  segmented control with no per-option `disabled`, and a placement this server
+  cannot run must not be selectable.
+
+Two asks in the brief were not built, because neither had anything behind it:
+a search field in the Filter popover (the store filters on project and status
+alone, and a search over two rows is decoration), and a "…" on a board column
+header (there is no column-level command; `task.create` takes no status, which
+is also why the plus is on To do alone).
+
+Tests: the board, start-flow, start-form, create-form, preset-editor,
+conflicts, pagination, refused-read and row-action suites now drive the host
+components through one double in
+`features/tasks/ui/shared/test-support/host-controls.tsx`. Kobalte's menu and
+select are portal- and pointer-driven and jsdom cannot open them — the
+established substitution in this package — and the doubles keep what the
+assertions read: a real disabled-able trigger carrying the caller's test id and
+label, items with their roles and disabled state, and a radio group that
+reports which value is checked. `fireEvent.change` on a native select became a
+press on the menu row or the listbox option; `getByLabelText(...).tagName ===
+"SELECT"` became the same element's `role === "radiogroup"`.
+
+Gates at `3e5d7309f3`: app vitest for tasks, tasks integrations and settings 16
+files / 99 pass; `bun test ./src/architecture` 252 pass across 39 files (seven
+fewer than the previous round only because the `ungate-tasks` lane deleted
+`tasks-build-selection.guard.test.ts` in its own commits); `npx tsgo -b` clean;
+`lint:theme-tokens` at its two pre-existing failures; kit `bun test src` 188
+pass and its typecheck clean; root `test:architecture-ratchets` holds, with the
+two renderer ceilings raised by the eighteen modules the walker could not see
+while they were a package edge and then lowered by the two this round deletes
+(the hand-rolled menu panel and the kit's own glyph) — app-local 1067 / 58 and
+desktop renderer 1110 / 58; root `bun run lint` at its three pre-existing
+perf-harness errors.
+
+Screenshots, light and dark at 1440×900, against the running stack:
+`ui-shots/v9-{list,list-row-menu,filter-popover,display-popover,board,task-page,new-task-dialog,start-dialog,settings-presets,preset-editor}-{light,dark}.png`.
