@@ -10,9 +10,6 @@ export const dict = {
   "settings.models.showMore": "さらに表示",
   "settings.providers.search.label": "プロバイダーを検索",
   "settings.providers.search.placeholder": "プロバイダーを検索…",
-  "settings.providers.status.broken": "要確認",
-  "settings.providers.status.connected": "接続済み",
-  "settings.providers.status.detected": "検出済み",
   "settings.providers.status.notConnected": "未接続",
   "settings.providers.tag.apiKey": "API キー",
 }

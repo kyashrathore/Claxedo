@@ -10,9 +10,6 @@ export const dict = {
   "settings.models.showMore": "더 보기",
   "settings.providers.search.label": "공급자 검색",
   "settings.providers.search.placeholder": "제공자 검색…",
-  "settings.providers.status.broken": "확인이 필요함",
-  "settings.providers.status.connected": "연결됨",
-  "settings.providers.status.detected": "감지됨",
   "settings.providers.status.notConnected": "연결되지 않음",
   "settings.providers.tag.apiKey": "API 키",
 }

@@ -9,9 +9,6 @@ export const dict = {
   "settings.models.showMore": "顯示更多",
   "settings.providers.search.label": "搜尋提供者",
   "settings.providers.search.placeholder": "搜尋供應商…",
-  "settings.providers.status.broken": "需要注意",
-  "settings.providers.status.connected": "已連線",
-  "settings.providers.status.detected": "已偵測到",
   "settings.providers.status.notConnected": "未連線",
   "settings.providers.tag.apiKey": "API 金鑰",
 }

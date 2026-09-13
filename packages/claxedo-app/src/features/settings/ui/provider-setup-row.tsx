@@ -1,125 +1,23 @@
 import { Button } from "@opencode-ai/ui/button"
-import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { Tag } from "@opencode-ai/ui/tag"
-import { createSignal, For, Show, type Component } from "solid-js"
-import { ProviderConnectForm } from "@/features/settings/app-ports"
+import { createSignal, Show, type Component } from "solid-js"
+import { ProviderConnectCard } from "@/features/settings/ui/provider-connect-card"
 import { useLanguage } from "@/platform/i18n/provider"
-import type { ProviderSetupStatus } from "@/features/settings/provider-settings-logic"
 
-export function providerSetupStatusLabel(status: ProviderSetupStatus, language: ReturnType<typeof useLanguage>) {
-  if (status === "connected") return language.t("settings.providers.status.connected")
-  if (status === "detected") return language.t("settings.providers.status.detected")
-  if (status === "broken") return language.t("settings.providers.status.broken")
-  return language.t("settings.providers.status.notConnected")
-}
-
-/** What a provider last said about one credential, already in words. */
-export type ProviderHealth = {
-  /** The verdict itself: "Working", "Rejected by the provider". */
-  label: string
-  /** When it was said, and any plan windows it came with. */
-  note?: string
-  /**
-   * The provider refused the credential. Nothing this account can do fixes
-   * that, so its row offers a replacement rather than another Check.
-   */
-  rejected: boolean
-}
-
-/** One stored account under a harness row, already in words. */
-export type ProviderAccount = {
-  id: string
-  /** Every stored row holding this account, one per binding of the harness. */
-  ids: readonly string[]
-  name: string
-  /** The account's identity at the provider, or a pasted key's last characters. */
-  detail?: string
-  health?: ProviderHealth
-  expiry?: string
-  isActive: boolean
-}
-
-/**
- * The verdict and its timestamp on one line: the verdict carries the tone, the
- * timestamp stays quiet behind it.
- */
-const HealthLine: Component<{ health: ProviderHealth; component: string }> = (props) => (
-  <span class="flex min-w-0 flex-wrap items-baseline gap-x-1.5" data-component={props.component}>
-    <Show
-      when={props.health.rejected}
-      fallback={<span class="text-12-regular text-text-weak">{props.health.label}</span>}
-    >
-      <Tag class="border-border-critical-base bg-surface-critical-base text-icon-critical-base" data-tone="danger">
-        {props.health.label}
-      </Tag>
-    </Show>
-    <Show when={props.health.note}>
-      {(note) => <span class="text-12-regular text-text-weak">{note()}</span>}
-    </Show>
-  </span>
-)
-
+/** A provider a harness has no credential for, with Connect opening an inset card. */
 export const ProviderSetupRow: Component<{
   id: string
   name: string
-  status: ProviderSetupStatus
-  detail?: string
   providerId: string
   /** The harness whose credentials this row connects. */
   harness: string
   /** The workspace-or-directory scope those credentials belong to. */
   scope?: string
   note?: string
-  /** Which credential this harness runs on, when no listed account says so itself. */
-  inUse?: string
-  /** What the provider last said about the login this machine holds. */
-  live?: ProviderHealth
-  /** Every account stored for this harness, active first. */
-  accounts?: readonly ProviderAccount[]
-  /** Offers Make active on each inactive account; absent leaves the list read-only. */
-  onActivate?: (credentialIds: readonly string[]) => void | Promise<void>
-  /** Why a read-only list offers no switch yet. */
-  activateNote?: string
-  /** The account whose switch is in flight. */
-  activating?: string
-  /** Offers Remove on each account; absent leaves the list unremovable. */
-  onRemove?: (credentialIds: readonly string[]) => void | Promise<void>
-  /** The account whose removal is in flight. */
-  removing?: string
-  /** Asks the provider about the machine login; offered only where one is in use. */
-  onCheck?: () => void | Promise<void>
-  checking?: boolean
-  /** Asks the provider about one stored account. */
-  onCheckAccount?: (credentialIds: readonly string[]) => void | Promise<void>
-  /** The account whose check is in flight. */
-  checkingAccount?: string
-  /** Saves the login a scan found on this machine; offered while the row reads detected. */
-  onUseLogin?: () => void | Promise<void>
   onConnected?: () => void | Promise<void>
 }> = (props) => {
   const language = useLanguage()
   const [expanded, setExpanded] = createSignal(false)
-  const [usingLogin, setUsingLogin] = createSignal(false)
-  const [confirmingRemove, setConfirmingRemove] = createSignal<string>()
-  const connected = () => props.status === "connected"
-  const showStatus = () => props.status !== "missing"
-  const toggle = () => setExpanded((value) => !value)
-  const useLogin = async () => {
-    setUsingLogin(true)
-    try {
-      await props.onUseLogin?.()
-    } finally {
-      setUsingLogin(false)
-    }
-  }
-  const remove = async (account: ProviderAccount) => {
-    try {
-      await props.onRemove?.(account.ids)
-    } finally {
-      setConfirmingRemove(undefined)
-    }
-  }
 
   return (
     <div class="border-b border-border-weak-base last:border-none" data-provider={props.id}>
@@ -127,11 +25,7 @@ export const ProviderSetupRow: Component<{
         <button
           type="button"
           class="flex min-w-0 flex-1 items-start gap-3 border-none bg-transparent p-0 text-left"
-          disabled={connected()}
-          onClick={() => {
-            if (connected()) return
-            toggle()
-          }}
+          onClick={() => setExpanded((value) => !value)}
         >
           <ProviderIcon id={props.id} class="size-5 shrink-0 icon-strong-base" />
           <div class="flex min-w-0 flex-col gap-0.5">
@@ -139,190 +33,30 @@ export const ProviderSetupRow: Component<{
             <Show when={props.note}>
               {(note) => <span class="text-12-regular text-text-weak">{note()}</span>}
             </Show>
-            <Show when={props.inUse}>
-              {(inUse) => <span class="text-12-regular text-text-base" data-component="provider-in-use">{inUse()}</span>}
-            </Show>
-            <Show when={props.live}>
-              {(live) => <HealthLine health={live()} component="provider-live" />}
-            </Show>
-            <Show when={!expanded() && props.detail}>
-              {(detail) => <span class="text-12-regular text-text-weak">{detail()}</span>}
-            </Show>
           </div>
         </button>
         <div class="flex shrink-0 items-center gap-2" data-component="provider-actions">
-          <Show when={showStatus()}>
-            <Tag>{providerSetupStatusLabel(props.status, language)}</Tag>
-          </Show>
-          <Show when={props.onCheck}>
-            <Button size="large" variant="ghost" disabled={props.checking} data-action="settings-provider-check" onClick={() => void props.onCheck?.()}>
-              {props.checking ? language.t("settings.providers.agents.checking") : language.t("settings.providers.agents.check")}
-            </Button>
-          </Show>
-          <Show when={!connected() && props.status === "detected" && props.onUseLogin}>
-            <Button size="large" variant="primary" disabled={usingLogin()} data-action="settings-provider-use-login" onClick={() => void useLogin()}>
-              {language.t("settings.providers.agents.useLogin")}
-            </Button>
-          </Show>
-          <Show when={!connected() && !expanded()}>
-            <Button size="large" variant="ghost" onClick={toggle}>
-              {language.t("common.connect")}
-            </Button>
-          </Show>
-          <Show when={expanded()}>
+          <Show
+            when={expanded()}
+            fallback={(
+              <Button size="large" variant="ghost" onClick={() => setExpanded(true)}>
+                {language.t("common.connect")}
+              </Button>
+            )}
+          >
             <span class="text-12-regular text-text-interactive-base">{language.t("settings.providers.connect.open")}</span>
           </Show>
         </div>
       </div>
-      <Show when={(props.accounts?.length ?? 0) > 0}>
-        <div class="mb-3 ml-8 flex flex-col gap-2" data-component="provider-accounts">
-          <For each={props.accounts}>
-            {(account) => (
-              <div
-                class="flex flex-wrap items-center justify-between gap-3"
-                data-component="provider-account"
-                data-account={account.id}
-                data-active={account.isActive ? "true" : "false"}
-              >
-                <div class="flex min-w-0 flex-wrap items-center gap-2">
-                  <span class="text-12-medium text-text-strong">{account.name}</span>
-                  <Show when={account.detail}>
-                    {(detail) => <span class="text-12-regular text-text-weak">{detail()}</span>}
-                  </Show>
-                  <Show when={account.health}>
-                    {(health) => <HealthLine health={health()} component="provider-account-health" />}
-                  </Show>
-                  <Show when={account.expiry}>
-                    {(expiry) => <span class="text-12-regular text-text-weak">{expiry()}</span>}
-                  </Show>
-                </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <Show
-                    when={!account.isActive && props.onActivate}
-                    fallback={
-                      <Show when={account.isActive}>
-                        <Tag>{language.t("settings.providers.agents.accountActive")}</Tag>
-                      </Show>
-                    }
-                  >
-                    <Button
-                      size="small"
-                      variant="ghost"
-                      disabled={props.activating !== undefined}
-                      data-action="settings-provider-activate"
-                      onClick={() => void props.onActivate?.(account.ids)}
-                    >
-                      {props.activating === account.id
-                        ? language.t("settings.providers.agents.makingActive")
-                        : language.t("settings.providers.agents.makeActive")}
-                    </Button>
-                  </Show>
-                  <Show when={props.onCheckAccount}>
-                    <Button
-                      size="small"
-                      variant="ghost"
-                      disabled={props.checkingAccount !== undefined}
-                      data-action="settings-provider-check-account"
-                      onClick={() => void props.onCheckAccount?.(account.ids)}
-                    >
-                      {props.checkingAccount === account.id
-                        ? language.t("settings.providers.agents.checking")
-                        : language.t("settings.providers.agents.check")}
-                    </Button>
-                  </Show>
-                  <Show when={account.health?.rejected}>
-                    <Button
-                      size="small"
-                      variant="primary"
-                      data-action="settings-provider-reconnect-account"
-                      onClick={() => setExpanded(true)}
-                    >
-                      {language.t("settings.providers.agents.reconnectAccount")}
-                    </Button>
-                  </Show>
-                  <Show when={props.onRemove}>
-                    <Show
-                      when={confirmingRemove() === account.id}
-                      fallback={
-                        <Button
-                          size="small"
-                          variant="ghost"
-                          disabled={props.removing !== undefined}
-                          data-action="settings-provider-remove-account"
-                          onClick={() => setConfirmingRemove(account.id)}
-                        >
-                          {language.t("settings.providers.agents.removeAccount")}
-                        </Button>
-                      }
-                    >
-                      <span class="text-12-regular text-text-weak">
-                        {language.t("settings.providers.agents.removeAccountConfirm")}
-                      </span>
-                      <Button
-                        size="small"
-                        variant="primary"
-                        disabled={props.removing !== undefined}
-                        data-action="settings-provider-remove-account-confirm"
-                        onClick={() => void remove(account)}
-                      >
-                        {props.removing === account.id
-                          ? language.t("settings.providers.agents.removingAccount")
-                          : language.t("settings.providers.agents.removeAccount")}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        disabled={props.removing !== undefined}
-                        data-action="settings-provider-remove-account-cancel"
-                        onClick={() => setConfirmingRemove(undefined)}
-                      >
-                        {language.t("common.cancel")}
-                      </Button>
-                    </Show>
-                  </Show>
-                </div>
-              </div>
-            )}
-          </For>
-          <Show when={props.activateNote}>
-            {(note) => <span class="text-12-regular text-text-weak" data-component="provider-activate-note">{note()}</span>}
-          </Show>
-          <div>
-            <Button size="small" variant="ghost" data-action="settings-provider-add-account" onClick={() => setExpanded(true)}>
-              {language.t("settings.providers.agents.addAccount")}
-            </Button>
-          </div>
-        </div>
-      </Show>
       <Show when={expanded()}>
-        <div
-          class="mb-3 ml-8 overflow-hidden rounded-md border border-border-weak-base bg-background-stronger"
-          data-component="provider-connect-card"
-          onKeyDown={(event) => {
-            if (event.key !== "Escape") return
-            event.preventDefault()
-            setExpanded(false)
-          }}
-        >
-          <div class="flex items-start justify-between gap-3 border-b border-border-weak-base py-3 pl-4 pr-3">
-            <div class="flex flex-col gap-0.5">
-              <span class="text-14-medium text-text-strong">{language.t("settings.providers.connect.title", { provider: props.name })}</span>
-              <span class="text-12-regular text-text-weak">{language.t("settings.providers.connect.subtitle", { provider: props.name })}</span>
-            </div>
-            <IconButton icon="close" variant="ghost" aria-label={language.t("common.close")} data-action="provider-connect-close" onClick={() => setExpanded(false)} />
-          </div>
-          <div class="p-4">
-            <ProviderConnectForm
-              provider={props.providerId}
-              harness={props.harness}
-              workspaceScope={props.scope}
-              hideHeading
-              methodPicker="segmented"
-              onConnected={props.onConnected}
-              onDone={() => setExpanded(false)}
-            />
-          </div>
-        </div>
+        <ProviderConnectCard
+          provider={props.providerId}
+          providerName={props.name}
+          harness={props.harness}
+          scope={props.scope}
+          onConnected={props.onConnected}
+          onClose={() => setExpanded(false)}
+        />
       </Show>
     </div>
   )

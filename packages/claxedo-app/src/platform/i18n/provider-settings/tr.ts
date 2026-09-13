@@ -10,9 +10,6 @@ export const dict = {
   "settings.models.showMore": "Daha fazla göster",
   "settings.providers.search.label": "Sağlayıcıları ara",
   "settings.providers.search.placeholder": "Sağlayıcı ara…",
-  "settings.providers.status.broken": "Dikkat gerekiyor",
-  "settings.providers.status.connected": "Bağlandı",
-  "settings.providers.status.detected": "Algılandı",
   "settings.providers.status.notConnected": "Bağlı değil",
   "settings.providers.tag.apiKey": "API anahtarı",
 }

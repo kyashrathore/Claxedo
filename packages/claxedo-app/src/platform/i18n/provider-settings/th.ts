@@ -10,9 +10,6 @@ export const dict = {
   "settings.models.showMore": "แสดงเพิ่มเติม",
   "settings.providers.search.label": "ค้นหาผู้ให้บริการ",
   "settings.providers.search.placeholder": "ค้นหาผู้ให้บริการ…",
-  "settings.providers.status.broken": "ต้องตรวจสอบ",
-  "settings.providers.status.connected": "เชื่อมต่อแล้ว",
-  "settings.providers.status.detected": "ตรวจพบแล้ว",
   "settings.providers.status.notConnected": "ไม่ได้เชื่อมต่อ",
   "settings.providers.tag.apiKey": "คีย์ API",
 }

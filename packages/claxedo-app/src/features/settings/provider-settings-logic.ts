@@ -1,8 +1,5 @@
 export type ProviderSource = "env" | "api" | "config" | "custom"
 
-/** What a provider row can say about itself, before and after a machine scan. */
-export type ProviderSetupStatus = "connected" | "detected" | "broken" | "missing"
-
 export function providerSourceTagKey(source?: ProviderSource): string {
   if (source === "env") return "settings.providers.tag.environment"
   if (source === "api") return "settings.providers.tag.apiKey"

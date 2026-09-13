@@ -10,9 +10,6 @@ export const dict = {
   "settings.models.showMore": "Показать больше",
   "settings.providers.search.label": "Поиск провайдеров",
   "settings.providers.search.placeholder": "Поиск провайдеров…",
-  "settings.providers.status.broken": "Требует внимания",
-  "settings.providers.status.connected": "Подключено",
-  "settings.providers.status.detected": "Обнаружено",
   "settings.providers.status.notConnected": "Не подключено",
   "settings.providers.tag.apiKey": "Ключ API",
 }

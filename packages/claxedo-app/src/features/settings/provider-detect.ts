@@ -4,10 +4,8 @@ import {
   groupDiscoveryItems,
   localHarnessStatuses,
   type AIDiscoveryRow,
-  type LocalHarnessCheck,
   type LocalHarnessStatus,
 } from "@/features/settings/app-ports"
-import type { ProviderSetupStatus } from "@/features/settings/provider-settings-logic"
 import { readArray, readBoolean, readFiniteNumber, readString } from "@/lib/record"
 
 /** What the server would hand a harness for a provider: the row, without its secret. */
@@ -100,10 +98,6 @@ export async function listStoredCredentials(): Promise<StoredCredential[]> {
   })
 }
 
-export function storedCredentialProviders(rows: readonly StoredCredential[]) {
-  return new Set(rows.map((row) => row.providerId))
-}
-
 /**
  * How an account names itself under a harness row: the identity its provider
  * gave it, or — for a pasted key the provider never named — the last characters
@@ -191,27 +185,6 @@ export async function removeCredential(credentialIds: readonly string[]) {
   }
 }
 
-/**
- * What one harness row says, from the two things that can be known about it: a
- * credential Claxedo already holds, and what the last scan of this machine found.
- *
- * A stored credential outranks a scan because it is the thing a session will
- * actually run with. `unverifiable` reports as `detected` rather than
- * `connected`: the server has no verifier for it, so a tick would claim a proof
- * nothing performed.
- */
-export function agentSetupStatus(
-  check: { id: LocalHarnessCheck["id"]; providerIds: readonly string[] },
-  stored: ReadonlySet<string>,
-  discovered: readonly LocalHarnessStatus[],
-): { status: ProviderSetupStatus; detail?: string } {
-  if (check.providerIds.some((id) => stored.has(id))) return { status: "connected" }
-  const row = discovered.find((item) => item.id === check.id)
-  if (!row || row.state === "missing") return { status: "missing" }
-  if (row.state === "broken") return { status: "broken", detail: row.detail }
-  return { status: "detected", detail: row.detail }
-}
-
 export type ProviderDetectResult = {
   stored: StoredCredential[]
   effective: ReadonlyMap<string, EffectiveCredential> | undefined
@@ -221,7 +194,7 @@ export type ProviderDetectResult = {
   rows: AIDiscoveryRow[]
 }
 
-/** One scan of this machine: the status inputs `agentSetupStatus` reads, plus the scan itself. */
+/** One scan of this machine, with the store read alongside it. */
 export async function runProviderDetect(): Promise<ProviderDetectResult> {
   const [discovery, stored, effective] = await Promise.all([
     discoverAIConnections({}),

@@ -9,9 +9,6 @@ export const dict = {
   "settings.models.showMore": "إظهار المزيد",
   "settings.providers.search.label": "البحث عن المزوّدين",
   "settings.providers.search.placeholder": "ابحث عن المزودين…",
-  "settings.providers.status.broken": "يتطلب الانتباه",
-  "settings.providers.status.connected": "متصل",
-  "settings.providers.status.detected": "تم الاكتشاف",
   "settings.providers.status.notConnected": "غير متصل",
   "settings.providers.tag.apiKey": "مفتاح API",
 }

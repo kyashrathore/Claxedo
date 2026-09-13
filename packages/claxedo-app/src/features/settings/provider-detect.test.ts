@@ -3,16 +3,14 @@ import {
   accountIdentity,
   activateCredential,
   agentInUse,
-  agentSetupStatus,
   harnessAccounts,
   listEffectiveCredentials,
   listStoredCredentials,
   removeCredential,
   runProviderDetect,
-  storedCredentialProviders,
   type StoredCredential,
 } from "./provider-detect"
-import { localHarnessChecks, type LocalHarnessStatus } from "@/features/settings/app-ports"
+import { localHarnessChecks } from "@/features/settings/app-ports"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 
 beforeAll(() => configureAppPortsForTest())
@@ -20,42 +18,6 @@ beforeAll(() => configureAppPortsForTest())
 const check = (id: string) => localHarnessChecks().find((row) => row.id === id)!
 const claude = () => check("claude")
 const codex = () => check("codex")
-const cursor = () => check("cursor")
-
-function status(id: string, state: LocalHarnessStatus["state"], detail?: string): LocalHarnessStatus {
-  return { id, label: id, state, signIn: id, ...(detail ? { detail } : {}) }
-}
-
-describe("agentSetupStatus", () => {
-  test("a stored credential under any of the harness's bindings reads connected", () => {
-    expect(agentSetupStatus(claude(), new Set(["claude-sdk"]), [])).toEqual({ status: "connected" })
-    expect(agentSetupStatus(claude(), new Set(["claude-acp"]), [status("claude", "missing")]))
-      .toEqual({ status: "connected" })
-  })
-
-  test("a verified scan with nothing stored reads detected, not connected", () => {
-    expect(agentSetupStatus(codex(), new Set(), [status("codex", "working")])).toEqual({ status: "detected" })
-  })
-
-  test("an unverifiable scan reads detected and carries its reason", () => {
-    expect(agentSetupStatus(cursor(), new Set(), [status("cursor", "unverifiable", "no verifier")]))
-      .toEqual({ status: "detected", detail: "no verifier" })
-  })
-
-  test("a rejected credential reads broken with the provider's reason", () => {
-    expect(agentSetupStatus(claude(), new Set(), [status("claude", "broken", "401")]))
-      .toEqual({ status: "broken", detail: "401" })
-  })
-
-  test("no scan row and no stored credential both read missing", () => {
-    expect(agentSetupStatus(codex(), new Set(), [])).toEqual({ status: "missing" })
-    expect(agentSetupStatus(codex(), new Set(), [status("codex", "missing")])).toEqual({ status: "missing" })
-  })
-
-  test("a stored credential for another harness does not spill onto this row", () => {
-    expect(agentSetupStatus(codex(), new Set(["claude-sdk"]), [])).toEqual({ status: "missing" })
-  })
-})
 
 const realFetch = globalThis.fetch
 
@@ -101,7 +63,6 @@ describe("listStoredCredentials", () => {
       { id: "cred_1", providerId: "claude-sdk", label: "Subscription", accountId: "fp_0123abcd…wxyz", isActive: true, health: "ok", lastValidatedAt: 7, expiresAt: 99 },
       { id: "cred_2", providerId: "openai", isActive: false },
     ])
-    expect([...storedCredentialProviders(rows)].sort((left, right) => left.localeCompare(right))).toEqual(["claude-sdk", "openai"])
   })
 
   test("a response with no credentials array names no account", async () => {
@@ -253,10 +214,9 @@ describe("runProviderDetect", () => {
       { id: "codex", state: "missing" },
       { id: "cursor", state: "unverifiable" },
     ])
-    const stored = storedCredentialProviders(result.stored)
-    expect(agentSetupStatus(claude(), stored, result.agents)).toEqual({ status: "connected" })
-    expect(agentSetupStatus(cursor(), stored, result.agents)).toEqual({ status: "detected" })
-    expect(agentSetupStatus(codex(), stored, result.agents)).toEqual({ status: "missing" })
+    // The scan's rows are kept whole so a row can save the login it found
+    // without asking the machine a second time.
+    expect(result.rows.map((row) => row.providerIds.join("+"))).toEqual(["claude-acp+claude-sdk", "cursor-acp"])
   })
 })
 

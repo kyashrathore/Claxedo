@@ -10,9 +10,6 @@ export const dict = {
   "settings.models.showMore": "Mostrar mais",
   "settings.providers.search.label": "Pesquisar provedores",
   "settings.providers.search.placeholder": "Buscar provedores…",
-  "settings.providers.status.broken": "Requer atenção",
-  "settings.providers.status.connected": "Conectado",
-  "settings.providers.status.detected": "Detectado",
   "settings.providers.status.notConnected": "Não conectado",
   "settings.providers.tag.apiKey": "Chave de API",
 }

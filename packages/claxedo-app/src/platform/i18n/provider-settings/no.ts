@@ -9,9 +9,6 @@ export const dict = {
   "settings.models.showMore": "Vis mer",
   "settings.providers.search.label": "Søk etter tilbydere",
   "settings.providers.search.placeholder": "Søk etter leverandører…",
-  "settings.providers.status.broken": "Krever oppmerksomhet",
-  "settings.providers.status.connected": "Tilkoblet",
-  "settings.providers.status.detected": "Oppdaget",
   "settings.providers.status.notConnected": "Ikke tilkoblet",
   "settings.providers.tag.apiKey": "API-nøkkel",
 }

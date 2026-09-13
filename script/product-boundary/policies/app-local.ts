@@ -340,7 +340,13 @@ export const appLocal: Policy = {
   // under the reader. It reaches the prefetched page and the view key through
   // owners the rail and the session controller already put in this closure.
   // No new package edge. Measured 1013 / 38.
-  ceilings: { modules: 1013, packages: 38 },
+  // +2 modules (2026-09-13): features/settings/ui/agent-harness-row.tsx and
+  // features/settings/ui/provider-connect-card.tsx, the Agents-on-this-machine
+  // row and the inline connect card lifted out of provider-setup-row.tsx so the
+  // catalog row and the agent row stop sharing one component with two jobs. Both
+  // are reached only from the settings feature already in this closure.
+  // No new package edge. Measured 1015 / 38.
+  ceilings: { modules: 1015, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

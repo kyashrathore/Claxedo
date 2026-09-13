@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 
 const state = vi.hoisted(() => ({
   methods: [] as Array<{ type: "oauth" | "api" | "token"; label: string; command?: string }>,
-  puts: [] as Array<Record<string, unknown>>,
+  puts: [] as Array<{ input: unknown; body: Record<string, unknown> }>,
 }))
 
 vi.mock("@/app/providers/global-sdk/provider", () => ({
@@ -18,8 +18,8 @@ vi.mock("@/app/providers/use-providers", () => ({
   useProviderAuth: () => ({ get data() { return { "claude-sdk": state.methods } } }),
 }))
 vi.mock("@/platform/api/credential-request", () => ({
-  claxedoCredentialRequest: async (_input: unknown, init?: RequestInit) => {
-    state.puts.push(JSON.parse(typeof init?.body === "string" ? init.body : "{}"))
+  claxedoCredentialRequest: async (input: unknown, init?: RequestInit) => {
+    state.puts.push({ input, body: JSON.parse(typeof init?.body === "string" ? init.body : "{}") })
     return new Response(JSON.stringify({ credential: { id: "cred_1", provider_id: "claude-sdk" } }), { headers: { "Content-Type": "application/json" } })
   },
 }))
@@ -57,9 +57,39 @@ describe("ProviderConnectForm", () => {
 
     const input = document.querySelector<HTMLInputElement>('input[name="apiKey"]')!
     fireEvent.input(input, { target: { value: "sk-ant-oat01-example" } })
+    fireEvent.input(document.querySelector<HTMLInputElement>('input[name="accountLabel"]')!, { target: { value: "work@acme.com" } })
     fireEvent.submit(input.closest("form")!)
     await waitFor(() => expect(state.puts).toHaveLength(1))
-    expect(state.puts[0]).toMatchObject({ provider_id: "claude-sdk", kind: "api_key", secret: "sk-ant-oat01-example" })
+    expect(state.puts[0].body).toMatchObject({ provider_id: "claude-sdk", kind: "api_key", secret: "sk-ant-oat01-example", label: "work@acme.com" })
+  })
+
+  test("a pasted credential will not be stored under a name that does not identify the account", async () => {
+    state.methods = [{ type: "api", label: "API Key" }]
+    render(() => <ProviderConnectForm provider="claude-sdk" harness="claude" hideHeading />)
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+
+    const input = document.querySelector<HTMLInputElement>('input[name="apiKey"]')!
+    fireEvent.input(input, { target: { value: "sk-ant-example" } })
+    fireEvent.submit(input.closest("form")!)
+
+    await waitFor(() => expect(screen.getByText("provider.connect.label.required")).toBeInTheDocument())
+    expect(state.puts).toEqual([])
+  })
+
+  test("reconnecting replaces the token on the named row and asks for no new name", async () => {
+    state.methods = [{ type: "api", label: "API Key" }]
+    render(() => <ProviderConnectForm provider="claude-sdk" harness="claude" credentialId="cred_bad" hideHeading />)
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+    // The row keeps the name it already has, so there is nothing to ask for.
+    expect(document.querySelector('input[name="accountLabel"]')).toBeNull()
+
+    const input = document.querySelector<HTMLInputElement>('input[name="apiKey"]')!
+    fireEvent.input(input, { target: { value: "sk-ant-fresh" } })
+    fireEvent.submit(input.closest("form")!)
+
+    await waitFor(() => expect(state.puts).toHaveLength(1))
+    expect(state.puts[0].input).toEqual({ credentialId: "cred_bad", action: "reconnect" })
+    expect(state.puts[0].body).toEqual({ secret: "sk-ant-fresh" })
   })
 
   test("a harness with several methods lists them all instead of assuming a key", async () => {

@@ -35,6 +35,12 @@ export type ProviderConnectFormProps = {
   workspaceScope?: string
   /** Written with the credential so onboarding's scope choice is honoured. */
   scope?: "local" | "shared"
+  /**
+   * Replaces the token on this stored row instead of storing another account.
+   * The row keeps its id, its name and its place in the accounts list, so the
+   * harness is not silently moved onto a row the user did not choose.
+   */
+  credentialId?: string
   /** Runs after the credential is stored and the provider list is refreshed. */
   onConnected?: () => void | Promise<void>
   /** The surface's own teardown — dialog close, or step advance. */
@@ -79,6 +85,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     authorization: undefined as ProviderAuthAuthorization | undefined,
     state: undefined as "pending" | "auto" | "code" | "error" | undefined,
     value: "",
+    label: "",
     code: "",
     error: undefined as string | undefined,
     saving: false,
@@ -176,23 +183,38 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
       setStore("error", language.t("provider.connect.apiKey.required"))
       return
     }
+    const label = store.label.trim()
+    // Without a name of the user's own the row would be listed under the
+    // provider id it is stored against, which names the binding rather than
+    // the account and reads identically for every key they paste.
+    if (!props.credentialId && !label) {
+      setStore("error", language.t("provider.connect.label.required"))
+      return
+    }
 
     setStore("saving", true)
     setStore("error", undefined)
     try {
-      await claxedoCredentialRequest(undefined, {
-        method: "PUT",
-        body: JSON.stringify({
-          provider_id: props.provider,
-          kind: "api_key",
-          // An unscoped save defaults to `managed`; onboarding passes a scope so
-          // "this machine only" is stored as the user asked.
-          source: props.scope === "local" ? "local_only" : "managed",
-          ...(props.scope ? { scope: props.scope } : {}),
-          label: provider().name,
-          secret: apiKey,
-        }),
-      })
+      if (props.credentialId) {
+        await claxedoCredentialRequest({ credentialId: props.credentialId, action: "reconnect" }, {
+          method: "POST",
+          body: JSON.stringify({ secret: apiKey }),
+        })
+      } else {
+        await claxedoCredentialRequest(undefined, {
+          method: "PUT",
+          body: JSON.stringify({
+            provider_id: props.provider,
+            kind: "api_key",
+            // An unscoped save defaults to `managed`; onboarding passes a scope so
+            // "this machine only" is stored as the user asked.
+            source: props.scope === "local" ? "local_only" : "managed",
+            ...(props.scope ? { scope: props.scope } : {}),
+            label,
+            secret: apiKey,
+          }),
+        })
+      }
       await complete()
     } catch (err) {
       setStore("error", errorMessage(err))
@@ -280,6 +302,16 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
               validationState={store.error ? "invalid" : undefined}
               error={store.error}
             />
+            <Show when={!props.credentialId}>
+              <TextField
+                type="text"
+                label={language.t("provider.connect.label.label")}
+                placeholder={language.t("provider.connect.label.placeholder")}
+                name="accountLabel"
+                value={store.label}
+                onChange={(value) => setStore("label", value)}
+              />
+            </Show>
             <Button class="w-auto" type="submit" size="large" variant="primary" disabled={store.saving}>
               {language.t("common.continue")}
             </Button>

@@ -9,9 +9,6 @@ export const dict = {
   "settings.models.showMore": "Prikaži više",
   "settings.providers.search.label": "Pretraži pružaoce usluga",
   "settings.providers.search.placeholder": "Pretraži provajdere…",
-  "settings.providers.status.broken": "Zahtijeva pažnju",
-  "settings.providers.status.connected": "Povezano",
-  "settings.providers.status.detected": "Otkriveno",
   "settings.providers.status.notConnected": "Nije povezano",
   "settings.providers.tag.apiKey": "API ključ",
 }

@@ -211,7 +211,6 @@ export const HarnessProvidersSection: Component<{
                 <ProviderSetupRow
                   id={item.id}
                   name={item.name}
-                  status="missing"
                   providerId={item.id}
                   harness={props.harness}
                   scope={scope.scopeRef()}
