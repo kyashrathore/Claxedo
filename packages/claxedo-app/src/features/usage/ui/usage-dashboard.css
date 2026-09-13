@@ -527,7 +527,19 @@
   font-size: var(--font-size-micro);
   text-transform: uppercase;
 }
+/* Tooltip puts a div of its own around what it is triggered by, so that div is
+   the header's flex item; the baseline row has nothing to sit an icon on and
+   would hang it off the div's bottom edge. */
+.usage-quota-account header [data-component="tooltip-trigger"] {
+  display: flex;
+  align-items: center;
+  align-self: center;
+}
 .usage-quota-account header .usage-quota-reach {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--text-weak);
   cursor: help;
 }
 /* Last in the header and pushed off the rest, so every card's read time ends on

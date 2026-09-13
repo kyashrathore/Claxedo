@@ -4,7 +4,8 @@ import { For, Show, createMemo } from "solid-js"
 import type { QuotaAccount, QuotaSnapshot } from "@claxedo/usage-contract"
 import { accountReach, ACCOUNT_REACH_KEYS, harnessIcon, harnessLabel } from "@/platform/identity/harness-catalog"
 import { useLanguage } from "@/platform/i18n/provider"
-import { formatRelativeTime } from "@/lib/relative-time"
+import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
+import { formatCompactAge, formatRelativeTime } from "@/lib/relative-time"
 import { percentText, readPercent } from "@/lib/percent"
 
 /**
@@ -177,11 +178,24 @@ export function QuotaLimitsView(props: {
     return (
       <Tooltip value={language.t(ACCOUNT_REACH_KEYS[reach()].note)} placement="top">
         <span class="usage-quota-reach" data-component="usage-quota-reach" data-reach={reach()}>
-          {language.t(ACCOUNT_REACH_KEYS[reach()].label)}
+          <For each={ACCOUNT_REACH_KEYS[reach()].places}>
+            {(place) => (
+              <ClaxedoIcon
+                name={place.icon}
+                size="small"
+                role="img"
+                aria-hidden="false"
+                aria-label={language.t(place.label)}
+              />
+            )}
+          </For>
         </span>
       </Tooltip>
     )
   }
+  /** The whole sentence behind the age the card's header has room for. */
+  const lastChecked = (at: number) =>
+    language.t("common.lastChecked", { ago: formatRelativeTime(at, language.locale()) })
   const note = (entry: Card): Note | undefined => {
     if (entry.refusedKey !== undefined) {
       return { text: `${language.t(entry.refusedKey)} · ${language.t("usage.quota.reconnect")}` }
@@ -231,9 +245,11 @@ export function QuotaLimitsView(props: {
                     </Show>
                     <Show when={entry.usageAt}>
                       {(at) => (
-                        <span class="usage-quota-as-of" data-component="usage-quota-as-of">
-                          as of {formatRelativeTime(at())}
-                        </span>
+                        <Tooltip value={lastChecked(at())} placement="top" class="usage-quota-as-of">
+                          <span data-component="usage-quota-as-of" aria-label={lastChecked(at())}>
+                            {formatCompactAge(at()) ?? language.t("common.justNow")}
+                          </span>
+                        </Tooltip>
                       )}
                     </Show>
                   </header>

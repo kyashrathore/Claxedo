@@ -14,6 +14,7 @@ vi.mock("@/features/settings/app-ports", () => ({
 vi.mock("@/platform/i18n/provider", () => ({
   useLanguage: () => ({
     t: (key: string, vars?: Record<string, string>) => (vars ? `${key}:${Object.values(vars).join("|")}` : key),
+    locale: () => "en",
   }),
 }))
 
@@ -157,17 +158,41 @@ describe("AgentHarnessRow accounts", () => {
   })
 
   test("when the row was read sits in its own right-hand column, outside the sentence", () => {
-    row({ accounts: [account({ detail: "Weekly 64% used", checked: "Checked 5 minutes ago" })] })
+    row({ accounts: [account({ detail: "Weekly 64% used", checkedAt: Date.now() - 5 * 60_000 })] })
 
     expect(entry("cred_1").querySelector('[data-slot="radio-list-item-description"]')?.textContent)
       .toBe("Weekly 64% used")
     const checked = entry("cred_1").querySelector('[data-component="agent-account-checked"]')!
-    expect(checked.textContent).toBe("Checked 5 minutes ago")
-    // The actions hold their width at rest, so the time beside them is in the
-    // same column on every row and neither moves when the pointer arrives.
+    expect(checked.textContent).toBe("5m")
+    // The time is pinned to the column's right edge and the actions hold their
+    // width under it, so the cluster arrives over the time rather than beside
+    // it and no row moves when the pointer does.
+    expect(checked.className).toContain("absolute right-0")
+    expect(checked.className).toContain("group-hover:opacity-0")
     expect(checked.nextElementSibling?.getAttribute("data-component")).toBe("agent-account-actions")
     expect(entry("cred_1").querySelector('[data-component="agent-account-actions"]')!.className)
       .toContain("min-w-11")
+  })
+
+  test("the read time is an age in one unit, and the whole sentence is its accessible name", () => {
+    const at = (ms: number) => [account({ checkedAt: Date.now() - ms })]
+    const shown = () => entry("cred_1").querySelector('[data-component="agent-account-checked"]')!
+
+    row({ accounts: at(30_000) })
+    expect(shown().textContent).toBe("common.justNow")
+    cleanup()
+
+    row({ accounts: at(5 * 60_000) })
+    expect(shown().textContent).toBe("5m")
+    cleanup()
+
+    row({ accounts: at(5 * 3_600_000) })
+    expect(shown().textContent).toBe("5h")
+    expect(shown().getAttribute("aria-label")).toBe("common.lastChecked:5 hours ago")
+    cleanup()
+
+    row({ accounts: at(3 * 86_400_000) })
+    expect(shown().textContent).toBe("3d")
   })
 
   test("a row nothing has read carries no time at all", () => {
@@ -199,10 +224,19 @@ describe("AgentHarnessRow accounts", () => {
 
     const reach = (key: string) =>
       entry(key).querySelector('[data-component="agent-account-reach"] [data-reach]')
+    const places = (key: string) => [...reach(key)?.querySelectorAll("[data-icon]") ?? []]
+      .map((icon) => [icon.getAttribute("data-icon"), icon.getAttribute("aria-label")])
+
     expect(reach("cred_1")?.getAttribute("data-reach")).toBe("local-and-cloud")
-    expect(reach("cred_1")?.textContent).toBe("settings.providers.agents.reachLocalCloud")
+    // No words: the two places are two marks, and the second one is what a
+    // stored account has that this computer's login does not.
+    expect(reach("cred_1")?.textContent).toBe("")
+    expect(places("cred_1")).toEqual([
+      ["monitor", "settings.providers.agents.reachLocal"],
+      ["cloud", "settings.providers.agents.reachCloud"],
+    ])
     expect(reach("machine")?.getAttribute("data-reach")).toBe("local-only")
-    expect(reach("machine")?.textContent).toBe("settings.providers.agents.reachLocalOnly")
+    expect(places("machine")).toEqual([["monitor", "settings.providers.agents.reachLocal"]])
   })
 
   test("an id the reader cannot match to an account is a tooltip, never a line", () => {
@@ -217,7 +251,8 @@ describe("AgentHarnessRow accounts", () => {
 
     expect([...document.querySelectorAll<HTMLElement>('[data-component="provider-actions"] button')]
       .map((button) => button.dataset.action)).toEqual(["agent-add-account"])
-    const reconnect = entry("cred_1").querySelector<HTMLElement>('[data-action="agent-reconnect"]')!
+    const actions = entry("cred_1").querySelector('[data-component="agent-account-actions"]')!
+    const reconnect = actions.querySelector<HTMLElement>('[data-action="agent-reconnect"]')!
     expect(reconnect.textContent).toBe("settings.providers.agents.reconnectAccount")
 
     fireEvent.click(reconnect)
@@ -236,11 +271,15 @@ describe("AgentHarnessRow accounts", () => {
     expect(entry("cred_1").getAttribute("title")).toBe("settings.providers.live.authFailed")
   })
 
-  test("a refused row keeps both hover actions as well as its Reconnect", () => {
+  test("a refused row rests as a ring alone: Reconnect waits with the other two for the pointer", () => {
     row({ accounts: [account({ refused: "settings.providers.live.expired", selected: true })] })
 
-    expect(entry("cred_1").querySelector('[data-action="agent-account-check"]')).not.toBeNull()
-    expect(entry("cred_1").querySelector('[data-action="agent-account-remove"]')).not.toBeNull()
+    const actions = entry("cred_1").querySelector('[data-component="agent-account-actions"]')!
+    expect([...actions.querySelectorAll("button")].map((node) => node.dataset.action))
+      .toEqual(["agent-reconnect", "agent-account-check", "agent-account-remove"])
+    expect(actions.className).toContain("opacity-0")
+    expect(actions.className).toContain("group-hover:opacity-100")
+    expect(actions.className).toContain("group-focus-within:opacity-100")
   })
 
   test("the two actions are hidden at rest and arrive with the pointer or the keyboard", () => {

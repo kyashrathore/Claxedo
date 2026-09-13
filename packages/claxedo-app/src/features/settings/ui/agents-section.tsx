@@ -199,10 +199,6 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       })
     })
 
-  const checkedWords = (at: number) => Date.now() - at < 60_000
-    ? language.t("settings.providers.live.checkedNow")
-    : language.t("settings.providers.live.checkedAt", { when: formatRelativeTime(at, language.locale()) })
-
   /**
    * The second line of one entry, or nothing when the label already said it
    * all. An unchecked account says nothing here: "Not checked" is the absence
@@ -266,7 +262,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
         ids: row.ids,
         label,
         ...(detail === undefined ? {} : { detail }),
-        ...(live === undefined ? {} : { checked: checkedWords(live.at) }),
+        ...(live === undefined ? {} : { checkedAt: live.at }),
         ...(refused === undefined ? {} : { refused }),
         // An id the reader cannot match to an account is worth having and not
         // worth a line, so the row carries it where a full value belongs.
@@ -297,7 +293,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
         ? machine.email
         : language.t("settings.providers.agents.machineLogin"),
       ...(detail === undefined ? {} : { detail }),
-      ...(machine.usageAt === undefined ? {} : { checked: checkedWords(machine.usageAt) }),
+      ...(machine.usageAt === undefined ? {} : { checkedAt: machine.usageAt }),
       ...(note === "" ? {} : { note }),
       selected: selected === MACHINE,
       machine: true,

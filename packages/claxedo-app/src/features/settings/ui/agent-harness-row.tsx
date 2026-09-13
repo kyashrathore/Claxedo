@@ -8,8 +8,9 @@ import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton } from "@/ui/controls/claxedo-icon-button"
 import { accountReach, ACCOUNT_REACH_KEYS, harnessConnectContext } from "@/platform/identity/harness-catalog"
 import { useLanguage } from "@/platform/i18n/provider"
+import { formatCompactAge, formatRelativeTime } from "@/lib/relative-time"
 
-/** One entry of the harness's account list, already in words. */
+/** One entry of the harness's account list, resolved down to what a row draws. */
 export type AgentAccount = {
   /** The stored row this entry is keyed by, or `machine` for this computer's login. */
   key: string
@@ -24,8 +25,12 @@ export type AgentAccount = {
    * beside the label rather than lengthening the sentence under it.
    */
   note?: string
-  /** When the figures on this row were read, in words, for the far right. */
-  checked?: string
+  /**
+   * When the figures on this row were read. The far-right column has room for
+   * an age and not for a sentence, so the row spells it rather than being
+   * handed words it would have to shorten again.
+   */
+  checkedAt?: number
   /** The provider's refusal, in words. The row shows it as a ring, not as text. */
   refused?: string
   /** An identity worth having on the row but not worth reading. */
@@ -70,6 +75,15 @@ export const AgentHarnessRow: Component<{
   const group = () => `agent-account-${props.harness}`
   const selectedKey = () => props.accounts.find((account) => account.selected)?.key
 
+  /**
+   * The whole sentence behind the age. The column shows "5h"; a reader who
+   * cannot see the column — or who is asking what five hours ago refers to —
+   * gets the sentence from the accessible name rather than from a tooltip the
+   * hover cannot reach, because that same hover swaps the age for the actions.
+   */
+  const lastChecked = (at: number) =>
+    language.t("common.lastChecked", { ago: formatRelativeTime(at, language.locale()) })
+
   const remove = async (account: AgentAccount) => {
     try {
       await props.onRemove(account.ids)
@@ -100,21 +114,32 @@ export const AgentHarnessRow: Component<{
     const reach = () => accountReach(self.account.machine === true)
     return (
       <LabelHint value={language.t(ACCOUNT_REACH_KEYS[reach()].note)} component="agent-account-reach">
-        <span class="text-13-regular text-text-weak" data-reach={reach()}>
-          {language.t(ACCOUNT_REACH_KEYS[reach()].label)}
+        <span class="flex items-center gap-1" data-reach={reach()}>
+          <For each={ACCOUNT_REACH_KEYS[reach()].places}>
+            {(place) => (
+              <ClaxedoIcon
+                name={place.icon}
+                size="small"
+                class="icon-weak-base"
+                role="img"
+                aria-hidden="false"
+                aria-label={language.t(place.label)}
+              />
+            )}
+          </For>
         </span>
       </LabelHint>
     )
   }
 
   /**
-   * At rest a row is its label alone. The actions arrive on hover or with
-   * keyboard focus, and a confirming row holds them on screen so the question
-   * it just asked cannot vanish under the pointer.
+   * At rest a row is its label alone. Every action arrives on hover or with
+   * keyboard focus — Reconnect included, so a refused row rests as a ring on
+   * its radio and nothing else — and a confirming row holds them on screen so
+   * the question it just asked cannot vanish under the pointer.
    *
-   * The cluster holds its width at rest — the widest row carries two buttons —
-   * so the read time to its left lands in the same column on every row and
-   * neither moves when the pointer arrives.
+   * The cluster holds its width at rest, so the read time it covers on hover
+   * sits where the cluster will be and neither moves when the pointer arrives.
    */
   const AccountActions: Component<{ account: AgentAccount }> = (self) => (
     <Show when={self.account.ids.length > 0 || self.account.machine}>
@@ -127,6 +152,16 @@ export const AgentHarnessRow: Component<{
           when={confirmingRemove() === self.account.key}
           fallback={(
             <>
+              <Show when={self.account.refused !== undefined && self.account.ids.length > 0}>
+                <Button
+                  size="small"
+                  variant="secondary"
+                  data-action="agent-reconnect"
+                  onClick={() => setConnecting({ credentialId: self.account.ids[0] })}
+                >
+                  {language.t("settings.providers.agents.reconnectAccount")}
+                </Button>
+              </Show>
               <ClaxedoIconButton
                 icon="reload"
                 size="small"
@@ -256,21 +291,15 @@ export const AgentHarnessRow: Component<{
                     )
                     : undefined}
                 >
-                  <span class="flex shrink-0 items-center gap-2">
-                    <Show when={account.refused !== undefined && account.ids.length > 0}>
-                      <Button
-                        size="small"
-                        variant="secondary"
-                        data-action="agent-reconnect"
-                        onClick={() => setConnecting({ credentialId: account.ids[0] })}
-                      >
-                        {language.t("settings.providers.agents.reconnectAccount")}
-                      </Button>
-                    </Show>
-                    <Show when={account.checked}>
-                      {(checked) => (
-                        <span class="text-13-regular text-text-weak" data-component="agent-account-checked">
-                          {checked()}
+                  <span class="relative flex shrink-0 items-center justify-end">
+                    <Show when={account.checkedAt}>
+                      {(at) => (
+                        <span
+                          class="pointer-events-none absolute right-0 whitespace-nowrap text-13-regular text-text-weak transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
+                          data-component="agent-account-checked"
+                          aria-label={lastChecked(at())}
+                        >
+                          {formatCompactAge(at()) ?? language.t("common.justNow")}
                         </span>
                       )}
                     </Show>

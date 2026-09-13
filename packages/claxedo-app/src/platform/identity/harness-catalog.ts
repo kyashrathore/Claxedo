@@ -39,17 +39,30 @@ export function accountReach(machineLogin: boolean): AccountReach {
   return machineLogin ? "local-only" : "local-and-cloud"
 }
 
-/** What each reach is called, and what it means, as dictionary keys. */
-export const ACCOUNT_REACH_KEYS: Record<AccountReach, { label: string; note: string }> = {
+/**
+ * Which places a reach draws, and what the pair of them means, as dictionary
+ * keys. A reach is two facts about one account and the icons say them one each,
+ * so `local-and-cloud` is `local-only` plus the cloud rather than a third mark
+ * a reader has to learn. The names are catalog entries; `as const` keeps them
+ * narrow enough for `ClaxedoIcon` to reject a typo without this module
+ * depending on the icon layer.
+ */
+export const ACCOUNT_REACH_KEYS = {
   "local-and-cloud": {
-    label: "settings.providers.agents.reachLocalCloud",
+    places: [
+      { icon: "monitor", label: "settings.providers.agents.reachLocal" },
+      { icon: "cloud", label: "settings.providers.agents.reachCloud" },
+    ],
     note: "settings.providers.agents.reachLocalCloudNote",
   },
   "local-only": {
-    label: "settings.providers.agents.reachLocalOnly",
+    places: [{ icon: "monitor", label: "settings.providers.agents.reachLocal" }],
     note: "settings.providers.agents.reachLocalOnlyNote",
   },
-}
+} as const satisfies Record<AccountReach, {
+  places: ReadonlyArray<{ icon: string; label: string }>
+  note: string
+}>
 
 /**
  * What the connect card is setting up, in the words it will use.

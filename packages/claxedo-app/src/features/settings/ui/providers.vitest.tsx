@@ -341,9 +341,10 @@ function accountNote(id: string, key: string) {
     ?.getAttribute("aria-label") ?? ""
 }
 
-/** Where the entry says a turn on it can run. */
-function accountReachTag(id: string, key: string) {
-  return accountRow(id, key).querySelector('[data-component="agent-account-reach"] [data-reach]')?.textContent ?? ""
+/** The places the entry marks a turn on it can run in. */
+function accountReachIcons(id: string, key: string) {
+  const group = accountRow(id, key).querySelector('[data-component="agent-account-reach"] [data-reach]')
+  return [...group?.querySelectorAll("[data-icon]") ?? []].map((icon) => icon.getAttribute("data-icon"))
 }
 
 /** Whether the entry's radio is ringed for a provider refusal. */
@@ -608,7 +609,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
     expect(agentAction("anthropic")).toBe("agent-add-account")
     expect(accountRefused("anthropic", "sdk_work")).toBe(false)
-    expect(accountChecked("anthropic", "sdk_work")).toBe("settings.providers.live.checkedNow")
+    expect(accountChecked("anthropic", "sdk_work")).toBe("common.justNow")
     expect(accountRow("anthropic", "sdk_work").textContent).toContain("work@acme.com")
   })
 
@@ -634,7 +635,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       "settings.providers.live.window:settings.providers.window.weekly|67",
     ].join(" · "))
     // The read's age leaves the sentence for the column every row lines up in.
-    expect(accountChecked("anthropic", "sdk_work")).toBe("settings.providers.live.checkedAt:5 minutes ago")
+    expect(accountChecked("anthropic", "sdk_work")).toBe("5m")
     expect(state.credentialCalls).not.toContain("POST /api/claxedo/credentials/sdk_work/verify")
   })
 
@@ -655,7 +656,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       "settings.providers.live.window:settings.providers.window.session|12",
       "settings.providers.live.window:settings.providers.window.weekly|40",
     ].join(" · ")))
-    expect(accountChecked("anthropic", "sdk_work")).toBe("settings.providers.live.checkedNow")
+    expect(accountChecked("anthropic", "sdk_work")).toBe("common.justNow")
   })
 
   test("a rejected account rings its own radio and moves the action to Reconnect", async () => {
@@ -707,7 +708,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
     expect(accountDetail("openai", "machine"))
       .toBe("settings.providers.live.window:settings.providers.window.weekly|64")
-    expect(accountChecked("openai", "machine")).toBe("settings.providers.live.checkedAt:5 minutes ago")
+    expect(accountChecked("openai", "machine")).toBe("5m")
   })
 
   test("a machine login carrying no windows says the plan and the organization instead", async () => {
@@ -807,8 +808,8 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     ]
     mount()
     await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine"]))
-    expect(accountReachTag("openai", "cred_codex")).toBe("settings.providers.agents.reachLocalCloud")
-    expect(accountReachTag("openai", "machine")).toBe("settings.providers.agents.reachLocalOnly")
+    expect(accountReachIcons("openai", "cred_codex")).toEqual(["monitor", "cloud"])
+    expect(accountReachIcons("openai", "machine")).toEqual(["monitor"])
   })
 
   test("this computer's login is not a choice while the harness runs on a binding it cannot drive", async () => {
@@ -972,7 +973,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
     rowAction("openai", "cred_codex", "check").click()
 
-    await waitFor(() => expect(accountChecked("openai", "cred_codex")).toBe("settings.providers.live.checkedNow"))
+    await waitFor(() => expect(accountChecked("openai", "cred_codex")).toBe("common.justNow"))
     expect(accountRefused("openai", "cred_codex")).toBe(false)
     expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/cred_codex/verify")
   })

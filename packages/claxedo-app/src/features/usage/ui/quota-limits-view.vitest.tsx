@@ -97,8 +97,12 @@ describe("quota limits view", () => {
     // The two windows of one card were read together; the age belongs to the
     // card, so it is said once, in the header, not under every bar.
     const card = container.querySelector('[data-account="cred_work"]')!
-    expect(within(card as HTMLElement).getAllByText(/as of 1 minute ago/)).toHaveLength(1)
+    expect(within(card as HTMLElement).getAllByText("1m")).toHaveLength(1)
     expect(card.querySelector("header .usage-quota-as-of")).not.toBeNull()
+    // The column has room for the age; the sentence it stands for is the
+    // element's name, and the same words are the tooltip.
+    expect(card.querySelector('[data-component="usage-quota-as-of"]')?.getAttribute("aria-label"))
+      .toBe("Last checked 1 minute ago")
   })
 
   test("a vendor's fraction of a percent reads as whole percent everywhere the card spells one", async () => {
@@ -125,9 +129,11 @@ describe("quota limits view", () => {
     } })
     const reach = (key: string) =>
       container.querySelector(`[data-account="${key}"] [data-component="usage-quota-reach"]`)
-    expect(reach("cred_work")?.textContent).toBe("Local & cloud")
+    const places = (key: string) => [...reach(key)?.querySelectorAll("[data-icon]") ?? []]
+      .map((icon) => [icon.getAttribute("data-icon"), icon.getAttribute("aria-label")])
+    expect(places("cred_work")).toEqual([["monitor", "This computer"], ["cloud", "Cloud sandboxes"]])
     expect(reach("cred_work")?.getAttribute("data-reach")).toBe("local-and-cloud")
-    expect(reach("codex-2")?.textContent).toBe("Local only")
+    expect(places("codex-2")).toEqual([["monitor", "This computer"]])
     expect(container.querySelector('[data-account="gemini-3"] [data-component="usage-quota-reach"]')).toBeNull()
   })
 
