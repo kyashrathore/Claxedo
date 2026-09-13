@@ -23,8 +23,10 @@ export type AgentAccount = {
   selected: boolean
   /** This computer's own login for the harness, which is never a stored row. */
   machine?: boolean
-  /** Listed, and not a choice: the harness it belongs to is not installed. */
+  /** Listed, and not a choice. */
   disabled?: boolean
+  /** Why it is not a choice, where the label and the second line do not say. */
+  disabledReason?: string
 }
 
 /**
@@ -179,7 +181,7 @@ export const AgentHarnessRow: Component<{
                   data-component="agent-account"
                   data-account={account.key}
                   data-selected={account.selected ? "true" : "false"}
-                  title={[account.refused, account.identity].filter(Boolean).join(" · ") || undefined}
+                  title={[account.refused, account.disabledReason, account.identity].filter(Boolean).join(" · ") || undefined}
                   label={<span class="text-13-regular text-text-strong">{account.label}</span>}
                   description={account.detail ?? account.refused
                     ? (

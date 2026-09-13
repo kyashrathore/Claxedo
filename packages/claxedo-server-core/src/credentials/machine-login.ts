@@ -18,6 +18,8 @@ export type MachineLogin = {
   harness: MachineLoginHarness
   /** The registry provider ids this harness resolves its auth through. */
   providerIds: readonly string[]
+  /** Those of `providerIds` this login drives, where it does not drive them all. */
+  serves?: readonly string[]
   state: MachineLoginState
   /** The address the harness says it is signed in as. */
   email?: string
@@ -50,6 +52,19 @@ const PROVIDER_IDS: Record<MachineLoginHarness, readonly string[]> = {
   claude: ["claude-acp", "claude-sdk"],
   codex: ["codex-app-server", "openai"],
   cursor: ["cursor-acp", "cursor-sdk"],
+}
+
+/**
+ * The bindings a machine login actually drives, for the harnesses where that is
+ * narrower than the set they resolve auth through.
+ *
+ * `cursor-agent login` signs the CLI in, and Cursor ACP runs on it. The Cursor
+ * SDK takes its key as an `Agent.create` argument and reads nothing from that
+ * login, so it refuses a turn with `Cursor SDK requires an explicit cursor-sdk
+ * API key` however signed in the CLI is.
+ */
+const SERVED_PROVIDER_IDS: Partial<Record<MachineLoginHarness, readonly string[]>> = {
+  cursor: ["cursor-acp"],
 }
 
 /**
@@ -152,8 +167,12 @@ function askHarness(harness: MachineLoginHarness, probes: MachineLoginProbes): P
   return cursorMachineLogin(run)
 }
 
-function report(harness: MachineLoginHarness, rest: Omit<MachineLogin, "harness" | "providerIds">): MachineLogin {
-  return { harness, providerIds: PROVIDER_IDS[harness], ...rest }
+function report(
+  harness: MachineLoginHarness,
+  rest: Omit<MachineLogin, "harness" | "providerIds" | "serves">,
+): MachineLogin {
+  const serves = SERVED_PROVIDER_IDS[harness]
+  return { harness, providerIds: PROVIDER_IDS[harness], ...(serves ? { serves } : {}), ...rest }
 }
 
 /**

@@ -691,6 +691,53 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(accountDetail("cursor", "machine")).toBe("Cursor did not answer with a login status.")
   })
 
+  test("a login that drives part of its harness says which part, because one row covers both", async () => {
+    state.machineLogins = [{
+      harness: "cursor",
+      providerIds: ["cursor-acp", "cursor-sdk"],
+      serves: ["cursor-acp"],
+      state: "signed_in",
+    }]
+    mount()
+    await waitFor(() => expect(accountIds("cursor")).toEqual(["machine"]))
+    expect(accountDetail("cursor", "machine"))
+      .toBe("settings.providers.agents.machineCursorAcp · settings.providers.agents.machineCursorSdkKey")
+    expect(accountRow("cursor", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
+      .toBe(false)
+  })
+
+  test("this computer's login is not a choice while the harness runs on a binding it cannot drive", async () => {
+    state.storedCredentials = [
+      { id: "cred_cursor_key", provider_id: "cursor-sdk", kind: "api_key", label: "key@acme.com", account_id: "acc_c", is_active: true },
+    ]
+    state.machineLogins = [{
+      harness: "cursor",
+      providerIds: ["cursor-acp", "cursor-sdk"],
+      serves: ["cursor-acp"],
+      state: "signed_in",
+    }]
+    mount()
+    await waitFor(() => expect(accountIds("cursor")).toEqual(["cred_cursor_key", "machine"]))
+    const radio = accountRow("cursor", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!
+    expect(radio.disabled).toBe(true)
+    expect(accountRow("cursor", "machine").getAttribute("title"))
+      .toBe("settings.providers.agents.machineStrands:Cursor")
+  })
+
+  test("a login that drives every binding of its harness is a choice whatever is stored", async () => {
+    state.storedCredentials = [
+      { id: "cred_codex", provider_id: "codex-app-server", kind: "oauth_token", label: "work@acme.com", account_id: "acc_1", is_active: true },
+    ]
+    state.machineLogins = [
+      { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com" },
+    ]
+    mount()
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine"]))
+    expect(accountRow("openai", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
+      .toBe(false)
+    expect(accountRow("openai", "machine").getAttribute("title")).toBe(null)
+  })
+
   test("Check on this computer's login asks that harness again, and nothing else", async () => {
     state.machineLogins = [{
       harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com", plan: "pro",

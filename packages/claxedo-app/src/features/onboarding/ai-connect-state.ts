@@ -89,6 +89,8 @@ export type MachineLogin = {
   harness: string
   /** Every registry provider id this harness resolves its auth through. */
   providerIds: readonly string[]
+  /** Those of `providerIds` this login drives, where it does not drive them all. */
+  serves?: readonly string[]
   state: "signed_in" | "signed_out" | "absent" | "unknown"
   email?: string
   plan?: string

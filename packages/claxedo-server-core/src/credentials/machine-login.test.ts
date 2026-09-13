@@ -157,6 +157,23 @@ describe("readMachineLogins", () => {
     expect(signedOut.state).toBe("signed_out")
   })
 
+  test("the Cursor login reports serving ACP alone, because the SDK takes a key of its own", async () => {
+    const [cursor] = await readMachineLogins(["cursor"], {
+      run: runner({ "cursor-agent": { found: true, ok: true, stdout: JSON.stringify({ isAuthenticated: true }) } }),
+    })
+    const [claude, codex] = await readMachineLogins(["claude", "codex"], {
+      run: runner({
+        claude: { found: true, ok: true, stdout: JSON.stringify({ loggedIn: true }) },
+        codex: { found: true, ok: true, stdout: "Logged in" },
+      }),
+      codexAccount: () => Promise.reject(new Error("not asked")),
+    })
+
+    expect(cursor.serves).toEqual(["cursor-acp"])
+    expect(claude.serves).toBeUndefined()
+    expect(codex.serves).toBeUndefined()
+  })
+
   test("every harness is reported, in the order asked for", async () => {
     const logins = await readMachineLogins(undefined, { run: runner({}) })
 

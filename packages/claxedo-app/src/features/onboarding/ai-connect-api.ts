@@ -203,6 +203,7 @@ function redactedMachineLogin(value: unknown): MachineLogin[] {
   const providerIds = readArray(value, "providerIds")?.filter((id): id is string => typeof id === "string")
   if (harness === undefined || !providerIds) return []
   if (state !== "signed_in" && state !== "signed_out" && state !== "absent" && state !== "unknown") return []
+  const serves = readArray(value, "serves")?.filter((id): id is string => typeof id === "string")
   const email = readString(value, "email")
   const plan = readString(value, "plan")
   const org = readString(value, "org")
@@ -211,6 +212,7 @@ function redactedMachineLogin(value: unknown): MachineLogin[] {
   return [{
     harness,
     providerIds,
+    ...(serves ? { serves } : {}),
     state,
     ...(email === undefined ? {} : { email }),
     ...(plan === undefined ? {} : { plan }),

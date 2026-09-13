@@ -44,6 +44,20 @@ const AGENT_ICON: Record<string, string> = {
 const MACHINE = "machine"
 
 /**
+ * How far a machine login that drives only part of its harness reaches, for the
+ * harnesses where the difference is the user's to know. The server says which
+ * bindings the login serves; these are the words for it.
+ */
+const MACHINE_REACH: Record<string, readonly string[]> = {
+  cursor: ["settings.providers.agents.machineCursorAcp", "settings.providers.agents.machineCursorSdkKey"],
+}
+
+/** Whether the harness runs on bindings this login cannot drive. */
+function partialMachineLogin(login: MachineLogin) {
+  return login.serves !== undefined && login.serves.length < login.providerIds.length
+}
+
+/**
  * What the provider said about one stored account, and when. `unknown` carries
  * the failure's own sentence; the rest are the verifier's health values.
  */
@@ -196,9 +210,9 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   }
 
   /**
-   * The machine login's second line: what the harness itself reported. The
-   * windows where it has them, and otherwise who it is signed in as — Claude
-   * Code has no headless usage read, so its row never carries a window.
+   * The machine login's second line: how far the login reaches, then what the
+   * harness itself reported — its quota windows where it has them, and
+   * otherwise the plan and organization it named.
    */
   const machineWords = (login: MachineLogin, check: LocalHarnessCheck) => {
     if (login.state === "absent") return language.t("settings.providers.agents.machineNotInstalled")
@@ -213,12 +227,22 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
         used: String(window.usedPercent),
       })
     })
-    const words = windows.length > 0
+    const identity = windows.length > 0
       ? windows
       : [login.plan ? language.t("settings.providers.agents.machinePlan", { plan: login.plan }) : undefined, login.org]
         .filter((word): word is string => word !== undefined)
+    const words = [...reachWords(login), ...identity]
     return words.length > 0 ? words.join(" · ") : undefined
   }
+
+  /**
+   * What a login that drives only part of its harness reaches, and what the
+   * rest needs instead. One row covers every binding a harness resolves auth
+   * through, so without this the Cursor row reads as if signing the CLI in were
+   * enough for the native SDK too.
+   */
+  const reachWords = (login: MachineLogin) =>
+    partialMachineLogin(login) ? (MACHINE_REACH[login.harness] ?? []).map((key) => language.t(key)) : []
 
   /** The provider's refusal, which the row draws as a ring rather than as text. */
   const refusedWord = (live: LiveCheck | undefined) =>
@@ -248,6 +272,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     const machine = machineLogin(check)
     if (!machine) return entries
     const detail = machineWords(machine, check)
+    const stranded = machine.state === "absent" ? undefined : strandedBinding(machine, check)
     // Listed in every state, because choosing it is the withdrawal of a stored
     // account rather than a login: a user whose harness is signed out still
     // needs to be able to say "run on whatever that CLI holds" and then go and
@@ -265,8 +290,25 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       ...(detail === undefined ? {} : { detail }),
       selected: selected === MACHINE,
       machine: true,
-      ...(machine.state === "absent" ? { disabled: true } : {}),
+      ...(machine.state === "absent" || stranded ? { disabled: true } : {}),
+      ...(stranded ? { disabledReason: language.t("settings.providers.agents.machineStrands", { name: check.label }) } : {}),
     }]
+  }
+
+  /**
+   * Whether choosing this login would strand the binding the harness runs on.
+   *
+   * Choosing it withdraws the active mark from every one of the harness's
+   * bindings at once, and a binding the login cannot drive has nothing to fall
+   * back to: Cursor's SDK path would lose its stored key and refuse the next
+   * turn outright, which is not a trade the row can offer as a radio button.
+   */
+  const strandedBinding = (login: MachineLogin, check: LocalHarnessCheck) => {
+    const serves = login.serves
+    if (serves === undefined) return false
+    const known = effective()
+    const inUse = known ? agentInUse({ providerIds: providerIds(check) }, known) : undefined
+    return inUse !== undefined && !serves.includes(inUse.providerId)
   }
 
   /**
