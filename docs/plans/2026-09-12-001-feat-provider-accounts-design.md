@@ -193,7 +193,7 @@ Multiple rows, one winner, chosen by an invisible sort order.
    provider can still run on**, in the delete's own transaction; only an
    `available` row qualifies, the same test the save-time yield applies.
    With no such row the provider has no active account: the row in Settings
-   reads "In use: this computer's login", and a new sandbox falls to the team
+   reads "Using this computer's login", and a new sandbox falls to the team
    binding, else the implicit tier. Sandboxes already bound to the removed row
    lose it (broker doc, withdraw), and the session says so.
 6. **A saved row is active when it is the first for its provider.** A later
@@ -202,11 +202,24 @@ Multiple rows, one winner, chosen by an invisible sort order.
    corrected key after a rejected one leaves the broken row chosen, the
    fanout sends nothing, and the harness falls back to the machine login
    with no sign of why. One-account users see no new UI.
-7. **Identity per row**, so the list is legible: Codex rows carry the
-   ChatGPT account id and email from the token claims; a pasted Claude
-   token or API key carries a fingerprint (hash prefix plus the last four
-   characters) and the user's label; a second paste is a second row, never
-   an overwrite.
+7. **A row is named by the user's email wherever that can be known**, so the
+   list is legible. A ChatGPT token carries the address in its JWT claims
+   (`emailFromClaims`), and an Anthropic subscription is asked once at
+   `GET /api/oauth/profile` beside the usage read — a refusal there names no
+   account and is not a verdict on the token. A pasted key, whose provider
+   never names it, keeps the fingerprint the registry mints (hash prefix plus
+   the last four characters) and a label the connect card requires, because a
+   row stored under its provider id names the harness binding rather than the
+   account. The derived address is written only over a row that has no name of
+   the user's own. A second paste is a second row, never an overwrite.
+8. **Reconnecting replaces the token on the row it was clicked on.**
+   `POST /:id/reconnect` writes the new secret through `updateCredentialSecret`,
+   which bumps the revision and clears the verdict reached against the material
+   it replaced, then verifies and stores the new one. The row keeps its id, its
+   name and its position, so repairing a login is not the same act as adding an
+   account. The verifier judges the pasted material rather than the expiry the
+   replaced secret carried — left in place that reads a fresh API key as
+   expired. Rule 6's yield is untouched and still governs the Add path.
 
 ### Claude accounts
 
@@ -229,21 +242,51 @@ never holds the token for).
 
 ### Settings → Providers
 
-Each harness row keeps what it has: connect inline, "In use", Check. It
-gains:
+Rebuilt 2026-09-13 to the owner-approved shape. The governing rule is that each
+harness has **one status sentence and at most one button**, because the old row
+carried a Connected/Detected tag, an "In use" line, a machine-login verdict and
+a per-account verdict at once, and four answers to "which login runs next" can
+disagree.
 
-- an **accounts list** under the row: label, account id or email, last
-  check and usage windows, expiry, and the sandboxes the account is bound
-  into; the active one carries an **Active** tag, the others a **Make
-  active** button;
-- **Add account**, which opens the same inline card;
-- for admins, on a project's settings page, **Team account** per provider
-  and the one default-on switch "attach my AI provider accounts on every
-  sandbox creation".
+- **Header line** per harness: the brand mark, the name, and one sentence led by
+  a single coloured dot — success, danger, or neutral — derived from the account
+  in use: "Using <label> · Working" with the plan's usage windows appended when
+  the provider reported them; "<label> is rejected by <vendor>. Reconnect or pick
+  another account."; "Using this computer's login · Working"; or "Not set up".
+  The right side offers **Connect** when nothing is set up, **Reconnect** when
+  the account in use was refused, and nothing otherwise.
+- **Accounts as a radio list** indented under the name. The checked radio is the
+  account in use, read from the server's effective credentials — the row a
+  session will actually be handed — falling back to the stored mark where the
+  host cannot enumerate its store. Choosing a radio activates that account, for
+  every harness whose registry provider is fanout-eligible, which today is all
+  three. Each entry is one line: the label, the account's identity where it adds
+  something, then a dot and the verdict ("Working", "Rejected by the provider",
+  "Not checked") with the time of that verdict behind it in muted text.
+- **"This computer's login" is the last entry** whenever the scan found one,
+  with its origin in muted text ("from ~/.codex/auth.json"). It is last by
+  construction: every stored account is a choice the user made, and this login
+  is the standing fallback underneath all of them. Choosing it saves the scanned
+  login through `save-discovered` and then marks what was saved — saving alone
+  would leave the harness on the entry the user just clicked away from.
+- **Per-entry actions live in a "…" overflow menu**: Check now and Remove, with
+  Remove's confirm inline on the entry. Nothing competes with the radio at rest.
+- **"+ Add another account"** ("+ Add an account" when the list is empty) is the
+  last list entry, styled as a link, and opens the same inline connect card.
+  Reconnect opens that card in reconnect mode against one row (rule 8).
+- **The scan is automatic**: it runs when the section mounts and after every
+  write, so the list and the sentence are derived from one read. The section
+  header reads "Scanned just now · Rescan".
+- The only state colour is the dot. There are no status tags, no "Use this
+  login" button, no header-level Check, and no Make active button.
+- For admins, on a project's settings page: **Team account** per provider and
+  the one default-on switch "attach my AI provider accounts on every sandbox
+  creation". Not built.
 
-The "In use" line I landed on 2026-09-12 stays: on the laptop it names the
-account the next local turn runs on; for a cloud workspace it names the
-account each sandbox was created with.
+Known gap: a row imported before the fingerprint mint landed has neither a label
+of its own nor an `account_id`, so it lists by its kind ("api_key") until it is
+renamed. New rows cannot reach that state — the connect card requires a label
+and discovery carries the account id.
 
 ## Sequencing
 
