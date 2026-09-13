@@ -28,22 +28,14 @@ export function cursorAuthValue(auth: Record<string, ProviderProjection> | undef
 export function applyCursorBackendUrl(projection: ProviderProjection | undefined) {
   if (projection && !isProviderUnavailable(projection)) {
     process.env[CURSOR_BACKEND_URL_ENV] = projection.baseUrl
-    appliedBindingUrls.add(projection.baseUrl)
-  } else delete process.env[CURSOR_BACKEND_URL_ENV]
+    appliedBindingUrl = projection.baseUrl
+  } else {
+    delete process.env[CURSOR_BACKEND_URL_ENV]
+    appliedBindingUrl = undefined
+  }
 }
 
-/**
- * Whether a frozen backend URL is one this module wrote for a binding.
- *
- * An operator who exports `CURSOR_BACKEND_URL` for a proxy of their own has a
- * value here too, and refusing their unbound turns because of it would break a
- * setup the broker has nothing to do with.
- */
-export function isCursorBindingBackendUrl(value: string | undefined): boolean {
-  return value !== undefined && appliedBindingUrls.has(value)
-}
-
-const appliedBindingUrls = new Set<string>()
+let appliedBindingUrl: string | undefined
 
 /**
  * The backend URL the installed SDK froze.
@@ -56,21 +48,26 @@ const appliedBindingUrls = new Set<string>()
  * Cursor's own host — or the machine's key to the broker.
  */
 export function freezeCursorBackendUrl() {
-  loadedBackendUrl ??= { value: process.env[CURSOR_BACKEND_URL_ENV] }
+  const value = process.env[CURSOR_BACKEND_URL_ENV]
+  // `binding` is read here rather than from the value later, because an
+  // operator who exports `CURSOR_BACKEND_URL` for a proxy of their own has a
+  // value here too and refusing their unbound turns over it would break a setup
+  // the broker has nothing to do with.
+  loadedBackendUrl ??= { value, binding: value !== undefined && value === appliedBindingUrl }
 }
 
 /** What the SDK froze, or nothing when this process has never imported it. */
-export function frozenCursorBackendUrl(): { value: string | undefined } | undefined {
+export function frozenCursorBackendUrl(): { value: string | undefined; binding: boolean } | undefined {
   return loadedBackendUrl
 }
 
 /** Test seam: the freeze is process state, and a test needs to start over. */
 export function forgetCursorBackendUrl() {
   loadedBackendUrl = undefined
-  appliedBindingUrls.clear()
+  appliedBindingUrl = undefined
 }
 
-let loadedBackendUrl: { value: string | undefined } | undefined
+let loadedBackendUrl: { value: string | undefined; binding: boolean } | undefined
 
 export class CursorBackendUrlFrozenError extends Error {
   constructor(readonly frozen: string | undefined, readonly required: string | undefined) {
