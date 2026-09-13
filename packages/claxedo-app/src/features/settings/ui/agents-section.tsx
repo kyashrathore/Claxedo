@@ -308,7 +308,9 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
    * One round of asking every harness on this machine what it is signed in as,
    * plus a fresh read of the store. Everything that changes what is stored ends
    * here, so the machine-login entry appears and disappears from the same read
-   * the header is derived from. Local and cheap: no provider is called.
+   * the header is derived from. Asking a harness is not free — Codex answers
+   * through its app-server, which reads the plan windows from the vendor — so
+   * this runs on mount, on Rescan, and after a write, never on a render.
    */
   const scan = async () => {
     setScanning(true)
