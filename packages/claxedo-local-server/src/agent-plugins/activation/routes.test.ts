@@ -8,6 +8,7 @@ import { mountControlPlaneRouteContributions } from "@claxedo/server-core/platfo
 import type { CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import { fileSystemCollectionSource } from "@claxedo/server-core/agent-plugins/artifacts/node-tree"
 import { LocalAgentPluginArtifactStore } from "../artifacts/local-store"
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import { createLocalAgentPluginsModule } from "../module"
 import { SqliteUnsignedAgentPluginActivationStore } from "./sqlite-store"
 
@@ -40,7 +41,8 @@ async function fixture() {
   const activations = new SqliteUnsignedAgentPluginActivationStore(new Database(":memory:"))
   const artifacts = new LocalAgentPluginArtifactStore(path.join(root, "data"))
   const reconcile = { reconcile: vi.fn(async () => ({ state: "applied" as const })) }
-  const module = createLocalAgentPluginsModule({ sources, activations, artifacts, reconcile })
+  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { documentsInProcess: true } }
+  const module = createLocalAgentPluginsModule({ sources, activations, artifacts, reconcile, builtIn })
   const app = new Hono()
   mountControlPlaneRouteContributions({
     contributions: module.routeContributions,
@@ -97,7 +99,9 @@ describe("unsigned Agent Plugins public route contribution", () => {
 
     await fs.rm(subject.collection, { recursive: true })
     const sourceGone = await catalog(subject.app, "/refresh")
-    expect(sourceGone.candidates).toHaveLength(1)
+    // The retained plugin and the built-in, which no disappearing source can take.
+    expect(sourceGone.candidates).toHaveLength(2)
+    expect(sourceGone.candidates.at(-1)).toMatchObject({ pluginInstanceId: "claxedo", builtIn: true })
     expect(sourceGone.candidates[0]).toMatchObject({
       pluginInstanceId: candidate.pluginInstanceId,
       retainedDigest: candidate.candidateDigest,

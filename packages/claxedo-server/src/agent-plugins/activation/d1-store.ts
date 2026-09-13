@@ -1,3 +1,4 @@
+import { isBuiltinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import {
   AgentPluginActivationStoreError,
@@ -229,6 +230,15 @@ function conflict(expected: number, current: number) {
   )
 }
 
+/**
+ * The built-in comes from no source, so there is no tree to retain and no pin
+ * to point at. The rule the pin enforces — never enable bytes this deployment
+ * does not hold — is already true of it: the bytes are the product.
+ */
+function requiresRetainedArtifact(pluginInstanceId: string) {
+  return !isBuiltinPluginInstanceId(pluginInstanceId)
+}
+
 function artifactUnavailable() {
   return new AgentPluginActivationStoreError(
     "artifact-unavailable",
@@ -353,7 +363,10 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     const started = await this.begin(scope.orgId, input.expectedRevision, operation)
     if ("replay" in started) return started.replay
     const scopeKey = userScopeKey(scope.orgId, scope.userId)
-    if (input.choice === true && !input.artifact && !(await this.pinRow(scopeKey, input.pluginInstanceId))) {
+    if (input.choice === true
+      && requiresRetainedArtifact(input.pluginInstanceId)
+      && !input.artifact
+      && !(await this.pinRow(scopeKey, input.pluginInstanceId))) {
       throw artifactUnavailable()
     }
     const now = this.now()
@@ -402,7 +415,10 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     const started = await this.begin(scope.orgId, input.expectedRevision, operation)
     if ("replay" in started) return started.replay
     const scopeKey = organizationScopeKey(scope.orgId)
-    if (input.choice === true && !input.artifact && !(await this.pinRow(scopeKey, input.pluginInstanceId))) {
+    if (input.choice === true
+      && requiresRetainedArtifact(input.pluginInstanceId)
+      && !input.artifact
+      && !(await this.pinRow(scopeKey, input.pluginInstanceId))) {
       throw artifactUnavailable()
     }
     const now = this.now()

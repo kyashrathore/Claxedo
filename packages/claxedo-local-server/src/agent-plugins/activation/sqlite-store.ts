@@ -1,3 +1,4 @@
+import { isBuiltinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import {
   AgentPluginActivationStoreError,
   type MutateMachineActivation,
@@ -208,7 +209,10 @@ export class SqliteUnsignedAgentPluginActivationStore implements UnsignedAgentPl
         )
       }
 
-      if (input.choice === true) {
+      // The built-in comes from no source, so there is no tree to retain and
+      // no pin to point at. The rule the pin enforces — never enable bytes
+      // this machine does not hold — is already true of it.
+      if (input.choice === true && !isBuiltinPluginInstanceId(input.pluginInstanceId)) {
         const pin = this.db.prepare(`
           SELECT artifact_digest
           FROM agent_plugin_machine_pins

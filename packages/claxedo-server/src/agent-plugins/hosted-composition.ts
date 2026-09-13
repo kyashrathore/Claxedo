@@ -1,3 +1,4 @@
+import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
 import type { D1Database } from "@cloudflare/workers-types"
 import type { Hono } from "hono"
 import { sandboxDriverCatalog, sandboxDriverId } from "@claxedo/sandbox-manager/driver-catalog"
@@ -354,6 +355,10 @@ export function createHostedAgentPluginsComposition(input: {
     // revision at its next readiness boundary; no route claims a running VM
     // was updated without an apply receipt.
     reconcile: { reconcile: async () => ({ state: "scheduled" }) },
+    // Hosted, documents are an account service a session reaches across the
+    // network rather than a store in this process, so the group is a decision
+    // rather than an inheritance.
+    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { documentsInProcess: false } },
     mcpAuthentication: hostedMcpCatalogAuthentication(oauth),
     mcpClientMetadata: clientMetadata,
     mcpGatewayRoutes: gateway,

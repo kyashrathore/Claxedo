@@ -15,8 +15,18 @@ import { readPluginSkill } from "@claxedo/server-core/agent-plugins/catalog/read
 import type { AgentPluginCatalogCandidate } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import {
+  builtinCatalogEntry,
+  builtinPluginInstanceId,
+  builtinToolGroupId,
+  isBuiltinPluginInstanceId,
+  resolveBuiltinGroupActivation,
+  type BuiltinDeployment,
+  type BuiltinToolGroup,
+} from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import {
   SUPPORTED_AGENT_PLUGIN_HARNESSES,
   isAgentPluginHarnessId,
+  type AgentPluginHarnessId,
 } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { isRecord } from "../../platform/json"
 
@@ -179,8 +189,21 @@ export function LocalAgentPluginActivationRoutes(input: {
   artifacts: AgentPluginArtifactStore
   activations: UnsignedAgentPluginActivationStore
   reconcile: AgentPluginReconcilePort
+  /** The first-party server's tool groups; required so no composition can serve a catalog without it. */
+  builtIn: { groups: readonly BuiltinToolGroup[]; deployment: BuiltinDeployment }
 }) {
   const app = new Hono()
+
+  const builtInEnabled = (groupId: string, harnessId: AgentPluginHarnessId) => {
+    const { machineOverride } = input.activations.read(builtinPluginInstanceId(groupId), harnessId)
+    return resolveBuiltinGroupActivation({
+      groupId,
+      harnessId,
+      deployment: input.builtIn.deployment,
+      mode: "unsigned",
+      ...(machineOverride === undefined ? {} : { machineOverride }),
+    })
+  }
 
   async function reconciliation(revision: number) {
     try {
@@ -216,10 +239,11 @@ export function LocalAgentPluginActivationRoutes(input: {
         activations: input.activations,
         artifacts: input.artifacts,
       })))
+    const builtIn = builtinCatalogEntry({ ...input.builtIn, enabled: builtInEnabled })
     return c.json({
       revision: after,
       supportedHarnesses: SUPPORTED_AGENT_PLUGIN_HARNESSES,
-      candidates: [...candidates, ...retained],
+      candidates: [...candidates, ...retained, builtIn],
       errors: resolved.errors,
     })
   }
@@ -252,7 +276,20 @@ export function LocalAgentPluginActivationRoutes(input: {
 
     let revision: number | undefined
     const existingPin = input.activations.read(body.pluginInstanceId, body.harnessIds[0]).pins.localMachine
-    if (body.choice === true && !existingPin) {
+    // The built-in comes from no source: there is nothing to fetch, hash or
+    // retain, so a choice about one of its groups is only ever the row.
+    if (isBuiltinPluginInstanceId(body.pluginInstanceId)) {
+      const groupId = builtinToolGroupId(body.pluginInstanceId)
+      if (!input.builtIn.groups.some((group) => group.id === groupId)) {
+        return c.json(errorBody("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
+      }
+      revision = input.activations.mutate({
+        pluginInstanceId: body.pluginInstanceId,
+        harnessIds: body.harnessIds,
+        choice: body.choice ?? undefined,
+        expectedRevision: body.expectedRevision,
+      })
+    } else if (body.choice === true && !existingPin) {
       const candidate = await currentCandidate(input.sources, body.pluginInstanceId)
       if (!candidate) return c.json(errorBody("agent_plugins_candidate_unavailable", "Plugin is not available in the current catalog"), 409)
       await acquirePluginArtifact({
