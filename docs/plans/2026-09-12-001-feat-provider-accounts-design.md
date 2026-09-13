@@ -3,9 +3,11 @@
 Status: proposed; slice 1 not started
 Date: 2026-09-12
 Owner: Yash Rathore
-Revision 4, 2026-09-12 (night). Delivery of a chosen account to a harness
-is decided by `2026-09-12-002-feat-credential-broker-design.md`; this
-document keeps the accounts model and sequences it on top of that one.
+Revision 5, 2026-09-13. A harness's own login is now asked for, never
+copied: rules 5 and 9 and the Settings section below record what shipped.
+Delivery of a chosen account to a harness is decided by
+`2026-09-12-002-feat-credential-broker-design.md`; this document keeps the
+accounts model and sequences it on top of that one.
 The earlier per-session picker, the per-account `CODEX_HOME`, refresh
 write-back through the app-server, and the fanout "send the active row"
 are gone with the plaintext push they assumed. The Background, Prior art,
@@ -96,11 +98,13 @@ What the storage layer already supports and the fanout throws away:
 
 - `putCredential` upserts on `(org, provider_id, kind, account_id)`
   (`registry.ts:95-104`). Two Codex accounts are two rows.
-- The local sync (`credentials/operations/sync.ts:148`) imports every
-  `~/.codex/accounts/*.auth.json` with its `account_id`.
-- The Claude sync (`sync.ts:295`) stores only the access token with **no
-  `account_id`**, so two Claude Code logins collapse into one row at write
-  time, before the fanout runs.
+- The local collector (`credentials/operations/sync.ts`) reads only what this
+  machine handed Claxedo on purpose: keys in the agent config, sandbox driver
+  settings, and provider secrets in the environment. It used to import
+  `~/.codex/accounts/*.auth.json` with its `account_id`, and the Claude
+  Keychain token with **no `account_id`** — so two Claude Code logins collapsed
+  into one row at write time, before the fanout ran. Rule 9 ended both: a
+  harness's own login is asked for rather than imported.
 
 Two defects exist independently of multi-account and get worse with it:
 
@@ -189,13 +193,18 @@ Multiple rows, one winner, chosen by an invisible sort order.
    uses the new account, because local runtimes are rebound through the
    loopback broker at the turn boundary and the operator is the only
    identity on the laptop.
-5. **Removing the active row hands the mark to the oldest account the
-   provider can still run on**, in the delete's own transaction; only an
-   `available` row qualifies, the same test the save-time yield applies.
-   With no such row the provider has no active account: the row in Settings
-   reads "Using this computer's login", and a new sandbox falls to the team
-   binding, else the implicit tier. Sandboxes already bound to the removed row
-   lose it (broker doc, withdraw), and the session says so.
+5. **Losing the active row hands the mark to the oldest account the
+   provider can still run on**, in the losing write's own transaction; only an
+   `available` row qualifies, the same test the save-time yield applies. Two
+   writes lose it: deleting the row, and a verdict that ends it —
+   `auth_failed`, `expired` or `no_billing`, whether the operator's Check or
+   the broker's `reportFailure` reached it. A rate cap is not one of them: the
+   same login works again once the window resets. With no heir the refused row
+   KEEPS the mark, because falling to the machine login is only ever an
+   explicit choice (rule 9); only a delete can leave a provider unmarked on its
+   own, and then a new sandbox falls to the team binding, else the implicit
+   tier. Sandboxes already bound to the removed row lose it (broker doc,
+   withdraw), and the session says so.
 6. **A saved row is active when it is the first for its provider.** A later
    save never steals the mark from a working account; an active row whose
    `status` is not `available` yields it. Without that yield, pasting a
@@ -220,6 +229,26 @@ Multiple rows, one winner, chosen by an invisible sort order.
    account. The verifier judges the pasted material rather than the expiry the
    replaced secret carried — left in place that reads a fresh API key as
    expired. Rule 6's yield is untouched and still governs the Add path.
+
+9. **A harness's own login is asked for, never copied.** Claxedo does not open
+   the store a CLI keeps its login in — not the `Claude Code-credentials`
+   Keychain item, not `~/.claude/.credentials.json`, not `~/.codex/auth.json`.
+   The server asks each harness instead: `claude auth status` prints
+   `{loggedIn, email, orgName, subscriptionType}`, the Codex app-server answers
+   `account/read` and `account/rateLimits/read` (with `codex login status` as
+   the presence fallback when the app-server cannot be started), and
+   `cursor-agent status --format json` answers for Cursor. Claude Code has no
+   headless usage read, so its row carries a plan and an address and never a
+   quota window. `GET /api/claxedo/credentials/machine-logins` serves the
+   answers, optionally for one `?harness=`; the scan spends no vendor request
+   and takes no lock on the user's quota. Choosing that login is the
+   withdrawal of the stored mark —
+   `POST /credentials/activate {"machine_login": {"provider_ids": [...]}}`,
+   `clearActiveCredentials` in the registry — so nothing is stored for it and
+   the implicit tier stays the absence of a row rather than a row of its own.
+   Rows imported by the sync that preceded this are ordinary stored accounts;
+   the one thing still written to `~/.codex/auth.json` is the refresh
+   write-back that keeps such a row from stranding the user's own Codex CLI.
 
 ### Claude accounts
 
@@ -275,15 +304,15 @@ miniature — it read as a second account — so there is none.
   tooltip and in a screen-reader-only description. Nothing else: no red text, no
   sentence. Where it is the account in use, its action is the header's
   Reconnect; where it is not, it is an account to forget like any other.
-- **"This computer's login" is the last entry** whenever the scan found one, and
-  its origin is its second line. It is last by construction: every stored
-  account is a choice the user made, and this login is the standing fallback
-  underneath all of them. Choosing it saves the scanned login through
-  `save-discovered` and then marks what was saved — saving alone would leave the
-  harness on the entry the user just clicked away from. A saved scan row the
-  provider never named is still shown as this computer's login; one the provider
-  did name (every Codex account) is shown by that name, because a machine can
-  hold several of them.
+- **"This computer's login" is the last entry** whenever the harness reports one.
+  It is last by construction: every stored account is a choice the user made,
+  and this login is the standing fallback underneath all of them. It is named by
+  the address the harness gave, falling back to "This computer's login" where
+  the harness names none. Its second line is the quota windows the harness
+  reports, else the plan and organization ("Max plan · Yash"), else nothing. Its
+  Check re-runs that one harness's self-report. Choosing it withdraws the mark
+  from the harness's providers and stores nothing (rule 9). A harness that is
+  not installed, or signed out of, has no entry at all.
 - **Saving runs no second check**: `save-discovered` writes the verdict the
   discovery probe already reached onto the row it saved, so a freshly saved
   account reads as checked without spending another request against the user's
@@ -300,7 +329,8 @@ miniature — it read as a second account — so there is none.
   radio column, styled as a link, and opens the same inline connect card.
   Reconnect opens that card in reconnect mode against one row (rule 8).
 - **The scan is automatic**: it runs when the section mounts and after every
-  write, so the rows are derived from one read. The section header reads
+  write, so the rows are derived from one read. It is cheap and local — the
+  harnesses' own self-reports, no vendor call. The section header reads
   "Scanned just now · Rescan".
 - The only state colour is the refused ring. There are no status tags, no dots,
   no "Use this login" button, no header-level Check, and no Make active button.
