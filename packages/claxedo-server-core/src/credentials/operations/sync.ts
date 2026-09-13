@@ -150,18 +150,6 @@ export async function collectLocalCredentials() {
   const map = new Map<string, LocalCredentialItem>()
   put(map, claudeEnvOAuthItem())
 
-  for (const [providerId, secret] of Object.entries(cfg?.auth ?? {})) {
-    const txt = trimToUndefined(secret)
-    if (!txt) continue
-    put(map, {
-      provider_id: providerId,
-      kind: kind(providerId),
-      source: "local_only",
-      label: "Synced from local config",
-      secret: txt,
-    })
-  }
-
   put(
     map,
     sandboxDriverCredentialItem(

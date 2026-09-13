@@ -67,14 +67,13 @@ describe("agent config", () => {
 
   test("leaves the default unresolved when no explicit selection is configured", () => {
     expect(mod.defaultHarness()).toBeUndefined()
-    expect(mod.defaultHarness({ version: 3, connections: {}, mcp: {}, auth: {} })).toBeUndefined()
+    expect(mod.defaultHarness({ version: 3, connections: {}, mcp: {} })).toBeUndefined()
   })
 
   test("selects an explicit default connection without exposing its trusted config", () => {
     const selected = mod.defaultHarness({
       version: 3,
       mcp: {},
-      auth: {},
       connections: { "conn-primary": trustedConnection() },
       defaultConnectionId: "conn-primary",
     })
@@ -87,7 +86,6 @@ describe("agent config", () => {
       version: 3,
       connections: {},
       mcp: {},
-      auth: {},
       defaultHarness: { kind: "native", harnessId: "claude" },
     })).toEqual({ kind: "native", harnessId: "claude" })
   })
@@ -96,7 +94,6 @@ describe("agent config", () => {
     await fs.mkdir(root, { recursive: true })
     await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
       mcp: {},
-      auth: {},
       harness: { id: "openclaw", access: "acp" },
       acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
     }))
@@ -131,14 +128,13 @@ describe("agent config", () => {
 
   test("returns default config when file does not exist", async () => {
     const config = await mod.loadUserConfig()
-    expect(config).toEqual({ version: 3, connections: {}, mcp: {}, auth: {}, sandbox_driver: {} })
+    expect(config).toEqual({ version: 3, connections: {}, mcp: {}, sandbox_driver: {} })
   })
 
   test("migrates the operator's unversioned file to v3, backs it up, and stays migrated", async () => {
     await fs.mkdir(root, { recursive: true })
     const legacy = JSON.stringify({
       mcp: {},
-      auth: {},
       harness: { id: "opencode", access: "native" },
       acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
       sandbox_driver: { default_driver: "daytona" },
@@ -150,7 +146,6 @@ describe("agent config", () => {
       mcp: {},
       connections: {},
       defaultHarness: { kind: "native", harnessId: "opencode" },
-      auth: {},
       sandbox_driver: { default_driver: "daytona" },
     }
     expect(await mod.loadUserConfig()).toEqual(expected)
@@ -161,15 +156,14 @@ describe("agent config", () => {
     expect(await fs.readFile(backupFile(2), "utf-8")).toBe(legacy)
   })
 
-  test("migrates declared v1 and v2 files, keeping mcp, auth, and sandbox driver", async () => {
+  test("migrates declared v1 and v2 files, keeping mcp and the sandbox driver", async () => {
     await fs.mkdir(root, { recursive: true })
     for (const version of [1, 2]) {
       await fs.rm(backupFile(version), { force: true })
       await fs.writeFile(cfgFile(), JSON.stringify({
         version,
         mcp: { "my-tool": { type: "stdio", command: "npx", args: ["tool"] } },
-        auth: { openai: "sk-legacy" },
-        sandbox_driver: { default_driver: "modal", auth: { modal: { token_id: "id" } } },
+          sandbox_driver: { default_driver: "modal", auth: { modal: { token_id: "id" } } },
         harnesses: [],
       }))
 
@@ -177,8 +171,7 @@ describe("agent config", () => {
         version: 3,
         mcp: { "my-tool": { type: "stdio", command: "npx", args: ["tool"] } },
         connections: {},
-        auth: { openai: "sk-legacy" },
-        sandbox_driver: { default_driver: "modal", auth: { modal: { token_id: "id" } } },
+          sandbox_driver: { default_driver: "modal", auth: { modal: { token_id: "id" } } },
       })
       expect(JSON.parse(await fs.readFile(backupFile(version), "utf-8")).version).toBe(version)
     }
@@ -188,7 +181,6 @@ describe("agent config", () => {
     await fs.mkdir(root, { recursive: true })
     await fs.writeFile(cfgFile(), JSON.stringify({
       mcp: {},
-      auth: {},
       harness: { id: "openclaw", access: "acp" },
       model: "some-model",
       runner: { type: "claude-sdk" },
@@ -196,7 +188,7 @@ describe("agent config", () => {
     }))
 
     const migrated = await mod.loadUserConfig()
-    expect(migrated).toEqual({ version: 3, mcp: {}, connections: {}, auth: {}, sandbox_driver: {} })
+    expect(migrated).toEqual({ version: 3, mcp: {}, connections: {}, sandbox_driver: {} })
     expect(migrated.defaultHarness).toBeUndefined()
     expect(await fs.readFile(cfgFile(), "utf-8")).not.toContain("openclaw")
     expect(await fs.readFile(backupFile(2), "utf-8")).toContain("openclaw")
@@ -268,7 +260,6 @@ describe("agent config", () => {
           env: { PORT: "3000" },
         },
       },
-      auth: { "claude-sdk": "sk-ant-test" },
       sandbox_driver: { default_driver: "daytona" as const },
     }
     await mod.saveUserConfig(original)
@@ -277,7 +268,6 @@ describe("agent config", () => {
     expect(loaded.mcp["my-server"]).toEqual(original.mcp["my-server"])
     expect(loaded.connections).toEqual(original.connections)
     expect(loaded.defaultConnectionId).toEqual(original.defaultConnectionId)
-    expect(loaded.auth).toEqual(original.auth)
     expect(loaded.sandbox_driver).toEqual(original.sandbox_driver)
     expect((loaded as { sandbox?: unknown }).sandbox).toBeUndefined()
   })
@@ -286,7 +276,6 @@ describe("agent config", () => {
     await fs.mkdir(root, { recursive: true })
     await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
       mcp: {},
-      auth: {},
       sandbox_driver: {
         default_provider: "vercel",
         default_driver: "modal",
@@ -315,7 +304,6 @@ describe("agent config", () => {
     await fs.mkdir(root, { recursive: true })
     await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
       mcp: {},
-      auth: {},
       sandbox: {
         default_driver: "modal",
         auth: {
@@ -333,7 +321,7 @@ describe("agent config", () => {
   })
 
   test("save creates directory if it doesn't exist", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
     const exists = await fs
       .stat(cfgFile())
       .then(() => true)
@@ -347,7 +335,6 @@ describe("agent config", () => {
     await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
       mcp: { "test-mcp": { type: "remote", url: "http://localhost:9000" } },
       defaultConnectionId: "conn-primary",
-      auth: {},
     })
     await mod.saveCommand("triage", "Triage $ARGUMENTS")
     const snap = await mod.getRuntimeConfigSnapshot()
@@ -367,7 +354,6 @@ describe("agent config", () => {
   test("snapshot auth is exactly what the credential authority projects", async () => {
     await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
       mcp: {},
-      auth: { openai: "sk-openai-typed-into-the-config-file" },
     })
     const projection = {
       baseUrl: "http://127.0.0.1:2595/bindings/61b4",
@@ -385,21 +371,21 @@ describe("agent config", () => {
   })
 
   test("a composition with no authority sends no credentials at all", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: { openai: "sk-ignored" } })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
     mod.configureAgentConfig({})
 
     expect((await mod.getRuntimeConfigSnapshot(undefined, { workspaceId: "ws_1" })).auth).toEqual({})
   })
 
   test("snapshot remains unresolved when no harness is configured", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
     const snap = await mod.getRuntimeConfigSnapshot()
     expect(snap.defaultHarness).toBeUndefined()
     expect(snap.connections).toEqual([])
   })
 
   test("snapshot obtains opaque harness launch options from the composition", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
     mod.configureAgentConfig({
       harnessLaunch: async () => ({
         claude: { pluginRoots: ["/runtime/plugins/review"] },
@@ -416,7 +402,6 @@ describe("agent config", () => {
     await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
       mcp: {},
       defaultConnectionId: "conn-primary",
-      auth: {},
     })
     const snap = await mod.getRuntimeConfigSnapshot()
     expect(snap).toMatchObject({
@@ -436,7 +421,7 @@ describe("agent config", () => {
   test("a shared cloud snapshot carries what the authority projects for that scope", async () => {
     const project = path.join(root, "project")
     await fs.mkdir(project, { recursive: true })
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
     const scopes: string[] = []
     mod.configureAgentConfig({
       projectAuth: async ({ scope }) => {
@@ -481,7 +466,7 @@ describe("agent config", () => {
   })
 
   test("the snapshot retains its canonical version when no user MCP servers exist", async () => {
-    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {} })
     const config = await mod.getRuntimeConfigSnapshot()
     expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: {} })
   })
@@ -496,7 +481,6 @@ describe("agent config", () => {
           env: { TOOL_MODE: "test" },
         },
       },
-      auth: {},
     })
     const config = await mod.getRuntimeConfigSnapshot()
     expect(config.mcp).toBeDefined()
@@ -512,7 +496,6 @@ describe("agent config", () => {
           headers: { Authorization: "Bearer token" },
         },
       },
-      auth: {},
     })
     const config = await mod.getRuntimeConfigSnapshot()
     expect(config.mcp).toEqual({ "remote-tool": { name: "remote-tool", source: "user", transport: "remote", url: "https://mcp.example.com", headers: { Authorization: "Bearer token" } } })
@@ -524,7 +507,6 @@ describe("agent config", () => {
         active: { type: "stdio", command: "node", args: [] },
         disabled: { type: "stdio", command: "node", args: [], disabled: true },
       },
-      auth: {},
     })
     const config = await mod.getRuntimeConfigSnapshot()
     const mcp = config.mcp as Record<string, unknown>

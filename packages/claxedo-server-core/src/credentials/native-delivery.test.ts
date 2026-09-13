@@ -243,7 +243,6 @@ describe("native provider delivery", () => {
     setActiveCredentials([key.id])
     await tick()
     setActiveCredentials([subscription.id])
-    setActiveCredentials([key.id, subscription.id])
 
     await tick()
     updateCredentialHealth(key.id, "ok", Date.now())
