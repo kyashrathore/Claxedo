@@ -493,7 +493,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // workerd cancels detached work with the request, which left the first
         // `ensure` — and the Agent Plugins runtime provisioning behind it — to
         // whichever `/connection` poll came next.
-        const runtimeContext = { workspaceId, userId: auth.user.subject }
+        const runtimeContext = { workspaceId }
         keepAlivePastResponse(c, Promise.resolve()
           .then(async () => {
             const runtimePreparation = await options.prepareRuntime?.(runtimeContext)

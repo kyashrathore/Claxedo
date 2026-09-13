@@ -799,8 +799,8 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(waitUntil).toHaveBeenCalledTimes(1)
     await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
     expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ homeRegion: "us-east" }))
-    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId, userId: "user_1" })
-    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId, userId: "user_1" }, preparation)
+    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId })
+    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId }, preparation)
     expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ secrets: [] }))
   })
 

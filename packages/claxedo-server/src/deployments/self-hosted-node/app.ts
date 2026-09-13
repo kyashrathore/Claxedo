@@ -1382,7 +1382,7 @@ export type ControlPlaneStackOptions = {
  */
 export function selfHostedCredentialAuthority(
   broker?: Pick<LocalCredentialBroker, "projectAuth">,
-): NonNullable<Parameters<typeof configureAgentConfig>[0]>["projectAuth"] {
+): NonNullable<NonNullable<Parameters<typeof configureAgentConfig>[0]>["projectAuth"]> {
   return (input) => broker ? broker.projectAuth(input) : projectNativeProviderAuth(input)
 }
 

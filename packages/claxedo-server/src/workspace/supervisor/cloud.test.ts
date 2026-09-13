@@ -822,12 +822,69 @@ describe("workspace-supervisor", () => {
       })
       mockDaytonaLaunch.mockClear()
 
-      // Same process, runtime already ready: the warm short-circuit used to
-      // answer from memory and the withdrawal never left the supervisor.
+      // Same process, runtime already ready: a warm short-circuit that answers
+      // from memory leaves the withdrawal inside the supervisor and the secret
+      // spendable at the provider edge.
       const result = await manager.ensure("ws-secrets-warm", { homeRegion: "us-east", secrets: [] })
 
       expect(result.status).toBe("ready")
       expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+    })
+
+    test("a warm local workspace is served with the egress policy every hosted route states", async () => {
+      // `hostedSandboxNetworkPolicy` is passed unconditionally by the hosted
+      // connection route, and a local workspace has no driver to carry it to.
+      // Reading "the caller stated something" as "go to the driver" answered
+      // the operator `unavailable` on a runtime that was up.
+      const runtimes = (await import("./store")).runtimes
+      const local = { ...workspace("ws-local-warm"), kind: "local" as const, directory: "/tmp/ws-local-warm" }
+      store.set("ws-local-warm", local)
+      runtimes.set("ws-local-warm", {
+        ws: local as never,
+        status: "ready",
+        url: "http://127.0.0.1:2599",
+        sandbox_id: "embedded-ws-local-warm",
+        used_at: Date.now(),
+        crashes: 0,
+        retry_at: 0,
+        active: 0,
+        holds: [],
+      })
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      mockDaytonaLaunch.mockClear()
+
+      const result = await manager.ensure("ws-local-warm", {
+        homeRegion: "us-east",
+        net: { mode: "restricted", hosts: ["github.com"] },
+      })
+
+      expect(result).toMatchObject({ status: "ready", url: "http://127.0.0.1:2599" })
+      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+    })
+
+    test("a local workspace asked to carry a brokered secret is refused, not served", async () => {
+      const runtimes = (await import("./store")).runtimes
+      const local = { ...workspace("ws-local-secret"), kind: "local" as const, directory: "/tmp/ws-local-secret" }
+      store.set("ws-local-secret", local)
+      runtimes.set("ws-local-secret", {
+        ws: local as never,
+        status: "ready",
+        url: "http://127.0.0.1:2598",
+        sandbox_id: "embedded-ws-local-secret",
+        used_at: Date.now(),
+        crashes: 0,
+        retry_at: 0,
+        active: 0,
+        holds: [],
+      })
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+
+      const result = await manager.ensure("ws-local-secret", {
+        homeRegion: "us-east",
+        secrets: [{ name: "CLAXEDO_GITHUB_CLONE_AUTH", value: "Basic v", hosts: ["github.com"], header: "Authorization" }],
+      })
+
+      expect(result).toMatchObject({ status: "unavailable", error: "local workspaces use embedded workspace-runtime hosts" })
     })
 
     test("the operator's active account reaches the driver as a brokered secret no caller stated", async () => {

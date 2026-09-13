@@ -96,7 +96,7 @@ export async function hostedConnectionInfo(
     },
   })
 
-  const runtimeContext = { workspaceId, userId: auth.user.subject }
+  const runtimeContext = { workspaceId }
   let preparation
   try {
     preparation = await options.prepareRuntime?.(runtimeContext)

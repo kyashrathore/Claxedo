@@ -20,7 +20,6 @@ import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
 
 export type WorkspaceRuntimeContext = {
   workspaceId: string
-  userId: string
 }
 
 export type WorkspaceRuntimePreparation = {

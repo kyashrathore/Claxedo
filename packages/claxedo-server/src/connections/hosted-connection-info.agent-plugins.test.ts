@@ -100,8 +100,8 @@ describe("Agent Plugins cloud readiness gate", () => {
       net: expect.objectContaining({ mode: "restricted", hosts: expect.arrayContaining(["relay.test", "control.test"]) }),
       secrets: preparation.secrets,
     })
-    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_1", userId: "user_1" })
-    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_1", userId: "user_1" }, preparation)
+    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_1" })
+    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_1" }, preparation)
     expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
   })
 
@@ -199,8 +199,8 @@ describe("Agent Plugins user-hosted readiness gate", () => {
     }, auth, "ws_local")
 
     expect(order).toEqual(["prepare", "plugins", "token"])
-    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local", userId: "user_1" })
-    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local", userId: "user_1" }, preparation)
+    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local" })
+    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local" }, preparation)
     expect(result).toMatchObject({
       connection: { access: "user-hosted", backing: "local-worktree", runtimeAccessToken: "runtime-token" },
     })

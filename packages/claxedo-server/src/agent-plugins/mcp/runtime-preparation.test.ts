@@ -137,11 +137,9 @@ describe("hosted MCP runtime preparation", () => {
   })
 
   test("the runtime credential's subject is the activation owner, not the signed caller", async () => {
-    // `WorkspaceRuntimeContext` carries the signed user through to the hosted
-    // prepare hook, but the only consumer of that hook looks the identity up by
-    // workspace id: `runtimeSnapshot` reads `workspaces.owner_user_id`. Two
-    // different signed callers therefore mint the same credential. Per-user
-    // identity is the lease-key change, not this threading.
+    // The identity is looked up by workspace id — `runtimeSnapshot` reads
+    // `workspaces.owner_user_id` — so two different signed callers mint the
+    // same credential. Per-user identity is a change to the lease key.
     const env = await signingEnv()
     const runtimeSnapshot = vi.fn(async (workspaceId: string) => ({
       ...snapshot(),
