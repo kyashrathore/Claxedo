@@ -106,15 +106,37 @@ export function providerProjection(
   return { ...rest, placeholder }
 }
 
+/**
+ * What a row this validator cannot read does to the whole record.
+ *
+ * `reject` is for a map that crossed a process boundary: a producer that sent a
+ * row this runtime cannot read has said nothing trustworthy about the rest, so
+ * the snapshot is refused whole and the previously applied one stays. Only a
+ * process projecting its own authority passes `unavailable`, where refusing
+ * everything would disable every working account over one malformed row; that
+ * row alone becomes an unavailable projection, which disables its provider and
+ * refuses a turn on it rather than letting the harness fall back to a login the
+ * operator did not choose.
+ */
+export type ProviderProjectionRowPolicy = "reject" | "unavailable"
+
+/** The reason a row carries when `unavailable` policy could not read it. */
+export const UNRESOLVED_PROJECTION_REASON = "unresolved_projection"
+
 export function providerProjectionRecord(
   input: unknown,
   env: PlaceholderEnvironment = {},
+  options: { onInvalid?: ProviderProjectionRowPolicy } = {},
 ): Record<string, ProviderProjection> | undefined {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
   const rows: Record<string, ProviderProjection> = {}
   for (const [providerId, value] of Object.entries(input)) {
     const projection = providerProjection(value, env)
-    if (!projection) return undefined
+    if (!projection) {
+      if (options.onInvalid !== "unavailable") return undefined
+      rows[providerId] = { unavailable: true, reason: UNRESOLVED_PROJECTION_REASON }
+      continue
+    }
     rows[providerId] = projection
   }
   return rows

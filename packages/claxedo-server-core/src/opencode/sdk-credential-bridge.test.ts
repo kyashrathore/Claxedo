@@ -117,6 +117,24 @@ describe("OpenCode SDK credential bridge", () => {
     }])
   })
 
+  test("a row this process cannot project disables its own provider and no other", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    configureAgentConfig({
+      projectAuth: async () => ({
+        "claude-sdk": { ...brokerProjection, authMode: "basic" },
+        openai: brokerProjection,
+      } as unknown as Record<string, ProviderProjection>),
+    })
+
+    await reconcileCredentialsIntoSdk()
+
+    expect(fake.bound).toEqual([{
+      anthropic: { unavailable: true, reason: "unresolved_projection" },
+      openai: { baseURL: "http://127.0.0.1:2595/bindings/aa11/v1", apiKey: "signed-placeholder" },
+    }])
+  })
+
   test("an unavailable alias never disables a provider another account has bound", async () => {
     const fake = fakeRuntime()
     construct.mockImplementation(() => fake.runtime as never)

@@ -4,6 +4,7 @@ import {
   projectionRenewalDueAt,
   providerProjection,
   providerProjectionRecord,
+  UNRESOLVED_PROJECTION_REASON,
 } from "./provider-projection"
 
 const minted = {
@@ -68,6 +69,25 @@ describe("provider projection", () => {
     )).toEqual({
       "claude-sdk": { baseUrl: "https://api.anthropic.com", placeholder: "dtn_secret_abc", authMode: "bearer", apiPath: "/v1" },
       openrouter: minted,
+    })
+  })
+
+  test("a record from another process refuses every row when one cannot be read", () => {
+    expect(providerProjectionRecord({ openrouter: minted, anthropic: { ...minted, authMode: "basic" } }))
+      .toBeUndefined()
+  })
+
+  test("a record projecting a process's own authority disables only the row it cannot read", () => {
+    expect(providerProjectionRecord(
+      { openrouter: minted, anthropic: { ...minted, authMode: "basic" } },
+      {},
+      { onInvalid: "unavailable" },
+    )).toEqual({
+      openrouter: minted,
+      // Unavailable rather than absent: an absent row is what a harness reads
+      // as "no account chosen", and it answers that by running the turn on
+      // whatever login the machine holds.
+      anthropic: { unavailable: true, reason: UNRESOLVED_PROJECTION_REASON },
     })
   })
 
