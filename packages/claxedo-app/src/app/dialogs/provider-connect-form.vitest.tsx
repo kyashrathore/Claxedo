@@ -210,7 +210,7 @@ describe("ProviderConnectForm method chooser", () => {
       { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
     ]
     render(() => (
-      <ProviderConnectForm provider="codex-app-server" context={harnessConnectContext("codex")} harness="codex" hideHeading methodPicker="segmented" />
+      <ProviderConnectForm provider="codex-app-server" context={harnessConnectContext("codex")} harness="codex" hideHeading preselectFirstMethod />
     ))
 
     await waitFor(() => expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).not.toBeNull())

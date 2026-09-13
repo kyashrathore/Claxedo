@@ -67,6 +67,18 @@ export type ConnectContext =
   | { kind: "harness"; harness: string; vendor: string }
   | { kind: "engine"; engine: string; vendor: string }
 
+/** The words each connect sentence interpolates, whichever of the two it is. */
+export function connectVars(context: ConnectContext): Record<string, string> {
+  return context.kind === "harness"
+    ? { harness: context.harness, vendor: context.vendor }
+    : { engine: context.engine, vendor: context.vendor }
+}
+
+/** Who the card is about: the harness that runs on the login, or the vendor behind it. */
+export function connectSubject(context: ConnectContext): string {
+  return context.kind === "harness" ? context.harness : context.vendor
+}
+
 /** The connect card's context for a harness that runs on one account's login. */
 export function harnessConnectContext(harness: string, fallbackLabel?: string): ConnectContext {
   const known = entry(harness)
