@@ -1,6 +1,6 @@
 # Tasks from inside a session: MCP tools over a scoped capability
 
-Status: in progress (2026-09-14). Branch `feat/tasks-presets`.
+Status: built and proven live on the local stack (2026-09-14). Branch `feat/tasks-presets`. Follow-up decided by the user: the first-party server becomes a Marketplace plugin the user enables per tool group instead of a runtime injection (defaults pending).
 
 ## Goal
 
