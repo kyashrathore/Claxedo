@@ -364,7 +364,7 @@ export function HostedAgentPluginRoutes(input: {
           ...(projectId ? { projectId } : {}),
         })
         snapshots.set(`${group.id}:${harnessId}`, resolveBuiltinGroupActivation({
-          groupId: group.id,
+          group,
           harnessId,
           deployment: input.builtIn.deployment,
           mode: "signed",
@@ -375,7 +375,7 @@ export function HostedAgentPluginRoutes(input: {
       })))
     return builtinCatalogEntry({
       ...input.builtIn,
-      enabled: (groupId, harnessId) => snapshots.get(`${groupId}:${harnessId}`) ?? false,
+      enabled: (group, harnessId) => snapshots.get(`${group.id}:${harnessId}`) ?? false,
     })
   }
 

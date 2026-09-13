@@ -283,7 +283,7 @@ async function fixture(options: {
     activations,
     artifacts,
     reconcile,
-    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { documentsInProcess: false } },
+    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } },
     ...(options.mcpAuthentication ? { mcpAuthentication: options.mcpAuthentication } : {}),
     ...(options.mcpClientMetadata ? { mcpClientMetadata: options.mcpClientMetadata } : {}),
   })

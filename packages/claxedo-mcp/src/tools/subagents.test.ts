@@ -309,7 +309,7 @@ async function mount(runtime: ReturnType<typeof fakeRuntime>, options: Partial<C
       deployment: "loopback",
       local: { fetch: inProcessFetch((request) => runtime.app.fetch(request)), workspace: { workspaceId: WORKSPACE, directory: DIRECTORY } },
     }),
-    registerTools: [{ id: "subagents", register: registerSubagentTools }],
+    registerTools: [{ id: "subagents", reach: "runtime", register: registerSubagentTools }],
     audit: () => undefined,
     ...options,
   })

@@ -34,7 +34,7 @@ const runtimeClaims = { runtimeId: "rt_1", workspaceId: "ws_1", sessionId: "ses_
 
 /** Two audiences, one write with a session, one destructive, one that waits. */
 function fixtureTools(gate: { release?: () => void }): McpToolGroup {
-  return { id: "fixture", register: (registry) => {
+  return { id: "fixture", reach: "runtime", register: (registry) => {
     registry.tool("runtime_ping", {
       description: "runtime only",
       inputSchema: {},

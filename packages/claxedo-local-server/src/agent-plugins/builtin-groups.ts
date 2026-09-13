@@ -12,7 +12,7 @@ import type { UnsignedAgentPluginActivationStore } from "@claxedo/server-core/ag
  * This machine serves its own documents, so that group reaches no further than
  * the process the session already runs in.
  */
-export const LOCAL_BUILTIN_DEPLOYMENT: BuiltinDeployment = { documentsInProcess: true }
+export const LOCAL_BUILTIN_DEPLOYMENT: BuiltinDeployment = { inProcessServices: ["documents"] }
 
 /**
  * The first-party tool groups this machine has turned on.
@@ -30,7 +30,7 @@ export function localBuiltinToolGroups(activations: UnsignedAgentPluginActivatio
     .filter((group) => {
       const { machineOverride } = activations.read(builtinPluginInstanceId(group.id), "opencode")
       return resolveBuiltinGroupActivation({
-        groupId: group.id,
+        group,
         harnessId: "opencode",
         deployment: LOCAL_BUILTIN_DEPLOYMENT,
         mode: "unsigned",

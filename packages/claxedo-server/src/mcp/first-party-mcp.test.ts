@@ -51,7 +51,7 @@ const signed = (subject: string, actorId?: string): SignedControlPlaneAuth => ({
     : {}),
 })
 
-const tools: McpToolGroup = { id: "fixture", register: (registry) => {
+const tools: McpToolGroup = { id: "fixture", reach: "runtime", register: (registry) => {
   registry.tool("session_send", {
     description: "write",
     inputSchema: { session: z.string() },

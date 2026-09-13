@@ -41,7 +41,7 @@ async function fixture() {
   const activations = new SqliteUnsignedAgentPluginActivationStore(new Database(":memory:"))
   const artifacts = new LocalAgentPluginArtifactStore(path.join(root, "data"))
   const reconcile = { reconcile: vi.fn(async () => ({ state: "applied" as const })) }
-  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { documentsInProcess: true } }
+  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: ["documents"] } }
   const module = createLocalAgentPluginsModule({ sources, activations, artifacts, reconcile, builtIn })
   const app = new Hono()
   mountControlPlaneRouteContributions({

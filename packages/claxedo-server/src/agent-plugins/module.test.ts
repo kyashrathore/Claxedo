@@ -11,7 +11,7 @@ describe("hostedAgentPluginsModule", () => {
       activations: {} as never,
       artifacts: {} as never,
       reconcile: {} as never,
-      builtIn: { groups: [], deployment: { documentsInProcess: false } },
+      builtIn: { groups: [], deployment: { inProcessServices: [] } },
     })
     expect(module.routeContributions).toHaveLength(1)
     expect(module.routeContributions[0]).toMatchObject({ id: "agent-plugins", path: AGENT_PLUGINS_ROUTE_PATH })
@@ -24,7 +24,7 @@ describe("hostedAgentPluginsModule", () => {
       activations: {} as never,
       artifacts: {} as never,
       reconcile: {} as never,
-      builtIn: { groups: [], deployment: { documentsInProcess: false } },
+      builtIn: { groups: [], deployment: { inProcessServices: [] } },
       mcpGatewayRoutes: new Hono().post("/:id", (c) => c.text(c.req.param("id"))),
     })
     const routes = module.routeContributions[0].routes

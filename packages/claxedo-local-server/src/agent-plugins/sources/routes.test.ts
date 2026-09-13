@@ -42,7 +42,7 @@ function rail(fetch: AgentPluginSourceFetch) {
     artifacts,
     activations,
     reconcile: { reconcile: async () => ({ state: "applied" as const }) },
-    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { documentsInProcess: true } },
+    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: ["documents"] } },
   }))
   app.route(`${AGENT_PLUGINS_ROUTE_PATH}/sources`, LocalAgentPluginSourceRoutes({
     registry,

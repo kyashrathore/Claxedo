@@ -219,9 +219,9 @@ export function createLocalAgentPluginsComposition(
     activations,
     reconcile,
     signedRuntime,
-    // This machine serves its own documents, so the group reaches no further
-    // than the process the session already runs in.
-    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { documentsInProcess: true } },
+    // This machine runs the documents service itself, so that group reaches no
+    // further than the process the session already runs in.
+    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: ["documents"] } },
   })
   const harnessLaunch = async () => {
     await current

@@ -176,7 +176,7 @@ export function createHostedAgentPluginsComposition(input: {
   // Hosted, documents are an account service a session reaches across the
   // network rather than a store in this process, so that group is a decision
   // rather than an inheritance.
-  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { documentsInProcess: false } }
+  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { inProcessServices: [] } }
   const activations = new D1SignedAgentPluginActivationStore({ database: input.database, authority })
   // GitHub reads are cached at the edge across isolates (see github-edge-cache.ts);
   // `caches` exists only inside a Worker isolate, so it is looked up per call.
@@ -403,7 +403,7 @@ export function createHostedAgentPluginsComposition(input: {
           projectId,
         })
         return resolveBuiltinGroupActivation({
-          groupId: group.id,
+          group,
           harnessId: "opencode",
           deployment: builtIn.deployment,
           mode: "signed",

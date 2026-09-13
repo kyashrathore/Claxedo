@@ -58,9 +58,18 @@ export function isBuiltinFamilyName(pluginInstanceId: string): boolean {
  */
 export const BUILTIN_TASKS_TOOL_GROUP = "tasks"
 
-/** One group as the serving code declares it: its name and the tools it registers. */
+/**
+ * How far a group's tools reach, as its registration declares it.
+ *
+ * Mirrors the serving package's own vocabulary and is carried here as data,
+ * because this package must not depend on the MCP server it describes.
+ */
+export type BuiltinToolGroupReach = "runtime" | Readonly<{ service: string }> | "account"
+
+/** One group as the serving code declares it: its name, its reach and the tools it registers. */
 export type BuiltinToolGroup = Readonly<{
   id: string
+  reach: BuiltinToolGroupReach
   tools: readonly string[]
 }>
 
@@ -73,7 +82,7 @@ export type BuiltinToolGroup = Readonly<{
  * and one that reaches the user's whole account.
  */
 export type BuiltinDeployment = Readonly<{
-  documentsInProcess: boolean
+  inProcessServices: readonly string[]
 }>
 
 /**
@@ -85,14 +94,14 @@ export type BuiltinDeployment = Readonly<{
  * user makes rather than one they inherit. Documents is the same decision
  * wherever the documents service is the account's rather than this process's.
  */
-export function builtinGroupDefault(groupId: string, deployment: BuiltinDeployment): boolean {
-  if (groupId === BUILTIN_TASKS_TOOL_GROUP) return false
-  if (groupId === "documents") return deployment.documentsInProcess
-  return true
+export function builtinGroupDefault(group: BuiltinToolGroup, deployment: BuiltinDeployment): boolean {
+  if (group.reach === "runtime") return true
+  if (group.reach === "account") return false
+  return deployment.inProcessServices.includes(group.reach.service)
 }
 
 export type BuiltinActivationInput = Readonly<{
-  groupId: string
+  group: BuiltinToolGroup
   harnessId: AgentPluginHarnessId
   deployment: BuiltinDeployment
 }> & (
@@ -110,9 +119,9 @@ export type BuiltinActivationInput = Readonly<{
  */
 export function resolveBuiltinGroupActivation(input: BuiltinActivationInput): boolean {
   const identity = {
-    pluginInstanceId: builtinPluginInstanceId(input.groupId),
+    pluginInstanceId: builtinPluginInstanceId(input.group.id),
     harnessId: input.harnessId,
-    claxedoDefault: builtinGroupDefault(input.groupId, input.deployment),
+    claxedoDefault: builtinGroupDefault(input.group, input.deployment),
     pins: {},
   }
   const resolved: EffectiveActivationInput = input.mode === "signed"
@@ -154,12 +163,12 @@ export function builtinCatalogEntry(input: {
   groups: readonly BuiltinToolGroup[]
   deployment: BuiltinDeployment
   /** Whether one group is on for one harness, as this deployment's store resolves it. */
-  enabled: (groupId: string, harnessId: AgentPluginHarnessId) => boolean
+  enabled: (group: BuiltinToolGroup, harnessId: AgentPluginHarnessId) => boolean
 }) {
   const groups: BuiltinGroupView[] = input.groups.map((group) => ({
     id: group.id,
     pluginInstanceId: builtinPluginInstanceId(group.id),
-    enabled: SUPPORTED_AGENT_PLUGIN_HARNESSES.every((harnessId) => input.enabled(group.id, harnessId)),
+    enabled: SUPPORTED_AGENT_PLUGIN_HARNESSES.every((harnessId) => input.enabled(group, harnessId)),
     tools: group.tools,
   }))
   const harnesses = Object.fromEntries(SUPPORTED_AGENT_PLUGIN_HARNESSES.map((harnessId) => [harnessId, {
@@ -170,7 +179,7 @@ export function builtinCatalogEntry(input: {
     claxedoDefault: true,
     effective: {
       status: "ready" as const,
-      effective: input.groups.some((group) => input.enabled(group.id, harnessId)),
+      effective: input.groups.some((group) => input.enabled(group, harnessId)),
       winner: "claxedo" as const,
     },
   }]))

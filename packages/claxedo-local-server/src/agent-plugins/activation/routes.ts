@@ -195,10 +195,10 @@ export function LocalAgentPluginActivationRoutes(input: {
 }) {
   const app = new Hono()
 
-  const builtInEnabled = (groupId: string, harnessId: AgentPluginHarnessId) => {
-    const { machineOverride } = input.activations.read(builtinPluginInstanceId(groupId), harnessId)
+  const builtInEnabled = (group: BuiltinToolGroup, harnessId: AgentPluginHarnessId) => {
+    const { machineOverride } = input.activations.read(builtinPluginInstanceId(group.id), harnessId)
     return resolveBuiltinGroupActivation({
-      groupId,
+      group,
       harnessId,
       deployment: input.builtIn.deployment,
       mode: "unsigned",

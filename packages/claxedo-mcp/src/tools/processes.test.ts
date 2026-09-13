@@ -90,7 +90,7 @@ async function listen() {
           return Response.json({ configs: [], processes: [] })
         },
       }),
-    registerTools: [{ id: "processes", register: registerProcessTools }],
+    registerTools: [{ id: "processes", reach: "runtime", register: registerProcessTools }],
     audit: () => undefined,
   })
   mounts.push(routes)

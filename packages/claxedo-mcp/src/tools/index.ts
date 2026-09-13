@@ -16,20 +16,38 @@ import { registerWorkspaceTools } from "./workspaces"
  * name kept somewhere else could be enabled under one spelling and registered
  * under another.
  */
+/**
+ * How far a group's tools reach, which is what decides whether a project that
+ * has said nothing gets it.
+ *
+ * Declared by the registration rather than inferred from the name, because the
+ * rule that reads it cannot recognise a group that does not exist yet: a name
+ * it did not know would have to be guessed at, and the safe-looking guess —
+ * this one is like the others — is the one that grants.
+ */
+export type McpToolGroupReach =
+  /** The workspace runtime this session is already running in. Nothing new is granted by turning it on. */
+  | "runtime"
+  /** A named service some deployments run in this process and others reach as the account's. */
+  | Readonly<{ service: string }>
+  /** Outside the project altogether. Never on until a user says so. */
+  | "account"
+
 export type McpToolGroup = Readonly<{
   id: string
+  reach: McpToolGroupReach
   register: (registry: ToolRegistrar) => void
 }>
 
 export const CLAXEDO_MCP_TOOL_GROUPS = [
-  { id: "attention", register: registerAttentionTools },
-  { id: "documents", register: registerDocumentTools },
-  { id: "processes", register: registerProcessTools },
-  { id: "review", register: registerReviewTools },
-  { id: "sessions", register: registerSessionTools },
-  { id: "subagents", register: registerSubagentTools },
-  { id: "tasks", register: registerTaskTools },
-  { id: "workspaces", register: registerWorkspaceTools },
+  { id: "attention", reach: "runtime", register: registerAttentionTools },
+  { id: "documents", reach: { service: "documents" }, register: registerDocumentTools },
+  { id: "processes", reach: "runtime", register: registerProcessTools },
+  { id: "review", reach: "runtime", register: registerReviewTools },
+  { id: "sessions", reach: "runtime", register: registerSessionTools },
+  { id: "subagents", reach: "runtime", register: registerSubagentTools },
+  { id: "tasks", reach: "account", register: registerTaskTools },
+  { id: "workspaces", reach: "runtime", register: registerWorkspaceTools },
 ] as const satisfies readonly McpToolGroup[]
 
 export type ClaxedoMcpToolGroupId = (typeof CLAXEDO_MCP_TOOL_GROUPS)[number]["id"]
@@ -39,6 +57,7 @@ export const CLAXEDO_MCP_TOOL_GROUP_IDS: readonly ClaxedoMcpToolGroupId[] =
 
 export type ClaxedoMcpToolGroupDescription = Readonly<{
   id: ClaxedoMcpToolGroupId
+  reach: McpToolGroupReach
   tools: readonly string[]
 }>
 
@@ -56,7 +75,7 @@ export function claxedoMcpToolGroupInventory(): readonly ClaxedoMcpToolGroupDesc
   inventory ??= CLAXEDO_MCP_TOOL_GROUPS.map((group) => {
     const tools: string[] = []
     group.register({ tool: (name) => { tools.push(name) } })
-    return { id: group.id, tools }
+    return { id: group.id, reach: group.reach, tools }
   })
   return inventory
 }

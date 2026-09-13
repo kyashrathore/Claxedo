@@ -241,4 +241,22 @@ describe("the tool names the catalog publishes", () => {
     expect(published.find((group) => group.id === "attention")?.tools).toContain("permission_reply")
     expect(new Set(published.flatMap((group) => group.tools)).size).toBe(declared.size)
   })
+
+  test("declare a reach, and only the two that leave the runtime say so", () => {
+    const published = claxedoMcpToolGroupInventory()
+    // What a project inherits is computed from these, so a group that reaches
+    // past the session and says "runtime" is granted to every project that has
+    // decided nothing. The list is short on purpose: adding to it is the
+    // decision, and this is where it gets read.
+    expect(published.filter((group) => group.reach === "account").map((group) => group.id)).toEqual(["tasks"])
+    expect(published.filter((group) => typeof group.reach === "object").map((group) => group.id)).toEqual(["documents"])
+    expect(published.filter((group) => group.reach === "runtime").map((group) => group.id)).toEqual([
+      "attention",
+      "processes",
+      "review",
+      "sessions",
+      "subagents",
+      "workspaces",
+    ])
+  })
 })

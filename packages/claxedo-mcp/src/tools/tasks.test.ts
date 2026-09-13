@@ -185,7 +185,7 @@ async function listen(input: MountInput = {}) {
             }
           : {}),
       }),
-    registerTools: [{ id: "tasks", register: registerTaskTools }],
+    registerTools: [{ id: "tasks", reach: "account", register: registerTaskTools }],
     audit: (event) => void audits.push(mcpAuditRecord(event)),
     crossMachineWrites: () => input.crossMachineWrites === true,
   })
