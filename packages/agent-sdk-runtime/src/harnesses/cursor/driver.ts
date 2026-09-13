@@ -47,6 +47,7 @@ import {
   cursorAuthValue,
   CursorBackendUrlFrozenError,
   freezeCursorBackendUrl,
+  isCursorBindingBackendUrl,
   frozenCursorBackendUrl,
 } from "./auth"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
@@ -522,16 +523,19 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     const loaded = await (this.driverOptions.loadAgent?.() ?? this.loadSdk())
     const required = providerBinding("cursor", this.auth)?.baseUrl
     const frozen = frozenCursorBackendUrl()
-    if (required && frozen && frozen.value !== required) throw new CursorBackendUrlFrozenError(frozen.value, required)
+    // Both directions of one mismatch: a binding the frozen value cannot reach,
+    // and a frozen binding this workspace no longer selects — which would send
+    // the machine's own key to the broker.
+    if (frozen && frozen.value !== required && (required || isCursorBindingBackendUrl(frozen.value))) {
+      throw new CursorBackendUrlFrozenError(frozen.value, required)
+    }
     return loaded
   }
 
   /** The full module, required by the `Cursor.models.list` catalog probe. */
   private loadSdk(): Promise<CursorSdkModule> {
-    const injected = this.driverOptions.loadSdk?.()
-    if (injected) return injected
     freezeCursorBackendUrl()
-    return import("@cursor/sdk")
+    return this.driverOptions.loadSdk?.() ?? import("@cursor/sdk")
   }
 
   private observeAgent(directory: string, sessionId?: string): AgentProcessObserverHandle {

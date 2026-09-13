@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "bun:test"
+import { forgetCursorBackendUrl } from "./auth"
 import {
   createCursorSdkDriver,
   cursorPluginLocalOptions,
@@ -9,6 +10,10 @@ import {
 import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
 
 describe("Cursor SDK driver", () => {
+  // The SDK freezes its backend URL once per process, and every test here is a
+  // fresh process as far as that freeze is concerned.
+  beforeEach(() => forgetCursorBackendUrl())
+
   test("enables Cursor's native plugin setting source only for materialized plugin roots", () => {
     expect(cursorPluginRoots({ pluginRoots: ["/managed/one", "/managed/one", "/managed/two"] }))
       .toEqual(["/managed/one", "/managed/two"])

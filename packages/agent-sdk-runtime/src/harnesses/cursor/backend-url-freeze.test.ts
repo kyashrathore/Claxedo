@@ -91,3 +91,50 @@ test("a binding the SDK was loaded under is used", async () => {
 test("a process that never imported the SDK freezes nothing and refuses nothing", () => {
   expect(frozenCursorBackendUrl()).toBeUndefined()
 })
+
+test("the driver's own load is what freezes the value, with nobody calling the freeze", async () => {
+  // The production call lives inside the driver's module load. A test that
+  // calls the freeze by hand proves the function, never the call.
+  applyCursorBackendUrl(projection("http://127.0.0.1:2595/bindings/loaded")["cursor-sdk"])
+  const driver = createCursorSdkDriver(host(), {
+    loadSdk: async () => ({}) as never,
+  })
+  await driver.applyConfig({ auth: projection("http://127.0.0.1:2595/bindings/loaded") })
+  expect(frozenCursorBackendUrl()).toBeUndefined()
+
+  await driver.createAgentSession({ directory: "/repo", model: "auto", sessionId: "s1" }).catch(() => {})
+
+  expect(frozenCursorBackendUrl()).toEqual({ value: "http://127.0.0.1:2595/bindings/loaded" })
+})
+
+test("a binding the SDK froze refuses a turn the operator has since unbound", async () => {
+  // The other direction of the same fault: the SDK still points at the broker,
+  // and an unbound turn would send the machine's own key there.
+  applyCursorBackendUrl(projection("http://127.0.0.1:2595/bindings/gone")["cursor-sdk"])
+  freezeCursorBackendUrl()
+  applyCursorBackendUrl(undefined)
+
+  const driver = createCursorSdkDriver(host(), { loadSdk: async () => ({}) as never })
+  await driver.applyConfig({ auth: {} })
+
+  await expect(driver.createAgentSession({ directory: "/repo", model: "auto", sessionId: "s1" }))
+    .rejects.toBeInstanceOf(CursorBackendUrlFrozenError)
+})
+
+test("a backend URL the operator set themselves is not a binding and refuses nothing", async () => {
+  process.env[BACKEND_URL] = "https://cursor.proxy.internal"
+  freezeCursorBackendUrl()
+
+  const created: unknown[] = []
+  const driver = createCursorSdkDriver(host(), {
+    loadAgent: async () => ({
+      Agent: { create: async (options: unknown) => { created.push(options); return { id: "agent-1" } } },
+    }) as never,
+    loadSdk: async () => ({}) as never,
+  })
+  await driver.applyConfig({ auth: {} })
+
+  await driver.createAgentSession({ directory: "/repo", model: "auto", sessionId: "s1" })
+
+  expect(created).toHaveLength(1)
+})

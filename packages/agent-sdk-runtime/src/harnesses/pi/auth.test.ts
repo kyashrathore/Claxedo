@@ -232,7 +232,7 @@ test("an unusable account refuses only the launches that would have spent it", a
   }
 })
 
-test("an explicit native profile overrides the store default and is scrubbed on disposal", async () => {
+test("PI_CODING_AGENT_DIR names the profile when nothing scopes one, and it is scrubbed on disposal", async () => {
   const f = await installFakePiRpc()
   const previous = process.env.PI_CODING_AGENT_DIR
   let adapter: PiHarnessAdapter
@@ -240,7 +240,6 @@ test("an explicit native profile overrides the store default and is scrubbed on 
     process.env.PI_CODING_AGENT_DIR = f.agentDir
     adapter = new PiHarnessAdapter({
       binary: f.binary,
-      storeRoot: path.join(f.agentDir, "store"),
       store: createMemoryRuntimeStore(),
     })
   } finally {

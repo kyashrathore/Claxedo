@@ -93,3 +93,19 @@ test("two workspaces with no store root are separated by their workspace ids", a
   expect(models).toHaveLength(2)
   for (const file of models) expect(file).toContain(path.join(".claxedo", "pi", "agent"))
 })
+
+test("a store root outranks PI_CODING_AGENT_DIR, so env cannot un-scope a workspace", async () => {
+  root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-profile-"))
+  const shared = path.join(root, "shared")
+  const scoped = path.join(root, "ws-a")
+  // One variable in the operator's shell would otherwise put every workspace's
+  // placeholder back in one file, which is the fault the scoping exists for.
+  process.env.PI_CODING_AGENT_DIR = shared
+
+  const adapter = await applied({ storeRoot: scoped }, "http://127.0.0.1:2595/bindings/aaa", "placeholder-a")
+  try {
+    expect(await modelsFileUnder(root)).toEqual([path.join(scoped, "pi", "agent", "models.json")])
+  } finally {
+    await adapter.dispose()
+  }
+})

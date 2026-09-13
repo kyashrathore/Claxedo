@@ -26,9 +26,24 @@ export function cursorAuthValue(auth: Record<string, ProviderProjection> | undef
  * refused where the key is read.
  */
 export function applyCursorBackendUrl(projection: ProviderProjection | undefined) {
-  if (projection && !isProviderUnavailable(projection)) process.env[CURSOR_BACKEND_URL_ENV] = projection.baseUrl
-  else delete process.env[CURSOR_BACKEND_URL_ENV]
+  if (projection && !isProviderUnavailable(projection)) {
+    process.env[CURSOR_BACKEND_URL_ENV] = projection.baseUrl
+    appliedBindingUrls.add(projection.baseUrl)
+  } else delete process.env[CURSOR_BACKEND_URL_ENV]
 }
+
+/**
+ * Whether a frozen backend URL is one this module wrote for a binding.
+ *
+ * An operator who exports `CURSOR_BACKEND_URL` for a proxy of their own has a
+ * value here too, and refusing their unbound turns because of it would break a
+ * setup the broker has nothing to do with.
+ */
+export function isCursorBindingBackendUrl(value: string | undefined): boolean {
+  return value !== undefined && appliedBindingUrls.has(value)
+}
+
+const appliedBindingUrls = new Set<string>()
 
 /**
  * The backend URL the installed SDK froze.
@@ -52,15 +67,19 @@ export function frozenCursorBackendUrl(): { value: string | undefined } | undefi
 /** Test seam: the freeze is process state, and a test needs to start over. */
 export function forgetCursorBackendUrl() {
   loadedBackendUrl = undefined
+  appliedBindingUrls.clear()
 }
 
 let loadedBackendUrl: { value: string | undefined } | undefined
 
 export class CursorBackendUrlFrozenError extends Error {
-  constructor(readonly frozen: string | undefined, readonly required: string) {
+  constructor(readonly frozen: string | undefined, readonly required: string | undefined) {
     super(
       "the cursor credential binding cannot be used: the Cursor SDK froze "
-      + `${frozen ?? "its default backend"} at import, before this binding named ${required}`,
+      + `${frozen ?? "its default backend"} at import, `
+      + (required
+        ? `before this binding named ${required}`
+        : "and this workspace now selects no bound account for it"),
     )
     this.name = "CursorBackendUrlFrozenError"
   }
