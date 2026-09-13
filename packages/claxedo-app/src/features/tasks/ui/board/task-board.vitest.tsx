@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library"
-import type { TaskStatus, TaskSummary } from "@claxedo/tasks"
+import { taskSummaryOf, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
+import { taskRow } from "@claxedo/tasks/test-support"
 import { TaskBoard } from "./task-board"
 
 vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("../shared/test-support/host-controls")).dropdownMenuDouble())
@@ -10,24 +11,8 @@ afterEach(cleanup)
 let minted = 0
 
 function summary(id: string, status: TaskStatus): TaskSummary {
-  return {
-    id,
-    revision: 4,
-    scopeId: "local",
-    projectId: "prj_1",
-    workspaceId: null,
-    number: (minted += 1),
-    parentTaskId: null,
-    title: `Task ${id}`,
-    status,
-    childSetRevision: 0,
-    archivedAt: null,
-    createdAt: 1,
-    updatedAt: 1,
-    hasDescription: false,
-    links: { count: 0 },
-    children: { total: 0, done: 0 },
-  }
+  const row = taskRow({ id, revision: 4, number: (minted += 1), title: `Task ${id}`, status })
+  return taskSummaryOf(row, { count: 0 }, { total: 0, done: 0 })
 }
 
 /** A card's status is set from its actions menu, so every status case opens it first. */

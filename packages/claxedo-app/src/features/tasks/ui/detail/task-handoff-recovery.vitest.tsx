@@ -2,7 +2,14 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
-import { TASKS_ROUTE_PATH, type ModelConfiguration, type SessionHandoffState, type Task } from "@claxedo/tasks"
+import {
+  TASKS_ROUTE_PATH,
+  linkView,
+  type ModelConfiguration,
+  type SessionHandoffState,
+  type Task,
+} from "@claxedo/tasks"
+import { linkRow, taskRow } from "@claxedo/tasks/test-support"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import type { TasksScope } from "@/features/tasks/data/queries"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
@@ -19,22 +26,23 @@ const configuration: ModelConfiguration = {
   effort: null,
 }
 
-const task: Task = {
-  id: "tsk_1",
-  revision: 4,
-  scopeId: "local",
-  projectId: "prj_1",
-  workspaceId: null,
-  number: 1,
-  parentTaskId: null,
-  title: "Ship the importer",
-  description: "",
-  status: "doing",
-  childSetRevision: 0,
-  archivedAt: null,
-  createdAt: 1,
-  updatedAt: 2,
-}
+const task: Task = taskRow({ id: "tsk_1", revision: 4, title: "Ship the importer", status: "doing", updatedAt: 2 })
+
+/** The slot's current attempt, as the host reports it over the wire. */
+const liveLink = (handoff: SessionHandoffState) =>
+  linkView(
+    linkRow({
+      taskId: task.id,
+      attempt: 2,
+      sessionRef: { sessionId: "ses_2", workspaceId: "ws_1" },
+      presetId: "pre_1",
+      presetRevision: 3,
+      presetNameAtStart: "Careful reviewer",
+      createdAt: 5,
+    }),
+    "live",
+    handoff,
+  )
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
@@ -67,21 +75,7 @@ function mount(input: { handoff: SessionHandoffState; refuseStart?: string }) {
       if (path === `/tasks/${task.id}`) {
         return json({
           task,
-          links: [
-            {
-              taskId: task.id,
-              slot: "primary",
-              attempt: 2,
-              sessionRef: { sessionId: "ses_2", workspaceId: "ws_1" },
-              continuedFrom: null,
-              presetId: "pre_1",
-              presetRevision: 3,
-              presetNameAtStart: "Careful reviewer",
-              createdAt: 5,
-              liveness: "live",
-              handoff,
-            },
-          ],
+          links: [liveLink(handoff)],
         })
       }
       if (path.endsWith("/start-preview")) {
@@ -108,19 +102,7 @@ function mount(input: { handoff: SessionHandoffState; refuseStart?: string }) {
         if (input.refuseStart) return json({ error: { code: "conflict", message: input.refuseStart } }, 409)
         handoff = "sent"
         return json({
-          link: {
-            taskId: task.id,
-            slot: "primary",
-            attempt: 2,
-            sessionRef: { sessionId: "ses_2", workspaceId: "ws_1" },
-            continuedFrom: null,
-            presetId: "pre_1",
-            presetRevision: 3,
-            presetNameAtStart: "Careful reviewer",
-            createdAt: 5,
-            liveness: "live",
-            handoff: "sent",
-          },
+          link: liveLink("sent"),
           created: false,
         })
       }

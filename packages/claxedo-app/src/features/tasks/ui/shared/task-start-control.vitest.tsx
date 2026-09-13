@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
-import type { Preset, TaskSummary } from "@claxedo/tasks"
+import { primaryConfiguration, presetRow, taskRow } from "@claxedo/tasks/test-support"
+import { taskSummaryOf, type Preset, type TaskSummary } from "@claxedo/tasks"
 import { TaskStartControl, type StartChoice, type TaskStartOffer } from "./task-row-controls"
 
 vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("./test-support/host-controls")).dropdownMenuDouble())
@@ -8,48 +9,21 @@ vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("./test-suppo
 afterEach(cleanup)
 
 function summary(overrides: Partial<TaskSummary> = {}): TaskSummary {
-  return {
-    id: "tsk_1",
-    revision: 3,
-    scopeId: "local",
-    projectId: "prj_1",
-    workspaceId: null,
-    number: 1,
-    parentTaskId: null,
-    title: "Ship the importer",
-    status: "todo",
-    childSetRevision: 0,
-    archivedAt: null,
-    createdAt: 1,
-    updatedAt: 1,
-    hasDescription: false,
-    links: { count: 0 },
-    ...overrides,
-  }
+  const row = taskRow({ id: "tsk_1", revision: 3, number: 1, title: "Ship the importer" })
+  return { ...taskSummaryOf(row, { count: 0 }, { total: 0, done: 0 }), ...overrides }
 }
 
 function preset(id: string, name: string, slots: readonly ("planning" | "review")[] = []): Preset {
-  const configuration = {
-    harness: { id: "claude", access: "native" as const },
-    model: { providerID: "anthropic", modelID: "opus" },
-    effort: null,
-  }
-  return {
+  const configuration = primaryConfiguration({ model: { providerID: "anthropic", modelID: "opus" } })
+  return presetRow({
     id,
     revision: 2,
-    scopeId: "local",
-    ownerId: "owner",
     name,
-    instructions: "",
-    execution: { placement: "local", capabilities: { mode: "inherit-local" } },
     configurations: {
       primary: configuration,
       ...Object.fromEntries(slots.map((slot) => [slot, configuration])),
     },
-    archivedAt: null,
-    createdAt: 1,
-    updatedAt: 1,
-  }
+  })
 }
 
 function mount(input: { task?: TaskSummary } & Partial<TaskStartOffer> = {}) {

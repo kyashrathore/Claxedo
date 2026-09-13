@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, render, screen, within } from "@solidjs/testing-library"
-import type { TaskSummary } from "@claxedo/tasks"
+import { taskSummaryOf, type TaskSummary } from "@claxedo/tasks"
+import { taskRow } from "@claxedo/tasks/test-support"
 import type { TaskDateField } from "../../view-model"
 import { TaskList } from "./task-list"
 
@@ -12,25 +13,9 @@ const CREATED = Date.parse("2026-03-01T09:00:00Z")
 const UPDATED = Date.parse("2026-09-01T09:00:00Z")
 
 function summary(overrides: Partial<TaskSummary> = {}): TaskSummary {
-  return {
-    id: "tsk_1",
-    revision: 1,
-    scopeId: "local",
-    projectId: "prj_1",
-    number: 12,
-    workspaceId: null,
-    parentTaskId: null,
-    title: "Ship the importer",
-    status: "todo",
-    childSetRevision: 0,
-    archivedAt: null,
-    createdAt: CREATED,
-    updatedAt: UPDATED,
-    hasDescription: false,
-    links: { count: 0 },
-    children: { total: 0, done: 0 },
-    ...overrides,
-  }
+  // `number` is explicit because the rendered key (`DP-12`) is asserted below.
+  const row = taskRow({ id: "tsk_1", number: 12, title: "Ship the importer", createdAt: CREATED, updatedAt: UPDATED })
+  return { ...taskSummaryOf(row, { count: 0 }, { total: 0, done: 0 }), ...overrides }
 }
 
 function mount(dateField: TaskDateField = "updated", tasks: readonly TaskSummary[] = [summary()]) {

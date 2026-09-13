@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library"
-import type { ConfigurationSlot, Preset, SessionHandoffState, SessionLiveness, Task, TaskSessionLinkView } from "@claxedo/tasks"
+import {
+  linkView,
+  type ConfigurationSlot,
+  type Preset,
+  type SessionHandoffState,
+  type SessionLiveness,
+  type Task,
+  type TaskSessionLinkView,
+} from "@claxedo/tasks"
+import { linkRow, presetRow, taskRow } from "@claxedo/tasks/test-support"
 import { groupLinksBySlot } from "../../view-model"
 import type { TaskStartOffer } from "../shared/task-row-controls"
 import { TaskDetail } from "./task-detail"
@@ -26,23 +35,8 @@ const StubProseEditor = (props: {
 )
 
 function task(overrides: Partial<Task> = {}): Task {
-  return {
-    id: "tsk_1",
-    revision: 2,
-    scopeId: "local",
-    projectId: "prj_1",
-    workspaceId: null,
-    number: 1,
-    parentTaskId: null,
-    title: "Ship the importer",
-    description: "",
-    status: "doing",
-    childSetRevision: 0,
-    archivedAt: null,
-    createdAt: 1,
-    updatedAt: 1,
-    ...overrides,
-  }
+  // `number` is explicit because the rendered key (`IMP-1`) is asserted below.
+  return taskRow({ id: "tsk_1", revision: 2, number: 1, title: "Ship the importer", status: "doing", ...overrides })
 }
 
 // The host can only read a handoff out of a session it still has, so anything
@@ -52,36 +46,20 @@ function link(
   liveness: SessionLiveness,
   handoff: SessionHandoffState = liveness === "live" ? "sent" : "unknown",
 ): TaskSessionLinkView {
-  return {
-    handoff,
-    taskId: "tsk_1",
-    slot: "primary",
-    attempt,
-    sessionRef: { sessionId: `ses_${attempt}`, workspaceId: "ws_1" },
-    continuedFrom: null,
-    presetId: "pre_1",
-    presetRevision: 1,
-    presetNameAtStart: "Reviewer",
-    createdAt: 1,
+  return linkView(
+    linkRow({
+      taskId: "tsk_1",
+      attempt,
+      sessionRef: { sessionId: `ses_${attempt}`, workspaceId: "ws_1" },
+      presetId: "pre_1",
+      presetNameAtStart: "Reviewer",
+    }),
     liveness,
-  }
+    handoff,
+  )
 }
 
-const preset: Preset = {
-  id: "pre_1",
-  revision: 1,
-  scopeId: "local",
-  ownerId: "owner",
-  name: "Reviewer",
-  instructions: "",
-  execution: { placement: "local", capabilities: { mode: "inherit-local" } },
-  configurations: {
-    primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "opus" }, effort: null },
-  },
-  archivedAt: null,
-  createdAt: 1,
-  updatedAt: 1,
-}
+const preset: Preset = presetRow({ id: "pre_1", name: "Reviewer" })
 
 function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> = {}, startLabel?: string) {
   const onStart = vi.fn()

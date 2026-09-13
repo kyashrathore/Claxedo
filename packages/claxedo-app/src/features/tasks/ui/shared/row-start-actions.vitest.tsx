@@ -5,6 +5,8 @@ import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import {
   TASKS_ROUTE_PATH,
+  linkView,
+  taskSummaryOf,
   type ConfigurationSlot,
   type Preset,
   type SessionLiveness,
@@ -12,6 +14,7 @@ import {
   type Task,
   type TaskSummary,
 } from "@claxedo/tasks"
+import { linkRow, presetRow, taskRow } from "@claxedo/tasks/test-support"
 import type { TasksPage } from "@/platform/identity/route"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import { TasksSurface } from "@/features/tasks/ui/tasks-surface"
@@ -23,49 +26,11 @@ afterEach(cleanup)
 
 const SERVER = "http://tasks.test"
 
-const preset: Preset = {
-  id: "pre_1",
-  revision: 2,
-  scopeId: "local",
-  ownerId: "owner",
-  name: "Careful reviewer",
-  instructions: "",
-  execution: { placement: "local", capabilities: { mode: "inherit-local" } },
-  configurations: {
-    primary: {
-      harness: { id: "claude", access: "native" },
-      model: { providerID: "anthropic", modelID: "opus" },
-      effort: null,
-    },
-  },
-  archivedAt: null,
-  createdAt: 1,
-  updatedAt: 1,
-}
+const preset: Preset = presetRow({ id: "pre_1", revision: 2, name: "Careful reviewer" })
 
-const task: Task = {
-  id: "tsk_1",
-  revision: 4,
-  scopeId: "local",
-  projectId: "prj_1",
-  workspaceId: null,
-  number: 1,
-  parentTaskId: null,
-  title: "Ship the importer",
-  description: "",
-  status: "todo",
-  childSetRevision: 0,
-  archivedAt: null,
-  createdAt: 1,
-  updatedAt: 1,
-}
+const task: Task = taskRow({ id: "tsk_1", revision: 4, title: "Ship the importer" })
 
-const summary: TaskSummary = {
-  ...(({ description: _description, ...rest }) => rest)(task),
-  hasDescription: false,
-  links: { count: 1 },
-  children: { total: 0, done: 0 },
-}
+const summary: TaskSummary = taskSummaryOf(task, { count: 1 }, { total: 0, done: 0 })
 
 const PREVIEW_DIGEST = "d".repeat(64)
 const STARTED_SESSION = { sessionId: "ses_2", workspaceId: null }
@@ -129,19 +94,20 @@ function mount(input: { links?: unknown[]; presets?: Preset[]; transcriptReadabl
   return { openSession, openPresetSettings, requested, page }
 }
 
-const link = (liveness: SessionLiveness, slot: ConfigurationSlot = "primary") => ({
-  taskId: "tsk_1",
-  slot,
-  attempt: 1,
-  sessionRef: { sessionId: `ses_${slot}`, workspaceId: null },
-  continuedFrom: null,
-  presetId: "pre_1",
-  presetRevision: 2,
-  presetNameAtStart: "Careful reviewer",
-  createdAt: 1,
-  liveness,
-  handoff: liveness === "live" ? "sent" : "unknown",
-})
+const link = (liveness: SessionLiveness, slot: ConfigurationSlot = "primary") =>
+  linkView(
+    linkRow({
+      taskId: "tsk_1",
+      slot,
+      attempt: 1,
+      sessionRef: { sessionId: `ses_${slot}`, workspaceId: null },
+      presetId: "pre_1",
+      presetRevision: 2,
+      presetNameAtStart: "Careful reviewer",
+    }),
+    liveness,
+    liveness === "live" ? "sent" : "unknown",
+  )
 
 describe("starting and opening from a list row", () => {
   test("a row with no preset saved sends the user to the Presets settings", async () => {

@@ -10,6 +10,7 @@ import {
   type SessionReference,
   type Task,
 } from "@claxedo/tasks"
+import { presetRow, taskRow } from "@claxedo/tasks/test-support"
 import { presetEditorDraftOf } from "../preset-editor-model"
 import { configureTasksAppPorts, type TasksAppPorts } from "@/features/tasks/app-ports"
 import type { TasksScope } from "@/features/tasks/data/queries"
@@ -25,38 +26,15 @@ afterEach(cleanup)
 const SERVER = "http://tasks.test"
 const SCOPE: TasksScope = { serverUrl: SERVER, scopeId: "local" }
 
-const task: Task = {
-  id: "tsk_1",
-  revision: 4,
-  scopeId: "local",
-  projectId: "prj_1",
-  workspaceId: null,
-  number: 1,
-  parentTaskId: null,
-  title: "Ship the importer",
-  description: "",
-  status: "doing",
-  childSetRevision: 0,
-  archivedAt: null,
-  createdAt: 1,
-  updatedAt: 2,
-}
+const task: Task = taskRow({ id: "tsk_1", revision: 4, title: "Ship the importer", status: "doing", updatedAt: 2 })
 
-const preset: Preset = {
+const preset: Preset = presetRow({
   id: "pre_1",
   revision: 3,
-  scopeId: "local",
-  ownerId: "local",
   name: "Careful reviewer",
   instructions: "Read before writing.",
-  execution: { placement: "local", capabilities: { mode: "inherit-local" } },
-  configurations: {
-    primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "sonnet" }, effort: null },
-  },
-  archivedAt: null,
-  createdAt: 1,
   updatedAt: 2,
-}
+})
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })

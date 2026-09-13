@@ -3,7 +3,16 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import type { JSX } from "solid-js"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-import { TASKS_BOUNDS, TASKS_ROUTE_PATH, type Preset, type SessionReference, type Task, type TaskSummary } from "@claxedo/tasks"
+import {
+  TASKS_BOUNDS,
+  TASKS_ROUTE_PATH,
+  taskSummaryOf,
+  type Preset,
+  type SessionReference,
+  type Task,
+  type TaskSummary,
+} from "@claxedo/tasks"
+import { presetRow, taskRow } from "@claxedo/tasks/test-support"
 import type { TasksPage } from "@/platform/identity/route"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
@@ -19,43 +28,11 @@ afterEach(cleanup)
 const SERVER = "http://tasks.test"
 
 function summary(id: string, overrides: Partial<TaskSummary> = {}): TaskSummary {
-  return {
-    id,
-    revision: 1,
-    scopeId: "local",
-    projectId: "prj_1",
-    workspaceId: null,
-    number: 1,
-    parentTaskId: null,
-    title: `Task ${id}`,
-    status: "todo",
-    childSetRevision: 0,
-    archivedAt: null,
-    createdAt: 1,
-    updatedAt: 1,
-    hasDescription: false,
-    links: { count: 0 },
-    children: { total: 0, done: 0 },
-    ...overrides,
-  }
+  const row = taskRow({ id, number: 1, title: `Task ${id}` })
+  return { ...taskSummaryOf(row, { count: 0 }, { total: 0, done: 0 }), ...overrides }
 }
 
-const parent: Task = {
-  id: "tsk_1",
-  revision: 1,
-  scopeId: "local",
-  projectId: "prj_1",
-  workspaceId: null,
-  number: 1,
-  parentTaskId: null,
-  title: "Task tsk_1",
-  description: "",
-  status: "doing",
-  childSetRevision: 2,
-  archivedAt: null,
-  createdAt: 1,
-  updatedAt: 1,
-}
+const parent: Task = taskRow({ id: "tsk_1", number: 1, title: "Task tsk_1", status: "doing", childSetRevision: 2 })
 
 function json(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
@@ -179,22 +156,8 @@ describe("tasks pagination", () => {
   })
 })
 
-function presetRow(id: string): Preset {
-  return {
-    id,
-    revision: 1,
-    scopeId: "local",
-    ownerId: "local",
-    name: `Preset ${id}`,
-    instructions: "",
-    execution: { placement: "local", capabilities: { mode: "inherit-local" } },
-    configurations: {
-      primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "sonnet" }, effort: null },
-    },
-    archivedAt: null,
-    createdAt: 1,
-    updatedAt: 1,
-  }
+function preset(id: string): Preset {
+  return presetRow({ id, name: `Preset ${id}` })
 }
 
 /**
@@ -213,8 +176,8 @@ function failingSecondPageHost() {
       await new Promise((resolve) => setTimeout(resolve, 0))
       const cursor = new URLSearchParams(path.slice(path.indexOf("?") + 1)).get("cursor")
       if (path.startsWith("/presets")) {
-        if (cursor !== "presets-page-2") return json({ items: [presetRow("pre_1")], nextCursor: "presets-page-2" })
-        return repaired ? json({ items: [presetRow("pre_2")], nextCursor: null }) : nextPageRefusal()
+        if (cursor !== "presets-page-2") return json({ items: [preset("pre_1")], nextCursor: "presets-page-2" })
+        return repaired ? json({ items: [preset("pre_2")], nextCursor: null }) : nextPageRefusal()
       }
       if (path.startsWith("/tasks/tsk_1/children")) {
         if (cursor !== "children-page-2") {

@@ -1,27 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { Task } from "@claxedo/tasks"
+import { taskRow } from "@claxedo/tasks/test-support"
 import { TasksApiError } from "@claxedo/tasks/client"
 import { refusalOf } from "../data/tasks-api"
 import { createTasksStore } from "./tasks-store"
 
 function task(overrides: Partial<Task> = {}): Task {
-  return {
-    id: "tsk_1",
-    revision: 3,
-    scopeId: "local",
-    projectId: "prj_1",
-    workspaceId: null,
-    number: 1,
-    parentTaskId: null,
-    title: "Ship the importer",
-    description: "",
-    status: "todo",
-    childSetRevision: 0,
-    archivedAt: null,
-    createdAt: 1,
-    updatedAt: 1,
-    ...overrides,
-  }
+  return taskRow({ id: "tsk_1", revision: 3, number: 1, title: "Ship the importer", ...overrides })
 }
 
 describe("tasks store drafts", () => {
