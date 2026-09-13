@@ -4,24 +4,17 @@ import {
   aiConnectTransition,
   connectionDisplayName,
   destinationStoresCredentials,
-  groupConnectResults,
-  groupDiscoveryItems,
+  discoveryRows,
   initialAIConnectState,
   localHarnessStatuses,
   isUsableResult,
 } from "./ai-connect-state"
 
-const claudeBindings = [
-  {
-    providerId: "claude-acp",
-    kind: "oauth_token",
-    label: "Claude Code login · ACP adapter",
-    origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
-  },
+const claudeToken = [
   {
     providerId: "claude-sdk",
     kind: "oauth_token",
-    label: "Claude Code login · agent SDK",
+    label: "Synced from CLAUDE_CODE_OAUTH_TOKEN",
     origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
   },
 ]
@@ -103,7 +96,7 @@ describe("AI connect state", () => {
     const state = aiConnectTransition({ phase: "discovering" }, {
       type: "discovery-succeeded",
       discoveryId: "discovery-1",
-      items: claudeBindings,
+      items: claudeToken,
     })
 
     expect(state).toMatchObject({ phase: "preview", discoveryId: "discovery-1" })
@@ -114,7 +107,7 @@ describe("AI connect state", () => {
     const state = aiConnectTransition({ phase: "discovering" }, {
       type: "discovery-succeeded",
       discoveryId: "discovery-1",
-      items: claudeBindings,
+      items: claudeToken,
     })
 
     expect(state.phase).toBe("preview")
@@ -126,61 +119,40 @@ describe("AI connect state", () => {
     expect(destinationStoresCredentials("both")).toBe(true)
   })
 
-  test("two harness bindings of one Claude login collect as one row that saves under both", () => {
-    const rows = groupDiscoveryItems(claudeBindings)
+  test("one discovered login is one row, saved under the provider it arrived as", () => {
+    const rows = discoveryRows(claudeToken)
 
     expect(rows).toHaveLength(1)
-    expect(rows[0].label).toBe("Claude Code login")
-    expect(rows[0].bindings).toEqual(["ACP adapter", "agent SDK"])
-    expect(rows[0].providerIds).toEqual(["claude-acp", "claude-sdk"])
-  })
-
-  test("the merged row is keyed on credential identity, not on the label the server varies per binding", () => {
-    // The server deliberately gives the two bindings different labels so they
-    // could be told apart — which makes the label the one field that cannot
-    // identify them as the same login.
-    const rows = groupDiscoveryItems([
-      { ...claudeBindings[0], label: "Claude token from CLAUDE_CODE_OAUTH_TOKEN · ACP adapter" },
-      { ...claudeBindings[1], label: "Claude token from CLAUDE_CODE_OAUTH_TOKEN · agent SDK" },
-    ])
-
-    expect(rows).toHaveLength(1)
-    expect(rows[0].label).toBe("Claude token from CLAUDE_CODE_OAUTH_TOKEN")
+    expect(rows[0].label).toBe("Synced from CLAUDE_CODE_OAUTH_TOKEN")
+    expect(rows[0].providerId).toBe("claude-sdk")
   })
 
   test("two Codex accounts stay two rows — different accounts are different credentials", () => {
-    const rows = groupDiscoveryItems([
+    const rows = discoveryRows([
       { providerId: "codex-app-server", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…a", origin: "Synced from OPENAI_API_KEY" },
       { providerId: "codex-app-server", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…b", origin: "~/.codex/accounts/b.auth.json" },
     ])
 
     expect(rows.map((row) => row.accountId)).toEqual(["account…a", "account…b"])
+    expect(new Set(rows.map((row) => row.selectionId)).size).toBe(2)
   })
 
-  test("a merged row is only already-connected when every binding is, and never over-promises a probe", () => {
-    const partial = groupDiscoveryItems([
-      { ...claudeBindings[0], alreadyConnected: true, probe: { state: "working" } },
-      { ...claudeBindings[1], probe: { state: "broken", reason: "The provider rejected this credential." } },
+  test("a row the provider rejected is shown with its reason and left unchecked", () => {
+    const rows = discoveryRows([
+      { ...claudeToken[0], probe: { state: "broken", reason: "The provider rejected this credential." } },
     ])
 
-    expect(partial[0].alreadyConnected).toBe(false)
-    expect(partial[0].probe).toEqual({ state: "broken", reason: "The provider rejected this credential." })
-    // Broken is never pre-selected, merged or not.
-    expect(partial[0].selected).toBe(false)
+    expect(rows[0].probe).toEqual({ state: "broken", reason: "The provider rejected this credential." })
+    expect(rows[0].selected).toBe(false)
   })
 
-  test("both bindings of one login settle as a single verdict, and a failure on either wins", () => {
-    const results = groupConnectResults([
-      { credentialId: "c1", providerId: "claude-acp", result: "ok" },
-      { credentialId: "c2", providerId: "claude-sdk", result: "auth_failed" },
-      { credentialId: "c3", providerId: "codex-app-server", result: "ok" },
-    ])
+  test("an already-connected row is not offered again", () => {
+    const rows = discoveryRows([{ ...claudeToken[0], alreadyConnected: true, probe: { state: "working" } }])
 
-    expect(results).toEqual([
-      { credentialId: "c2", providerId: "claude-sdk", result: "auth_failed" },
-      { credentialId: "c3", providerId: "codex-app-server", result: "ok" },
-    ])
+    expect(rows[0].alreadyConnected).toBe(true)
+    expect(rows[0].selected).toBe(false)
   })
+
 
   test("every harness the local checks name gets a row, whatever the reports contain", () => {
     const statuses = localHarnessStatuses([

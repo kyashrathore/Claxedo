@@ -53,18 +53,14 @@ export function destinationStoresCredentials(destination: OnboardingDestination)
  */
 export const claudeHarnessBindings = ["claude-acp", "claude-sdk"] as const
 
-const bindingFamilies: Record<string, string> = {
-  "claude-acp": "claude",
-  "claude-sdk": "claude",
-}
-
-const familyNames: Record<string, string> = {
-  claude: "Claude Code login",
+const connectionNames: Record<string, string> = {
+  "claude-acp": "Claude Code login",
+  "claude-sdk": "Claude Code login",
 }
 
 /** The name a settled row shows, so a verdict never reads as a raw provider id. */
 export function connectionDisplayName(providerId: string) {
-  return familyNames[bindingFamilies[providerId] ?? ""] ?? providerId
+  return connectionNames[providerId] ?? providerId
 }
 
 /**
@@ -129,20 +125,11 @@ export function localHarnessStatuses(logins: readonly MachineLogin[]): LocalHarn
   })
 }
 
-/**
- * One discovered login, however many harness bindings it arrived under.
- *
- * `claude-acp` and `claude-sdk` are the same Keychain token read twice. Offered
- * as two rows they read as two decisions, and unchecking one leaves a half-
- * connected Claude the user has no way to reason about.
- */
+/** One discovered login, as it is offered for saving. */
 export type AIDiscoveryRow = {
   selectionId: string
-  /** Every provider id this row saves under. */
-  providerIds: readonly string[]
+  providerId: string
   label: string
-  /** Named harness bindings, when the row covers more than one. */
-  bindings: readonly string[]
   accountId?: string
   origin: string
   alreadyConnected: boolean
@@ -151,70 +138,28 @@ export type AIDiscoveryRow = {
 }
 
 /**
- * Identity is what the credential IS — its family, account, and where it was
- * read from. Never the label: the server deliberately varies the label per
- * binding so the two Claude rows could be told apart, which makes it the one
- * field guaranteed to differ between rows that must merge.
+ * Identity is what the credential IS — its provider and its account, the same
+ * pair the save request addresses the item by, so a checked row and the
+ * selection sent for it cannot drift apart.
  */
-function groupKey(item: AIDiscoveryItem) {
-  return [bindingFamilies[item.providerId] ?? item.providerId, item.kind, item.accountId ?? "", item.origin]
-    .join("\u0000")
+function selectionId(item: AIDiscoveryItem) {
+  return `${item.providerId}\u0000${item.accountId ?? ""}`
 }
 
-/** Splits "Claude Code login · agent SDK" into its base name and its binding. */
-function splitBinding(label: string) {
-  const at = label.lastIndexOf(" · ")
-  if (at < 0) return { base: label, binding: undefined }
-  return { base: label.slice(0, at), binding: label.slice(at + 3) }
-}
-
-/** Never over-promise: one broken binding makes the whole login broken. */
-function mergeProbes(probes: Array<AIDiscoveryProbe | undefined>) {
-  return probes.find((probe) => probe?.state === "broken")
-    ?? probes.find((probe) => probe?.state === "unknown")
-    ?? probes.find((probe) => probe?.state === "working")
-}
-
-export function groupDiscoveryItems(items: readonly AIDiscoveryItem[]): AIDiscoveryRow[] {
-  const groups = new Map<string, AIDiscoveryItem[]>()
-  for (const item of items) {
-    const key = groupKey(item)
-    groups.set(key, [...(groups.get(key) ?? []), item])
-  }
-  return [...groups].map(([selectionId, group]) => {
-    const first = group[0]
-    const split = group.map((item) => splitBinding(item.label))
-    const merged = group.length > 1
-    // A group is settled only when every binding is; one binding still missing
-    // is still work to do, and the row has to stay checkable to do it.
-    const alreadyConnected = group.every((item) => item.alreadyConnected === true)
-    const probe = mergeProbes(group.map((item) => item.probe))
+export function discoveryRows(items: readonly AIDiscoveryItem[]): AIDiscoveryRow[] {
+  return items.map((item) => {
+    const alreadyConnected = item.alreadyConnected === true
     return {
-      selectionId,
-      providerIds: group.map((item) => item.providerId),
-      label: merged ? split[0].base : first.label,
-      bindings: merged ? split.flatMap((part) => part.binding ? [part.binding] : []) : [],
-      ...(first.accountId ? { accountId: first.accountId } : {}),
-      origin: first.origin,
+      selectionId: selectionId(item),
+      providerId: item.providerId,
+      label: item.label,
+      ...(item.accountId ? { accountId: item.accountId } : {}),
+      origin: item.origin,
       alreadyConnected,
-      ...(probe ? { probe } : {}),
-      selected: !alreadyConnected && probe?.state !== "broken",
+      ...(item.probe ? { probe: item.probe } : {}),
+      selected: !alreadyConnected && item.probe?.state !== "broken",
     }
   })
-}
-
-/**
- * One verdict per login rather than per binding. Both bindings carry the same
- * secret, so two rows would report the same answer twice — and a failure on one
- * is a failure of the login.
- */
-export function groupConnectResults(results: readonly AIConnectResult[]) {
-  const groups = new Map<string, AIConnectResult[]>()
-  for (const result of results) {
-    const key = bindingFamilies[result.providerId] ?? result.providerId
-    groups.set(key, [...(groups.get(key) ?? []), result])
-  }
-  return [...groups.values()].map((group) => group.find((result) => !isUsableResult(result.result)) ?? group[0])
 }
 
 /** The per-credential verdict rendered on its own row. */
@@ -261,7 +206,7 @@ export function aiConnectTransition(state: AIConnectState, event: AIConnectEvent
     // Only credentials the provider actually accepted are pre-selected. A
     // broken one stays visible and unchecked with its reason — the user knows
     // it was found and why it was rejected, and can still override.
-    return { phase: "preview", discoveryId: event.discoveryId, items: groupDiscoveryItems(event.items) }
+    return { phase: "preview", discoveryId: event.discoveryId, items: discoveryRows(event.items) }
   }
   if (event.type === "selection-changed" && state.phase === "preview") {
     return {

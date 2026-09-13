@@ -252,45 +252,33 @@ describe("AIConnectSurface", () => {
     expect(stub.calls).toHaveLength(1)
   })
 
-  test("two harness bindings of one Claude login collect as one row and save under both", async () => {
+  test("a discovered Claude login is one row, saved under the provider it arrived as", async () => {
     stubPorts()
     const stub = requests([
       Response.json({
         discovery_id: "discovery-1",
         items: [
-          { provider_id: "claude-acp", kind: "oauth_token", label: "Claude Code login · ACP adapter", origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN", probe: { state: "working" } },
-          { provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN", probe: { state: "working" } },
+          { provider_id: "claude-sdk", kind: "oauth_token", label: "Synced from CLAUDE_CODE_OAUTH_TOKEN", origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN", probe: { state: "working" } },
         ],
       }),
-      Response.json({ saved: [
-        { credential_id: "cred-acp", provider_id: "claude-acp" },
-        { credential_id: "cred-sdk", provider_id: "claude-sdk" },
-      ] }),
-      Response.json({ result: "ok" }),
+      Response.json({ saved: [{ credential_id: "cred-sdk", provider_id: "claude-sdk" }] }),
       Response.json({ result: "ok" }),
     ])
     const submits: Array<{ run: () => Promise<void>; count: () => number }> = []
     render(() => <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />)
 
     fireEvent.click(screen.getByText("Send a login from this computer"))
-    expect(await screen.findByText("Claude Code login")).toBeInTheDocument()
+    expect(await screen.findByText("Synced from CLAUDE_CODE_OAUTH_TOKEN")).toBeInTheDocument()
     expect(screen.getAllByRole("checkbox")).toHaveLength(1)
-    expect(screen.getByText(/Used by ACP adapter and agent SDK/i)).toBeInTheDocument()
-    // One row is one decision, so the action bar counts one.
     expect(submits.at(-1)!.count()).toBe(1)
 
     await submits.at(-1)!.run()
 
-    // ...and the save still writes both bindings, or one harness would be left
-    // unable to resolve auth.
     expect(requestJson(stub.calls[1].init)).toEqual({
       discovery_id: "discovery-1",
-      items: [
-        { provider_id: "claude-acp", scope: "local" },
-        { provider_id: "claude-sdk", scope: "local" },
-      ],
+      items: [{ provider_id: "claude-sdk", scope: "local" }],
     })
-    // Two credentials verified, but the user sees one login with one verdict.
+    // The verdict is named, never shown as the raw provider id.
     expect(await screen.findByText("Claude Code login")).toBeInTheDocument()
     expect(screen.getAllByText("Verified")).toHaveLength(1)
   })

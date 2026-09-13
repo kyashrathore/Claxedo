@@ -18,7 +18,6 @@ import {
   aiConnectTransition,
   connectionDisplayName,
   destinationStoresCredentials,
-  groupConnectResults,
   initialAIConnectState,
   isUsableResult,
   localHarnessStatuses,
@@ -235,13 +234,11 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
     await saveDiscoveredAIConnections({
       serverUrl: props.serverUrl,
       discoveryId: current.discoveryId,
-      // One row, both bindings: the user made one decision about one login, so
-      // each harness binding is written rather than left half-connected.
-      items: selected.flatMap((item) => item.providerIds.map((providerId) => ({
-        providerId,
+      items: selected.map((item) => ({
+        providerId: item.providerId,
         accountId: item.accountId,
         scope: scope(),
-      }))),
+      })),
       request: props.request,
     })
       .then(complete)
@@ -580,13 +577,10 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
           </div>
         </Show>
 
-        {/* One row per LOGIN, each with its own verdict and its own repair —
-            two harness bindings of one credential reported the same answer
-            twice and read as two separate things to fix. */}
         <Show when={settled()}>
           {(current) => (
             <div class="setup-rows">
-              <For each={groupConnectResults(current().results)}>
+              <For each={current().results}>
                 {(result) => (
                   <div class="setup-row">
                     <span class="setup-row-copy">
@@ -651,13 +645,9 @@ function harnessDetail(harness: LocalHarnessStatus) {
   return harness.detail || "Sign in again to use it here."
 }
 
-/**
- * One login's sub-line. A merged row names the harness bindings it covers, so
- * "why is this one row when Claxedo runs two harnesses?" is answerable without
- * leaving the screen.
- */
+/** One login's sub-line: which account it is, and where it was read from. */
 function rowDescription(row: AIDiscoveryRow) {
-  return [row.accountId, row.origin, row.bindings.length > 1 ? `Used by ${row.bindings.join(" and ")}` : undefined]
+  return [row.accountId, row.origin]
     .filter(Boolean)
     .join(" · ")
 }
