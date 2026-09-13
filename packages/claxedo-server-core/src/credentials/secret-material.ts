@@ -1,3 +1,4 @@
+import { accountIdFromClaims } from "@claxedo/agent-sdk-runtime"
 import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import type { CredentialKind } from "@claxedo/server-core/credentials/types"
 
@@ -56,8 +57,12 @@ export function credentialSecretMaterial(input: {
     .map(jsonString)
     .find((item) => item !== undefined)
   if (!token) return undefined
+  // A ChatGPT login often names its account only inside the `id_token` claims,
+  // and the header that account id fills is what tells the backend which plan
+  // the token spends. One reader for both shapes, shared with the Codex home.
   const accountId = [document.account_id, document.accountId, tokens?.account_id, oauth?.account_id]
     .map(jsonString)
     .find((item) => item !== undefined)
+    ?? accountIdFromClaims(document)
   return { token, ...(accountId ? { accountId } : {}), form: "subscription" }
 }

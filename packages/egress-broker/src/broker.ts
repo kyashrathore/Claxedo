@@ -65,16 +65,21 @@ export function createEgressBroker(options: BrokerOptions) {
       target.search = url.search
       const headers = new Headers(request.headers)
       stripTransportHeaders(headers)
-      for (const name of ["authorization", ...API_KEY_HEADERS, "cookie", "x-claxedo-egress-target"]) headers.delete(name)
       const injection = binding.injection
       const injected = [injection.header, ...Object.keys(injection.headers ?? {})]
+      // Every name this binding owns, stripped before anything is set: a
+      // companion the row declares but has no value for must not survive from
+      // the client either.
+      for (const name of ["authorization", ...API_KEY_HEADERS, "cookie", "x-claxedo-egress-target", ...injected]) {
+        headers.delete(name)
+      }
       if (injected.some((name) => ["host", "connection", "content-length", "transfer-encoding", "cookie"].includes(name.toLowerCase()))) {
         return brokerErrorResponse(503, "binding_injection_invalid")
       }
       headers.set(injection.header, injection.scheme ? `${injection.scheme} ${value}` : value)
       for (const [name, companion] of Object.entries(injection.headers ?? {})) {
         if (name.toLowerCase() === injection.header.toLowerCase()) return brokerErrorResponse(503, "binding_injection_invalid")
-        headers.set(name, companion)
+        if (companion !== null) headers.set(name, companion)
       }
       let upstream: Response
       try {

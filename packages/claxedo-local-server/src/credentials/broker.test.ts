@@ -34,6 +34,8 @@ function bound(projection: Projection | undefined) {
 
 const workspaceId = "ws-broker"
 const brokerOrigin = "http://127.0.0.1:2595"
+/** An `id_token` payload naming the account only in its claims. */
+const CLAIMS = "eyJjaGF0Z3B0X2FjY291bnRfaWQiOiAiYWNjdC1mcm9tLWNsYWltcyJ9"
 
 async function activeRow(secret: string, providerId = "claude-sdk", kind: "api_key" | "oauth_token" = "api_key") {
   const credential = await putCredential({
@@ -260,6 +262,51 @@ describe("local binding authority", () => {
       },
       injection: { header: "Authorization", scheme: "Bearer", headers: { "ChatGPT-Account-Id": "acct-7" } },
     })
+  })
+
+  test("the agent's own account header never travels beside the operator's token", async () => {
+    await activeRow(
+      JSON.stringify({ tokens: { access_token: "chatgpt-access-no-account" } }),
+      "codex-app-server",
+      "oauth_token",
+    )
+    const local = broker()
+    const projection = bound((await local.projectAuth({ workspaceId }))["codex-app-server"])
+    const realFetch = globalThis.fetch
+    const upstream: Request[] = []
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      upstream.push(new Request(url, init))
+      return new Response("{}")
+    }) as typeof fetch
+    try {
+      const response = await local.handler(new Request(`${projection.baseUrl}/backend-api/codex/responses`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${projection.placeholder}`,
+          // The harness's own plan, alongside the operator's real token.
+          "ChatGPT-Account-Id": "acct-belonging-to-the-agent",
+        },
+      }))
+
+      expect(response.status).toBe(200)
+      expect(upstream[0]?.headers.get("chatgpt-account-id")).toBeNull()
+      expect(upstream[0]?.headers.get("authorization")).toBe("Bearer chatgpt-access-no-account")
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("a ChatGPT login that names its account only in its claims still binds one", async () => {
+    await activeRow(
+      JSON.stringify({ tokens: { access_token: "chatgpt-access-claims", id_token: `header.${CLAIMS}.sig` } }),
+      "codex-app-server",
+      "oauth_token",
+    )
+    const local = broker()
+    const projection = bound((await local.projectAuth({ workspaceId }))["codex-app-server"])
+
+    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.binding.injection)
+      .toEqual({ header: "Authorization", scheme: "Bearer", headers: { "ChatGPT-Account-Id": "acct-from-claims" } })
   })
 
   test("a Cursor key binds to the backend the SDK targets", async () => {

@@ -22,7 +22,7 @@ export type ProviderDestination = {
    * (Codex, Pi, the OpenCode engine) appends this to it.
    */
   apiPath: string
-  injection: { header: string; scheme?: string; headers?: Record<string, string> }
+  injection: { header: string; scheme?: string; headers?: Record<string, string | null> }
   /** What the broker injects, which is the token inside a stored login document. */
   value: string
 }
@@ -66,7 +66,9 @@ const openaiDestination: ProviderRow = (material) => material.form === "subscrip
     injection: {
       header: "Authorization",
       scheme: "Bearer",
-      ...(material.accountId ? { headers: { "ChatGPT-Account-Id": material.accountId } } : {}),
+      // Declared even when the login names no account: the name is this row's,
+      // so the harness's own value never travels beside the operator's token.
+      headers: { "ChatGPT-Account-Id": material.accountId ?? null },
     },
   }
   : {
