@@ -1135,8 +1135,11 @@ transport errors.
 - Evidence: the buildkit error above; host volume at 100%.
 - Owner: the repository owner (free disk, or build and push the image from a
   machine with headroom).
-- Follow-up: free space, rerun `wrangler deploy` from this directory; the Worker
-  script is already current, so only the container application changes.
+- Follow-up: rerun `wrangler deploy` from this directory; the Worker script is
+  already current, so only the container application changes. The volume has
+  since returned to 101Gi free, so the build has room; buildkit's own store may
+  still hold the corrupt blob that made `docker system df` fail, and a second
+  failure there wants `docker buildx prune` before a third attempt.
 
 #### Blocker 2 — the registry's Cloudflare API token is not the deployed Worker's
 
