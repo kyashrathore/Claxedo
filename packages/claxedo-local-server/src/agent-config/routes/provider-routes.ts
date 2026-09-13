@@ -1,5 +1,5 @@
 import { Hono, type MiddlewareHandler } from "hono"
-import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
+import { HARNESS_TABLE, isHarnessId } from "@claxedo/agent-runtime-contract"
 import {
   CustomProviderInvalidError,
   putCustomProvider,
@@ -21,23 +21,6 @@ import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../
  * same picker without exposing a raw engine control route.
  */
 const CATALOG_HARNESSES = new Set(["pi", "opencode"])
-
-/**
- * The provider a native harness's own login is stored against.
- *
- * These harnesses run on one vendor's account and have no model catalog to
- * pick from, so `/providers` still refuses them while `/providers/auth`
- * answers with that provider's sign-in methods — the only way a caller learns
- * the method index `provider.oauth.authorize` is keyed by.
- *
- * The list of methods is the server's to decide; the app joins its own words
- * to this answer by method type and keeps no list of its own.
- */
-const HARNESS_AUTH_PROVIDER = new Map<string, string>(Object.entries({
-  claude: "claude-sdk",
-  codex: "codex-app-server",
-  cursor: "cursor-sdk",
-} satisfies Partial<Record<RuntimeNativeHarnessId, string>>))
 
 function unsupportedHarness(message: string) {
   return { error: { code: "provider_catalog_unsupported", message } } as const
@@ -79,7 +62,11 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
       }
       const methods = providerAuthMethods()
       if (CATALOG_HARNESSES.has(harness)) return c.json(methods)
-      const providerId = HARNESS_AUTH_PROVIDER.get(harness)
+      // A native harness runs on one vendor's account and has no catalog to
+      // pick from, so `/providers` refuses it while this answers with the
+      // sign-in methods of the provider its login is stored against — the only
+      // way a caller learns the method index `provider.oauth.authorize` takes.
+      const providerId = isHarnessId(harness) ? HARNESS_TABLE[harness].connectProvider : undefined
       const served = providerId === undefined ? undefined : methods[providerId]
       if (providerId === undefined || served === undefined) {
         return c.json(unsupportedHarness(`No sign-in methods are served for nativeHarness=${harness}`), 400)

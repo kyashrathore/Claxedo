@@ -44,6 +44,7 @@
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/egress-broker": "workspace:*",
     "@claxedo/helpers": "workspace:*",

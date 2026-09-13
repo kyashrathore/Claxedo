@@ -1,11 +1,11 @@
 import { describe, expect, test } from "vitest"
 import { spawn } from "child_process"
+import type { HarnessId } from "@claxedo/agent-runtime-contract"
 import {
   createMachineLoginCache,
   readMachineLogins,
   stopAppServer,
   type MachineLogin,
-  type MachineLoginHarness,
   type MachineLoginProbes,
   type MachineLoginRun,
 } from "./machine-login"
@@ -185,7 +185,7 @@ describe("the harnesses are not asked twice at once, nor again straight away", (
   function counting() {
     const reads: string[] = []
     let release: (login: MachineLogin) => void = () => {}
-    const read = (harness: MachineLoginHarness) => {
+    const read = (harness: HarnessId) => {
       reads.push(harness)
       return new Promise<MachineLogin>((resolve) => { release = resolve })
     }

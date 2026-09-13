@@ -10,7 +10,7 @@
 
 import { Log } from "../platform/runtime/lib/log"
 import type { CredentialUsageWindow } from "./types"
-import type { MachineLoginHarness } from "./machine-login"
+import type { HarnessId } from "@claxedo/agent-runtime-contract"
 
 const log = Log.create({ service: "credentials-machine-agent-usage" })
 
@@ -18,7 +18,7 @@ export type MachineAgentUsage = {
   /** The agent as the probe names it: `claude`, `codex`, `gemini`, `opencodeGo`. */
   agent: string
   /** The harness this agent is, for the agents Claxedo runs turns on. */
-  harness?: MachineLoginHarness
+  harness?: HarnessId
   /** The product's name, as a reader knows it. */
   label: string
   /** The plan tier the agent names, with the brand stripped: "Max", "Pro". */

@@ -1,4 +1,5 @@
 import { execFile, spawn } from "child_process"
+import { HARNESS_IDS, HARNESS_TABLE, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { jsonNumber, jsonRecord, jsonString, jsonText, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { CredentialUsageWindow } from "./operations/verify"
@@ -15,7 +16,7 @@ const log = Log.create({ service: "credentials-machine-login" })
  * use when we invoke it.
  */
 export type MachineLogin = {
-  harness: MachineLoginHarness
+  harness: HarnessId
   /** The registry provider ids this harness resolves its auth through. */
   providerIds: readonly string[]
   /** Those of `providerIds` this login drives, where it does not drive them all. */
@@ -40,41 +41,6 @@ export type MachineLogin = {
  * `unknown` — the CLI is installed and could not be asked; `detail` says why.
  */
 export type MachineLoginState = "signed_in" | "signed_out" | "absent" | "unknown"
-
-export const MACHINE_LOGIN_HARNESSES = ["claude", "codex", "cursor"] as const
-export type MachineLoginHarness = (typeof MACHINE_LOGIN_HARNESSES)[number]
-
-export function isMachineLoginHarness(value: string): value is MachineLoginHarness {
-  return (MACHINE_LOGIN_HARNESSES as readonly string[]).includes(value)
-}
-
-export const MACHINE_LOGIN_PROVIDER_IDS: Record<MachineLoginHarness, readonly string[]> = {
-  claude: ["claude-acp", "claude-sdk"],
-  codex: ["codex-app-server", "openai"],
-  cursor: ["cursor-acp", "cursor-sdk"],
-}
-
-/**
- * The harness a stored row's provider belongs to, where one does. Every other
- * provider id names a vendor an engine can run rather than a harness's own
- * login, and has no harness to be listed under.
- */
-export function machineLoginHarnessFor(providerId: string): MachineLoginHarness | undefined {
-  return MACHINE_LOGIN_HARNESSES.find((harness) => MACHINE_LOGIN_PROVIDER_IDS[harness].includes(providerId))
-}
-
-/**
- * The bindings a machine login actually drives, for the harnesses where that is
- * narrower than the set they resolve auth through.
- *
- * `cursor-agent login` signs the CLI in, and Cursor ACP runs on it. The Cursor
- * SDK takes its key as an `Agent.create` argument and reads nothing from that
- * login, so it refuses a turn with `Cursor SDK requires an explicit cursor-sdk
- * API key` however signed in the CLI is.
- */
-const SERVED_PROVIDER_IDS: Partial<Record<MachineLoginHarness, readonly string[]>> = {
-  cursor: ["cursor-acp"],
-}
 
 /**
  * One command run, reduced to what a self-report needs.
@@ -124,16 +90,16 @@ export type MachineLoginRead = MachineLoginProbes & {
  * spawning anything.
  */
 export function createMachineLoginCache(input: {
-  read: (harness: MachineLoginHarness) => Promise<MachineLogin>
+  read: (harness: HarnessId) => Promise<MachineLogin>
   now?: () => number
   freshForMs?: number
 }) {
   const now = input.now ?? Date.now
   const freshForMs = input.freshForMs ?? FRESH_FOR_MS
-  const answers = new Map<MachineLoginHarness, { at: number; login: MachineLogin }>()
-  const asking = new Map<MachineLoginHarness, Promise<MachineLogin>>()
+  const answers = new Map<HarnessId, { at: number; login: MachineLogin }>()
+  const asking = new Map<HarnessId, Promise<MachineLogin>>()
   return {
-    read(harness: MachineLoginHarness, options: { fresh?: boolean } = {}): Promise<MachineLogin> {
+    read(harness: HarnessId, options: { fresh?: boolean } = {}): Promise<MachineLogin> {
       const held = answers.get(harness)
       if (!options.fresh && held && now() - held.at < freshForMs) return Promise.resolve(held.login)
       // A read already in flight is joined even by a `fresh` caller: it was
@@ -160,7 +126,7 @@ export function createMachineLoginCache(input: {
 const machineLogins = createMachineLoginCache({ read: (harness) => askHarness(harness, {}) })
 
 export async function readMachineLogins(
-  harnesses: readonly MachineLoginHarness[] = MACHINE_LOGIN_HARNESSES,
+  harnesses: readonly HarnessId[] = HARNESS_IDS,
   options: MachineLoginRead = {},
 ): Promise<MachineLogin[]> {
   // A caller with probes of its own is asking a question about those probes,
@@ -169,7 +135,7 @@ export async function readMachineLogins(
   return Promise.all(harnesses.map((harness) => machineLogins.read(harness, { fresh: options.fresh === true })))
 }
 
-function askHarness(harness: MachineLoginHarness, probes: MachineLoginProbes): Promise<MachineLogin> {
+function askHarness(harness: HarnessId, probes: MachineLoginProbes): Promise<MachineLogin> {
   const run = probes.run ?? runCommand
   if (harness === "claude") return claudeMachineLogin(run)
   if (harness === "codex") return codexMachineLogin(run, probes.codexAccount ?? codexAccountRead)
@@ -177,11 +143,12 @@ function askHarness(harness: MachineLoginHarness, probes: MachineLoginProbes): P
 }
 
 function report(
-  harness: MachineLoginHarness,
+  harness: HarnessId,
   rest: Omit<MachineLogin, "harness" | "providerIds" | "serves">,
 ): MachineLogin {
-  const serves = SERVED_PROVIDER_IDS[harness]
-  return { harness, providerIds: MACHINE_LOGIN_PROVIDER_IDS[harness], ...(serves ? { serves } : {}), ...rest }
+  const { providerIds, machineLoginServes } = HARNESS_TABLE[harness]
+  const narrowed = machineLoginServes.length < providerIds.length
+  return { harness, providerIds, ...(narrowed ? { serves: machineLoginServes } : {}), ...rest }
 }
 
 /**

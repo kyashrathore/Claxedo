@@ -18,7 +18,8 @@
 import { agentUsageOrNone } from "./machine-agent-usage"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { MachineAgentUsageReader } from "./machine-agent-usage"
-import type { MachineLogin, MachineLoginHarness } from "./machine-login"
+import type { HarnessId } from "@claxedo/agent-runtime-contract"
+import type { MachineLogin } from "./machine-login"
 
 export type ReportedMachineLogin = MachineLogin & {
   usageAt?: number
@@ -34,7 +35,7 @@ function usageKey(harness: string, account: string) {
 export async function machineLoginsWithUsage(
   credentials: ControlPlaneCredentials,
   options: {
-    harnesses?: readonly MachineLoginHarness[]
+    harnesses?: readonly HarnessId[]
     fresh: boolean
     now: () => number
     agentUsage?: MachineAgentUsageReader

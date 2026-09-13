@@ -13,14 +13,9 @@
  * holds its own answer, so a read costs a vendor request only when it is stale.
  */
 
+import { HARNESS_IDS, HARNESS_TABLE, harnessForProviderId, isHarnessId } from "@claxedo/agent-runtime-contract"
 import { agentUsageOrNone } from "../credentials/machine-agent-usage"
 import { machineLoginsWithUsage } from "../credentials/machine-login-report"
-import {
-  MACHINE_LOGIN_HARNESSES,
-  MACHINE_LOGIN_PROVIDER_IDS,
-  isMachineLoginHarness,
-  machineLoginHarnessFor,
-} from "../credentials/machine-login"
 import { checkCredential } from "../credentials/operations/check"
 import { isSubscriptionKind } from "../credentials/secret-material"
 import { Log } from "../platform/runtime/lib/log"
@@ -153,10 +148,10 @@ async function composeSnapshot(
 function orderAccounts(accounts: readonly QuotaAccount[]): QuotaAccount[] {
   const rank = (account: QuotaAccount) =>
     account.otherAgent
-      ? MACHINE_LOGIN_HARNESSES.length + 1
-      : isMachineLoginHarness(account.harness)
-        ? MACHINE_LOGIN_HARNESSES.indexOf(account.harness)
-        : MACHINE_LOGIN_HARNESSES.length
+      ? HARNESS_IDS.length + 1
+      : isHarnessId(account.harness)
+        ? HARNESS_IDS.indexOf(account.harness)
+        : HARNESS_IDS.length
   return [...accounts].sort((a, b) =>
     rank(a) - rank(b)
     || a.harness.localeCompare(b.harness)
@@ -174,7 +169,7 @@ function storedAccounts(rows: readonly CredentialMetadata[]): StoredAccount[] {
   const groups = new Map<string, StoredAccount>()
   for (const row of rows) {
     if (!isSubscriptionKind(row.kind)) continue
-    const harness = machineLoginHarnessFor(row.provider_id) ?? row.provider_id
+    const harness = harnessForProviderId(row.provider_id) ?? row.provider_id
     const identity = row.account_id ?? row.id
     const held = groups.get(`${harness} ${identity}`)
     if (held) {
@@ -205,7 +200,7 @@ async function accountsInUse(
   const harnesses = new Set(stored.map((account) => account.harness))
   return new Set(
     [...harnesses].flatMap((harness) => {
-      const providerIds = isMachineLoginHarness(harness) ? MACHINE_LOGIN_PROVIDER_IDS[harness] : [harness]
+      const providerIds = isHarnessId(harness) ? HARNESS_TABLE[harness].providerIds : [harness]
       const id = providerIds.map((provider) => byProvider.get(provider)).find((value) => value !== undefined)
       return id === undefined ? [] : [id]
     }),

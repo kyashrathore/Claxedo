@@ -33,7 +33,8 @@ import type {
   SetActiveCredentialsResult,
 } from "../credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/operations/discovery"
-import type { MachineLogin, MachineLoginHarness } from "../credentials/machine-login"
+import type { HarnessId } from "@claxedo/agent-runtime-contract"
+import type { MachineLogin } from "../credentials/machine-login"
 import type { MachineLoginUsage } from "../credentials/machine-login-usage"
 
 export class ControlPlaneCompositionError extends Error {
@@ -98,7 +99,7 @@ export type ControlPlaneCredentials = {
    * Absent wherever the host is not the machine the harnesses live on.
    */
   machineLogins?: (
-    harnesses?: readonly MachineLoginHarness[],
+    harnesses?: readonly HarnessId[],
     options?: { fresh?: boolean },
   ) => Promise<MachineLogin[]>
   getCredentialByProvider: (

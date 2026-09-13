@@ -23,7 +23,7 @@
 
 import os from "node:os"
 import { createMachineAgentUsageCache } from "@claxedo/server-core/credentials/machine-agent-usage"
-import { isMachineLoginHarness } from "@claxedo/server-core/credentials/machine-login"
+import { isHarnessId } from "@claxedo/agent-runtime-contract"
 import type { MachineAgentUsage } from "@claxedo/server-core/credentials/machine-agent-usage"
 import type { CredentialUsageWindow } from "@claxedo/server-core/credentials/types"
 import { num, record, text } from "../../platform/json"
@@ -134,7 +134,7 @@ export function machineAgentUsage(probe: unknown, fallbackAt: number): MachineAg
     const plan = text(row.plan_label)
     return [{
       agent,
-      ...(isMachineLoginHarness(agent) ? { harness: agent } : {}),
+      ...(isHarnessId(agent) ? { harness: agent } : {}),
       label: AGENT_LABEL[agent] ?? agent,
       ...(plan === undefined ? {} : { plan }),
       windows: error === undefined ? windowsOf(agent, row) : [],
