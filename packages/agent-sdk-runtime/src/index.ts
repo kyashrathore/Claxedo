@@ -167,13 +167,11 @@ export {
   isAgentHarnessAccess,
   isAgentHarnessId,
   isHarnessEffortLevel,
-  isSessionGroupSlot,
   NO_HARNESS_EFFORT,
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
   parseSessionModelGroup,
   parseStoredSessionModelGroup,
-  SESSION_GROUP_SLOTS,
   sessionModelGroupJson,
 } from "@claxedo/agent-runtime-contract"
 export type {
@@ -189,8 +187,6 @@ export type {
   HarnessModelEffort,
   NativeHarnessId,
   NativeSdkHarnessId,
-  SessionGroupEntry,
-  SessionGroupSlot,
   SessionHarness,
   SessionHarnessId,
   SessionModelGroup,
