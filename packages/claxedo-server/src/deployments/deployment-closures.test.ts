@@ -87,7 +87,13 @@ const ENTRIES = [
   // included.
   // +1 module: `src/mcp/oauth-credential.ts`, which turns a consented access
   // token into an MCP credential. Consent revocation adds platform/auth/oauth-consent-revocation.ts; 139/38.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 139, packages: 38 },
+  // +1 package: `@claxedo/egress-broker`, whose mount policy — the
+  // `/bindings/*` pattern, the loopback gate and the CORS carve-out — this
+  // binary shares with the desktop composition rather than hand-typing. It
+  // holds the credential values and may bind 0.0.0.0, so it is a broker host;
+  // the package reaches only jose, @hono/node-server and the runtime contract.
+  // 139/39.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 139, packages: 39 },
 ] as const
 
 /** The remaining cloud compositions. */
