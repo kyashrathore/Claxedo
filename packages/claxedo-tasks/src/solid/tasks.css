@@ -1430,3 +1430,52 @@
   color: var(--icon-base);
   line-height: inherit;
 }
+
+/* The editor paints its own body; this only gives it the page's measure and a
+   focus ring that matches the other borderless fields. */
+.tsk-prose {
+  max-width: 80ch;
+  min-width: 0;
+}
+
+.tsk-prose :focus-visible {
+  outline: none;
+}
+
+.tsk-prose-boxed {
+  max-width: none;
+  padding: 6px 8px;
+  background: var(--input-base);
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-5);
+}
+
+.tsk-prose textarea {
+  width: 100%;
+  min-height: 78px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-base);
+  font: inherit;
+  font-size: var(--font-size-compact);
+  line-height: var(--line-height-relaxed);
+  resize: vertical;
+}
+
+.tsk-prose textarea::placeholder {
+  color: var(--text-weak);
+  opacity: 0.7;
+}
+
+/* The Documents editor sizes itself for a page: a 200px writing area and a
+   160px scroll runway under it. A description is a field on a page that already
+   has both, so this surface asks for neither. Scoped to `.tsk-prose`, which is
+   the kit's own box — the editor keeps its own styling everywhere else. */
+.tsk-prose .notion-editor .tiptap {
+  min-height: 1.6em;
+}
+
+.tsk-prose .notion-bottom-space {
+  display: none;
+}

@@ -21,6 +21,23 @@ const catalog: CapabilityCatalog = {
   loading: false,
 }
 
+/** The host's prose editor, as the plain textarea the detector falls back to. */
+const StubProseEditor = (props: {
+  value: string
+  testId: string
+  ariaLabel: string
+  placeholder: string
+  onChange: (value: string) => void
+}) => (
+  <textarea
+    data-testid={props.testId}
+    aria-label={props.ariaLabel}
+    placeholder={props.placeholder}
+    value={props.value}
+    onInput={(event) => props.onChange(event.currentTarget.value)}
+  />
+)
+
 /**
  * Stands in for the host's harness/model/effort control. It emits the same
  * `ConfigurationDraft` the real adapter reads back from the composer's
@@ -63,6 +80,7 @@ function mount(initial?: Partial<PresetEditorDraft>) {
       placements={["local", "cloud"]}
       catalog={() => catalog}
       configurationEditor={StubConfigurationEditor}
+      proseEditor={StubProseEditor}
       submitLabel="Create preset"
       onSubmit={onSubmit}
       onCancel={() => {}}
@@ -100,6 +118,7 @@ describe("preset editor", () => {
         placements={["local"]}
         catalog={() => catalog}
         configurationEditor={TrackingEditor}
+        proseEditor={StubProseEditor}
         submitLabel="Create preset"
         onSubmit={() => {}}
         onCancel={() => {}}

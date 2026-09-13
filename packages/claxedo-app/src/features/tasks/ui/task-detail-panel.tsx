@@ -120,6 +120,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             busy={busy()}
             error={sendError() ?? props.store.state.taskErrors[current().id]}
             conflict={props.store.state.taskConflicts[current().id]}
+            proseEditor={ports.ProseEditor}
             projectLabel={projects().find((project) => project.id === current().projectId)?.label ?? current().projectId}
             onEditChange={(edit) =>
               props.store.setEditDraft(current().id, { title: edit.title, description: edit.description, revision: draft().revision })

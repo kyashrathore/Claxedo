@@ -67,6 +67,7 @@ export function PresetDraftEditor(props: PresetDraftEditorProps) {
           placements={capabilities.data?.placements ?? ["local"]}
           catalog={catalog}
           configurationEditor={ports.ConfigurationEditor}
+          proseEditor={ports.ProseEditor}
           busy={busy()}
           error={props.store.state.presetRefusal?.message}
           fieldErrors={props.store.state.presetRefusal?.fields}

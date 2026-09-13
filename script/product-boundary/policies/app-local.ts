@@ -359,7 +359,24 @@ export const appLocal: Policy = {
   // +1 module (2026-09-13): features/tasks/data/start-task.ts, the one owner of
   // the preview-and-start pair now that a list row starts a task as well as the
   // dialog. No new package edge. Measured 1035 / 39.
-  ceilings: { modules: 1035, packages: 39 },
+  // +9 modules, +19 packages (2026-09-13): task descriptions and preset
+  // instructions use the Documents editor. Reviewed and accepted by the user
+  // on 2026-09-13 — "task description and preset instructions use the Documents
+  // editor" — because the alternative was a second markdown surface with its
+  // own subset. The nineteen package edges are the editor and its runtime:
+  // @tiptap/core, @tiptap/pm, @tiptap/starter-kit, @tiptap/markdown,
+  // @tiptap/suggestion, solid-tiptap, and the extensions the Documents
+  // configuration mounts — code-block, color, highlight, image, link, table,
+  // table-cell, table-header, table-row, task-item, task-list, text-style and
+  // underline. The reviewed owners are app/integrations/tasks/
+  // tasks-prose-editor.tsx, which binds the kit's `ProseEditor` port, and the
+  // Documents modules it reaches: the rich editor, its extension list, the
+  // mermaid block, slash commands, and the markdown detector and frontmatter
+  // pair that keep the stored value markdown. The hosted Documents set stays
+  // out: no store, route or content-surface module is reachable from here, and
+  // `documents-content-surfaces` remains a forbidden chunk marker.
+  // Measured 1044 / 58.
+  ceilings: { modules: 1044, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

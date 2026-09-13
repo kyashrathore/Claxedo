@@ -5,6 +5,22 @@ import { TaskDetail, groupLinksBySlot } from "@claxedo/tasks/solid"
 
 afterEach(cleanup)
 
+const StubProseEditor = (props: {
+  value: string
+  testId: string
+  ariaLabel: string
+  placeholder: string
+  onChange: (value: string) => void
+}) => (
+  <textarea
+    data-testid={props.testId}
+    aria-label={props.ariaLabel}
+    placeholder={props.placeholder}
+    value={props.value}
+    onInput={(event) => props.onChange(event.currentTarget.value)}
+  />
+)
+
 function task(overrides: Partial<Task> = {}): Task {
   return {
     id: "tsk_1",
@@ -55,6 +71,7 @@ function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> =
       view={{ task: task(overrides), children: [], groups: groupLinksBySlot(links), configuredSlots: ["primary"] }}
       edit={{ title: task(overrides).title, description: "" }}
       dirty={false}
+      proseEditor={StubProseEditor}
       projectLabel="Importer"
       onEditChange={() => {}}
       onSave={() => {}}
@@ -88,6 +105,7 @@ function mountSubtask(input: { onOpenParent?: () => void } = {}) {
       }}
       edit={{ title: "Write the importer test", description: "" }}
       dirty={false}
+      proseEditor={StubProseEditor}
       projectLabel="Importer"
       onEditChange={() => {}}
       onSave={() => {}}

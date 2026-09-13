@@ -1,6 +1,7 @@
 import "./tasks.css"
 
 export { CapabilityNotice } from "./capability-notice"
+export type { ProseEditor, ProseEditorProps } from "./prose-editor"
 export { TaskStatusChip, TaskStatusDot, StatusMenu } from "./status-menu"
 export { LoadMore, type MorePages } from "./load-more"
 export { ListFailureNotice, type ListFailure } from "./list-failure"

@@ -9,7 +9,7 @@ import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { useCapabilityCatalog } from "./capability-catalog"
 import { useOpenTaskSession } from "./open-task-session"
 import { useOpenTasksPage } from "./open-tasks-page"
-import type { ConfigurationEditorProps } from "@claxedo/tasks/solid"
+import type { ConfigurationEditorProps, ProseEditorProps } from "@claxedo/tasks/solid"
 
 /**
  * The configuration control arrives with the Tasks chunk, not with the shell:
@@ -18,6 +18,15 @@ import type { ConfigurationEditorProps } from "@claxedo/tasks/solid"
  */
 const PresetConfigurationEditor = lazy(() =>
   import("./preset-configuration-editor").then((module) => ({ default: module.PresetConfigurationEditor })),
+)
+
+/**
+ * The Documents rich editor arrives with the Tasks chunk rather than the shell:
+ * Tiptap and ProseMirror are the largest thing this surface pulls, and nothing
+ * on the path to a task list needs them until a description is on screen.
+ */
+const TasksProseEditor = lazy(() =>
+  import("./tasks-prose-editor").then((module) => ({ default: module.TasksProseEditor })),
 )
 
 export function useTasksProjectsPort() {
@@ -58,6 +67,7 @@ export function tasksAppPorts(): TasksAppPorts {
     useActiveProjectId: useTasksActiveProjectIdPort,
     useCapabilityCatalog,
     ConfigurationEditor: (props: ConfigurationEditorProps) => PresetConfigurationEditor(props),
+    ProseEditor: (props: ProseEditorProps) => TasksProseEditor(props),
     useOpenSession: useOpenTaskSession,
     useOpenPage: useOpenTasksPage,
   }

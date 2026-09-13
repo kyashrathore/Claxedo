@@ -18,6 +18,7 @@ import {
   type PresetEditorDraft,
 } from "./preset-editor-model"
 import { CapabilityNotice } from "./capability-notice"
+import type { ProseEditor } from "./prose-editor"
 import {
   LOCAL_CAPABILITY_TEXT,
   PLACEMENT_LABELS,
@@ -37,6 +38,8 @@ export type PresetEditorProps = {
   placements: readonly PresetPlacement[]
   catalog: CapabilityCatalogReader
   configurationEditor: ConfigurationEditor
+  /** The host's markdown editor; instructions are prose, not a text field. */
+  proseEditor: ProseEditor
   busy?: boolean
   error?: string
   /** Field errors the server named, merged with the ones submit finds locally. */
@@ -174,18 +177,20 @@ export function PresetEditor(props: PresetEditorProps) {
 
           <div class="tsk-divider" />
 
-          <label class="tsk-field">
+          <div class="tsk-field">
             <span class="tsk-label">Instructions</span>
-            <textarea
-              class="tsk-textarea"
-              data-testid="preset-editor-instructions"
-              placeholder="What this agent should always do, whatever the task says"
-              aria-invalid={fieldError("instructions") ? "true" : undefined}
-              value={props.draft.instructions}
-              onInput={(event) => patch({ instructions: event.currentTarget.value })}
-            />
+            <div class="tsk-prose tsk-prose-boxed">
+              <Dynamic
+                component={props.proseEditor}
+                value={props.draft.instructions}
+                placeholder="What this agent should always do, whatever the task says"
+                ariaLabel="Preset instructions"
+                testId="preset-editor-instructions"
+                onChange={(instructions) => patch({ instructions })}
+              />
+            </div>
             <Show when={fieldError("instructions")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
-          </label>
+          </div>
 
           <section class="tsk-stack" aria-label="Capabilities">
             <h3 class="tsk-section-title">Capabilities</h3>

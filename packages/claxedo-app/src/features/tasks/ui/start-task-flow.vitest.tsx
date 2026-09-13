@@ -162,6 +162,15 @@ function mount(input: {
     useActiveProjectId: () => () => "prj_1",
     useCapabilityCatalog: () => () => ({ plugins: [], skills: [], loading: false }),
     ConfigurationEditor: () => null,
+    ProseEditor: (props: { value: string; testId: string; ariaLabel: string; placeholder: string; onChange: (value: string) => void }) => (
+      <textarea
+        data-testid={props.testId}
+        aria-label={props.ariaLabel}
+        placeholder={props.placeholder}
+        value={props.value}
+        onInput={(event) => props.onChange(event.currentTarget.value)}
+      />
+    ),
     useOpenSession: () => openSession,
     useOpenPage: () => () => {},
   })

@@ -1,4 +1,5 @@
 import { For, Show, type JSX } from "solid-js"
+import { Dynamic } from "solid-js/web"
 import {
   TASKS_BOUNDS,
   type ConfigurationSlot,
@@ -6,6 +7,7 @@ import {
   type TaskSessionLinkView,
   type TaskStatus,
 } from "../contracts"
+import type { ProseEditor } from "./prose-editor"
 import { StatusMenu } from "./status-menu"
 import { SLOT_LABELS, TASK_STATUS_LABELS, type TaskDetailView, type TaskLinkGroup } from "./view-model"
 
@@ -23,6 +25,8 @@ export type TaskDetailProps = {
   /** Set when the server refused an edit against a stale revision. */
   conflict?: string
   projectLabel: string
+  /** The host's markdown editor; a description is prose, not a text field. */
+  proseEditor: ProseEditor
   onEditChange: (edit: TaskDetailEdit) => void
   onSave: () => void
   onDiscard: () => void
@@ -125,14 +129,16 @@ export function TaskDetail(props: TaskDetailProps) {
           onInput={(event) => patch({ title: event.currentTarget.value })}
         />
 
-        <textarea
-          class="tsk-bare-text"
-          data-testid="task-detail-description"
-          aria-label="Task description"
-          placeholder="Add a description…"
-          value={props.edit.description}
-          onInput={(event) => patch({ description: event.currentTarget.value })}
-        />
+        <div class="tsk-prose">
+          <Dynamic
+            component={props.proseEditor}
+            value={props.edit.description}
+            placeholder="Add a description…"
+            ariaLabel="Task description"
+            testId="task-detail-description"
+            onChange={(description) => patch({ description })}
+          />
+        </div>
 
         <Show when={props.conflict}>
           {(message) => (

@@ -1,7 +1,7 @@
 import type { Accessor } from "solid-js"
 import type { SessionReference } from "@claxedo/tasks"
 import type { TasksPage } from "@/platform/identity/route"
-import type { CapabilityCatalogReader, ConfigurationEditor } from "@claxedo/tasks/solid"
+import type { CapabilityCatalogReader, ConfigurationEditor, ProseEditor } from "@claxedo/tasks/solid"
 
 export type TasksProjectOption = { id: string; label: string }
 
@@ -24,6 +24,8 @@ export type TasksAppPorts = {
   useActiveProjectId: () => Accessor<string | undefined>
   useCapabilityCatalog: () => CapabilityCatalogReader
   ConfigurationEditor: ConfigurationEditor
+  /** The Documents rich editor: task descriptions and preset instructions are markdown prose. */
+  ProseEditor: ProseEditor
   useOpenSession: () => (session: SessionReference) => void
   /** Navigates the Tasks tab between its list, a task, and the preset pages. */
   useOpenPage: () => (page?: TasksPage) => void
