@@ -162,26 +162,14 @@
 
 /*
  * The status mark is the host's own circle set — dashed for not started, half
- * filled while working, an alert once it needs you, a tick when done — carrying
- * the colour the rail already uses for those states.
+ * filled while working, an alert once it needs you, a tick when done — in the
+ * one icon colour, so the shape alone carries the state.
  */
 .tsk-status-icon {
   flex: none;
   display: inline-flex;
   align-items: center;
   color: var(--icon-base);
-}
-
-.tsk-status-icon[data-status="doing"] {
-  color: var(--icon-warning-base);
-}
-
-.tsk-status-icon[data-status="needs_you"] {
-  color: var(--icon-critical-base);
-}
-
-.tsk-status-icon[data-status="done"] {
-  color: var(--icon-success-base);
 }
 
 .tsk-status {
