@@ -1,6 +1,11 @@
 # Credential broker: the system and the proposed change
 
-Status: proposed; not implemented. Code checked at `47931bd727`.
+Status: implemented for the local deployment on `feat/credentials-integration`. The loopback broker,
+the binding authority over the local registry, the projection into every harness and the OpenCode
+engine, and the refusal of a selected-but-unusable account all run and are tested. Outstanding: the
+hosted credential store, lease identity, and delivery into a cloud sandbox — sections 4 and 6 remain
+a proposal. Code checked at `47931bd727`; see the Open findings appendix for what a third review
+left standing.
 Owner: Yash Rathore. Date: 2026-09-12.
 No backward compatibility anywhere in this design: old snapshot versions, existing hosted credential rows, and the consent flag are removed, not migrated (owner decision, 2026-09-12).
 Provenance: rewritten by Codex (`gpt-6-astra`) from the committed draft after its review of that draft; product rules and decisions taken by the owner the same night; the draft's tables are kept as appendices.
@@ -792,3 +797,39 @@ package's own published ceiling to 86) for `credentials/destinations.ts`.
 Pre-existing red, untouched by this change: `workspace-runtime
 src/server.test.ts` has two cases posting a `version: 3` runtime snapshot that
 the route has required to be `4` since before this branch.
+
+## Appendix F. Open findings from the third review
+
+Each of these was raised, read, and deliberately not fixed on this branch. They
+are here so the next person does not re-derive them.
+
+- **A throwing registry read fails the whole projection.** `projectAuth` lets a
+  registry outage propagate, so one unreadable row answers nothing for every
+  provider rather than marking that one unavailable. Both policies are
+  defensible — the current one refuses to let a harness read an outage as "no
+  account chosen" — and the choice belongs to the owner, not to a fix.
+- **The four engine bindings are unmeasured against the config-declared-provider
+  negative.** `sdk-credential-bridge` binds OpenRouter, Gemini, Groq and xAI by
+  registry id; nothing proves the engine refuses a provider its own config
+  declares but the binding does not name.
+- **Broker error classification is measured live for Claude only.** Codex,
+  Cursor, Pi and the engine echo the broker's body in their own shapes, and only
+  Claude's has been read off a real failing turn.
+- **A long turn can outlive its placeholder.** The token's lifetime is one hour
+  and renewal replaces it at half that, but a turn already running holds the
+  placeholder it launched on; a turn longer than the remaining lifetime fails
+  mid-flight with a broker refusal rather than being carried over.
+- **The workspace's own `.claude/settings*.json` is not covered.** The Claude SDK
+  resolves those from the working directory and the canonical git root, which
+  this process must not rewrite. A repository that names `apiKeyHelper` or an
+  `env` credential there still reaches the vendor on it.
+- **A third account-id claims reader lives in `provider-auth/service.ts`.** The
+  branch reduced two readers to one shared implementation and left that one,
+  which decodes the same ChatGPT `id_token` claims independently.
+- **The broker's header denylist is a list, not a rule.** `OpenAI-Organization`
+  and any other vendor header a binding does not declare travel from the harness
+  to the vendor untouched.
+- **The generation counter is not monotonic across a backwards clock step with a
+  lost file.** `nextLeaseGeneration` falls back to `Date.now()` when the counter
+  is missing; a machine whose clock moved backwards after losing that file can
+  issue a generation a live placeholder already names.
