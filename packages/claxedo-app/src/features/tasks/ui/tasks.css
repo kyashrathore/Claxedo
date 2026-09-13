@@ -857,43 +857,31 @@
   color: var(--text-diff-delete-base);
 }
 
-/* Icon-and-label rows, not a boxed table. */
+/* Value rows with no label column, on the status control's own metrics so the
+   glyphs line up down the rail. */
 .tsk-props-list {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 2px;
-  margin: 0;
+  margin: 0 0 0 -6px;
 }
 
 .tsk-prop {
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  min-height: 26px;
-}
-
-.tsk-prop > dt {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-weak);
-  font-size: var(--font-size-x-small);
-}
-
-.tsk-prop > dt .ui-icon-svg {
-  color: var(--icon-base);
-}
-
-.tsk-prop > dd {
-  margin: 0;
   min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 6px;
   color: var(--text-base);
   font-size: var(--font-size-x-small);
 }
 
-.tsk-prop > dd > .tsk-status-trigger {
-  margin-left: -6px;
+.tsk-prop .ui-icon-svg {
+  flex: none;
+  color: var(--icon-base);
 }
 
 .tsk-slots {

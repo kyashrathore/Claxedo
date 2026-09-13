@@ -14,7 +14,6 @@ import type { ProseEditor } from "../../app-ports"
 import { StatusControl } from "../shared/status-control"
 import {
   SLOT_LABELS,
-  TASK_STATUS_LABELS,
   openableSlot,
   slotAttempt,
   taskKey,
@@ -204,53 +203,37 @@ export function TaskDetail(props: TaskDetailProps) {
       <aside class="tsk-rail">
         <section class="tsk-rail-section" aria-label="Properties">
           <h3 class="tsk-rail-title">Properties</h3>
-          <dl class="tsk-props-list">
-            <div class="tsk-prop">
-              <dt>
-                <Icon name="status" size="small" />
-                Status
-              </dt>
-              <dd>
-                <StatusControl
-                  status={task().status}
-                  disabled={props.busy || task().archivedAt !== null}
-                  label="Task status"
-                  testId="task-detail-status"
-                  onChange={(status) => props.onStatusChange({ taskId: task().id, revision: task().revision, status })}
-                />
-              </dd>
-            </div>
-            <div class="tsk-prop">
-              <dt>
-                <Icon name="folder" size="small" />
-                Project
-              </dt>
-              <dd>{props.projectLabel}</dd>
+          {/* Each row is its value: the status control is the status, and a
+              property nothing can change is the glyph and the name alone. */}
+          <div class="tsk-props-list">
+            <StatusControl
+              status={task().status}
+              disabled={props.busy || task().archivedAt !== null}
+              label="Status"
+              testId="task-detail-status"
+              onChange={(status) => props.onStatusChange({ taskId: task().id, revision: task().revision, status })}
+            />
+            <div class="tsk-prop" role="group" aria-label="Project">
+              <Icon name="folder" size="small" />
+              <span class="tsk-truncate">{props.projectLabel}</span>
             </div>
             <Show when={presetName()}>
               {(name) => (
-                <div class="tsk-prop">
-                  <dt>
-                    <Icon name="sliders" size="small" />
-                    Preset
-                  </dt>
-                  <dd class="tsk-truncate">{name()}</dd>
+                <div class="tsk-prop" role="group" aria-label="Preset">
+                  <Icon name="sliders" size="small" />
+                  <span class="tsk-truncate">{name()}</span>
                 </div>
               )}
             </Show>
             <Show when={task().workspaceId}>
               {(workspaceId) => (
-                <div class="tsk-prop">
-                  <dt>
-                    <Icon name="server" size="small" />
-                    Workspace
-                  </dt>
-                  <dd class="tsk-truncate">{workspaceId()}</dd>
+                <div class="tsk-prop" role="group" aria-label="Workspace">
+                  <Icon name="server" size="small" />
+                  <span class="tsk-truncate">{workspaceId()}</span>
                 </div>
               )}
             </Show>
-          </dl>
-          <p class="tsk-hint">Status is manual: {TASK_STATUS_LABELS[task().status]} until you change it.</p>
+          </div>
         </section>
 
         <section class="tsk-rail-section" aria-label="Linked sessions">

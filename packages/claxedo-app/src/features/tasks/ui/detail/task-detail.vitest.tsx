@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library"
 import type { SessionHandoffState, SessionLiveness, Task, TaskSessionLinkView } from "@claxedo/tasks"
 import { groupLinksBySlot } from "../../view-model"
 import { TaskDetail } from "./task-detail"
@@ -133,6 +133,31 @@ describe("the key a task page names itself by", () => {
     expect(key.textContent).toBe("IMP-1")
     expect(screen.getByLabelText("Breadcrumb").contains(key)).toBe(true)
     expect(screen.getAllByText("IMP-1")).toHaveLength(1)
+  })
+})
+
+describe("the properties rail", () => {
+  test("each row is its own value, named for a reader rather than by a label beside it", () => {
+    mount([link(1, "live")], { workspaceId: "ws_1" })
+
+    const rail = screen.getByLabelText("Properties")
+    // The menu the control opens carries the same name, so the trigger is
+    // reached by its test id and its own label read off it.
+    const status = within(rail).getByTestId("task-detail-status")
+    expect(status.getAttribute("aria-label")).toBe("Status")
+    expect(status.textContent).toContain("In progress")
+    expect(within(rail).getByLabelText("Project").textContent).toBe("Importer")
+    expect(within(rail).getByLabelText("Preset").textContent).toBe("Reviewer")
+    expect(within(rail).getByLabelText("Workspace").textContent).toBe("ws_1")
+  })
+
+  test("names no property twice, because the row is the value", () => {
+    mount([link(1, "live")], { workspaceId: "ws_1" })
+
+    const rail = screen.getByLabelText("Properties")
+    for (const label of ["Status", "Project", "Preset", "Workspace"]) {
+      expect(within(rail).queryByText(label)).toBeNull()
+    }
   })
 })
 
