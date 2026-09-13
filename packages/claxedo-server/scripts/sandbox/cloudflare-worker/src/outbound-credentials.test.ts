@@ -148,7 +148,7 @@ test("a registration that states no route policy spends the credential nowhere",
   // parse accepts it — and is refused at every request instead of forwarding
   // the operator's key to whatever route a sandbox process happens to name.
   const upstream = vi.fn(async () => new Response("forwarded"))
-  const { methods, pathPrefixes, ...stale } = registration
+  const { methods: _methods, pathPrefixes: _pathPrefixes, ...stale } = registration
   const parsed = parseRegistrations([stale])
   expect(parsed[0]).toMatchObject({ methods: [], pathPrefixes: [] })
 

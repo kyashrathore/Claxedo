@@ -128,8 +128,13 @@ export const localServer: Policy = {
   // login, are operations with no referent on a host where no harness is
   // installed, so they are composed here and left off the shared default.
   // It reaches only the machine-login reader and the registry.
-  // Full closure measured at 60 modules / 25 packages.
-  ceilings: { modules: 60, packages: 25 },
+  // +1 package: @claxedo/agent-runtime-contract, reviewed owner of the harness
+  // table (which provider ids each harness answers to, and which one a connect
+  // card signs in with) and of the credential-broker error vocabulary. The
+  // desktop server reads both — it serves the connect card and mounts the
+  // broker — and the package is data and pure functions with no dependencies
+  // of its own. Re-measured, no headroom: 60 modules / 26 packages.
+  ceilings: { modules: 60, packages: 26 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

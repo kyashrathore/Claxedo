@@ -672,7 +672,7 @@ globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
     return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }))
   }
   if (u.includes("/api/wr/config")) {
-    configPush.push({ url: u, body: JSON.parse(String(init?.body ?? "null")) })
+    configPush.push({ url: u, body: JSON.parse(typeof init?.body === "string" ? init.body : "null") })
     return Promise.resolve(configPushResponse())
   }
   // SSE streams — return response that completes immediately
