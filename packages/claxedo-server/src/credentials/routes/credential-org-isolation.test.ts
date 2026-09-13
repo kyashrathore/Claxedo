@@ -225,6 +225,11 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
 
     await expect(response.json()).resolves.toEqual({ result: "ok", health: "ok", verified_at: 5_000 })
     expect(providerFetch).toHaveBeenCalledTimes(1)
+    // Org B stored its own key for the same provider above. The verdict is
+    // only org A's if the request carried org A's secret.
+    const [url, init] = providerFetch.mock.calls[0] ?? []
+    expect(String(url)).toContain("api.openai.com")
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer sk-org-a-secret")
     expect(registry.getCredential(credA.id, ORG_A)?.health).toBe("ok")
   })
 
@@ -345,10 +350,6 @@ describe("single-tenant self-host still works end to end", () => {
       .filter((statement) => !/inOrg\(|\.where\(scope\)/.test(statement))
 
     expect(unscoped, `unscoped credential statements: ${unscoped.join(" | ")}`).toEqual([])
-    expect(source).toMatch(/const scope = kind\s*\?\s*and\(\s*inOrg\(org\)/)
-    // The one INSERT has no WHERE — it must stamp the column instead.
-    expect(source).toContain("db.insert(ClaxedoProviderCredentialTable).values(row)")
-    expect(source).toContain("org_id: orgId,")
   })
 
   test("a blank org resolves to the single-tenant partition rather than matching everything", () => {

@@ -1099,6 +1099,7 @@ export function LocalUsageRoutes(input: {
   const app = new Hono()
   const centralCache = new Map<string, CentralUsageProjection>()
   const historyCache = new Map<string, LocalHistorySnapshot>()
+  const quotaCache = new Map<string, UnifiedUsageResponse["quota"]>()
   const consumedRefreshNonces = new Set<number>()
   const deadline = <T>(promise: Promise<T>, label: string, timeoutMs = 8_000) =>
     withTimeout(promise, timeoutMs, () => new Error(`${label} timed out`))
@@ -1111,6 +1112,11 @@ export function LocalUsageRoutes(input: {
     historyCache.delete(key)
     historyCache.set(key, value)
     while (historyCache.size > 8) historyCache.delete(historyCache.keys().next().value!)
+  }
+  const rememberQuota = (key: string, value: UnifiedUsageResponse["quota"]) => {
+    quotaCache.delete(key)
+    quotaCache.set(key, value)
+    while (quotaCache.size > 8) quotaCache.delete(quotaCache.keys().next().value!)
   }
   const consumeRefreshNonce = (raw: string | undefined) => {
     if (raw === undefined) return false
@@ -1150,11 +1156,25 @@ export function LocalUsageRoutes(input: {
     const refresh = consumeRefreshNonce(c.req.query("refresh_nonce"))
     if (refresh === undefined) return c.json({ error: "invalid_refresh_nonce" }, 400)
     if (view === "quota") {
+      // The last good plans stand when a read fails, the same way the history
+      // view holds its snapshot: the figures a user is looking at did not stop
+      // being true because a refresh could not reach a vendor, and blanking
+      // every card is how Refresh came to lose the whole view.
+      //
+      // Held per bearer, because the quota reader resolves its own tenant from
+      // the request: one principal's plans must never be drawn for another.
+      const quotaKey = c.req.header("authorization") ?? ""
       const quota: UnifiedUsageResponse["quota"] = input.quota
-        ? await deadline(input.quota({ request: c.req.raw, refresh }), "quota read").catch((error: unknown) => ({
-            status: "unavailable" as const,
-            error: error instanceof Error ? error.message : String(error),
-          }))
+        ? await deadline(input.quota({ request: c.req.raw, refresh }), "quota read")
+            .then((answer) => {
+              if (answer.snapshot) rememberQuota(quotaKey, answer)
+              return answer
+            })
+            .catch((error: unknown) => {
+              const message = error instanceof Error ? error.message : String(error)
+              const held = quotaCache.get(quotaKey)
+              return held ? { ...held, error: message } : { status: "unavailable" as const, error: message }
+            })
         : { status: "unavailable" }
       const series = usageSeriesFromFacts({ facts: [], since, until, timeZone })
       const response: UnifiedUsageResponse = {

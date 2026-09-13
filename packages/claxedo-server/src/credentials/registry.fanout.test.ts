@@ -115,11 +115,10 @@ describe("credential fanout fence", () => {
     expect((await fannedOut("local"))["multi-account-fanout"]).toBe("healthy-token")
   })
 
-  // A sandbox runs on the account the user chose or on nothing at all. Falling
-  // through to another account of the same provider is what a shared scope must
-  // never do: the second account may not be consented for a sandbox, and even
-  // when it is, running someone's turns on a login they did not pick is the
-  // silent substitution the active mark exists to end.
+  // The scope filter runs after the mark, never instead of it: it can only
+  // remove the marked account, never reach past it to a sibling that would
+  // qualify. Running a sandbox on a login the user did not pick is the silent
+  // substitution the mark exists to end.
   test("a shared sandbox gets the active account or nothing, never another account of the same provider", async () => {
     const local = await putCredential({
       provider_id: "multi-account-scope",
