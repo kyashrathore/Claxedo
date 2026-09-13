@@ -15,9 +15,6 @@ const normalizePath = (p: string) => p.replace(/\\/g, "/")
 // vite@7-compatible major, not before.
 
 export default defineConfig({
-  // Same selection the product builds make, so a spec can run the off build by
-  // setting the variable instead of stubbing the identifier.
-  define: { __CLAXEDO_TASKS_ENABLED__: JSON.stringify(process.env.CLAXEDO_BUILD_TASKS !== "0") },
   plugins: [solid() as NonNullable<UserConfig["plugins"]>[number]] satisfies UserConfig["plugins"],
   resolve: {
     conditions: ["development", "browser"],

@@ -172,7 +172,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
         onUsage={handleUsage}
         onHelp={handleHelp}
         onOpenMarketplace={handleOpenMarketplace}
-        onOpenTasks={__CLAXEDO_TASKS_ENABLED__ ? handleOpenTasks : undefined}
+        onOpenTasks={handleOpenTasks}
         documentNavigationEnabled={productUi().documentNavigation}
         canUseDocuments={shell.canUseDocuments()}
         onNewSession={handleNewSession}

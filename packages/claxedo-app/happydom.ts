@@ -4,10 +4,6 @@ import { mock } from "bun:test"
 
 GlobalRegistrator.register()
 
-// `bun test` has no bundler `define`, so the build-selection identifier every
-// product replaces has to exist as a global before any app module evaluates.
-Object.assign(globalThis, { __CLAXEDO_TASKS_ENABLED__: process.env.CLAXEDO_BUILD_TASKS !== "0" })
-
 // Vite serves `*.svg?url` as an asset URL string. Bun's resolver has no such
 // convention, so every sprite-sheet import (`@claxedo/ui` icon components)
 // resolves to an empty URL here instead of a module-resolution error.

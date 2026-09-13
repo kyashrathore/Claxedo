@@ -40,10 +40,9 @@ const wiringFiles = {
   production: [
     "src/app/integrations/feature-ports.ts",
     "src/app/integrations/secondary-feature-ports.ts",
-    // A build-selected feature configures its ports from the module its gate
-    // dynamic-imports, so a `configure*AppPorts` call there is still
-    // production wiring. `tasks-build-selection.guard.test.ts` is what keeps
-    // this file from being an orphan the gate no longer reaches.
+    // Tasks configures its ports from the module `secondary-feature-ports.ts`
+    // dynamic-imports, so a `configure*AppPorts` call there is production
+    // wiring too.
     "src/app/integrations/tasks-contributions.ts",
   ],
   "test stub": ["src/app/integrations/test-support/app-ports-stub.ts"],
