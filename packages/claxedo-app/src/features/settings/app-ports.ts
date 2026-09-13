@@ -4,7 +4,6 @@ import type * as QueryOptions from "@/app/integrations/sync/query-options"
 import type * as ConnectProvider from "@/app/dialogs/connect-provider"
 import type * as SelectProvider from "@/app/dialogs/select-provider"
 import type * as CustomProvider from "@/app/dialogs/custom-provider"
-import type { Accessor } from "solid-js"
 import type * as AIConnectApi from "@/features/onboarding/ai-connect-api"
 import type * as AIConnectState from "@/features/onboarding/ai-connect-state"
 import type * as TerminalAgents from "@/features/terminal/core/terminal-agents"
@@ -31,7 +30,7 @@ export type SettingsAppPorts = {
   DialogCustomProvider: typeof CustomProvider.DialogCustomProvider
   verifyAIConnection: typeof AIConnectApi.verifyAIConnection
   /** What each harness on the server's machine says about the login it would run on. */
-  readMachineLogins: typeof AIConnectApi.readMachineLogins
+  loadMachineLogins: typeof AIConnectApi.loadMachineLogins
   /** Withdraws the stored mark, so a harness runs on the login its own CLI holds. */
   useMachineLogin: typeof AIConnectApi.useMachineLogin
   /** The harness rows the Agents section lists, in the order onboarding declares them. */
@@ -88,7 +87,7 @@ export const DialogConnectProvider = bind((ports) => ports.DialogConnectProvider
 export const DialogSelectProvider = bind((ports) => ports.DialogSelectProvider)
 export const DialogCustomProvider = bind((ports) => ports.DialogCustomProvider)
 export const verifyAIConnection = bind((ports) => ports.verifyAIConnection)
-export const readMachineLogins = bind((ports) => ports.readMachineLogins)
+export const loadMachineLogins = bind((ports) => ports.loadMachineLogins)
 export const useMachineLogin = bind((ports) => ports.useMachineLogin)
 
 /** Not a `bind`: this port is a value, so it is read rather than called through. */

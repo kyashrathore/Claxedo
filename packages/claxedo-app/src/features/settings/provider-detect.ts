@@ -1,5 +1,5 @@
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
-import { readMachineLogins, useMachineLogin, type MachineLogin } from "@/features/settings/app-ports"
+import { loadMachineLogins, useMachineLogin, type MachineLogin } from "@/features/settings/app-ports"
 import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
 
 /** What the server would hand a harness for a provider: the row, without its secret. */
@@ -208,7 +208,7 @@ export type ProviderDetectResult = {
 /** One read of this machine's harnesses, with the store read alongside it. */
 export async function runProviderDetect(): Promise<ProviderDetectResult> {
   const [machineLogins, stored, effective] = await Promise.all([
-    readMachineLogins({}),
+    loadMachineLogins({}),
     listStoredCredentials(),
     listEffectiveCredentials(),
   ])

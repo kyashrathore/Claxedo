@@ -72,7 +72,7 @@ const TIMEOUT_MS = 10_000
 const runCommand = (file: string, args: readonly string[]): Promise<MachineLoginRun> =>
   new Promise((resolve) => {
     execFile(file, [...args], { encoding: "utf8", timeout: TIMEOUT_MS }, (error, stdout) => {
-      const code = (error as NodeJS.ErrnoException | null)?.code
+      const code = error && "code" in error ? error.code : undefined
       resolve({ found: code !== "ENOENT", ok: !error, stdout })
     })
   })
@@ -139,7 +139,7 @@ async function codexMachineLogin(
   const chatgpt = jsonRecord(jsonRecord(answer.account)?.account)
   const email = chatgpt ? jsonText(chatgpt, "email") : undefined
   const plan = chatgpt ? jsonText(chatgpt, "planType") : undefined
-  const usage = codexUsageWindows(answer.rateLimits)
+  const usage = appServerUsageWindows(answer.rateLimits)
   return report("codex", {
     state: "signed_in",
     ...(email ? { email } : {}),
@@ -163,11 +163,13 @@ const CODEX_SESSION_WINDOW_MINUTES = 300
 const CODEX_WEEKLY_WINDOW_MINUTES = 10_080
 
 /**
- * `rateLimits.primary` / `secondary` from `account/rateLimits/read`. A window is
+ * `rateLimits.primary` / `secondary` as the Codex app-server spells them, which
+ * is not how the ChatGPT HTTP usage read spells the same quota: camelCase keys,
+ * `windowDurationMins` rather than `limit_window_seconds`. A window is
  * named by `windowDurationMins`, not by its slot: a plan that has only a weekly
  * limit delivers it in the primary slot. `resetsAt` is Unix seconds.
  */
-function codexUsageWindows(input: unknown): CredentialUsageWindow[] {
+function appServerUsageWindows(input: unknown): CredentialUsageWindow[] {
   const limits = jsonRecord(jsonRecord(input)?.rateLimits)
   return (["primary", "secondary"] as const).flatMap((slot) => {
     const window = jsonRecord(limits?.[slot])

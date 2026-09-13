@@ -67,12 +67,12 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/features/settings/app-ports", async () => {
   const { useProviders } = await import("@/app/providers/use-providers")
-  const { readMachineLogins, useMachineLogin, verifyAIConnection } = await import("@/features/onboarding/ai-connect-api")
+  const { loadMachineLogins, useMachineLogin, verifyAIConnection } = await import("@/features/onboarding/ai-connect-api")
   const { localHarnessChecks } = await import("@/features/onboarding/ai-connect-state")
   return {
     useProviders,
     verifyAIConnection,
-    readMachineLogins,
+    loadMachineLogins,
     useMachineLogin,
     localHarnessChecks: () => localHarnessChecks,
     useShellQueryOptions: () => ({

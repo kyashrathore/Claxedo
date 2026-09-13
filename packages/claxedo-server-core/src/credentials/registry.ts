@@ -704,7 +704,7 @@ export function updateCredentialHealth(
       .from(ClaxedoProviderCredentialTable)
       .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
       .get()
-    if (!refused || refused.is_active !== true) return
+    if (!refused?.is_active) return
     const partition = { provider_id: refused.provider_id, owner: refused.owner ?? null }
     const heir = oldestAvailable(db, org, partition)
     if (!heir) return

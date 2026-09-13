@@ -2,7 +2,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { createSignal, For, onMount, Show, type Component } from "solid-js"
 import {
   localHarnessChecks,
-  readMachineLogins,
+  loadMachineLogins,
   useGlobalSDK,
   verifyAIConnection,
   type LocalHarnessCheck,
@@ -320,7 +320,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     if (account.machine) {
       setChecking(account.key)
       try {
-        const reread = await readMachineLogins({ serverUrl: globalSDK.url, harness: harness.id })
+        const reread = await loadMachineLogins({ serverUrl: globalSDK.url, harness: harness.id })
         setMachineLogins((prev) => [...prev.filter((login) => login.harness !== harness.id), ...reread])
       } catch (err: unknown) {
         fail(err)

@@ -71,7 +71,7 @@ describe("harness login access guard", () => {
     const invocations = [...text.replace(/\s+/g, " ").matchAll(/(?:run|spawn)\( ?"([^"]+)", ?(\[[^\]]*\])/g)]
       .map((match) => [match[1], ...JSON.parse(match[2]) as string[]])
 
-    expect(invocations.toSorted()).toEqual(SELF_REPORTS)
+    expect(invocations.toSorted((a, b) => a.join(" ").localeCompare(b.join(" ")))).toEqual(SELF_REPORTS)
   })
 
   test("no credentials module opens the store a harness keeps its login in", () => {

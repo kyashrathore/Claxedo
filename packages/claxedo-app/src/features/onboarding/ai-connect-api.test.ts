@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   connectAIKey,
   discoverAIConnections,
-  readMachineLogins,
+  loadMachineLogins,
   saveDiscoveredAIConnections,
   useMachineLogin,
   verifyProviderAIConnections,
@@ -66,7 +66,7 @@ describe("AI connect API", () => {
       ],
     })])
 
-    await expect(readMachineLogins({ request: stub.request })).resolves.toEqual([{
+    await expect(loadMachineLogins({ request: stub.request })).resolves.toEqual([{
       harness: "codex",
       providerIds: ["codex-app-server", "openai"],
       state: "signed_in",
@@ -81,13 +81,13 @@ describe("AI connect API", () => {
   test("a host that runs no harness reports no login rather than failing the read", async () => {
     const stub = requests([new Response("{}", { status: 501 })])
 
-    await expect(readMachineLogins({ request: stub.request })).resolves.toEqual([])
+    await expect(loadMachineLogins({ request: stub.request })).resolves.toEqual([])
   })
 
   test("one harness's Check asks about that harness alone", async () => {
     const stub = requests([Response.json({ machine_logins: [] })])
 
-    await readMachineLogins({ harness: "claude", request: stub.request })
+    await loadMachineLogins({ harness: "claude", request: stub.request })
 
     expect(stub.calls[0].input).toMatchObject({ action: "machine-logins", harness: "claude" })
   })
@@ -98,7 +98,8 @@ describe("AI connect API", () => {
     await useMachineLogin({ providerIds: ["claude-acp", "claude-sdk"], request: stub.request })
 
     expect(stub.calls[0].input).toMatchObject({ action: "activate" })
-    expect(JSON.parse(String(stub.calls[0].init?.body)))
+    const body = stub.calls[0].init?.body
+    expect(JSON.parse(typeof body === "string" ? body : ""))
       .toEqual({ machine_login: { provider_ids: ["claude-acp", "claude-sdk"] } })
   })
 

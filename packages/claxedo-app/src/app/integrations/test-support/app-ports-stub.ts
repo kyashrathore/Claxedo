@@ -132,7 +132,7 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   DialogSelectProvider: lazy("@/app/dialogs/select-provider", "DialogSelectProvider"),
   DialogCustomProvider: lazy("@/app/dialogs/custom-provider", "DialogCustomProvider"),
   verifyAIConnection: lazy("@/features/onboarding/ai-connect-api", "verifyAIConnection"),
-  readMachineLogins: lazy("@/features/onboarding/ai-connect-api", "readMachineLogins"),
+  loadMachineLogins: lazy("@/features/onboarding/ai-connect-api", "loadMachineLogins"),
   useMachineLogin: lazy("@/features/onboarding/ai-connect-api", "useMachineLogin"),
   localHarnessChecks: lazy("@/features/onboarding/ai-connect-state", "localHarnessChecks"),
   terminalAgents: lazy("@/features/terminal/core/terminal-agents", "TERMINAL_AGENTS"),

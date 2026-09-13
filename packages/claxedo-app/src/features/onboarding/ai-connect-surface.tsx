@@ -8,7 +8,7 @@ import { ProviderConnectForm, ProviderList } from "./app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import {
   discoverAIConnections,
-  readMachineLogins,
+  loadMachineLogins,
   saveDiscoveredAIConnections,
   type AIConnectRequest,
   type AIVerificationResult,
@@ -178,7 +178,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
     // question is which harnesses on this machine already have a login, and
     // each harness is the only honest answer to that.
     if (!stores()) {
-      await readMachineLogins({ serverUrl: props.serverUrl, request: props.request })
+      await loadMachineLogins({ serverUrl: props.serverUrl, request: props.request })
         .then((logins) => {
           transition({ type: "machine-logins-read", logins })
           props.onLocalHarnessesDetected?.(

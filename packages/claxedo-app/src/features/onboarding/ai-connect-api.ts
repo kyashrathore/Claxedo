@@ -43,7 +43,7 @@ export async function discoverAIConnections(input: {
  * narrows the read to one row, which is what a single row's Check needs: asking
  * the others would start processes nobody is waiting on.
  */
-export async function readMachineLogins(input: {
+export async function loadMachineLogins(input: {
   serverUrl?: string
   harness?: string
   request?: AIConnectRequest
