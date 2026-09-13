@@ -542,6 +542,7 @@ export const dict = {
   "settings.providers.agents.makeActive": "اجعله نشطًا",
   "settings.providers.agents.makingActive": "جارٍ التبديل…",
   "settings.providers.agents.addAccount": "إضافة حساب",
+  "settings.providers.agents.reconnectAccount": "إعادة الاتصال",
   "settings.providers.agents.removeAccount": "إزالة",
   "settings.providers.agents.removeAccountConfirm": "إزالة الحساب؟",
   "settings.providers.agents.removingAccount": "جارٍ الإزالة…",

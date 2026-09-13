@@ -622,6 +622,7 @@ export const dict = {
   "settings.providers.agents.makeActive": "Postavi kao aktivan",
   "settings.providers.agents.makingActive": "Prebacivanje…",
   "settings.providers.agents.addAccount": "Dodaj račun",
+  "settings.providers.agents.reconnectAccount": "Ponovo poveži",
   "settings.providers.agents.removeAccount": "Ukloni",
   "settings.providers.agents.removeAccountConfirm": "Ukloniti račun?",
   "settings.providers.agents.removingAccount": "Uklanjanje…",

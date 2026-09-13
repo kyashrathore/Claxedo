@@ -615,6 +615,7 @@ export const dict = {
   "settings.providers.agents.makeActive": "ตั้งเป็นใช้งาน",
   "settings.providers.agents.makingActive": "กำลังสลับ…",
   "settings.providers.agents.addAccount": "เพิ่มบัญชี",
+  "settings.providers.agents.reconnectAccount": "เชื่อมต่ออีกครั้ง",
   "settings.providers.agents.removeAccount": "ลบ",
   "settings.providers.agents.removeAccountConfirm": "ลบบัญชีหรือไม่",
   "settings.providers.agents.removingAccount": "กำลังลบ…",

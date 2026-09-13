@@ -613,6 +613,7 @@ export const dict = {
   "settings.providers.agents.makeActive": "Gør aktiv",
   "settings.providers.agents.makingActive": "Skifter…",
   "settings.providers.agents.addAccount": "Tilføj konto",
+  "settings.providers.agents.reconnectAccount": "Tilslut igen",
   "settings.providers.agents.removeAccount": "Fjern",
   "settings.providers.agents.removeAccountConfirm": "Fjern konto?",
   "settings.providers.agents.removingAccount": "Fjerner…",

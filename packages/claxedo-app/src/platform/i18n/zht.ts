@@ -611,6 +611,7 @@ export const dict = {
   "settings.providers.agents.makeActive": "設為使用中",
   "settings.providers.agents.makingActive": "正在切換…",
   "settings.providers.agents.addAccount": "新增帳戶",
+  "settings.providers.agents.reconnectAccount": "重新連線",
   "settings.providers.agents.removeAccount": "移除",
   "settings.providers.agents.removeAccountConfirm": "移除此帳戶？",
   "settings.providers.agents.removingAccount": "正在移除…",

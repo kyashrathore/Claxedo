@@ -631,6 +631,7 @@ export const dict = {
   "settings.providers.agents.makeActive": "Etkin yap",
   "settings.providers.agents.makingActive": "Değiştiriliyor…",
   "settings.providers.agents.addAccount": "Hesap ekle",
+  "settings.providers.agents.reconnectAccount": "Yeniden bağlan",
   "settings.providers.agents.removeAccount": "Kaldır",
   "settings.providers.agents.removeAccountConfirm": "Hesap kaldırılsın mı?",
   "settings.providers.agents.removingAccount": "Kaldırılıyor…",

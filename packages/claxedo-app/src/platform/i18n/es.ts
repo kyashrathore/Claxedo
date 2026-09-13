@@ -627,6 +627,7 @@ export const dict = {
   "settings.providers.agents.makeActive": "Hacer activa",
   "settings.providers.agents.makingActive": "Cambiando…",
   "settings.providers.agents.addAccount": "Añadir cuenta",
+  "settings.providers.agents.reconnectAccount": "Volver a conectar",
   "settings.providers.agents.removeAccount": "Quitar",
   "settings.providers.agents.removeAccountConfirm": "¿Quitar la cuenta?",
   "settings.providers.agents.removingAccount": "Quitando…",

@@ -27,7 +27,7 @@ import {
   type StoredCredential,
 } from "@/features/settings/provider-detect"
 import { SettingsList } from "@/features/settings/ui/list"
-import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
+import { ProviderSetupRow, type ProviderHealth } from "@/features/settings/ui/provider-setup-row"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useLanguage } from "@/platform/i18n/provider"
 
@@ -72,6 +72,13 @@ const VERDICT_KEY: Record<LiveCheck["verdict"], string> = {
   missing: "settings.providers.live.missing",
 }
 
+/**
+ * The verdicts only a different credential can answer. A rate cap is not one of
+ * them — the same login works again once the window resets — and neither is a
+ * check we could not make.
+ */
+const REJECTED: ReadonlySet<LiveCheck["verdict"]> = new Set(["auth_failed", "no_billing", "expired", "broken"])
+
 const WINDOW_KEY: Record<string, string> = {
   session: "settings.providers.window.session",
   weekly: "settings.providers.window.weekly",
@@ -108,8 +115,10 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const [discovery, setDiscovery] = createSignal<Pick<ProviderDetectResult, "discoveryId" | "rows">>()
   const [effective, setEffective] = createSignal<ReadonlyMap<string, EffectiveCredential>>()
   const [scannedAt, setScannedAt] = createSignal<number>()
-  const [checks, setChecks] = createSignal<Record<string, LiveCheck>>({})
   const [checking, setChecking] = createSignal<string>()
+  /** Checks made here, by account id; they outrank the verdict the server stored. */
+  const [accountChecks, setAccountChecks] = createSignal<Record<string, LiveCheck>>({})
+  const [checkingAccount, setCheckingAccount] = createSignal<string>()
   const [activating, setActivating] = createSignal<string>()
   const [removing, setRemoving] = createSignal<string>()
 
@@ -130,35 +139,26 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     return known ? agentInUse({ providerIds: providerIds(check) }, known) : undefined
   }
 
+  /**
+   * Which credential the harness runs on, in the one case the list below cannot
+   * say it: an account row marked Active already answers this, and repeating it
+   * here contradicts itself the moment the two are read from different places.
+   */
   const inUseLabel = (check: LocalHarnessCheck) => {
     if (!effective()) return undefined
+    if (accounts(check).some((account) => account.isActive)) return undefined
     const row = inUseRow(check)
     if (!row) return language.t("settings.providers.agents.inUseMachine")
     return language.t("settings.providers.agents.inUse", { label: row.label ?? row.kind ?? row.providerId })
   }
 
   /**
-   * The freshest answer about the credential in use: a check made here, else
-   * the verdict the server stored with a row, else what the last scan said
-   * about the machine login.
+   * The verdict alone carries the tone, so the sentence stays out of it: the
+   * provider's own words, the plan windows and the timestamp all trail behind
+   * as quiet text.
    */
-  const liveCheck = (check: LocalHarnessCheck): LiveCheck | undefined => {
-    const own = checks()[check.id]
-    if (own) return own
-    const row = inUseRow(check)
-    if (row) {
-      if (row.health !== undefined && isHealth(row.health) && row.lastValidatedAt !== undefined) {
-        return { at: row.lastValidatedAt, verdict: row.health }
-      }
-      return undefined
-    }
-    const at = scannedAt()
-    return at === undefined ? undefined : scanCheck(discovered().find((status) => status.id === check.id), at)
-  }
-
-  const liveText = (live: LiveCheck) => {
-    const verdict = language.t(VERDICT_KEY[live.verdict])
-    const parts = [live.reason ? `${verdict}: ${live.reason}` : verdict]
+  const health = (live: LiveCheck): ProviderHealth => {
+    const parts = live.reason ? [live.reason] : []
     for (const window of live.usage ?? []) {
       const name = WINDOW_KEY[window.window]
       parts.push(language.t("settings.providers.live.window", {
@@ -169,12 +169,27 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     parts.push(Date.now() - live.at < 60_000
       ? language.t("settings.providers.live.checkedNow")
       : language.t("settings.providers.live.checkedAt", { when: formatRelativeTime(live.at, language.locale()) }))
-    return parts.join(" · ")
+    return {
+      label: language.t(VERDICT_KEY[live.verdict]),
+      note: parts.join(" · "),
+      rejected: REJECTED.has(live.verdict),
+    }
   }
 
-  const liveLabel = (check: LocalHarnessCheck) => {
-    const live = liveCheck(check)
-    return live ? liveText(live) : undefined
+  /**
+   * How the row speaks for the login this machine holds: what the last scan
+   * said about it, and whether there is one there to ask about again.
+   *
+   * Silent once a stored account exists — that account carries its own verdict,
+   * and two answers in one row is what made the old one unreadable — and silent
+   * before any scan, because nothing is known then.
+   */
+  const machineLogin = (check: LocalHarnessCheck) => {
+    if (accounts(check).length > 0) return undefined
+    const at = scannedAt()
+    if (at === undefined) return undefined
+    const live = scanCheck(discovered().find((status) => status.id === check.id), at)
+    return live ? { health: health(live), found: live.verdict !== "missing" } : undefined
   }
 
   /**
@@ -190,15 +205,17 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       stored(),
     ).map((row) => {
       const identity = accountIdentity(row)
+      const checked = accountChecks()[row.id]
+        ?? (row.health !== undefined && isHealth(row.health) && row.lastValidatedAt !== undefined
+          ? { at: row.lastValidatedAt, verdict: row.health }
+          : undefined)
       return {
         id: row.id,
         ids: row.ids,
         name: row.label ?? row.kind ?? row.providerId,
         isActive: row.isActive,
         ...(identity === undefined ? {} : { detail: identity }),
-        ...(row.health !== undefined && isHealth(row.health) && row.lastValidatedAt !== undefined
-          ? { live: liveText({ at: row.lastValidatedAt, verdict: row.health }) }
-          : {}),
+        ...(checked === undefined ? {} : { health: health(checked) }),
         ...(row.expiresAt === undefined ? {} : {
           expiry: language.t("settings.providers.agents.accountExpires", {
             when: formatRelativeTime(row.expiresAt, language.locale()),
@@ -257,7 +274,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       setDiscovered(result.agents)
       setDiscovery({ discoveryId: result.discoveryId, rows: result.rows })
       setScannedAt(Date.now())
-      setChecks({})
+      setAccountChecks({})
       await props.onConnected?.()
     } catch (err: unknown) {
       fail(err)
@@ -267,32 +284,44 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   }
 
   /**
-   * Asks the provider about the credential this harness runs on. A stored row
-   * is verified by id; the machine login is re-scanned, which probes it.
+   * Re-scans this machine, which probes the login the harness runs on. There is
+   * no stored row to verify: this is offered only where none exists.
    */
-  const runCheck = async (check: LocalHarnessCheck) => {
+  const recheckMachineLogin = async (check: LocalHarnessCheck) => {
     setChecking(check.id)
     try {
-      const row = inUseRow(check)
-      if (!row) {
-        await detect()
-        return
-      }
+      await detect()
+    } finally {
+      setChecking(undefined)
+    }
+  }
+
+  /**
+   * Asks the provider about one stored account. The check is made against the
+   * first of its rows — the others are the same login under the harness's other
+   * bindings, and the provider would answer each of them identically.
+   */
+  const verifyAccount = async (ids: readonly string[]) => {
+    const [first] = ids
+    const row = stored().find((item) => item.id === first)
+    if (!row) return
+    setCheckingAccount(row.id)
+    try {
       try {
         const verified = await verifyAIConnection({ serverUrl: globalSDK.url, credentialId: row.id, providerId: row.providerId })
-        setChecks((prev) => ({
+        setAccountChecks((prev) => ({
           ...prev,
-          [check.id]: { at: Date.now(), verdict: verified.result, ...(verified.usage ? { usage: verified.usage } : {}) },
+          [row.id]: { at: Date.now(), verdict: verified.result, ...(verified.usage ? { usage: verified.usage } : {}) },
         }))
       } catch (err: unknown) {
-        setChecks((prev) => ({
+        setAccountChecks((prev) => ({
           ...prev,
-          [check.id]: { at: Date.now(), verdict: "unknown", reason: err instanceof Error ? err.message : String(err) },
+          [row.id]: { at: Date.now(), verdict: "unknown", reason: err instanceof Error ? err.message : String(err) },
         }))
       }
       await readStored()
     } finally {
-      setChecking(undefined)
+      setCheckingAccount(undefined)
     }
   }
 
@@ -351,6 +380,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
               storedCredentialProviders(stored()),
               discovered(),
             )
+            const login = () => machineLogin(check)
             return (
               <ProviderSetupRow
                 id={AGENT_ICON[check.id] ?? check.id}
@@ -361,15 +391,17 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
                 harness={check.id}
                 note={language.t("settings.providers.agents.sharedCredential")}
                 inUse={inUseLabel(check)}
-                live={liveLabel(check)}
+                live={login()?.health}
                 accounts={accounts(check)}
                 onActivate={check.id === "claude" ? (ids) => activate(ids) : undefined}
                 activateNote={check.id === "codex" ? language.t("settings.providers.agents.switchLater") : undefined}
                 activating={activating()}
                 onRemove={(ids) => remove(ids)}
                 removing={removing()}
-                onCheck={() => runCheck(check)}
+                onCheck={login()?.found ? () => recheckMachineLogin(check) : undefined}
                 checking={checking() === check.id || detecting()}
+                onCheckAccount={(ids) => verifyAccount(ids)}
+                checkingAccount={checkingAccount()}
                 onUseLogin={discoveredRow(check) ? () => useLogin(check) : undefined}
                 onConnected={async () => {
                   await readStored()

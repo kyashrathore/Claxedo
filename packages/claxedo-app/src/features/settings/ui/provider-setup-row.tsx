@@ -14,6 +14,19 @@ export function providerSetupStatusLabel(status: ProviderSetupStatus, language: 
   return language.t("settings.providers.status.notConnected")
 }
 
+/** What a provider last said about one credential, already in words. */
+export type ProviderHealth = {
+  /** The verdict itself: "Working", "Rejected by the provider". */
+  label: string
+  /** When it was said, and any plan windows it came with. */
+  note?: string
+  /**
+   * The provider refused the credential. Nothing this account can do fixes
+   * that, so its row offers a replacement rather than another Check.
+   */
+  rejected: boolean
+}
+
 /** One stored account under a harness row, already in words. */
 export type ProviderAccount = {
   id: string
@@ -22,11 +35,30 @@ export type ProviderAccount = {
   name: string
   /** The account's identity at the provider, or a pasted key's last characters. */
   detail?: string
-  /** What the provider last said about this account, and when. */
-  live?: string
+  health?: ProviderHealth
   expiry?: string
   isActive: boolean
 }
+
+/**
+ * The verdict and its timestamp on one line: the verdict carries the tone, the
+ * timestamp stays quiet behind it.
+ */
+const HealthLine: Component<{ health: ProviderHealth; component: string }> = (props) => (
+  <span class="flex min-w-0 items-center gap-1.5" data-component={props.component}>
+    <Show
+      when={props.health.rejected}
+      fallback={<span class="text-12-regular text-text-weak">{props.health.label}</span>}
+    >
+      <Tag class="border-border-critical-base bg-surface-critical-base text-icon-critical-base" data-tone="danger">
+        {props.health.label}
+      </Tag>
+    </Show>
+    <Show when={props.health.note}>
+      {(note) => <span class="text-12-regular text-text-weak">{note()}</span>}
+    </Show>
+  </span>
+)
 
 export const ProviderSetupRow: Component<{
   id: string
@@ -39,10 +71,10 @@ export const ProviderSetupRow: Component<{
   /** The workspace-or-directory scope those credentials belong to. */
   scope?: string
   note?: string
-  /** Which credential this harness runs on right now, in words. */
+  /** Which credential this harness runs on, when no listed account says so itself. */
   inUse?: string
-  /** What the provider last said about that credential, in words. */
-  live?: string
+  /** What the provider last said about the login this machine holds. */
+  live?: ProviderHealth
   /** Every account stored for this harness, active first. */
   accounts?: readonly ProviderAccount[]
   /** Offers Make active on each inactive account; absent leaves the list read-only. */
@@ -55,9 +87,13 @@ export const ProviderSetupRow: Component<{
   onRemove?: (credentialIds: readonly string[]) => void | Promise<void>
   /** The account whose removal is in flight. */
   removing?: string
-  /** Asks the provider now; the row reads "Checking…" until it answers. */
+  /** Asks the provider about the machine login; offered only where one is in use. */
   onCheck?: () => void | Promise<void>
   checking?: boolean
+  /** Asks the provider about one stored account. */
+  onCheckAccount?: (credentialIds: readonly string[]) => void | Promise<void>
+  /** The account whose check is in flight. */
+  checkingAccount?: string
   /** Saves the login a scan found on this machine; offered while the row reads detected. */
   onUseLogin?: () => void | Promise<void>
   onConnected?: () => void | Promise<void>
@@ -87,10 +123,10 @@ export const ProviderSetupRow: Component<{
 
   return (
     <div class="border-b border-border-weak-base last:border-none" data-provider={props.id}>
-      <div class="flex w-full flex-wrap items-center justify-between gap-4 py-3">
+      <div class="flex w-full flex-wrap items-start justify-between gap-4 py-3">
         <button
           type="button"
-          class="flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent p-0 text-left"
+          class="flex min-w-0 flex-1 items-start gap-3 border-none bg-transparent p-0 text-left"
           disabled={connected()}
           onClick={() => {
             if (connected()) return
@@ -107,14 +143,14 @@ export const ProviderSetupRow: Component<{
               {(inUse) => <span class="text-12-regular text-text-base" data-component="provider-in-use">{inUse()}</span>}
             </Show>
             <Show when={props.live}>
-              {(live) => <span class="text-12-regular text-text-weak" data-component="provider-live">{live()}</span>}
+              {(live) => <HealthLine health={live()} component="provider-live" />}
             </Show>
             <Show when={!expanded() && props.detail}>
               {(detail) => <span class="text-12-regular text-text-weak">{detail()}</span>}
             </Show>
           </div>
         </button>
-        <div class="flex shrink-0 items-center gap-2">
+        <div class="flex shrink-0 items-center gap-2" data-component="provider-actions">
           <Show when={showStatus()}>
             <Tag>{providerSetupStatusLabel(props.status, language)}</Tag>
           </Show>
@@ -148,13 +184,13 @@ export const ProviderSetupRow: Component<{
                 data-account={account.id}
                 data-active={account.isActive ? "true" : "false"}
               >
-                <div class="flex min-w-0 flex-col gap-0.5">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
                   <span class="text-12-medium text-text-strong">{account.name}</span>
                   <Show when={account.detail}>
                     {(detail) => <span class="text-12-regular text-text-weak">{detail()}</span>}
                   </Show>
-                  <Show when={account.live}>
-                    {(live) => <span class="text-12-regular text-text-weak">{live()}</span>}
+                  <Show when={account.health}>
+                    {(health) => <HealthLine health={health()} component="provider-account-health" />}
                   </Show>
                   <Show when={account.expiry}>
                     {(expiry) => <span class="text-12-regular text-text-weak">{expiry()}</span>}
@@ -179,6 +215,29 @@ export const ProviderSetupRow: Component<{
                       {props.activating === account.id
                         ? language.t("settings.providers.agents.makingActive")
                         : language.t("settings.providers.agents.makeActive")}
+                    </Button>
+                  </Show>
+                  <Show when={props.onCheckAccount}>
+                    <Button
+                      size="small"
+                      variant="ghost"
+                      disabled={props.checkingAccount !== undefined}
+                      data-action="settings-provider-check-account"
+                      onClick={() => void props.onCheckAccount?.(account.ids)}
+                    >
+                      {props.checkingAccount === account.id
+                        ? language.t("settings.providers.agents.checking")
+                        : language.t("settings.providers.agents.check")}
+                    </Button>
+                  </Show>
+                  <Show when={account.health?.rejected}>
+                    <Button
+                      size="small"
+                      variant="primary"
+                      data-action="settings-provider-reconnect-account"
+                      onClick={() => setExpanded(true)}
+                    >
+                      {language.t("settings.providers.agents.reconnectAccount")}
                     </Button>
                   </Show>
                   <Show when={props.onRemove}>

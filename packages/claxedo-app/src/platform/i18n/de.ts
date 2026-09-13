@@ -560,6 +560,7 @@ export const dict = {
   "settings.providers.agents.makeActive": "Aktiv setzen",
   "settings.providers.agents.makingActive": "Wird gewechselt…",
   "settings.providers.agents.addAccount": "Konto hinzufügen",
+  "settings.providers.agents.reconnectAccount": "Neu verbinden",
   "settings.providers.agents.removeAccount": "Entfernen",
   "settings.providers.agents.removeAccountConfirm": "Konto entfernen?",
   "settings.providers.agents.removingAccount": "Wird entfernt…",

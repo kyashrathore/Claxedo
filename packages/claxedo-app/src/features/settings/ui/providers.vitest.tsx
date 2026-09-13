@@ -53,8 +53,12 @@ const state = vi.hoisted(() => ({
   removed: [] as string[],
   /** What a machine scan finds, as the discovery route reports it. */
   discoveryItems: [] as Array<Record<string, unknown>>,
+  /** When set, the discovery route answers 500 with this cause instead of a scan. */
+  discoveryFailure: undefined as string | undefined,
   credentialCalls: [] as string[],
   dialogs: [] as Array<() => JSX.Element>,
+  /** What every failure told the user, in order. */
+  toasts: [] as string[],
 }))
 
 vi.mock("@/features/settings/app-ports", async () => {
@@ -125,7 +129,11 @@ vi.mock("@/app/integrations/sync/query-options", () => ({
     }),
   }),
 }))
-vi.mock("@opencode-ai/ui/toast", () => ({ showToast: () => undefined }))
+vi.mock("@opencode-ai/ui/toast", () => ({
+  showToast: (input: { title?: string; description?: string }) => {
+    state.toasts.push(input.description ?? input.title ?? "")
+  },
+}))
 
 vi.mock("@/platform/i18n/provider", () => ({
   useLanguage: () => ({
@@ -192,6 +200,15 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
     }))
   }
   if (url.pathname === "/api/claxedo/credentials/discover") {
+    if (state.discoveryFailure) {
+      return new Response(JSON.stringify({
+        error: {
+          code: "credential_discovery_failed",
+          message: "Failed to discover credentials",
+          details: { detail: { name: "Error", message: state.discoveryFailure } },
+        },
+      }), { status: 500 })
+    }
     return new Response(JSON.stringify({ discovery_id: "disc_1", items: state.discoveryItems }))
   }
   if (url.pathname.endsWith("/verify")) {
@@ -267,9 +284,21 @@ function agentRow(id: string) {
   return row
 }
 
-/** The status tag a row shows, or "" where a missing row shows none. */
+/** The harness-level status tag, or "" where a missing row shows none. */
 function agentStatus(id: string) {
-  return agentRow(id).querySelector('[data-component="tag"]')?.textContent ?? ""
+  return agentRow(id)
+    .querySelector('[data-component="provider-actions"] [data-component="tag"]')
+    ?.textContent ?? ""
+}
+
+/** The verdict tag on one account row, with the tone it was drawn in. */
+function accountHealth(id: string, credentialId: string) {
+  const health = accountRow(id, credentialId).querySelector('[data-component="provider-account-health"]')
+  const tag = health?.querySelector('[data-component="tag"]')
+  return {
+    text: health?.textContent ?? "",
+    tone: tag?.getAttribute("data-tone") ?? "",
+  }
 }
 
 /** The stored accounts a harness row listed, by credential id. */
@@ -295,10 +324,12 @@ beforeEach(() => {
   state.authReads.length = 0
   state.credentialCalls.length = 0
   state.dialogs.length = 0
+  state.toasts.length = 0
   state.storedCredentials = []
   state.activated.length = 0
   state.removed.length = 0
   state.discoveryItems = []
+  state.discoveryFailure = undefined
   state.projects = [LOCAL_PROJECT, CLOUD_PROJECT]
   state.catalogs = {
     "workspace:ws_local|pi": ["anthropic", "openai"],
@@ -490,20 +521,25 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/effective")
   })
 
-  test("Check on a harness with a stored row asks the provider and shows its verdict with the plan's windows", async () => {
+  test("Check on a stored account asks the provider and shows its verdict with the plan's windows", async () => {
     state.storedCredentials = [{ id: "cred_codex", provider_id: "codex-app-server", kind: "oauth_token", label: "ChatGPT OAuth" }]
     mount()
-    await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-in-use"]')).not.toBeNull())
-    expect(agentRow("openai").querySelector('[data-component="provider-live"]')).toBeNull()
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex"]))
+    expect(accountHealth("openai", "cred_codex").text).toBe("")
+    // The harness level has nothing of its own to check once an account answers for it.
+    expect(agentRow("openai").querySelector('[data-action="settings-provider-check"]')).toBeNull()
 
-    agentRow("openai").querySelector<HTMLButtonElement>('[data-action="settings-provider-check"]')!.click()
+    accountRow("openai", "cred_codex")
+      .querySelector<HTMLButtonElement>('[data-action="settings-provider-check-account"]')!.click()
 
-    await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-live"]')).not.toBeNull())
-    const live = agentRow("openai").querySelector('[data-component="provider-live"]')!.textContent ?? ""
-    expect(live).toContain("settings.providers.live.ok")
-    expect(live).toContain("settings.providers.live.window:settings.providers.window.session|12")
-    expect(live).toContain("settings.providers.live.window:settings.providers.window.weekly|40")
-    expect(live).toContain("settings.providers.live.checkedNow")
+    await waitFor(() => expect(accountHealth("openai", "cred_codex").text).not.toBe(""))
+    const live = accountHealth("openai", "cred_codex")
+    expect(live.text).toContain("settings.providers.live.ok")
+    expect(live.text).toContain("settings.providers.live.window:settings.providers.window.session|12")
+    expect(live.text).toContain("settings.providers.live.window:settings.providers.window.weekly|40")
+    expect(live.text).toContain("settings.providers.live.checkedNow")
+    expect(live.tone).toBe("")
+    expect(accountRow("openai", "cred_codex").querySelector('[data-action="settings-provider-reconnect-account"]')).toBeNull()
     expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/cred_codex/verify")
   })
 
@@ -513,16 +549,40 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       probe: { state: "working", usage: [{ window: "weekly", usedPercent: 64, resetsAt: null }] },
     }]
     mount()
-    await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-in-use"]')).not.toBeNull())
+    await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
+    fireEvent.click(detectButton())
+    await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-live"]')).not.toBeNull())
+    state.credentialCalls.length = 0
 
     agentRow("openai").querySelector<HTMLButtonElement>('[data-action="settings-provider-check"]')!.click()
 
-    await waitFor(() => expect(agentRow("openai").querySelector('[data-component="provider-live"]')).not.toBeNull())
+    await waitFor(() => expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/discover"))
     const live = agentRow("openai").querySelector('[data-component="provider-live"]')!.textContent ?? ""
     expect(live).toContain("settings.providers.live.ok")
     expect(live).toContain("settings.providers.live.window:settings.providers.window.weekly|64")
-    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/discover")
     expect(state.credentialCalls.some((call) => call.endsWith("/verify"))).toBe(false)
+  })
+
+  test("a scan that fails tells the user what broke, not that a scan failed", async () => {
+    state.discoveryFailure = "User agent config contains invalid JSON"
+    mount()
+    await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
+
+    fireEvent.click(detectButton())
+
+    await waitFor(() => expect(state.toasts).toEqual(["User agent config contains invalid JSON"]))
+  })
+
+  test("a harness that is not set up offers no Check, whether or not a scan ran", async () => {
+    mount()
+    await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
+    expect(agentRow("openai").querySelector('[data-action="settings-provider-check"]')).toBeNull()
+
+    fireEvent.click(detectButton())
+
+    await waitFor(() => expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/discover"))
+    expect(agentRow("openai").querySelector('[data-action="settings-provider-check"]')).toBeNull()
+    expect(within(agentRow("openai")).getByRole("button", { name: "common.connect" })).toBeInTheDocument()
   })
 
   test("Connect opens an inset card in the row, named for the harness, that its own close button dismisses", async () => {
@@ -564,22 +624,23 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(inactive.querySelector('[data-action="settings-provider-activate"]')).not.toBeNull()
   })
 
-  test("Make active switches the account and the In use line names the new one", async () => {
+  test("Make active moves the Active tag, and the header never repeats it", async () => {
     state.storedCredentials = [
       { id: "cred_key", provider_id: "claude-sdk", kind: "api_key", label: "API key", account_id: "fp_0123abcd…wxyz", is_active: false, expires_at: 4102444800000 },
       { id: "cred_token", provider_id: "claude-sdk", kind: "oauth_token", label: "Subscription", is_active: true, health: "ok", last_validated_at: 7 },
     ]
     mount()
-    await waitFor(() => expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
-      .toBe("settings.providers.agents.inUse:Subscription"))
+    await waitFor(() => expect(accountRow("anthropic", "cred_token").getAttribute("data-active")).toBe("true"))
+    // An account row already says which login runs; an In use line beside it
+    // is a second answer that the next switch can contradict.
+    expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')).toBeNull()
 
     accountRow("anthropic", "cred_key").querySelector<HTMLButtonElement>('[data-action="settings-provider-activate"]')!.click()
 
     await waitFor(() => expect(state.activated).toEqual([["cred_key"]]))
-    await waitFor(() => expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
-      .toBe("settings.providers.agents.inUse:API key"))
-    expect(accountRow("anthropic", "cred_key").getAttribute("data-active")).toBe("true")
+    await waitFor(() => expect(accountRow("anthropic", "cred_key").getAttribute("data-active")).toBe("true"))
     expect(accountRow("anthropic", "cred_token").getAttribute("data-active")).toBe("false")
+    expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')).toBeNull()
     expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/activate")
   })
 
@@ -678,7 +739,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(state.credentialCalls).toContain("DELETE /api/claxedo/credentials/sdk_new")
   })
 
-  test("removing the active account hands the Active tag and the In use line to the one left", async () => {
+  test("removing the active account hands the Active tag to the one left", async () => {
     state.storedCredentials = [
       { id: "acp_old", provider_id: "claude-acp", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
       { id: "sdk_old", provider_id: "claude-sdk", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
@@ -686,16 +747,14 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       { id: "sdk_new", provider_id: "claude-sdk", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
     ]
     mount()
-    await waitFor(() => expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
-      .toBe("settings.providers.agents.inUse:Work login"))
+    await waitFor(() => expect(accountRow("anthropic", "sdk_old").getAttribute("data-active")).toBe("true"))
 
     accountRow("anthropic", "sdk_old").querySelector<HTMLButtonElement>('[data-action="settings-provider-remove-account"]')!.click()
     accountRow("anthropic", "sdk_old").querySelector<HTMLButtonElement>('[data-action="settings-provider-remove-account-confirm"]')!.click()
 
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_new"]))
     expect(accountRow("anthropic", "sdk_new").getAttribute("data-active")).toBe("true")
-    expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
-      .toBe("settings.providers.agents.inUse:Personal login")
+    expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')).toBeNull()
   })
 
   test("removing the last account returns the row to this computer's login", async () => {
@@ -713,15 +772,25 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       .toBe("settings.providers.agents.inUseMachine")
   })
 
-  test("a rejected account keeps its verdict, and Add account is the way back", async () => {
+  test("a rejected account reads as rejected in the danger tone, and Reconnect is the way back", async () => {
     state.storedCredentials = [
       { id: "cred_bad", provider_id: "claude-sdk", kind: "api_key", label: "Old key", is_active: true, health: "auth_failed", last_validated_at: 7 },
     ]
     mount()
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_bad"]))
-    expect(accountRow("anthropic", "cred_bad").textContent).toContain("settings.providers.live.authFailed")
+    const rejected = accountHealth("anthropic", "cred_bad")
+    expect(rejected.text).toContain("settings.providers.live.authFailed")
+    expect(rejected.tone).toBe("danger")
+    // The verdict is the tag; the time trails it as quiet text on the same line.
+    expect(rejected.text).toContain("settings.providers.live.checkedAt")
+    expect(accountRow("anthropic", "cred_bad").querySelector('[data-action="settings-provider-remove-account"]')).not.toBeNull()
+    expect(agentRow("anthropic").querySelector('[data-component="provider-connect-card"]')).toBeNull()
 
-    agentRow("anthropic").querySelector<HTMLButtonElement>('[data-action="settings-provider-add-account"]')!.click()
+    accountRow("anthropic", "cred_bad")
+      .querySelector<HTMLButtonElement>('[data-action="settings-provider-reconnect-account"]')!.click()
+
+    const card = agentRow("anthropic").querySelector('[data-component="provider-connect-card"]')
+    expect(card?.textContent).toContain("settings.providers.connect.title:Claude Code")
     // The save the card makes is the server's: the rejected active row yields
     // the mark to the row written after it.
     state.storedCredentials = [
@@ -733,9 +802,10 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_good", "cred_bad"]))
     expect(accountRow("anthropic", "cred_good").getAttribute("data-active")).toBe("true")
     expect(accountRow("anthropic", "cred_bad").getAttribute("data-active")).toBe("false")
-    expect(accountRow("anthropic", "cred_bad").textContent).toContain("settings.providers.live.authFailed")
-    expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
-      .toBe("settings.providers.agents.inUse:New key")
+    expect(accountHealth("anthropic", "cred_bad").tone).toBe("danger")
+    // The working account offers no way back, because it has nowhere to go back to.
+    expect(accountRow("anthropic", "cred_good").querySelector('[data-action="settings-provider-reconnect-account"]')).toBeNull()
+    expect(accountHealth("anthropic", "cred_good").text).toBe("")
   })
 
   test("Make active marks every binding of the account it was clicked on", async () => {

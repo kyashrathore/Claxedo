@@ -542,6 +542,7 @@ export const dict = {
   "settings.providers.agents.makeActive": "사용으로 지정",
   "settings.providers.agents.makingActive": "전환 중…",
   "settings.providers.agents.addAccount": "계정 추가",
+  "settings.providers.agents.reconnectAccount": "다시 연결",
   "settings.providers.agents.removeAccount": "제거",
   "settings.providers.agents.removeAccountConfirm": "계정을 제거할까요?",
   "settings.providers.agents.removingAccount": "제거 중…",

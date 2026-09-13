@@ -546,6 +546,7 @@ export const dict = {
   "settings.providers.agents.makeActive": "使用中にする",
   "settings.providers.agents.makingActive": "切り替え中…",
   "settings.providers.agents.addAccount": "アカウントを追加",
+  "settings.providers.agents.reconnectAccount": "再接続",
   "settings.providers.agents.removeAccount": "削除",
   "settings.providers.agents.removeAccountConfirm": "アカウントを削除しますか？",
   "settings.providers.agents.removingAccount": "削除中…",
