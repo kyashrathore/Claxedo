@@ -205,6 +205,11 @@ function daytonaSecretName(workspaceId: string, secretName: string) {
   return `${workspaceSecretPrefix(workspaceId)}${encodeSecretSegment(secretName)}`
 }
 
+/** The env var name a workspace-prefixed org secret was minted for. */
+function daytonaSecretEnvName(workspaceId: string, secretName: string) {
+  return decodeURIComponent(secretName.slice(workspaceSecretPrefix(workspaceId).length).replace(/_/g, "%"))
+}
+
 /**
  * Every org secret this driver holds for the workspace, by name.
  *
@@ -438,7 +443,14 @@ export function createDaytonaSandboxDriver(
     if (options.withdraw) {
       for (const [name, secret] of existing) {
         if (desired.has(name)) continue
-        await withdrawSecret(secrets, secret)
+        // Emptied, not unmounted. Dropping the name shrinks the mounted set,
+        // and a changed set of names restarts the container — which on a
+        // withdrawal would kill whatever turn is running in it. A dead value
+        // allowlisted to no host carries no authority, and `destroy` is what
+        // finally deletes the secret.
+        await secrets.update(secret.id, { value: REVOKED_SECRET_VALUE, hosts: [] })
+        desired.add(name)
+        references[daytonaSecretEnvName(input.workspaceId, name)] = name
       }
     }
 

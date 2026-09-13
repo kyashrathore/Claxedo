@@ -266,7 +266,7 @@ describe("DaytonaSandboxDriver", () => {
     expect(existing.stop).not.toHaveBeenCalled()
   })
 
-  test("withdrawal writes the revoked value over the org secret before deleting it", async () => {
+  test("withdrawal empties the org secret and keeps its name mounted", async () => {
     const secret = secretService([{ id: "sec_slot", name: sentinelSecret }, { id: "sec_notion", name: notionSecret }])
     const existing = sandbox()
     const daytona = client({ secret, list: vi.fn(async () => ({ items: [existing] })) })
@@ -274,11 +274,15 @@ describe("DaytonaSandboxDriver", () => {
 
     await driver.ensureHost({ ...input, secrets: [] })
 
-    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked" })
-    expect(secret.delete).toHaveBeenCalledWith("sec_notion")
-    expect(secret.update.mock.invocationCallOrder[0]).toBeLessThan(secret.delete.mock.invocationCallOrder[0])
-    expect(secret.delete).not.toHaveBeenCalledWith("sec_slot")
-    expect(existing.updateSecrets).toHaveBeenCalledWith({ [SENTINEL_ENV]: sentinelSecret })
+    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked", hosts: [] })
+    // Unmounting the name would change the mounted set, and a changed set
+    // restarts the container — on a withdrawal, mid-turn.
+    expect(secret.delete).not.toHaveBeenCalled()
+    expect(existing.updateSecrets).toHaveBeenCalledWith({
+      [SENTINEL_ENV]: sentinelSecret,
+      NOTION_TOKEN: notionSecret,
+    })
+    expect(existing.stop).not.toHaveBeenCalled()
   })
 
   test("destroy withdraws every brokered org secret the workspace still holds", async () => {
@@ -838,7 +842,7 @@ describe("brokered secret reconciliation through the manager", () => {
     return { existing, secret, manager: createSandboxManager({ leaseStore: store, driver }) }
   }
 
-  test("reuse with an empty secret list withdraws every brokered secret", async () => {
+  test("reuse with an empty secret list empties every brokered secret without restarting", async () => {
     const { existing, secret, manager } = reuseFixture([
       { id: "sec_slot", name: sentinelSecret },
       { id: "sec_notion", name: notionSecret },
@@ -846,8 +850,13 @@ describe("brokered secret reconciliation through the manager", () => {
 
     await manager.ensure("ws_1", { homeRegion: "us-east", secrets: [] })
 
-    expect(existing.updateSecrets).toHaveBeenCalledWith({ [SENTINEL_ENV]: sentinelSecret })
-    expect(secret.delete).toHaveBeenCalledWith("sec_notion")
+    expect(existing.updateSecrets).toHaveBeenCalledWith({
+      [SENTINEL_ENV]: sentinelSecret,
+      NOTION_TOKEN: notionSecret,
+    })
+    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked", hosts: [] })
+    expect(secret.delete).not.toHaveBeenCalled()
+    expect(existing.stop).not.toHaveBeenCalled()
   })
 
   test("reuse with no secret key leaves the mounted set alone", async () => {
@@ -863,7 +872,7 @@ describe("brokered secret reconciliation through the manager", () => {
     expect(existing.stop).not.toHaveBeenCalled()
   })
 
-  test("resume with an empty secret list withdraws every brokered secret", async () => {
+  test("resume with an empty secret list empties every brokered secret without restarting", async () => {
     const { existing, secret, manager } = resumeFixture([
       { id: "sec_slot", name: sentinelSecret },
       { id: "sec_notion", name: notionSecret },
@@ -871,8 +880,13 @@ describe("brokered secret reconciliation through the manager", () => {
 
     await manager.ensure("ws_1", { homeRegion: "us-east", secrets: [] })
 
-    expect(existing.updateSecrets).toHaveBeenCalledWith({ [SENTINEL_ENV]: sentinelSecret })
-    expect(secret.delete).toHaveBeenCalledWith("sec_notion")
+    expect(existing.updateSecrets).toHaveBeenCalledWith({
+      [SENTINEL_ENV]: sentinelSecret,
+      NOTION_TOKEN: notionSecret,
+    })
+    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked", hosts: [] })
+    expect(secret.delete).not.toHaveBeenCalled()
+    expect(existing.stop).not.toHaveBeenCalled()
   })
 
   test("resume with no secret key leaves the mounted set alone", async () => {
