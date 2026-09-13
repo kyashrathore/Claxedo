@@ -29,7 +29,7 @@ import {
   AgentHarnessRow,
   type AgentAccount,
 } from "@/features/settings/ui/agent-harness-row"
-import { HARNESS_CONNECT_PROVIDER, harnessIcon } from "@/platform/identity/harness-catalog"
+import { harnessIcon } from "@/platform/identity/harness-catalog"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { readPercent } from "@/lib/percent"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -119,19 +119,8 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     })
   }
 
-  /** A harness's bound provider ids plus the one its connect card stores under. */
-  const providerIds = (check: LocalHarnessCheck): readonly string[] => {
-    const connect = HARNESS_CONNECT_PROVIDER[check.id]
-    return connect && !(check.providerIds as readonly string[]).includes(connect) ? [...check.providerIds, connect] : check.providerIds
-  }
-
-  const accounts = (check: LocalHarnessCheck) => {
-    const connect = HARNESS_CONNECT_PROVIDER[check.id]
-    return harnessAccounts(
-      { providerIds: providerIds(check), ...(connect === undefined ? {} : { connectProviderId: connect }) },
-      stored(),
-    )
-  }
+  const accounts = (check: LocalHarnessCheck) =>
+    harnessAccounts({ providerIds: check.providerIds, connectProviderId: check.connectProvider }, stored())
 
   /** What this harness said about its own login, in whichever of the four states. */
   const machineLogin = (check: LocalHarnessCheck): MachineLogin | undefined =>
@@ -171,7 +160,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const selectedKey = (check: LocalHarnessCheck): string | undefined => {
     const rows = accounts(check)
     const known = effective()
-    const inUse = known ? agentInUse({ providerIds: providerIds(check) }, known) : undefined
+    const inUse = known ? agentInUse({ providerIds: check.providerIds }, known) : undefined
     const match = inUse ? rows.find((row) => row.ids.includes(inUse.id)) : undefined
     if (match) return match.id
     const active = rows.find((row) => row.isActive)
@@ -326,7 +315,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     const serves = login.serves
     if (serves === undefined) return false
     const known = effective()
-    const inUse = known ? agentInUse({ providerIds: providerIds(check) }, known) : undefined
+    const inUse = known ? agentInUse({ providerIds: check.providerIds }, known) : undefined
     return inUse !== undefined && !serves.includes(inUse.providerId)
   }
 
@@ -487,7 +476,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
             <AgentHarnessRow
               id={harnessIcon(harness.id)}
               name={harness.label}
-              providerId={HARNESS_CONNECT_PROVIDER[harness.id] ?? harness.providerIds[0]}
+              providerId={harness.connectProvider}
               harness={harness.id}
               accounts={listedAccounts(harness)}
               onSelect={(account) => select(harness, account)}

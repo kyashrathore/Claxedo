@@ -205,9 +205,9 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.async).toBe(0)
     expect(calls.transportAsync).toBe(1)
     expect(boots).toEqual([
-      { phase: "booting", harness: "Claude", sessionID: undefined },
-      { phase: "booting", harness: "Claude", sessionID: "session-1" },
-      { phase: "sending", harness: "Claude", sessionID: "session-1" },
+      { phase: "booting", harness: "Claude Code", sessionID: undefined },
+      { phase: "booting", harness: "Claude Code", sessionID: "session-1" },
+      { phase: "sending", harness: "Claude Code", sessionID: "session-1" },
       undefined,
     ])
     expect(apiCalls).toHaveLength(0)
@@ -355,7 +355,7 @@ describe("Harness + demo dispatch and abort", () => {
     await pending
     await settleSubmitEffects()
 
-    expect(boots).toEqual([{ phase: "booting", harness: "Claude", sessionID: undefined }])
+    expect(boots).toEqual([{ phase: "booting", harness: "Claude Code", sessionID: undefined }])
     expect(calls.transportAsync).toBe(1)
   })
 
@@ -373,7 +373,7 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.create).toBe(0)
     expect(calls.transportAsync).toBe(0)
     expect(optimisticAdds).toEqual([])
-    expect(boots).toEqual([{ phase: "booting", harness: "Claude", sessionID: undefined }, undefined])
+    expect(boots).toEqual([{ phase: "booting", harness: "Claude Code", sessionID: undefined }, undefined])
     expect(toasts).toEqual([{ title: "prompt.toast.sessionCreateFailed.title", description: "Failed to create session" }])
   })
 

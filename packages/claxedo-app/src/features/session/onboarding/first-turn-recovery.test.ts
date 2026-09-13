@@ -132,7 +132,7 @@ describe("first-turn recovery", () => {
     }
     expect(sessionRecoveryClass(error)).toBe("usage_limit")
     expect(sessionRecovery("usage_limit", error, { providerID: "claude-sdk" })).toMatchObject({
-      title: "Claude usage limit reached",
+      title: "Claude Code usage limit reached",
       description: "You've reached your Fable 5 limit. Choose another model to continue.",
       label: "Continue",
     })

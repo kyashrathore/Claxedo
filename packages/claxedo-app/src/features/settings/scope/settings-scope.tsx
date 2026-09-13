@@ -1,7 +1,7 @@
 import { createContext, createMemo, useContext, type Accessor, type ParentProps } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { NATIVE_HARNESS_IDS, harnessSelectionKey, nativeHarness, connectionHarness, type HarnessSelection } from "@/platform/identity/harness-selection"
-import { harnessDisplayLabel } from "@/ui/harness-display"
+import { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { useEnabledAcpHarnesses, useSDK, useShellQueryOptions } from "@/features/settings/app-ports"
 import {

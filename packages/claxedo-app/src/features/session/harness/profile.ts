@@ -5,9 +5,9 @@ import {
   type HarnessSelection,
   type NativeHarnessId,
 } from "@/platform/identity/harness-selection"
-import { HARNESS_DISPLAY_NAMES, harnessDisplayLabel } from "@/ui/harness-display"
+import { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
 
-export { HARNESS_DISPLAY_NAMES, harnessDisplayLabel } from "@/ui/harness-display"
+export { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
 
 export type HarnessType = HarnessSelection
 export type OptionsSource = "harness" | "catalog" | "empty"
@@ -89,7 +89,7 @@ export function isNativeSdkHarness(type: HarnessType) {
  */
 export function harnessModelPickerProvider(harness: HarnessType, item: { id: string; providerID?: string }) {
   const harnessId = item.providerID ?? harnessSelectionId(harness)
-  const label = HARNESS_DISPLAY_NAMES[harnessId] ?? harnessDisplayLabel(harnessId)
+  const label = harnessDisplayLabel(harnessId)
   if (!isNativeHarness(harness, "pi")) return { id: harnessId, name: label }
   const slash = item.id.indexOf("/")
   const provider = slash > 0 ? item.id.slice(0, slash) : harnessId

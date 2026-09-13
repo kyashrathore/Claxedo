@@ -1,28 +1,58 @@
+import { HARNESS_TABLE, harnessForProviderId } from "@claxedo/agent-runtime-contract"
 import type { NativeHarnessId } from "@/platform/identity/harness-selection"
 
-/**
- * How each harness and the vendor behind its login are named to a reader.
- *
- * The single owner of these words. A provider id — `claude-sdk`,
- * `codex-app-server`, `cursor-sdk` — is a registry key and means nothing to
- * anyone reading a connect card, so every user-facing surface resolves through
- * here rather than falling back to the id when the model catalog has never
- * heard of it.
- */
-export const HARNESS_CATALOG = {
-  claude: { label: "Claude Code", vendor: "Anthropic" },
-  codex: { label: "Codex", vendor: "OpenAI" },
-  cursor: { label: "Cursor", vendor: "Cursor" },
-  pi: { label: "Pi", vendor: "Pi" },
-  opencode: { label: "OpenCode", vendor: "OpenCode" },
-} as const satisfies Record<NativeHarnessId, { label: string; vendor: string }>
-
-export function harnessLabel(id: string): string | undefined {
-  return (HARNESS_CATALOG as Record<string, { label: string } | undefined>)[id]?.label
+/** One harness as this app draws it: the shared record, plus its brand mark. */
+type HarnessEntry = {
+  label: string
+  vendor: string
+  /** The brand mark the harness is recognised by; its login is the vendor's. */
+  icon: string
+  /** Every registry provider id the harness resolves auth through. */
+  providerIds?: readonly string[]
+  /** The provider id a sign-in for this harness is stored against. */
+  connectProvider?: string
 }
 
-export function harnessVendor(id: string): string | undefined {
-  return (HARNESS_CATALOG as Record<string, { vendor: string } | undefined>)[id]?.vendor
+/**
+ * How each harness is named and marked to a reader, and which provider ids its
+ * login is stored under.
+ *
+ * Ids, names and provider ids are `HARNESS_TABLE`'s: the server stores a login
+ * against those ids and the machine scan reports them, so a second list here
+ * loses an account the moment the two disagree. `pi` and `opencode` are engines
+ * a reader picks rather than logins anything is stored against, so they carry a
+ * name and a mark and nothing else.
+ */
+export const HARNESS_CATALOG = {
+  claude: { ...HARNESS_TABLE.claude, icon: "anthropic" },
+  codex: { ...HARNESS_TABLE.codex, icon: "openai" },
+  cursor: { ...HARNESS_TABLE.cursor, icon: "cursor" },
+  pi: { label: "Pi", vendor: "Pi", icon: "pi" },
+  opencode: { label: "OpenCode", vendor: "OpenCode", icon: "opencode" },
+} as const satisfies Record<NativeHarnessId, HarnessEntry>
+
+function entry(id: string): HarnessEntry | undefined {
+  return (HARNESS_CATALOG as Record<string, HarnessEntry | undefined>)[id]
+}
+
+export function harnessLabel(id: string): string | undefined {
+  return entry(id)?.label
+}
+
+/**
+ * The name to put on a key no catalog entry answers to — a historical session's
+ * harness, an operator's ACP connection id. The server-supplied label is
+ * preferred wherever discovery data is at hand; this is the label of last
+ * resort, and it beats printing `team-agent`.
+ */
+export function harnessDisplayLabel(key: string): string {
+  const known = harnessLabel(key)
+  if (known) return known
+  return key
+    .split(/[-_]/g)
+    .filter(Boolean)
+    .map((item) => item[0]?.toUpperCase() + item.slice(1))
+    .join(" ")
 }
 
 /** Where a turn on one account can run. */
@@ -78,7 +108,7 @@ export type ConnectContext =
 
 /** The connect card's context for a harness that runs on one account's login. */
 export function harnessConnectContext(harness: string, fallbackLabel?: string): ConnectContext {
-  const known = (HARNESS_CATALOG as Record<string, { label: string; vendor: string } | undefined>)[harness]
+  const known = entry(harness)
   const label = known?.label ?? fallbackLabel ?? harness
   return { kind: "harness", harness: label, vendor: known?.vendor ?? label }
 }
@@ -88,30 +118,35 @@ export function engineConnectContext(engine: string, vendor: string): ConnectCon
   return { kind: "engine", engine: harnessLabel(engine) ?? engine, vendor }
 }
 
-/** The brand mark each harness is recognised by; its login is the vendor's. */
-const HARNESS_ICON: Record<string, string> = {
-  claude: "anthropic",
-  codex: "openai",
-  cursor: "cursor",
-}
-
 export function harnessIcon(id: string): string {
-  return HARNESS_ICON[id] ?? id
+  return entry(id)?.icon ?? id
 }
 
 /**
- * The provider id a harness's own login is stored under, and the id its connect
- * card writes. Every other provider id names a vendor an engine can run, which
- * is a different sentence on the card.
+ * How a key that may be either a harness id or one of its provider ids is
+ * named to a reader. A registry key — `claude-sdk`, `codex-app-server` — names
+ * the binding a login is stored against and nothing a reader would recognise.
  */
-export const HARNESS_CONNECT_PROVIDER = {
-  claude: "claude-sdk",
-  codex: "codex-app-server",
-  cursor: "cursor-sdk",
-} as const satisfies Partial<Record<NativeHarnessId, string>>
+export function harnessLabelForProviderId(providerId: string): string | undefined {
+  return harnessLabel(harnessForProviderId(providerId) ?? providerId)
+}
 
+/** The provider ids a harness's accounts are stored under, its connect id first. */
+export function harnessProviderIds(id: string): readonly string[] {
+  return entry(id)?.providerIds ?? []
+}
+
+export function harnessConnectProvider(id: string): string | undefined {
+  return entry(id)?.connectProvider
+}
+
+/**
+ * The harness whose own login is stored under this provider id, for the id its
+ * connect card writes. Every other provider id — `openai` under Codex, say —
+ * names a vendor an engine can run, which is a different sentence on the card.
+ */
 export function harnessForConnectProvider(providerId: string): string | undefined {
-  return Object.entries(HARNESS_CONNECT_PROVIDER).find(([, id]) => id === providerId)?.[0]
+  return Object.keys(HARNESS_CATALOG).find((id) => harnessConnectProvider(id) === providerId)
 }
 
 /**

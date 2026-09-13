@@ -1,10 +1,42 @@
 import { describe, expect, test } from "bun:test"
+import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
+import { NATIVE_HARNESS_IDS } from "@/platform/identity/harness-selection"
 import {
   connectContextFor,
   engineConnectContext,
   harnessConnectContext,
+  harnessDisplayLabel,
   harnessForConnectProvider,
+  harnessIcon,
+  harnessLabelForProviderId,
+  harnessProviderIds,
+  HARNESS_CATALOG,
 } from "./harness-catalog"
+
+describe("HARNESS_CATALOG", () => {
+  test("carries the shared table's own record for every harness a login is stored for", () => {
+    for (const harness of ["claude", "codex", "cursor"] as const) {
+      expect(HARNESS_CATALOG[harness]).toMatchObject(HARNESS_TABLE[harness])
+    }
+    expect(harnessProviderIds("cursor")).toEqual(["cursor-acp", "cursor-sdk"])
+    expect(harnessProviderIds("codex")).toEqual(["codex-app-server", "openai"])
+  })
+
+  test("every harness a reader can pick has a name and a mark of its own", () => {
+    expect(NATIVE_HARNESS_IDS.map(harnessDisplayLabel))
+      .toEqual(["Claude Code", "Codex", "Cursor", "Pi", "OpenCode"])
+    expect(NATIVE_HARNESS_IDS.map(harnessIcon))
+      .toEqual(["anthropic", "openai", "cursor", "pi", "opencode"])
+  })
+
+  test("a binding's registry id is read as the harness it stores a login for", () => {
+    expect(harnessLabelForProviderId("claude-sdk")).toBe("Claude Code")
+    expect(harnessLabelForProviderId("codex-app-server")).toBe("Codex")
+    expect(harnessLabelForProviderId("cursor-acp")).toBe("Cursor")
+    // A vendor an engine runs is not a harness, and has no login of its own.
+    expect(harnessLabelForProviderId("anthropic")).toBeUndefined()
+  })
+})
 
 describe("harnessConnectContext", () => {
   test("names the harness and the vendor behind its login", () => {
