@@ -58,6 +58,7 @@ export {
   publicConnectionUnavailable,
 } from "./connection-secrets"
 import { jsonStringRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import type { SandboxSecretBrokering } from "../credentials/native-delivery"
 export type {
   ConnectionSecretUnavailableReason,
   PublicConnectionUnavailable,
@@ -161,6 +162,8 @@ export type AgentConfigOptions = {
     scope: RuntimeConfigSecretScope
     orgId?: string
     workspaceId?: string
+    /** How this workspace's sandbox can carry a credential, when it has one. */
+    secretBrokering?: SandboxSecretBrokering
   }) => Promise<Record<string, ProviderProjectionSource>>
 }
 
@@ -181,6 +184,7 @@ export function projectRuntimeAuth(input: {
   scope: RuntimeConfigSecretScope
   orgId?: string
   workspaceId?: string
+  secretBrokering?: SandboxSecretBrokering
 }): Promise<Record<string, ProviderProjectionSource>> {
   return agentConfigOptions.projectAuth?.(input) ?? Promise.resolve({})
 }
@@ -540,6 +544,7 @@ export async function getRuntimeConfigSnapshot(
     orgId?: string
     workspaceDir?: string
     workspaceId?: string
+    secretBrokering?: SandboxSecretBrokering
   } = {},
 ): Promise<RuntimeConfigSnapshot> {
   const config = await loadUserConfig()
@@ -556,6 +561,7 @@ export async function getRuntimeConfigSnapshot(
     scope,
     ...(options.orgId ? { orgId: options.orgId } : {}),
     ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+    ...(options.secretBrokering ? { secretBrokering: options.secretBrokering } : {}),
   }) ?? {}
   const harnessLaunch = await agentConfigOptions.harnessLaunch?.()
   return {

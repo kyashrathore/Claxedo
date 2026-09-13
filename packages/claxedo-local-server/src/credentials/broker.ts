@@ -35,6 +35,7 @@ import {
 } from "@claxedo/server-core/credentials/registry"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import {
+  destinationAuthMode,
   hasProviderDestination,
   providerDestination,
   type ProviderDestination,
@@ -42,6 +43,7 @@ import {
 import {
   nativeProviderAuth,
   nativeProviderDeliveries,
+  type SandboxSecretBrokering,
 } from "@claxedo/server-core/credentials/native-delivery"
 
 export const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
@@ -100,6 +102,8 @@ export type ProjectAuthInput = {
   scope?: SecretScope
   orgId?: string
   workspaceId?: string
+  /** How the sandbox this projection is for can carry a credential, if at all. */
+  secretBrokering?: SandboxSecretBrokering
 }
 
 export type LocalCredentialBroker = {
@@ -292,7 +296,7 @@ export function createLocalCredentialBroker(input: {
     handler,
     authority,
     runtimeIdentity,
-    async projectAuth({ scope = "local", orgId, workspaceId }) {
+    async projectAuth({ scope = "local", orgId, workspaceId, secretBrokering }) {
       if (!workspaceId) return {}
       const org = orgId ?? defaultOrg
       // A shared-scope runtime is a sandbox this process cannot serve: its
@@ -300,7 +304,12 @@ export function createLocalCredentialBroker(input: {
       // travels through its own provider's edge and the projection names the
       // variable that edge fills. Same authority, same selection, other
       // delivery.
-      if (scope === "shared") return nativeProviderAuth(await nativeProviderDeliveries(org))
+      if (scope === "shared") {
+        return nativeProviderAuth(await nativeProviderDeliveries({
+          org,
+          ...(secretBrokering ? { secretBrokering } : {}),
+        }))
+      }
       const selection = selectedCredentials(scope, org)
       const rows: Record<string, ProviderProjectionSource> = {}
       let state: { signingKey: Uint8Array; leaseGeneration: number }
@@ -332,7 +341,7 @@ export function createLocalCredentialBroker(input: {
         rows[credential.provider_id] = {
           baseUrl: bindingBaseUrl(input.brokerOrigin, id),
           placeholder: await mintRuntimeToken({ ...identity, bindingIds: [id], expiresAt }, state.signingKey, now()),
-          authMode: destination.injection.header.toLowerCase() === "authorization" ? "bearer" : "api-key",
+          authMode: destinationAuthMode(destination),
           expiresAt,
           ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
         }

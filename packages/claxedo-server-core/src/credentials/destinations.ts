@@ -27,6 +27,17 @@ export type ProviderDestination = {
   value: string
 }
 
+/**
+ * Which slot a harness must put the credential in, read from the header the
+ * vendor accepts it in. Every delivery path answers this question about the
+ * same row, so the row answers it once.
+ */
+export function destinationAuthMode(
+  destination: Pick<ProviderDestination, "injection">,
+): "api-key" | "bearer" {
+  return destination.injection.header.toLowerCase() === "authorization" ? "bearer" : "api-key"
+}
+
 type ProviderRow = (material: {
   token: string
   accountId?: string
