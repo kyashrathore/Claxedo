@@ -1,7 +1,7 @@
-import { Show, createSignal } from "solid-js"
+import { Show, createMemo, createSignal } from "solid-js"
 import type { ProseEditorProps } from "@claxedo/tasks/solid"
 import { RichMode } from "@/features/documents/editor/rich-mode"
-import { detectMarkdown, type RichMarkdown } from "@/features/documents/markdown/detector"
+import { detectMarkdown, type MarkdownDetection, type RichMarkdown } from "@/features/documents/markdown/detector"
 import { splitMarkdownEnvelope } from "@/features/documents/markdown/frontmatter"
 
 /**
@@ -14,21 +14,34 @@ import { splitMarkdownEnvelope } from "@/features/documents/markdown/frontmatter
  * classifies `source` or `rejected` gets the plain textarea rather than an
  * editor that would rewrite the user's bytes.
  *
- * The mode is decided once per field. Re-detecting on every keystroke would
- * swap the surface out from under someone mid-sentence the moment they typed
- * something the subset does not cover.
+ * Every value the field did not just emit is a replacement from outside — a
+ * refetch, a rebase, a discard — and is put through the detector again, because
+ * `RichMode` would otherwise `setContent` text the extensions cannot hold and
+ * the next keystroke would save it back shorn of what was dropped. The value
+ * the field emitted keeps the detection it was admitted under, so typing never
+ * swaps the surface out mid-sentence.
  */
 export function TasksProseEditor(props: ProseEditorProps) {
+  let emitted: string | undefined
   // A task description is the app's own record, not a file the user owns, so
   // the first edit normalizing `* item` to `- item` is acceptable here and the
   // byte-exact gate Documents needs would only put this field in a textarea.
-  const admitted = detectMarkdown(props.value, "normalizing")
-  const [failed, setFailed] = createSignal(false)
+  const admitted = createMemo<MarkdownDetection>((previous) =>
+    previous && props.value === emitted ? previous : detectMarkdown(props.value, "normalizing"),
+  )
+  // A serializer that cannot write the tree belongs to the text that produced
+  // it; a replacement is a different text and is owed its own attempt.
+  const [failed, setFailed] = createSignal<MarkdownDetection>()
+  const emit = (markdown: string) => {
+    emitted = markdown
+    props.onChange(markdown)
+  }
   const rich = (): RichMarkdown | undefined => {
-    if (admitted.status !== "rich" || failed()) return undefined
+    const detection = admitted()
+    if (detection.status !== "rich" || failed() === detection) return undefined
     // The envelope is re-split from the live value so a discard or a rebase
     // reaches the editor; `RichMode` ignores a body it just serialized itself.
-    return { ...admitted, envelope: splitMarkdownEnvelope(props.value) }
+    return { ...detection, envelope: splitMarkdownEnvelope(props.value) }
   }
 
   return (
@@ -40,7 +53,7 @@ export function TasksProseEditor(props: ProseEditorProps) {
           aria-label={props.ariaLabel}
           placeholder={props.placeholder}
           value={props.value}
-          onInput={(event) => props.onChange(event.currentTarget.value)}
+          onInput={(event) => emit(event.currentTarget.value)}
         />
       }
     >
@@ -48,11 +61,11 @@ export function TasksProseEditor(props: ProseEditorProps) {
         <div data-testid={props.testId} data-prose-mode="rich">
           <RichMode
             detection={detection()}
-            onInput={(markdown) => props.onChange(markdown)}
+            onInput={(markdown) => emit(markdown)}
             onBlur={() => {}}
             // A tree the serializer cannot write is the one case where staying
             // rich would lose text; the textarea below still holds every byte.
-            onSerializationError={() => setFailed(true)}
+            onSerializationError={() => setFailed(() => admitted())}
           />
         </div>
       )}

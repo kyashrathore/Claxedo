@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { TasksProseEditor } from "@/app/integrations/tasks/tasks-prose-editor"
+import { detectMarkdown } from "@/features/documents/markdown/detector"
 
 afterEach(cleanup)
 
@@ -17,7 +18,7 @@ function mount(initial: string) {
       onChange={onChange}
     />
   ))
-  return { value, onChange }
+  return { value, setValue, onChange }
 }
 
 const RICH = "# Importer\n\nWhat it does:\n\n- reads the file\n- writes the rows\n"
@@ -81,6 +82,39 @@ describe("a Tasks markdown field", () => {
     fireEvent.input(screen.getByTestId("task-detail-description"), { target: { value: "# rewritten" } })
 
     expect(onChange).toHaveBeenCalledWith("# rewritten")
+  })
+
+  /**
+   * A refetch, a rebase or a discard replaces the description with text the
+   * field never saw. Admitting it on the strength of the first value would
+   * hand `RichMode` an HTML comment it drops on `setContent`, and the next
+   * keystroke would save that loss.
+   */
+  test("a replacement the extensions cannot hold drops the field to the textarea", async () => {
+    const { setValue } = mount(RICH)
+
+    await waitFor(() => expect(screen.getByTestId("task-detail-description").getAttribute("data-prose-mode")).toBe("rich"))
+    setValue("keep <!-- x --> this\n")
+
+    const field = await waitFor(() => screen.getByTestId<HTMLTextAreaElement>("task-detail-description"))
+    expect(field.tagName).toBe("TEXTAREA")
+    expect(field.value).toBe("keep <!-- x --> this\n")
+  })
+
+  /**
+   * `{token}` is outside the rich contract, so re-running the detector over
+   * what the editor itself just wrote would take the field away mid-sentence.
+   */
+  test("what the field itself emits keeps the surface it was typed into", async () => {
+    const { value } = mount(RICH)
+
+    const field = await waitFor(() => screen.getByTestId("task-detail-description"))
+    field.querySelector("p")!.textContent = "a {token} here"
+    fireEvent.input(field.querySelector<HTMLElement>(".tiptap")!)
+
+    await waitFor(() => expect(value()).toContain("{token}"))
+    expect(detectMarkdown(value(), "normalizing").status).toBe("source")
+    expect(screen.getByTestId("task-detail-description").getAttribute("data-prose-mode")).toBe("rich")
   })
 
   test("an empty description offers the placeholder to write into", () => {
