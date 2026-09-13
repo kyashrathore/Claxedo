@@ -11,7 +11,12 @@ import { createMemo } from "solid-js"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useProviders } from "@/app/providers/use-providers"
 import { ProviderConnectForm } from "./provider-connect-form"
-import { connectContextFor, connectVars } from "@/platform/identity/harness-catalog"
+import {
+  connectContextFor,
+  connectContextKey,
+  connectVars,
+  CONNECT_CONTEXT_COPY,
+} from "@/platform/identity/harness-catalog"
 
 export function DialogConnectProvider(props: { provider: string; harness: string; scope?: string; onConnected?: () => void | Promise<void> }) {
   const dialog = useDialog()
@@ -26,7 +31,7 @@ export function DialogConnectProvider(props: { provider: string; harness: string
     connectContextFor({ providerId: props.provider, engine: props.harness, vendor: vendor() }))
 
   return (
-    <Dialog title={language.t(`provider.connect.title.${context().kind}`, connectVars(context()))} transition>
+    <Dialog title={language.t(connectContextKey(CONNECT_CONTEXT_COPY.title, context()), connectVars(context()))} transition>
       <ProviderConnectForm
         provider={props.provider}
         context={context()}
@@ -39,7 +44,7 @@ export function DialogConnectProvider(props: { provider: string; harness: string
             variant: "success",
             icon: "circle-check",
             title: language.t("provider.connect.toast.connected.title", { vendor: context().vendor }),
-            description: language.t(`provider.connect.toast.connected.description.${context().kind}`, connectVars(context())),
+            description: language.t(connectContextKey(CONNECT_CONTEXT_COPY.connected, context()), connectVars(context())),
           })
         }}
       />

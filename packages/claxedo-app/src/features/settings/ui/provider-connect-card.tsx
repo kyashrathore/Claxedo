@@ -2,7 +2,13 @@ import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-butt
 import { Suspense, type Component } from "solid-js"
 import { ProviderConnectForm } from "@/features/settings/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
-import { connectSubject, connectVars, type ConnectContext } from "@/platform/identity/harness-catalog"
+import {
+  connectContextKey,
+  connectSubject,
+  connectVars,
+  CONNECT_CONTEXT_COPY,
+  type ConnectContext,
+} from "@/platform/identity/harness-catalog"
 
 /**
  * The connect form, inset in the row that opened it.
@@ -26,7 +32,7 @@ export const ProviderConnectCard: Component<{
   const vars = () => connectVars(props.context)
   const title = () => props.credentialId
     ? language.t("settings.providers.connect.reconnectTitle", { provider: subject() })
-    : language.t(`provider.connect.title.${props.context.kind}`, vars())
+    : language.t(connectContextKey(CONNECT_CONTEXT_COPY.title, props.context), vars())
   const subtitle = () => props.credentialId
     ? language.t("settings.providers.connect.reconnectSubtitle")
     : language.t("settings.providers.connect.subtitle", { provider: subject() })

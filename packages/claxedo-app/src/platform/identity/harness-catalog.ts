@@ -67,6 +67,23 @@ export type ConnectContext =
   | { kind: "harness"; harness: string; vendor: string }
   | { kind: "engine"; engine: string; vendor: string }
 
+/**
+ * The copy written twice, once per context kind. Both halves are read through
+ * `connectContextKey`, so a locale carrying one and not the other is a missing
+ * string rather than a quiet fallback to the other sentence.
+ */
+export const CONNECT_CONTEXT_COPY = {
+  title: "provider.connect.title",
+  context: "provider.connect.context",
+  autoVisitSuffix: "provider.connect.oauth.auto.visit.suffix",
+  codeVisitSuffix: "provider.connect.oauth.code.visit.suffix",
+  connected: "provider.connect.toast.connected.description",
+} as const
+
+export function connectContextKey(base: string, context: ConnectContext): string {
+  return `${base}.${context.kind}`
+}
+
 /** The words each connect sentence interpolates, whichever of the two it is. */
 export function connectVars(context: ConnectContext): Record<string, string> {
   return context.kind === "harness"

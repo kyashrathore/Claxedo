@@ -1,7 +1,8 @@
 import { For, type Component } from "solid-js"
+import type { QuotaWindow } from "@claxedo/usage-contract"
 import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
 import { formatCompactAge, formatRelativeTime } from "@/lib/relative-time"
-import { readBoolean, readField, readString } from "@/lib/record"
+import { readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
 
 /**
  * What one account is doing, in the words and marks every surface that lists
@@ -34,6 +35,22 @@ export function isRefusal(verdict: string): verdict is "auth_failed" | "no_billi
 /** The verdicts a provider itself returns, and which a row can hold stored. */
 export function isStoredVerdict(value: string): value is Exclude<ProviderVerdict, "unknown"> {
   return value !== "unknown" && value in VERDICT_KEY
+}
+
+/**
+ * The plan windows in one usage read, from whichever route carried it. An
+ * entry that names no window, or reports no figure, is not a window: the
+ * surfaces draw a bar per entry and would draw a nameless empty one.
+ */
+export function readUsageWindows(value: unknown): QuotaWindow[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const windows = value.flatMap((entry): QuotaWindow[] => {
+    const window = readString(entry, "window")
+    const usedPercent = readFiniteNumber(entry, "usedPercent")
+    if (window === undefined || usedPercent === undefined) return []
+    return [{ window, usedPercent, resetsAt: readFiniteNumber(entry, "resetsAt") ?? null }]
+  })
+  return windows.length > 0 ? windows : undefined
 }
 
 /** The dictionary entry each quota window is named by. */

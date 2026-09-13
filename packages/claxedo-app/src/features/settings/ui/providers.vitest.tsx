@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/te
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 
 const clients = new Set<QueryClient>()
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal, type JSX } from "solid-js"
 import { nativeHarness, connectionHarness, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { readField, readStringArray } from "@/lib/record"
@@ -181,6 +181,10 @@ function requestJson(init?: RequestInit): unknown {
 
 // The credential routes are the only network the agents section has; leaving the
 // real request module in place keeps the machine scan on the onboarding engine.
+const realFetch = globalThis.fetch
+afterAll(() => {
+  globalThis.fetch = realFetch
+})
 globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input))
   state.credentialCalls.push(`${init?.method ?? "GET"} ${url.pathname}${url.search}`)

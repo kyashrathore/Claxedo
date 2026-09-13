@@ -1,3 +1,4 @@
+import type { QuotaWindow } from "@claxedo/usage-contract"
 import { HARNESS_CATALOG } from "@/platform/identity/harness-catalog"
 export type AICredentialVerification = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired"
 
@@ -10,12 +11,9 @@ export function isUsableResult(result: AICredentialVerification) {
   return result === "ok" || result === "rate_capped"
 }
 
-/** One quota window a subscription reports: `session`, `weekly`, `weekly_opus`, or a vendor slot. */
-export type AIUsageWindow = { window: string; usedPercent: number; resetsAt: number | null }
-
 /** What a live probe said about a candidate, before anything is saved. */
 export type AIDiscoveryProbe =
-  | { state: "working"; usage?: AIUsageWindow[] }
+  | { state: "working"; usage?: QuotaWindow[] }
   | { state: "broken"; reason: string }
   | { state: "unknown"; reason: string }
 
@@ -91,7 +89,7 @@ export type MachineLogin = {
   plan?: string
   org?: string
   /** Quota windows, for the harnesses that report them. Claude Code does not. */
-  usage?: AIUsageWindow[]
+  usage?: QuotaWindow[]
   /** When `usage` was read, on the rows the server answered from stored state. */
   usageAt?: number
   /** Why the harness could not be asked, when `state` is `unknown`. */

@@ -9,7 +9,7 @@ import {
   type LocalHarnessCheck,
   type MachineLogin,
 } from "@/features/settings/app-ports"
-import type { AIUsageWindow } from "@/features/onboarding/ai-connect-state"
+import type { QuotaWindow } from "@claxedo/usage-contract"
 import {
   accountIdentity,
   activateCredential,
@@ -68,7 +68,7 @@ function partialMachineLogin(login: MachineLogin) {
 type LiveCheck = {
   at: number
   verdict?: ProviderVerdict
-  usage?: AIUsageWindow[]
+  usage?: QuotaWindow[]
   reason?: string
 }
 
@@ -162,7 +162,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     return identity?.readable ? identity.text : row.kind ?? row.providerId
   }
 
-  const windowWords = (windows: readonly AIUsageWindow[] | undefined) =>
+  const windowWords = (windows: readonly QuotaWindow[] | undefined) =>
     (windows ?? []).map((window) => {
       const name = WINDOW_KEY[window.window]
       return language.t("settings.providers.live.window", {

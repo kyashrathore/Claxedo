@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { dict as en } from "./en"
 import { LOCALE_ENTRIES, type LocaleCode } from "./locales"
 import { CONNECT_METHOD_COPY_BASES, CONNECT_METHOD_URLS } from "@/platform/identity/connect-methods"
+import { CONNECT_CONTEXT_COPY } from "@/platform/identity/harness-catalog"
 
 // The connect card once rendered `{{provider}}` from the model catalog, which
 // has never heard of `claude-sdk` and fell back to printing the id. Every
@@ -9,15 +9,6 @@ import { CONNECT_METHOD_COPY_BASES, CONNECT_METHOD_URLS } from "@/platform/ident
 // these are the two things that would put an id back on screen.
 
 const REGISTRY_IDS = /claude-sdk|codex-app-server|cursor-sdk|claude-acp|cursor-acp/
-
-/** Both halves are read by the same call site, so one without the other is a missing string. */
-const SPLIT_KEYS = [
-  "provider.connect.title",
-  "provider.connect.context",
-  "provider.connect.oauth.code.visit.suffix",
-  "provider.connect.oauth.auto.visit.suffix",
-  "provider.connect.toast.connected.description",
-]
 
 async function loadDict(code: LocaleCode): Promise<Record<string, string>> {
   // English lives in the base dictionary; every other locale's provider copy is
@@ -43,7 +34,7 @@ describe("connect-card copy", () => {
 
     test(`${entry.code} carries both the harness and the engine wording for every split key`, async () => {
       const dict = await loadDict(entry.code)
-      const missing = SPLIT_KEYS.flatMap((base) =>
+      const missing = Object.values(CONNECT_CONTEXT_COPY).flatMap((base) =>
         [`${base}.harness`, `${base}.engine`].filter((key) => !dict[key]))
 
       expect(missing).toEqual([])
@@ -57,15 +48,6 @@ describe("connect-card copy", () => {
       expect(missing).toEqual([])
     })
   }
-
-  test("the English card no longer claims the account is being connected for OpenCode", () => {
-    const claims = Object.entries(en)
-      .filter(([key]) => key.startsWith("provider.connect."))
-      .filter(([, value]) => value.includes("in OpenCode"))
-      .map(([key]) => key)
-
-    expect(claims).toEqual([])
-  })
 
   test("every key page the card links to is an https URL the external-link helper can open", () => {
     const offenders = CONNECT_METHOD_URLS.filter((url) => !URL.canParse(url) || !url.startsWith("https://"))

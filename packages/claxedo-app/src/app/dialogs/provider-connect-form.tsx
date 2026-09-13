@@ -22,7 +22,13 @@ import { useProviderAuth, useProviders } from "@/app/providers/use-providers"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
 import { errorMessage } from "@/lib/server-errors"
-import { connectSubject, connectVars, type ConnectContext } from "@/platform/identity/harness-catalog"
+import {
+  connectContextKey,
+  connectSubject,
+  connectVars,
+  CONNECT_CONTEXT_COPY,
+  type ConnectContext,
+} from "@/platform/identity/harness-catalog"
 import { connectMethodOptions, fallbackConnectMethods, type ConnectMethodOption } from "@/platform/identity/connect-methods"
 
 export type ProviderConnectFormProps = {
@@ -71,7 +77,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   const providerAuthQuery = useProviderAuth(() => props.harness, () => props.workspaceScope)
   /** The subject of every sentence on this card, and the name on its heading. */
   const subject = () => connectSubject(props.context)
-  const contextKey = (base: string) => `${base}.${props.context.kind}`
+  const contextKey = (base: string) => connectContextKey(base, props.context)
   const contextVars = () => connectVars(props.context)
 
   const codexBundleRequired = () => props.harness === "pi" && props.provider === "openai-codex"
@@ -126,7 +132,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     await markConnected()
     showToast({
       title: language.t("provider.connect.toast.connected.title", { vendor: contextVars().vendor }),
-      description: language.t(contextKey("provider.connect.toast.connected.description"), contextVars()),
+      description: language.t(contextKey(CONNECT_CONTEXT_COPY.connected), contextVars()),
     })
     await props.onConnected?.()
     props.onDone?.()
@@ -271,7 +277,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
 
       <div class="flex flex-col gap-3">
         <div class="text-13-regular text-text-weak">
-          {language.t(form.contextKey("provider.connect.context"), form.contextVars())}
+          {language.t(form.contextKey(CONNECT_CONTEXT_COPY.context), form.contextVars())}
         </div>
         <Show when={choosing()}>
           <div class="text-14-regular text-text-base">
@@ -368,7 +374,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
             <div>
               {language.t("provider.connect.oauth.auto.visit.prefix")}
               <Link href={store.authorization!.url}>{language.t("provider.connect.oauth.auto.visit.link")}</Link>
-              {language.t(form.contextKey("provider.connect.oauth.auto.visit.suffix"), form.contextVars())}
+              {language.t(form.contextKey(CONNECT_CONTEXT_COPY.autoVisitSuffix), form.contextVars())}
             </div>
             <TextField
               label={language.t("provider.connect.oauth.auto.confirmationCode")}
@@ -398,7 +404,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
             <div class="text-14-regular text-text-base">
               {language.t("provider.connect.oauth.code.visit.prefix")}
               <Link href={store.authorization!.url}>{language.t("provider.connect.oauth.code.visit.link")}</Link>
-              {language.t(form.contextKey("provider.connect.oauth.code.visit.suffix"), form.contextVars())}
+              {language.t(form.contextKey(CONNECT_CONTEXT_COPY.codeVisitSuffix), form.contextVars())}
             </div>
             <TextField
               autofocus

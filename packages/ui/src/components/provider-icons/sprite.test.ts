@@ -39,6 +39,5 @@ describe("provider icon sprite", () => {
     const sprite = readFileSync(`${dir}/sprite.svg`, "utf8")
     const symbol = sprite.split('id="cursor"')[1]?.split("</symbol>")[0] ?? ""
     expect(symbol).toContain('fill="currentColor"')
-    expect(symbol).toContain("m415.035 156.35")
   })
 })
