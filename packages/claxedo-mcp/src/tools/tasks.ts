@@ -153,7 +153,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
         "Start a task's session on an execution preset and link it to the task. Runs the host's own preview first and sends nothing when the preview reports a blocker. A slot whose session is still live is returned as it is rather than started again.",
       inputSchema: {
         ...TASK_ARG,
-        preset: z.string().trim().min(1).optional().describe("Preset id. Optional only while the account has exactly one preset."),
+        preset: z.string().trim().min(1).optional().describe("Preset id or name. Optional only while the account has exactly one preset."),
         slot: z.enum(SLOTS).optional().describe("Which configuration of the preset to run. Defaults to primary."),
         continue: z.boolean().optional().describe("Hand the slot's previous session over to the new one. Defaults to false."),
         clientRequestId: z
