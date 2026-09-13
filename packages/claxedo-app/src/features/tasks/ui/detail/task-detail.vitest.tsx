@@ -126,11 +126,13 @@ function mountSubtask(input: { onOpenParent?: () => void } = {}) {
 }
 
 describe("the key a task page names itself by", () => {
-  test("stands in the title row and closes the breadcrumb", () => {
+  test("closes the breadcrumb, and stands nowhere else", () => {
     mount([])
 
-    expect(screen.getByTestId("task-detail-key").textContent).toBe("IMP-1")
-    expect(screen.getByLabelText("Breadcrumb").textContent).toContain("IMP-1")
+    const key = screen.getByTestId("task-detail-key")
+    expect(key.textContent).toBe("IMP-1")
+    expect(screen.getByLabelText("Breadcrumb").contains(key)).toBe(true)
+    expect(screen.getAllByText("IMP-1")).toHaveLength(1)
   })
 })
 

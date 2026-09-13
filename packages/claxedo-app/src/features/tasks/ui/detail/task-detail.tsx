@@ -130,7 +130,7 @@ export function TaskDetail(props: TaskDetailProps) {
           </Show>
           <span class="tsk-crumb-sep" aria-hidden="true">›</span>
           <span class="tsk-crumb-current">
-            <span class="tsk-key">{key()}</span>
+            <span class="tsk-key" data-testid="task-detail-key">{key()}</span>
             {task().title}
           </span>
 
@@ -168,20 +168,15 @@ export function TaskDetail(props: TaskDetailProps) {
           )}
         </Show>
 
-        <div class="tsk-title-row">
-          <span class="tsk-key tsk-title-key" data-testid="task-detail-key">
-            {key()}
-          </span>
-          <input
-            class="tsk-bare-title"
-            data-testid="task-detail-title"
-            aria-label="Task title"
-            placeholder="Untitled task"
-            maxLength={TASKS_BOUNDS.taskTitleMax}
-            value={props.edit.title}
-            onInput={(event) => patch({ title: event.currentTarget.value })}
-          />
-        </div>
+        <input
+          class="tsk-bare-title"
+          data-testid="task-detail-title"
+          aria-label="Task title"
+          placeholder="Untitled task"
+          maxLength={TASKS_BOUNDS.taskTitleMax}
+          value={props.edit.title}
+          onInput={(event) => patch({ title: event.currentTarget.value })}
+        />
 
         <div class="tsk-prose">
           <Dynamic

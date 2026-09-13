@@ -797,17 +797,6 @@
   cursor: default;
 }
 
-.tsk-title-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  min-width: 0;
-}
-
-.tsk-title-key {
-  font-size: var(--font-size-small);
-}
-
 .tsk-bare-title {
   width: 100%;
   padding: 0;
