@@ -8,8 +8,13 @@
 --
 -- Deliberately no foreign keys to `orgs` or `users`: this feature stores no
 -- authority facts, and a reference would make its tables a reason a tenant row
--- cannot be removed. The column names match the desktop-local SQLite schema
--- (`claxedo_task*`) exactly, because one decoder reads the rows of both.
+-- cannot be removed.
+--
+-- Every COLUMN name matches the desktop-local SQLite schema, because one
+-- decoder reads the rows of both. The TABLE names deliberately do not: this
+-- database holds only control-plane tables, so `tasks` is unambiguous here,
+-- while the desktop-local database is shared with every other local feature and
+-- needs the `claxedo_task*` prefix to stay out of their way.
 
 create table task_presets (
   scope_id text not null,

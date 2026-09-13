@@ -229,9 +229,9 @@ describe("@claxedo/local-server closure", () => {
     // the published closure measures 84 modules / 24 packages.
     // Tasks adds its two feature-owned modules -- the route composition and
     // the session bridge it hands the kit -- and with them the 25th package,
-    // `@claxedo/tasks`: the kit itself, which reaches hono, helpers and
-    // solid-js only. Nothing outside `src/tasks/` imports either module, so a
-    // product entry that does not mount the composition carries neither.
+    // `@claxedo/tasks`: the kit itself, which reaches hono and helpers only.
+    // Nothing outside `src/tasks/` imports either module, so a product entry
+    // that does not mount the composition carries neither.
     // Measured 2026-09-12: 86 modules / 25 packages.
     expect(modules.size).toBeLessThanOrEqual(86)
     // smol-toml is the hosted MCP installer's configuration validator.

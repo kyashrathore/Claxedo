@@ -418,32 +418,14 @@ export const desktopRendererUnsigned: Policy = {
   // reviews — the harness model-options loader, the page's query hook and
   // stylesheet in, the Connect-your-AI dialog and the scope pickers out.
   // No new package edge. Measured 1063 / 57.
-  // +16 modules, +1 package (2026-09-12): the same Tasks and Presets owners
-  // app-local reviews, reaching the renderer through the shell's secondary port
-  // wiring. The new package edge is @claxedo/tasks. Measured 1079 / 58.
-  // +1 module (2026-09-12): the same tasks-contributions module app-local
-  // reviews. No new package edge. Measured 1080 / 58.
-  // +5 modules (2026-09-13): the same nested-Tasks-route owners app-local
-  // reviews. No new package edge. Measured 1085 / 58.
-  // +1 module (2026-09-13): the same start-task command owner app-local
-  // reviews. No new package edge. Measured 1086 / 58.
-  // +1 module (2026-09-13): the same Documents-editor owner app-local reviews,
-  // accepted by the user on 2026-09-13. This renderer already carried the
-  // nineteen Tiptap package edges through its hosted half, so its package count
-  // does not move. Measured 1087 / 58.
-  // +2 modules (2026-09-13): the same markdown input-rule and paste owners
-  // app-local reviews. No new package edge. Measured 1089 / 58.
-  // +2 modules (2026-09-13): the same first-project canvas owners app-local
-  // reviews. No new package edge. Measured 1091 / 58.
-  // +3 modules (2026-09-13): the same contributed-settings-section and Presets
-  // owners app-local reviews. No new package edge. Measured 1094 / 58.
-  // +18 modules (2026-09-13): the same moved Tasks UI owners app-local
-  // reviews, visible to the walker for the first time now that they are app
-  // modules rather than kit ones. No new package edge. Measured 1112 / 58.
-  // −2 modules (2026-09-13): the same row menu and glyph app-local drops for
-  // the host's own menu and icon. Measured 1110 / 58.
-  // −3 modules (2026-09-13): the same Start dialog, flow and form app-local
-  // drops for its split control. Measured 1107 / 58.
+  // Tasks and Presets reach this renderer through the shell's secondary port
+  // wiring, under exactly the owners `app-local` reviews — including the
+  // Documents editor the user accepted on 2026-09-13, the first-project canvas
+  // and the contributed settings section. `@claxedo/tasks` is the one package
+  // edge they add; this renderer already carried the Tiptap edges through its
+  // hosted half.
+  //
+  // Measured 1107 modules / 58 packages, with no headroom.
   ceilings: { modules: 1107, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
@@ -463,15 +445,12 @@ export const desktopRendererUnsigned: Policy = {
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],
-    // NO Tasks rule here, and the omission is deliberate. This manifest is the
-    // renderer's STATIC closure (`desktopRendererBoundaryManifestPlugin` builds
-    // the base entry without `includeDynamicImports`) and the only edge into
-    // Tasks is the dynamic import in `secondary-feature-ports.ts`, so no Tasks
-    // module or chunk appears here and a rule about them would read as
-    // coverage it is not. The Tasks chunk is measured by `app-local`'s emitted
-    // manifest, which records the full closure. A desktop-specific emitted
-    // proof needs that plugin to record the renderer's dynamic closure, which
-    // today it does not.
+    // This manifest is the renderer's STATIC closure —
+    // `desktopRendererBoundaryManifestPlugin` builds the base entry without
+    // `includeDynamicImports` — and the only edge into Tasks is the dynamic
+    // import in `secondary-feature-ports.ts`, so no Tasks module or chunk can
+    // appear in it. `app-local`'s emitted manifest records the full closure and
+    // is where the Tasks chunk is measured.
     forbiddenChunkMarkers: ["desktop-hosted-contributions"],
   },
 }

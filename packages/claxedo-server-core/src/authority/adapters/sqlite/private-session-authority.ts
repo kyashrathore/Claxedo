@@ -232,8 +232,6 @@ export function createSqlitePrivateSessionAuthority(input: {
         sameRegistration(existing, intent, actor.token_identifier)
         return result(existing, false)
       }
-      // A completed compensation keeps its row as the terminal record of the
-      // undo only until a reservation needs either identifier back.
       db.prepare(`
         DELETE FROM session_registration_operations
         WHERE state = 'compensated' AND (session_id = ? OR operation_id = ?)

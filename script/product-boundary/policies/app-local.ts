@@ -3,18 +3,6 @@ import { APP_ALIASES, MANIFEST_READS, TASKS_CHUNK_MARKER } from "./shared.ts"
 
 const SRC = "packages/claxedo-app/src"
 
-const FORBIDDEN_MODULES = [
-  // The module that MINTS a token. Every local module that needs one takes
-  // it from `configureApiRuntime`/`configureAuthSession` instead.
-  `${SRC}/platform/auth/better-auth-browser-auth.ts`,
-  // The hosted browser entry. A local build reaching it would start the
-  // signed-identity composition.
-  `${SRC}/app/entry/main.tsx`,
-  // The hosted implementation set. Its loaders are injected by main.tsx, so a
-  // local build must not carry even their lazy chunks.
-  `${SRC}/app/integrations/documents-content-surfaces.tsx`,
-]
-
 /**
  * `@claxedo/app`'s LOCAL production entry.
  *
@@ -53,7 +41,17 @@ export const appLocal: Policy = {
   aliases: APP_ALIASES,
 
   forbiddenPackages: ["better-auth"],
-  forbiddenModules: FORBIDDEN_MODULES,
+  forbiddenModules: [
+    // The module that MINTS a token. Every local module that needs one takes
+    // it from `configureApiRuntime`/`configureAuthSession` instead.
+    `${SRC}/platform/auth/better-auth-browser-auth.ts`,
+    // The hosted browser entry. A local build reaching it would start the
+    // signed-identity composition.
+    `${SRC}/app/entry/main.tsx`,
+    // The hosted implementation set. Its loaders are injected by main.tsx, so a
+    // local build must not carry even their lazy chunks.
+    `${SRC}/app/integrations/documents-content-surfaces.tsx`,
+  ],
   permittedOutsideRoots: MANIFEST_READS,
 
   control: {
@@ -335,80 +333,46 @@ export const appLocal: Policy = {
   //   − features/settings/ui/scope-selector.tsx — the workspace/harness
   //     pickers, gone with per-workspace model visibility.
   // No new package edge. Measured 1012 / 38.
-  // +16 modules, +1 package (2026-09-12): Tasks and Presets. The optional
-  // @claxedo/tasks kit is the new package edge; the HLD makes both catalogs
-  // part of every build that renders the shell, so the surface is registered
-  // from app/integrations/secondary-feature-ports.ts (the first-party surface
-  // list is reached from the published local entry, whose closure must stay
-  // clear of hosted capability modules). Reviewed owners: the five
-  // app/integrations/tasks modules that bind the ports, and the eleven
-  // features/tasks modules behind them — app-ports, the catalog client and its
-  // queries, the filter/draft store, and the surface, its two views, the two
-  // dialogs, the detail panel and the start flow. Measured 1028 / 39.
-  // +1 module (2026-09-12): app/integrations/tasks-contributions.ts, the one
-  // module `secondary-feature-ports.ts` dynamic-imports. It holds
-  // the two registration calls and nothing else; the sixteen owners above are
-  // reached through it instead of statically. No new package edge.
-  // Measured 1029 / 39.
-  // +5 modules (2026-09-13): the nested Tasks routes and the redesigned
-  // surface. Reviewed owners: app/integrations/tasks/open-tasks-page (the
-  // navigation port that moves the one Tasks tab between its pages), and in
-  // features/tasks/ui the page for /tasks/<taskId>, the header both pages
-  // wear, the list toolbar, and the preset draft editor the Presets page and
-  // the Start dialog now share. No new package edge. Measured 1034 / 39.
-  // +1 module (2026-09-13): features/tasks/data/start-task.ts, the one owner of
-  // the preview-and-start pair now that a list row starts a task as well as the
-  // dialog. No new package edge. Measured 1035 / 39.
-  // +9 modules, +19 packages (2026-09-13): task descriptions and preset
-  // instructions use the Documents editor. Reviewed and accepted by the user
-  // on 2026-09-13 — "task description and preset instructions use the Documents
-  // editor" — because the alternative was a second markdown surface with its
-  // own subset. The nineteen package edges are the editor and its runtime:
-  // @tiptap/core, @tiptap/pm, @tiptap/starter-kit, @tiptap/markdown,
-  // @tiptap/suggestion, solid-tiptap, and the extensions the Documents
-  // configuration mounts — code-block, color, highlight, image, link, table,
-  // table-cell, table-header, table-row, task-item, task-list, text-style and
-  // underline. The reviewed owners are app/integrations/tasks/
-  // tasks-prose-editor.tsx, which binds the kit's `ProseEditor` port, and the
-  // Documents modules it reaches: the rich editor, its extension list, the
-  // mermaid block, slash commands, and the markdown detector and frontmatter
-  // pair that keep the stored value markdown. The hosted Documents set stays
-  // out: no store, route or content-surface module is reachable from here, and
+  // `app/workbench/rail/first-project-canvas.{tsx,css}`: the rail canvas is the
+  // screen this entry boots to before a project exists, and it renders the
+  // create form inline rather than mounting the draft composer with an empty
+  // project, so both modules belong to the local product.
+  //
+  // `app/integrations/settings-sections.ts` is the shell's registry for
+  // contributed settings sections; Tasks registers its Presets section through
+  // it.
+  //
+  // Tasks and Presets. `@claxedo/tasks` is the package edge; the HLD makes both
+  // catalogs part of every build that renders the shell, so the surface is
+  // registered from `app/integrations/secondary-feature-ports.ts` — the
+  // first-party surface list is reached from the published local entry, whose
+  // closure must stay clear of hosted capability modules — and everything
+  // behind it hangs off the one module that list dynamic-imports,
+  // `app/integrations/tasks-contributions.ts`. The reviewed owners are the
+  // `app/integrations/tasks` modules that bind the ports (the catalog and
+  // navigation ports, the contributed Presets settings section, and the
+  // `ProseEditor` binding) and the `features/tasks` modules behind them: the
+  // app ports, the catalog client and its queries, the filter/draft store, the
+  // preview-and-start pair, the view-model and preset-editor model, and the
+  // surface with its two pages, dialogs, detail panel, list, board and shared
+  // row controls. The kit keeps domain, http, client and conformance; its UI
+  // lives here, which is why those modules are visible to this walk at all.
+  //
+  // Task descriptions and preset instructions use the Documents editor, which
+  // the user reviewed and accepted on 2026-09-13 — "task description and preset
+  // instructions use the Documents editor" — because the alternative was a
+  // second markdown surface with its own subset. That is where the Tiptap
+  // package edges come from: @tiptap/core, /pm, /starter-kit, /markdown,
+  // /suggestion, solid-tiptap, and the extensions the Documents configuration
+  // mounts. The owner is `app/integrations/tasks/tasks-prose-editor.tsx`, and
+  // the Documents modules it reaches are the rich editor, its extension list
+  // (including the markdown input rules and paste path), the mermaid block,
+  // slash commands, and the markdown detector and frontmatter pair that keep
+  // the stored value markdown. The hosted Documents set stays out: no store,
+  // route or content-surface module is reachable from here, and
   // `documents-content-surfaces` remains a forbidden chunk marker.
-  // Measured 1044 / 58.
-  // +2 modules (2026-09-13): the markdown input rules and the paste path that
-  // close the gaps between what the Documents editor parses and what it
-  // converts as you type — both under features/documents/editor, both reached
-  // through the extension list the editor already mounted. No new package edge.
-  // Measured 1046 / 58.
-  // +2 modules (2026-09-13): the first-project canvas and its stylesheet,
-  // app/workbench/rail/first-project-canvas.{tsx,css}. The rail canvas is the
-  // screen this entry boots to before a project exists, and it now renders the
-  // create form inline instead of mounting the draft composer with an empty
-  // project, so both modules belong to the local product. No new package edge.
-  // Measured 1048 / 58.
-  // +3 modules (2026-09-13): the contributed-settings-section registry
-  // (`app/integrations/settings-sections.ts`) and the Presets section Tasks
-  // registers through it (`app/integrations/tasks/settings-section.tsx` and
-  // `features/tasks/ui/presets/presets-settings.tsx`). Reviewed owners: the shell's
-  // contribution registry for the first, the gated Tasks module for the other
-  // two, which this entry already reached through the Tasks content surface.
-  // No new package edge. Measured 1051 / 58.
-  // +18 modules (2026-09-13): the Tasks UI moved out of the @claxedo/tasks kit
-  // into features/tasks. The walker counts a workspace package as one edge and
-  // does not descend into it, so these eighteen were already in the artifact
-  // and only became visible here: the feature's view-model and preset-editor
-  // model; ui/tasks.css; ui/shared's status control, glyphs, row menu, load
-  // more, list failure, capability notice and row controls; the list; the
-  // board; the task detail and its subtasks; the preset list and editor; the
-  // start form; and the create form. The kit keeps domain, http, client and
-  // conformance, so its package edge is unchanged. Measured 1069 / 58.
-  // −2 modules (2026-09-13): the hand-rolled row menu and the kit's own glyph,
-  // both replaced by @opencode-ai/ui's DropdownMenu and Icon, which this entry
-  // already carried. Measured 1067 / 58.
-  // −3 modules (2026-09-13): the Start dialog, its flow and its form. A task
-  // page and a row both start through the one split control, so nothing
-  // reaches them. Measured 1064 / 58.
+  //
+  // Measured 1064 modules / 58 packages, with no headroom.
   ceilings: { modules: 1064, packages: 58 },
 
   emitted: {

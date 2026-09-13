@@ -230,10 +230,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const assertionId = this.randomId("assert")
     await this.guardedBatch(
       [
-        // A completed compensation keeps its row as the terminal record of the
-        // undo only until a reservation needs either identifier back. The batch
-        // is one transaction, so an insert the assertion refuses takes this
-        // release back with it.
+        // The batch is one transaction, so an insert the assertion refuses
+        // takes this release of a compensated row back with it.
         this.database
           .prepare(
             `
