@@ -59,6 +59,7 @@ function mount(tasks: readonly TaskSummary[]) {
       tasks={tasks}
       projectName="Demo project"
       dateField="updated"
+      subtaskProgress={(taskId) => tasks.find((task) => task.id === taskId)?.children}
       onSelect={onSelect}
       onCreate={onCreate}
       onStatusChange={onStatusChange}
@@ -102,6 +103,23 @@ describe("task board", () => {
     mount([summary("a", "todo")])
 
     expect(within(screen.getByTestId("tasks-board-card-a")).getByText(/^DP-\d+$/)).toBeTruthy()
+  })
+
+  test("a card says its subtasks as a plain count and its session as the rail's dot", () => {
+    const card = { ...summary("a", "todo"), children: { total: 2, done: 1 }, links: { count: 1 } }
+    mount([card])
+
+    expect(screen.getByText("1/2").querySelector("svg")).toBeNull()
+    const mark = screen.getByRole("img", { name: "Has a session" })
+    expect(mark.classList.contains("tsk-dot")).toBe(true)
+    expect(mark.childElementCount).toBe(0)
+  })
+
+  test("a card with neither subtasks nor a session carries neither mark", () => {
+    mount([summary("a", "todo")])
+
+    expect(screen.queryByText("0/0")).toBeNull()
+    expect(screen.queryByRole("img", { name: "Has a session" })).toBeNull()
   })
 
   test("the per-card menu moves a task without any drag, carrying its expected revision", () => {

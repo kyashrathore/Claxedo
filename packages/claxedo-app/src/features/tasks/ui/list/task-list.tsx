@@ -1,6 +1,5 @@
 import { For, Show, createMemo } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
 import { TASK_STATUSES, type TaskChildSummary, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { LoadMore, type MorePages } from "../shared/load-more"
 import { TaskStatusIcon } from "../shared/status-control"
@@ -149,16 +148,15 @@ function TaskRow(props: {
         {/* A task with no subtasks says nothing rather than `0/0`. */}
         <Show when={props.progress && props.progress.total > 0 ? props.progress : undefined}>
           {(progress) => (
-            <span class="tsk-cell tsk-cell-sub">
-              <Icon name="checklist" size="small" />
+            <span class="tsk-cell tsk-cell-sub" title={`${progress().done} of ${progress().total} subtasks done`}>
               {`${progress().done}/${progress().total}`}
             </span>
           )}
         </Show>
+        {/* A list read carries a count and no liveness, so the mark says a
+            session exists and the hollow ring says nothing further. */}
         <Show when={props.task.links.count > 0}>
-          <span class="tsk-cell tsk-cell-session" role="img" aria-label="Has a session">
-            <Icon name="bubble-5" size="small" />
-          </span>
+          <span class="tsk-dot tsk-cell-session" role="img" aria-label="Has a session" />
         </Show>
         <span class="tsk-cell tsk-cell-time" title={new Date(taskDate(props.task, props.dateField)).toLocaleString()}>
           {shortAge(taskDate(props.task, props.dateField), props.now)}

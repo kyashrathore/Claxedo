@@ -34,7 +34,15 @@ function summary(overrides: Partial<TaskSummary> = {}): TaskSummary {
 }
 
 function mount(dateField: TaskDateField = "updated", tasks: readonly TaskSummary[] = [summary()]) {
-  render(() => <TaskList tasks={tasks} projectName="Demo project" dateField={dateField} onSelect={() => {}} />)
+  render(() => (
+    <TaskList
+      tasks={tasks}
+      projectName="Demo project"
+      dateField={dateField}
+      subtaskProgress={(taskId) => tasks.find((task) => task.id === taskId)?.children}
+      onSelect={() => {}}
+    />
+  ))
   return screen.getByTestId("tasks-list-row-tsk_1")
 }
 
@@ -59,6 +67,34 @@ describe("a list row's properties", () => {
     const row = mount("updated", [summary({ status: "backlog" })])
 
     expect(within(row).getByRole("img", { name: "Backlog" })).toBeTruthy()
+  })
+})
+
+describe("what a row says about its subtasks and its session", () => {
+  test("subtask progress is a plain count carrying no glyph", () => {
+    mount("updated", [summary({ children: { total: 2, done: 1 } })])
+
+    expect(screen.getByText("1/2").querySelector("svg")).toBeNull()
+  })
+
+  test("a task with no subtasks says nothing rather than 0/0", () => {
+    mount()
+
+    expect(screen.queryByText("0/0")).toBeNull()
+  })
+
+  test("a task with a session carries the rail's own dot, and nothing inside it", () => {
+    mount("updated", [summary({ links: { count: 1 } })])
+
+    const mark = screen.getByRole("img", { name: "Has a session" })
+    expect(mark.classList.contains("tsk-dot")).toBe(true)
+    expect(mark.childElementCount).toBe(0)
+  })
+
+  test("a task with no session carries no mark at all", () => {
+    mount()
+
+    expect(screen.queryByRole("img", { name: "Has a session" })).toBeNull()
   })
 })
 

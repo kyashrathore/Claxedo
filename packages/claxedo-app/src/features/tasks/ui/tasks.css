@@ -954,17 +954,20 @@
   margin-left: -8px;
 }
 
+/* A ring until the host reports the session live, which fills it. A surface
+   that only knows a session exists carries the ring and claims nothing more. */
 .tsk-dot {
   flex: none;
   display: inline-block;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--icon-disabled);
+  box-shadow: inset 0 0 0 1px var(--icon-base);
 }
 
 .tsk-dot[data-liveness="live"] {
   background: var(--icon-success-base);
+  box-shadow: none;
   animation: tsk-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 

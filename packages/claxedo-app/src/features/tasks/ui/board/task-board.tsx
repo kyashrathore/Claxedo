@@ -1,5 +1,4 @@
 import { For, Show, createSignal } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { TASK_STATUSES, isTaskCreateStatus, type TaskCreateStatus, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { LoadMore, type MorePages } from "../shared/load-more"
@@ -133,11 +132,16 @@ export function TaskBoard(props: TaskBoardProps) {
                       <div class="tsk-card-meta">
                         <Show when={(props.subtaskProgress?.(task.id)?.total ?? 0) > 0 ? props.subtaskProgress?.(task.id) : undefined}>
                           {(progress) => (
-                            <span class="tsk-cell">
-                              <Icon name="checklist" size="small" />
+                            <span class="tsk-cell" title={`${progress().done} of ${progress().total} subtasks done`}>
                               {`${progress().done}/${progress().total}`}
                             </span>
                           )}
+                        </Show>
+                        {/* A list read carries a count and no liveness, so the
+                            mark says a session exists and the hollow ring says
+                            nothing further. */}
+                        <Show when={task.links.count > 0}>
+                          <span class="tsk-dot" role="img" aria-label="Has a session" />
                         </Show>
                         <Show when={task.parentTaskId}>
                           <span class="tsk-cell">Subtask</span>
