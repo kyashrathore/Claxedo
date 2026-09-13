@@ -105,7 +105,7 @@ describe("a subagent started over the injected first-party MCP", () => {
     // The embedded harness has no instruction channel, so the child's
     // standing block rides at the head of this one prompt instead.
     expect(prompts).toHaveLength(1)
-    expect(prompts[0]!.endsWith("\n\nRole: reviewer\n\nread the diff")).toBe(true)
+    expect(prompts[0].endsWith("\n\nRole: reviewer\n\nread the diff")).toBe(true)
     expect(prompts[0]).toContain("cannot start subagents of your own")
     expect(prompts.join("")).not.toContain("a secret the child must never see")
   })

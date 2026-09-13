@@ -668,7 +668,7 @@ describe("subagent tools", () => {
     }))
     expect((await runtime.config(String(created.sessionId))).instructions).toBe("")
     expect(runtime.prompts).toHaveLength(1)
-    const prompt = runtime.prompts[0]!
+    const prompt = runtime.prompts[0]
     expect(prompt.sessionId).toBe(created.sessionId)
     expect(prompt.text).toContain("Read before you write.")
     expect(prompt.text).toContain("review configuration")
