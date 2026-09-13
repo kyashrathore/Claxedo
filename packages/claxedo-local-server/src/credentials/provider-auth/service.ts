@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "@claxedo/server-core/credentials/provider-auth/openai-oauth"
-import { emailFromClaims } from "@claxedo/server-core/credentials/secret-material"
+import { accountIdFromClaims, emailFromClaims } from "@claxedo/server-core/credentials/secret-material"
 import { num, record, text } from "../../platform/json"
 
 const OPENAI_DEVICE_URL = `${OPENAI_ISSUER}/codex/device`
@@ -336,34 +336,8 @@ function tokenResponseFrom(value: unknown, code: ProviderAuthError["code"]): Tok
   }
 }
 
-function parseJwtClaims(token: string | undefined): Record<string, unknown> | undefined {
-  if (!token) return undefined
-  const parts = token.split(".")
-  const payload = parts.length === 3 ? parts[1] : undefined
-  if (!payload) return undefined
-  try {
-    return record(JSON.parse(Buffer.from(payload, "base64url").toString()))
-  } catch {
-    return undefined
-  }
-}
-
-function extractAccountIdFromClaims(claims: Record<string, unknown> | undefined): string | undefined {
-  if (!claims) return undefined
-  if (typeof claims.chatgpt_account_id === "string") return claims.chatgpt_account_id
-  const openai = record(claims["https://api.openai.com/auth"])
-  if (typeof openai?.chatgpt_account_id === "string") return openai.chatgpt_account_id
-  const organizations = claims.organizations
-  if (Array.isArray(organizations)) {
-    const first = record(organizations[0])
-    if (typeof first?.id === "string") return first.id
-  }
-  return undefined
-}
-
 function extractAccountId(tokens: TokenResponse) {
-  return extractAccountIdFromClaims(parseJwtClaims(tokens.id_token))
-    ?? extractAccountIdFromClaims(parseJwtClaims(tokens.access_token))
+  return accountIdFromClaims({ id_token: tokens.id_token, access_token: tokens.access_token })
 }
 
 function openaiSecret(tokens: TokenResponse, expires: number, accountId: string | undefined) {

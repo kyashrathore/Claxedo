@@ -116,6 +116,24 @@ describe("the brokered secret set a cloud sandbox must hold", () => {
     expect(plan.digest).not.toBe(installed)
   })
 
+  test("a delivered secret carries the methods and paths its provider edge is configured from", async () => {
+    // The Cloudflare Worker answers 403 and Vercel writes no transform when a
+    // registration arrives with neither, so an omitted list is a refusal rather
+    // than an absence of restriction.
+    const credential = await shared({ provider_id: "claude-sdk", secret: "sk-ant-api03-one" })
+    setActiveCredentials([credential.id])
+
+    const plan = await sandboxBrokeredSecrets({})
+
+    expect(plan.secrets).toEqual([expect.objectContaining({
+      name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+      hosts: ["api.anthropic.com"],
+      header: "x-api-key",
+      methods: ["POST", "GET"],
+      pathPrefixes: ["/v1/messages", "/v1/models"],
+    })])
+  })
+
   test("a caller's own secret name cannot be claimed by a provider account", async () => {
     const credential = await shared({ provider_id: "claude-sdk", secret: "sk-ant-api03-one" })
     setActiveCredentials([credential.id])

@@ -1,4 +1,3 @@
-import { accountIdFromClaims } from "@claxedo/agent-sdk-runtime"
 import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import type { CredentialKind } from "@claxedo/server-core/credentials/types"
 
@@ -45,19 +44,52 @@ export function emailFromClaims(input: Record<string, unknown> | undefined): str
     )
 }
 
-function emailFromJwt(token: string | undefined): string | undefined {
+/**
+ * The ChatGPT account a login document names, out of the same JWT claims.
+ *
+ * The account id is what tells the Codex backend which plan a token spends, and
+ * a login often carries it only inside the `id_token`. Read here rather than
+ * through the harness runtime: interpreting a stored credential is the
+ * credential authority's question, and taking it from a harness would make the
+ * authority depend on the thing it hands credentials to.
+ */
+export function accountIdFromClaims(input: Record<string, unknown> | undefined): string | undefined {
+  const tokens = jsonRecord(input?.tokens)
+  return accountIdFromJwt(jsonString(input?.id_token) ?? jsonString(tokens?.id_token))
+    ?? accountIdFromJwt(
+      jsonString(input?.access_token) ?? jsonString(input?.access) ?? jsonString(tokens?.access_token),
+    )
+}
+
+function accountIdFromJwt(token: string | undefined): string | undefined {
+  const claims = jwtClaims(token)
+  if (!claims) return undefined
+  const openai = jsonRecord(claims["https://api.openai.com/auth"])
+  if (jsonString(claims.chatgpt_account_id) ?? jsonString(openai?.chatgpt_account_id)) {
+    return jsonString(claims.chatgpt_account_id) ?? jsonString(openai?.chatgpt_account_id)
+  }
+  const organizations = claims.organizations
+  return Array.isArray(organizations) ? jsonString(jsonRecord(organizations[0])?.id) : undefined
+}
+
+/** A JWT's payload as a record, or nothing when the value is not one. */
+export function jwtClaims(token: string | undefined): Record<string, unknown> | undefined {
   if (!token) return undefined
   const payload = token.split(".")[1]
   if (!payload) return undefined
   try {
-    const claims = jsonRecord(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")))
-    const openai = jsonRecord(claims?.["https://api.openai.com/auth"])
-    return [claims?.email, claims?.preferred_username, openai?.email]
-      .map(jsonString)
-      .find((item) => item !== undefined && item.includes("@"))
+    return jsonRecord(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")))
   } catch {
     return undefined
   }
+}
+
+function emailFromJwt(token: string | undefined): string | undefined {
+  const claims = jwtClaims(token)
+  const openai = jsonRecord(claims?.["https://api.openai.com/auth"])
+  return [claims?.email, claims?.preferred_username, openai?.email]
+    .map(jsonString)
+    .find((item) => item !== undefined && item.includes("@"))
 }
 
 /** Anthropic's OAuth access token; every other secret on that provider is a key. */

@@ -27,6 +27,7 @@ import {
   SINGLE_TENANT_ORG,
   type CredentialOrgScope,
 } from "./registry"
+import type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import type { CredentialKind, CredentialMetadata } from "./types"
 
 /**
@@ -43,6 +44,15 @@ export type NativeProviderSecret = {
   hosts: string[]
   /** The vendor header the value belongs in. */
   header: string
+  /**
+   * The methods and path prefixes the value may be attached to, as the
+   * provider's own destination row declares them. A provider edge is configured
+   * from these and refuses everything else, so an empty list is not "no
+   * restriction" — the Cloudflare Worker answers 403 and Vercel writes no
+   * transform at all.
+   */
+  methods: readonly string[]
+  pathPrefixes: readonly string[]
   /**
    * The scheme that header's value is prefixed with. A driver that substitutes
    * a placeholder the harness already wrote into `Authorization: Bearer …`
@@ -76,8 +86,7 @@ export type NativeProviderDelivery = {
   unreadable?: true
 }
 
-/** How a sandbox driver can carry a brokered secret, as its catalog declares it. */
-export type SandboxSecretBrokering = "native" | "none"
+export type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 
 /**
  * Where an account can actually be spent.
@@ -139,6 +148,8 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
       value: destination.value,
       hosts: [new URL(destination.origin).host],
       header: destination.injection.header,
+      methods: destination.methods,
+      pathPrefixes: destination.pathPrefixes,
       ...(destination.injection.scheme ? { scheme: destination.injection.scheme } : {}),
     },
     projection: {

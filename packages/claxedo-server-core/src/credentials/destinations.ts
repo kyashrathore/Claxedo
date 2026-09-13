@@ -8,6 +8,7 @@
  * fact about that vendor, which is why they are one row.
  */
 
+import type { BindingInjection } from "@claxedo/egress-broker"
 import { credentialSecretMaterial, isSubscriptionKind } from "@claxedo/server-core/credentials/secret-material"
 import type { CredentialKind } from "@claxedo/server-core/credentials/types"
 
@@ -22,7 +23,7 @@ export type ProviderDestination = {
    * (Codex, Pi, the OpenCode engine) appends this to it.
    */
   apiPath: string
-  injection: { header: string; scheme?: string; headers?: Record<string, string | null> }
+  injection: BindingInjection
   /** What the broker injects, which is the token inside a stored login document. */
   value: string
 }

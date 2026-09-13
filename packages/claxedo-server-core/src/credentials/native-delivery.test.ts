@@ -77,6 +77,8 @@ describe("native provider delivery", () => {
       value: API_KEY,
       hosts: ["api.anthropic.com"],
       header: "x-api-key",
+      methods: ["POST", "GET"],
+      pathPrefixes: ["/v1/messages", "/v1/models"],
     }])
     expect(nativeProviderAuth(deliveries)).toEqual({
       "claude-sdk": {
@@ -107,6 +109,8 @@ describe("native provider delivery", () => {
       hosts: ["api.anthropic.com"],
       header: "Authorization",
       scheme: "Bearer",
+      methods: ["POST", "GET"],
+      pathPrefixes: ["/v1/messages", "/v1/models"],
     }])
     expect(nativeProviderAuth(deliveries)["claude-sdk"]).toMatchObject({ authMode: "bearer" })
   })
