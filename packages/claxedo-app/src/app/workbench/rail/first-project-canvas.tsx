@@ -35,7 +35,7 @@ export function FirstProjectCanvas(props: {
   const layout = useLayout()
   const platform = usePlatform()
   const queryOptions = useShellQueryOptions()
-  let card: HTMLDivElement | undefined
+  let nameField: HTMLInputElement | undefined
 
   const signedControlPlane = createMemo(
     () =>
@@ -57,7 +57,7 @@ export function FirstProjectCanvas(props: {
   // "New Project" in the rail and the desktop menu raise an intent rather than
   // opening anything; with no project this screen is the only surface that can
   // answer it, and the name field is where the answer starts.
-  const focusName = () => card?.querySelector<HTMLInputElement>('input[aria-label="Project name"]')?.focus()
+  const focusName = () => nameField?.focus()
   createEffect(
     on(
       () => layout.projects.createRequests(),
@@ -79,9 +79,10 @@ export function FirstProjectCanvas(props: {
           A project is a repository and a name. Point Claxedo at a folder on this machine, or give it a repository to
           clone — where the work runs is a later question.
         </p>
-        <div class="first-project-card first-project-reveal" ref={card} style={{ "--first-project-delay": "80ms" }}>
+        <div class="first-project-card first-project-reveal" style={{ "--first-project-delay": "80ms" }}>
           <ProjectCreateForm
             size="comfortable"
+            nameField={(element) => (nameField = element)}
             baseUrl={server.url}
             localExecution={localExecution()}
             pickFolder={pickProjectFolderWith(dialog)}

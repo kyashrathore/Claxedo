@@ -142,7 +142,9 @@ describe("FirstProjectCanvas", () => {
   test("answers the shell's create-project intent by focusing the name field", async () => {
     renderCanvas()
     const name = screen.getByRole("textbox", { name: "Project name" })
-    expect(document.activeElement).not.toBe(name)
+    // The field carries `autofocus`, so in a browser it already holds the
+    // caret: what an intent has to do is put it back after it has moved.
+    name.blur()
 
     createIntent.bump()
     await waitFor(() => expect(document.activeElement).toBe(name))

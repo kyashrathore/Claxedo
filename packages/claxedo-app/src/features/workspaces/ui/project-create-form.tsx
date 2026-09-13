@@ -38,6 +38,8 @@ export function ProjectCreateForm(props: {
   pickFolder?: (draft: { name: string }) => Promise<string | undefined>
   /** A draft to resume — the dialog host re-creates the form after its picker. */
   initial?: { name?: string; folder?: string }
+  /** Handed the name field on mount, so a host can put the caret back in it. */
+  nameField?: (element: HTMLInputElement) => void
   onCreated: (project: ProjectRecord) => void
   onCancel?: () => void
 }) {
@@ -138,6 +140,7 @@ export function ProjectCreateForm(props: {
           aria-label="Project name"
           class={field()}
           autofocus
+          ref={(element: HTMLInputElement) => props.nameField?.(element)}
         />
       </label>
 

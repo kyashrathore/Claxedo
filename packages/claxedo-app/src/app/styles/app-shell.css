@@ -27,23 +27,34 @@
   --bp-xs: 420px; /* BP_XS */
 }
 
+/*
+ * The app's modal stack, in order. Both layers are portaled to <body>, so
+ * nothing about their nesting says which paints over which; only these numbers
+ * do, and a layer added above needs a name here rather than a larger literal at
+ * its own rule.
+ */
+:root {
+  --z-modal: 300;
+  --z-modal-popover: 320;
+}
+
 /* Keep modal dialogs above Claxedo's floating mobile sidebar and dropdown layers. */
 [data-component="dialog-overlay"],
 [data-component="dialog"] {
-  z-index: 300 !important;
+  z-index: var(--z-modal) !important;
 }
 
 /* DialogProvider adds an inline layer wrapper around dialogs it owns. Keep that
    wrapper in the same elevated app-modal stacking context so a dialog opened
    from another modal appears above its invoker instead of behind it. */
 [data-dialog-layer] {
-  z-index: 300 !important;
+  z-index: var(--z-modal) !important;
 }
 
-/* A select's list is portaled to <body>, so it has to clear the elevated dialog
-   layer above — a select inside a dialog otherwise opens behind the dialog. */
+/* A select's list is portaled to <body>, so it has to clear the dialog layer
+   above — a select opened inside a dialog otherwise paints behind it. */
 .ui-select-content {
-  z-index: 320;
+  z-index: var(--z-modal-popover);
 }
 
 /* --bp-md complement (767 = below BP_MD) + coarse-pointer touch floor. */

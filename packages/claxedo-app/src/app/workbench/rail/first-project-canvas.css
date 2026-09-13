@@ -179,6 +179,12 @@
   animation-delay: 290ms;
 }
 
+/* A row past the fifth arrives with the fifth rather than ahead of all of them,
+   which is where an unset delay would put it. */
+.first-project-card [data-slot="project-create-form"] > *:nth-child(n + 6) {
+  animation-delay: 290ms;
+}
+
 @keyframes first-project-rise {
   from {
     opacity: 0;
