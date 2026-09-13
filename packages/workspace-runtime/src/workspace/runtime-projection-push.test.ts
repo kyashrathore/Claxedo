@@ -71,7 +71,7 @@ test("a push that selects no harness leaves the live adapter's binding alone", a
   }
 })
 
-test("a push the harness rejects leaves the binding it was already running on", async () => {
+test("a snapshot carrying an unreadable projection leaves the binding already in force", async () => {
   const runtime = createWorkspaceRuntimeApp({
     target: { workspaceId: "ws_1", directory },
     storeRoot: directory,
@@ -110,7 +110,6 @@ test("a push that selects the harness gives it the projection under its registry
 
 test("a configurable adapter is given its projections once, through applyConfig alone", async () => {
   const applied: unknown[] = []
-  const slots: unknown[] = []
   const host = createWorkspaceHost({
     target: { workspaceId: "ws_1", directory },
     storeRoot: directory,
@@ -119,11 +118,6 @@ test("a configurable adapter is given its projections once, through applyConfig 
       create: () => ({
         adapterCapabilities: ["runtime-config"] as const,
         setModel() {},
-        // A second delivery path for the same fact. It reads the snapshot by
-        // harness slot while `applyConfig` reads it by registry provider id,
-        // so the two disagree about every brokered account and this one wins
-        // whenever `applyConfig` does not run after it.
-        setAuth(keys: unknown) { slots.push(keys) },
         async applyConfig(config: unknown) { applied.push(config) },
         sessionConfigOwner: "runtime" as const,
         async createSession(_d: string, _t: string | undefined, id?: string) {
@@ -148,11 +142,10 @@ test("a configurable adapter is given its projections once, through applyConfig 
   try {
     await host.apply(snapshot({ defaultHarness: { kind: "native", harnessId: "cursor" } }))
 
-    expect(applied.length).toBeGreaterThan(0)
-    for (const config of applied) {
-      expect((config as { auth: Record<string, unknown> }).auth).toHaveProperty("cursor-sdk")
-    }
-    expect(slots).toEqual([])
+    // Once, and by registry provider id: a second delivery path keyed by
+    // harness slot would disagree with this one about every brokered account.
+    expect(applied).toHaveLength(1)
+    expect((applied[0] as { auth: Record<string, unknown> }).auth).toHaveProperty("cursor-sdk")
   } finally {
     await host.dispose()
   }

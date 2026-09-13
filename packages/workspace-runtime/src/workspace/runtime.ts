@@ -1364,21 +1364,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
       if (!replacing) runner = nextRunner
       if (!adapter && nextRunner) adapter = await ensureSessionAdapter(nextRunner)
-      if (!deferDefaultAdapterConfig && adapter?.applyConfig && nextRunner) {
-        const launch = nextHarnessLaunch[nextRunner.id] ?? {}
-        await adapter.applyConfig({
-          mcp: next.mcp,
-          auth: configuredConnection(nextRunner) ? {} : next.auth,
-          harness: nextRunner,
-          launch,
-          ...firstPartyMcpAdapterConfig(options.firstPartyMcpLaunch),
-        })
-        await (adapter as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
-        adapterConfigStamps.set(
-          adapter,
-          adapterConfigStamp(nextRunner, configuredConnection(nextRunner) ? {} : next.auth, next.mcp, launch),
-        )
-      }
+      // Through `configureAdapter` rather than a second `applyConfig` beside
+      // it: acquiring the adapter above already configures it, and a push that
+      // repeated the call handed every harness the same rotation twice.
+      if (!deferDefaultAdapterConfig && adapter && nextRunner) await configureAdapter(adapter, nextRunner)
       await Promise.all([...sessionAdapters.entries()].map(([key, nextAdapter]) => {
         const selection = sessionAdapterRunners.get(key)!
         return activeTurns.get(nextAdapter)?.size || (selection.access === "connection" && !nextConnections.get(selection.id)?.enabled)

@@ -62,10 +62,16 @@ describe("OpenCode SDK credential bridge", () => {
   })
 
   test("a running SDK host receives the write", async () => {
+    const fake = fakeRuntime()
     loaded.mockReturnValue(true)
-    construct.mockImplementation(() => { throw new Error("a credential write must not boot the SDK") })
-    await expect(syncCredentialsToSdk()).rejects.toThrow("a credential write must not boot the SDK")
-    expect(construct).toHaveBeenCalledTimes(1)
+    construct.mockImplementation(() => fake.runtime as never)
+    configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
+
+    await expect(syncCredentialsToSdk()).resolves.toEqual({ bound: ["anthropic"], removed: [] })
+
+    expect(fake.bound).toEqual([{
+      anthropic: { baseURL: "http://127.0.0.1:2595/bindings/aa11/v1", apiKey: "signed-placeholder" },
+    }])
   })
 
   test("a bound account becomes provider routing, never a stored credential", async () => {
@@ -85,9 +91,8 @@ describe("OpenCode SDK credential bridge", () => {
   test("every provider the broker has a destination for reaches the engine as routing", async () => {
     const fake = fakeRuntime()
     construct.mockImplementation(() => fake.runtime as never)
-    // The four below reached the engine as a plaintext copy of the stored key
-    // until the broker took over delivery; an id missing here reaches it not at
-    // all, which is a working account silently going dark.
+    // An id missing from the bridge's table reaches the engine not at all,
+    // which is a working account going dark with nothing failing.
     const registryIds = ["claude-sdk", "openai", "openrouter", "google", "groq", "xai"] as const
     const auth = Object.fromEntries(registryIds.map((id) => [id, brokerProjection])) as Record<string, ProviderProjection>
     configureAgentConfig({ projectAuth: async () => auth })

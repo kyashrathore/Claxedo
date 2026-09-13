@@ -210,9 +210,9 @@ export async function reconcileCredentialsIntoSdk(
 }
 
 /**
- * Drop the plaintext keys an earlier build connected into the SDK's own
- * credential store. Without this the engine keeps resolving auth from a stored
- * copy of the user's secret and the broker binding is never the value it sends.
+ * Drop every plaintext key stored in the SDK's own credential store under this
+ * bridge's label. A stored credential resolves ahead of the catalog overlay, so
+ * one left behind is what the engine sends and the broker binding never is.
  */
 async function removeStoredCredentials(runtime: ReturnType<typeof openCodeSdkRuntime>): Promise<string[]> {
   const ledger = readLedger()
