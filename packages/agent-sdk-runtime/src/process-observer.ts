@@ -4,7 +4,7 @@ import {
   type SessionHarnessId,
   type AgentHarnessKey,
   type AgentHarnessTransport,
-} from "./harness-types"
+} from "@claxedo/agent-runtime-contract"
 
 export type AgentProcessRole = "harness" | "probe" | "mcp" | "tool"
 export type AgentProcessLocality = "local-process" | "in-process" | "remote"

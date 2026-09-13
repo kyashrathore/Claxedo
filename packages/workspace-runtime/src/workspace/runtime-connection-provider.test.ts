@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import type { ConnectionProvider, HarnessConnectionCapabilities } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { Hono } from "hono"
@@ -41,7 +42,7 @@ function adapter(): AgentHarnessAdapter {
       return { harness: update.harness ?? { id: "fixture-primary", access: "connection" }, variant: null, agent: null }
     },
     async getMessages() { return [] },
-    readHarnessCapabilities() { return { ...capabilities, goals: false, harness: "fixture-primary" } },
+    readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, harness: "fixture-primary" } },
     dispose() {},
   }
 }
@@ -219,7 +220,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
           async getSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
           async updateSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
           async getMessages() { return [] },
-          readHarnessCapabilities() { return { ...capabilities, goals: false, harness: "fixture-primary" } },
+          readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, harness: "fixture-primary" } },
           dispose() { disposed.push(token) },
         }
       },

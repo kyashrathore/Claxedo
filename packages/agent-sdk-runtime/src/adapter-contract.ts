@@ -1,6 +1,6 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
-import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
+import type { AgentExecutionBinding, AgentQuestionAnswer, SessionModelGroup } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { GoalCapabilityError } from "./capabilities"
 import type { AdapterCapability, GoalCapabilities, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
@@ -93,7 +93,7 @@ export type AgentSessionCreateOptions = {
    * harness input: it is retained so a later delegation resolves the same
    * harness/model/effort the creator chose.
    */
-  group?: import("./session-group").SessionModelGroup
+  group?: SessionModelGroup
 }
 
 export type AgentPreparedHandoffSession = {

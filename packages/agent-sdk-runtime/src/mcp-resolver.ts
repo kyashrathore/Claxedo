@@ -4,7 +4,7 @@ import type { McpServer } from "@agentclientprotocol/sdk"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { dataDir } from "./paths"
 import { asRecord, isRecord } from "@claxedo/agent-runtime-contract"
-import { normalizeHarnessIdentity } from "./harness-types"
+import { normalizeHarnessIdentity } from "@claxedo/agent-runtime-contract"
 
 // Resolve storage paths at operation time because the data directory is a runtime setting.
 const claxedoDir = () => dataDir()

@@ -1,10 +1,18 @@
 import { z } from "zod"
+import {
+  harnessEffortRefusal,
+  isSessionGroupSlot,
+  parseHarnessEffortLevels,
+  parseSessionModelGroup,
+  type SessionHarness,
+  type SessionModelGroup,
+} from "@claxedo/agent-runtime-contract"
 import { WorkspaceRuntimeClientError, type WorkspaceRuntimeClient } from "@claxedo/workspace-runtime/client"
 import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 import type { WorkspaceTarget } from "../client/contract"
 import { McpAccessDenied, type McpToolContext } from "../context"
 import { McpHttpError, mcpHttpError } from "../http-error"
-import { num, oneOf, record, records, strings, text } from "../json"
+import { num, oneOf, record, records, text } from "../json"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
 import type { ToolRegistry } from "./registry"
 
@@ -198,17 +206,9 @@ type CreateSubagentArgs = {
   clientRequestId?: string
 }
 
-type HarnessIdentity = { id: string; access: "native" | "connection" }
-
-type GroupEntry = {
-  harness: HarnessIdentity
-  model: { providerID: string; modelID: string }
-  effort?: string
-}
-
 /** What the child will actually run, after a `configuration` slot has been resolved. */
 type Choice = {
-  harness: HarnessIdentity
+  harness: SessionHarness
   /** The create route's own model shape, which names the model `id`. */
   model?: { providerID: string; id: string }
   effort?: string
@@ -217,12 +217,10 @@ type Choice = {
 
 type ParentSessionConfig = {
   instructions?: string
-  group: Record<string, GroupEntry>
+  group: SessionModelGroup
 }
 
-const HARNESS_ACCESS = ["native", "connection"] as const
-
-const harnessQuery = (harness: HarnessIdentity): Record<string, string> =>
+const harnessQuery = (harness: SessionHarness): Record<string, string> =>
   harness.access === "connection" ? { connectionId: harness.id } : { nativeHarness: harness.id }
 
 const describeChoice = (choice: Choice): string =>
@@ -233,7 +231,7 @@ const describeChoice = (choice: Choice): string =>
  * slot and an explicit field that disagree are refused rather than ranked:
  * either answer would run a configuration nobody asked for.
  */
-function resolveChoice(args: CreateSubagentArgs, group: Record<string, GroupEntry>): Choice {
+function resolveChoice(args: CreateSubagentArgs, group: SessionModelGroup): Choice {
   if (!args.configuration) {
     if (!args.harness) {
       throw new McpHttpError(400, "subagent_harness_required", "Name a harness, or a configuration from this session's model group")
@@ -244,7 +242,7 @@ function resolveChoice(args: CreateSubagentArgs, group: Record<string, GroupEntr
       ...(args.effort ? { effort: args.effort } : {}),
     }
   }
-  const entry = group[args.configuration]
+  const entry = isSessionGroupSlot(args.configuration) ? group[args.configuration] : undefined
   if (!entry) {
     const slots = Object.keys(group)
     throw new McpHttpError(400, "subagent_configuration_unknown", slots.length > 0
@@ -289,60 +287,29 @@ async function refuseUnsupportedChoice(ctx: McpToolContext, choice: Choice): Pro
     throw new McpHttpError(400, "subagent_model_unavailable",
       `${chosen.providerID}/${chosen.id} is not offered by the ${choice.harness.id} harness here`)
   }
-  refuseUnsupportedEffort(body?.effortLevels, choice)
-}
-
-/**
- * Only a `resolved` catalog refuses an effort: `unresolved` is a harness whose
- * model catalog has not answered yet and `unsupported` one whose adapter
- * reports no effort control, and refusing on either would refuse on silence.
- *
- * The runtime decides this from the same rows in `harnessEffortVerdict`, which
- * this endpoint may not import: `@claxedo/agent-sdk-runtime` would be a new
- * package edge in a measured product closure that today reaches only the MCP
- * SDK, hono, zod, helpers and the runtime contract.
- */
-function refuseUnsupportedEffort(value: unknown, choice: Choice): void {
-  const catalog = record(value)
-  if (!choice.effort || catalog?.status !== "resolved") return
-  const levels = records(catalog.models)
-    .filter((model) => model.modelID === choice.model?.id)
-    .flatMap((model) => strings(model.levels))
-  if (levels.includes(choice.effort)) return
-  throw new McpHttpError(400, "subagent_effort_unsupported",
-    `The ${choice.harness.id} harness does not run ${choice.model?.id ?? "its default model"} at effort ${choice.effort}; ${
-      levels.length > 0 ? `it accepts ${levels.join(", ")}` : "it accepts no effort for that model"
-    }`)
+  const refusal = harnessEffortRefusal({
+    harness: choice.harness.id,
+    catalog: parseHarnessEffortLevels(body?.effortLevels),
+    modelID: choice.model?.id,
+    effort: choice.effort,
+  })
+  if (refusal) throw new McpHttpError(400, "subagent_effort_unsupported", refusal)
 }
 
 async function parentSessionConfig(ctx: McpToolContext, parent: string): Promise<ParentSessionConfig> {
   const body = record(await getRuntimeJson(ctx, `/session/${encodeURIComponent(parent)}/config`, {}))
   const instructions = text(body?.instructions)
-  return { ...(instructions ? { instructions } : {}), group: sessionGroup(body?.group) }
-}
-
-function sessionGroup(value: unknown): Record<string, GroupEntry> {
-  const row = record(value)
-  if (!row) return {}
-  const group: Record<string, GroupEntry> = {}
-  for (const [slot, entry] of Object.entries(row)) {
-    const parsed = groupEntry(entry)
-    if (parsed) group[slot] = parsed
+  if (body?.group === undefined || body.group === null) {
+    return { ...(instructions ? { instructions } : {}), group: {} }
   }
-  return group
-}
-
-function groupEntry(value: unknown): GroupEntry | undefined {
-  const row = record(value)
-  const harness = record(row?.harness)
-  const id = text(harness?.id)
-  const access = oneOf(harness?.access, HARNESS_ACCESS)
-  const model = record(row?.model)
-  const providerID = text(model?.providerID)
-  const modelID = text(model?.modelID)
-  if (!id || !access || !providerID || !modelID) return undefined
-  const effort = text(row?.effort)
-  return { harness: { id, access }, model: { providerID, modelID }, ...(effort ? { effort } : {}) }
+  const parsed = parseSessionModelGroup(body.group)
+  // The runtime wrote this group through this same parser, so a field refused
+  // here is a corrupt row rather than a caller mistake.
+  if ("field" in parsed) {
+    throw new McpHttpError(502, "session_group_unreadable",
+      `This session's model group cannot be read: ${parsed.field} ${parsed.message}`)
+  }
+  return { ...(instructions ? { instructions } : {}), group: parsed.group }
 }
 
 /**

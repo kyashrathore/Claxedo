@@ -1,12 +1,11 @@
 import type { AgentEventRuntime, RawHarnessEvent, RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import type { GoalCapabilities } from "../../capabilities"
-import type { HarnessEffortLevels } from "../../harness-effort"
 import type {
   AgentConfigOption,
   PromptInput,
   SessionConfig,
 } from "../../index"
-import type { AgentQuestionAnswer, AgentTodo } from "@claxedo/agent-runtime-contract"
+import type { AgentQuestionAnswer, AgentTodo, HarnessEffortLevels } from "@claxedo/agent-runtime-contract"
 import type {
   AgentGoalResource,
   AgentHarnessAdapterHealth,
@@ -14,7 +13,7 @@ import type {
   AgentPermissionModeState,
 } from "../../adapter-contract"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
-import type { NativeSdkHarnessId } from "../../harness-types"
+import type { NativeSdkHarnessId } from "@claxedo/agent-runtime-contract"
 import type { AgentProcessObserver } from "../../process-observer"
 import type { SubagentObservation } from "../../subagent-admission"
 import type { AgentSessionBinding } from "./agent-session-index"

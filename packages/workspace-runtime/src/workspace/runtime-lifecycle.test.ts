@@ -4,6 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Hono } from "hono"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import type { AgentSession, ConnectionProvider, SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { RuntimeStore } from "../store"
@@ -129,7 +130,7 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
         async abort(binding) { controls.push({ instance, action: "abort" }); const key = `${instance}:${binding.sessionId}`; turnReleases.get(key)?.(); turnReleases.delete(key); return { ok: true as const, status: "cancelled" as const, sessionId: binding.sessionId } },
         async listPermissions() { return options.hold && instance === 1 ? [{ id: "pending", sessionID: "local", permission: "tool", patterns: [], metadata: {}, always: [] }] : [] },
         async respondPermission() { controls.push({ instance, action: "permission" }) },
-        readHarnessCapabilities() { return { ...capabilities, goals: false, harness: descriptor.connectionId } },
+        readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, harness: descriptor.connectionId } },
         dispose() { dead = true; disposed.push(instance); if (options.releaseOnDispose) release() },
       } satisfies AgentHarnessAdapter
     },

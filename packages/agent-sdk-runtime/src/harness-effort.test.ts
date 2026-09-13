@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { harnessEffortLevels, harnessEffortVerdict, NO_HARNESS_EFFORT } from "./harness-effort"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
+import { harnessEffortLevels } from "./harness-effort"
 import type { SdkModelEntry } from "./sdk-model-options"
 
 const CATALOG: SdkModelEntry[] = [
@@ -34,31 +35,5 @@ describe("harnessEffortLevels", () => {
     const catalog = harnessEffortLevels([{ id: "m", name: "M", supportsEffort: true, supportedEffortLevels: levels }])
     levels.push("max")
     expect(catalog.models[0]?.levels).toEqual(["low", "high"])
-  })
-})
-
-describe("harnessEffortVerdict", () => {
-  const resolved = harnessEffortLevels(CATALOG)
-
-  test("accepts a level the model reported and refuses one it did not", () => {
-    expect(harnessEffortVerdict(resolved, "opus", "max")).toBe("accepted")
-    expect(harnessEffortVerdict(resolved, "sonnet", "max")).toBe("refused")
-  })
-
-  test("refuses every level for a model absent from a resolved catalog", () => {
-    expect(harnessEffortVerdict(resolved, "haiku", "low")).toBe("refused")
-    expect(harnessEffortVerdict(resolved, "unknown", "low")).toBe("refused")
-    expect(harnessEffortVerdict(resolved, undefined, "low")).toBe("refused")
-  })
-
-  test("asking for no effort is always accepted", () => {
-    expect(harnessEffortVerdict(NO_HARNESS_EFFORT, "opus", undefined)).toBe("accepted")
-    expect(harnessEffortVerdict(undefined, "opus", undefined)).toBe("accepted")
-  })
-
-  test("separates a cold catalog from a harness that takes no effort", () => {
-    expect(harnessEffortVerdict(harnessEffortLevels([]), "opus", "high")).toBe("unknown")
-    expect(harnessEffortVerdict(undefined, "opus", "high")).toBe("unknown")
-    expect(harnessEffortVerdict(NO_HARNESS_EFFORT, "opus", "high")).toBe("refused")
   })
 })

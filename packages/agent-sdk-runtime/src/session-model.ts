@@ -1,5 +1,5 @@
 import type { PromptModel, SessionConfig, SessionHarness } from "./index"
-import { harnessKey } from "./harness-types"
+import { harnessKey } from "@claxedo/agent-runtime-contract"
 
 /**
  * The `modelID` a session carries while it has selected no model. Harnesses

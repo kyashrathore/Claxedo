@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -102,6 +103,7 @@ function runtimeApp(state: Harness) {
         configOptions: false,
         subagents: true,
         goals: false,
+        effortLevels: NO_HARNESS_EFFORT,
       }),
       executeTurn: () => (async function* () {})(),
       getMessages: async () => [],

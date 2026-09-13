@@ -1,6 +1,6 @@
 import type { SessionConfig } from "../../index"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
-import { NO_HARNESS_EFFORT } from "../../harness-effort"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 
 export function acpSessionConfig(
   harness: string,

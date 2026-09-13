@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes, type RuntimeSessionBusEvent, type SessionLifecycleEvent } from "./session-core"
 import type {
   AgentHarnessFactory,
@@ -76,6 +77,7 @@ function adapter(input: {
         unrevert: true,
         configOptions: false,
         subagents: true,
+        effortLevels: NO_HARNESS_EFFORT,
         goals: false,
       }
     },
@@ -1554,6 +1556,7 @@ describe("createSessionRoutes directory-less sessions", () => {
           unrevert: false,
           configOptions: false,
           subagents: false,
+          effortLevels: NO_HARNESS_EFFORT,
         }),
         shell: undefined,
       }) as unknown as AgentHarnessAdapter,
@@ -1655,6 +1658,7 @@ describe("createSessionRoutes directory-less sessions", () => {
           unrevert: false,
           configOptions: false,
           subagents: false,
+          effortLevels: NO_HARNESS_EFFORT,
         }),
         summarize: undefined,
       }) as unknown as AgentHarnessAdapter,
@@ -2350,7 +2354,7 @@ describe("GET /session/capabilities effort levels", () => {
         configOptions: false,
         subagents: true,
         goals: false,
-        ...(effortLevels ? { effortLevels } : {}),
+        effortLevels,
       }),
     }
     return createSessionRoutes({
@@ -2372,14 +2376,8 @@ describe("GET /session/capabilities effort levels", () => {
   })
 
   test("carries an unsupported catalog through rather than omitting the field", async () => {
-    const app = capabilityRoutes({ status: "unsupported", models: [] })
+    const app = capabilityRoutes(NO_HARNESS_EFFORT)
     expect(await (await app.request("http://localhost/session/capabilities")).json())
       .toMatchObject({ effortLevels: { status: "unsupported", models: [] } })
-  })
-
-  test("an adapter that reports no catalog leaves the field absent rather than inventing one", async () => {
-    const app = capabilityRoutes(undefined)
-    expect(await (await app.request("http://localhost/session/capabilities")).json())
-      .not.toHaveProperty("effortLevels")
   })
 })

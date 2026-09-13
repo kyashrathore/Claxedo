@@ -2,7 +2,7 @@ import type { AgentConfigOption } from "../../index"
 import type { AgentConfigOptions } from "../../adapter-contract"
 import { resolvedModelFromConfigOptions } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
-import { NO_HARNESS_EFFORT } from "../../harness-effort"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import type { SdkRuntimeDriver } from "./sdk-runtime-driver"
 
 export function sdkConfigOptions(options: AgentConfigOption[]): AgentConfigOptions {

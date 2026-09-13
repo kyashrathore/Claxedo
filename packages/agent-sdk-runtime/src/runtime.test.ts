@@ -7,8 +7,9 @@ import { createAgentRuntime } from "./runtime"
 import type { AgentHarnessFactory } from "./runtime"
 import { AgentRuntimeStaleTurnError } from "./adapters"
 import type { AgentGoalResource, AgentHarnessAdapter } from "./adapter-contract"
-import { goalCapabilities } from "./capabilities"
+import { goalCapabilities, type HarnessCapabilities } from "./capabilities"
 import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { NO_HARNESS_EFFORT, type SessionHarnessId } from "@claxedo/agent-runtime-contract"
 import type { RuntimeEventHub } from "./runtime-event-hub"
 import { claude, pi } from "./harnesses"
 import { installFakePiRpc } from "./test-utils/fake-pi-rpc.mjs"
@@ -150,22 +151,25 @@ function testHarness(options: {
   } as unknown as AgentHarnessFactory
 }
 
-const GOAL_HARNESS_CAPABILITIES = {
-  harness: "pi",
-  abort: false,
-  reconnect: false,
-  replay: true,
-  permissions: false,
-  questions: false,
-  todos: false,
-  commands: false,
-  fork: false,
-  revert: false,
-  unrevert: false,
-  configOptions: false,
-  subagents: false,
-  goals: true,
-} as const
+function goalHarnessCapabilities(harness: SessionHarnessId = "pi"): HarnessCapabilities {
+  return {
+    harness,
+    abort: false,
+    reconnect: false,
+    replay: true,
+    permissions: false,
+    questions: false,
+    todos: false,
+    commands: false,
+    fork: false,
+    revert: false,
+    unrevert: false,
+    configOptions: false,
+    subagents: false,
+    goals: true,
+    effortLevels: NO_HARNESS_EFFORT,
+  }
+}
 
 function goalPayloads(events: Array<{ type: string }>) {
   return events.filter((payload) => payload.type === "goal-updated" || payload.type === "goal-cleared")
@@ -343,22 +347,7 @@ describe("createAgentRuntime", () => {
     let messagesSent = 0
     const factory = testHarness({
       goals,
-      readHarnessCapabilities: () => ({
-        harness: "pi",
-        abort: false,
-        reconnect: false,
-        replay: true,
-        permissions: false,
-        questions: false,
-        todos: false,
-        commands: false,
-        fork: false,
-        revert: false,
-        unrevert: false,
-        configOptions: false,
-        subagents: false,
-        goals: true,
-      }),
+      readHarnessCapabilities: () => goalHarnessCapabilities(),
       sendMessage: async function* () {
         messagesSent += 1
       },
@@ -423,7 +412,7 @@ describe("createAgentRuntime", () => {
       store: createMemoryRuntimeStore(),
       harnesses: [testHarness({
         goals,
-        readHarnessCapabilities: () => GOAL_HARNESS_CAPABILITIES,
+        readHarnessCapabilities: () => goalHarnessCapabilities(),
         onCreate: (context) => { eventHub = context.eventHub },
       })],
     })
@@ -482,7 +471,7 @@ describe("createAgentRuntime", () => {
     }
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
-      harnesses: [testHarness({ goals, readHarnessCapabilities: () => GOAL_HARNESS_CAPABILITIES })],
+      harnesses: [testHarness({ goals, readHarnessCapabilities: () => goalHarnessCapabilities() })],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
     const subscription = runtime.events.subscribe({ sessionId: session.id })
@@ -538,22 +527,7 @@ describe("createAgentRuntime", () => {
       store: createMemoryRuntimeStore(),
       harnesses: [testHarness({
         goals,
-        readHarnessCapabilities: () => ({
-          harness: "pi",
-          abort: false,
-          reconnect: false,
-          replay: true,
-          permissions: false,
-          questions: false,
-          todos: false,
-          commands: false,
-          fork: false,
-          revert: false,
-          unrevert: false,
-          configOptions: false,
-          subagents: false,
-          goals: true,
-        }),
+        readHarnessCapabilities: () => goalHarnessCapabilities(),
       })],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
@@ -612,22 +586,7 @@ describe("createAgentRuntime", () => {
     }
     const factory = testHarness({
       goals,
-      readHarnessCapabilities: () => ({
-        harness: "cursor",
-        abort: false,
-        reconnect: false,
-        replay: true,
-        permissions: false,
-        questions: false,
-        todos: false,
-        commands: false,
-        fork: false,
-        revert: false,
-        unrevert: false,
-        configOptions: false,
-        subagents: false,
-        goals: true,
-      }),
+      readHarnessCapabilities: () => goalHarnessCapabilities("cursor"),
     })
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
@@ -688,22 +647,7 @@ describe("createAgentRuntime", () => {
     }
     const factory = testHarness({
       goals,
-      readHarnessCapabilities: () => ({
-        harness: "pi",
-        abort: false,
-        reconnect: false,
-        replay: true,
-        permissions: false,
-        questions: false,
-        todos: false,
-        commands: false,
-        fork: false,
-        revert: false,
-        unrevert: false,
-        configOptions: false,
-        subagents: false,
-        goals: true,
-      }),
+      readHarnessCapabilities: () => goalHarnessCapabilities(),
     })
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),

@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -78,6 +79,7 @@ function runtimeApp() {
         configOptions: false,
         subagents: false,
         goals: false,
+        effortLevels: NO_HARNESS_EFFORT,
       }),
       executeTurn: () => (async function* () {})(),
       getMessages: async () => [],

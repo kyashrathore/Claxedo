@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "vitest"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -141,6 +142,7 @@ function runtimeApp(state: Workspace) {
         configOptions: false,
         subagents: true,
         goals: false,
+        effortLevels: NO_HARNESS_EFFORT,
       }),
       executeTurn: (binding, input) => {
         const text = input.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")

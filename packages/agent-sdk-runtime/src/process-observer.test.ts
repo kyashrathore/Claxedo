@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { EventEmitter } from "events"
 import { PassThrough } from "stream"
 
+import { AGENT_HARNESS_DEFINITIONS } from "@claxedo/agent-runtime-contract"
 import {
+  AGENT_PROCESS_ATTRIBUTION_SCENARIOS,
   observeAgentProcess,
   safeAgentProcessDescriptor,
   type AgentProcessDescriptor,
@@ -174,5 +176,18 @@ describe("agent process observer", () => {
     expect(JSON.stringify(descriptors)).not.toContain(sentinel)
     child.emit("exit", 0, null)
     expect(exits).toHaveLength(3)
+  })
+})
+
+describe("process attribution catalog", () => {
+  test("has an explicit root, probe, and MCP scenario for every harness definition", () => {
+    expect(AGENT_PROCESS_ATTRIBUTION_SCENARIOS.map((scenario) => scenario.key).sort()).toEqual(
+      AGENT_HARNESS_DEFINITIONS.map((definition) => definition.key).sort(),
+    )
+    for (const scenario of AGENT_PROCESS_ATTRIBUTION_SCENARIOS) {
+      expect(scenario.root).toBeTruthy()
+      expect(scenario.probe).toBeTruthy()
+      expect(scenario.mcp).toBeTruthy()
+    }
   })
 })

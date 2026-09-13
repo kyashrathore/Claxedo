@@ -1,6 +1,6 @@
-import { isRecord } from "@claxedo/agent-runtime-contract"
-import { normalizeHarnessIdentity } from "./harness-types"
-import type { PromptModel, SessionHarness } from "./index"
+import { normalizeHarnessIdentity, type SessionHarness } from "./harnesses"
+import type { PromptModel } from "./sessions"
+import { isRecord } from "./values"
 
 /** The slots a Tasks preset resolves. A group names at most one entry per slot. */
 export const SESSION_GROUP_SLOTS = ["primary", "planning", "implementation", "review"] as const

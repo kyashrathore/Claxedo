@@ -1,4 +1,5 @@
-import { asRecord } from "@claxedo/agent-runtime-contract"
+import { asRecord } from "./values"
+
 export const AGENT_HARNESS_DEFINITIONS = [
   {
     key: "claude",
@@ -120,4 +121,10 @@ export function normalizeHarnessIdentity(input: unknown): { id: SessionHarnessId
   const access = accessInput && isAgentHarnessAccess(accessInput) ? accessInput : id ? "native" : undefined
   if (!id || !access) return undefined
   return { id, access }
+}
+
+/** A session's harness identity: a built-in id, or a configured connection id. */
+export type SessionHarness = {
+  id: SessionHarnessId
+  access: AgentHarnessAccess
 }

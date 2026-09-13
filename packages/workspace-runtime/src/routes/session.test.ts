@@ -1,4 +1,5 @@
 import { describe, expect, it, spyOn } from "bun:test"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import { fetchDouble } from "../test-support/fetch-double"
 import type {
@@ -107,6 +108,7 @@ function adapter(input: {
       unrevert: true,
       configOptions: false,
       subagents: true,
+      effortLevels: NO_HARNESS_EFFORT,
       goals: false,
     }),
     executeTurn(binding, prompt) {
@@ -1180,6 +1182,7 @@ describe("session prompt route", () => {
           unrevert: !input?.sessionId,
           configOptions: !!input?.sessionId,
           subagents: true,
+          effortLevels: NO_HARNESS_EFFORT,
           goals: false,
         }),
       }),
@@ -1203,6 +1206,7 @@ describe("session prompt route", () => {
       questions: true,
       configOptions: false,
       subagents: true,
+      effortLevels: NO_HARNESS_EFFORT,
     })
     expect(session.status).toBe(200)
     expect(await session.json()).toMatchObject({
@@ -1211,6 +1215,7 @@ describe("session prompt route", () => {
       questions: false,
       configOptions: true,
       subagents: true,
+      effortLevels: NO_HARNESS_EFFORT,
     })
   })
 
@@ -1341,6 +1346,7 @@ describe("session prompt route", () => {
         unrevert: true,
         configOptions: false,
         subagents: true,
+        effortLevels: NO_HARNESS_EFFORT,
         goals: false,
       }),
     }))
@@ -1665,6 +1671,7 @@ describe("session prompt route", () => {
         unrevert: false,
         configOptions: true,
         subagents: true,
+        effortLevels: NO_HARNESS_EFFORT,
         goals: false,
       }),
       abort: async () => {

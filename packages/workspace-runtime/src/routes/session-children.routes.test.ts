@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
 import type { AgentMessage, AgentPermissionMode, AgentPermissionModeState, AgentSession, SessionConfig } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import { MemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
@@ -62,6 +63,7 @@ function fixture(input: { parentMode?: string } = {}) {
       unrevert: false,
       configOptions: false,
       subagents: true,
+      effortLevels: NO_HARNESS_EFFORT,
       goals: false,
     }),
     executeTurn: (binding, prompt) => {

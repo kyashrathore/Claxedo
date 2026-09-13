@@ -15,7 +15,12 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
 import type { AgentRuntimeEvent as RuntimeStreamEvent } from "@claxedo/agent-event-runtime"
-import type { AgentHarnessAccess, AgentHarnessId, AgentHarnessTransport, SessionHarnessId } from "./harness-types"
+import type {
+  AgentHarnessId,
+  AgentHarnessTransport,
+  SessionHarness,
+  SessionModelGroup,
+} from "@claxedo/agent-runtime-contract"
 
 export {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
@@ -154,42 +159,43 @@ export {
   AGENT_HARNESS_IDS,
   AGENT_HARNESS_KEYS,
   harnessDefinition,
+  harnessEffortVerdict,
   harnessKey,
   isAcpConnectionId,
   isAgentHarnessAccess,
   isAgentHarnessId,
+  isSessionGroupSlot,
+  NO_HARNESS_EFFORT,
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
-} from "./harness-types"
-export { modelConfigOption } from "./sdk-model-options"
-export type { SdkModelEntry } from "./sdk-model-options"
-export { harnessEffortLevels, harnessEffortVerdict, NO_HARNESS_EFFORT } from "./harness-effort"
-export type { HarnessEffortLevels, HarnessEffortVerdict, HarnessModelEffort } from "./harness-effort"
-export {
-  isSessionGroupSlot,
   parseSessionModelGroup,
   parseStoredSessionModelGroup,
   SESSION_GROUP_SLOTS,
   sessionModelGroupJson,
-} from "./session-group"
-export type {
-  SessionGroupEntry,
-  SessionGroupSlot,
-  SessionModelGroup,
-  SessionModelGroupParse,
-} from "./session-group"
-export { createLiveModelSource } from "./live-model-source"
-export type { LiveModelSource } from "./live-model-source"
+} from "@claxedo/agent-runtime-contract"
 export type {
   AgentHarnessAccess,
   AgentHarnessDefinition,
   AgentHarnessId,
   AgentHarnessKey,
   AgentHarnessTransport,
+  HarnessEffortLevels,
+  HarnessEffortVerdict,
+  HarnessModelEffort,
   NativeHarnessId,
   NativeSdkHarnessId,
+  SessionGroupEntry,
+  SessionGroupSlot,
+  SessionHarness,
   SessionHarnessId,
-} from "./harness-types"
+  SessionModelGroup,
+  SessionModelGroupParse,
+} from "@claxedo/agent-runtime-contract"
+export { modelConfigOption } from "./sdk-model-options"
+export type { SdkModelEntry } from "./sdk-model-options"
+export { harnessEffortLevels } from "./harness-effort"
+export { createLiveModelSource } from "./live-model-source"
+export type { LiveModelSource } from "./live-model-source"
 export {
   AGENT_PROCESS_ATTRIBUTION_SCENARIOS,
   observeAgentProcess,
@@ -204,12 +210,6 @@ export {
   type AgentProcessObserverHandle,
   type AgentProcessRole,
 } from "./process-observer"
-
-export type SessionHarness = {
-  /** A built-in harness id, or a configured connection id. */
-  id: SessionHarnessId
-  access: AgentHarnessAccess
-}
 
 export type SessionConfig = {
   /** Host-owned maximum permission level, retained across harness changes. */
@@ -235,7 +235,7 @@ export type SessionConfig = {
    * same harness/model/effort the creator chose instead of re-parsing the
    * instruction prose the group was also rendered into.
    */
-  group?: import("./session-group").SessionModelGroup | null
+  group?: SessionModelGroup | null
   handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
 
@@ -257,7 +257,7 @@ export type SessionConfigUpdate = {
   variant?: string | null
   agent?: string | null
   instructions?: string | null
-  group?: import("./session-group").SessionModelGroup | null
+  group?: SessionModelGroup | null
   handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
 
