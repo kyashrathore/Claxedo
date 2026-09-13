@@ -2,10 +2,21 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { For, Show, createMemo } from "solid-js"
 import type { QuotaAccount, QuotaSnapshot } from "@claxedo/usage-contract"
-import { accountReach, ACCOUNT_REACH_KEYS, harnessIcon, harnessLabel } from "@/platform/identity/harness-catalog"
+import { harnessIcon, harnessLabel } from "@/platform/identity/harness-catalog"
 import { useLanguage } from "@/platform/i18n/provider"
-import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
-import { formatCompactAge, formatRelativeTime } from "@/lib/relative-time"
+import {
+  accountReach,
+  AccountReachMarks,
+  ACCOUNT_REACH_KEYS,
+  CheckedAge,
+  isRefusal,
+  lastCheckedSentence,
+  readAccountDelivery,
+  VERDICT_KEY,
+  WINDOW_KEY,
+  type AccountReach,
+} from "@/ui/controls/account-status"
+import { formatCompactAge } from "@/lib/relative-time"
 import { percentText, readPercent } from "@/lib/percent"
 
 /**
@@ -22,8 +33,8 @@ type Card = {
   label: string
   plan?: string
   inUse: boolean
-  /** Set where the account is this computer's own login rather than a stored row. */
-  machineLogin: boolean
+  /** Where the credential authority says a turn on this account can run. */
+  reach: AccountReach
   /** An agent Claxedo cannot send a turn to; where it runs is not the reader's to choose. */
   otherAgent: boolean
   refusedKey?: string
@@ -32,19 +43,6 @@ type Card = {
   usageAt?: number
 }
 type Group = { key: string; name: Words; icon?: string; cards: Card[] }
-
-const WINDOW_KEY: Record<string, string> = {
-  session: "settings.providers.window.session",
-  weekly: "settings.providers.window.weekly",
-  weekly_opus: "settings.providers.window.weeklyOpus",
-}
-
-/** The verdicts only a different account, or a fresh login, can answer. */
-const REFUSAL_KEY: Record<string, string> = {
-  auth_failed: "settings.providers.live.authFailed",
-  no_billing: "settings.providers.live.noBilling",
-  expired: "settings.providers.live.expired",
-}
 
 /** The group every account no harness can run a turn on collects under. */
 const OTHER_AGENTS = "other-agents"
@@ -66,7 +64,9 @@ function formatReset(value: number | null | undefined) {
 }
 
 function card(account: QuotaAccount, index: number): Card {
-  const refusedKey = account.health === undefined ? undefined : REFUSAL_KEY[account.health]
+  const refusedKey = account.health !== undefined && isRefusal(account.health)
+    ? VERDICT_KEY[account.health]
+    : undefined
   return {
     key: account.credentialId ?? `${account.harness}-${index}`,
     harness: account.harness,
@@ -75,7 +75,7 @@ function card(account: QuotaAccount, index: number): Card {
     label: account.label ?? "This computer's login",
     ...(account.plan === undefined ? {} : { plan: account.plan }),
     inUse: account.inUse,
-    machineLogin: account.machineLogin === true,
+    reach: accountReach(readAccountDelivery(account)),
     otherAgent: account.otherAgent === true,
     ...(refusedKey === undefined ? {} : { refusedKey }),
     ...(account.usageError === undefined ? {} : { usageError: account.usageError }),
@@ -173,29 +173,11 @@ export function QuotaLimitsView(props: {
     return reset === undefined ? summary : language.t("usage.quota.summaryReset", { summary, reset })
   })
   /** Whether a workspace in a cloud sandbox can run on this account at all. */
-  const Reach = (self: { machineLogin: boolean }) => {
-    const reach = () => accountReach(self.machineLogin)
-    return (
-      <Tooltip value={language.t(ACCOUNT_REACH_KEYS[reach()].note)} placement="top">
-        <span class="usage-quota-reach" data-component="usage-quota-reach" data-reach={reach()}>
-          <For each={ACCOUNT_REACH_KEYS[reach()].places}>
-            {(place) => (
-              <ClaxedoIcon
-                name={place.icon}
-                size="small"
-                role="img"
-                aria-hidden="false"
-                aria-label={language.t(place.label)}
-              />
-            )}
-          </For>
-        </span>
-      </Tooltip>
-    )
-  }
-  /** The whole sentence behind the age the card's header has room for. */
-  const lastChecked = (at: number) =>
-    language.t("common.lastChecked", { ago: formatRelativeTime(at, language.locale()) })
+  const Reach = (self: { reach: AccountReach }) => (
+    <Tooltip value={language.t(ACCOUNT_REACH_KEYS[self.reach].note)} placement="top">
+      <AccountReachMarks reach={self.reach} component="usage-quota-reach" t={language.t} class="usage-quota-reach" />
+    </Tooltip>
+  )
   const note = (entry: Card): Note | undefined => {
     if (entry.refusedKey !== undefined) {
       return { text: `${language.t(entry.refusedKey)} · ${language.t("usage.quota.reconnect")}` }
@@ -241,14 +223,21 @@ export function QuotaLimitsView(props: {
                       about nothing the reader can act on.
                     */}
                     <Show when={!entry.otherAgent}>
-                      <Reach machineLogin={entry.machineLogin} />
+                      <Reach reach={entry.reach} />
                     </Show>
                     <Show when={entry.usageAt}>
                       {(at) => (
-                        <Tooltip value={lastChecked(at())} placement="top" class="usage-quota-as-of">
-                          <span data-component="usage-quota-as-of" aria-label={lastChecked(at())}>
-                            {formatCompactAge(at()) ?? language.t("common.justNow")}
-                          </span>
+                        <Tooltip
+                          value={lastCheckedSentence(language.t, at(), language.locale())}
+                          placement="top"
+                          class="usage-quota-as-of"
+                        >
+                          <CheckedAge
+                            at={at()}
+                            component="usage-quota-as-of"
+                            t={language.t}
+                            locale={language.locale()}
+                          />
                         </Tooltip>
                       )}
                     </Show>

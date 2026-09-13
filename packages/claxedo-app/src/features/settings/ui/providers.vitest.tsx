@@ -832,16 +832,27 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(accountRow("openai", "machine").querySelector('[data-component="agent-account-note"]')).toBeNull()
   })
 
-  test("every entry says where a turn on it can run: a stored account in both places, this computer's login in one", async () => {
+  test("where a turn on an entry can run is the authority's answer, never that the row is stored", async () => {
     state.storedCredentials = [
-      { id: "cred_codex", provider_id: "codex-app-server", kind: "oauth_token", label: "work@acme.com", account_id: "acc_1", is_active: true },
+      {
+        id: "cred_codex", provider_id: "codex-app-server", kind: "oauth_token", label: "work@acme.com",
+        account_id: "acc_1", is_active: true, deliverable: { local: true, cloud: true },
+      },
+      {
+        // Stored exactly like the row above, and refused in a sandbox: the
+        // destination needs a header only this machine can add.
+        id: "cred_codex_companion", provider_id: "codex-app-server", kind: "oauth_token", label: "home@acme.com",
+        account_id: "acc_2", is_active: false,
+        deliverable: { local: true, cloud: false, reason: "needs a companion header" },
+      },
     ]
     state.machineLogins = [
       { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com" },
     ]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_companion", "machine"]))
     expect(accountReachIcons("openai", "cred_codex")).toEqual(["monitor", "cloud"])
+    expect(accountReachIcons("openai", "cred_codex_companion")).toEqual(["monitor"])
     expect(accountReachIcons("openai", "machine")).toEqual(["monitor"])
   })
 

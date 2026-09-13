@@ -120,7 +120,7 @@ describe("quota limits view", () => {
     expect(screen.getByText("27% left on Session")).toBeInTheDocument()
   })
 
-  test("each card says where a turn on that account can run, and an agent Claxedo cannot run says nothing", async () => {
+  test("a card claims no cloud reach the authority has not granted, and an agent Claxedo cannot run says nothing", async () => {
     const { container } = await renderView({ snapshot: {
       accounts: [
         ...snapshot.accounts,
@@ -131,8 +131,10 @@ describe("quota limits view", () => {
       container.querySelector(`[data-account="${key}"] [data-component="usage-quota-reach"]`)
     const places = (key: string) => [...reach(key)?.querySelectorAll("[data-icon]") ?? []]
       .map((icon) => [icon.getAttribute("data-icon"), icon.getAttribute("aria-label")])
-    expect(places("cred_work")).toEqual([["monitor", "This computer"], ["cloud", "Cloud sandboxes"]])
-    expect(reach("cred_work")?.getAttribute("data-reach")).toBe("local-and-cloud")
+    // A stored row is not a cloud-capable row: until the snapshot carries the
+    // credential authority's own `deliverable`, no card may draw the cloud.
+    expect(places("cred_work")).toEqual([["monitor", "This computer"]])
+    expect(reach("cred_work")?.getAttribute("data-reach")).toBe("local-only")
     expect(places("codex-2")).toEqual([["monitor", "This computer"]])
     expect(container.querySelector('[data-account="gemini-3"] [data-component="usage-quota-reach"]')).toBeNull()
   })

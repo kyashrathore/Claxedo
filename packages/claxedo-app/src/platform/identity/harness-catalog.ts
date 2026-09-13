@@ -55,45 +55,6 @@ export function harnessDisplayLabel(key: string): string {
     .join(" ")
 }
 
-/** Where a turn on one account can run. */
-export type AccountReach = "local-and-cloud" | "local-only"
-
-/**
- * A stored account is a token Claxedo holds, so the loopback broker hands it to
- * a turn on this computer and `sandboxBrokeredSecrets` hands it to each
- * driver's native brokering for a turn in a cloud sandbox. This computer's own
- * login is a file the harness wrote on this machine and nothing carries it off
- * the machine, so a workspace on a sandbox has no such login to run on.
- */
-export function accountReach(machineLogin: boolean): AccountReach {
-  return machineLogin ? "local-only" : "local-and-cloud"
-}
-
-/**
- * Which places a reach draws, and what the pair of them means, as dictionary
- * keys. A reach is two facts about one account and the icons say them one each,
- * so `local-and-cloud` is `local-only` plus the cloud rather than a third mark
- * a reader has to learn. The names are catalog entries; `as const` keeps them
- * narrow enough for `ClaxedoIcon` to reject a typo without this module
- * depending on the icon layer.
- */
-export const ACCOUNT_REACH_KEYS = {
-  "local-and-cloud": {
-    places: [
-      { icon: "monitor", label: "settings.providers.agents.reachLocal" },
-      { icon: "cloud", label: "settings.providers.agents.reachCloud" },
-    ],
-    note: "settings.providers.agents.reachLocalCloudNote",
-  },
-  "local-only": {
-    places: [{ icon: "monitor", label: "settings.providers.agents.reachLocal" }],
-    note: "settings.providers.agents.reachLocalOnlyNote",
-  },
-} as const satisfies Record<AccountReach, {
-  places: ReadonlyArray<{ icon: string; label: string }>
-  note: string
-}>
-
 /**
  * What the connect card is setting up, in the words it will use.
  *

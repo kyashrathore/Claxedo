@@ -18,8 +18,12 @@ describe("HARNESS_CATALOG", () => {
     for (const harness of ["claude", "codex", "cursor"] as const) {
       expect(HARNESS_CATALOG[harness]).toMatchObject(HARNESS_TABLE[harness])
     }
-    expect(harnessProviderIds("cursor")).toEqual(["cursor-acp", "cursor-sdk"])
-    expect(harnessProviderIds("codex")).toEqual(["codex-app-server", "openai"])
+    // Never a hand-written subset: the row lists every binding the server
+    // stores a login for, in the table's own order.
+    expect(harnessProviderIds("cursor")).toEqual(HARNESS_TABLE.cursor.providerIds)
+    expect(harnessProviderIds("codex")).toEqual(HARNESS_TABLE.codex.providerIds)
+    // An engine a reader picks is not a login anything is stored against.
+    expect(harnessProviderIds("pi")).toEqual([])
   })
 
   test("every harness a reader can pick has a name and a mark of its own", () => {
@@ -33,8 +37,8 @@ describe("HARNESS_CATALOG", () => {
     expect(harnessLabelForProviderId("claude-sdk")).toBe("Claude Code")
     expect(harnessLabelForProviderId("codex-app-server")).toBe("Codex")
     expect(harnessLabelForProviderId("cursor-acp")).toBe("Cursor")
-    // A vendor an engine runs is not a harness, and has no login of its own.
-    expect(harnessLabelForProviderId("anthropic")).toBeUndefined()
+    // A provider id no harness stores a login under names nothing here.
+    expect(harnessLabelForProviderId("openrouter")).toBeUndefined()
   })
 })
 
