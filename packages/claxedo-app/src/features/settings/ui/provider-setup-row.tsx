@@ -51,6 +51,10 @@ export const ProviderSetupRow: Component<{
   activateNote?: string
   /** The account whose switch is in flight. */
   activating?: string
+  /** Offers Remove on each account; absent leaves the list unremovable. */
+  onRemove?: (credentialIds: readonly string[]) => void | Promise<void>
+  /** The account whose removal is in flight. */
+  removing?: string
   /** Asks the provider now; the row reads "Checking…" until it answers. */
   onCheck?: () => void | Promise<void>
   checking?: boolean
@@ -61,6 +65,7 @@ export const ProviderSetupRow: Component<{
   const language = useLanguage()
   const [expanded, setExpanded] = createSignal(false)
   const [usingLogin, setUsingLogin] = createSignal(false)
+  const [confirmingRemove, setConfirmingRemove] = createSignal<string>()
   const connected = () => props.status === "connected"
   const showStatus = () => props.status !== "missing"
   const toggle = () => setExpanded((value) => !value)
@@ -70,6 +75,13 @@ export const ProviderSetupRow: Component<{
       await props.onUseLogin?.()
     } finally {
       setUsingLogin(false)
+    }
+  }
+  const remove = async (account: ProviderAccount) => {
+    try {
+      await props.onRemove?.(account.ids)
+    } finally {
+      setConfirmingRemove(undefined)
     }
   }
 
@@ -148,26 +160,68 @@ export const ProviderSetupRow: Component<{
                     {(expiry) => <span class="text-12-regular text-text-weak">{expiry()}</span>}
                   </Show>
                 </div>
-                <Show
-                  when={!account.isActive && props.onActivate}
-                  fallback={
-                    <Show when={account.isActive}>
-                      <Tag>{language.t("settings.providers.agents.accountActive")}</Tag>
-                    </Show>
-                  }
-                >
-                  <Button
-                    size="small"
-                    variant="ghost"
-                    disabled={props.activating !== undefined}
-                    data-action="settings-provider-activate"
-                    onClick={() => void props.onActivate?.(account.ids)}
+                <div class="flex shrink-0 items-center gap-2">
+                  <Show
+                    when={!account.isActive && props.onActivate}
+                    fallback={
+                      <Show when={account.isActive}>
+                        <Tag>{language.t("settings.providers.agents.accountActive")}</Tag>
+                      </Show>
+                    }
                   >
-                    {props.activating === account.id
-                      ? language.t("settings.providers.agents.makingActive")
-                      : language.t("settings.providers.agents.makeActive")}
-                  </Button>
-                </Show>
+                    <Button
+                      size="small"
+                      variant="ghost"
+                      disabled={props.activating !== undefined}
+                      data-action="settings-provider-activate"
+                      onClick={() => void props.onActivate?.(account.ids)}
+                    >
+                      {props.activating === account.id
+                        ? language.t("settings.providers.agents.makingActive")
+                        : language.t("settings.providers.agents.makeActive")}
+                    </Button>
+                  </Show>
+                  <Show when={props.onRemove}>
+                    <Show
+                      when={confirmingRemove() === account.id}
+                      fallback={
+                        <Button
+                          size="small"
+                          variant="ghost"
+                          disabled={props.removing !== undefined}
+                          data-action="settings-provider-remove-account"
+                          onClick={() => setConfirmingRemove(account.id)}
+                        >
+                          {language.t("settings.providers.agents.removeAccount")}
+                        </Button>
+                      }
+                    >
+                      <span class="text-12-regular text-text-weak">
+                        {language.t("settings.providers.agents.removeAccountConfirm")}
+                      </span>
+                      <Button
+                        size="small"
+                        variant="primary"
+                        disabled={props.removing !== undefined}
+                        data-action="settings-provider-remove-account-confirm"
+                        onClick={() => void remove(account)}
+                      >
+                        {props.removing === account.id
+                          ? language.t("settings.providers.agents.removingAccount")
+                          : language.t("settings.providers.agents.removeAccount")}
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        disabled={props.removing !== undefined}
+                        data-action="settings-provider-remove-account-cancel"
+                        onClick={() => setConfirmingRemove(undefined)}
+                      >
+                        {language.t("common.cancel")}
+                      </Button>
+                    </Show>
+                  </Show>
+                </div>
               </div>
             )}
           </For>

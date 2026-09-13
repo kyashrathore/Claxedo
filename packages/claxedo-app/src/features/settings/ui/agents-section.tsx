@@ -19,6 +19,7 @@ import {
   harnessAccounts,
   listEffectiveCredentials,
   listStoredCredentials,
+  removeCredential,
   runProviderDetect,
   storedCredentialProviders,
   type EffectiveCredential,
@@ -110,6 +111,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const [checks, setChecks] = createSignal<Record<string, LiveCheck>>({})
   const [checking, setChecking] = createSignal<string>()
   const [activating, setActivating] = createSignal<string>()
+  const [removing, setRemoving] = createSignal<string>()
 
   const readStored = async () => {
     const [rows, inUse] = await Promise.all([listStoredCredentials(), listEffectiveCredentials()])
@@ -217,6 +219,21 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       fail(err)
     } finally {
       setActivating(undefined)
+    }
+  }
+
+  const remove = async (ids: readonly string[]) => {
+    const [first] = ids
+    if (first === undefined) return
+    setRemoving(first)
+    try {
+      await removeCredential(ids)
+      await readStored()
+      await props.onConnected?.()
+    } catch (err: unknown) {
+      fail(err)
+    } finally {
+      setRemoving(undefined)
     }
   }
 
@@ -349,6 +366,8 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
                 onActivate={check.id === "claude" ? (ids) => activate(ids) : undefined}
                 activateNote={check.id === "codex" ? language.t("settings.providers.agents.switchLater") : undefined}
                 activating={activating()}
+                onRemove={(ids) => remove(ids)}
+                removing={removing()}
                 onCheck={() => runCheck(check)}
                 checking={checking() === check.id || detecting()}
                 onUseLogin={discoveredRow(check) ? () => useLogin(check) : undefined}

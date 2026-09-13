@@ -49,6 +49,8 @@ const state = vi.hoisted(() => ({
   storedCredentials: [] as Array<Record<string, unknown>>,
   /** Every activate call's body, in order. */
   activated: [] as string[][],
+  /** Every credential row the page asked the store to forget, in order. */
+  removed: [] as string[],
   /** What a machine scan finds, as the discovery route reports it. */
   discoveryItems: [] as Array<Record<string, unknown>>,
   credentialCalls: [] as string[],
@@ -89,7 +91,11 @@ vi.mock("@/features/settings/app-ports", async () => {
     DialogCustomProvider: (props: { scope?: string }) => (
       <div data-testid="custom-provider-dialog" data-scope={props.scope ?? ""} />
     ),
-    ProviderConnectForm: () => <div data-testid="provider-connect-form" />,
+    ProviderConnectForm: (props: { onConnected?: () => void | Promise<void> }) => (
+      <div data-testid="provider-connect-form">
+        <button data-testid="provider-connect-save" onClick={() => void props.onConnected?.()}>Save</button>
+      </div>
+    ),
   }
 })
 
@@ -203,6 +209,19 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
     })
     return new Response("{}")
   }
+  if (init?.method === "DELETE" && url.pathname.startsWith("/api/claxedo/credentials/")) {
+    const id = decodeURIComponent(url.pathname.split("/").at(-1) ?? "")
+    state.removed.push(id)
+    const gone = state.storedCredentials.find((row) => String(row.id) === id)
+    state.storedCredentials = state.storedCredentials.filter((row) => String(row.id) !== id)
+    // The route hands the mark to the oldest account the provider can still run on.
+    if (gone?.is_active === true) {
+      const heir = state.storedCredentials
+        .find((row) => row.provider_id === gone.provider_id && row.health !== "auth_failed")
+      if (heir) heir.is_active = true
+    }
+    return new Response(JSON.stringify({ deleted: gone !== undefined }))
+  }
   return new Response("not found", { status: 404 })
 }) as typeof globalThis.fetch
 
@@ -278,6 +297,7 @@ beforeEach(() => {
   state.dialogs.length = 0
   state.storedCredentials = []
   state.activated.length = 0
+  state.removed.length = 0
   state.discoveryItems = []
   state.projects = [LOCAL_PROJECT, CLOUD_PROJECT]
   state.catalogs = {
@@ -617,6 +637,105 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_old", "sdk_new"]))
     expect(accountRow("anthropic", "sdk_old").getAttribute("data-active")).toBe("true")
     expect(accountRow("anthropic", "sdk_new").getAttribute("data-active")).toBe("false")
+  })
+
+  test("Remove asks before it forgets, and Cancel keeps the account", async () => {
+    state.storedCredentials = [
+      { id: "cred_key", provider_id: "claude-sdk", kind: "api_key", label: "API key", account_id: "fp_0123abcd…wxyz", is_active: false },
+      { id: "cred_token", provider_id: "claude-sdk", kind: "oauth_token", label: "Subscription", is_active: true },
+    ]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_token", "cred_key"]))
+
+    accountRow("anthropic", "cred_key").querySelector<HTMLButtonElement>('[data-action="settings-provider-remove-account"]')!.click()
+
+    expect(state.removed).toEqual([])
+    expect(accountRow("anthropic", "cred_key").textContent).toContain("settings.providers.agents.removeAccountConfirm")
+
+    accountRow("anthropic", "cred_key").querySelector<HTMLButtonElement>('[data-action="settings-provider-remove-account-cancel"]')!.click()
+
+    expect(state.removed).toEqual([])
+    expect(accountRow("anthropic", "cred_key").querySelector('[data-action="settings-provider-remove-account"]')).not.toBeNull()
+  })
+
+  test("confirming Remove forgets every binding of the account and refreshes the list", async () => {
+    state.storedCredentials = [
+      { id: "acp_old", provider_id: "claude-acp", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+      { id: "sdk_old", provider_id: "claude-sdk", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+      { id: "acp_new", provider_id: "claude-acp", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
+      { id: "sdk_new", provider_id: "claude-sdk", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
+    ]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_old", "sdk_new"]))
+
+    accountRow("anthropic", "sdk_new").querySelector<HTMLButtonElement>('[data-action="settings-provider-remove-account"]')!.click()
+    accountRow("anthropic", "sdk_new").querySelector<HTMLButtonElement>('[data-action="settings-provider-remove-account-confirm"]')!.click()
+
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_old"]))
+    // Both bindings of the one account go, so no copy survives under the
+    // binding the list stopped showing.
+    expect(state.removed).toEqual(["sdk_new", "acp_new"])
+    expect(state.credentialCalls).toContain("DELETE /api/claxedo/credentials/sdk_new")
+  })
+
+  test("removing the active account hands the Active tag and the In use line to the one left", async () => {
+    state.storedCredentials = [
+      { id: "acp_old", provider_id: "claude-acp", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+      { id: "sdk_old", provider_id: "claude-sdk", kind: "oauth_token", label: "Work login", account_id: "acc_work", is_active: true },
+      { id: "acp_new", provider_id: "claude-acp", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
+      { id: "sdk_new", provider_id: "claude-sdk", kind: "oauth_token", label: "Personal login", account_id: "acc_personal", is_active: false },
+    ]
+    mount()
+    await waitFor(() => expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
+      .toBe("settings.providers.agents.inUse:Work login"))
+
+    accountRow("anthropic", "sdk_old").querySelector<HTMLButtonElement>('[data-action="settings-provider-remove-account"]')!.click()
+    accountRow("anthropic", "sdk_old").querySelector<HTMLButtonElement>('[data-action="settings-provider-remove-account-confirm"]')!.click()
+
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_new"]))
+    expect(accountRow("anthropic", "sdk_new").getAttribute("data-active")).toBe("true")
+    expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
+      .toBe("settings.providers.agents.inUse:Personal login")
+  })
+
+  test("removing the last account returns the row to this computer's login", async () => {
+    state.storedCredentials = [
+      { id: "cred_token", provider_id: "claude-sdk", kind: "oauth_token", label: "Subscription", is_active: true },
+    ]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_token"]))
+
+    accountRow("anthropic", "cred_token").querySelector<HTMLButtonElement>('[data-action="settings-provider-remove-account"]')!.click()
+    accountRow("anthropic", "cred_token").querySelector<HTMLButtonElement>('[data-action="settings-provider-remove-account-confirm"]')!.click()
+
+    await waitFor(() => expect(accountIds("anthropic")).toEqual([]))
+    expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
+      .toBe("settings.providers.agents.inUseMachine")
+  })
+
+  test("a rejected account keeps its verdict, and Add account is the way back", async () => {
+    state.storedCredentials = [
+      { id: "cred_bad", provider_id: "claude-sdk", kind: "api_key", label: "Old key", is_active: true, health: "auth_failed", last_validated_at: 7 },
+    ]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_bad"]))
+    expect(accountRow("anthropic", "cred_bad").textContent).toContain("settings.providers.live.authFailed")
+
+    agentRow("anthropic").querySelector<HTMLButtonElement>('[data-action="settings-provider-add-account"]')!.click()
+    // The save the card makes is the server's: the rejected active row yields
+    // the mark to the row written after it.
+    state.storedCredentials = [
+      { ...state.storedCredentials[0]!, is_active: false },
+      { id: "cred_good", provider_id: "claude-sdk", kind: "api_key", label: "New key", is_active: true },
+    ]
+    within(agentRow("anthropic")).getByTestId("provider-connect-save").click()
+
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_good", "cred_bad"]))
+    expect(accountRow("anthropic", "cred_good").getAttribute("data-active")).toBe("true")
+    expect(accountRow("anthropic", "cred_bad").getAttribute("data-active")).toBe("false")
+    expect(accountRow("anthropic", "cred_bad").textContent).toContain("settings.providers.live.authFailed")
+    expect(agentRow("anthropic").querySelector('[data-component="provider-in-use"]')?.textContent)
+      .toBe("settings.providers.agents.inUse:New key")
   })
 
   test("Make active marks every binding of the account it was clicked on", async () => {
