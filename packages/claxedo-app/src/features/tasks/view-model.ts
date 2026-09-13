@@ -133,9 +133,9 @@ const WEEK = 7 * DAY
  * suffix. Past a year it reads as the year, because "83w" carries no more
  * meaning than "2024" and is harder to place.
  *
- * Deliberately not the sidebar's `relativeTime`, which counts in seconds and
- * months for a row that updates live; this one is coarse on purpose, and the
- * kit ships without the app to import it from.
+ * Not the sidebar's `relativeTime`, which counts in seconds and months for a
+ * row that updates live: a column of these wants one unit per cell, not the
+ * most precise one.
  */
 export function shortAge(timestamp: number, now: number = Date.now()): string {
   const elapsed = Math.max(0, now - timestamp)

@@ -30,11 +30,7 @@ function summary(id: string, status: TaskStatus): TaskSummary {
   }
 }
 
-/**
- * Status lives in the card's actions menu now that the column already names it,
- * so every case that changes status opens the menu first and presses the row it
- * wants.
- */
+/** A card's status is set from its actions menu, so every status case opens it first. */
 function openActions(id: string) {
   fireEvent.click(screen.getByTestId(`tasks-board-actions-${id}`))
   return screen.getByTestId(`tasks-board-status-${id}`)

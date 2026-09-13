@@ -89,8 +89,8 @@ describe("markdown shortcuts in a Tasks description", () => {
     expect(markdown.trim()).toBe("[text](https://example.com)")
   })
 
-  // The image rule used to replace the whole paragraph, because the node was a
-  // block while the parser placed images inline.
+  // The image node is inline while the paragraph is the block, so a rule that
+  // replaced the block would take the rest of the line with it.
   test("image syntax inserts an image without destroying the line", () => {
     const { html, markdown } = typed("![alt](https://example.com/a.png)")
 

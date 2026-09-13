@@ -74,9 +74,9 @@ export function TaskDetail(props: TaskDetailProps) {
   const presetName = () => openableSlot(props.view.groups)?.current.presetNameAtStart
   const key = () => taskKey(props.projectLabel, task().number)
 
-  // Cmd/Ctrl+S saves from wherever the caret is — the editor holds focus while
-  // you type, so a handler on this subtree alone would miss the rail. Bound
-  // only while there is something to save, and it stops the browser's own save.
+  // On `window` rather than this subtree: the menus and selects on this page
+  // portal to the body, so a keydown raised while one is open never reaches the
+  // article.
   const save = (event: KeyboardEvent) => {
     if (event.key !== "s" || !(event.metaKey || event.ctrlKey) || event.altKey) return
     if (!props.dirty || props.busy) return

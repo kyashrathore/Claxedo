@@ -132,8 +132,6 @@
   color: var(--icon-weak-base, var(--icon-base));
 }
 
-/* Status ------------------------------------------------------------------ */
-
 /*
  * The status mark is the host's own circle set — dashed while parked, a plain
  * ring once it is to do, half filled while working, an alert when it needs
@@ -191,8 +189,6 @@
   color: var(--icon-weak-base, var(--icon-base));
 }
 
-/* Menus ------------------------------------------------------------------- */
-
 .tsk-menu-content {
   min-width: 208px;
 }
@@ -235,8 +231,6 @@
 .tsk-menu-content .tsk-menu-note:first-child {
   color: var(--text-diff-delete-base);
 }
-
-/* Row controls ------------------------------------------------------------ */
 
 /*
  * Start and its caret as one control: the pair carries the border and the
@@ -323,8 +317,6 @@
   }
 }
 
-/* Page shell -------------------------------------------------------------- */
-
 .tsk-surface-head {
   display: flex;
   align-items: center;
@@ -372,8 +364,6 @@
   margin-right: -4px;
 }
 
-/* Popovers ---------------------------------------------------------------- */
-
 .tsk-popover {
   display: flex;
   flex-direction: column;
@@ -395,8 +385,6 @@
   font-size: var(--font-size-small);
   white-space: nowrap;
 }
-
-/* List -------------------------------------------------------------------- */
 
 .tsk-listing {
   flex: 1 1 auto;
@@ -540,8 +528,6 @@
   }
 }
 
-/* Board ------------------------------------------------------------------- */
-
 /* A flat ground: the columns are spacing, and only the cards are surfaces. */
 .tsk-board {
   flex: 1 1 auto;
@@ -657,8 +643,6 @@
   border: 1px dashed var(--tsk-hairline);
   border-radius: var(--radius-md);
 }
-
-/* Task page --------------------------------------------------------------- */
 
 .tsk-detail {
   display: grid;
@@ -961,8 +945,6 @@
   color: var(--text-strong);
 }
 
-/* Subtasks ---------------------------------------------------------------- */
-
 .tsk-subtasks {
   display: flex;
   flex-direction: column;
@@ -1050,8 +1032,6 @@
   min-width: 0;
 }
 
-/* Dialogs ----------------------------------------------------------------- */
-
 .tsk-create {
   display: flex;
   flex-direction: column;
@@ -1096,8 +1076,6 @@
   margin-top: 1px;
   color: var(--icon-base);
 }
-
-/* Presets ----------------------------------------------------------------- */
 
 .tsk-page {
   display: flex;
@@ -1163,8 +1141,6 @@
   font-size: var(--font-size-small);
 }
 
-/* Prose ------------------------------------------------------------------- */
-
 /* The editor paints its own body; this only gives it the page's measure and a
    focus ring that matches the other borderless fields. */
 .tsk-prose {
@@ -1212,8 +1188,6 @@
 .tsk-prose .notion-bottom-space {
   display: none;
 }
-
-/* Motion ------------------------------------------------------------------ */
 
 .tsk-rise {
   animation: tsk-rise 260ms cubic-bezier(0.2, 0, 0, 1) backwards;

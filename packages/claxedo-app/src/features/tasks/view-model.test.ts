@@ -50,8 +50,8 @@ describe("the slot an Open means", () => {
     expect(openableSlot(groups())).toBeUndefined()
   })
 
-  // The row reads a link count and no slot, so a task started on Review alone
-  // used to offer Open and then report having no session.
+  // A list read carries a link count and no slot, so which session an Open
+  // means is a question only the task's own links answer.
   test("a task whose only session is on a secondary slot opens that session", () => {
     const chosen = openableSlot(groups(link("review", 1, "live")))
 

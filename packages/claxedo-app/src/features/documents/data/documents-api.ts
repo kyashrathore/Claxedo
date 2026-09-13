@@ -171,13 +171,7 @@ function documentsUrl(input?: { id?: string; path?: string | string[]; query?: D
   return url
 }
 
-/**
- * The route body, unchecked.
- *
- * This used to hand back a caller-named `T` over `JSON.parse`, which meant the
- * contract types above were asserted rather than established. The schemas do
- * that now, in `documentCall`, where both transports meet.
- */
+/** The route body, unchecked: the schemas in `documentCall` establish the type. */
 async function json(response: Response): Promise<unknown> {
   const text = await response.text()
   if (!response.ok) {

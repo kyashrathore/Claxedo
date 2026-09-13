@@ -51,8 +51,8 @@ describe("the branch a paste takes", () => {
     expect(markdownFromPaste({ html: "<h1>Title</h1>", text: "# Title", inCode: false })).toBeUndefined()
   })
 
-  // Measured before this branch existed: pasting `# not a heading` into a
-  // fence produced an h1 after the fence and moved the caret out of it.
+  // Inside a fence the clipboard is content, not syntax: parsed as markdown it
+  // closes the block and leaves the caret outside it.
   test("text pasted inside a code block is code, and is left to the default paste", () => {
     expect(markdownFromPaste({ html: "", text: "# a comment\n- not a list", inCode: true })).toBeUndefined()
   })

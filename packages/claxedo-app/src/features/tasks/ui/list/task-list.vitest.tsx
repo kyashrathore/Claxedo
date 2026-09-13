@@ -61,8 +61,8 @@ describe("a list row's properties", () => {
     expect(precedes(key, within(row).getByText("Ship the importer"))).toBe(true)
   })
 
-  // The row used to name the status only where grouping was off, and the mark
-  // it leads with now is the only thing that says it.
+  // The mark is the only thing on the row that says the status, so a reader
+  // who cannot see it has nothing else to read.
   test("the status mark carries its own name", () => {
     const row = mount("updated", [summary({ status: "backlog" })])
 
