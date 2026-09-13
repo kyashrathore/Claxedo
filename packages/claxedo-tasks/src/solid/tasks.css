@@ -767,19 +767,21 @@
 .tsk-detail {
   flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   min-width: 0;
   min-height: 0;
   overflow: auto;
   container-type: inline-size;
 }
 
+/* Fluid to the rail, with the same gutter on both sides. A capped column left a
+   dead band across the middle of a wide window; the measure belongs to the
+   prose inside the column, not to the column. */
 .tsk-detail-main {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-width: 0;
-  max-width: 760px;
   padding: 16px var(--tsk-gutter) 40px;
 }
 
@@ -867,6 +869,7 @@
 
 .tsk-bare-text {
   width: 100%;
+  max-width: 80ch;
   min-height: 78px;
   padding: 0;
   background: transparent;
@@ -1088,7 +1091,7 @@
 
 .tsk-form-split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 268px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   align-items: start;
   gap: 24px;
 }
