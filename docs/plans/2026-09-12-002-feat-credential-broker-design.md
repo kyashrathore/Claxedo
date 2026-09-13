@@ -6,6 +6,12 @@ engine, and the refusal of a selected-but-unusable account all run and are teste
 hosted credential store, lease identity, and delivery into a cloud sandbox — sections 4 and 6 remain
 a proposal. Code checked at `47931bd727`; see the Open findings appendix for what a third review
 left standing.
+
+Native delivery into a cloud sandbox is built on `feat/sandbox-credential-delivery` for the
+supervisor rail — Daytona, Vercel and Cloudflare — and Appendix C describes it as code rather than
+as a draft. Not built there: the hosted rail's own credential store, and attribution of a vendor 401
+seen from inside a natively brokered sandbox. No live vendor turn has run through it, and two
+Daytona acceptance criteria named at the end of Appendix C remain unmet.
 Owner: Yash Rathore. Date: 2026-09-12.
 No backward compatibility anywhere in this design: old snapshot versions, existing hosted credential rows, and the consent flag are removed, not migrated (owner decision, 2026-09-12).
 Provenance: rewritten by Codex (`gpt-6-astra`) from the committed draft after its review of that draft; product rules and decisions taken by the owner the same night; the draft's tables are kept as appendices.
@@ -306,22 +312,84 @@ Each is a fact about the code above, not a preference.
 10. **Consent is enforced only in the push.** The `shared` scope respects
     the row's consent flag; nothing else does.
 
-## Appendix C. Delivery adapter per driver (draft; confirmed only by Appendix E results)
+## Appendix C. Delivery adapter per driver
+
+Built for the supervisor rail on `feat/sandbox-credential-delivery`. One module
+answers both halves of the decision —
+`claxedo-server-core/src/credentials/native-delivery.ts` — reading the same
+active-account selection and the same destination table the loopback broker
+reads, and producing per provider a secret for the driver and a projection for
+the runtime. `claxedo-server/src/credentials/sandbox-delivery.ts` merges that
+set with whatever the request itself stated (a repository clone token, an MCP
+runtime token) and hands the whole desired set to the sandbox manager.
 
 | Driver | apply | rotate | withdraw | Projection |
 | --- | --- | --- | --- | --- |
-| daytona | `secret.create` per binding with `hosts`; referenced at sandbox create as the placeholder env var | `updateSecrets`; the adapter reports the documented ~15 s propagation and the control plane treats the revision as applied only after a verify probe through the sandbox succeeds | set the value to a revoked sentinel, then delete the secret | vendor host; placeholder = the env var's value |
-| vercel | policy union with `transform` rules, plus `match` on the vendor's paths (the policy-level equivalent of the broker's `allow`) | `update({networkPolicy})` with the new value | remove the rule | vendor host; any dummy |
-| cloudflare | `outboundByHost` handler reading the binding table; `allowedHosts` from the union of bindings and the network policy | table write; no sandbox call | table write | vendor host; any dummy |
+| daytona | `secret.create` per account with `hosts`; referenced at create as the env var it mounts | `secret.update` on the same name, so the mounted names do not change and the sandbox is not restarted | reconcile writes the revoked value and empties `hosts`, keeping the name mounted; `destroy` deletes | vendor origin; `placeholderEnv` names the mounted variable |
+| vercel | policy union with a `transform` rule per host; the sandbox boots with the placeholder under the same variable | `update({networkPolicy})` with the new value | remove the rule | vendor origin; `placeholderEnv` names that variable |
+| cloudflare | `outboundByHost` registration per host sent server-to-server with the create call; the sandbox boots with the placeholder under the same variable | registration write; no sandbox call | registration write | vendor origin; `placeholderEnv` names that variable |
 | exe | `integrations add` (LLM integration for model accounts, HTTP proxy for the rest) attached to the VM over `/exec` | `integrations edit` | `integrations detach` then delete | `https://<name>.int.exe.xyz`; any dummy |
 | modal | sidecar proxy from the binding table when the workspace is allowlisted; otherwise the generic broker | sidecar reads the table | table write | sidecar URL or broker URL |
 | box, docker | generic broker | table write | table write | broker URL |
 
+The last three rows are unbuilt. A driver declaring `secretBrokering: "none"`
+is handed nothing and the manager refuses to provision it
+(`secret_brokering_unsupported`) rather than downgrade a value to readable env.
+
+**The placeholder is one shape across the three built drivers.** Each brokered
+secret's `name` is the environment variable the sandbox reads its placeholder
+from, and the driver guarantees that variable holds a string its own edge
+accepts: Daytona mounts the secret and substitutes the value it issued, while
+Vercel and Cloudflare boot the sandbox with `claxedo-broker:<name>` and write
+the header at the edge. The projection therefore carries `placeholderEnv`
+rather than a placeholder, and the runtime resolves it against its own
+environment at the config boundary, so every harness keeps reading the one
+`{baseUrl, placeholder}` shape the loopback broker already gives it. A variable
+the provider never filled resolves to `unavailable`, which refuses the turn
+instead of letting it run on the image's own login.
+
+**A vendor header's scheme belongs to the driver.** Daytona substitutes into a
+header the harness already wrote, so its secret carries the bare token; Vercel
+and Cloudflare write the whole header, so they compose `Bearer ` back in from
+the secret's `scheme`. A vendor that also needs a fixed companion header — the
+ChatGPT account id — is refused rather than half-delivered, because a provider
+edge attaches one header per secret.
+
+**Withdrawal is reconciliation, not an event.** The supervisor resolves the
+desired set before it decides whether a warm runtime can answer, so an account
+revoked, replaced or marked `auth_failed` since the sandbox went ready is
+withdrawn from the provider edge on the next ensure, resume or wake, and the
+projection pushed with that config says `unavailable`. A deployment with no
+marked account and no stated secret says nothing at all, rather than an empty
+set, which would withdraw secrets another caller installed.
+
 A sandbox created before its first account is connected (Daytona's restart
-case) is provisioned with a placeholder binding per provider the workspace
-may use, valueless, so the env var exists from boot and only ever changes
-value. The Docker auth-file copy and the Cloudflare `/egress` Worker route
-are deleted when their replacements land (5.3).
+case) is provisioned with the valueless sentinel slot, so the mount exists from
+boot and connecting the first account only adds a name. The Docker auth-file
+copy and the Cloudflare `/egress` Worker route are deleted when their
+replacements land (5.3).
+
+**Two acceptance criteria of the Daytona rail are UNMET, and the rows above
+assume both.** Appendix E item 1 has still not been run, so nothing shows that
+Daytona substitutes a placeholder inside `x-api-key` rather than only inside
+`Authorization` — every Anthropic API-key account on that driver rests on it.
+And nothing shows that the placeholder a sandbox holds survives a
+`secret.update`: the runtime reads `process.env` once, in
+`normalizeRuntimeSnapshot`, so a provider that reissues the placeholder on
+rotation would leave the harness sending a string the edge no longer knows,
+and the no-restart rotation in the table would be wrong. Both are answered by
+the synthetic-value probe in `scratchpad/daytona-feasibility/`, which needs a
+Daytona key this branch has not had.
+
+**Not built here.** The hosted create and wake routes still forward only what
+`prepareRuntime` returns, because a signed user's accounts live in the hosted
+store that section 4 replaces. And a vendor 401 seen from inside a natively
+brokered sandbox marks nothing: the classification runs in the sandbox
+(`agent-sdk-runtime/src/first-turn-error.ts`) and lands in a session event the
+control plane only proxies — the workspace runtime makes no report call back to
+it — so attributing that failure needs a runtime-to-server channel that does not
+exist yet. On the loopback path the broker still attributes it through
+`reportFailure`, because there the request passes through this process.
 
 ## Appendix D. Findings from the review of the first draft (section numbers refer to that draft)
 

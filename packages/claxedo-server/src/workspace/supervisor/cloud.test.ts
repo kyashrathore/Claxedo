@@ -322,8 +322,26 @@ vi.mock("../../sandbox/network/resolve", () => ({
   resolveSandboxNetworkPolicy: vi.fn(() => Promise.resolve(undefined)),
 }))
 
+/**
+ * The operator's saved accounts, as the registry would answer them. Held here
+ * so the delivery adapter and the destination table below it run for real and
+ * only the storage is a fixture.
+ */
+const credentials = vi.hoisted(() => ({
+  active: [] as Array<{ credential: Record<string, unknown>; unavailable?: string }>,
+  secrets: new Map<string, string>(),
+  /** Rows the backend refuses to answer for, the way a locked keychain does. */
+  locked: new Set<string>(),
+}))
+
 vi.mock("@claxedo/server-core/credentials/registry", () => ({
   selectCredentialsForScope: vi.fn(() => []),
+  requireActiveCredentialsForScope: vi.fn(() => credentials.active),
+  readSecretById: vi.fn(async (id: string) => {
+    if (credentials.locked.has(id)) throw new Error("keychain is locked")
+    return credentials.secrets.get(id)
+  }),
+  SINGLE_TENANT_ORG: "__local__",
 }))
 
 vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
@@ -645,6 +663,7 @@ globalThis.fetch = vi.fn((url: string | URL | Request) => {
 // ── Import module under test (after mocks) ───────────────────────────────
 
 const supervisor = await import("./index")
+const supervisorSandbox = await import("./sandbox")
 await import("./test-helper")
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -661,6 +680,9 @@ describe("workspace-supervisor", () => {
     holds.clear()
     snapshots.length = 0
     store.clear()
+    credentials.active.length = 0
+    credentials.secrets.clear()
+    credentials.locked.clear()
     sandboxBootEnvCalls.length = 0
     driverId = "daytona"
     mockSandboxDriverAuthAsync.mockClear()
@@ -806,6 +828,306 @@ describe("workspace-supervisor", () => {
 
       expect(result.status).toBe("ready")
       expect(mockDaytonaLaunch).toHaveBeenCalledWith(expect.objectContaining({ secrets: [] }))
+    })
+
+    test("the operator's active account reaches the driver as a brokered secret no caller stated", async () => {
+      credentials.active.push({
+        credential: {
+          id: "cred-1",
+          provider_id: "claude-sdk",
+          kind: "api_key",
+          revision: 1,
+          secure_ref: "ref-1",
+          status: "available",
+        },
+      })
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+
+      const result = await manager.ensure("ws-provider-account", {
+        homeRegion: "us-east",
+        secrets: [{
+          name: "CLAXEDO_GITHUB_CLONE_AUTH",
+          value: "Basic clone-token",
+          hosts: ["github.com"],
+          header: "Authorization",
+        }],
+      })
+
+      expect(result.status).toBe("ready")
+      const launch = mockDaytonaLaunch.mock.calls.at(-1)![0]
+      expect(launch.secrets).toEqual([
+        { name: "CLAXEDO_GITHUB_CLONE_AUTH", value: "Basic clone-token", hosts: ["github.com"], header: "Authorization" },
+        {
+          name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+          value: "sk-ant-api03-fixture",
+          hosts: ["api.anthropic.com"],
+          header: "x-api-key",
+        },
+      ])
+      expect(JSON.stringify(launch.env)).not.toContain("sk-ant-api03-fixture")
+      expect(JSON.stringify(result)).not.toContain("sk-ant-api03-fixture")
+    })
+
+    test("an account the vendor rejected is withdrawn from the driver on the next ensure", async () => {
+      credentials.active.push({
+        credential: {
+          id: "cred-1",
+          provider_id: "claude-sdk",
+          kind: "api_key",
+          revision: 1,
+          secure_ref: "ref-1",
+          status: "available",
+        },
+      })
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-provider-withdrawn", { homeRegion: "us-east" })
+      mockDaytonaLaunch.mockClear()
+
+      credentials.active[0].unavailable = "auth_failed"
+
+      const result = await manager.ensure("ws-provider-withdrawn", { homeRegion: "us-east" })
+
+      expect(result.status).toBe("ready")
+      // Still STATED, and empty: the driver reconciles against the list, so an
+      // absent name is what withdraws the value from the provider edge.
+      expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([])
+    })
+
+    test("an unchanged account set answers from the warm runtime without a driver call", async () => {
+      credentials.active.push({
+        credential: {
+          id: "cred-1",
+          provider_id: "claude-sdk",
+          kind: "api_key",
+          revision: 1,
+          secure_ref: "ref-1",
+          status: "available",
+        },
+      })
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-provider-warm", { homeRegion: "us-east" })
+      mockDaytonaLaunch.mockClear()
+
+      const result = await manager.ensure("ws-provider-warm", { homeRegion: "us-east" })
+
+      expect(result.status).toBe("ready")
+      // Presence of an account is not a change to reconcile; answering on it
+      // would send every message through the driver, which on a
+      // replacement-host driver is a new sandbox per message.
+      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+    })
+
+    test("a rotated account set goes back through the driver", async () => {
+      const row = {
+        credential: {
+          id: "cred-1",
+          provider_id: "claude-sdk",
+          kind: "api_key",
+          revision: 1,
+          secure_ref: "ref-1",
+          status: "available",
+        },
+      }
+      credentials.active.push(row)
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-provider-rotated", { homeRegion: "us-east" })
+      mockDaytonaLaunch.mockClear()
+
+      row.credential.revision = 2
+      credentials.secrets.set("cred-1", "sk-ant-api03-rotated")
+      const result = await manager.ensure("ws-provider-rotated", { homeRegion: "us-east" })
+
+      expect(result.status).toBe("ready")
+      expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([
+        expect.objectContaining({ name: "CLAXEDO_PROVIDER_CLAUDE_SDK", value: "sk-ant-api03-rotated" }),
+      ])
+    })
+
+    test("a driver that cannot broker is provisioned, with no provider secret handed to it", async () => {
+      driverId = "docker"
+      store.set("ws-provider-docker", { ...workspace("ws-provider-docker"), driver: "docker" })
+      credentials.active.push({
+        credential: {
+          id: "cred-1",
+          provider_id: "claude-sdk",
+          kind: "api_key",
+          revision: 1,
+          secure_ref: "ref-1",
+          status: "available",
+        },
+      })
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+
+      const result = await supervisor.createWorkspaceSupervisorSandboxManager()
+        .ensure("ws-provider-docker", { homeRegion: "us-east" })
+
+      // The manager fails closed on a native secret a "none" driver is handed,
+      // so handing it one would leave the workspace unprovisionable; the turn
+      // is refused through the projection instead.
+      expect(result.status).toBe("ready")
+      expect(mockDockerLaunch.mock.calls.at(-1)![0]).not.toHaveProperty("secrets")
+      expect(JSON.stringify(mockDockerLaunch.mock.calls.at(-1)![0])).not.toContain("sk-ant-api03-fixture")
+    })
+
+    test("a caller and a provider account claiming one secret name is refused by name", async () => {
+      credentials.active.push({
+        credential: {
+          id: "cred-1",
+          provider_id: "claude-sdk",
+          kind: "api_key",
+          revision: 1,
+          secure_ref: "ref-1",
+          status: "available",
+        },
+      })
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+
+      const result = await supervisor.createWorkspaceSupervisorSandboxManager().ensure("ws-provider-collide", {
+        homeRegion: "us-east",
+        secrets: [{
+          name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+          value: "caller-token",
+          hosts: ["api.anthropic.com"],
+          header: "x-api-key",
+        }],
+      })
+
+      expect(result).toMatchObject({ status: "unavailable" })
+      expect(result.status === "unavailable" && result.error).toContain("CLAXEDO_PROVIDER_CLAUDE_SDK")
+    })
+
+    test("a restored checkpoint carries the operator's accounts into the replacement sandbox", async () => {
+      credentials.active.push({
+        credential: {
+          id: "cred-1",
+          provider_id: "claude-sdk",
+          kind: "api_key",
+          revision: 1,
+          secure_ref: "ref-1",
+          status: "available",
+        },
+      })
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      const entry = await supervisor.ensureSupervisorSandbox("ws-provider-restore")
+      leases.set("ws-provider-restore", {
+        ...leases.get("ws-provider-restore")!,
+        checkpoint: {
+          id: "chk-1",
+          providerReference: "snap-1",
+          sourceEpoch: 1,
+          capturedAt: Date.now(),
+          metadata: { scope: "filesystem", sourceBehavior: "preserved", restoreMount: "same-resource" },
+        },
+      })
+      mockDaytonaLaunch.mockClear()
+
+      await supervisorSandbox.restoreSupervisorSandboxCheckpoint(entry, {
+        runtime: {
+          freeze: async () => {},
+          flush: async () => {},
+          scrub: async () => {},
+          resume: async () => {},
+          reconcile: async () => {},
+        },
+      })
+
+      // A restore provisions a replacement sandbox without going through
+      // `startRuntime`; one that mounted only the empty slot answers every turn
+      // with a placeholder its provider never filled.
+      expect(mockDaytonaLaunch.mock.calls.at(-1)?.[0].secrets).toEqual([
+        expect.objectContaining({ name: "CLAXEDO_PROVIDER_CLAUDE_SDK" }),
+      ])
+    })
+
+    test("removing the last account withdraws it from a warm sandbox", async () => {
+      const row = {
+        credential: {
+          id: "cred-1",
+          provider_id: "claude-sdk",
+          kind: "api_key",
+          revision: 1,
+          secure_ref: "ref-1",
+          status: "available",
+        },
+      }
+      credentials.active.push(row)
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-provider-last", { homeRegion: "us-east" })
+      mockDaytonaLaunch.mockClear()
+
+      credentials.active.length = 0
+      const result = await manager.ensure("ws-provider-last", { homeRegion: "us-east" })
+
+      // Having no account left is a change once something of ours is installed;
+      // the empty set is how the last one reaches the provider edge.
+      expect(result.status).toBe("ready")
+      expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([])
+    })
+
+    test("an account whose secret cannot be read holds what the sandbox installed", async () => {
+      credentials.active.push({
+        credential: {
+          id: "cred-1",
+          provider_id: "claude-sdk",
+          kind: "api_key",
+          revision: 1,
+          secure_ref: "ref-1",
+          status: "available",
+        },
+      })
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      const manager = supervisor.createWorkspaceSupervisorSandboxManager()
+      await manager.ensure("ws-provider-blip", { homeRegion: "us-east" })
+      mockDaytonaLaunch.mockClear()
+
+      credentials.locked.add("cred-1")
+      const result = await manager.ensure("ws-provider-blip", { homeRegion: "us-east" })
+
+      // A locked keychain is not a revocation; stating a set without the row
+      // would write the revoked value over a credential nobody revoked.
+      expect(result.status).toBe("ready")
+      expect(mockDaytonaLaunch).not.toHaveBeenCalled()
+    })
+
+    test("a fresh sandbox delivers the readable accounts when one cannot be read", async () => {
+      credentials.active.push(
+        {
+          credential: {
+            id: "cred-1",
+            provider_id: "claude-sdk",
+            kind: "api_key",
+            revision: 1,
+            secure_ref: "ref-1",
+            status: "available",
+          },
+        },
+        {
+          credential: {
+            id: "cred-2",
+            provider_id: "openrouter",
+            kind: "api_key",
+            revision: 1,
+            secure_ref: "ref-2",
+            status: "available",
+          },
+        },
+      )
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
+      credentials.secrets.set("cred-2", "sk-or-fixture")
+      credentials.locked.add("cred-1")
+
+      const result = await supervisor.createWorkspaceSupervisorSandboxManager()
+        .ensure("ws-provider-blip-fresh", { homeRegion: "us-east" })
+
+      expect(result.status).toBe("ready")
+      expect(mockDaytonaLaunch.mock.calls.at(-1)![0].secrets).toEqual([
+        expect.objectContaining({ name: "CLAXEDO_PROVIDER_OPENROUTER" }),
+      ])
     })
 
     test("a wake that names no bindings still answers from the warm runtime", async () => {
@@ -1216,6 +1538,9 @@ describe("workspace-supervisor", () => {
         secretScope: "shared",
         workspaceDir: "/remote/app",
         workspaceId: "ws-hosted-config",
+        // What the sandbox's provider can carry decides what the projection may
+        // promise; a "none" driver's projection has to refuse the turn.
+        secretBrokering: "native",
       })
       const env = latestSandboxBootEnv("daytona")
       expect(env.WORKSPACE_RUNTIME_CONFIG_TOKEN).toBeTruthy()

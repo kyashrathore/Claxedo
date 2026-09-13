@@ -23,14 +23,20 @@ const {
 } = await import("@claxedo/server-core/credentials/registry")
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 const { createLocalCredentialBroker } = await import("./broker")
+const { providerProjection } = await import("@claxedo/agent-sdk-runtime")
 
 type Projection = Awaited<ReturnType<ReturnType<typeof createLocalCredentialBroker>["projectAuth"]>>[string]
 
-/** The bound half of a projection; a test that asks for one must not get "unavailable". */
+/**
+ * The bound half of a projection, read the way a runtime reads it. A test that
+ * asks for one must not get "unavailable".
+ */
 function bound(projection: Projection | undefined) {
   if (!projection) throw new Error("expected a projection")
-  if ("unavailable" in projection) throw new Error(`expected a bound projection, got ${projection.reason}`)
-  return projection
+  const resolved = providerProjection(projection, {})
+  if (!resolved) throw new Error("expected a valid projection")
+  if ("unavailable" in resolved) throw new Error(`expected a bound projection, got ${resolved.reason}`)
+  return resolved
 }
 
 const workspaceId = "ws-broker"

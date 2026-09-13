@@ -163,6 +163,66 @@ describe("DaytonaSandboxDriver", () => {
     expect(serialized).not.toContain("ntn-secret")
   })
 
+  test("a provider account is mounted under its own variable, which no env entry shadows", async () => {
+    const created = sandbox()
+    const daytona = client({ create: vi.fn(async () => created) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await driver.ensureHost({
+      ...input,
+      secrets: [{
+        name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        value: "sk-ant-oat01-fixture",
+        hosts: ["api.anthropic.com"],
+        header: "Authorization",
+        scheme: "Bearer",
+      }],
+    })
+
+    expect(daytona.secret.create).toHaveBeenCalledWith({
+      name: `claxedo-ws_5F1-CLAXEDO_5FPROVIDER_5FCLAUDE_5FSDK`,
+      // The bare token: Daytona substitutes it for the placeholder the harness
+      // already wrote after `Bearer`, so composing the scheme in would send it
+      // twice.
+      value: "sk-ant-oat01-fixture",
+      hosts: ["api.anthropic.com"],
+    })
+    const createArg = (daytona.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(createArg.envVars).not.toHaveProperty("CLAXEDO_PROVIDER_CLAUDE_SDK")
+    expect(JSON.stringify(createArg.envVars)).not.toContain("sk-ant-oat01-fixture")
+  })
+
+  test("a new sandbox is not mounted with a withdrawn leftover from an earlier one", async () => {
+    const secret = secretService([{ id: "sec_notion", name: notionSecret }])
+    const created = sandbox()
+    const daytona = client({ secret, create: vi.fn(async () => created) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await driver.ensureHost({ ...input, secrets: [] })
+
+    // The leftover is still emptied — it is spendable until it is — but a
+    // sandbox being created has no running turn to protect and no reason to
+    // carry a dead name.
+    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked", hosts: [] })
+    const createArg = (daytona.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(createArg.secrets).toEqual({ [SENTINEL_ENV]: sentinelSecret })
+  })
+
+  test("an org secret this driver did not mint is emptied and left unmounted", async () => {
+    const secret = secretService([
+      { id: "sec_slot", name: sentinelSecret },
+      { id: "sec_handmade", name: `claxedo-ws_5F1-%not-encoded` },
+    ])
+    const existing = sandbox()
+    const daytona = client({ secret, list: vi.fn(async () => ({ items: [existing] })) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await driver.ensureHost({ ...input, secrets: [] })
+
+    expect(secret.update).toHaveBeenCalledWith("sec_handmade", { value: "claxedo-revoked", hosts: [] })
+    expect(existing.updateSecrets).toHaveBeenCalledWith({ [SENTINEL_ENV]: sentinelSecret })
+  })
+
   test("a sandbox is created with the valueless sentinel secret already mounted", async () => {
     const created = sandbox()
     const daytona = client({ create: vi.fn(async () => created) })
@@ -237,7 +297,7 @@ describe("DaytonaSandboxDriver", () => {
     expect(existing.stop).not.toHaveBeenCalled()
   })
 
-  test("withdrawal writes the revoked value over the org secret before deleting it", async () => {
+  test("withdrawal empties the org secret and keeps its name mounted", async () => {
     const secret = secretService([{ id: "sec_slot", name: sentinelSecret }, { id: "sec_notion", name: notionSecret }])
     const existing = sandbox()
     const daytona = client({ secret, list: vi.fn(async () => ({ items: [existing] })) })
@@ -245,11 +305,15 @@ describe("DaytonaSandboxDriver", () => {
 
     await driver.ensureHost({ ...input, secrets: [] })
 
-    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked" })
-    expect(secret.delete).toHaveBeenCalledWith("sec_notion")
-    expect(secret.update.mock.invocationCallOrder[0]).toBeLessThan(secret.delete.mock.invocationCallOrder[0])
-    expect(secret.delete).not.toHaveBeenCalledWith("sec_slot")
-    expect(existing.updateSecrets).toHaveBeenCalledWith({ [SENTINEL_ENV]: sentinelSecret })
+    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked", hosts: [] })
+    // Unmounting the name would change the mounted set, and a changed set
+    // restarts the container — on a withdrawal, mid-turn.
+    expect(secret.delete).not.toHaveBeenCalled()
+    expect(existing.updateSecrets).toHaveBeenCalledWith({
+      [SENTINEL_ENV]: sentinelSecret,
+      NOTION_TOKEN: notionSecret,
+    })
+    expect(existing.stop).not.toHaveBeenCalled()
   })
 
   test("destroy withdraws every brokered org secret the workspace still holds", async () => {
@@ -809,7 +873,7 @@ describe("brokered secret reconciliation through the manager", () => {
     return { existing, secret, manager: createSandboxManager({ leaseStore: store, driver }) }
   }
 
-  test("reuse with an empty secret list withdraws every brokered secret", async () => {
+  test("reuse with an empty secret list empties every brokered secret without restarting", async () => {
     const { existing, secret, manager } = reuseFixture([
       { id: "sec_slot", name: sentinelSecret },
       { id: "sec_notion", name: notionSecret },
@@ -817,8 +881,13 @@ describe("brokered secret reconciliation through the manager", () => {
 
     await manager.ensure("ws_1", { homeRegion: "us-east", secrets: [] })
 
-    expect(existing.updateSecrets).toHaveBeenCalledWith({ [SENTINEL_ENV]: sentinelSecret })
-    expect(secret.delete).toHaveBeenCalledWith("sec_notion")
+    expect(existing.updateSecrets).toHaveBeenCalledWith({
+      [SENTINEL_ENV]: sentinelSecret,
+      NOTION_TOKEN: notionSecret,
+    })
+    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked", hosts: [] })
+    expect(secret.delete).not.toHaveBeenCalled()
+    expect(existing.stop).not.toHaveBeenCalled()
   })
 
   test("reuse with no secret key leaves the mounted set alone", async () => {
@@ -834,7 +903,7 @@ describe("brokered secret reconciliation through the manager", () => {
     expect(existing.stop).not.toHaveBeenCalled()
   })
 
-  test("resume with an empty secret list withdraws every brokered secret", async () => {
+  test("resume with an empty secret list empties every brokered secret without restarting", async () => {
     const { existing, secret, manager } = resumeFixture([
       { id: "sec_slot", name: sentinelSecret },
       { id: "sec_notion", name: notionSecret },
@@ -842,8 +911,13 @@ describe("brokered secret reconciliation through the manager", () => {
 
     await manager.ensure("ws_1", { homeRegion: "us-east", secrets: [] })
 
-    expect(existing.updateSecrets).toHaveBeenCalledWith({ [SENTINEL_ENV]: sentinelSecret })
-    expect(secret.delete).toHaveBeenCalledWith("sec_notion")
+    expect(existing.updateSecrets).toHaveBeenCalledWith({
+      [SENTINEL_ENV]: sentinelSecret,
+      NOTION_TOKEN: notionSecret,
+    })
+    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked", hosts: [] })
+    expect(secret.delete).not.toHaveBeenCalled()
+    expect(existing.stop).not.toHaveBeenCalled()
   })
 
   test("resume with no secret key leaves the mounted set alone", async () => {

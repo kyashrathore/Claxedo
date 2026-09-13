@@ -16,6 +16,7 @@ import {
 } from "@claxedo/server-core/credentials/backend-registry"
 import { putCredential, setActiveCredentials } from "@claxedo/server-core/credentials/registry"
 import { createLocalCredentialBroker } from "../credentials/broker"
+import { providerProjection } from "@claxedo/agent-sdk-runtime"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
 
@@ -574,7 +575,10 @@ describe("local egress broker — the mounted authority", () => {
     })
     expect(setActiveCredentials([credential.id])).toMatchObject({ ok: true })
     const local = createLocalCredentialBroker({ dataDir, brokerOrigin: "http://127.0.0.1" })
-    const row = (await local.projectAuth({ workspaceId: "ws-mounted" }))["claude-sdk"]
+    // Read the way a runtime reads it, so the placeholder here is the one a
+    // harness would actually present.
+    const row = providerProjection((await local.projectAuth({ workspaceId: "ws-mounted" }))["claude-sdk"], {})
+    if (!row) throw new Error("expected a valid projection")
     if ("unavailable" in row) throw new Error(`expected a bound projection, got ${row.reason}`)
     return {
       instance: app({ egressBroker: local.handler }),

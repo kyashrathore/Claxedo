@@ -20,6 +20,13 @@ export type WorkspaceRuntimeState = {
   sandbox_target?: SandboxTarget
   health_monitor?: ReturnType<typeof setInterval>
   relay_host_id?: string
+  /**
+   * Identity of the brokered secret set the last successful ensure installed on
+   * this sandbox. Held so a wake can tell "the operator's accounts are
+   * unchanged" from "they changed", without a secret value living here. Lost
+   * with the process, which reads as "unknown" and costs one reconcile.
+   */
+  installed_secrets?: string
 }
 
 export const runtimes = new Map<string, WorkspaceRuntimeState>()

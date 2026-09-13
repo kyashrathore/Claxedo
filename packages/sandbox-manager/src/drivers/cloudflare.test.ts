@@ -101,6 +101,51 @@ describe("CloudflareSandboxDriver", () => {
     expect(JSON.stringify(ensure.body.env)).not.toContain("ntn-secret")
   })
 
+  test("a scheme is composed into the header value the worker writes, and the sandbox gets only the placeholder", async () => {
+    const { calls, fetch } = harness(() => ({ status: 200, json: { ready: true, url: "https://sbx.example.com/proxy" } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+
+    await driver.ensureHost({
+      ...createInput,
+      secrets: [{
+        name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        value: "sk-ant-oat01-fixture",
+        hosts: ["api.anthropic.com"],
+        header: "Authorization",
+        scheme: "Bearer",
+      }],
+    })
+
+    const ensure = calls.find((c) => c.url.endsWith("/ensure-runtime"))!
+    expect(ensure.body.egress).toEqual([{
+      name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+      hosts: ["api.anthropic.com"],
+      header: "Authorization",
+      value: "Bearer sk-ant-oat01-fixture",
+    }])
+    expect(ensure.body.env.CLAXEDO_PROVIDER_CLAUDE_SDK).toBe("claxedo-broker:CLAXEDO_PROVIDER_CLAUDE_SDK")
+    expect(JSON.stringify(ensure.body.env)).not.toContain("sk-ant-oat01-fixture")
+  })
+
+  test("a caller-supplied variable cannot stand in for a brokered placeholder", async () => {
+    const { calls, fetch } = harness(() => ({ status: 200, json: { ready: true, url: "https://sbx.example.com/proxy" } }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+
+    await driver.ensureHost({
+      ...createInput,
+      env: { CLAXEDO_PROVIDER_CLAUDE_SDK: "attacker-chosen" },
+      secrets: [{
+        name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        value: "sk-ant-api03-fixture",
+        hosts: ["api.anthropic.com"],
+        header: "x-api-key",
+      }],
+    })
+
+    const ensure = calls.find((c) => c.url.endsWith("/ensure-runtime"))!
+    expect(ensure.body.env.CLAXEDO_PROVIDER_CLAUDE_SDK).toBe("claxedo-broker:CLAXEDO_PROVIDER_CLAUDE_SDK")
+  })
+
   test("explicit empty secrets are delivered as withdrawal while omission preserves registrations", async () => {
     const { calls, fetch } = harness(() => ({ status: 200, json: { ready: true, url: "https://sbx.example.com/proxy" } }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })

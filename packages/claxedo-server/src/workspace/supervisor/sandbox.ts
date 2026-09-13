@@ -21,7 +21,6 @@ import {
 } from "@claxedo/sandbox-manager/lease-policy"
 import { emitProvision } from "../../sandbox/provision-events"
 import { sandboxDriverAuthAsync } from "../../sandbox/driver-auth"
-import { defaultSandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
@@ -36,6 +35,9 @@ import {
   supervisorBackplaneHeaders,
 } from "./control-token"
 import { pushRuntimeConfig } from "./config-sync"
+import { sandboxBrokeredSecrets } from "../../credentials/sandbox-delivery"
+import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
+import { supervisorSandboxDriverId } from "./driver-id"
 import {
   createSupervisorSandboxLeaseStore,
   getSupervisorSandboxLease,
@@ -80,16 +82,64 @@ export function sandboxBindingsRequested(bindings: SandboxBindings | undefined) 
   return bindings?.secrets !== undefined || bindings?.net !== undefined
 }
 
+/**
+ * The authority this generation of the sandbox must be brought to, and whether
+ * a sandbox already holding `digest` still satisfies it.
+ */
+export type SandboxAuthority = {
+  bindings?: SandboxBindings
+  /** Whether the caller stated authority of its own for this request. */
+  stated: boolean
+  /** Absent when this deployment states no authority of its own. */
+  digest?: string
+}
+
+/**
+ * What the caller stated for its own request, plus the operator's active
+ * provider accounts, which belong to the deployment rather than to any request.
+ *
+ * The driver is resolved first because it decides whether native delivery is
+ * possible at all: a driver that cannot broker is handed no provider secret —
+ * the manager would refuse to provision it — and refuses those turns through
+ * the projection instead.
+ */
+export async function resolveSandboxBindings(
+  state: WorkspaceRuntimeState,
+  bindings?: SandboxBindings,
+): Promise<SandboxAuthority> {
+  const plan = await sandboxBrokeredSecrets({
+    ...(bindings?.secrets ? { stated: bindings.secrets } : {}),
+    ...(state.ws.org_id ? { org: state.ws.org_id } : {}),
+    ...(state.installed_secrets === undefined ? {} : { installed: state.installed_secrets }),
+    secretBrokering: sandboxDriverCatalog[await supervisorSandboxDriverId(state)].metadata.secretBrokering,
+  })
+  return {
+    stated: sandboxBindingsRequested(bindings),
+    ...(plan.digest === undefined ? {} : { digest: plan.digest }),
+    ...(bindings || plan.secrets
+      ? { bindings: { ...bindings, ...(plan.secrets ? { secrets: plan.secrets } : {}) } }
+      : {}),
+  }
+}
+
+/**
+ * Whether a sandbox that is already up satisfies this authority without a
+ * driver call. A deployment that states nothing has nothing to reconcile; one
+ * that does must have installed exactly this set, and a runtime that does not
+ * remember what it installed has not.
+ */
+export function sandboxAuthoritySatisfied(state: WorkspaceRuntimeState, authority: SandboxAuthority) {
+  if (authority.stated) return false
+  return authority.digest === undefined || authority.digest === state.installed_secrets
+}
+
 export async function startSandbox(
   state: WorkspaceRuntimeState,
   callbacks: SandboxCallbacks,
-  bindings?: SandboxBindings,
+  authority: SandboxAuthority = { stated: false },
 ): Promise<WorkspaceRuntimeState> {
-  const cfg = await loadUserConfig()
-  const driverId =
-    state.ws.driver ??
-    needWorkspaceSupervisorOptions().default_sandbox_driver ??
-    defaultSandboxDriverID(sandboxDriverConfig(cfg))
+  const bindings = authority.bindings
+  const driverId = await supervisorSandboxDriverId(state)
   const placement = sandboxDriverPlacement(driverId)
   const storedLease = getSupervisorSandboxLease(state.ws.id)
   const prev = storedLease ?? pendingSandboxLease(state.ws.id, driverId, now())
@@ -99,7 +149,7 @@ export async function startSandbox(
   // taken when there is nothing to reconcile. A wake that withdrew a credential
   // or narrowed egress has to go through the manager, which re-ensures a ready
   // lease on the same epoch.
-  if (recordedHostUrl && !sandboxBindingsRequested(bindings)) {
+  if (recordedHostUrl && sandboxAuthoritySatisfied(state, authority)) {
     const attached = await attachRecordedSandbox(state, callbacks, {
       driverId,
       storedLease,
@@ -113,7 +163,7 @@ export async function startSandbox(
   if (action.action === "wait") {
     const ms = Math.max(0, action.until - now())
     if (ms > 0) await sleep(ms)
-    return startSandbox(state, callbacks, bindings)
+    return startSandbox(state, callbacks, authority)
   }
 
   if (action.action === "mark_failed") {
@@ -169,12 +219,12 @@ export async function startSandbox(
     })
     if (result.status === "provisioning") {
       await sleep(result.retryAfterMs)
-      return startSandbox(state, callbacks, bindings)
+      return startSandbox(state, callbacks, authority)
     }
     if (result.status !== "ready") {
       throw new Error(result.error ?? "sandbox unavailable")
     }
-    return await markSandboxReady(state, callbacks, result)
+    return await markSandboxReady(state, callbacks, result, authority.digest)
   } catch (err) {
     state.url = undefined
     state.crashes += 1
@@ -425,13 +475,29 @@ export async function captureSupervisorSandboxCheckpoint(
   return await (await createSupervisorSandboxManager(state, driverId)).checkpoint(state.ws.id, input)
 }
 
+/**
+ * A restore provisions a replacement sandbox through the manager without going
+ * through `startRuntime`, so the authority has to be resolved here too. A
+ * restored sandbox that mounted only the empty slot answers every turn with a
+ * placeholder its provider never filled.
+ */
 export async function restoreSupervisorSandboxCheckpoint(
   state: WorkspaceRuntimeState,
   input: Parameters<SandboxManager["restore"]>[1],
 ) {
   const driverId = sandboxDriverId(state)
   if (!driverId) throw new Error("workspace_restore_driver_missing")
-  return await (await createSupervisorSandboxManager(state, driverId)).restore(state.ws.id, input)
+  const authority = await resolveSandboxBindings(
+    state,
+    input.ensure?.secrets ? { secrets: input.ensure.secrets } : undefined,
+  )
+  const secrets = authority.bindings?.secrets
+  const restored = await (await createSupervisorSandboxManager(state, driverId)).restore(state.ws.id, {
+    ...input,
+    ...(secrets ? { ensure: { ...input.ensure, secrets } } : {}),
+  })
+  if (restored.status === "ready") state.installed_secrets = authority.digest
+  return restored
 }
 
 async function sandboxDriverForSupervisor(state: WorkspaceRuntimeState, driverId: SandboxDriverID) {
@@ -600,6 +666,7 @@ async function markSandboxReady(
   state: WorkspaceRuntimeState,
   callbacks: SandboxCallbacks,
   target: Extract<SandboxEnsureResult, { status: "ready" }>,
+  installedSecrets?: string,
 ) {
   // The driver has confirmed a live sandbox URL; what remains is starting the
   // runtime handshake (config push). This is the ONLY post-acquire transition
@@ -616,6 +683,7 @@ async function markSandboxReady(
   state.url = target.url
   state.sandbox_id = target.sandboxId
   state.sandbox_target = target
+  state.installed_secrets = installedSecrets
 
   await pushRuntimeConfig(state)
 

@@ -427,21 +427,56 @@ describe("agent config", () => {
     expect("harnesses" in snap).toBe(false)
   })
 
-  test("shared cloud snapshot keeps the v4 contract without implicit selection", async () => {
+  /**
+   * A cloud sandbox reaches its credential through its own provider's edge, so
+   * the authority answers with the variable that edge fills rather than a
+   * placeholder this machine minted. The scope reaches the authority either
+   * way; this producer does not decide delivery.
+   */
+  test("a shared cloud snapshot carries what the authority projects for that scope", async () => {
     const project = path.join(root, "project")
     await fs.mkdir(project, { recursive: true })
-    await mod.saveUserConfig({ version: 3, connections: {},
-      mcp: {},
-      auth: {},
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
+    const scopes: string[] = []
+    mod.configureAgentConfig({
+      projectAuth: async ({ scope }) => {
+        scopes.push(scope)
+        return {
+          "claude-sdk": {
+            baseUrl: "https://api.anthropic.com",
+            placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+            authMode: "api-key",
+            apiPath: "/v1",
+          },
+        }
+      },
     })
+
     const snap = await mod.getRuntimeConfigSnapshot(undefined, {
       secretScope: "shared",
       workspaceDir: project,
       workspaceId: "ws_1",
     })
+
     expect(snap.version).toBe(4)
     expect(snap.connections).toEqual([])
-    expect(snap.auth).toEqual({})
+    expect(scopes).toEqual(["shared"])
+    expect(snap.auth).toEqual({
+      "claude-sdk": {
+        baseUrl: "https://api.anthropic.com",
+        placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        authMode: "api-key",
+        apiPath: "/v1",
+      },
+    })
+    expect(normalizeRuntimeSnapshot(snap, { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn-placeholder" })?.auth).toEqual({
+      "claude-sdk": {
+        baseUrl: "https://api.anthropic.com",
+        placeholder: "dtn-placeholder",
+        authMode: "api-key",
+        apiPath: "/v1",
+      },
+    })
     expect(snap.defaultHarness).toBeUndefined()
   })
 

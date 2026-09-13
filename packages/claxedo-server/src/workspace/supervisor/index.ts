@@ -8,7 +8,9 @@ import {
 } from "./config-sync"
 import {
   captureSupervisorSandboxCheckpoint,
+  resolveSandboxBindings,
   restoreSupervisorSandboxCheckpoint,
+  sandboxAuthoritySatisfied,
   sandboxBindingsRequested,
   startSandbox,
   stopSandbox,
@@ -442,11 +444,29 @@ function recordSupervisorRuntimeSnapshot(workspaceId: string, input: SandboxRegi
   return { ok: true as const, status: "ready" as const }
 }
 
-async function startRuntime(state: WorkspaceRuntimeState, bindings?: SandboxBindings) {
-  // A warm runtime is served from memory only when the caller stated no
-  // authority to reconcile; otherwise the withdrawal or the narrowed policy
-  // would never reach the driver.
-  if (state.status === "ready" && state.url && !sandboxBindingsRequested(bindings)) {
+async function startRuntime(state: WorkspaceRuntimeState, stated?: SandboxBindings) {
+  if (state.ws.kind !== "cloud") {
+    if (state.status === "ready" && state.url && !sandboxBindingsRequested(stated)) {
+      state.used_at = now()
+      scheduleStop(state)
+      return state
+    }
+    if (state.start) return state.start
+    state.start = (async () => {
+      try {
+        throw new Error("local workspaces use embedded workspace-runtime hosts")
+      } finally {
+        state.start = undefined
+      }
+    })()
+    return state.start
+  }
+  const authority = await resolveSandboxBindings(state, stated)
+  // A warm runtime is served from memory only while it already holds the
+  // authority this ensure demands. Answering on the presence of an account
+  // rather than on a change to it sends every message through the driver, which
+  // on a replacement-host driver is a new sandbox per message.
+  if (state.status === "ready" && state.url && sandboxAuthoritySatisfied(state, authority)) {
     state.used_at = now()
     scheduleStop(state)
     return state
@@ -454,10 +474,7 @@ async function startRuntime(state: WorkspaceRuntimeState, bindings?: SandboxBind
   if (state.start) return state.start
   state.start = (async () => {
     try {
-      if (state.ws.kind === "cloud") {
-        return await startSandbox(state, { scheduleStop }, bindings)
-      }
-      throw new Error("local workspaces use embedded workspace-runtime hosts")
+      return await startSandbox(state, { scheduleStop }, authority)
     } finally {
       state.start = undefined
     }

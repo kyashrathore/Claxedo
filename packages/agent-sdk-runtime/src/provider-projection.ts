@@ -15,7 +15,12 @@ export type ProviderBinding = {
   baseUrl: string
   placeholder: string
   authMode: "api-key" | "bearer"
-  expiresAt: number
+  /**
+   * Absent when the placeholder has no lifetime of its own: a sandbox provider
+   * that substitutes on egress holds the value until the authority withdraws
+   * it, so there is no moment at which the harness must stop using it.
+   */
+  expiresAt?: number
   /**
    * Where the vendor's API root sits under `baseUrl`. A client that appends the
    * whole vendor path itself (Claude Code, the Cursor SDK) is configured with
@@ -33,15 +38,36 @@ export type ProviderUnavailable = {
 
 export type ProviderProjection = ProviderBinding | ProviderUnavailable
 
+/**
+ * What an authority puts on the wire, before the runtime resolves it.
+ *
+ * An authority that mints the placeholder itself sends it. One whose sandbox
+ * provider issues the placeholder — Daytona substitutes the value of an env var
+ * it filled, and only the sandbox can read it — names that env var instead, and
+ * `providerProjection` reads it off the runtime's own environment. Exactly one
+ * of the two is a projection; both or neither is not.
+ */
+export type ProviderBindingSource =
+  & Omit<ProviderBinding, "placeholder">
+  & ({ placeholder: string; placeholderEnv?: undefined } | { placeholderEnv: string; placeholder?: undefined })
+
+export type ProviderProjectionSource = ProviderBindingSource | ProviderUnavailable
+
+/** The environment a `placeholderEnv` row is resolved against. */
+export type PlaceholderEnvironment = Record<string, string | undefined>
+
 const AUTH_MODES = ["api-key", "bearer"] as const
-const BINDING_KEYS = new Set(["baseUrl", "placeholder", "authMode", "expiresAt", "apiPath"])
+const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath"])
 const UNAVAILABLE_KEYS = new Set(["unavailable", "reason"])
 
 export function isProviderUnavailable(projection: ProviderProjection): projection is ProviderUnavailable {
   return "unavailable" in projection
 }
 
-export function providerProjection(input: unknown): ProviderProjection | undefined {
+export function providerProjection(
+  input: unknown,
+  env: PlaceholderEnvironment = {},
+): ProviderProjection | undefined {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
   const row: Record<string, unknown> = { ...input }
   if ("unavailable" in row) {
@@ -50,22 +76,44 @@ export function providerProjection(input: unknown): ProviderProjection | undefin
     return { unavailable: true, reason: row.reason }
   }
   if (Object.keys(row).some((key) => !BINDING_KEYS.has(key))) return undefined
-  const { baseUrl, placeholder, expiresAt } = row
+  const { baseUrl, expiresAt, placeholderEnv } = row
   // `find` over the literal list yields the union member; a membership test
   // would leave a bare `string` and force an assertion.
   const authMode = AUTH_MODES.find((mode) => mode === row.authMode)
-  if (typeof baseUrl !== "string" || !baseUrl || typeof placeholder !== "string" || !placeholder) return undefined
-  if (!authMode || typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt <= 0) return undefined
+  if (typeof baseUrl !== "string" || !baseUrl || !authMode) return undefined
+  if (expiresAt !== undefined && (typeof expiresAt !== "number" || !Number.isSafeInteger(expiresAt) || expiresAt <= 0)) {
+    return undefined
+  }
   const apiPath = row.apiPath
   if (apiPath !== undefined && (typeof apiPath !== "string" || (apiPath && !apiPath.startsWith("/")))) return undefined
-  return { baseUrl, placeholder, authMode, expiresAt, ...(apiPath === undefined ? {} : { apiPath }) }
+  const rest = {
+    baseUrl,
+    authMode,
+    ...(expiresAt === undefined ? {} : { expiresAt }),
+    ...(apiPath === undefined ? {} : { apiPath }),
+  }
+  if (placeholderEnv !== undefined) {
+    if (row.placeholder !== undefined || typeof placeholderEnv !== "string" || !placeholderEnv) return undefined
+    const resolved = env[placeholderEnv]
+    // Refused rather than dropped: a sandbox whose provider never filled the
+    // variable has no credential at all, and an absent projection is what sends
+    // the harness to the login its image carries.
+    if (!resolved) return { unavailable: true, reason: `placeholder_env_missing: ${placeholderEnv}` }
+    return { ...rest, placeholder: resolved }
+  }
+  const placeholder = row.placeholder
+  if (typeof placeholder !== "string" || !placeholder) return undefined
+  return { ...rest, placeholder }
 }
 
-export function providerProjectionRecord(input: unknown): Record<string, ProviderProjection> | undefined {
+export function providerProjectionRecord(
+  input: unknown,
+  env: PlaceholderEnvironment = {},
+): Record<string, ProviderProjection> | undefined {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
   const rows: Record<string, ProviderProjection> = {}
   for (const [providerId, value] of Object.entries(input)) {
-    const projection = providerProjection(value)
+    const projection = providerProjection(value, env)
     if (!projection) return undefined
     rows[providerId] = projection
   }
@@ -79,15 +127,16 @@ export function providerProjectionRecord(input: unknown): Record<string, Provide
  *
  * Read from `expiresAt` rather than from a fixed interval, because the lifetime
  * belongs to the authority that minted the placeholder and can be shorter than
- * any interval chosen here. A map carrying no bound row never needs renewing.
+ * any interval chosen here. A map carrying no row that expires never needs
+ * renewing.
  */
 export function projectionRenewalDueAt(
   auth: Record<string, ProviderProjection>,
   appliedAt: number,
 ): number | undefined {
   const due = Object.values(auth)
-    .filter((row): row is ProviderBinding => !isProviderUnavailable(row))
-    .map((row) => row.expiresAt - Math.max(row.expiresAt - appliedAt, 0) / 2)
+    .flatMap((row) => isProviderUnavailable(row) || row.expiresAt === undefined ? [] : [row.expiresAt])
+    .map((expiresAt) => expiresAt - Math.max(expiresAt - appliedAt, 0) / 2)
   return due.length ? Math.min(...due) : undefined
 }
 
@@ -136,7 +185,9 @@ export function liveProviderBinding(
 ): ProviderBinding | undefined {
   const held = providerBinding(harnessId, projection)
   if (!held) return undefined
-  if (held.expiresAt <= now()) throw new ProviderProjectionExpiredError(harnessId, held.expiresAt)
+  if (held.expiresAt !== undefined && held.expiresAt <= now()) {
+    throw new ProviderProjectionExpiredError(harnessId, held.expiresAt)
+  }
   return held
 }
 

@@ -1,9 +1,10 @@
 import type { NetworkPolicy, NetworkPolicyRule } from "@vercel/sandbox"
-import type {
-  SandboxBrokeredSecret,
-  SandboxDriver,
-  SandboxDriverEnsureInput,
-  SandboxTarget,
+import {
+  brokeredPlaceholderEnv,
+  type SandboxBrokeredSecret,
+  type SandboxDriver,
+  type SandboxDriverEnsureInput,
+  type SandboxTarget,
 } from ".."
 import { workspaceRuntimeBootEnv, type WorkspaceRuntimeControlEnv } from "../runtime-env"
 import { workspaceRuntimeVersion } from "../runtime-version"
@@ -183,8 +184,11 @@ export function vercelBrokeredNetworkPolicy(
         `vercel brokered secret "${secret.name}" requires a header — the firewall injects the value as an HTTP header on egress`,
       )
     }
+    // The transform writes the whole header value, so the scheme the harness
+    // wrote in front of the placeholder has to be composed back in.
+    const value = secret.scheme ? `${secret.scheme} ${secret.value}` : secret.value
     for (const host of secret.hosts) {
-      ;(allow[host] ??= []).push({ transform: [{ headers: { [secret.header]: secret.value } }] })
+      ;(allow[host] ??= []).push({ transform: [{ headers: { [secret.header]: value } }] })
     }
   }
   const subnets = typeof base === "object" && base?.subnets ? { subnets: base.subnets } : {}
@@ -382,6 +386,9 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     const env = {
       ...bootEnv(input, hostId),
       ...await options.env?.(input, { id: hostId }),
+      // Last, so no caller-supplied variable of the same name can stand in for
+      // a placeholder the firewall transform overwrites.
+      ...brokeredPlaceholderEnv(input.secrets),
     }
     // Resolved once and reused below: the brokered-secret update REPLACES the
     // whole policy, so it has to merge against the very policy that was sent to

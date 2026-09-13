@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import { createSandboxManager, type SandboxDriver } from "."
+import { brokeredPlaceholderEnv, brokeredSecretPlaceholder, createSandboxManager, type SandboxDriver } from "."
 import { createMemoryLeaseStore, sandboxLease } from "./stores/memory"
 
 function fakeDriver(overrides: Partial<SandboxDriver> = {}): SandboxDriver {
@@ -1069,6 +1069,17 @@ describe("sandbox manager", () => {
     })
     expect(result.status).toBe("ready")
     expect(driver.ensureHost).toHaveBeenCalled()
+  })
+
+  test("the placeholder a header-injecting driver puts in the sandbox is named, not valued", () => {
+    expect(brokeredSecretPlaceholder("CLAXEDO_PROVIDER_CLAUDE_SDK"))
+      .toContain("CLAXEDO_PROVIDER_CLAUDE_SDK")
+    expect(brokeredSecretPlaceholder("A")).not.toBe("A")
+    expect(brokeredPlaceholderEnv([
+      { name: "A", value: "secret-a", hosts: ["api.a.test"], header: "x-key" },
+      { name: "B", value: "secret-b", hosts: ["api.b.test"], header: "x-key" },
+    ])).toEqual({ A: brokeredSecretPlaceholder("A"), B: brokeredSecretPlaceholder("B") })
+    expect(brokeredPlaceholderEnv(undefined)).toEqual({})
   })
 
   test("brokered secrets reach the driver on its own channel, never in env or labels", async () => {
