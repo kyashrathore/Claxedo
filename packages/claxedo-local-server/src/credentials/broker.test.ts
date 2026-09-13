@@ -196,9 +196,9 @@ describe("local binding authority", () => {
   })
 
   /**
-   * These four reached the OpenCode engine and Pi as a plaintext copy of the
-   * stored key until the broker took over delivery; without a row here their
-   * accounts reach those harnesses not at all.
+   * The OpenCode engine and Pi both define providers for these four. Without a
+   * row here the account the operator selected for one of them reaches neither
+   * harness, and the turn runs on whatever login the machine holds.
    */
   test.each([
     ["openrouter", "https://openrouter.ai", "/api/v1", { header: "Authorization", scheme: "Bearer" }],

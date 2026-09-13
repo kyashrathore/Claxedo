@@ -13,19 +13,25 @@ export type PiProviderOverrides = Record<string, { baseUrl: string; apiKey: stri
  * The providers Pi itself defines that this harness can bind, and the two facts
  * about each that the binding cannot supply.
  *
- * `includesApiPath` says whether Pi's own base URL for the provider already
- * reaches the vendor's API root — it ships `https://api.anthropic.com` for
- * `anthropic` and `https://api.openai.com/v1` for `openai`, and an overlay
- * replaces that URL whole. `env` names the variables Pi's built-in auth reads,
- * which a brokered launch withholds so the placeholder is the only credential
- * the process can send.
+ * `path` is the path of Pi 0.85.0's own base URL for the provider, which an
+ * overlay replaces whole — so the overlay has to put it back under the binding
+ * root or Pi sends the turn somewhere the binding does not allow. It is not the
+ * binding's own `apiPath`: `openrouter` speaks the Anthropic wire protocol
+ * under `https://openrouter.ai/api` and appends `/v1/messages` itself, while
+ * the binding's API root is `/api/v1`. `env` names the variables Pi's built-in
+ * auth reads, which a brokered launch withholds so the placeholder is the only
+ * credential the process can send.
  */
 const PI_PROVIDERS = {
   anthropic: {
-    includesApiPath: false,
+    path: "",
     env: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN"],
   },
-  openai: { includesApiPath: true, env: ["OPENAI_API_KEY"] },
+  openai: { path: "/v1", env: ["OPENAI_API_KEY"] },
+  openrouter: { path: "/api", env: ["OPENROUTER_API_KEY"] },
+  google: { path: "/v1beta", env: ["GOOGLE_API_KEY", "GEMINI_API_KEY"] },
+  groq: { path: "/openai/v1", env: ["GROQ_API_KEY"] },
+  xai: { path: "/v1", env: ["XAI_API_KEY"] },
 } as const
 
 /** The projections this harness consumes; every other key belongs to another harness. */
@@ -48,7 +54,7 @@ export function piProviderOverrides(auth: Record<string, ProviderProjection> | u
   for (const { providerId, provider, projection } of piProjections(auth)) {
     if (isProviderUnavailable(projection)) continue
     overrides[providerId] = {
-      baseUrl: `${projection.baseUrl}${provider.includesApiPath ? projection.apiPath ?? "" : ""}`,
+      baseUrl: `${projection.baseUrl}${provider.path}`,
       apiKey: projection.placeholder,
     }
   }
@@ -59,9 +65,21 @@ export function piProviderOverrides(auth: Record<string, ProviderProjection> | u
  * Refuse a launch on an account the operator selected and the provider will not
  * accept. Read here rather than at config time: an unusable account must fail
  * the turn, not the workspace's config apply.
+ *
+ * `model` is Pi's own `provider/id`. When it names one, only that provider's
+ * account can be spent and only it is refused — one unusable Gemini account
+ * would otherwise take every Claude turn in the workspace down with it. A
+ * resume and the model probe carry no model, so those refuse on any of them.
  */
-export function assertPiProvidersBindable(auth: Record<string, ProviderProjection> | undefined) {
-  for (const { projection } of piProjections(auth)) providerBinding("pi", projection)
+export function assertPiProvidersBindable(
+  auth: Record<string, ProviderProjection> | undefined,
+  model?: string,
+) {
+  const selected = model?.includes("/") ? model.slice(0, model.indexOf("/")) : undefined
+  for (const { providerId, projection } of piProjections(auth)) {
+    if (selected && providerId !== selected) continue
+    providerBinding("pi", projection)
+  }
 }
 
 /**

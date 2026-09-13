@@ -168,6 +168,70 @@ test("an unavailable account fails the turn instead of running on the machine lo
   }
 })
 
+test("every provider the broker binds reaches Pi at Pi's own base path", async () => {
+  const f = await installFakePiRpc()
+  const adapter = new PiHarnessAdapter({
+    binary: f.binary,
+    agentDir: f.agentDir,
+    store: createMemoryRuntimeStore(),
+  })
+  const binding = (apiPath: string) => ({ ...piProjection, apiPath })
+  try {
+    await adapter.applyConfig({ auth: {
+      openrouter: binding("/api/v1"),
+      google: binding("/v1beta"),
+      groq: binding("/openai/v1"),
+      xai: binding("/v1"),
+    } })
+
+    expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "models.json"), "utf8"))).toEqual({
+      providers: {
+        // Pi 0.85.0's own base URLs: `openrouter` speaks the Anthropic wire
+        // protocol under `/api` and appends `/v1/messages` itself, so the
+        // binding's own API root would send it to `/api/v1/v1/messages`.
+        openrouter: { baseUrl: "http://127.0.0.1:2595/bindings/7c2d/api", apiKey: "signed-placeholder" },
+        google: { baseUrl: "http://127.0.0.1:2595/bindings/7c2d/v1beta", apiKey: "signed-placeholder" },
+        groq: { baseUrl: "http://127.0.0.1:2595/bindings/7c2d/openai/v1", apiKey: "signed-placeholder" },
+        xai: { baseUrl: "http://127.0.0.1:2595/bindings/7c2d/v1", apiKey: "signed-placeholder" },
+      },
+    })
+
+    await adapter.createSession(f.agentDir)
+    const launched = JSON.parse(await fs.readFile(path.join(f.agentDir, "launch-env.json"), "utf8"))
+    for (const name of ["OPENROUTER_API_KEY", "GOOGLE_API_KEY", "GEMINI_API_KEY", "GROQ_API_KEY", "XAI_API_KEY"]) {
+      expect(launched).not.toHaveProperty(name)
+    }
+  } finally {
+    await adapter.dispose()
+    await f.dispose()
+  }
+})
+
+test("an unusable account refuses only the launches that would have spent it", async () => {
+  const f = await installFakePiRpc()
+  const adapter = new PiHarnessAdapter({
+    binary: f.binary,
+    agentDir: f.agentDir,
+    store: createMemoryRuntimeStore(),
+  })
+  try {
+    await adapter.applyConfig({ auth: {
+      anthropic: { unavailable: true, reason: "auth_failed" },
+      openai: piProjection,
+    } })
+
+    adapter.setModel("openai/gpt-5")
+    await expect(adapter.createSession(f.agentDir, undefined, "on-openai")).resolves.toBeDefined()
+
+    adapter.setModel("anthropic/claude-sonnet-4")
+    await expect(adapter.createSession(f.agentDir, undefined, "on-anthropic"))
+      .rejects.toThrow("the pi credential selected for this workspace cannot be used: auth_failed")
+  } finally {
+    await adapter.dispose()
+    await f.dispose()
+  }
+})
+
 test("an explicit native profile overrides the store default and is scrubbed on disposal", async () => {
   const f = await installFakePiRpc()
   const previous = process.env.PI_CODING_AGENT_DIR

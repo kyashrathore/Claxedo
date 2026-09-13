@@ -247,9 +247,9 @@ class PiRpcDriver implements SdkRuntimeDriver {
       PI_CODING_AGENT_DIR: this.agentDir,
     }
   }
-  private async start(directory: string, args: string[]) {
+  private async start(directory: string, args: string[], model?: string) {
     if (!directory.trim()) throw new Error("Pi requires a workspace directory")
-    assertPiProvidersBindable(this.auth)
+    assertPiProvidersBindable(this.auth, model)
     await fs.mkdir(this.agentDir, { recursive: true, mode: 0o700 })
     await fs.mkdir(path.join(this.agentDir, "sessions"), { recursive: true })
     const binary = this.options.binary ?? requirePiExecutable()
@@ -274,7 +274,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
       ...(input.model ? ["--model", input.model] : []),
       ...(input.system ? ["--append-system-prompt", input.system] : []),
       ...(input.title ? ["--name", input.title] : []),
-    ])
+    ], input.model)
     try {
       const state = record(await process.request("get_state"))
       const id = text(state?.sessionId)
