@@ -20,7 +20,7 @@
  */
 
 import { createHash, randomUUID } from "crypto"
-import { eq, and, desc, inArray, sql } from "drizzle-orm"
+import { eq, and, asc, desc, inArray, sql } from "drizzle-orm"
 import { ClaxedoDB } from "../platform/db"
 import { ClaxedoProviderCredentialTable, SINGLE_TENANT_ORG } from "./provider-credential.sql"
 import { getBackend } from "./backend-registry"
@@ -604,6 +604,47 @@ export function updateCredentialHealth(
   )
 }
 
+/**
+ * Hand the mark to the oldest account the provider can still run on.
+ *
+ * Removing the marked account otherwise leaves the partition unmarked: the
+ * fanout sends nothing and the harness falls back to the machine login while
+ * a working account sits in the list. Same shape as the save-time yield —
+ * only an `available` row qualifies, and only auth the fanout may carry,
+ * which is the only kind the mark is ever set on.
+ *
+ * Runs inside the delete's own transaction: the partial unique index refuses
+ * to see two marks in one partition. Two accounts saved in the same
+ * millisecond share `created_at`, so insertion order decides between them and
+ * the same account is promoted on every machine.
+ */
+function markOldestAvailable(
+  db: ClaxedoDB.Client,
+  org: CredentialOrgScope,
+  partition: { provider_id: string; owner: string | null },
+) {
+  const heir = db
+    .select()
+    .from(ClaxedoProviderCredentialTable)
+    .where(
+      and(
+        inOrg(org),
+        eq(ClaxedoProviderCredentialTable.provider_id, partition.provider_id),
+        ownedBy(partition.owner),
+        eq(ClaxedoProviderCredentialTable.status, "available"),
+      ),
+    )
+    .orderBy(asc(ClaxedoProviderCredentialTable.created_at), sql`rowid`)
+    .all()
+    .find((candidate) => fanoutEligible(toMetadata(candidate)))
+  if (!heir) return undefined
+  db.update(ClaxedoProviderCredentialTable)
+    .set({ is_active: true, updated_at: now() })
+    .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, heir.id)))
+    .run()
+  return heir.id
+}
+
 /** Delete a credential and its backend secret. */
 export async function deleteCredential(
   id: string,
@@ -619,14 +660,19 @@ export async function deleteCredential(
     })
   }
 
-  ClaxedoDB.use((db) =>
-    db
-      .delete(ClaxedoProviderCredentialTable)
+  const marked = ClaxedoDB.transaction((db) => {
+    db.delete(ClaxedoProviderCredentialTable)
       .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
-      .run(),
-  )
+      .run()
+    return cred.is_active === true ? markOldestAvailable(db, org, cred) : undefined
+  })
 
-  log.info("Credential deleted", { id, org_id: credentialOrg(org), provider_id: cred.provider_id })
+  log.info("Credential deleted", {
+    id,
+    org_id: credentialOrg(org),
+    provider_id: cred.provider_id,
+    ...(marked === undefined ? {} : { marked_active: marked }),
+  })
 
   return true
 }

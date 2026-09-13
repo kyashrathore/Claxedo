@@ -582,6 +582,73 @@ describe("credential registry", () => {
         .toHaveLength(1)
     })
 
+    async function thirdAccount(providerId: string) {
+      return putCredential({
+        provider_id: providerId,
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_third",
+        label: "third",
+        secret: "third-secret",
+      })
+    }
+
+    test("removing the active account hands the mark to the oldest account left", async () => {
+      const { first, second } = await twoAccounts("active-remove")
+      const third = await thirdAccount("active-remove")
+      expect(first.is_active).toBe(true)
+
+      await deleteCredential(first.id)
+
+      expect(getCredential(second.id)?.is_active).toBe(true)
+      expect(getCredential(third.id)?.is_active).toBe(false)
+      expect(await resolveSecret("active-remove")).toBe("second-secret")
+      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-remove"))
+        .toMatchObject([{ id: second.id }])
+    })
+
+    test("the account that takes the mark is one the provider can still run on", async () => {
+      const { first, second } = await twoAccounts("active-remove-skip")
+      const third = await thirdAccount("active-remove-skip")
+      updateCredentialStatus(second.id, "expired")
+
+      await deleteCredential(first.id)
+
+      expect(getCredential(second.id)?.is_active).toBe(false)
+      expect(getCredential(third.id)?.is_active).toBe(true)
+      expect(await resolveSecret("active-remove-skip")).toBe("third-secret")
+    })
+
+    test("removing every account of a provider leaves nothing marked", async () => {
+      const { first, second } = await twoAccounts("active-remove-all")
+
+      await deleteCredential(first.id)
+      expect(getCredential(second.id)?.is_active).toBe(true)
+      await deleteCredential(second.id)
+
+      expect(listCredentials().filter((row) => row.provider_id === "active-remove-all")).toEqual([])
+      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-remove-all")).toEqual([])
+    })
+
+    test("removing the active account marks nothing when the rest are rejected", async () => {
+      const { first, second } = await twoAccounts("active-remove-rejected")
+      updateCredentialHealth(second.id, "auth_failed", 1234)
+
+      await deleteCredential(first.id)
+
+      expect(getCredential(second.id)).toMatchObject({ is_active: false, status: "error" })
+      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-remove-rejected"))
+        .toEqual([])
+    })
+
+    test("removing an account that never held the mark leaves the marked one alone", async () => {
+      const { first, second } = await twoAccounts("active-remove-inactive")
+
+      await deleteCredential(second.id)
+
+      expect(getCredential(first.id)?.is_active).toBe(true)
+    })
+
     test("setActiveCredentials moves the mark, and the fanout sends the account it moved to", async () => {
       const { first, second } = await twoAccounts("active-switch")
       expect(await resolveSecret("active-switch")).toBe("first-secret")
@@ -673,15 +740,6 @@ describe("credential registry", () => {
 
       expect(getCredential(first.id)?.is_active).toBe(true)
       expect(getCredential(second.id)?.is_active).toBe(false)
-    })
-
-    test("deleting the active account leaves the provider with none, and nothing is promoted", async () => {
-      const { first, second } = await twoAccounts("active-delete")
-
-      expect(await deleteCredential(first.id)).toBe(true)
-
-      expect(getCredential(second.id)?.is_active).toBe(false)
-      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-delete")).toEqual([])
     })
 
     test("a shared sandbox gets the active account or nothing, never another account of the same provider", async () => {

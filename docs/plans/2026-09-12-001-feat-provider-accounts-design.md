@@ -189,11 +189,13 @@ Multiple rows, one winner, chosen by an invisible sort order.
    uses the new account, because local runtimes are rebound through the
    loopback broker at the turn boundary and the operator is the only
    identity on the laptop.
-5. **Deleting the active row leaves the provider with no active account.**
-   Nothing is promoted. The row in Settings says "choose an account"; a new
-   sandbox for that provider falls to the team binding, else the implicit
-   tier. Sandboxes already bound to the deleted row lose it (broker doc,
-   withdraw), and the session says so.
+5. **Removing the active row hands the mark to the oldest account the
+   provider can still run on**, in the delete's own transaction; only an
+   `available` row qualifies, the same test the save-time yield applies.
+   With no such row the provider has no active account: the row in Settings
+   reads "In use: this computer's login", and a new sandbox falls to the team
+   binding, else the implicit tier. Sandboxes already bound to the removed row
+   lose it (broker doc, withdraw), and the session says so.
 6. **A saved row is active when it is the first for its provider.** A later
    save never steals the mark from a working account; an active row whose
    `status` is not `available` yields it. Without that yield, pasting a
@@ -274,9 +276,11 @@ Acceptance (checked 2026-09-13 against the branch's server on a copy of the desk
       on a selected account. Re-run with a real `claude setup-token` through
       the broker. Finding kept: Claude Code with an invalid key hangs rather
       than failing, and on 401 falls back to the OS keychain.
-- [ ] Deleting the active row: the row reads "choose an account"; the next
-      turn runs on the machine login and the session names it as such.
-      (Not run: the owner's machine Claude login is expired.)
+- [ ] Removing the active row: the mark moves to the oldest remaining
+      account, and with none left the row reads "In use: this computer's
+      login" and the next turn runs on the machine login.
+      (Not run live: the owner's machine Claude login is expired; covered by
+      `registry.test.ts` and `providers.vitest.tsx`.)
 - [x] Inserting two active rows for one `(owner, provider)` fails at the
       database, asserted by a test (`registry.test.ts`).
 - [x] `bun run test:architecture-ratchets` green; the affected packages'
@@ -357,8 +361,8 @@ what did not, and what each miss changes.
    This is why the app works locally without ever connecting a harness.
    "No active row means not connected" would break that. Change: the
    active choice has an implicit member, **this computer's login**, which
-   is the default whenever no stored row is active. Deleting the active row
-   returns the harness to it, visibly, rather than failing closed.
+   is the default whenever no stored row is active. Removing the last stored
+   account returns the harness to it, visibly, rather than failing closed.
 2. **Importing the Claude machine login makes it worse, not better.** The
    sync stores only the access token, with no refresh token and no expiry
    (`sync.ts:295`), nothing re-syncs it (the only callers are the explicit
