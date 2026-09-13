@@ -8,8 +8,10 @@ import { signedTasksIdentity, tasksRouteContribution } from "@claxedo/server-cor
 import { createTasksCapabilities } from "@claxedo/server-core/tasks-host/host-ports"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { TasksActor, TasksHostCapabilities, TasksSessionBridgePort } from "@claxedo/tasks"
+import type { TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
+import { verifyTasksCapability } from "./capability"
 import { createD1TasksStore } from "./d1-store"
 
 export type HostedTasksComposition = {
@@ -35,6 +37,12 @@ export type HostedTasksCompositionInput = {
    * saved and refused at every Start.
    */
   cloudSelectedCapabilities?: boolean
+  /**
+   * Where the runtime signing key lives. A deployment that names it accepts
+   * the capabilities it mints for its own cloud roots; one that does not
+   * serves Tasks to signed callers only.
+   */
+  signingEnv?: Record<string, string | undefined>
 }
 
 /** The signed request a Tasks actor was minted from, for authority calls that act as the caller. */
@@ -68,10 +76,23 @@ export function hostedTasksRuntimeClient(services: ControlPlaneServices): Worksp
  * route asks.
  */
 export function createHostedTasksComposition(input: HostedTasksCompositionInput): HostedTasksComposition {
+  const authority = requireAuthority(input.services)
+  const owners = authority.resolveWorkspaceOwner?.bind(authority)
+  const signingEnv = input.signingEnv
+  // Both halves or neither: a grant whose owner this deployment cannot look
+  // up would have to be believed on its own claims, so it is not accepted at
+  // all.
+  const capability: TasksCapabilityPort | undefined = signingEnv && owners
+    ? {
+        verify: async (token) => await verifyTasksCapability(token, signingEnv).catch(() => undefined),
+        workspaceOwner: owners,
+      }
+    : undefined
   const identity = signedTasksIdentity({
-    authority: requireAuthority(input.services),
+    authority,
     signed: (request) =>
       signedOrError(request, { authentication: input.authentication, requireSigned: true }, input.services),
+    ...(capability ? { capability } : {}),
   })
   // The same reading the workspace routes make before they will create a
   // cloud workspace at all: without a sandbox manager this deployment has no

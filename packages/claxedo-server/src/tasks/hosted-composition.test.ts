@@ -7,6 +7,7 @@
  * ever consulted.
  */
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { Hono } from "hono"
 import type { D1Database } from "@cloudflare/workers-types"
 import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
@@ -22,6 +23,7 @@ import {
   type ControlPlaneDatabase,
 } from "../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
+import { mintTasksCapability } from "./capability"
 import { createHostedTasksComposition } from "./hosted-composition"
 
 const TASKS = "/api/claxedo/tasks"
@@ -39,6 +41,11 @@ async function database(): Promise<D1Database> {
 
 /** alice belongs to org-1 and may write project-a; bob belongs to org-2 and may write nothing of alice's. */
 const ORGS: Record<string, string> = { alice: "org-1", bob: "org-2" }
+
+/** The one cloud root a capability can be minted for, and who the authority says owns it. */
+const WORKSPACE_OWNERS: Record<string, { userId: string; actorId: string; orgId: string; projectId: string }> = {
+  ws_root: { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-a" },
+}
 
 function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
   const sessionAuthority = {
@@ -60,6 +67,7 @@ function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
         ORGS[auth.user.subject] === "org-1" && args.projectId === "project-a" ? { ok: true, role: "admin", orgId: "org-1" } : { ok: false },
       ),
       authorizeSessionRead: vi.fn(async () => undefined),
+      resolveWorkspaceOwner: vi.fn(async (workspaceId: string) => WORKSPACE_OWNERS[workspaceId]),
       usersMe: vi.fn(async () => ({ user_id: "user-1" })),
       listOrgs: vi.fn(async () => [{ org_id: "org-1" }]),
       listWorkspaces: vi.fn(async () => []),
@@ -115,7 +123,10 @@ function reportingBridge(principal: TasksRuntimePrincipal): TasksSessionBridgePo
   }
 }
 
-async function hostedApp(sandbox: Record<string, unknown> = {}) {
+async function hostedApp(
+  sandbox: Record<string, unknown> = {},
+  options: { signingEnv?: Record<string, string | undefined> } = {},
+) {
   const base = plane(sandbox)
   const authentication = testRequestAuthenticationAdapter()
   const tasks = createHostedTasksComposition({
@@ -123,6 +134,7 @@ async function hostedApp(sandbox: Record<string, unknown> = {}) {
     database: await database(),
     authentication,
     bridge: reportingBridge,
+    ...(options.signingEnv ? { signingEnv: options.signingEnv } : {}),
   })
   const app = createHostedCoreApp(base, {
     authentication,
@@ -307,5 +319,189 @@ describe("hosted Tasks composition", () => {
 
     const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: headers("alice") })
     expect(((await listed.json()) as { items: unknown[] }).items).toHaveLength(1)
+  })
+})
+
+/**
+ * The same composition reached by the other credential it accepts: a
+ * capability this control plane minted for one cloud root, presented by that
+ * root's sessions. The routes, the store and the authority are the real ones;
+ * what the tests pin is who the request turns out to be and what it may do.
+ */
+describe("hosted Tasks capability", () => {
+  async function signing() {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    return {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
+    }
+  }
+
+  const grant = (
+    signingEnv: Record<string, string | undefined>,
+    scope: Partial<Parameters<typeof mintTasksCapability>[0]> = {},
+  ) => mintTasksCapability(
+    {
+      userId: "alice",
+      orgId: "org-1",
+      projectId: "project-a",
+      workspaceId: "ws_root",
+      sessionId: "ses_1",
+      operations: ["read", "create", "start"],
+      ...scope,
+    },
+    signingEnv,
+  )
+
+  const bearer = (token: string) => ({ authorization: `Bearer ${token}`, "content-type": "application/json" })
+
+  test("reads and writes the project of its own workspace", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv)
+
+    const created = await app.request(`https://core.test${TASKS}/commands`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({ clientRequestId: "agent-1", command: TASK }),
+    })
+    expect(created.status).toBe(200)
+
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })
+    expect(listed.status).toBe(200)
+    expect(((await listed.json()) as { items: unknown[] }).items).toHaveLength(1)
+  })
+
+  test("writes into the organization the workspace's owner belongs to, so the owner reads them back", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv)
+    await app.request(`https://core.test${TASKS}/commands`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({ clientRequestId: "agent-1", command: TASK }),
+    })
+
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: headers("alice") })
+    expect(((await listed.json()) as { items: [{ title: string }] }).items[0].title).toBe(TASK.input.title)
+  })
+
+  test("is refused when the workspace's owner is not the user the token names", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv, { userId: "bob" })
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })
+    expect(listed.status).toBe(403)
+    expect(await listed.json()).toMatchObject({ error: { message: expect.stringContaining("no longer answers") } })
+  })
+
+  test("is refused for a workspace this control plane does not know", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv, { workspaceId: "ws_elsewhere" })
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })
+    expect(listed.status).toBe(403)
+  })
+
+  test("is refused for a project that is not the scope's", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv)
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-b`, { headers: bearer(token) })
+    expect(listed.status).toBe(403)
+    expect(await listed.json()).toMatchObject({ error: { message: expect.stringContaining("project-a") } })
+
+    const created = await app.request(`https://core.test${TASKS}/commands`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({
+        clientRequestId: "agent-2",
+        command: { ...TASK, input: { ...TASK.input, projectId: "project-b" } },
+      }),
+    })
+    expect(created.status).toBe(403)
+  })
+
+  test("is refused an operation its scope does not carry", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv, { operations: ["read"] })
+
+    const created = await app.request(`https://core.test${TASKS}/commands`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({ clientRequestId: "agent-3", command: TASK }),
+    })
+    expect(created.status).toBe(403)
+    expect(await created.json()).toMatchObject({ error: { message: expect.stringContaining("does not allow create") } })
+
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })
+    expect(listed.status).toBe(200)
+  })
+
+  test("is refused every command but creating a task, whatever it was granted", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv)
+    const created = await command(app, "alice", "owner-task", TASK)
+    const taskId = (created.body.result as { task: { id: string } }).task.id
+
+    const archived = await app.request(`https://core.test${TASKS}/commands`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({
+        clientRequestId: "agent-4",
+        command: { type: "task.archive", input: { taskId, revision: 1 } },
+      }),
+    })
+    expect(archived.status).toBe(403)
+    expect(await archived.json()).toMatchObject({ error: { message: expect.stringContaining("cannot reach this command") } })
+  })
+
+  test("reaches Start as the workspace's owner", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv)
+    await command(app, "alice", "owner-preset", PRESET)
+    const created = await command(app, "alice", "owner-task", TASK)
+    const taskId = (created.body.result as { task: { id: string } }).task.id
+
+    const preview = await app.request(`https://core.test${TASKS}/tasks/${taskId}/start-preview`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({
+        taskRevision: 1,
+        presetId: await presetId(app, "alice"),
+        presetRevision: 1,
+        slot: "primary",
+        attempt: 1,
+        continueFromPrevious: false,
+      }),
+    })
+    // The stub bridge refuses every Start and reports the principal it was
+    // handed, which is what says the session this would reserve belongs to the
+    // workspace's owner rather than to the agent that asked.
+    expect(await preview.json()).toMatchObject({ error: { message: "principal actor:alice" } })
+  })
+
+  test("is refused by a deployment that mints none", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp()
+    const { token } = await grant(signingEnv)
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })
+    // Not a capability refusal: a plane that mints none reads the bearer as a
+    // signed token, and the project the grant named is one that stranger has
+    // no access to.
+    expect(listed.status).toBe(403)
+    expect(await listed.json()).toMatchObject({ error: { message: "No read access to project project-a" } })
+  })
+
+  test("is refused when another key signed it", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(await signing())
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })
+    expect(listed.status).toBe(403)
+    expect(await listed.json()).toMatchObject({ error: { message: "No read access to project project-a" } })
   })
 })

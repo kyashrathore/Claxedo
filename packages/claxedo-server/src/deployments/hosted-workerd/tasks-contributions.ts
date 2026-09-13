@@ -8,6 +8,7 @@ import {
   createHostedTasksSessionBridge,
   type HostedTasksSessionBridgeInput,
 } from "../../tasks/session-bridge"
+import { createTasksRootCapability } from "../../tasks/root-capability"
 
 /**
  * The hosted Tasks routes a Worker entry mounts, with the session bridge each
@@ -23,6 +24,9 @@ export function hostedTasksRouteContributions(
     selectedCapabilities?: NonNullable<HostedTasksSessionBridgeInput["selectedCapabilities"]>
   },
 ): readonly ControlPlaneRouteContribution[] {
+  // One signing key decides both halves: a deployment that can mint a root's
+  // Tasks grant is exactly the one whose routes will verify it.
+  const capability = input.signingEnv ? createTasksRootCapability({ signingEnv: input.signingEnv }) : undefined
   return createHostedTasksComposition({
     ...input,
     cloudSelectedCapabilities: Boolean(input.selectedCapabilities),
@@ -33,6 +37,7 @@ export function hostedTasksRouteContributions(
         principal,
         auth,
         ...(input.selectedCapabilities ? { selectedCapabilities: input.selectedCapabilities } : {}),
+        ...(capability ? { capability } : {}),
       }),
   }).routeContributions
 }

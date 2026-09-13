@@ -15,6 +15,7 @@ export const D1_CHANNEL_RUNTIME_AUTHORITY_METHODS = [
   "resolveRuntimeMachineAccess",
   "recordActorRuntimeAccessToken",
   "resolveChannelMachineAccess",
+  "resolveWorkspaceOwner",
   "recordChannelRuntimeAccessToken",
   "authorizeChannelProject",
   "authorizeChannelWorkspace",
@@ -194,6 +195,28 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     const who = await this.requireActor(args.actorId)
     if (args.actorKind !== who.actorKind) throw denied()
     return this.recordUserRuntimeToken(who, args)
+  }
+
+  /**
+   * Who a control-plane-minted credential naming this workspace acts as.
+   *
+   * The owner column alone would be an assertion about a row; the access read
+   * beside it is the recheck, so a workspace whose owner lost the project, the
+   * organization, or their account stops answering for any credential that
+   * names it.
+   */
+  async resolveWorkspaceOwner(workspaceId: string) {
+    const row = await this.database.prepare(`
+      select workspace.owner_user_id, workspace.project_id, actor.actor_id
+      from workspaces workspace
+      join users owner on owner.user_id = workspace.owner_user_id and owner.state = 'active'
+      join actors actor on actor.user_id = owner.user_id and actor.kind = 'human' and actor.state = 'active'
+      where workspace.workspace_id = ? and workspace.deleted_at is null
+    `).bind(requireText(workspaceId, "workspaceId")).first<{ owner_user_id: string; project_id: string; actor_id: string }>()
+    if (!row?.owner_user_id || !row.project_id || !row.actor_id) return undefined
+    const access = await this.workspaceAccess(row.owner_user_id, workspaceId)
+    if (!access || access.role_rank < actionRank("write")) return undefined
+    return { userId: row.owner_user_id, actorId: row.actor_id, orgId: access.org_id, projectId: row.project_id }
   }
 
   async resolveChannelMachineAccess(identity: ChannelMachineIdentity, workspaceId: string) {

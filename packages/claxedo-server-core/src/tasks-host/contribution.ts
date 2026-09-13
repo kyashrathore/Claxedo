@@ -19,6 +19,7 @@ import type {
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import {
+  capabilityTasksAuthenticate,
   createTasksAuthorization,
   createTasksPrincipals,
   signedTasksAuthenticate,
@@ -27,6 +28,7 @@ import {
   type TasksPrincipals,
   type TasksRuntimePrincipal,
 } from "./authorization"
+import type { TasksCapabilityPort } from "./capability"
 import { randomTasksIds, systemTasksClock } from "./host-ports"
 
 export type TasksRouteContributionInput = {
@@ -56,12 +58,21 @@ export type SignedTasksIdentity = {
 export function signedTasksIdentity(input: {
   authority: WorkspaceAuthority
   signed: SignedTasksAuthenticateInput["signed"]
+  /**
+   * The grant a session's agent carries. Absent on a deployment that mints
+   * none, and then a request is admitted only by the signed identity — which
+   * is what keeps a build with no capability minting from accepting one.
+   */
+  capability?: TasksCapabilityPort
 }): SignedTasksIdentity {
   const principals = createTasksPrincipals()
+  const signed = signedTasksAuthenticate({ authority: input.authority, principals, signed: input.signed })
   return {
     principals,
     authorization: createTasksAuthorization({ authority: input.authority, principals }),
-    authenticate: signedTasksAuthenticate({ authority: input.authority, principals, signed: input.signed }),
+    authenticate: input.capability
+      ? capabilityTasksAuthenticate({ capability: input.capability, principals, signed })
+      : signed,
     runtimePrincipal: signedTasksRuntimePrincipal(principals),
   }
 }

@@ -58,6 +58,8 @@ export type RuntimeActorIdentity = {
   actorAvatarUrl?: string
 }
 
+export type WorkspaceOwnerIdentity = { userId: string; actorId: string; orgId: string; projectId: string }
+
 export type WorkspaceRecord = {
   workspace_id?: string
   org_id?: string
@@ -127,6 +129,17 @@ export type WorkspaceAuthority = {
   resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
   recordActorRuntimeAccessToken: (args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => Promise<unknown>
   resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
+  /**
+   * The workspace's canonical owner, for a credential this control plane
+   * minted that carries no signed bearer of its own.
+   *
+   * Optional because only a deployment that mints such credentials can answer
+   * it, and a credential is refused where it is unanswered rather than
+   * admitted on what the credential itself claims. Undefined for a workspace
+   * that is gone, whose owner is no longer an active user, or who can no
+   * longer write to it.
+   */
+  resolveWorkspaceOwner?: (workspaceId: string) => Promise<WorkspaceOwnerIdentity | undefined>
   recordChannelRuntimeAccessToken: (identity: ChannelMachineIdentity, args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => Promise<unknown>
   // identity
   usersMe: (auth: SignedControlPlaneAuth) => Promise<unknown>

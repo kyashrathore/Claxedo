@@ -3,6 +3,7 @@ import { hostedSandboxDriver } from "../../authority/adapters/worker/hosted-sand
 import { createD1SandboxLeaseStore } from "../../sandbox/stores/d1"
 import {
   composeBetterAuthD1AgentPluginsCandidate,
+  stringEnvironment,
   type BetterAuthD1AgentPluginsCandidateWorkerEnv,
 } from "./better-auth-d1-candidate-worker.agent-plugins.cf"
 import { createBetterAuthD1CandidateWorker } from "./better-auth-d1-candidate-worker.cf"
@@ -22,12 +23,6 @@ export { LiveSyncRoom }
  * this Worker sees the same acquire/epoch state, which is what makes the
  * manager's stale-takeover and compare-and-set rules hold across isolates.
  */
-function stringEnvironment(env: BetterAuthD1AgentPluginsCandidateWorkerEnv): Record<string, string | undefined> {
-  return Object.fromEntries(
-    Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  )
-}
-
 const composition = settledCompositionCache(
   (env: BetterAuthD1AgentPluginsCandidateWorkerEnv) => {
     const driver = hostedSandboxDriver(stringEnvironment(env))

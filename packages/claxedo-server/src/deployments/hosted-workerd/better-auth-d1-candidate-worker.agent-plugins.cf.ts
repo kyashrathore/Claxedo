@@ -18,6 +18,15 @@ export type BetterAuthD1AgentPluginsCandidateWorkerEnv = BetterAuthD1CandidateWo
   CLAXEDO_CREDENTIALS?: CloudflareKvNamespaceBinding
 }
 
+/** The string-valued half of a Worker env, for the composers that read configuration rather than bindings. */
+export function stringEnvironment(
+  env: BetterAuthD1AgentPluginsCandidateWorkerEnv,
+): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  )
+}
+
 /**
  * The Agent Plugins composition over the plain candidate.
  *
@@ -48,6 +57,7 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
     selectedCapabilities: feature.selectedCapabilities,
+    signingEnv: stringEnvironment(env),
   })
   return {
     ...base,
