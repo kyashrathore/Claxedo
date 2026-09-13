@@ -1,6 +1,7 @@
+import { RadioGroup as KobalteRadio } from "@kobalte/core/radio-group"
 import { SegmentedControl as Kobalte } from "@kobalte/core/segmented-control"
 import { For, splitProps } from "solid-js"
-import type { ComponentProps, JSX } from "solid-js"
+import type { ComponentProps, JSX, ParentProps } from "solid-js"
 
 export type RadioGroupProps<T> = Omit<
   ComponentProps<typeof Kobalte>,
@@ -80,5 +81,55 @@ export function RadioGroup<T>(props: RadioGroupProps<T>) {
         </div>
       </div>
     </Kobalte>
+  )
+}
+
+export type RadioListProps = ParentProps<ComponentProps<typeof KobalteRadio>>
+
+/** A vertical list of choices, one row each, with the rows free to differ in width. */
+export function RadioList(props: RadioListProps) {
+  const [local, others] = splitProps(props, ["children", "class", "classList"])
+  return (
+    <KobalteRadio
+      {...others}
+      data-component="radio-list"
+      classList={{
+        "ui-radio-list": true,
+        ...local.classList,
+        [local.class ?? ""]: !!local.class,
+      }}
+    >
+      {local.children}
+    </KobalteRadio>
+  )
+}
+
+export type RadioListItemProps = ComponentProps<typeof KobalteRadio.Item> & {
+  label: JSX.Element
+  /** Trailing controls; they sit outside the label, so pressing one does not select the row. */
+  children?: JSX.Element
+}
+
+export function RadioListItem(props: RadioListItemProps) {
+  const [local, others] = splitProps(props, ["children", "class", "classList", "label"])
+  return (
+    <KobalteRadio.Item
+      {...others}
+      data-slot="radio-list-item"
+      classList={{
+        "ui-radio-list-item": true,
+        ...local.classList,
+        [local.class ?? ""]: !!local.class,
+      }}
+    >
+      <KobalteRadio.ItemInput data-slot="radio-list-item-input" />
+      <KobalteRadio.ItemControl data-slot="radio-list-item-control" class="ui-radio-list-item-control">
+        <KobalteRadio.ItemIndicator data-slot="radio-list-item-indicator" class="ui-radio-list-item-indicator" />
+      </KobalteRadio.ItemControl>
+      <KobalteRadio.ItemLabel data-slot="radio-list-item-label" class="ui-radio-list-item-label">
+        {local.label}
+      </KobalteRadio.ItemLabel>
+      {local.children}
+    </KobalteRadio.Item>
   )
 }
