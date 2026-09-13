@@ -1,4 +1,4 @@
-import { USAGE_WINDOW_NAMES } from "@claxedo/usage-contract"
+import { USAGE_WINDOW_NAMES } from "@claxedo/agent-runtime-contract"
 import { jsonNumber, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { CredentialVerificationError } from "../verification-error"

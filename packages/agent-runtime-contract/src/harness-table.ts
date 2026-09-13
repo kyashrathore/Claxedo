@@ -24,11 +24,10 @@ export type HarnessRecord = {
    * fallback.
    *
    * The order is load-bearing at both ends. A connect card stores under
-   * `connectProvider`, and a resolver that asks which stored row a turn will
-   * spend takes the first of these that has one. `claudeAuthValue` reads
-   * `claude-sdk` then `anthropic` and `cursorAuthValue` reads `cursor-sdk` then
-   * `cursor`, so a list that stopped at the aliases would drop a working
-   * account.
+   * `connectProvider`, and `harnessProjection` takes the first of these ids a
+   * projection map holds — so a Claude turn binds through `claude-sdk` when one
+   * is selected and through a plain `anthropic` key when it is not, and a list
+   * that stopped at the aliases would drop that key.
    */
   providerIds: readonly string[]
   /** The provider id a sign-in for this harness is stored against. */

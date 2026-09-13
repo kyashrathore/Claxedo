@@ -6,11 +6,11 @@
  * Codex app-server self-report, the machine-wide probe and Anthropic's OAuth
  * usage read — and each spells the same three windows differently. Naming,
  * clamping and reset parsing are here so a slot a vendor renames is renamed
- * once; `@claxedo/usage-contract` owns the names themselves, because the app
- * labels the same windows from the same table.
+ * once; `@claxedo/agent-runtime-contract` owns the names themselves, because
+ * the event adapter and the app label the same windows from the same table.
  */
 
-import { CODEX_WINDOW_NAME_BY_SECONDS, USAGE_WINDOW_NAMES } from "@claxedo/usage-contract"
+import { CODEX_WINDOW_NAME_BY_SECONDS, USAGE_WINDOW_NAMES } from "@claxedo/agent-runtime-contract"
 import { jsonNumber, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import type { CredentialUsageWindow } from "./types"
 

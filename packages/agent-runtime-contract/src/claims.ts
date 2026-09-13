@@ -11,6 +11,15 @@
 import { asRecord, asText } from "./values"
 
 /**
+ * Declared rather than taken from a lib: both are globals in every runtime this
+ * package ships to, and a consumer typechecking this source with a narrower
+ * `lib` than ours must not fail on them. A published contract cannot require
+ * its consumers' compiler flags to match its own.
+ */
+declare const atob: (data: string) => string
+declare const TextDecoder: { new (): { decode(input: Uint8Array): string } }
+
+/**
  * A JWT's payload as a record, or nothing when the value is not one.
  *
  * Decoded without `Buffer`, which this package cannot reach in a browser
@@ -23,7 +32,8 @@ export function jwtClaims(token: string | undefined): Record<string, unknown> | 
   const base64 = payload.replaceAll("-", "+").replaceAll("_", "/")
   try {
     const binary = atob(base64 + "=".repeat((4 - (base64.length % 4)) % 4))
-    return asRecord(JSON.parse(new TextDecoder().decode(Uint8Array.from(binary, (c) => c.charCodeAt(0)))))
+    const bytes = Uint8Array.from([...binary], (character) => character.charCodeAt(0))
+    return asRecord(JSON.parse(new TextDecoder().decode(bytes)))
   } catch {
     return undefined
   }
