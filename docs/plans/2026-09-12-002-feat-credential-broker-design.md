@@ -10,7 +10,8 @@ left standing.
 Native delivery into a cloud sandbox is built on `feat/sandbox-credential-delivery` for the
 supervisor rail — Daytona, Vercel and Cloudflare — and Appendix C describes it as code rather than
 as a draft. Not built there: the hosted rail's own credential store, and attribution of a vendor 401
-seen from inside a natively brokered sandbox. No live vendor turn has run through it.
+seen from inside a natively brokered sandbox. No live vendor turn has run through it, and two
+Daytona acceptance criteria named at the end of Appendix C remain unmet.
 Owner: Yash Rathore. Date: 2026-09-12.
 No backward compatibility anywhere in this design: old snapshot versions, existing hosted credential rows, and the consent flag are removed, not migrated (owner decision, 2026-09-12).
 Provenance: rewritten by Codex (`gpt-6-astra`) from the committed draft after its review of that draft; product rules and decisions taken by the owner the same night; the draft's tables are kept as appendices.
@@ -324,7 +325,7 @@ runtime token) and hands the whole desired set to the sandbox manager.
 
 | Driver | apply | rotate | withdraw | Projection |
 | --- | --- | --- | --- | --- |
-| daytona | `secret.create` per account with `hosts`; referenced at create as the env var it mounts | `secret.update` on the same name, so the mounted names do not change and the sandbox is not restarted | revoked sentinel value, then delete — on reconcile and on destroy | vendor origin; `placeholderEnv` names the mounted variable |
+| daytona | `secret.create` per account with `hosts`; referenced at create as the env var it mounts | `secret.update` on the same name, so the mounted names do not change and the sandbox is not restarted | reconcile writes the revoked value and empties `hosts`, keeping the name mounted; `destroy` deletes | vendor origin; `placeholderEnv` names the mounted variable |
 | vercel | policy union with a `transform` rule per host; the sandbox boots with the placeholder under the same variable | `update({networkPolicy})` with the new value | remove the rule | vendor origin; `placeholderEnv` names that variable |
 | cloudflare | `outboundByHost` registration per host sent server-to-server with the create call; the sandbox boots with the placeholder under the same variable | registration write; no sandbox call | registration write | vendor origin; `placeholderEnv` names that variable |
 | exe | `integrations add` (LLM integration for model accounts, HTTP proxy for the rest) attached to the VM over `/exec` | `integrations edit` | `integrations detach` then delete | `https://<name>.int.exe.xyz`; any dummy |
@@ -367,6 +368,18 @@ case) is provisioned with the valueless sentinel slot, so the mount exists from
 boot and connecting the first account only adds a name. The Docker auth-file
 copy and the Cloudflare `/egress` Worker route are deleted when their
 replacements land (5.3).
+
+**Two acceptance criteria of the Daytona rail are UNMET, and the rows above
+assume both.** Appendix E item 1 has still not been run, so nothing shows that
+Daytona substitutes a placeholder inside `x-api-key` rather than only inside
+`Authorization` — every Anthropic API-key account on that driver rests on it.
+And nothing shows that the placeholder a sandbox holds survives a
+`secret.update`: the runtime reads `process.env` once, in
+`normalizeRuntimeSnapshot`, so a provider that reissues the placeholder on
+rotation would leave the harness sending a string the edge no longer knows,
+and the no-restart rotation in the table would be wrong. Both are answered by
+the synthetic-value probe in `scratchpad/daytona-feasibility/`, which needs a
+Daytona key this branch has not had.
 
 **Not built here.** The hosted create and wake routes still forward only what
 `prepareRuntime` returns, because a signed user's accounts live in the hosted
