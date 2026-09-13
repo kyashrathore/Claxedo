@@ -696,6 +696,11 @@ describe("a brokered turn withholds the operator's Claude account", () => {
       awsCredentialExport: "/bin/aws-export",
       env: { AWS_BEARER_TOKEN_BEDROCK: "operator-bedrock", VERTEX_API_KEY: "operator-vertex", PAGER: "less" },
     }))
+    fs.writeFileSync(path.join(source, "cowork_settings.json"), JSON.stringify({
+      model: "haiku",
+      apiKeyHelper: "/bin/echo sk-ant-api03-cowork",
+      env: { ANTHROPIC_AUTH_TOKEN: "operator-cowork", TERM: "xterm" },
+    }))
     fs.writeFileSync(path.join(source, "CLAUDE.md"), "operator memory")
     fs.writeFileSync(path.join(source, ".claude.json"), '{"oauthAccount":{"emailAddress":"operator@example.test"}}')
     fs.writeFileSync(path.join(source, ".credentials.json"), '{"claudeAiOauth":{"accessToken":"operator-own-token"}}')
@@ -708,14 +713,21 @@ describe("a brokered turn withholds the operator's Claude account", () => {
       const root = brokeredClaudeConfigDir({ root: dirs.root, source: dirs.source })
 
       expect(fs.readdirSync(root).sort())
-        .toEqual(["CLAUDE.md", "plugins", "settings.json", "settings.local.json"])
+        .toEqual(["CLAUDE.md", "cowork_settings.json", "plugins", "settings.json", "settings.local.json"])
       expect(fs.existsSync(path.join(root, ".claude.json"))).toBe(false)
       expect(fs.existsSync(path.join(root, ".credentials.json"))).toBe(false)
       expect(fs.lstatSync(path.join(root, "settings.json")).isSymbolicLink()).toBe(false)
       expect(JSON.parse(fs.readFileSync(path.join(root, "settings.json"), "utf8")))
         .toEqual({ model: "opus", env: { EDITOR: "vim" } })
-      // `settings.local.json` is read alongside `settings.json` and reaches the
-      // vendor the same way; a link here would also let the turn edit it.
+      // `cowork_settings.json` is what the SDK reads from the config dir in
+      // place of `settings.json` once cowork plugins are on, so it names a
+      // credential by exactly the same routes.
+      expect(fs.lstatSync(path.join(root, "cowork_settings.json")).isSymbolicLink()).toBe(false)
+      expect(JSON.parse(fs.readFileSync(path.join(root, "cowork_settings.json"), "utf8")))
+        .toEqual({ model: "haiku", env: { TERM: "xterm" } })
+      // The SDK resolves `settings.local.json` from the git root, never from
+      // here. It is copied rather than linked because a link would put a write
+      // by the turn into the operator's own file.
       expect(fs.lstatSync(path.join(root, "settings.local.json")).isSymbolicLink()).toBe(false)
       expect(JSON.parse(fs.readFileSync(path.join(root, "settings.local.json"), "utf8")))
         .toEqual({ env: { PAGER: "less" } })

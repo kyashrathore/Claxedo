@@ -10,8 +10,13 @@ const ACCOUNT_ENTRIES = new Set([".claude.json", ".credentials.json"])
  * Every settings file this config dir owns. Each is copied and scrubbed rather
  * than linked, because a link would carry the operator's own credential routes
  * into a brokered turn and a write through it would edit their file.
+ *
+ * `@anthropic-ai/claude-agent-sdk@0.3.220` reads `cowork_settings.json` from
+ * the config dir in place of `settings.json` whenever the `coworkPlugins`
+ * option or `CLAUDE_CODE_USE_COWORK_PLUGINS` is set, so it names a credential
+ * by every route `settings.json` does.
  */
-const SETTINGS_ENTRIES = ["settings.json", "settings.local.json"] as const
+const SETTINGS_ENTRIES = ["settings.json", "settings.local.json", "cowork_settings.json"] as const
 
 /**
  * Settings keys that hand the CLI a credential of its own. `apiKeyHelper` runs
@@ -68,17 +73,17 @@ export function brokeredClaudeSettings(content: string | undefined): Record<stri
  *
  * Everything except the settings files is mirrored as a symlink, so memory,
  * agents, commands, skills, plugins and the transcript directories stay the
- * operator's own. `settings.json` and `settings.local.json` are copied instead,
- * scrubbed, because either can name a credential the account entries no longer
- * carry. `~/.claude.json` is not one of these entries — Claude Code writes it
- * inside the config dir, so a fresh one appears here and the operator's stays
- * untouched.
+ * operator's own. The settings files are copied and scrubbed instead: each can
+ * name a credential the account entries no longer carry, and a link would put
+ * a write by the turn into the operator's own file. `~/.claude.json` is not one
+ * of these entries — Claude Code writes it inside the config dir, so a fresh
+ * one appears here and the operator's stays untouched.
  *
  * The workspace's own `.claude/settings.json` and `.claude/settings.local.json`
- * are NOT covered: the CLI reads them from the working directory, which this
- * process must not rewrite, and no documented way to redirect that path was
- * confirmed. A repository that names a credential there still reaches the
- * vendor on it.
+ * are NOT covered: the SDK resolves both from the working directory and the
+ * canonical git root, which this process must not rewrite, and no documented
+ * way to redirect those paths was confirmed. A repository that names a
+ * credential there still reaches the vendor on it.
  */
 export function brokeredClaudeConfigDir(input: {
   root: string
