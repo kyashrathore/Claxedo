@@ -2,6 +2,7 @@ export const AGENT_RUNTIME_CONTRACT_VERSION = 1
 
 export * from "./availability"
 export * from "./capabilities"
+export * from "./claims"
 export * from "./connections"
 export * from "./content"
 export * from "./credential-broker-errors"

@@ -2,7 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "@claxedo/server-core/credentials/provider-auth/openai-oauth"
-import { accountIdFromClaims, emailFromClaims } from "@claxedo/server-core/credentials/secret-material"
+import { accountIdFromClaims, emailFromClaims } from "@claxedo/agent-runtime-contract"
 import { num, record, text } from "../../platform/json"
 
 const OPENAI_DEVICE_URL = `${OPENAI_ISSUER}/codex/device`

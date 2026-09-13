@@ -1,3 +1,4 @@
+import { accountIdFromClaims, emailFromClaims } from "@claxedo/agent-runtime-contract"
 import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import type { CredentialKind } from "@claxedo/server-core/credentials/types"
 
@@ -22,74 +23,6 @@ export type CredentialSecretMaterial = {
   /** The signed-in user's address, when the login's own claims carry it. */
   email?: string
   form: "api-key" | "subscription"
-}
-
-/**
- * The account's email address out of a login document's JWT claims.
- *
- * Which claim holds it depends on the issuer and on which token is present: a
- * ChatGPT `id_token` carries `email`, an access token often carries only
- * `preferred_username`, and the `https://api.openai.com/auth` namespace keeps
- * its own copy. The `@` test is what separates an address from a bare
- * username, which `preferred_username` is free to be.
- *
- * A secret that is not a JWT, or a payload that is not base64url JSON, names no
- * account — never an error, because a credential without an email is ordinary.
- */
-export function emailFromClaims(input: Record<string, unknown> | undefined): string | undefined {
-  const tokens = jsonRecord(input?.tokens)
-  return emailFromJwt(jsonString(input?.id_token) ?? jsonString(tokens?.id_token))
-    ?? emailFromJwt(
-      jsonString(input?.access_token) ?? jsonString(input?.access) ?? jsonString(tokens?.access_token),
-    )
-}
-
-/**
- * The ChatGPT account a login document names, out of the same JWT claims.
- *
- * The account id is what tells the Codex backend which plan a token spends, and
- * a login often carries it only inside the `id_token`. Read here rather than
- * through the harness runtime: interpreting a stored credential is the
- * credential authority's question, and taking it from a harness would make the
- * authority depend on the thing it hands credentials to.
- */
-export function accountIdFromClaims(input: Record<string, unknown> | undefined): string | undefined {
-  const tokens = jsonRecord(input?.tokens)
-  return accountIdFromJwt(jsonString(input?.id_token) ?? jsonString(tokens?.id_token))
-    ?? accountIdFromJwt(
-      jsonString(input?.access_token) ?? jsonString(input?.access) ?? jsonString(tokens?.access_token),
-    )
-}
-
-function accountIdFromJwt(token: string | undefined): string | undefined {
-  const claims = jwtClaims(token)
-  if (!claims) return undefined
-  const openai = jsonRecord(claims["https://api.openai.com/auth"])
-  if (jsonString(claims.chatgpt_account_id) ?? jsonString(openai?.chatgpt_account_id)) {
-    return jsonString(claims.chatgpt_account_id) ?? jsonString(openai?.chatgpt_account_id)
-  }
-  const organizations = claims.organizations
-  return Array.isArray(organizations) ? jsonString(jsonRecord(organizations[0])?.id) : undefined
-}
-
-/** A JWT's payload as a record, or nothing when the value is not one. */
-export function jwtClaims(token: string | undefined): Record<string, unknown> | undefined {
-  if (!token) return undefined
-  const payload = token.split(".")[1]
-  if (!payload) return undefined
-  try {
-    return jsonRecord(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")))
-  } catch {
-    return undefined
-  }
-}
-
-function emailFromJwt(token: string | undefined): string | undefined {
-  const claims = jwtClaims(token)
-  const openai = jsonRecord(claims?.["https://api.openai.com/auth"])
-  return [claims?.email, claims?.preferred_username, openai?.email]
-    .map(jsonString)
-    .find((item) => item !== undefined && item.includes("@"))
 }
 
 /** Anthropic's OAuth access token; every other secret on that provider is a key. */
