@@ -1,9 +1,10 @@
 import { Show, createEffect, createMemo } from "solid-js"
+import "./tasks.css"
 import type { TasksPage } from "@/platform/identity/route"
 import { useTasksAppPorts } from "../app-ports"
 import { useTasksScope } from "../data/queries"
 import { createTasksStore } from "../store/tasks-store"
-import { TaskDetailPage } from "./task-detail-page"
+import { TaskDetailPage } from "./detail/task-detail-page"
 import { TasksView } from "./tasks-view"
 
 export type TasksSurfaceProps = {

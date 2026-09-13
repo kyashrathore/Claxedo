@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/solid-query"
-import type { CapabilityCatalog, CapabilityOption } from "@claxedo/tasks/solid"
+import type { CapabilityCatalog, CapabilityOption } from "@/features/tasks/view-model"
 import { agentPluginApi, type PluginCandidate, type PluginCatalog } from "@/features/agent-plugins/api"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 

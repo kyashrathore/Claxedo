@@ -1,6 +1,6 @@
 import { TASKS_ROUTE_PATH, type Preset, type Task, type TaskStatus } from "@claxedo/tasks"
 import { TasksApiError, TasksClientPayloadError, createTasksClient, type TasksClient } from "@claxedo/tasks/client"
-import type { FieldErrors } from "@claxedo/tasks/solid"
+import type { FieldErrors } from "../view-model"
 import { queryKeys } from "@/platform/query/keys"
 
 export { TasksApiError, TasksClientPayloadError }

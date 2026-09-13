@@ -1,6 +1,6 @@
 import { createSignal } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
-import { TaskCreateDialog } from "@claxedo/tasks/solid"
+import { TaskCreateForm } from "./task-create-form"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../../app-ports"
 import { refusalOf, type TasksRefusal } from "../../data/tasks-api"
@@ -47,7 +47,7 @@ export function DialogCreateTask(props: DialogCreateTaskProps) {
 
   return (
     <Dialog title={props.parent ? "New subtask" : "New task"} fit>
-      <TaskCreateDialog
+      <TaskCreateForm
         draft={draft()}
         projects={projects()}
         proseEditor={ports.ProseEditor}

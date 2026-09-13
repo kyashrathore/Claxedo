@@ -1,7 +1,8 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/solid-query"
 import { createEffect, createMemo, type Accessor } from "solid-js"
 import type { Page, Preset, Task, TaskSummary, TasksCapabilities, TaskSessionLinkView } from "@claxedo/tasks"
-import type { ListFailure, MorePages } from "@claxedo/tasks/solid"
+import type { ListFailure } from "../ui/shared/list-failure"
+import type { MorePages } from "../ui/shared/load-more"
 import { useTasksAppPorts, type TasksScope } from "../app-ports"
 import { createTasksApi, refusalOf, tasksQueryKeys, type TaskListFilter } from "./tasks-api"
 

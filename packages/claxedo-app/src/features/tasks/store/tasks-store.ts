@@ -1,6 +1,7 @@
 import { createStore, produce } from "solid-js/store"
 import type { Preset, Task, TaskStatus, TaskSummary } from "@claxedo/tasks"
-import type { PresetEditorDraft, TaskCollection } from "@claxedo/tasks/solid"
+import type { PresetEditorDraft } from "../preset-editor-model"
+import type { TaskCollection } from "../view-model"
 import type { TasksRefusal } from "../data/tasks-api"
 
 export type TasksViewMode = "list" | "board"

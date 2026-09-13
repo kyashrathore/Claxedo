@@ -2,13 +2,10 @@ import { Show, createMemo, createSignal } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { TaskStatus, TaskSummary } from "@claxedo/tasks"
-import {
-  TASK_COLLECTION_LABELS,
-  TaskBoard,
-  TaskList,
-  type StartChoice,
-  type TaskStartOffer,
-} from "@claxedo/tasks/solid"
+import { TASK_COLLECTION_LABELS } from "../view-model"
+import { TaskBoard } from "./board/task-board"
+import { TaskList } from "./list/task-list"
+import { type StartChoice, type TaskStartOffer } from "./shared/task-row-controls"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf, type TaskListFilter } from "../data/tasks-api"

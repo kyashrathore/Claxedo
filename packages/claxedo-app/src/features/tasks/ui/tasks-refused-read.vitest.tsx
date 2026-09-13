@@ -8,8 +8,8 @@ import type { TasksPage } from "@/platform/identity/route"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import type { TasksScope } from "@/features/tasks/data/queries"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
-import { PresetsView } from "@/features/tasks/ui/presets-view"
-import { StartTaskFlow } from "@/features/tasks/ui/start-task-flow"
+import { PresetsView } from "@/features/tasks/ui/presets/presets-view"
+import { StartTaskFlow } from "@/features/tasks/ui/start/start-task-flow"
 
 afterEach(cleanup)
 

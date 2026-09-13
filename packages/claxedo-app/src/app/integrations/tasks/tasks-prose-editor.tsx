@@ -1,5 +1,5 @@
 import { Show, createMemo, createSignal } from "solid-js"
-import type { ProseEditorProps } from "@claxedo/tasks/solid"
+import type { ProseEditorProps } from "@/features/tasks/app-ports"
 import { RichMode } from "@/features/documents/editor/rich-mode"
 import { detectMarkdown, type MarkdownDetection, type RichMarkdown } from "@/features/documents/markdown/detector"
 import { splitMarkdownEnvelope } from "@/features/documents/markdown/frontmatter"

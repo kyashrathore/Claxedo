@@ -390,11 +390,20 @@ export const appLocal: Policy = {
   // +3 modules (2026-09-13): the contributed-settings-section registry
   // (`app/integrations/settings-sections.ts`) and the Presets section Tasks
   // registers through it (`app/integrations/tasks/settings-section.tsx` and
-  // `features/tasks/ui/presets-settings.tsx`). Reviewed owners: the shell's
+  // `features/tasks/ui/presets/presets-settings.tsx`). Reviewed owners: the shell's
   // contribution registry for the first, the gated Tasks module for the other
   // two, which this entry already reached through the Tasks content surface.
   // No new package edge. Measured 1051 / 58.
-  ceilings: { modules: 1051, packages: 58 },
+  // +18 modules (2026-09-13): the Tasks UI moved out of the @claxedo/tasks kit
+  // into features/tasks. The walker counts a workspace package as one edge and
+  // does not descend into it, so these eighteen were already in the artifact
+  // and only became visible here: the feature's view-model and preset-editor
+  // model; ui/tasks.css; ui/shared's status control, glyphs, row menu, load
+  // more, list failure, capability notice and row controls; the list; the
+  // board; the task detail and its subtasks; the preset list and editor; the
+  // start form; and the create form. The kit keeps domain, http, client and
+  // conformance, so its package edge is unchanged. Measured 1069 / 58.
+  ceilings: { modules: 1069, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

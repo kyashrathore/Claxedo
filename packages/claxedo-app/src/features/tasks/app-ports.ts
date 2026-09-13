@@ -1,9 +1,30 @@
 import type { Accessor, JSX } from "solid-js"
 import type { SessionReference } from "@claxedo/tasks"
 import type { TasksPage } from "@/platform/identity/route"
-import type { CapabilityCatalogReader, ConfigurationEditor, ProseEditor } from "@claxedo/tasks/solid"
+import type { ConfigurationEditor } from "./preset-editor-model"
+import type { CapabilityCatalogReader } from "./view-model"
 
 export type TasksProjectOption = { id: string; label: string }
+
+/**
+ * The Documents rich editor, as a component the app supplies.
+ *
+ * Markdown crosses this boundary in both directions — `value` is the stored
+ * string and `onChange` is handed the same — so whichever surface the app
+ * mounts, the record stays markdown. A component rather than a value because
+ * the editor belongs to another feature, which this one may not import.
+ */
+export type ProseEditorProps = {
+  value: string
+  placeholder: string
+  ariaLabel: string
+  /** Carried onto whichever control the app mounts, so a test can find the field. */
+  testId: string
+  onChange: (markdown: string) => void
+}
+
+export type ProseEditor = (props: ProseEditorProps) => JSX.Element
+
 
 /** The server and the cache partition a Tasks read belongs to. */
 export type TasksScope = { serverUrl: string; scopeId: string }

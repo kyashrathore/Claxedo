@@ -9,12 +9,12 @@ import {
   type SessionReference,
   type Task,
 } from "@claxedo/tasks"
-import { presetEditorDraftOf } from "@claxedo/tasks/solid"
+import { presetEditorDraftOf } from "../preset-editor-model"
 import { configureTasksAppPorts, type TasksAppPorts } from "@/features/tasks/app-ports"
 import type { TasksScope } from "@/features/tasks/data/queries"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
-import { PresetDraftEditor } from "@/features/tasks/ui/preset-draft-editor"
-import { TaskDetailPanel } from "@/features/tasks/ui/task-detail-panel"
+import { PresetDraftEditor } from "@/features/tasks/ui/presets/preset-draft-editor"
+import { TaskDetailPanel } from "@/features/tasks/ui/detail/task-detail-panel"
 
 afterEach(cleanup)
 

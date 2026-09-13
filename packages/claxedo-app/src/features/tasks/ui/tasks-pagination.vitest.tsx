@@ -7,8 +7,8 @@ import { TASKS_BOUNDS, TASKS_ROUTE_PATH, type Preset, type SessionReference, typ
 import type { TasksPage } from "@/platform/identity/route"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
-import { PresetsView } from "@/features/tasks/ui/presets-view"
-import { TaskDetailPage } from "@/features/tasks/ui/task-detail-page"
+import { PresetsView } from "@/features/tasks/ui/presets/presets-view"
+import { TaskDetailPage } from "@/features/tasks/ui/detail/task-detail-page"
 import { TasksView } from "@/features/tasks/ui/tasks-view"
 
 afterEach(cleanup)

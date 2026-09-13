@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, render, screen, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
-import { EMPTY_CONFIGURATION } from "@claxedo/tasks/solid"
+import { EMPTY_CONFIGURATION } from "@/features/tasks/preset-editor-model"
 
 const state = vi.hoisted(() => ({ projects: [] as { id: string; name: string; worktree: string }[] }))
 

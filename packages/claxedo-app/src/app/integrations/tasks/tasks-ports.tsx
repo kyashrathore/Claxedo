@@ -11,7 +11,8 @@ import { useOpenTaskSession } from "./open-task-session"
 import { useOpenTasksPage } from "./open-tasks-page"
 import { TASKS_PRESETS_SETTINGS_TAB } from "./settings-section"
 import { openSettings } from "@/features/settings/open-settings"
-import type { ConfigurationEditorProps, ProseEditorProps } from "@claxedo/tasks/solid"
+import type { ConfigurationEditorProps } from "@/features/tasks/preset-editor-model"
+import type { ProseEditorProps } from "@/features/tasks/app-ports"
 
 /**
  * The configuration control arrives with the Tasks chunk, not with the shell:

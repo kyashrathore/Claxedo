@@ -1,7 +1,7 @@
 import { Show, createEffect, createMemo, onMount } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { HarnessReference } from "@claxedo/tasks"
-import type { ConfigurationEditorProps } from "@claxedo/tasks/solid"
+import type { ConfigurationEditorProps } from "@/features/tasks/preset-editor-model"
 import { AgentHarnessSelector } from "@/features/session/ui/controls/agent-harness-selector"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
 import { panePreferenceScope } from "@/features/session/preferences/pane"

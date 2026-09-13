@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "description": "Optional Tasks and Presets kit: personal execution presets, project-owned tasks with subtasks and linked sessions, their rules, store ports, HTTP routes, client and Solid UI",
+  "description": "Optional Tasks and Presets kit: personal execution presets, project-owned tasks with subtasks and linked sessions, their rules, store ports, HTTP routes and client",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -38,13 +38,6 @@
       "development": "./src/conformance/index.ts",
       "import": "./src/conformance/index.ts",
       "default": "./src/conformance/index.ts"
-    },
-    "./solid": {
-      "types": "./src/solid/index.tsx",
-      "bun": "./src/solid/index.tsx",
-      "development": "./src/solid/index.tsx",
-      "import": "./src/solid/index.tsx",
-      "default": "./src/solid/index.tsx"
     }
   },
   "scripts": {
@@ -53,8 +46,7 @@
   },
   "dependencies": {
     "@claxedo/helpers": "workspace:*",
-    "hono": "4.10.7",
-    "solid-js": "1.9.12"
+    "hono": "4.10.7"
   },
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",

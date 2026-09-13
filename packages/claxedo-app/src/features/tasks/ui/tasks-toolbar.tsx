@@ -1,7 +1,7 @@
 import { For, Show, createSignal } from "solid-js"
 import { Popover } from "@opencode-ai/ui/popover"
 import { TASK_STATUSES, isTaskStatus } from "@claxedo/tasks"
-import { TASK_COLLECTIONS, TASK_COLLECTION_LABELS, TASK_STATUS_LABELS } from "@claxedo/tasks/solid"
+import { TASK_COLLECTIONS, TASK_COLLECTION_LABELS, TASK_STATUS_LABELS } from "../view-model"
 import type { TasksProjectOption } from "../app-ports"
 import type { TasksStore } from "../store/tasks-store"
 

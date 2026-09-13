@@ -448,7 +448,6 @@
       "dependencies": {
         "@claxedo/helpers": "workspace:*",
         "hono": "4.10.7",
-        "solid-js": "1.9.12",
       },
       "devDependencies": {
         "@tsconfig/node-lts": "22.0.4",

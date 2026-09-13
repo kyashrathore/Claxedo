@@ -9,8 +9,6 @@
     "target": "ES2022",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": ["bun"],
-    "jsx": "preserve",
-    "jsxImportSource": "solid-js",
     "noUncheckedIndexedAccess": false,
     "noEmit": true,
     "skipLibCheck": true

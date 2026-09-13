@@ -12,7 +12,7 @@ import type { SettingsContribution } from "@/app/integrations/registry"
  * editor arrives the first time the tab is opened.
  */
 const PresetsSettings = lazy(() =>
-  import("@/features/tasks/ui/presets-settings").then((module) => ({ default: module.PresetsSettings })),
+  import("@/features/tasks/ui/presets/presets-settings").then((module) => ({ default: module.PresetsSettings })),
 )
 
 /** The tab `DialogSettings` opens on when a Tasks surface sends the user here. */

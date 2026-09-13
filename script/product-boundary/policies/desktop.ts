@@ -437,7 +437,10 @@ export const desktopRendererUnsigned: Policy = {
   // reviews. No new package edge. Measured 1091 / 58.
   // +3 modules (2026-09-13): the same contributed-settings-section and Presets
   // owners app-local reviews. No new package edge. Measured 1094 / 58.
-  ceilings: { modules: 1094, packages: 58 },
+  // +18 modules (2026-09-13): the same moved Tasks UI owners app-local
+  // reviews, visible to the walker for the first time now that they are app
+  // modules rather than kit ones. No new package edge. Measured 1112 / 58.
+  ceilings: { modules: 1112, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

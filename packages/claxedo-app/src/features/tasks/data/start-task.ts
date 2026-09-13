@@ -1,5 +1,5 @@
 import type { ConfigurationSlot, SessionReference, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
-import { SLOT_LABELS, groupLinksBySlot, openableSlot, slotAttempt } from "@claxedo/tasks/solid"
+import { SLOT_LABELS, groupLinksBySlot, openableSlot, slotAttempt } from "../view-model"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf } from "./tasks-api"
