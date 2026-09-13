@@ -91,6 +91,51 @@ describe("control-plane Pi catalog", () => {
   })
 })
 
+describe("sign-in methods for a harness that runs on one account", () => {
+  const auth = (harness: string) =>
+    app.request(`/providers/auth?nativeHarness=${harness}`, { headers: { authorization: "Bearer org_a" } })
+
+  test("answers each native harness with its own provider's methods and nothing else", async () => {
+    const claude = await auth("claude")
+    expect(claude.status).toBe(200)
+    expect(await claude.json()).toEqual({
+      "claude-sdk": [
+        { type: "token", label: "Claude subscription token", command: "claude setup-token" },
+        { type: "api", label: "API Key" },
+      ],
+    })
+
+    const codex = await auth("codex")
+    expect(codex.status).toBe(200)
+    const codexMethods = (await codex.json())["codex-app-server"]
+    // The index is the whole answer: `provider.oauth.authorize` is keyed by it.
+    expect(codexMethods[0]).toEqual({ type: "oauth", label: "ChatGPT Pro/Plus (headless)" })
+    expect(codexMethods[1].type).toBe("api")
+
+    const cursor = await auth("cursor")
+    expect(cursor.status).toBe(200)
+    expect(await cursor.json()).toEqual({ "cursor-sdk": [{ type: "api", label: "API Key" }] })
+  })
+
+  test("refuses a harness it serves no login for, and an external connection", async () => {
+    for (const query of ["", "?nativeHarness=made-up", "?connectionId=remote", "?nativeHarness=codex&connectionId=remote"]) {
+      const response = await app.request(`/providers/auth${query}`, { headers: { authorization: "Bearer org_a" } })
+      expect(response.status).toBe(400)
+      expect((await response.json()).error.code).toBe("provider_catalog_unsupported")
+    }
+  })
+
+  test("still requires the credential owner's authentication", async () => {
+    const response = await app.request("/providers/auth?nativeHarness=codex")
+    expect(response.status).toBe(401)
+  })
+
+  test("the model catalog stays refused for a harness that has no catalog", async () => {
+    const response = await app.request("/providers?nativeHarness=codex", { headers: { authorization: "Bearer org_a" } })
+    expect(response.status).toBe(400)
+  })
+})
+
 describe("declaring a custom OpenAI-compatible provider", () => {
   test("persists the configuration under the signed tenant", async () => {
     const response = await putCustom("org_custom", ACME)

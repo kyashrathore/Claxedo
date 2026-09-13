@@ -2,6 +2,7 @@ import { setTimeout as sleep } from "node:timers/promises"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
 import { OPENAI_CLIENT_ID, OPENAI_ISSUER } from "@claxedo/server-core/credentials/provider-auth/openai-oauth"
+import { emailFromClaims } from "@claxedo/server-core/credentials/secret-material"
 import { num, record, text } from "../../platform/json"
 
 const OPENAI_DEVICE_URL = `${OPENAI_ISSUER}/codex/device`
@@ -227,6 +228,10 @@ export function createProviderAuthService(
 
     const expires = clock() + (tokens.expires_in ?? 3600) * 1000
     const accountId = extractAccountId(tokens)
+    // Every row the accounts list shows is named by its account. Without the
+    // address off the login's own claims each of a reader's ChatGPT logins is
+    // listed under the same words and none of them can be told apart.
+    const email = emailFromClaims({ ...(tokens.id_token ? { id_token: tokens.id_token } : {}), access_token: tokens.access_token })
     // Org-scoped writes: without the scope both statements ran against the
     // single-tenant partition, so a signed multi-org box wrote every tenant's
     // OAuth login into the same rows.
@@ -235,7 +240,7 @@ export function createProviderAuthService(
       provider_id: input.providerId,
       kind: "oauth_token",
       source: "managed",
-      label: input.providerId === "codex-app-server" ? "ChatGPT OAuth" : "OpenAI OAuth",
+      label: email ?? (input.providerId === "codex-app-server" ? "ChatGPT OAuth" : "OpenAI OAuth"),
       ...(accountId ? { account_id: accountId } : {}),
       expires_at: expires,
       secret: input.providerId === "codex-app-server"

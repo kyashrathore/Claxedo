@@ -162,8 +162,8 @@ describe("ProviderConnectForm method chooser", () => {
   })
 
   test("a harness whose server serves no method list still offers what the reader can paste", async () => {
-    // `/providers/auth` answers for the model-provider catalog only, so a
-    // native harness asks it and is refused; the pasted methods need no answer.
+    // A vendor the server serves no method list for: everything the reader
+    // pastes is named here, so the card is still usable without an answer.
     state.methods = []
     render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
 

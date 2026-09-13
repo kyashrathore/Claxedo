@@ -236,3 +236,67 @@ describe("provider-auth routes resolve the tenant the same way credential routes
     expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: SINGLE_TENANT_ORG }])
   })
 })
+
+describe("what a completed ChatGPT sign-in leaves behind", () => {
+  const jwt = (claims: Record<string, unknown>) =>
+    `header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`
+
+  /** Device flow whose token exchange returns an id_token carrying the account's claims. */
+  function chatgpt(claims: Record<string, unknown>) {
+    return (async (input: string | URL) => {
+      const url = input.toString()
+      if (url.endsWith("/api/accounts/deviceauth/usercode")) {
+        return json({ device_auth_id: "dev_1", user_code: "ABCD-EFGH", interval: "1" })
+      }
+      if (url.endsWith("/api/accounts/deviceauth/token")) {
+        return json({ authorization_code: "auth_code", code_verifier: "verifier" })
+      }
+      if (url.endsWith("/oauth/token")) {
+        return json({ id_token: jwt(claims), access_token: "access", refresh_token: "refresh", expires_in: 3600 })
+      }
+      return json({ error: "unexpected" }, 404)
+    }) as typeof fetch
+  }
+
+  test("the Codex harness's own row, named by the account, and nothing on the engine's provider", async () => {
+    const c = credentials()
+    const auth = createProviderAuthService(c.registry, {
+      now: () => 1_000,
+      sleep: async () => {},
+      pollingSafetyMs: 0,
+      fetch: chatgpt({ email: "person@example.com", chatgpt_account_id: "acct_9" }),
+    })
+
+    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    expect(await auth.callback({ providerId: "codex-app-server", org: "org-a" })).toBe(true)
+
+    expect(c.writes).toHaveLength(1)
+    expect(c.writes[0].input).toMatchObject({
+      provider_id: "codex-app-server",
+      kind: "oauth_token",
+      source: "managed",
+      label: "person@example.com",
+      account_id: "acct_9",
+    })
+    // `openai` is the vendor an engine runs models from; a Codex login is not one.
+    expect(c.writes.map((write) => write.input.provider_id)).not.toContain("openai")
+    expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: "org-a" }])
+
+    const secret: unknown = JSON.parse(c.writes[0].input.secret)
+    expect(secret).toMatchObject({ type: "codex_auth", auth_mode: "chatgpt", account_id: "acct_9" })
+  })
+
+  test("a login whose claims name no address still stores, under words a reader can place", async () => {
+    const c = credentials()
+    const auth = createProviderAuthService(c.registry, {
+      now: () => 1_000,
+      sleep: async () => {},
+      pollingSafetyMs: 0,
+      fetch: chatgpt({ chatgpt_account_id: "acct_9" }),
+    })
+
+    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    await auth.callback({ providerId: "codex-app-server", org: "org-a" })
+    expect(c.writes[0].input.label).toBe("ChatGPT OAuth")
+  })
+})

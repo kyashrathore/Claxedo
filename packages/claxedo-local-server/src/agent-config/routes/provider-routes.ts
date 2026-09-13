@@ -1,4 +1,5 @@
 import { Hono, type MiddlewareHandler } from "hono"
+import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 import {
   CustomProviderInvalidError,
   putCustomProvider,
@@ -21,12 +22,33 @@ import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../
  */
 const CATALOG_HARNESSES = new Set(["pi", "opencode"])
 
+/**
+ * The provider a native harness's own login is stored against.
+ *
+ * These harnesses run on one vendor's account and have no model catalog to
+ * pick from, so `/providers` still refuses them while `/providers/auth`
+ * answers with that provider's sign-in methods — the only way a caller learns
+ * the method index `provider.oauth.authorize` is keyed by.
+ *
+ * The list of methods is the server's to decide; the app joins its own words
+ * to this answer by method type and keeps no list of its own.
+ */
+const HARNESS_AUTH_PROVIDER = new Map<string, string>(Object.entries({
+  claude: "claude-sdk",
+  codex: "codex-app-server",
+  cursor: "cursor-sdk",
+} satisfies Partial<Record<RuntimeNativeHarnessId, string>>))
+
+function unsupportedHarness(message: string) {
+  return { error: { code: "provider_catalog_unsupported", message } } as const
+}
+
 export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions = {}) {
   const authOptions = { ...options, authConfig: options.authConfig ?? controlPlaneAuthConfig() }
   const requireCatalogHarness: MiddlewareHandler = async (c, next) => {
     const harness = c.req.query("nativeHarness")
     if (!harness || !CATALOG_HARNESSES.has(harness) || c.req.query("connectionId")) {
-      return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider catalog requires nativeHarness=pi or nativeHarness=opencode" } }, 400)
+      return c.json(unsupportedHarness("Provider catalog requires nativeHarness=pi or nativeHarness=opencode"), 400)
     }
     await next()
     return undefined
@@ -50,7 +72,20 @@ export function agentConfigProviderRoutes(options: ControlPlaneRouteAuthOptions 
         throw error
       }
     })
-    .get("/providers/auth", requireCatalogHarness, (c) => c.json(providerAuthMethods()))
+    .get("/providers/auth", (c) => {
+      const harness = c.req.query("nativeHarness")
+      if (!harness || c.req.query("connectionId")) {
+        return c.json(unsupportedHarness("Provider authentication requires a nativeHarness"), 400)
+      }
+      const methods = providerAuthMethods()
+      if (CATALOG_HARNESSES.has(harness)) return c.json(methods)
+      const providerId = HARNESS_AUTH_PROVIDER.get(harness)
+      const served = providerId === undefined ? undefined : methods[providerId]
+      if (providerId === undefined || served === undefined) {
+        return c.json(unsupportedHarness(`No sign-in methods are served for nativeHarness=${harness}`), 400)
+      }
+      return c.json({ [providerId]: served })
+    })
     /**
      * Declare an OpenAI-compatible provider for the caller's org.
      *

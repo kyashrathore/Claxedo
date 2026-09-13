@@ -1,11 +1,12 @@
 /**
  * What each vendor's sign-in methods are, and how a reader obtains one.
  *
- * The server names the methods it can run and gives each an index that
+ * The server decides which methods a provider has and gives each an index that
  * `provider.oauth.authorize` is keyed by, but it names them for an operator —
  * "ChatGPT Pro/Plus (headless)" says nothing about which plan pays for it or
- * where the key comes from. This table is the words, joined to the server's
- * list by method type so the index survives.
+ * where the key comes from. This table carries only the words, the commands
+ * and the key pages, joined to the server's list by method type so the index
+ * survives; it never adds a method the server did not offer.
  */
 
 export type ConnectMethodType = "oauth" | "token" | "api"
@@ -129,13 +130,14 @@ export function connectMethodOptions(
 }
 
 /**
- * The methods to offer when the server names none.
+ * The methods to offer when the server names none for this provider.
  *
- * `/providers/auth` serves the model-provider catalog and answers only for
- * `pi` and `opencode`, so a native harness — Claude Code, Codex, Cursor — asks
- * it and is refused. Everything a reader pastes needs no answer from it: the
- * command that mints a subscription token and the vendor's key page are both
- * in the table above. Only OAuth needs the server's index, so it is left out.
+ * `/providers/auth` answers for the providers a login can be stored against,
+ * which is fewer than the vendors an engine can run models from, and the
+ * answer can also fail to arrive. Everything a reader pastes needs no answer
+ * from it: the command that mints a subscription token and the vendor's key
+ * page are both in the table above. Only OAuth needs the server's index, so it
+ * is left out.
  */
 export function fallbackConnectMethods(
   providerId: string,

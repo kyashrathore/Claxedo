@@ -209,6 +209,25 @@ describe("control-plane query helpers", () => {
     expect((await query.queryFn()).openai?.[0]?.authenticated).toBe(true)
   })
 
+  test("a native harness's answer survives the reader, subscription-token method included", async () => {
+    const query = providerAuthQuery({
+      baseUrl: "http://example.test",
+      harnessType: "claude",
+      request: async () => Response.json({
+        "claude-sdk": [
+          { type: "token", label: "Claude subscription token", command: "claude setup-token" },
+          { type: "api", label: "API Key" },
+        ],
+      }),
+    })
+
+    // Rejecting the body would leave the card on its pasted-only fallback and
+    // the OAuth index — the one thing only the server can name — unreachable.
+    const body = await query.queryFn()
+    expect(body["claude-sdk"]?.map((method) => method.type)).toEqual(["token", "api"])
+    expect(body["claude-sdk"]?.[0]?.command).toBe("claude setup-token")
+  })
+
   test("provider auth for a workspace is a different entry from the central runtime's", () => {
     const central = providerAuthQuery({ baseUrl: "http://x", harnessType: "claude-sdk" }).queryKey
     const workspace = providerAuthQuery({

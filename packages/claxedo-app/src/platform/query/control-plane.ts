@@ -156,7 +156,7 @@ function providerCatalogBody(body: unknown, harnessType: string): ProviderListRe
 
 type AuthPrompt = NonNullable<ClaxedoProviderAuthMethod["prompts"]>[number]
 
-const AUTH_METHOD_TYPES = ["oauth", "api"] as const
+const AUTH_METHOD_TYPES = ["oauth", "api", "token"] as const
 const AUTH_PROMPT_TYPES = ["text", "select"] as const
 
 function isAuthPrompt(value: unknown): value is AuthPrompt {
