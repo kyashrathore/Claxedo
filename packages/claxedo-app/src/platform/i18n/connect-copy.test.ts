@@ -34,7 +34,8 @@ describe("connect-card copy", () => {
 
     test(`${entry.code} carries both the harness and the engine wording for every split key`, async () => {
       const dict = await loadDict(entry.code)
-      const missing = Object.values(CONNECT_CONTEXT_COPY).flatMap((base) =>
+      const bases: readonly string[] = Object.values(CONNECT_CONTEXT_COPY)
+      const missing = bases.flatMap((base) =>
         [`${base}.harness`, `${base}.engine`].filter((key) => !dict[key]))
 
       expect(missing).toEqual([])

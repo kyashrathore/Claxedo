@@ -72,13 +72,16 @@ export type ConnectContext =
  * `connectContextKey`, so a locale carrying one and not the other is a missing
  * string rather than a quiet fallback to the other sentence.
  */
-export const CONNECT_CONTEXT_COPY = {
+export const CONNECT_CONTEXT_COPY: Readonly<Record<
+  "title" | "context" | "autoVisitSuffix" | "codeVisitSuffix" | "connected",
+  string
+>> = {
   title: "provider.connect.title",
   context: "provider.connect.context",
   autoVisitSuffix: "provider.connect.oauth.auto.visit.suffix",
   codeVisitSuffix: "provider.connect.oauth.code.visit.suffix",
   connected: "provider.connect.toast.connected.description",
-} as const
+}
 
 export function connectContextKey(base: string, context: ConnectContext): string {
   return `${base}.${context.kind}`
