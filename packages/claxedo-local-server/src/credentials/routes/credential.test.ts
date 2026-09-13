@@ -27,6 +27,16 @@ function providerFetch(response: () => Response) {
   return vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => response())
 }
 
+/** Everything the server logger wrote while a request ran; `Log` targets stderr directly. */
+function captureStderr() {
+  const lines: string[] = []
+  const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+    lines.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"))
+    return true
+  })
+  return { lines: () => lines, stop: () => spy.mockRestore() }
+}
+
 function credentials(): ControlPlaneCredentials {
   return {
     listCredentials: vi.fn(async () => [{
@@ -172,6 +182,30 @@ describe("credential routes", () => {
       }
     `)
     expect(JSON.stringify({ preview, saved })).not.toContain("secret")
+  })
+
+  test("a discovery that throws names its cause in the body and in a warn log", async () => {
+    const registry = Object.assign(credentials(), {
+      discoverLocalCredentials: vi.fn(async () => {
+        throw new Error("User agent config contains invalid JSON")
+      }),
+    })
+    const logged = captureStderr()
+
+    const response = await CredentialRoutes(registry).request("http://localhost/discover", { method: "POST" })
+    const body = await response.json()
+    logged.stop()
+
+    expect(response.status).toBe(500)
+    expect(body).toEqual({
+      error: {
+        code: "credential_discovery_failed",
+        message: "Failed to discover credentials",
+        details: { detail: { name: "Error", message: "User agent config contains invalid JSON" } },
+      },
+    })
+    expect(logged.lines().join("")).toContain("WARN  Credential discovery failed")
+    expect(logged.lines().join("")).toContain("User agent config contains invalid JSON")
   })
 
   test("fails closed when discovery is stale or unknown without exposing details", async () => {
@@ -489,6 +523,12 @@ describe("credential routes", () => {
         "verify": {
           "error": {
             "code": "credential_verification_failed",
+            "details": {
+              "detail": {
+                "message": "Credential provider does not support verification",
+                "name": "Error",
+              },
+            },
             "message": "Credential verification failed",
           },
         },
@@ -517,10 +557,66 @@ describe("credential routes", () => {
       error: {
         code: "credential_verification_failed",
         message: "Credential verification failed",
+        details: { detail: { name: "Error", message: "Credential provider request failed" } },
       },
     })
     expect(JSON.stringify(body)).not.toContain(secret)
     expect(registry.updateCredentialHealth).not.toHaveBeenCalled()
+  })
+
+  test("a verification failure names its cause in the body and in a warn log", async () => {
+    const row = { ...(await credentials().listCredentials())[0], health: null }
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async () => row),
+      resolveCredentialSecretById: vi.fn(async () => "sk-live-1"),
+      updateCredentialHealth: vi.fn(async () => {
+        throw new TypeError("credential store is closed")
+      }),
+    })
+    const app = CredentialRoutes(registry, {
+      fetch: providerFetch(() => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+    })
+    const logged = captureStderr()
+
+    const response = await app.request("http://localhost/cred_1/verify", { method: "POST" })
+    const body = await response.json()
+    logged.stop()
+
+    expect(response.status).toBe(500)
+    expect(body).toEqual({
+      error: {
+        code: "credential_verification_failed",
+        message: "Credential verification failed",
+        details: { detail: { name: "TypeError", message: "credential store is closed" } },
+      },
+    })
+    expect(logged.lines().join("")).toContain("WARN  Credential verification failed")
+    expect(logged.lines().join("")).toContain("credential store is closed")
+  })
+
+  test("a cause that quotes the secret reaches neither the body nor the log", async () => {
+    const secret = "sk-live-do-not-log"
+    const row = { ...(await credentials().listCredentials())[0], health: null }
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async () => row),
+      resolveCredentialSecretById: vi.fn(async () => secret),
+      updateCredentialHealth: vi.fn(async () => {
+        throw new Error(`store rejected ${secret}`)
+      }),
+    })
+    const app = CredentialRoutes(registry, {
+      fetch: providerFetch(() => new Response("{}", { status: 200 })) as unknown as typeof fetch,
+    })
+    const logged = captureStderr()
+
+    const response = await app.request("http://localhost/cred_1/verify", { method: "POST" })
+    const body = await response.json()
+    logged.stop()
+
+    expect(response.status).toBe(500)
+    expect(JSON.stringify(body)).not.toContain(secret)
+    expect(logged.lines().join("")).not.toContain(secret)
+    expect(JSON.stringify(body)).toContain("store rejected [redacted]")
   })
 
   test("uses injected credential registry and redacts secret references", async () => {

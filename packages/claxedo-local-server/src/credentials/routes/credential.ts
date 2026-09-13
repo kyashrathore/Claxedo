@@ -22,6 +22,23 @@ import {
   type ControlPlaneAuthContext,
 } from "@claxedo/server-core/platform/auth/auth"
 import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-credential.sql"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+
+const log = Log.create({ service: "credential-routes" })
+
+/**
+ * What went wrong, in the two fields a caller can act on. The stack never
+ * travels — only the name and the message.
+ *
+ * `secret` is struck from the message wherever the handler holds one: a driver
+ * or platform error can quote the value it was handed, and this detail is
+ * written to a log line and to an HTTP body.
+ */
+function failureDetail(error: unknown, secret?: string) {
+  const name = error instanceof Error ? error.name : "Error"
+  const message = error instanceof Error ? error.message : String(error)
+  return { name, message: secret ? message.split(secret).join("[redacted]") : message }
+}
 
 const putBody = z.object({
   provider_id: z.string().min(1),
@@ -236,8 +253,10 @@ export function CredentialRoutes(
       }
       try {
         return c.json(await credentials.discoverLocalCredentials(org(c.req.raw)))
-      } catch {
-        return c.json(errorBody("credential_discovery_failed", "Failed to discover credentials"), 500)
+      } catch (error) {
+        const detail = failureDetail(error)
+        log.warn("Credential discovery failed", detail)
+        return c.json(errorBody("credential_discovery_failed", "Failed to discover credentials", { detail }), 500)
       }
     })
     .post("/save-discovered", async (c) => {
@@ -295,10 +314,10 @@ export function CredentialRoutes(
         await credentials.updateCredentialHealth(id, health, verifiedAt, scope)
         return c.json({ result: health, health, verified_at: verifiedAt, ...(usage ? { usage } : {}) })
       } catch (error) {
-        if (error instanceof CredentialVerificationError) {
-          return c.json(errorBody("credential_verification_failed", "Credential verification failed"), 502)
-        }
-        return c.json(errorBody("credential_verification_failed", "Credential verification failed"), 500)
+        const detail = failureDetail(error, secret)
+        log.warn("Credential verification failed", { credential_id: id, ...detail })
+        const status = error instanceof CredentialVerificationError ? 502 : 500
+        return c.json(errorBody("credential_verification_failed", "Credential verification failed", { detail }), status)
       }
     })
     .post("/activate", async (c) => {

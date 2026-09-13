@@ -61,7 +61,12 @@ async function claxedoCredentialErrorMessage(res: Response) {
 
   try {
     const body: unknown = JSON.parse(text)
-    const nested = readString(readField(body, "error"), "message")
+    const failure = readField(body, "error")
+    // The cause the route logged, when it sent one. "Failed to discover
+    // credentials" names the route; only this names what broke inside it.
+    const cause = readString(readField(readField(failure, "details"), "detail"), "message")
+    if (cause?.trim()) return cause
+    const nested = readString(failure, "message")
     if (nested?.trim()) return nested
     const error = readString(body, "error")
     if (error?.trim()) return error

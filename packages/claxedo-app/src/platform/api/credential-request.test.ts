@@ -54,4 +54,27 @@ describe("claxedoCredentialRequest", () => {
       "http://127.0.0.1:3001/api/claxedo/credentials/cred%2Fid/verify",
     ])
   })
+
+  test("a failure reports the cause the route sent, not its own generic sentence", async () => {
+    globalThis.fetch = (async () =>
+      Response.json({
+        error: {
+          code: "credential_discovery_failed",
+          message: "Failed to discover credentials",
+          details: { detail: { name: "Error", message: "User agent config contains invalid JSON" } },
+        },
+      }, { status: 500 })) as typeof fetch
+
+    await expect(claxedoCredentialRequest({ action: "discover" }, { method: "POST" }))
+      .rejects.toThrow("User agent config contains invalid JSON")
+  })
+
+  test("a failure that carries no cause still reports the route's own message", async () => {
+    globalThis.fetch = (async () =>
+      Response.json({ error: { code: "credential_not_found", message: "Credential not found" } },
+        { status: 404 })) as typeof fetch
+
+    await expect(claxedoCredentialRequest({ credentialId: "cred_1" }, { method: "DELETE" }))
+      .rejects.toThrow("Credential not found")
+  })
 })
