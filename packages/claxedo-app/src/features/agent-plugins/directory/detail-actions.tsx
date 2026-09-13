@@ -18,8 +18,10 @@ import { defaultOutcome, isBuiltIn, isInstalled, pluginLabel } from "./view"
  * them: a greyed-out row invites a support question, an absent one does not.
  *
  * The built-in has no artifact to add, take or hand to an organization, so it
- * reaches only the Enable/Disable button and the one item that gives the
- * decision back to the default.
+ * reaches only the main button and the one item that gives the decision back
+ * to the defaults. Its off state is restored rather than enabled: turning every
+ * group on would turn Tasks on, and the deployment default leaves it off, so a
+ * button saying "Enable" would hand back six groups of eight and read as a bug.
  */
 export function PluginActions(props: {
   plugin: PluginCandidate
@@ -63,7 +65,7 @@ export function PluginActions(props: {
             }
           >
             <Button size="small" variant="primary" disabled={props.pending || !mutable()} onClick={() => props.onActivate(true)}>
-              {props.pending ? "Applying…" : "Enable"}
+              {props.pending ? "Applying…" : builtIn() ? "Restore defaults" : "Enable"}
             </Button>
           </Show>
         }
@@ -74,13 +76,26 @@ export function PluginActions(props: {
       </Show>
 
       <OverflowMenu label={`More actions for ${pluginLabel(props.plugin)}`}>
-        <OverflowItem
-          disabled={props.pending}
-          onSelect={() => props.onActivate(null)}
-          hint={`Follow the ${outcome().authority} default — it would be ${outcome().enabled ? "enabled" : "disabled"}`}
+        <Show
+          when={builtIn()}
+          fallback={
+            <OverflowItem
+              disabled={props.pending}
+              onSelect={() => props.onActivate(null)}
+              hint={`Follow the ${outcome().authority} default — it would be ${outcome().enabled ? "enabled" : "disabled"}`}
+            >
+              Clear my override
+            </OverflowItem>
+          }
         >
-          Clear my override
-        </OverflowItem>
+          <OverflowItem
+            disabled={props.pending}
+            onSelect={() => props.onActivate(null)}
+            hint="Every group goes back to its default"
+          >
+            Restore defaults
+          </OverflowItem>
+        </Show>
         <Show when={canManageOrganization()}>
           <Show
             when={organizationDefaultEnabled()}

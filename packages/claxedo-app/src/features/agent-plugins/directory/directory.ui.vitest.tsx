@@ -874,7 +874,7 @@ describe("Agent Plugin Directory built-in server", () => {
     )).toBeTruthy()
   })
 
-  test("a built-in that is off is still never offered for install: no Add anywhere, Enable only in the pane", async () => {
+  test("a built-in that is off is never offered for install, and is restored rather than enabled", async () => {
     // A sourced candidate in this state — no retained bytes, no reachable
     // source — earns a disabled "Add" on its card. The built-in earns nothing.
     await renderDirectory({ catalog: withBuiltIn({ installed: false }) })
@@ -885,7 +885,10 @@ describe("Agent Plugin Directory built-in server", () => {
 
     const pane = await openPane("claxedo")
     expect(within(pane).queryByRole("button", { name: "Add" })).toBeNull()
-    expect(within(pane).getByRole("button", { name: "Enable" })).not.toBeDisabled()
+    // Never "Enable": restoring leaves Tasks off, which an Enable label would
+    // promise it had turned on.
+    expect(within(pane).queryByRole("button", { name: "Enable" })).toBeNull()
+    expect(within(pane).getByRole("button", { name: "Restore defaults" })).not.toBeDisabled()
     // `sourceAvailable: false` is how the built-in says it has no source at
     // all, not that the source it has went missing.
     expect(within(pane).queryByText(/Source unavailable/)).toBeNull()
@@ -902,7 +905,7 @@ describe("Agent Plugin Directory built-in server", () => {
 
     expect(within(pane).getByRole("button", { name: "Disable" })).toBeTruthy()
     expect(within(pane).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-      expect.stringContaining("Clear my override"),
+      expect.stringContaining("Restore defaults"),
     ])
   })
 
@@ -999,11 +1002,11 @@ describe("Agent Plugin Directory built-in server", () => {
       .toEqual([4, 5, 6, 7, 8, 9, 10, 11])
   })
 
-  test("Enable clears every group rather than granting Tasks the user never consented to", async () => {
+  test("Restore defaults clears every group rather than granting Tasks the user never consented to", async () => {
     const { recorded } = await renderDirectory({ catalog: withBuiltIn({ installed: false }) })
     const pane = await openPane("claxedo")
 
-    await fireEvent.click(within(pane).getByRole("button", { name: "Enable" }))
+    await fireEvent.click(within(pane).getByRole("button", { name: "Restore defaults" }))
 
     const posts = () => posted(recorded, "/api/claxedo/plugins/activation")
     await waitFor(() => expect(posts()).toHaveLength(8))
