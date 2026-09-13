@@ -273,12 +273,6 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 
   /**
-   * A brokered turn also withholds the operator's Claude Code account: the CLI
-   * prefers a configured account over the placeholder, so leaving one visible
-   * means the projection is never sent. Without a projection nothing is
-   * withheld and the harness runs on that account exactly as before.
-   */
-  /**
    * The binding this spawn runs on, refused when the placeholder it holds has
    * already expired. Spawning on an expired one sends the vendor a token it
    * will reject, and that 401 is then attributed to the operator's account
@@ -288,17 +282,20 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     return liveProviderBinding("claude", this.auth.anthropic)
   }
 
+  /**
+   * A brokered turn also withholds the operator's Claude Code account: the CLI
+   * prefers a configured account over the placeholder, so leaving one visible
+   * means the projection is never sent. Without a projection nothing is
+   * withheld and the harness runs on that account exactly as before.
+   *
+   * The config dir is rebuilt per spawn because the operator edits their own
+   * settings between turns, and a dir built once would pin the first version.
+   */
   private spawnEnv(binding: ProviderBinding | undefined, extra: Record<string, string> = {}) {
     return claudeSpawnEnv({
       ...process.env,
       ...claudeAuthEnv(binding),
-      ...(binding
-        ? {
-          CLAUDE_CONFIG_DIR: this.driverOptions.brokeredConfigDir
-            ? brokeredClaudeConfigDir(this.driverOptions.brokeredConfigDir)
-            : brokeredClaudeConfigDir(),
-        }
-        : {}),
+      ...(binding ? { CLAUDE_CONFIG_DIR: brokeredClaudeConfigDir(this.driverOptions.brokeredConfigDir) } : {}),
       ...extra,
     })
   }

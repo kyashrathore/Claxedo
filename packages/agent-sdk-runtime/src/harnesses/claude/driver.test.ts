@@ -737,6 +737,24 @@ describe("a brokered turn withholds the operator's Claude account", () => {
     }
   })
 
+  test("an entry Claxedo does not name stays out of the brokered dir", () => {
+    const dirs = configDirs()
+    try {
+      // The next Claude Code release can add an account file under any name; a
+      // list of the ones known today would mirror it the day it ships.
+      fs.writeFileSync(path.join(dirs.source, "oauth-account.json"), '{"accessToken":"operator-own-token"}')
+      fs.mkdirSync(path.join(dirs.source, "sessions"))
+
+      const root = brokeredClaudeConfigDir({ root: dirs.root, source: dirs.source })
+
+      expect(fs.existsSync(path.join(root, "oauth-account.json"))).toBe(false)
+      expect(fs.existsSync(path.join(root, "sessions"))).toBe(false)
+      expect(fs.existsSync(path.join(root, "CLAUDE.md"))).toBe(true)
+    } finally {
+      fs.rmSync(dirs.base, { recursive: true, force: true })
+    }
+  })
+
   test("state Claude Code wrote into the dir survives, a stale mirror does not", () => {
     const dirs = configDirs()
     try {

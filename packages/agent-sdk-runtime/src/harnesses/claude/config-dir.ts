@@ -3,8 +3,26 @@ import os from "node:os"
 import path from "node:path"
 import { asRecord } from "@claxedo/helpers/guards"
 
-/** The entries that carry a signed-in account rather than configuration. */
-const ACCOUNT_ENTRIES = new Set([".claude.json", ".credentials.json"])
+/**
+ * The entries of the operator's `~/.claude` this config dir mirrors.
+ *
+ * An allowlist rather than a denylist of the account files: Claude Code adds
+ * entries across releases, and a new one that carried an account would be
+ * mirrored by a denylist the moment it shipped — which is the one failure this
+ * directory exists to prevent. An entry Claxedo does not name is simply absent
+ * from a brokered turn.
+ */
+const MIRRORED_ENTRIES = new Set([
+  "CLAUDE.md",
+  "memory",
+  "agents",
+  "commands",
+  "skills",
+  "plugins",
+  "projects",
+  "todos",
+  "history.jsonl",
+])
 
 /**
  * Every settings file this config dir owns. Each is copied and scrubbed rather
@@ -71,13 +89,13 @@ export function brokeredClaudeSettings(content: string | undefined): Record<stri
  * own OAuth bearer and the broker placeholder is never used. Withholding the
  * account is therefore what makes a projection reach the vendor at all.
  *
- * Everything except the settings files is mirrored as a symlink, so memory,
- * agents, commands, skills, plugins and the transcript directories stay the
- * operator's own. The settings files are copied and scrubbed instead: each can
- * name a credential the account entries no longer carry, and a link would put
- * a write by the turn into the operator's own file. `~/.claude.json` is not one
- * of these entries — Claude Code writes it inside the config dir, so a fresh
- * one appears here and the operator's stays untouched.
+ * The entries in `MIRRORED_ENTRIES` are symlinked, so memory, agents, commands,
+ * skills, plugins and the transcript directories stay the operator's own.
+ * Nothing else crosses. The settings files are copied and scrubbed instead:
+ * each can name a credential no account entry carries, and a link would put a
+ * write by the turn into the operator's own file. Claude Code writes its own
+ * `.claude.json` inside this config dir, so a fresh one appears here and the
+ * operator's stays untouched.
  *
  * The workspace's own `.claude/settings.json` and `.claude/settings.local.json`
  * are NOT covered: the SDK resolves both from the working directory and the
@@ -92,8 +110,7 @@ export function brokeredClaudeConfigDir(input: {
   const source = input.source ?? path.join(os.homedir(), ".claude")
   fs.mkdirSync(input.root, { recursive: true, mode: 0o700 })
   const present = fs.existsSync(source) ? fs.readdirSync(source) : []
-  const mirrored = present.filter((name) =>
-    !ACCOUNT_ENTRIES.has(name) && !SETTINGS_ENTRIES.some((entry) => entry === name))
+  const mirrored = present.filter((name) => MIRRORED_ENTRIES.has(name))
   for (const name of mirrored) {
     const link = path.join(input.root, name)
     // Only a link this function owns is replaced. A real file or directory here
