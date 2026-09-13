@@ -80,33 +80,25 @@ describe("AgentHarnessRow header", () => {
     expect(header.querySelector("button")).toBeNull()
   })
 
-  test("a harness with nothing set up offers Connect and nothing else", () => {
-    row({ action: { kind: "connect" }, accounts: [] })
+  test("a harness with no account at all offers Add an account, and nests no link under the empty list", () => {
+    row({ accounts: [] })
 
     const actions = document.querySelectorAll('[data-component="provider-actions"] button')
     expect(actions).toHaveLength(1)
-    expect(actions[0].textContent).toBe("common.connect")
+    expect(actions[0].textContent).toBe("settings.providers.agents.addFirstAccount")
+    expect(document.querySelector('[data-action="agent-add-account"]')).toBeNull()
 
     fireEvent.click(actions[0])
 
     expect(screen.getByTestId("connect-form").dataset.credential).toBe("")
   })
 
-  test("a refused account in use offers Reconnect, which opens the card on that same row", () => {
-    row({
-      action: { kind: "reconnect", credentialId: "cred_1" },
-      accounts: [account({ refused: "settings.providers.live.authFailed" })],
-    })
+  test("a harness with an account offers no header button, and nests the add link under the rows", () => {
+    row()
 
-    const actions = document.querySelectorAll('[data-component="provider-actions"] button')
-    expect(actions).toHaveLength(1)
-    expect(actions[0].textContent).toBe("settings.providers.agents.reconnectAccount")
-
-    fireEvent.click(actions[0])
-
-    expect(screen.getByTestId("connect-form").dataset.credential).toBe("cred_1")
-    expect(document.querySelector('[data-component="provider-connect-card"]')?.getAttribute("data-credential"))
-      .toBe("cred_1")
+    expect(document.querySelector('[data-component="provider-actions"] button')).toBeNull()
+    expect(document.querySelector('[data-action="agent-add-account"]')?.textContent)
+      .toBe("settings.providers.agents.addAnotherAccount")
   })
 })
 
@@ -167,6 +159,20 @@ describe("AgentHarnessRow accounts", () => {
     expect(entry("cred_1").getAttribute("title")).toBe("f050517a-3e46-4798-a274-1d3a34084f2a")
   })
 
+  test("Reconnect belongs to the row the provider refused, never to the header", () => {
+    row({ accounts: [account({ refused: "settings.providers.live.authFailed" })] })
+
+    expect(document.querySelector('[data-component="provider-actions"] button')).toBeNull()
+    const reconnect = entry("cred_1").querySelector<HTMLElement>('[data-action="agent-reconnect"]')!
+    expect(reconnect.textContent).toBe("settings.providers.agents.reconnectAccount")
+
+    fireEvent.click(reconnect)
+
+    expect(screen.getByTestId("connect-form").dataset.credential).toBe("cred_1")
+    expect(document.querySelector('[data-component="provider-connect-card"]')?.getAttribute("data-credential"))
+      .toBe("cred_1")
+  })
+
   test("a refused account is a ring and a screen-reader verdict, not red words", () => {
     row({ accounts: [account({ refused: "settings.providers.live.authFailed" })] })
 
@@ -176,26 +182,11 @@ describe("AgentHarnessRow accounts", () => {
     expect(entry("cred_1").getAttribute("title")).toBe("settings.providers.live.authFailed")
   })
 
-  test("the refused account in use keeps Check but loses Remove: the header's Reconnect is its action", () => {
-    row({
-      action: { kind: "reconnect", credentialId: "cred_1" },
-      accounts: [account({ refused: "settings.providers.live.expired", selected: true })],
-    })
+  test("a refused row keeps both hover actions as well as its Reconnect", () => {
+    row({ accounts: [account({ refused: "settings.providers.live.expired", selected: true })] })
 
     expect(entry("cred_1").querySelector('[data-action="agent-account-check"]')).not.toBeNull()
-    expect(entry("cred_1").querySelector('[data-action="agent-account-remove"]')).toBeNull()
-  })
-
-  test("a refused account the harness is not running on keeps Remove, or it could never be forgotten", () => {
-    row({
-      accounts: [
-        account(),
-        account({ key: "cred_2", ids: ["cred_2"], label: "old@acme.com", selected: false, refused: "settings.providers.live.expired" }),
-      ],
-    })
-
-    expect(document.querySelector('[data-component="provider-actions"] button')).toBeNull()
-    expect(entry("cred_2").querySelector('[data-action="agent-account-remove"]')).not.toBeNull()
+    expect(entry("cred_1").querySelector('[data-action="agent-account-remove"]')).not.toBeNull()
   })
 
   test("the two actions are hidden at rest and arrive with the pointer or the keyboard", () => {
@@ -240,10 +231,6 @@ describe("AgentHarnessRow accounts", () => {
   })
 
   test("the add link is last, indented to the labels rather than to the radios", () => {
-    row({ accounts: [] })
-    expect(screen.getByRole("button", { name: "settings.providers.agents.addFirstAccount" })).toBeTruthy()
-    cleanup()
-
     row({ accounts: [account(), machineLogin()] })
     const add = screen.getByRole("button", { name: "settings.providers.agents.addAnotherAccount" })
     const list = document.querySelector('[data-component="agent-accounts"]')!
@@ -253,5 +240,18 @@ describe("AgentHarnessRow accounts", () => {
     fireEvent.click(add)
 
     expect(screen.getByTestId("connect-form").dataset.credential).toBe("")
+  })
+
+  test("opening the connect card leaves every row where it was", () => {
+    // The card mounts a lazily loaded form. A row that remounts here takes the
+    // radio's checked state and the confirm in progress down with it.
+    row({ accounts: [account(), machineLogin()] })
+    const before = [...document.querySelectorAll('[data-component="agent-account"]')]
+
+    fireEvent.click(document.querySelector<HTMLElement>('[data-action="agent-add-account"]')!)
+
+    const after = [...document.querySelectorAll('[data-component="agent-account"]')]
+    expect(after).toEqual(before)
+    expect(screen.getByTestId("connect-form")).toBeTruthy()
   })
 })

@@ -4,10 +4,8 @@ import { RadioList, RadioListItem } from "@opencode-ai/ui/radio-group"
 import { createSignal, For, Show, type Component } from "solid-js"
 import { ProviderConnectCard } from "@/features/settings/ui/provider-connect-card"
 import { ClaxedoIconButton } from "@/ui/controls/claxedo-icon-button"
+import { harnessConnectContext } from "@/platform/identity/harness-catalog"
 import { useLanguage } from "@/platform/i18n/provider"
-
-/** The one thing a harness header offers, when it offers anything. */
-export type AgentAction = { kind: "connect" } | { kind: "reconnect"; credentialId: string }
 
 /** One entry of the harness's account list, already in words. */
 export type AgentAccount = {
@@ -30,17 +28,17 @@ export type AgentAccount = {
 /**
  * One agent harness: what it can run on, and the way to add another.
  *
- * The name and the single button are the whole header — the account rows say
- * which login runs next, and a sentence above them restating it was read as a
- * second account. A refused account is drawn as a ring on its own radio and a
- * Reconnect in the header; nothing else on the row is coloured or worded.
+ * The rows carry everything — which login runs next, which one the provider
+ * refused, and what to do about it — so the header is the name alone, plus the
+ * one button there is nothing else to say with: a harness with no account at
+ * all. A refused account is a ring on its own radio and a Reconnect on its own
+ * row; nothing else about it is coloured or worded.
  */
 export const AgentHarnessRow: Component<{
   id: string
   name: string
   providerId: string
   harness: string
-  action?: AgentAction
   accounts: readonly AgentAccount[]
   /** Marks the account the harness runs on; a machine login is stored first. */
   onSelect: (account: AgentAccount) => void | Promise<void>
@@ -93,17 +91,14 @@ export const AgentHarnessRow: Component<{
                 disabled={props.checking !== undefined}
                 onClick={() => void props.onCheck(self.account.ids)}
               />
-              {/* Only the account in use has a Reconnect to be sent to. */}
-              <Show when={self.account.refused === undefined || !self.account.selected}>
-                <ClaxedoIconButton
-                  icon="trash"
-                  size="small"
-                  variant="ghost"
-                  data-action="agent-account-remove"
-                  aria-label={language.t("settings.providers.agents.removeAccount")}
-                  onClick={() => setConfirmingRemove(self.account.key)}
-                />
-              </Show>
+              <ClaxedoIconButton
+                icon="trash"
+                size="small"
+                variant="ghost"
+                data-action="agent-account-remove"
+                aria-label={language.t("settings.providers.agents.removeAccount")}
+                onClick={() => setConfirmingRemove(self.account.key)}
+              />
             </>
           )}
         >
@@ -143,22 +138,15 @@ export const AgentHarnessRow: Component<{
           <span class="text-14-medium text-text-strong">{props.name}</span>
         </div>
         <div class="flex shrink-0 items-center gap-2" data-component="provider-actions">
-          <Show when={connecting() === undefined && props.action}>
-            {(action) => (
-              <Button
-                size="large"
-                variant={action().kind === "reconnect" ? "primary" : "ghost"}
-                data-action={action().kind === "reconnect" ? "agent-reconnect" : "agent-connect"}
-                onClick={() => {
-                  const next = action()
-                  setConnecting(next.kind === "reconnect" ? { credentialId: next.credentialId } : {})
-                }}
-              >
-                {action().kind === "reconnect"
-                  ? language.t("settings.providers.agents.reconnectAccount")
-                  : language.t("common.connect")}
-              </Button>
-            )}
+          <Show when={connecting() === undefined && props.accounts.length === 0}>
+            <Button
+              size="large"
+              variant="ghost"
+              data-action="agent-connect"
+              onClick={() => setConnecting({})}
+            >
+              {language.t("settings.providers.agents.addFirstAccount")}
+            </Button>
           </Show>
           <Show when={connecting()}>
             <span class="text-12-regular text-text-interactive-base">{language.t("settings.providers.connect.open")}</span>
@@ -201,31 +189,43 @@ export const AgentHarnessRow: Component<{
                     )
                     : undefined}
                 >
-                  <AccountActions account={account} />
+                  <span class="flex shrink-0 items-center gap-2">
+                    <Show when={account.refused !== undefined && account.ids.length > 0}>
+                      <Button
+                        size="small"
+                        variant="secondary"
+                        data-action="agent-reconnect"
+                        onClick={() => setConnecting({ credentialId: account.ids[0] })}
+                      >
+                        {language.t("settings.providers.agents.reconnectAccount")}
+                      </Button>
+                    </Show>
+                    <AccountActions account={account} />
+                  </span>
                 </RadioListItem>
               )}
             </For>
           </RadioList>
         </Show>
         {/* Indented past the radio column so the link starts where the labels do. */}
-        <div class="py-1 pl-[22px]">
-          <button
-            type="button"
-            class="border-none bg-transparent p-0 text-13-regular text-text-interactive-base"
-            data-action="agent-add-account"
-            onClick={() => setConnecting({})}
-          >
-            {props.accounts.length > 0
-              ? language.t("settings.providers.agents.addAnotherAccount")
-              : language.t("settings.providers.agents.addFirstAccount")}
-          </button>
-        </div>
+        <Show when={props.accounts.length > 0}>
+          <div class="py-1 pl-[22px]">
+            <button
+              type="button"
+              class="border-none bg-transparent p-0 text-13-regular text-text-interactive-base"
+              data-action="agent-add-account"
+              onClick={() => setConnecting({})}
+            >
+              {language.t("settings.providers.agents.addAnotherAccount")}
+            </button>
+          </div>
+        </Show>
       </div>
       <Show when={connecting()}>
         {(open) => (
           <ProviderConnectCard
             provider={props.providerId}
-            providerName={props.name}
+            context={harnessConnectContext(props.harness, props.name)}
             harness={props.harness}
             credentialId={open().credentialId}
             onConnected={props.onConnected}

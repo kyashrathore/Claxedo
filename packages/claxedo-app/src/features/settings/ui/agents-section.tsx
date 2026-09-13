@@ -30,8 +30,8 @@ import { SettingsList } from "@/features/settings/ui/list"
 import {
   AgentHarnessRow,
   type AgentAccount,
-  type AgentAction,
 } from "@/features/settings/ui/agent-harness-row"
+import { HARNESS_CONNECT_PROVIDER } from "@/platform/identity/harness-catalog"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useLanguage } from "@/platform/i18n/provider"
 
@@ -40,17 +40,6 @@ const AGENT_ICON: Record<string, string> = {
   claude: "anthropic",
   codex: "openai",
   cursor: "cursor",
-}
-
-/**
- * The provider id a pasted credential is stored under for each harness: the
- * one its native SDK driver resolves auth by, so a key connected here is the
- * key the next turn runs with.
- */
-const AGENT_CONNECT_PROVIDER: Record<string, string> = {
-  claude: "claude-sdk",
-  codex: "codex-app-server",
-  cursor: "cursor-sdk",
 }
 
 /** The entry key the login found on this computer is listed under. */
@@ -141,12 +130,12 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
 
   /** A harness's bound provider ids plus the one its connect card stores under. */
   const providerIds = (check: LocalHarnessCheck): readonly string[] => {
-    const connect = AGENT_CONNECT_PROVIDER[check.id]
+    const connect = HARNESS_CONNECT_PROVIDER[check.id]
     return connect && !(check.providerIds as readonly string[]).includes(connect) ? [...check.providerIds, connect] : check.providerIds
   }
 
   const accounts = (check: LocalHarnessCheck) => {
-    const connect = AGENT_CONNECT_PROVIDER[check.id]
+    const connect = HARNESS_CONNECT_PROVIDER[check.id]
     return harnessAccounts(
       { providerIds: providerIds(check), ...(connect === undefined ? {} : { connectProviderId: connect }) },
       stored(),
@@ -274,21 +263,6 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       selected: selected === MACHINE,
       machine: true,
     }]
-  }
-
-  /**
-   * The one thing the header offers. Connect where the harness has no login to
-   * run on, Reconnect where the login it runs on was refused, and otherwise
-   * nothing: the rows already say which account is next.
-   */
-  const action = (check: LocalHarnessCheck): AgentAction | undefined => {
-    const selected = selectedKey(check)
-    if (selected === undefined) return { kind: "connect" }
-    if (selected === MACHINE) return undefined
-    const row = accounts(check).find((account) => account.id === selected)
-    if (!row) return { kind: "connect" }
-    const live = accountCheck(row)
-    return live && unusable(live.verdict) ? { kind: "reconnect", credentialId: row.id } : undefined
   }
 
   /**
@@ -430,9 +404,8 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
             <AgentHarnessRow
               id={AGENT_ICON[harness.id] ?? harness.id}
               name={harness.label}
-              providerId={AGENT_CONNECT_PROVIDER[harness.id] ?? harness.providerIds[0]}
+              providerId={HARNESS_CONNECT_PROVIDER[harness.id] ?? harness.providerIds[0]}
               harness={harness.id}
-              action={action(harness)}
               accounts={listedAccounts(harness)}
               onSelect={(account) => select(harness, account)}
               selecting={selecting()}
