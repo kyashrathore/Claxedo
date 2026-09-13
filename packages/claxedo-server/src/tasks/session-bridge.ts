@@ -20,6 +20,7 @@ import {
   type TasksSessionBridgePort,
 } from "@claxedo/tasks"
 import { allocateOriginCloudWorkspace } from "../workspace/origin-cloud-workspace"
+import type { TasksRootIdentity } from "./root-capability"
 import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { createTasksSessionRelease, createTasksSessionReserve, type TasksSessionReserveInput } from "./session-reservation"
 
@@ -57,6 +58,13 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
     /** Projects it, and resolves only once the runtime acknowledged that exact selection. */
     apply(input: { workspaceId: string; preparation: WorkspaceRuntimePreparation }): Promise<void>
   }
+  /**
+   * The Tasks grant this root's sessions act with, minted beside the cloud
+   * root's other credentials and handed to its runtime as environment. A
+   * deployment that names none launches roots whose agents have no Tasks
+   * tools, which is what a control plane those sessions cannot reach means.
+   */
+  capability?: (root: TasksRootIdentity) => Promise<Record<string, string>>
 }
 
 export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeInput): TasksSessionBridgePort {
@@ -122,7 +130,20 @@ function createTasksCloudTarget(
         }
         const preparation = await port.prepare({ workspaceId: workspace.id, capabilities: origin.capabilities })
         projected = () => port.apply({ workspaceId: workspace.id, preparation })
-        return preparation.secrets ?? []
+        // The capability names the workspace's owner, and `admit` below makes
+        // this caller that owner. The application user id is the authority's
+        // own name for them; the actor's `ownerId` is the token subject, which
+        // no workspace row records.
+        const owner = auth?.principal?.userId
+        const env = owner
+          ? await input.capability?.({
+              userId: owner,
+              orgId: origin.actor.scopeId,
+              projectId: origin.task.projectId,
+              workspaceId: workspace.id,
+            })
+          : undefined
+        return { ...(preparation.secrets ? { secrets: preparation.secrets } : {}), ...(env ? { env } : {}) }
       },
       services: input.services,
       originKey: startOriginId(origin.actor.scopeId, origin.task.id, origin.slot, origin.attempt),

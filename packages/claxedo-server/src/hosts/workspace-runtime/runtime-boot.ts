@@ -19,6 +19,7 @@ import {
 import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/relay"
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
+import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import {
   sandboxLeaseEnv,
   workspaceRuntimeDirectAuthEnv,
@@ -162,7 +163,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     // the sandbox image answering 404 to the provisioner.
     routeContributions: [
       ...(input.routeContributions ?? []),
-      firstPartyMcpRuntimeContribution(firstPartyMcp.verify),
+      firstPartyMcpRuntimeContribution(firstPartyMcp.verify, workspaceRuntimeTasksGrant(env)),
     ],
   }
   return { port, hostname, options }

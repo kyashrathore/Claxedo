@@ -57,15 +57,22 @@ export type OriginCloudWorkspaceInput = {
    */
   discard(workspace: Workspace): Promise<void>
   /**
-   * Credentials this root's own configuration needs, resolved once the
-   * workspace id exists and before the sandbox is created.
+   * What this root's own configuration needs, resolved once the workspace id
+   * exists and before the sandbox is created.
    *
-   * They ride the driver's brokered-secret channel, which only `ensure`
-   * reaches, so a caller that resolved them after readiness would have a
-   * runtime that can never be given them.
+   * Brokered secrets ride the driver's egress-injection channel and never
+   * enter the sandbox; `env` is the readable environment, for a credential the
+   * agent itself presents. Both reach a runtime only through `ensure`, so a
+   * caller that resolved them after readiness would have a runtime that can
+   * never be given them.
    */
-  prepare?(workspace: Workspace): Promise<readonly SandboxBrokeredSecret[]>
+  prepare?(workspace: Workspace): Promise<OriginCloudWorkspacePreparation>
 }
+
+export type OriginCloudWorkspacePreparation = Readonly<{
+  secrets?: readonly SandboxBrokeredSecret[]
+  env?: Readonly<Record<string, string>>
+}>
 
 /**
  * `ws_<24 hex of SHA-256(originKey)>`.
@@ -110,13 +117,16 @@ export async function allocateOriginCloudWorkspace(
   }
   ensureHostForRepo(repoUrl)
 
-  const secrets = (await input.prepare?.(workspace)) ?? []
+  const prepared = (await input.prepare?.(workspace)) ?? {}
   const ready = await awaitSandboxReady(sandboxManager, workspace, {
     homeRegion: input.services.defaultHomeRegion ?? "us-east",
     projectId: input.projectId,
     repoUrl,
-    env: (await projectEnv(input.projectId)) ?? {},
-    secrets,
+    // The project's own environment first: a prepared value names this one
+    // root and must not be shadowed by a project-wide variable of the same
+    // name.
+    env: { ...(await projectEnv(input.projectId)), ...prepared.env },
+    secrets: prepared.secrets ?? [],
   })
   if (ready.status === "ready") return { workspace }
   if (ready.status === "provisioning") {

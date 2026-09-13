@@ -1,10 +1,12 @@
-import { importPKCS8, importSPKI, jwtVerify, SignJWT } from "jose"
+import { jwtVerify, SignJWT } from "jose"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
+import { RUNTIME_ACCESS_TOKEN_ALGORITHM } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import {
-  RUNTIME_ACCESS_TOKEN_ALGORITHM,
-  runtimeAccessTokenAlgorithm,
-} from "@claxedo/server-core/platform/auth/runtime-access-token"
+  requiredCredentialField,
+  runtimeTokenSigningKey,
+  runtimeTokenVerificationKey,
+} from "../platform/auth/runtime-token-keys"
 import {
   isTasksOperation,
   type TasksCapabilityScope,
@@ -15,23 +17,14 @@ export const TASKS_CAPABILITY_AUDIENCE = "claxedo-tasks-capability" as const
 const DEFAULT_TTL_SECONDS = 30 * 60
 const MAX_TTL_SECONDS = 60 * 60
 
-function pem(value: string | undefined) {
-  const clean = value?.trim()
-  return clean?.replaceAll("\\n", "\n") || undefined
-}
-
 /** The deployment lacks what minting or verifying needs — a fault, not a bad credential. */
 export class TasksCapabilityConfigurationError extends Error {
   readonly code = "tasks_capability_misconfigured"
 }
 
-function required(value: string | undefined, name: string) {
-  const clean = value?.trim()
-  if (!clean) throw new TasksCapabilityConfigurationError(`Tasks capability requires ${name}`)
-  return clean
-}
+const unsignable = (name: string) => new TasksCapabilityConfigurationError(`Tasks capability requires ${name}`)
 
-function claims(payload: Record<string, unknown>): TasksCapabilityScope | undefined {
+function capabilityScope(payload: Record<string, unknown>): TasksCapabilityScope | undefined {
   const read = (name: string) => {
     const value = payload[name]
     return typeof value === "string" && value ? value : undefined
@@ -68,13 +61,12 @@ export async function mintTasksCapability(
   env: Record<string, string | undefined>,
   options: { ttlSeconds?: number; now?: () => number } = {},
 ) {
-  for (const name of ["userId", "orgId", "projectId", "workspaceId"] as const) required(scope[name], name)
-  if (scope.sessionId !== undefined) required(scope.sessionId, "sessionId")
-  if (scope.operations.length === 0) {
-    throw new TasksCapabilityConfigurationError("Tasks capability requires at least one operation")
+  for (const name of ["userId", "orgId", "projectId", "workspaceId"] as const) {
+    requiredCredentialField(scope[name], name, unsignable)
   }
-  const alg = runtimeAccessTokenAlgorithm(env)
-  const key = await importPKCS8(required(pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM), "runtime signing key"), alg)
+  if (scope.sessionId !== undefined) requiredCredentialField(scope.sessionId, "sessionId", unsignable)
+  if (scope.operations.length === 0) throw unsignable("at least one operation")
+  const { alg, key } = await runtimeTokenSigningKey(env, unsignable)
   const now = Math.floor((options.now?.() ?? Date.now()) / 1_000)
   const requested = Math.floor(options.ttlSeconds ?? DEFAULT_TTL_SECONDS)
   const ttl = Math.min(MAX_TTL_SECONDS, Math.max(60, requested))
@@ -101,14 +93,13 @@ export async function verifyTasksCapability(
   token: string,
   env: Record<string, string | undefined>,
 ): Promise<TasksCapabilityScope> {
-  const alg = runtimeAccessTokenAlgorithm(env)
-  const key = await importSPKI(required(pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM), "runtime verification key"), alg)
+  const { key } = await runtimeTokenVerificationKey(env, unsignable)
   const result = await jwtVerify(token, key, {
     algorithms: [RUNTIME_ACCESS_TOKEN_ALGORITHM],
     issuer: runtimeAccessTokenIssuer,
     audience: TASKS_CAPABILITY_AUDIENCE,
   })
-  const scope = claims(result.payload as Record<string, unknown>)
+  const scope = capabilityScope(result.payload as Record<string, unknown>)
   if (!scope || result.payload.sub !== scope.userId) throw new Error("Tasks capability scope is invalid")
   return scope
 }

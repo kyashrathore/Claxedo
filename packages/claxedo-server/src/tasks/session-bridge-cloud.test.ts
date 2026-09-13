@@ -28,6 +28,7 @@ import {
 } from "@claxedo/tasks"
 import { originCloudWorkspaceId } from "../workspace/origin-cloud-workspace"
 import { createHostedTasksSessionBridge } from "./session-bridge"
+import type { TasksRootIdentity } from "./root-capability"
 import type { ControlPlaneServices } from "../authority/services"
 
 // Hoisted above the imports so it is set before the store's first read: left
@@ -189,13 +190,18 @@ function selectedCapabilities() {
 function bridge(
   composition: ReturnType<typeof services>,
   port: ReturnType<typeof selectedCapabilities> | null = selectedCapabilities(),
+  capability?: (root: TasksRootIdentity) => Promise<Record<string, string>>,
 ) {
   return createHostedTasksSessionBridge({
     services: composition.value,
     runtimeClient: {},
     principal: async () => ({ principalKind: "user", actorId: "act_owner", actorKind: "human" }),
-    auth: () => ({ user: { subject: "owner" } }) as unknown as SignedControlPlaneAuth,
+    auth: () => ({
+      user: { subject: "owner" },
+      principal: { userId: "usr_owner" },
+    }) as unknown as SignedControlPlaneAuth,
     ...(port ? { selectedCapabilities: port } : {}),
+    ...(capability ? { capability } : {}),
   })
 }
 
@@ -447,6 +453,33 @@ describe("hosted tasks cloud roots", () => {
       capabilities: { mode: "selected", plugins: [], skills: [] },
     })
     expect(brokered).toEqual([[{ name: "CLAXEDO_MCP_X", value: "Bearer x", hosts: ["mcp-x.example"], header: "Authorization" }]])
+  })
+
+  test("launches the root with the Tasks grant minted for it", async () => {
+    runtime()
+    const { driver } = fakeDriver()
+    const environments: (Record<string, string> | undefined)[] = []
+    const recording: SandboxDriver = {
+      ...driver,
+      ensureHost: async (input) => {
+        environments.push(input.env)
+        return driver.ensureHost(input)
+      },
+    }
+    const composition = services(createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver: recording }))
+    const capability = vi.fn(async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "grant-token" }))
+
+    await bridge(composition, selectedCapabilities(), capability).preview(previewCommand("tsk_one"))
+
+    // The grant names the workspace's owner as the authority records them, not
+    // the token subject the Tasks actor carries.
+    expect(capability).toHaveBeenCalledWith({
+      userId: "usr_owner",
+      orgId: "org",
+      projectId: PROJECT,
+      workspaceId: (await rootOf("tsk_one"))?.id,
+    })
+    expect(environments[0]).toMatchObject({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "grant-token" })
   })
 
   test("refuses a cloud root on a deployment that cannot project a capability set, before any sandbox exists", async () => {

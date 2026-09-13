@@ -1,10 +1,12 @@
-import { importPKCS8, importSPKI, jwtVerify, SignJWT } from "jose"
+import { jwtVerify, SignJWT } from "jose"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
+import { RUNTIME_ACCESS_TOKEN_ALGORITHM } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import {
-  RUNTIME_ACCESS_TOKEN_ALGORITHM,
-  runtimeAccessTokenAlgorithm,
-} from "@claxedo/server-core/platform/auth/runtime-access-token"
+  requiredCredentialField,
+  runtimeTokenSigningKey,
+  runtimeTokenVerificationKey,
+} from "../../platform/auth/runtime-token-keys"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { isArtifactDigest, type ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 
@@ -32,23 +34,14 @@ export type McpGatewayTokenScope = Readonly<{
   execution: "default" | "selected"
 }>
 
-function pem(value: string | undefined) {
-  const clean = value?.trim()
-  return clean?.replaceAll("\\n", "\n") || undefined
-}
-
 /** The deployment lacks what minting or verifying needs — a fault, not a bad credential. */
 export class McpGatewayConfigurationError extends Error {
   readonly code = "mcp_gateway_misconfigured"
 }
 
-function required(value: string | undefined, name: string) {
-  const clean = value?.trim()
-  if (!clean) throw new McpGatewayConfigurationError(`MCP gateway token requires ${name}`)
-  return clean
-}
+const misconfigured = (name: string) => new McpGatewayConfigurationError(`MCP gateway token requires ${name}`)
 
-function claims(payload: Record<string, unknown>): McpGatewayTokenScope | undefined {
+function gatewayScope(payload: Record<string, unknown>): McpGatewayTokenScope | undefined {
   const read = (name: string) => {
     const value = payload[name]
     return typeof value === "string" && value ? value : undefined
@@ -89,9 +82,8 @@ export async function mintMcpGatewayToken(
   env: Record<string, string | undefined>,
   options: { ttlSeconds?: number; now?: () => number } = {},
 ) {
-  for (const [name, value] of Object.entries(scope)) required(value, name)
-  const alg = runtimeAccessTokenAlgorithm(env)
-  const key = await importPKCS8(required(pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM), "runtime signing key"), alg)
+  for (const [name, value] of Object.entries(scope)) requiredCredentialField(value, name, misconfigured)
+  const { alg, key } = await runtimeTokenSigningKey(env, misconfigured)
   const now = Math.floor((options.now?.() ?? Date.now()) / 1_000)
   const requested = Math.floor(options.ttlSeconds ?? DEFAULT_TTL_SECONDS)
   const ttl = Math.min(MAX_TTL_SECONDS, Math.max(60, requested))
@@ -123,14 +115,13 @@ export async function verifyMcpGatewayToken(
   expected: Pick<McpGatewayTokenScope, "integrationId">,
   env: Record<string, string | undefined>,
 ) {
-  const alg = runtimeAccessTokenAlgorithm(env)
-  const key = await importSPKI(required(pem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM), "runtime verification key"), alg)
+  const { key } = await runtimeTokenVerificationKey(env, misconfigured)
   const result = await jwtVerify(token, key, {
     algorithms: [RUNTIME_ACCESS_TOKEN_ALGORITHM],
     issuer: runtimeAccessTokenIssuer,
     audience: MCP_GATEWAY_TOKEN_AUDIENCE,
   })
-  const scope = claims(result.payload as Record<string, unknown>)
+  const scope = gatewayScope(result.payload as Record<string, unknown>)
   if (!scope || result.payload.sub !== scope.userId || scope.integrationId !== expected.integrationId) {
     throw new Error("MCP gateway token scope is invalid")
   }
