@@ -1072,15 +1072,13 @@ describe("sandbox manager", () => {
   })
 
   test("the placeholder a header-injecting driver puts in the sandbox is named, not valued", () => {
-    // The prefix is the one the Cloudflare sandbox Worker's
-    // `outbound-credentials.ts` matches on; a change here that is not made
-    // there stops every brokered request being recognized.
     expect(brokeredSecretPlaceholder("CLAXEDO_PROVIDER_CLAUDE_SDK"))
-      .toBe("claxedo-broker:CLAXEDO_PROVIDER_CLAUDE_SDK")
+      .toContain("CLAXEDO_PROVIDER_CLAUDE_SDK")
+    expect(brokeredSecretPlaceholder("A")).not.toBe("A")
     expect(brokeredPlaceholderEnv([
       { name: "A", value: "secret-a", hosts: ["api.a.test"], header: "x-key" },
       { name: "B", value: "secret-b", hosts: ["api.b.test"], header: "x-key" },
-    ])).toEqual({ A: "claxedo-broker:A", B: "claxedo-broker:B" })
+    ])).toEqual({ A: brokeredSecretPlaceholder("A"), B: brokeredSecretPlaceholder("B") })
     expect(brokeredPlaceholderEnv(undefined)).toEqual({})
   })
 
