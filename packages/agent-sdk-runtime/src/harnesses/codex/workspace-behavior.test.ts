@@ -110,7 +110,7 @@ function write(message) {
 function append(message) {
   fs.appendFileSync(logPath, JSON.stringify(message) + "\\n")
 }
-append({ event: "started", pid: process.pid })
+append({ event: "started", pid: process.pid, codexHome: process.env.CODEX_HOME })
 process.on("SIGTERM", () => {
   append({ event: "sigterm" })
   if (ignoreSigterm) return
@@ -340,31 +340,92 @@ describe("CodexHarnessAdapter", () => {
     expect(requests.filter((request) => request.method === "initialize")).toHaveLength(1)
   })
 
-  test("refuses a provider projection instead of logging the app-server into nothing", async () => {
+  const brokerProjection = {
+    baseUrl: "http://127.0.0.1:2595/bindings/9ab1",
+    placeholder: "signed-placeholder",
+    authMode: "bearer" as const,
+    expiresAt: 1_800_000_000_000,
+    apiPath: "/backend-api/codex",
+  }
+
+  /** The homes the app-servers this fake launched were given; none when it never ran. */
+  function launchedHomes(log: string) {
+    if (!fs.existsSync(log)) return []
+    return fs.readFileSync(log, "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line) as { event?: string; codexHome?: string })
+      .flatMap((row) => row.event === "started" && row.codexHome ? [row.codexHome] : [])
+  }
+
+  test("a projection for another harness leaves Codex on the operator's own login", async () => {
+    const fake = await makeFakeCodex({})
+    const operatorHome = path.join(fake.dir, "operator-home")
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+      codexHome: operatorHome,
+      brokeredHome: path.join(fake.dir, "brokered-home"),
+    })
+
+    await adapter.applyConfig({ auth: { "claude-sdk": brokerProjection } })
+    await adapter.createSession(fake.dir)
+    await adapter.dispose()
+
+    expect(launchedHomes(fake.log)).toEqual([operatorHome])
+    expect(fs.existsSync(path.join(fake.dir, "brokered-home"))).toBe(false)
+  })
+
+  test("a bound Codex account launches on a Claxedo home carrying the placeholder", async () => {
+    const fake = await makeFakeCodex({})
+    const operatorHome = path.join(fake.dir, "operator-home")
+    const brokeredHome = path.join(fake.dir, "brokered-home")
+    fs.mkdirSync(operatorHome, { recursive: true })
+    fs.writeFileSync(path.join(operatorHome, "auth.json"), '{"tokens":{"access_token":"operator-own"}}')
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+      codexHome: operatorHome,
+      brokeredHome,
+    })
+
+    await adapter.applyConfig({ auth: { "codex-app-server": brokerProjection } })
+    await adapter.createSession(fake.dir)
+    await adapter.dispose()
+
+    expect(launchedHomes(fake.log)).toEqual([brokeredHome])
+    expect(fs.readdirSync(brokeredHome)).toEqual(["config.toml"])
+    const config = fs.readFileSync(path.join(brokeredHome, "config.toml"), "utf8")
+    expect(config).toContain('base_url = "http://127.0.0.1:2595/bindings/9ab1/backend-api/codex"')
+    expect(config).toContain('http_headers = { Authorization = "Bearer signed-placeholder" }')
+    expect(config).toContain("requires_openai_auth = false")
+    expect(config).toContain('wire_api = "responses"')
+    expect(config).not.toContain("operator-own")
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      method?: string
+      params?: { modelProvider?: string }
+    })
+    expect(requests.some((request) => request.method === "account/login/start")).toBe(false)
+    expect(requests.find((request) => request.method === "thread/start")?.params?.modelProvider).toBe("broker")
+  })
+
+  test("an unavailable account fails the launch instead of falling back to the machine login", async () => {
     const fake = await makeFakeCodex({})
     const adapter = new CodexHarnessAdapter({
       binary: fake.binary,
       createStore: () => fakeCodexStore(),
       storeRoot: path.join(fake.dir, "store"),
+      codexHome: path.join(fake.dir, "operator-home"),
+      brokeredHome: path.join(fake.dir, "brokered-home"),
     })
 
-    await adapter.createSession(fake.dir)
-    await expect(adapter.applyConfig({
-      auth: {
-        "codex-app-server": {
-          baseUrl: "http://127.0.0.1:2595/bindings/9ab1",
-          placeholder: "signed-placeholder",
-          authMode: "bearer",
-          expiresAt: 1_800_000_000_000,
-        },
-      },
-    })).rejects.toThrow("provider projection not supported by this harness yet: codex")
+    await adapter.applyConfig({ auth: { "codex-app-server": { unavailable: true, reason: "auth_failed" } } })
+    await expect(adapter.createSession(fake.dir))
+      .rejects.toThrow("the account selected for codex cannot be used: auth_failed")
     await adapter.dispose()
 
-    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
-      method?: string
-    })
-    expect(requests.some((request) => request.method === "account/login/start")).toBe(false)
+    expect(launchedHomes(fake.log)).toEqual([])
   })
 
   test("disposes an app-server whose startup is still pending", async () => {

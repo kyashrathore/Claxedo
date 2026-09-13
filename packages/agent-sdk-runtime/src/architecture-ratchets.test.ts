@@ -12,14 +12,16 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // no headroom, so the next feature must name an owner rather than append.
       // `runtime.ts` delegates the Goal surface to `runtime/goal-controller.ts`
       // and per-session turn admission to `runtime/turn-admission.ts`;
-      // `harnesses/codex/driver.ts` delegates app-server login state to
-      // `harnesses/codex/process-auth.ts` and `turn/steer` to
+      // `harnesses/codex/driver.ts` delegates the brokered provider to
+      // `harnesses/codex/broker.ts`, the operator login to
+      // `harnesses/codex/operator-login.ts`, Agent Plugins validation to
+      // `harnesses/codex/plugin-launch.ts` and `turn/steer` to
       // `harnesses/codex/protocol.ts`; `harnesses/shared/sdk-runtime-adapter.ts`
       // delegates steering to `harnesses/shared/turn-steering.ts` and keeps only
       // the entrypoint.
       "runtime.ts": 819,
       "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 656,
+      "harnesses/codex/driver.ts": 632,
       "harnesses/shared/sdk-runtime-adapter.ts": 880,
       "harnesses/pi/index.ts": 12,
     }

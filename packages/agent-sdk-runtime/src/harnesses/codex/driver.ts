@@ -31,7 +31,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { assertNoProviderProjection } from "../../provider-projection"
+import { providerProjectionRecord } from "../../provider-projection"
 import {
   CODEX_PERMISSION_MODES,
   CODEX_SETTINGS,
@@ -41,8 +41,9 @@ import {
 } from "../shared/permission-modes"
 import { requireCodexExecutable } from "./executable"
 import { CodexAppServerProcess } from "./app-server-process"
-import { refreshCodexChatgptAuth } from "./auth-file"
-import { CodexProcessAuth } from "./process-auth"
+import { CODEX_BROKER_PROVIDER, CodexBrokerProvider, codexAuthValue } from "./broker"
+import { CodexOperatorLogin } from "./operator-login"
+import { codexPluginLaunch, type CodexPluginLaunch } from "./plugin-launch"
 import { codexConfigOptions, fetchCodexModels } from "./model-options"
 import { handleCodexServerRequest } from "./server-request"
 import { CodexGoalController } from "./goal"
@@ -75,44 +76,19 @@ export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: 
   return new CodexAppServerDriver(host, options)
 }
 
-type CodexDriverOptions = { binary?: string; fetch?: FetchLike; codexHome?: string }
-
-export type CodexPluginLaunch = {
-  marketplace: { name: string; source: string }
-  plugins: string[]
-}
-
-export function codexPluginLaunch(launch: unknown): CodexPluginLaunch | undefined {
-  const config = asRecord(asRecord(launch)?.config)
-  if (!config || Object.keys(config).length === 0) return undefined
-  const marketplace = asRecord(config.marketplace)
-  const name = text(marketplace?.name)
-  const source = text(marketplace?.source)
-  if (!name || !/^[A-Za-z0-9_-]+$/.test(name)) {
-    throw new Error("Codex Agent Plugins launch config contains an invalid marketplace name")
-  }
-  if (!source || !path.isAbsolute(source)) {
-    throw new Error("Codex Agent Plugins launch config contains an invalid marketplace source")
-  }
-  if (!Array.isArray(config.plugins) || config.plugins.length === 0) {
-    throw new Error("Codex Agent Plugins launch config contains no plugins")
-  }
-  const plugins = config.plugins.map((value) => {
-    if (typeof value !== "string" || !/^[A-Za-z0-9._-]+@[A-Za-z0-9_-]+$/.test(value) || !value.endsWith(`@${name}`)) {
-      throw new Error("Codex Agent Plugins launch config contains an invalid plugin id")
-    }
-    return value
-  })
-  if (new Set(plugins).size !== plugins.length) {
-    throw new Error("Codex Agent Plugins launch config contains duplicate plugin ids")
-  }
-  return { marketplace: { name, source }, plugins }
+type CodexDriverOptions = {
+  binary?: string
+  fetch?: FetchLike
+  codexHome?: string
+  /** Where the account-free Codex home a brokered turn runs under is built. */
+  brokeredHome?: string
 }
 
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
   readonly interactions = { permissions: true, questions: true } as const
-  private readonly auth = new CodexProcessAuth((proc) => this.process === proc)
+  private readonly broker: CodexBrokerProvider
+  private readonly operatorLogin: CodexOperatorLogin
   private process: CodexAppServerProcess | null = null
   /** Releases the app-server after its activity leases expire. */
   private readonly idleMs = codexIdleTimeoutMs()
@@ -144,6 +120,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   ) {
     // Keep auth reads and writes on the same resolved Codex home for this driver.
     this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
+    this.broker = new CodexBrokerProvider(options.brokeredHome)
+    this.operatorLogin = new CodexOperatorLogin({ home: this.codexHome, ...(options.fetch ? { fetch: options.fetch } : {}) })
     this.goalController = new CodexGoalController({
       driverHost: this.host,
       ensureProcess: (directory) => this.ensureProcess(directory),
@@ -158,18 +136,25 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   setAuth(keys: SdkRuntimeAuth) {
-    assertNoProviderProjection("codex", keys)
+    void this.replaceAuth(keys.openai)
   }
 
   async applyConfig(config: Record<string, unknown>) {
     const nextPluginLaunch = codexPluginLaunch(config.launch)
     await this.applyPluginLaunch(nextPluginLaunch)
-    assertNoProviderProjection("codex", config.auth)
-    if (this.auth.replaceSource(undefined)) this.modelSource.invalidate()
+    const auth = providerProjectionRecord(config.auth)
+    if (config.auth !== undefined && !auth) {
+      throw new Error("codex harness received an auth map that is not provider projections")
+    }
+    if (this.replaceAuth(codexAuthValue(auth))) await this.restartProcess()
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.firstPartyMcp = firstPartyMcpProvider(config)
-    const proc = this.process ?? (this.processStartup ? await this.processStartup : null)
-    if (proc?.alive) await this.auth.sync(proc)
+  }
+
+  private replaceAuth(projection: Parameters<CodexBrokerProvider["replace"]>[0]) {
+    if (!this.broker.replace(projection)) return false
+    this.modelSource.invalidate()
+    return true
   }
 
   /** Keep native session tools and MCP credentials consistent on start and resume. */
@@ -189,6 +174,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       throw new Error("Codex Agent Plugins cannot change while a Codex turn is active")
     }
     this.currentPluginLaunch = launch
+    await this.restartProcess()
+  }
+
+  private async restartProcess() {
     this.lifecycleRevision++
     this.processStartupAbort?.abort()
     const startup = this.processStartup
@@ -223,6 +212,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       dynamicTools: CODEX_DYNAMIC_TOOLS,
       ...(input.system ? { developerInstructions: input.system } : {}),
       ...(model ? { model } : {}),
+      // The config already selects it; naming it here too is what the
+      // feasibility run proved a brokered thread starts under.
+      ...(this.broker.selected ? { modelProvider: CODEX_BROKER_PROVIDER } : {}),
       ...this.threadConfig(input.sessionId),
     }).then((response) => asRecord(response) ?? {})
     const thread = asRecord(result.thread)
@@ -575,9 +567,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       })
       this.processStartup = pending
     }
-    const proc = this.processStartup ? await this.processStartup : this.process!
-    await this.auth.sync(proc)
-    return proc
+    return this.processStartup ? await this.processStartup : this.process!
   }
 
   private async startProcess(directory: string, lifecycleRevision: number, signal: AbortSignal) {
@@ -587,7 +577,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       directory,
       env: codexSpawnEnv({
         ...process.env,
-        CODEX_HOME: this.codexHome,
+        CODEX_HOME: this.broker.home(this.codexHome),
       }),
       requestHandler: (message) => this.handleServerRequest(message),
       processObserver: this.host.processObserver,
@@ -609,9 +599,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.process = started
     this.processGoalUnsubscribe?.()
     this.processGoalUnsubscribe = started.onMessage((message) => this.goalController.handleProcessMessage(message))
-    this.auth.forgetProcess()
     this.processError = null
-    await this.auth.sync(started)
     if (this.disposed || lifecycleRevision !== this.lifecycleRevision) {
       await started.dispose()
       if (this.process === started) this.process = null
@@ -625,8 +613,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
    * `handleCodexServerRequest`, which owns the whole surface — questions,
    * approvals, the `spawn_agent` dynamic tool, and auth refresh. This driver
    * supplies only what is its own: the live thread index, the host's pending
-   * queues, the session's permission selection, and the credential refresh
-   * that also rewrites this driver's cached auth.
+   * queues, the session's permission selection, and the operator login a
+   * turn with no binding runs on.
    */
   private handleServerRequest(message: JsonRecord) {
     return handleCodexServerRequest({
@@ -634,19 +622,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       activeThreads: this.activeThreads,
       host: this.host,
       permissionModeId: (sessionId) => this.permissionSelection.currentId(sessionId),
-      refreshTokens: async () => {
-        const refreshed = await refreshCodexChatgptAuth({
-          auth: this.auth.codexAuth,
-          home: this.codexHome,
-          fetch: this.options.fetch,
-        })
-        this.auth.codexAuth = refreshed.auth
-        return {
-          access: refreshed.login.accessToken,
-          accountId: refreshed.login.chatgptAccountId,
-          ...(refreshed.login.chatgptPlanType ? { planType: refreshed.login.chatgptPlanType } : {}),
-        }
-      },
+      refreshTokens: () => this.operatorLogin.refresh(),
     })
   }
 }

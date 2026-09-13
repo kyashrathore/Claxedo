@@ -5,10 +5,19 @@ import type { FetchLike } from "../../adapter-contract"
 export type CodexHarnessAdapterOptions = Omit<SdkRuntimeAdapterOptions, "driver"> & {
   fetch?: FetchLike
   codexHome?: string
+  brokeredHome?: string
 }
 
 export class CodexHarnessAdapter extends SdkRuntimeAdapter {
   constructor(options: CodexHarnessAdapterOptions) {
-    super({ ...options, driver: (host) => createCodexAppServerDriver(host, { binary: options.binary, fetch: options.fetch, codexHome: options.codexHome }) })
+    super({
+      ...options,
+      driver: (host) => createCodexAppServerDriver(host, {
+        ...(options.binary ? { binary: options.binary } : {}),
+        ...(options.fetch ? { fetch: options.fetch } : {}),
+        ...(options.codexHome ? { codexHome: options.codexHome } : {}),
+        ...(options.brokeredHome ? { brokeredHome: options.brokeredHome } : {}),
+      }),
+    })
   }
 }

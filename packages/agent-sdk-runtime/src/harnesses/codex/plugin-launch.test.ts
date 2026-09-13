@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { codexAppServerCommand, codexPluginLaunch } from "./driver"
+import { codexAppServerCommand } from "./driver"
+import { codexPluginLaunch } from "./plugin-launch"
 
 describe("Codex Agent Plugins launch", () => {
   const launch = {
