@@ -697,7 +697,7 @@ export async function deleteCredential(
     db.delete(ClaxedoProviderCredentialTable)
       .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
       .run()
-    return cred.is_active === true ? markOldestAvailable(db, org, cred) : undefined
+    return cred.is_active === true ? markOldestAvailable(db, org, { provider_id: cred.provider_id, owner: cred.owner ?? null }) : undefined
   })
 
   log.info("Credential deleted", {
