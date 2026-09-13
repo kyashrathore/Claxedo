@@ -117,6 +117,54 @@ describe("parseCommandRequest", () => {
     expect(parsedReasons(working)).toEqual({ "command.input.status": "unknown_value" })
   })
 
+  test("a create carries the session it came from, or says nothing and came from the app", () => {
+    const fromSession = parseCommandRequest({
+      clientRequestId: "r",
+      command: {
+        type: "task.create",
+        input: {
+          projectId: "p",
+          title: "Ship",
+          description: "",
+          workspaceId: null,
+          parentTaskId: null,
+          createdFrom: { sessionId: "ses_1", workspaceId: null },
+        },
+      },
+    })
+    expect(fromSession.ok && fromSession.value.command.type === "task.create" && fromSession.value.command.input.createdFrom).toEqual({
+      sessionId: "ses_1",
+      workspaceId: null,
+    })
+
+    const fromTheApp = parseCommandRequest({
+      clientRequestId: "r",
+      command: {
+        type: "task.create",
+        input: { projectId: "p", title: "Ship", description: "", workspaceId: null, parentTaskId: null },
+      },
+    })
+    expect(
+      fromTheApp.ok && fromTheApp.value.command.type === "task.create" && fromTheApp.value.command.input.createdFrom,
+    ).toBeUndefined()
+
+    const halfWritten = parseCommandRequest({
+      clientRequestId: "r",
+      command: {
+        type: "task.create",
+        input: {
+          projectId: "p",
+          title: "Ship",
+          description: "",
+          workspaceId: null,
+          parentTaskId: null,
+          createdFrom: { workspaceId: "ws_1" },
+        },
+      },
+    })
+    expect(parsedReasons(halfWritten)).toEqual({ "command.input.createdFrom.sessionId": "required" })
+  })
+
   test("a status outside the closed set is refused", () => {
     const result = parseCommandRequest({
       clientRequestId: "r",

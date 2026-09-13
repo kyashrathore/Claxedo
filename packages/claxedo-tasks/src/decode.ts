@@ -146,7 +146,7 @@ function handoffState(ctx: DecodeContext, value: unknown, path: string): Session
   return known ?? "unknown"
 }
 
-function sessionReference(ctx: DecodeContext, value: unknown, path: string): SessionReference {
+export function decodeSessionReference(ctx: DecodeContext, value: unknown, path: string): SessionReference {
   const row = ctx.read.record(value, path)
   return {
     sessionId: ctx.read.nonEmptyString(row?.sessionId, `${path}.sessionId`) ?? "",
@@ -156,7 +156,7 @@ function sessionReference(ctx: DecodeContext, value: unknown, path: string): Ses
 
 function nullableSessionReference(ctx: DecodeContext, value: unknown, path: string): SessionReference | null {
   if (value === null) return null
-  return sessionReference(ctx, value, path)
+  return decodeSessionReference(ctx, value, path)
 }
 
 function nullableInteger(ctx: DecodeContext, value: unknown, path: string): number | null {
@@ -191,6 +191,7 @@ function taskOf(ctx: DecodeContext, value: unknown, path: string): Task {
     number: ctx.read.integer(row?.number, `${path}.number`) ?? 0,
     workspaceId: ctx.read.nullableString(row?.workspaceId, `${path}.workspaceId`) ?? null,
     parentTaskId: ctx.read.nullableString(row?.parentTaskId, `${path}.parentTaskId`) ?? null,
+    createdFrom: nullableSessionReference(ctx, row?.createdFrom, `${path}.createdFrom`),
     title: ctx.read.string(row?.title, `${path}.title`) ?? "",
     description: ctx.read.string(row?.description, `${path}.description`) ?? "",
     status: taskStatusOf(ctx, row?.status, `${path}.status`),
@@ -225,7 +226,7 @@ function linkViewOf(ctx: DecodeContext, value: unknown, path: string): TaskSessi
     taskId: ctx.read.nonEmptyString(row?.taskId, `${path}.taskId`) ?? "",
     slot: decodeSlot(ctx, row?.slot, `${path}.slot`),
     attempt: ctx.read.integer(row?.attempt, `${path}.attempt`) ?? 0,
-    sessionRef: sessionReference(ctx, row?.sessionRef, `${path}.sessionRef`),
+    sessionRef: decodeSessionReference(ctx, row?.sessionRef, `${path}.sessionRef`),
     continuedFrom: nullableSessionReference(ctx, row?.continuedFrom, `${path}.continuedFrom`),
     presetId: ctx.read.nonEmptyString(row?.presetId, `${path}.presetId`) ?? "",
     presetRevision: ctx.read.integer(row?.presetRevision, `${path}.presetRevision`) ?? 0,
@@ -272,7 +273,7 @@ function startPreviewOf(ctx: DecodeContext, value: unknown, path: string): Start
     blockers: blockers.map((entry, index) => blockerOf(ctx, entry, `${path}.blockers[${index}]`)),
     currentSession: hasCurrent
       ? {
-          sessionRef: sessionReference(ctx, currentRow?.sessionRef, `${path}.currentSession.sessionRef`),
+          sessionRef: decodeSessionReference(ctx, currentRow?.sessionRef, `${path}.currentSession.sessionRef`),
           liveness: liveness(ctx, currentRow?.liveness, `${path}.currentSession.liveness`),
         }
       : null,

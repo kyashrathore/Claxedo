@@ -74,6 +74,7 @@ export function taskRow(input: Partial<Task> & Pick<Task, "id">): Task {
     number: input.number ?? taskNumberFor(input.id),
     workspaceId: input.workspaceId ?? null,
     parentTaskId: input.parentTaskId ?? null,
+    createdFrom: input.createdFrom ?? null,
     title: input.title ?? "Ship the thing",
     description: input.description ?? "",
     status: input.status ?? "todo",

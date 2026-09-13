@@ -12,7 +12,7 @@ import {
   type TasksCommand,
   type TasksCommandRequest,
 } from "../contracts"
-import { decodeConfigurations, decodeExecution, decodeSlot } from "../decode"
+import { decodeConfigurations, decodeExecution, decodeSessionReference, decodeSlot } from "../decode"
 import { clampLimit } from "../paging"
 import { decodeContext, finishDecode, parsedInvalid, type DecodeContext, type Parsed } from "../validation"
 
@@ -48,11 +48,12 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
     case "preset.restore":
       return { type: name, input: { presetId: presetId(), revision: revision() } }
     case "task.create": {
-      // The only optional key in a command input: a client that says nothing
-      // about status gets To do, and one that names anything but the two a
-      // task may be created in is refused rather than quietly corrected.
+      // The two optional keys. A client that says nothing about status gets To
+      // do, and one that names anything but the two a task may be created in is
+      // refused rather than quietly corrected; an absent `createdFrom` is the app.
       const created = row?.status
       if (created !== undefined && !isTaskCreateStatus(created)) ctx.fields.add(`${path}status`, "unknown_value")
+      const from = row?.createdFrom
       return {
         type: name,
         input: {
@@ -62,6 +63,7 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
           workspaceId: ctx.read.nullableString(row?.workspaceId, `${path}workspaceId`) ?? null,
           parentTaskId: ctx.read.nullableString(row?.parentTaskId, `${path}parentTaskId`) ?? null,
           ...(isTaskCreateStatus(created) ? { status: created } : {}),
+          ...(from === undefined ? {} : { createdFrom: decodeSessionReference(ctx, from, `${path}createdFrom`) }),
         },
       }
     }

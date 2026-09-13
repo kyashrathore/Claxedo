@@ -26,6 +26,7 @@ describe("memory tasks store", () => {
       number: 1,
       workspaceId: null,
       parentTaskId: null,
+      createdFrom: null,
       title: "Original",
       description: "",
       status: "todo",

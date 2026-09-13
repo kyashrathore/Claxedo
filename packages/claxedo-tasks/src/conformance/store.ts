@@ -15,7 +15,7 @@ import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
 import { gate, settle } from "../test-support/concurrency"
 import { OWNER, SCOPES, linkRow, presetRow, receiptRow, taskRow } from "../test-support/rows"
 
-export const TASKS_STORE_CONFORMANCE_VERSION = 6 as const
+export const TASKS_STORE_CONFORMANCE_VERSION = 7 as const
 
 export const TASKS_STORE_CONFORMANCE_SCOPE = {
   cases: [
@@ -35,6 +35,7 @@ export const TASKS_STORE_CONFORMANCE_SCOPE = {
     "a_list_row_counts_every_live_child_not_the_ones_a_page_returned",
     "task_numbers_are_minted_per_project_and_carried_on_reads",
     "an_archived_task_keeps_its_number_and_the_next_one_does_not_reuse_it",
+    "a_task_created_from_a_session_reads_that_session_back_on_get_list_and_children",
   ],
   // NOT pinned:
   //
@@ -527,6 +528,48 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
         (await store.tasks.get(CONFORMANCE_SCOPES.first, "task-gone"))?.number,
         2,
         "the archived task lost the number it was created with",
+      )
+    }),
+
+    conformanceCase("a task created from a session reads that session back on get, list and children", async () => {
+      const store = await start()
+      const origin = { sessionId: "session-author", workspaceId: "workspace-author" }
+      await store.tasks.insert(taskRow({ id: "task-from-session", createdFrom: origin, createdAt: 4_000 }))
+      await store.tasks.insert(
+        taskRow({ id: "child-from-session", parentTaskId: "task-from-session", createdFrom: origin, createdAt: 3_000 }),
+      )
+      // A local session has no workspace, and a row keyed on the workspace
+      // column would read this one as created by nobody.
+      await store.tasks.insert(
+        taskRow({ id: "task-from-local", createdFrom: { sessionId: "session-local", workspaceId: null }, createdAt: 2_000 }),
+      )
+      await store.tasks.insert(taskRow({ id: "task-from-the-app", createdAt: 1_000 }))
+
+      const stored = await store.tasks.get(CONFORMANCE_SCOPES.first, "task-from-session")
+      assertEqual(stored?.createdFrom?.sessionId, "session-author", "a read dropped the session the task was created from")
+      assertEqual(stored?.createdFrom?.workspaceId, "workspace-author", "a read dropped the creating session's workspace")
+
+      const local = await store.tasks.get(CONFORMANCE_SCOPES.first, "task-from-local")
+      assertEqual(local?.createdFrom?.sessionId, "session-local", "a creating session without a workspace was read as none")
+      assertEqual(local?.createdFrom?.workspaceId, null, "a creating session was given a workspace it never named")
+
+      assertEqual(
+        (await store.tasks.get(CONFORMANCE_SCOPES.first, "task-from-the-app"))?.createdFrom,
+        null,
+        "a task nobody created from a session came back with one",
+      )
+
+      const page = await store.tasks.list(CONFORMANCE_SCOPES.first, TASK_LIST)
+      assertEqual(
+        page.items.find((row) => row.id === "task-from-session")?.createdFrom?.sessionId,
+        "session-author",
+        "a list row dropped the session the task was created from",
+      )
+      const children = await store.tasks.listChildren(CONFORMANCE_SCOPES.first, "task-from-session", LIST)
+      assertEqual(
+        children.items.find((row) => row.id === "child-from-session")?.createdFrom?.sessionId,
+        "session-author",
+        "a child row dropped the session the task was created from",
       )
     }),
   ]

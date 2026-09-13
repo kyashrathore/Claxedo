@@ -15,6 +15,12 @@ export function validateTaskDraft(draft: TaskDraft): Parsed<TaskDraft> {
   if (draft.workspaceId !== null && draft.workspaceId.trim().length === 0) fields.add("workspaceId", "required")
   if (draft.parentTaskId !== null && draft.parentTaskId.trim().length === 0) fields.add("parentTaskId", "required")
   if (draft.status !== undefined && !isTaskCreateStatus(draft.status)) fields.add("status", "unknown_value")
+  if (draft.createdFrom !== undefined) {
+    if (draft.createdFrom.sessionId.trim().length === 0) fields.add("createdFrom.sessionId", "required")
+    if (draft.createdFrom.workspaceId !== null && draft.createdFrom.workspaceId.trim().length === 0) {
+      fields.add("createdFrom.workspaceId", "required")
+    }
+  }
   return fields.ok ? parsedOk(draft) : parsedInvalid(fields.fields)
 }
 

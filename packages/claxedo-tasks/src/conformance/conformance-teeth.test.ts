@@ -17,6 +17,7 @@
 import { describe, expect, test } from "bun:test"
 import { CONFORMANCE_SCOPES, TASKS_STORE_CONFORMANCE_SCOPE, tasksStoreConformance } from "./index"
 import { createMemoryTasksStore } from "../stores/memory"
+import type { Page, Task, TaskSummary } from "../contracts"
 import type { TasksStoreOperations, TasksStorePort } from "../ports/store"
 
 type Mutant = Readonly<{
@@ -188,6 +189,28 @@ const REUSES_AN_ARCHIVED_NUMBER = everywhere((operations) => ({
   },
 }))
 
+/** The column an adapter never added: every task read back as created by nobody. */
+const FORGETS_THE_CREATING_SESSION = everywhere((operations) => {
+  const forgetTask = (task: Task): Task => ({ ...task, createdFrom: null })
+  const forgetPage = (page: Page<TaskSummary>): Page<TaskSummary> => ({
+    ...page,
+    items: page.items.map((row): TaskSummary => ({ ...row, createdFrom: null })),
+  })
+  return {
+    ...operations,
+    tasks: {
+      ...operations.tasks,
+      get: async (scopeId, taskId) => {
+        const task = await operations.tasks.get(scopeId, taskId)
+        return task === undefined ? undefined : forgetTask(task)
+      },
+      list: async (scopeId, query) => forgetPage(await operations.tasks.list(scopeId, query)),
+      listChildren: async (scopeId, parentTaskId, query) =>
+        forgetPage(await operations.tasks.listChildren(scopeId, parentTaskId, query)),
+    },
+  }
+})
+
 const MUTANTS: readonly Mutant[] = [
   {
     breaks: "commits the work of a transaction that threw",
@@ -315,6 +338,10 @@ const MUTANTS: readonly Mutant[] = [
   {
     breaks: "hands an archived task's number to the next one",
     apply: REUSES_AN_ARCHIVED_NUMBER,
+  },
+  {
+    breaks: "reads every task back as created by nobody",
+    apply: FORGETS_THE_CREATING_SESSION,
   },
 ]
 

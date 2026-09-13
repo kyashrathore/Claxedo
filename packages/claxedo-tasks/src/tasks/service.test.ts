@@ -31,6 +31,7 @@ function draft(overrides: Partial<TaskDraft> = {}): TaskDraft {
     workspaceId: overrides.workspaceId ?? null,
     parentTaskId: overrides.parentTaskId ?? null,
     ...(overrides.status === undefined ? {} : { status: overrides.status }),
+    ...(overrides.createdFrom === undefined ? {} : { createdFrom: overrides.createdFrom }),
   }
 }
 
@@ -98,6 +99,25 @@ describe("tasks service", () => {
       await tasks.archive(ACTOR, { taskId: first.id, revision: first.revision })
 
       expect((await tasks.create(ACTOR, draft())).task.number).toBe(2)
+    })
+
+    test("records the session a task was created from and reads it back", async () => {
+      const origin = { sessionId: "ses_author", workspaceId: "ws_author" }
+      const created = (await tasks.create(ACTOR, draft({ createdFrom: origin }))).task
+      expect(created.createdFrom).toEqual(origin)
+      expect((await tasks.detail(ACTOR, created.id)).task.createdFrom).toEqual(origin)
+
+      const listed = await tasks.list(ACTOR, { projectId: PROJECT, status: null, parent: "any", includeArchived: false, cursor: null, limit: 50 })
+      expect(listed.items.find((row) => row.id === created.id)?.createdFrom).toEqual(origin)
+    })
+
+    test("a task the app created is created from nobody", async () => {
+      expect((await tasks.create(ACTOR, draft())).task.createdFrom).toBeNull()
+    })
+
+    test("refuses a creating session that names no session", async () => {
+      const refusal = await refusalOf(() => tasks.create(ACTOR, draft({ createdFrom: { sessionId: " ", workspaceId: null } })))
+      expect(fieldReasons(refusal)).toEqual({ "createdFrom.sessionId": "required" })
     })
 
     test("refuses a project the actor cannot write", async () => {

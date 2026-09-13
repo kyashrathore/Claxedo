@@ -126,6 +126,8 @@ export type Task = {
   number: number
   workspaceId: string | null
   parentTaskId: string | null
+  /** The session whose agent created the task; null when a person created it in the app. */
+  createdFrom: SessionReference | null
   title: string
   description: string
   status: TaskStatus
@@ -263,6 +265,8 @@ export type TaskDraft = {
   parentTaskId: string | null
   /** Absent means To do, which is where a task that nobody parked belongs. */
   status?: TaskCreateStatus
+  /** Sent by a session creating a task from inside itself; the app sends nothing. */
+  createdFrom?: SessionReference
 }
 
 export type PresetCreateInput = PresetDraft
