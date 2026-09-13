@@ -635,6 +635,7 @@ describe("hosted Agent Plugins routes", () => {
       .find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")
       .groups.find((entry: { id: string }) => entry.id === "tasks")
     expect(group.enabled).toBe(true)
+    expect(after.candidates.map((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId)).not.toContain("claxedo:tasks")
     const elsewhere = await (await request(subject.app, "/projects/project-b")).json()
     expect(elsewhere.candidates
       .find((candidate: { pluginInstanceId: string }) => candidate.pluginInstanceId === "claxedo")

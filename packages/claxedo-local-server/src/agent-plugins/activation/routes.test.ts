@@ -309,4 +309,25 @@ describe("unsigned Agent Plugins public route contribution", () => {
     expect(subject.activations.revision()).toBe(before)
   })
 
+  test("a group switch changes the built-in's row and adds no row of its own", async () => {
+    const subject = await fixture()
+    const written = await subject.app.request("http://local.test/api/claxedo/plugins/activation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo:tasks",
+        harnessIds: ["opencode", "claude", "codex", "cursor"],
+        choice: true,
+        expectedRevision: subject.activations.revision(),
+      }),
+    })
+    expect(written.status).toBe(200)
+    const catalog = await (await subject.app.request("http://local.test/api/claxedo/plugins")).json() as {
+      candidates: Array<{ pluginInstanceId: string; builtIn?: boolean; groups?: Array<{ id: string; enabled: boolean }> }>
+    }
+    expect(catalog.candidates.map((candidate) => candidate.pluginInstanceId)).not.toContain("claxedo:tasks")
+    expect(catalog.candidates.find((candidate) => candidate.builtIn)?.groups?.find((group) => group.id === "tasks"))
+      .toMatchObject({ enabled: true })
+  })
+
 })

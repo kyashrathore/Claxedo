@@ -441,8 +441,10 @@ export function HostedAgentPluginRoutes(input: {
         artifacts: input.artifacts,
         ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
       }))),
+      // A group's activation row is the built-in entry's own state; listed
+      // on its own it would be a plugin with no source and no artifact.
       Promise.all(known
-        .filter((entry) => !candidateIds.has(entry.pluginInstanceId))
+        .filter((entry) => !candidateIds.has(entry.pluginInstanceId) && !isBuiltinPluginInstanceId(entry.pluginInstanceId))
         .map((entry) => retainedView({
           known: entry,
           auth,

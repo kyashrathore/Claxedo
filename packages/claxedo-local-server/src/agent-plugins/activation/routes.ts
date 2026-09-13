@@ -232,8 +232,10 @@ export function LocalAgentPluginActivationRoutes(input: {
     if (before !== after) throw new Error("Catalog reads must not mutate Agent Plugins activation state")
     const candidates = resolved.candidates.map((candidate) => candidateView(candidate, input.activations))
     const candidateIds = new Set(resolved.candidates.map((candidate) => candidate.pluginInstanceId))
+    // A group's activation row is the built-in entry's own state; listed on
+    // its own it would be a plugin with no source and no artifact.
     const retained = await Promise.all(input.activations.listKnown()
-      .filter((plugin) => !candidateIds.has(plugin.pluginInstanceId))
+      .filter((plugin) => !candidateIds.has(plugin.pluginInstanceId) && !isBuiltinPluginInstanceId(plugin.pluginInstanceId))
       .map((plugin) => retainedView({
         pluginInstanceId: plugin.pluginInstanceId,
         pin: plugin.pin,
