@@ -483,6 +483,29 @@ describe("local composition — first-party MCP", () => {
     expect(await (await local.fetch("/api/claxedo/echo")).json()).toEqual({ workspace: claims.workspaceId })
   })
 
+  test("hands the client every Tasks operation over this same app, confined to no project", async () => {
+    const inputs: McpClientInputs[] = []
+    const built = app({
+      routeContributions: [{ id: "echo", path: "/api/claxedo/echo", routes: new Hono().get("/", (c) => c.text("ok")) }],
+      firstPartyMcp: {
+        verifyRuntimeCredential: (token) => (token === "rt" ? claims : undefined),
+        createClient: (input) => {
+          inputs.push(input)
+          return stubClient
+        },
+      },
+    })
+
+    expect((await initialize(built, { authorization: "Bearer rt" })).status).toBe(200)
+    const tasks = inputs[0]?.tasks
+    if (!tasks) throw new Error("the loopback mount composed no Tasks grant")
+    expect(tasks.operations).toEqual(["read", "create", "start"])
+    // No project: this machine's own workspace answers that question, and a
+    // grant that named one would confine the local agent for no reason.
+    expect(tasks.projectId).toBeUndefined()
+    expect(await (await tasks.fetch("/api/claxedo/echo")).text()).toBe("ok")
+  })
+
   test("reflects no CORS origin on the MCP route even for an origin the shell admits", async () => {
     const built = app({
       firstPartyMcp: { verifyRuntimeCredential: () => claims, createClient: () => stubClient },

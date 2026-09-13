@@ -86,9 +86,9 @@ describe("the first-party MCP a local session is launched with", () => {
     expect(client.getServerVersion()).toMatchObject({ name: "claxedo" })
 
     // The runtime audience, in full: a model inside a session drives sessions,
-    // subagents, processes and documents, answers only its own children's
-    // questions, and never approves a permission, rejects a question, deletes
-    // a session or touches workspace compute.
+    // subagents, processes, documents and this machine's tasks, answers only
+    // its own children's questions, and never approves a permission, rejects a
+    // question, deletes a session or touches workspace compute.
     expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
       "create_subagent",
       "documents_list",
@@ -108,6 +108,10 @@ describe("the first-party MCP a local session is launched with", () => {
       "subagent_capabilities",
       "subagent_list",
       "subagent_status",
+      "task_create",
+      "task_get",
+      "task_list",
+      "task_start",
     ])
   })
 

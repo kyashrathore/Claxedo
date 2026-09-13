@@ -58,6 +58,7 @@ import {
   mcpAuditRecord,
   type LoopbackFirstPartyMcpOptions,
 } from "@claxedo/mcp"
+import { TASKS_OPERATIONS } from "@claxedo/server-core/tasks-host/capability"
 import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
 import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
 import { raw, record } from "../platform/json"
@@ -354,6 +355,11 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
           credential,
           request,
           documents: { fetch: localFetch },
+          // Every operation, and no capability: this server is both the
+          // runtime host and the control plane, so the grant a hosted root
+          // carries has nothing to say here — the loopback fetch already
+          // reaches the one machine whose tasks these are.
+          tasks: { fetch: localFetch, operations: TASKS_OPERATIONS },
           local: {
             fetch: localFetch,
             workspace: { workspaceId: credential.workspaceId, directory: workspace.directory },

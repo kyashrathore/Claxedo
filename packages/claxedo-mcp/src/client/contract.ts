@@ -35,7 +35,17 @@ export type TasksOperation = "read" | "create" | "start"
  * they are the scope of the capability the mount presents; locally, the whole
  * surface of the single actor.
  */
-export type TasksGrant = Readonly<{ fetch: ClaxedoFetch; operations: readonly TasksOperation[] }>
+export type TasksGrant = Readonly<{
+  fetch: ClaxedoFetch
+  operations: readonly TasksOperation[]
+  /**
+   * The project this grant is confined to, when it is confined to one. A
+   * cloud runtime host knows it from the grant itself and has no project route
+   * of its own; a local mount leaves it absent and the session's workspace
+   * answers instead.
+   */
+  projectId?: string
+}>
 
 export type WorkspaceSummary = Readonly<{
   id: string

@@ -326,9 +326,14 @@ function tasksClient(ctx: McpToolContext): TasksClient {
   })
 }
 
-/** The project a task belongs to: the one named, or the one this session's own workspace sits in. */
+/**
+ * The project a task belongs to: the one named, the one this grant is confined
+ * to, or the one this session's own workspace sits in.
+ */
 async function projectOf(ctx: McpToolContext, requested: string | undefined): Promise<string> {
   if (requested) return requested
+  const granted = ctx.client.tasks?.projectId
+  if (granted) return granted
   const target = toolTarget(ctx, {})
   let response: Response
   try {

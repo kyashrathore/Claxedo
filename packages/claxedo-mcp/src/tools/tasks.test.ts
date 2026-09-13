@@ -150,6 +150,7 @@ type MountInput = {
   operations?: readonly TasksOperation[]
   crossMachineWrites?: boolean
   project?: { id?: string; status?: number }
+  grantedProject?: string
 }
 
 async function listen(input: MountInput = {}) {
@@ -174,7 +175,15 @@ async function listen(input: MountInput = {}) {
       createClaxedoMcpClient({
         deployment: "node",
         local: { fetch: localFetch, workspace: { workspaceId: "ws_local", directory: "/w" } },
-        ...(input.service ? { tasks: { fetch: input.service.fetch, operations: input.operations ?? ALL_OPERATIONS } } : {}),
+        ...(input.service
+          ? {
+              tasks: {
+                fetch: input.service.fetch,
+                operations: input.operations ?? ALL_OPERATIONS,
+                ...(input.grantedProject ? { projectId: input.grantedProject } : {}),
+              },
+            }
+          : {}),
       }),
     registerTools: [registerTaskTools],
     audit: (event) => void audits.push(mcpAuditRecord(event)),
@@ -237,6 +246,16 @@ describe("task_list", () => {
     expect(localCalls).toEqual(["/project/current?workspace=ws_local"])
     expect(service.calls).toEqual([{ method: "GET", path: "/api/claxedo/tasks/tasks?projectId=prj_1&status=todo" }])
     expect(audits).toEqual([{ tool: "task_list", actor: "runtime:rt_1", client: "runtime:rt_1", workspaceId: "ws_local", callerSessionId: "ses_caller" }])
+  })
+
+  test("a grant confined to one project answers for it, so no project route is read", async () => {
+    const service = tasksService()
+    const { url, localCalls } = await listen({ service, grantedProject: "prj_root" })
+    const client = await connect(url)
+
+    await json(client, "task_list", {})
+    expect(localCalls).toEqual([])
+    expect(service.calls).toEqual([{ method: "GET", path: "/api/claxedo/tasks/tasks?projectId=prj_root" }])
   })
 
   test("a named project is used as given, and the project route is never read", async () => {
