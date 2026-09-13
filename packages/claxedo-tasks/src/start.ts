@@ -8,6 +8,7 @@ import {
   type Preset,
   type PresetPlacement,
   type Task,
+  type SessionLiveness,
 } from "./contracts"
 import { refuse, refuseInvalid } from "./errors"
 import { hashRequest } from "./hash"
@@ -28,6 +29,16 @@ export const START_ORIGIN_PREFIX = "tasks.v1"
  * percent-encoded: an id carrying a colon would otherwise render the same
  * string as a different origin, and two tasks would share one reservation.
  */
+/**
+ * The one attempt number a slot accepts next. The current attempt while its
+ * session is live, which is the idempotent re-request; one past it once the
+ * owner reports the session gone; 1 for a slot nothing has run in.
+ */
+export function admissibleAttempt(current: { attempt: number; liveness: SessionLiveness } | undefined): number {
+  if (!current) return 1
+  return current.liveness === "live" ? current.attempt : current.attempt + 1
+}
+
 export function startOriginId(scopeId: string, taskId: string, slot: ConfigurationSlot, attempt: number): string {
   if (scopeId.length === 0 || taskId.length === 0) refuseInvalid("An origin needs a scope and a task", [])
   if (!Number.isSafeInteger(attempt) || attempt < 1) {

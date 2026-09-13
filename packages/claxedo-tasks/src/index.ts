@@ -54,6 +54,7 @@ export { createTasksService, type TasksService, type TasksServiceDeps } from "./
 export { createTasksCommands, type TasksCommands, type TasksCommandsDeps } from "./commands"
 
 export {
+  admissibleAttempt,
   START_ORIGIN_PREFIX,
   startConfigurationDigest,
   startDigest,

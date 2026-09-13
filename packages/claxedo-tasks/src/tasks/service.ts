@@ -32,7 +32,7 @@ import type { TasksClockPort } from "../ports/clock"
 import type { TasksIdsPort } from "../ports/ids"
 import { sessionOriginOf, type TasksSessionBridgePort } from "../ports/session-bridge"
 import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
-import { startConfigurationDigest } from "../start"
+import { admissibleAttempt, startConfigurationDigest } from "../start"
 import { validateReparent, validateTaskDraft, validateTaskEdit } from "./model"
 
 export type TasksServiceDeps = {
@@ -201,7 +201,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
       if (attempt !== 1) refuse("conflict", `Slot has no session yet; the first attempt is 1, not ${attempt}`)
       return
     }
-    const admissible = current.state === "live" ? current.link.attempt : current.link.attempt + 1
+    const admissible = admissibleAttempt({ attempt: current.link.attempt, liveness: current.state ?? "unavailable" })
     if (attempt !== admissible) {
       refuse(
         "conflict",

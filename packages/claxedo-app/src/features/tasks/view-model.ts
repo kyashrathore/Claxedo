@@ -1,4 +1,4 @@
-import { CONFIGURATION_SLOTS } from "@claxedo/tasks"
+import { CONFIGURATION_SLOTS, admissibleAttempt } from "@claxedo/tasks"
 import type {
   ConfigurationSlot,
   ModelConfiguration,
@@ -208,7 +208,7 @@ export function slotAttempt(groups: readonly TaskLinkGroup[], slot: Configuratio
   if (!current) return { attempt: 1, current: undefined, open: undefined, again: false }
   const live = current.liveness === "live"
   return {
-    attempt: live ? current.attempt : current.attempt + 1,
+    attempt: admissibleAttempt(current),
     current,
     open: live ? current : undefined,
     again: !live,

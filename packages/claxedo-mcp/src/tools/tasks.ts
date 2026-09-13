@@ -25,6 +25,7 @@ import type {
   TaskStatus,
   TaskSummary,
 } from "@claxedo/tasks"
+import { admissibleAttempt } from "@claxedo/tasks"
 import { record, text } from "../json"
 import { McpAccessDenied, type McpToolContext } from "../context"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
@@ -225,17 +226,10 @@ function callingSession(ctx: McpToolContext): SessionReference | undefined {
   return { sessionId: credential.sessionId, workspaceId: credential.workspaceId }
 }
 
-/**
- * The attempt a slot will take next: the one it already holds while the host
- * reports that session live, which is the idempotent re-request, and one past
- * it once the session is gone. A call that always asked for 1 is refused by
- * every slot that has ever run.
- */
+/** The slot's current link is its highest attempt; the kit says which attempt that link admits next. */
 function nextAttempt(links: readonly TaskSessionLinkView[], slot: ConfigurationSlot): number {
-  const attempts = links.filter((link) => link.slot === slot).sort((a, b) => b.attempt - a.attempt)
-  const current = attempts[0]
-  if (!current) return 1
-  return current.liveness === "live" ? current.attempt : current.attempt + 1
+  const current = links.filter((link) => link.slot === slot).sort((a, b) => b.attempt - a.attempt)[0]
+  return admissibleAttempt(current)
 }
 
 /**
