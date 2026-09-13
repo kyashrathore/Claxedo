@@ -4,6 +4,7 @@
 // a workspace authority, or cloud provisioning, and its own closure test
 // asserts so.
 import { createLocalDaemonLifecycle, startLocalServer } from "@claxedo/local-server/self-hosted-execution"
+import { routeContributions as tasksRouteContributions } from "@claxedo/local-server/tasks/local-composition"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
@@ -18,18 +19,6 @@ import {
 
 const agentPlugins = await import("@claxedo/local-server/agent-plugins/local-composition")
   .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition())
-/**
- * Tasks, selected when this bundle is built.
- *
- * The comparison is folded to a literal by the `define` in
- * `bundle-claxedo-server.ts`, so `CLAXEDO_BUILD_TASKS=0` removes the
- * composition, the kit and the routes from the artifact rather than leaving
- * them behind a false branch. Unbundled (`tsx`) the same line reads the real
- * variable.
- */
-const tasks = process.env.CLAXEDO_BUILD_TASKS !== "0"
-  ? await import("@claxedo/local-server/tasks/local-composition")
-  : undefined
 void agentPlugins.ready.catch((error) => {
   console.error("Agent Plugins startup reconciliation failed", error)
 })
@@ -66,7 +55,7 @@ const server = startLocalServer({
     lifecycle,
   },
   ...(transport ? { processObserver: transport.observer } : {}),
-  routeContributions: [...agentPlugins.routeContributions, ...(tasks?.routeContributions ?? [])],
+  routeContributions: [...agentPlugins.routeContributions, ...tasksRouteContributions],
   harnessLaunch: agentPlugins.harnessLaunch,
 })
 const discovery: ClaxedoDaemonDiscovery = {
