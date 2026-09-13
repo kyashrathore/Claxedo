@@ -48,10 +48,19 @@ export function isMachineLoginHarness(value: string): value is MachineLoginHarne
   return (MACHINE_LOGIN_HARNESSES as readonly string[]).includes(value)
 }
 
-const PROVIDER_IDS: Record<MachineLoginHarness, readonly string[]> = {
+export const MACHINE_LOGIN_PROVIDER_IDS: Record<MachineLoginHarness, readonly string[]> = {
   claude: ["claude-acp", "claude-sdk"],
   codex: ["codex-app-server", "openai"],
   cursor: ["cursor-acp", "cursor-sdk"],
+}
+
+/**
+ * The harness a stored row's provider belongs to, where one does. Every other
+ * provider id names a vendor an engine can run rather than a harness's own
+ * login, and has no harness to be listed under.
+ */
+export function machineLoginHarnessFor(providerId: string): MachineLoginHarness | undefined {
+  return MACHINE_LOGIN_HARNESSES.find((harness) => MACHINE_LOGIN_PROVIDER_IDS[harness].includes(providerId))
 }
 
 /**
@@ -172,7 +181,7 @@ function report(
   rest: Omit<MachineLogin, "harness" | "providerIds" | "serves">,
 ): MachineLogin {
   const serves = SERVED_PROVIDER_IDS[harness]
-  return { harness, providerIds: PROVIDER_IDS[harness], ...(serves ? { serves } : {}), ...rest }
+  return { harness, providerIds: MACHINE_LOGIN_PROVIDER_IDS[harness], ...(serves ? { serves } : {}), ...rest }
 }
 
 /**

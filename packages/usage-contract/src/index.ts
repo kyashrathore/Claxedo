@@ -58,10 +58,52 @@ export type UsageChartSeries = {
   }>
 }
 
+/** One plan window a vendor reports for an account, as the credential store holds it. */
+export type QuotaWindow = {
+  /** `session`, `weekly`, `weekly_opus`, or the vendor's own slot name. */
+  window: string
+  usedPercent: number
+  resetsAt: number | null
+}
+
+/**
+ * One account a harness can run on, and what its plan has left.
+ *
+ * Flat and first-class rather than nested under a provider: a harness resolves
+ * auth through several provider ids and one login is stored once per binding,
+ * so a reader that grouped by provider would draw the same account twice.
+ */
+export type QuotaAccount = {
+  /** `claude`, `codex`, `cursor` — the harness this account runs. */
+  harness: string
+  /** The stored row this account is keyed by; absent for `machineLogin`. */
+  credentialId?: string
+  /** Set for the login a harness on this machine holds, which is no stored row. */
+  machineLogin?: true
+  /**
+   * What names this account: the address the vendor gave it, or the name the
+   * user gave the stored row. Absent only where the harness names no address,
+   * which the reader words for itself.
+   */
+  label?: string
+  /** The subscription, in the vendor's own word ("max", "pro"), where it names one. */
+  plan?: string
+  /** Whether this is the account the harness runs its next turn on. */
+  inUse: boolean
+  /** The provider's last verdict on a stored account. A machine login has none. */
+  health?: "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired"
+  windows: readonly QuotaWindow[]
+  /** When those windows were read; absent on an account nothing has read yet. */
+  usageAt?: number
+}
+
+/** Plan usage for every account this installation can name. */
+export type QuotaSnapshot = { accounts: readonly QuotaAccount[] }
+
 export type UnifiedUsageResponse = {
   version: 1
   range: { since: number; until: number; timeZone: string }
-  quota: { status: "available" | "unavailable" | "degraded"; snapshot?: unknown; error?: string }
+  quota: { status: "available" | "unavailable" | "degraded"; snapshot?: QuotaSnapshot; error?: string }
   claxedo: UsageSeries & {
     cost: UsageCost
     locationShare: { localTokens: number; cloudTokens: number }

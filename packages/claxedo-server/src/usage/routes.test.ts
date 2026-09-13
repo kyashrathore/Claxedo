@@ -581,9 +581,14 @@ describe("local unified usage route", () => {
     expect(shifted.filterOptions.total.app ?? []).not.toContain("codex")
   })
 
-  test("keeps the last valid quota snapshot when a refresh probe fails", async () => {
-    const snapshot = { providers: [{ provider: "openai", windows: [{ label: "weekly", usedPercent: 20 }] }] }
-    const quota = vi.fn().mockResolvedValueOnce(snapshot).mockRejectedValueOnce(new Error("quota offline"))
+  test("answers the quota view with what the reader composed, and degrades when it throws", async () => {
+    const snapshot = {
+      harnesses: [{ harness: "codex", accounts: [{ credentialIds: ["cred_1"], label: "a@b.c", windows: [], usageAt: 5 }] }],
+    }
+    const quota = vi
+      .fn()
+      .mockResolvedValueOnce({ status: "degraded", snapshot })
+      .mockRejectedValueOnce(new Error("registry offline"))
     const app = LocalUsageRoutes({
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
       identity: async () => undefined,
@@ -591,12 +596,13 @@ describe("local unified usage route", () => {
       quota,
     })
     const request = "/?since=0&until=20&timezone=UTC&view=quota"
-    expect(((await (await app.request(request)).json())).quota).toEqual({ status: "available", snapshot })
+    expect(((await (await app.request(request)).json())).quota).toEqual({ status: "degraded", snapshot })
+    expect(quota.mock.calls[0]?.[0]).toMatchObject({ refresh: false })
     expect(((await (await app.request(`${request}&refresh_nonce=3`)).json())).quota).toEqual({
       status: "degraded",
-      snapshot,
-      error: "quota offline",
+      error: "registry offline",
     })
+    expect(quota.mock.calls[1]?.[0]).toMatchObject({ refresh: true })
   })
 
   test("consumes a refresh nonce once across pagination and refetches", async () => {
@@ -634,7 +640,7 @@ describe("local unified usage route", () => {
       classifiedClaxedo: 0,
       unclassified: 0,
     }))
-    const quota = vi.fn(async () => ({ providers: [] }))
+    const quota = vi.fn(async () => ({ status: "unavailable" as const }))
     const app = LocalUsageRoutes({
       local: { current, pendingOutbox } as never,
       identity,

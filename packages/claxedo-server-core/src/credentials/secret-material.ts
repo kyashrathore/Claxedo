@@ -65,6 +65,16 @@ const OAUTH_TOKEN_PREFIX = /^sk-ant-o/i
 
 const SUBSCRIPTION_KINDS = new Set<CredentialKind>(["oauth_token", "subscription_session"])
 
+/**
+ * Whether a row's kind alone says it is a plan login rather than a key. A
+ * secret that is a subscription only by its prefix cannot be told apart without
+ * reading it, so a caller that holds metadata and no secret — anything listing
+ * accounts — reads a plan account as exactly these two kinds.
+ */
+export function isSubscriptionKind(kind: CredentialKind): boolean {
+  return SUBSCRIPTION_KINDS.has(kind)
+}
+
 export function credentialSecretMaterial(input: {
   kind: CredentialKind
   secret: string

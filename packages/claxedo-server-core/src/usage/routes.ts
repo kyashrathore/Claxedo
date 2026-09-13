@@ -1083,7 +1083,12 @@ export function LocalUsageRoutes(input: {
   central?: UsageLedger
   outbox: Pick<UsageOutboxSync, "flush" | "clearIdentity">
   identity(request: Request): Promise<{ org_id: string; user_id: string } | undefined>
-  quota?: (refresh: boolean) => Promise<unknown>
+  /**
+   * Plan usage for the quota view. Takes the request because the tenant it
+   * answers for is the credential registry's, which only the composition that
+   * mounted the credential routes can resolve the same way they do.
+   */
+  quota?: (input: { request: Request; refresh: boolean }) => Promise<UnifiedUsageResponse["quota"]>
   history?: (range: { since: number; until: number; refresh: boolean }) => Promise<LocalHistorySnapshot>
   telemetry?: UsageTelemetry
 }) {
@@ -1095,7 +1100,6 @@ export function LocalUsageRoutes(input: {
   const centralCache = new Map<string, CentralUsageProjection>()
   const historyCache = new Map<string, LocalHistorySnapshot>()
   const consumedRefreshNonces = new Set<number>()
-  let lastQuotaSnapshot: unknown
   const deadline = <T>(promise: Promise<T>, label: string, timeoutMs = 8_000) =>
     withTimeout(promise, timeoutMs, () => new Error(`${label} timed out`))
   const rememberCentral = (key: string, value: CentralUsageProjection) => {
@@ -1146,22 +1150,12 @@ export function LocalUsageRoutes(input: {
     const refresh = consumeRefreshNonce(c.req.query("refresh_nonce"))
     if (refresh === undefined) return c.json({ error: "invalid_refresh_nonce" }, 400)
     if (view === "quota") {
-      const result = input.quota
-        ? await deadline(input.quota(refresh), "quota probe")
-            .then((snapshot) => ({ snapshot }))
-            .catch((error) => ({ error: error instanceof Error ? error.message : String(error) }))
-        : { unavailable: true as const }
-      if ("snapshot" in result) lastQuotaSnapshot = result.snapshot
-      const quota: UnifiedUsageResponse["quota"] =
-        "snapshot" in result
-          ? { status: "available", snapshot: result.snapshot }
-          : "error" in result
-            ? {
-                status: "degraded",
-                ...(lastQuotaSnapshot === undefined ? {} : { snapshot: lastQuotaSnapshot }),
-                error: result.error,
-              }
-            : { status: "unavailable" }
+      const quota: UnifiedUsageResponse["quota"] = input.quota
+        ? await deadline(input.quota({ request: c.req.raw, refresh }), "quota read").catch((error: unknown) => ({
+            status: "degraded" as const,
+            error: error instanceof Error ? error.message : String(error),
+          }))
+        : { status: "unavailable" }
       const series = usageSeriesFromFacts({ facts: [], since, until, timeZone })
       const response: UnifiedUsageResponse = {
         version: 1,

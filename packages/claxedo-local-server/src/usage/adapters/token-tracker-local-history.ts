@@ -1,3 +1,17 @@
+/**
+ * The local usage history other agents already wrote, read through
+ * tokentracker-cli's library surface.
+ *
+ * Security constraints on that dependency (bunfig.toml exempts it from the
+ * release-age gate):
+ * - Library-only. Never invoke its CLI (`sync`/`serve`): those paths contain an
+ *   `npx --yes` self-update and a localhost dashboard that must not ship.
+ * - Exact-pinned. Bumping requires a tarball diff against the previous pin.
+ *
+ * Node-only (fs/child_process): loaded lazily so it can never enter the Worker
+ * import graph.
+ */
+
 import fs from "node:fs/promises"
 import path from "node:path"
 import { createHash } from "node:crypto"

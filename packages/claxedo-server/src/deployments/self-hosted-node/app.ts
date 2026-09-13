@@ -76,7 +76,7 @@ import {
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { dropCopiedHarnessLogins, migrateCredentials, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
-import { CredentialRoutes, localControlPlaneCredentials } from "@claxedo/local-server/self-hosted-execution"
+import { CredentialRoutes, createUsageQuotaReader, localControlPlaneCredentials, requestOrg } from "@claxedo/local-server/self-hosted-execution"
 import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { NetworkPolicyRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { ProjectRemoteRoutes } from "../../workspace/routes/project-remote"
@@ -139,7 +139,6 @@ import {
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
-import { getLocalUsageLimits } from "@claxedo/local-server/self-hosted-execution"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
   createLocalCredentialBroker,
@@ -1203,6 +1202,9 @@ export function createSelfHostedApp(
     isDirectory: async (directory) => (await fs.promises.stat(directory).catch(() => undefined))?.isDirectory() ?? false,
   }))
   if (options.usageRevisionStore) {
+    // The same tenant the credential routes resolve, because the accounts this
+    // reads are the rows those routes list.
+    const readQuota = createUsageQuotaReader({ credentials: services.credentials })
     app.route("/api/claxedo/usage", LocalUsageRoutes({
       local: options.usageRevisionStore,
       ...(options.usageLedger ? { central: options.usageLedger } : {}),
@@ -1213,7 +1215,7 @@ export function createSelfHostedApp(
           ? { org_id: auth.user.orgId, user_id: auth.user.subject }
           : undefined
       },
-      quota: async (refresh) => await getLocalUsageLimits({ refresh }),
+      quota: async ({ request, refresh }) => await readQuota({ org: await requestOrg(request, {}), refresh }),
       history: async ({ since, until, refresh }) => {
         const facts = await options.usageRevisionStore!.current()
         const incompleteSources = new Set<string>()
