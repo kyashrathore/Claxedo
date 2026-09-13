@@ -67,6 +67,37 @@ export type QuotaWindow = {
 }
 
 /**
+ * The Claxedo name for each window slot a vendor reports, per harness.
+ *
+ * One table across vendors would label half of them wrongly: `primary_window`
+ * is a session for Codex and the whole billing cycle for Cursor. A harness, or
+ * a slot, that is not listed keeps the vendor's own field name — inventing a
+ * tier name for it would rot on the next vendor change without anything
+ * failing.
+ */
+export const USAGE_WINDOW_NAMES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  claude: { five_hour: "session", seven_day: "weekly", seven_day_opus: "weekly_opus" },
+  codex: {
+    primary_window: "session",
+    secondary_window: "weekly",
+    credit_window: "credits",
+    spark_primary_window: "spark_session",
+    spark_secondary_window: "spark_weekly",
+  },
+  cursor: { primary_window: "plan", secondary_window: "auto", tertiary_window: "api" },
+}
+
+/**
+ * Codex's own usage read names a window by its declared `limit_window_seconds`
+ * rather than by the slot it arrives in: a free plan gets only the weekly
+ * window, delivered in the primary slot.
+ */
+export const CODEX_WINDOW_NAME_BY_SECONDS: Readonly<Record<number, string>> = {
+  18_000: "session",
+  604_800: "weekly",
+}
+
+/**
  * One account a harness can run on, and what its plan has left.
  *
  * Flat and first-class rather than nested under a provider: a harness resolves
