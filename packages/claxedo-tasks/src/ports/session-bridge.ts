@@ -24,6 +24,16 @@ export type SessionOrigin = {
   sessionRef: SessionReference
 }
 
+export function sessionOriginOf(link: TaskSessionLink): SessionOrigin {
+  return {
+    scopeId: link.scopeId,
+    taskId: link.taskId,
+    slot: link.slot,
+    attempt: link.attempt,
+    sessionRef: link.sessionRef,
+  }
+}
+
 export type SessionStateReading = {
   session: SessionReference
   state: SessionLiveness

@@ -50,7 +50,7 @@ export {
 export { configurationEntries, draftHarnesses, validatePresetDraft, type HarnessLookup } from "./presets/model"
 export { createPresetsService, type PresetsService, type PresetsServiceDeps } from "./presets/service"
 export { validateReparent, validateTaskDraft, validateTaskEdit } from "./tasks/model"
-export { createTasksService, type TaskMutation, type TasksService, type TasksServiceDeps } from "./tasks/service"
+export { createTasksService, type TasksService, type TasksServiceDeps } from "./tasks/service"
 export { createTasksCommands, type TasksCommands, type TasksCommandsDeps } from "./commands"
 
 export {

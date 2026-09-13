@@ -13,6 +13,7 @@ import {
   type StartResponse,
   type Task,
   type TaskArchiveInput,
+  type TaskCommandResult,
   type TaskCreateInput,
   type TaskDetailResponse,
   type TaskEditInput,
@@ -29,7 +30,7 @@ import { TasksError, refuse, refuseInvalid } from "../errors"
 import type { TasksAuthorizationPort } from "../ports/authorization"
 import type { TasksClockPort } from "../ports/clock"
 import type { TasksIdsPort } from "../ports/ids"
-import type { TasksSessionBridgePort } from "../ports/session-bridge"
+import { sessionOriginOf, type TasksSessionBridgePort } from "../ports/session-bridge"
 import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
 import { startConfigurationDigest } from "../start"
 import { validateReparent, validateTaskDraft, validateTaskEdit } from "./model"
@@ -42,8 +43,6 @@ export type TasksServiceDeps = {
   bridge: TasksSessionBridgePort
 }
 
-export type TaskMutation = { task: Task; parent: Task | null }
-
 type SlotReading = { state: SessionLiveness; handoff: SessionHandoffState }
 
 type CurrentSlot = { link: TaskSessionLink | null; state: SessionLiveness | null; handoff: SessionHandoffState }
@@ -54,12 +53,12 @@ export type TasksService = {
   detail(actor: TasksActor, taskId: string): Promise<TaskDetailResponse>
   /** The task, or a refusal, for a caller that must prove write access before acting on it. */
   requireWritable(actor: TasksActor, taskId: string): Promise<Task>
-  create(actor: TasksActor, input: TaskCreateInput): Promise<TaskMutation>
-  edit(actor: TasksActor, input: TaskEditInput): Promise<TaskMutation>
-  setStatus(actor: TasksActor, input: TaskSetStatusInput): Promise<TaskMutation>
-  reparent(actor: TasksActor, input: TaskReparentInput): Promise<TaskMutation>
-  archive(actor: TasksActor, input: TaskArchiveInput): Promise<TaskMutation>
-  restore(actor: TasksActor, input: TaskRestoreInput): Promise<TaskMutation>
+  create(actor: TasksActor, input: TaskCreateInput): Promise<TaskCommandResult>
+  edit(actor: TasksActor, input: TaskEditInput): Promise<TaskCommandResult>
+  setStatus(actor: TasksActor, input: TaskSetStatusInput): Promise<TaskCommandResult>
+  reparent(actor: TasksActor, input: TaskReparentInput): Promise<TaskCommandResult>
+  archive(actor: TasksActor, input: TaskArchiveInput): Promise<TaskCommandResult>
+  restore(actor: TasksActor, input: TaskRestoreInput): Promise<TaskCommandResult>
   startPreview(actor: TasksActor, taskId: string, request: StartPreviewRequest): Promise<StartPreview>
   start(actor: TasksActor, taskId: string, request: StartRequest): Promise<StartResponse>
 }
@@ -143,7 +142,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
 
   const readingsOf = async (links: readonly TaskSessionLink[]): Promise<Map<string, SlotReading>> => {
     if (links.length === 0) return new Map()
-    const readings = await deps.bridge.sessionState(links)
+    const readings = await deps.bridge.sessionState(links.map(sessionOriginOf))
     return new Map(readings.map((reading) => [reading.session.sessionId, { state: reading.state, handoff: reading.handoff }]))
   }
 

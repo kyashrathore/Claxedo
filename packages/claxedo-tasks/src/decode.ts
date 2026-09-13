@@ -126,7 +126,7 @@ function taskStatusOf(ctx: DecodeContext, value: unknown, path: string): TaskSta
   return isTaskStatus(raw) ? raw : "todo"
 }
 
-function slot(ctx: DecodeContext, value: unknown, path: string): ConfigurationSlot {
+export function decodeSlot(ctx: DecodeContext, value: unknown, path: string): ConfigurationSlot {
   const raw = ctx.read.string(value, path)
   if (raw !== undefined && !isConfigurationSlot(raw)) ctx.fields.add(path, "unknown_value")
   return isConfigurationSlot(raw) ? raw : "primary"
@@ -223,7 +223,7 @@ function linkViewOf(ctx: DecodeContext, value: unknown, path: string): TaskSessi
   const row = ctx.read.record(value, path)
   return {
     taskId: ctx.read.nonEmptyString(row?.taskId, `${path}.taskId`) ?? "",
-    slot: slot(ctx, row?.slot, `${path}.slot`),
+    slot: decodeSlot(ctx, row?.slot, `${path}.slot`),
     attempt: ctx.read.integer(row?.attempt, `${path}.attempt`) ?? 0,
     sessionRef: sessionReference(ctx, row?.sessionRef, `${path}.sessionRef`),
     continuedFrom: nullableSessionReference(ctx, row?.continuedFrom, `${path}.continuedFrom`),
@@ -262,7 +262,7 @@ function startPreviewOf(ctx: DecodeContext, value: unknown, path: string): Start
     digest: ctx.read.nonEmptyString(row?.digest, `${path}.digest`) ?? "",
     expiresAt: ctx.read.integer(row?.expiresAt, `${path}.expiresAt`) ?? 0,
     placement: placement === "cloud" ? "cloud" : "local",
-    slot: slot(ctx, row?.slot, `${path}.slot`),
+    slot: decodeSlot(ctx, row?.slot, `${path}.slot`),
     attempt: ctx.read.integer(row?.attempt, `${path}.attempt`) ?? 0,
     configuration: decodeModelConfiguration(ctx, row?.configuration, `${path}.configuration`),
     capabilities,
@@ -358,7 +358,7 @@ export function decodeCapabilitiesResponse(value: unknown): Parsed<TasksCapabili
       }),
       cloudSelectedCapabilities: ctx.read.boolean(row?.cloudSelectedCapabilities, "body.cloudSelectedCapabilities") ?? false,
       instructions: ctx.read.boolean(row?.instructions, "body.instructions") ?? false,
-      configurationSlots: slots.map((entry, index) => slot(ctx, entry, `body.configurationSlots[${index}]`)),
+      configurationSlots: slots.map((entry, index) => decodeSlot(ctx, entry, `body.configurationSlots[${index}]`)),
       bounds: boundsOf(ctx, row?.bounds),
     }
   })

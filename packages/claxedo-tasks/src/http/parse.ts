@@ -1,11 +1,9 @@
 import {
   TASKS_BOUNDS,
-  isConfigurationSlot,
   isTaskCreateStatus,
   isTaskStatus,
   isTasksCommandName,
   type ChildListQuery,
-  type ConfigurationSlot,
   type PresetDraft,
   type PresetListQuery,
   type StartPreviewRequest,
@@ -14,7 +12,8 @@ import {
   type TasksCommand,
   type TasksCommandRequest,
 } from "../contracts"
-import { decodeConfigurations, decodeExecution } from "../decode"
+import { decodeConfigurations, decodeExecution, decodeSlot } from "../decode"
+import { clampLimit } from "../paging"
 import { decodeContext, finishDecode, parsedInvalid, type DecodeContext, type Parsed } from "../validation"
 
 /**
@@ -23,12 +22,6 @@ import { decodeContext, finishDecode, parsedInvalid, type DecodeContext, type Pa
  * default and never a coercion. Sizes and semantic rules belong to the model
  * files, which own them for host callers too.
  */
-
-
-
-
-
-
 
 function presetDraft(ctx: DecodeContext, row: Record<string, unknown> | undefined, path: string): PresetDraft {
   return {
@@ -124,12 +117,6 @@ export function parseCommandRequest(body: unknown): Parsed<TasksCommandRequest> 
   return finishDecode(ctx, () => ({ clientRequestId, command: commandInput(ctx, name, command?.input) }))
 }
 
-function slotOf(ctx: DecodeContext, value: unknown, path: string): ConfigurationSlot {
-  const slot = ctx.read.string(value, path)
-  if (slot !== undefined && !isConfigurationSlot(slot)) ctx.fields.add(path, "unknown_value")
-  return isConfigurationSlot(slot) ? slot : "primary"
-}
-
 export function parseStartPreviewRequest(body: unknown): Parsed<StartPreviewRequest> {
   const ctx = decodeContext()
   const row = ctx.read.record(body, "body")
@@ -137,7 +124,7 @@ export function parseStartPreviewRequest(body: unknown): Parsed<StartPreviewRequ
     taskRevision: ctx.read.integer(row?.taskRevision, "taskRevision") ?? 0,
     presetId: ctx.read.nonEmptyString(row?.presetId, "presetId") ?? "",
     presetRevision: ctx.read.integer(row?.presetRevision, "presetRevision") ?? 0,
-    slot: slotOf(ctx, row?.slot, "slot"),
+    slot: decodeSlot(ctx, row?.slot, "slot"),
     attempt: ctx.read.integer(row?.attempt, "attempt") ?? 0,
     continueFromPrevious: ctx.read.boolean(row?.continueFromPrevious, "continueFromPrevious") ?? false,
   }))
@@ -152,7 +139,7 @@ export function parseStartRequest(body: unknown): Parsed<StartRequest> {
     taskRevision: ctx.read.integer(row?.taskRevision, "taskRevision") ?? 0,
     presetId: ctx.read.nonEmptyString(row?.presetId, "presetId") ?? "",
     presetRevision: ctx.read.integer(row?.presetRevision, "presetRevision") ?? 0,
-    slot: slotOf(ctx, row?.slot, "slot"),
+    slot: decodeSlot(ctx, row?.slot, "slot"),
     attempt: ctx.read.integer(row?.attempt, "attempt") ?? 0,
     previewDigest: ctx.read.nonEmptyString(row?.previewDigest, "previewDigest") ?? "",
     handoffText: handoff === null ? null : (ctx.read.boundedText(handoff, "handoffText", TASKS_BOUNDS.handoffTextMaxBytes) ?? null),
@@ -180,10 +167,12 @@ function queryBoolean(ctx: DecodeContext, params: URLSearchParams, key: string):
   return false
 }
 
+/** A browser is told its limit is out of range where a host caller is clamped, off the one rule. */
 function queryLimit(ctx: DecodeContext, params: URLSearchParams): number {
   const limit = queryInteger(ctx, params, "limit")
   if (limit === undefined) return TASKS_BOUNDS.listLimitDefault
-  if (limit < 1 || limit > TASKS_BOUNDS.listLimitMax) {
+  const clamped = clampLimit(limit)
+  if (clamped !== limit) {
     ctx.fields.add("limit", "out_of_range")
     return TASKS_BOUNDS.listLimitDefault
   }
