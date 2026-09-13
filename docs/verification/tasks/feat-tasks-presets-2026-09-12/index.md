@@ -393,3 +393,61 @@ Screenshots, light and dark at 1440×900, against the running stack:
 ## Task numbers, Backlog, and the popover fix (2026-09-14)
 
 The user asked for the row properties Linear shows (a short id, the status mark, a date) and chose a real Backlog status over a filter that only meant "To do". Landed as `feat(tasks): give every task a number of its own inside its project` (`Task.number` minted by the store one past the project's highest, archived rows counted, inside the serialized unit; unique `(scope, project, number)` in SQLite and D1, both unreleased migrations edited in place; D1 has no interactive transaction, so a raced create is refused by the index and surfaced as the new `number-taken` conflict), `feat(tasks): make Backlog a status a task can be parked in` (`TASK_STATUSES` gains `backlog` first; `task.create` takes an optional `backlog | todo`; no DDL constrained the status), `feat(tasks): put the key, the parked column and a date choice on the surface` (key `KEY-n` derived from the project name at render, status mark leading every row and card, Backlog column first, Display gains Date: Updated | Created), and `fix(app): let a select opened inside a dialog paint above it`. Earlier the same day: `fix(ui): keep a popover open while a layer it opened holds focus` (the host popover's own window listeners closed it on the first focus into a portaled select list; the adoption rule lives in `popover-dismissal.ts` with six tests and was proven live by mouse, by keyboard and through a pick) and `feat(tasks): draw the status glyphs in one icon colour`. The project column stays out: the list read requires a project and no any-project read exists. Live proof on a second stack with fresh dirs: numbers 1–7 contiguous, `status: "backlog"` accepted at create, `"doing"` at create refused 400, a task created into Backlog through the dialog's select. The user's stack was migrated in place (`alter table … add column number`, backfilled by creation order, unique index created; `claxedo.db.before-number` kept beside it) and restarted. Gates at the tip: kit 197, server-core tasks-host 29, claxedo-server `src/tasks` 72, local-server tasks 26, app 146 across tasks + integrations + settings + documents, architecture guards 252, `tsgo -b` clean, ratchets unchanged, theme-token and root lint at their pre-existing counts.
+
+## Four surface cuts from the owner's screenshots (2026-09-13)
+
+The owner read the list, the task page and the Start dialog off the running
+stack and asked for four things: the row's checklist and bubble glyphs are
+overkill; the task number breaks the title's left edge when the breadcrumb
+already carries it; the Properties rail says every name twice; and Start should
+be a press and a preset, not a dialog.
+
+| Commit | What changed |
+|---|---|
+| `feat(tasks): say a row's subtasks and session without glyphs` | the subtask fraction stands alone as muted tabular text (the count is also its `title`), and the session mark is the rail's own `.tsk-dot`. A list read carries `links.count` and no liveness, so the row's dot has no `data-liveness` and stays a ring; the rail's fills green only where the host reports the session live. `.tsk-dot` gained that ring, so a slot with no session reads as an outline rather than a grey disc. Board cards took both changes, and gained the session dot they never had. |
+| `feat(tasks): let a task page's title start at the left edge` | the key leaves the title row; the last crumb keeps `DP-4 another sub issue` and carries `data-testid="task-detail-key"`. `.tsk-title-row` and `.tsk-title-key` are gone. |
+| `feat(tasks): make each property in the rail the value itself` | the rail is rows of values: the `StatusControl` is the status row (`aria-label="Status"`), and project, preset and workspace are a glyph and a name in a `role="group"` carrying their own label. No `<dl>`, no label column, `PROPERTIES` still the eyebrow. The "Status is manual: To do until you change it." line is deleted — nothing in the product sets a status, so it was a fact about the product written on every task. |
+| `feat(tasks): start a task from the page the way a row does, and drop the dialog` | below. |
+
+### Start, without the dialog
+
+The Start dialog is deleted — `start-task-dialog.tsx`, `start-task-flow.tsx`,
+`start-task-form.tsx` and the two suites that drove them — and the task page's
+per-slot Start, Start again and the dialog they opened are one
+`TaskStartControl`, the same split control a list row and a board card carry.
+Start runs the default preset through `startNow`, which reads the task and
+takes the attempt `slotAttempt` yields, so a gone slot starts its next attempt
+without the page deciding a number. The caret lists the presets that configure
+that slot.
+
+The dialog's two extras were decided rather than carried over:
+
+- **Handoff text is gone.** The task's own text is what a session is handed;
+  a note only the starter could see was a second place to say it, and the
+  route still takes `handoffText: null`.
+- **Continue from previous** is a menu item on a slot whose session is gone,
+  starting the next attempt under the preset that attempt ran, with
+  `continueFromPrevious: true`. A deleted session is not offered, because the
+  service refuses to continue from one. A continue whose preview comes back
+  with `previousTranscriptReadable: false` is refused in `startNow` rather
+  than sent: the service would drop the transcript and start a fresh session,
+  which is not what continuing means.
+
+`useTaskStartOffers` in `data/start-task.ts` is now the one owner of what a
+Start may offer — the default preset, the busy task, the store's refusals, the
+preset catalog and its own failures — for the list, the board and the page.
+`TasksView` lost its copy. Two things the dialog owned and the row never had
+moved into the caret menu with it: a refused preset read shows the refusal and
+its retry instead of "you have none yet" (an unread catalog is not an empty
+one), and an incomplete preset list keeps its Load more.
+
+Gates at the tip: app vitest for `src/features/tasks` and
+`src/app/integrations/tasks` 15 files / 107 pass (two files fewer, five tests
+more); `bun test ./src/architecture` 252 pass across 39 files; `npx tsgo -b`
+clean; `lint:theme-tokens` at its two pre-existing failures; root
+`test:architecture-ratchets` holds with both renderer ceilings lowered by the
+three deleted modules to app-local 1064 / 58 and desktop renderer 1107 / 58;
+root `bun run lint` at its three pre-existing perf-harness errors.
+
+Screenshots, light and dark at 1440×900 against the running stack:
+`ui-shots/v12-{list,task-page,task-page-live,task-page-start-menu}-{light,dark}.png`.
