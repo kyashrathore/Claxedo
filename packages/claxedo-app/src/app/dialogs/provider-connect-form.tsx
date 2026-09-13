@@ -23,11 +23,18 @@ import { useProviderAuth, useProviders } from "@/app/providers/use-providers"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
 import { errorMessage } from "@/lib/server-errors"
+import type { ConnectContext } from "@/platform/identity/harness-catalog"
 
 export type ProviderConnectFormProps = {
   provider: string
   /** The harness whose credential store this writes to. */
   harness: string
+  /**
+   * What the card is setting up, in the words it shows. The registry's provider
+   * id is a key, not a name — the model catalog has never heard of `claude-sdk`
+   * and would render the id itself — so every sentence composes from here.
+   */
+  context: ConnectContext
   /**
    * The (workspace-or-directory) scope that harness is being configured for.
    * Omitted inside a workspace SDK scope, which resolves its own.
@@ -67,6 +74,13 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   // (an auth-only harness id, or a provider list that hasn't loaded yet).
   // Every consumer below reads `.name`, so this falls back to the id rather
   // than crash.
+  /** The subject of every sentence on this card, and the name on its heading. */
+  const subject = () => props.context.kind === "harness" ? props.context.harness : props.context.vendor
+  const contextKey = (base: string) => `${base}.${props.context.kind}`
+  const contextVars = (): Record<string, string> => props.context.kind === "harness"
+    ? { harness: props.context.harness, vendor: props.context.vendor }
+    : { engine: props.context.engine, vendor: props.context.vendor }
+
   const provider = createMemo(() =>
     providers.all().get(props.provider)
       ?? { id: props.provider, name: props.provider, source: "custom" as const, env: [], options: {}, models: {} },
@@ -118,10 +132,9 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
 
   const complete = async () => {
     await markConnected()
-    const name = provider().name
     showToast({
-      title: language.t("provider.connect.toast.connected.title", { provider: name }),
-      description: language.t("provider.connect.toast.connected.description", { provider: name }),
+      title: language.t("provider.connect.toast.connected.title", { vendor: contextVars().vendor }),
+      description: language.t(contextKey("provider.connect.toast.connected.description"), contextVars()),
     })
     await props.onConnected?.()
     props.onDone?.()
@@ -225,6 +238,9 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
 
   return {
     provider,
+    subject,
+    contextKey,
+    contextVars,
     language,
     methods,
     apiMethodIndex,
@@ -251,7 +267,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
       <Show when={!props.hideHeading}>
         <div class="flex items-center gap-3">
           <ProviderIcon id={form.provider().id} class="size-5 shrink-0 icon-strong-base" />
-          <span class="text-14-medium text-text-strong">{form.provider().name}</span>
+          <span class="text-14-medium text-text-strong">{form.subject()}</span>
         </div>
       </Show>
       <Show when={props.methodPicker === "segmented" && form.methods().length > 1}>
@@ -281,8 +297,8 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
           <form onSubmit={form.saveApiKey} class="flex flex-col items-start gap-4" data-method={form.selected()?.type ?? "api"}>
             <div class="text-14-regular text-text-base">
               {form.selected()?.type === "token"
-                ? language.t("provider.connect.token.description", { provider: form.provider().name })
-                : language.t("provider.connect.apiKey.description", { provider: form.provider().name })}
+                ? language.t("provider.connect.token.description")
+                : language.t(form.contextKey("provider.connect.apiKey.description"), form.contextVars())}
             </div>
             <Show when={form.selected()?.type === "token" ? form.selected()?.command : undefined}>
               {(command) => <TextField label={language.t("provider.connect.token.command")} value={command()} readOnly copyable />}
@@ -291,8 +307,8 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
               autofocus
               type="text"
               label={form.selected()?.type === "token"
-                ? language.t("provider.connect.token.label", { provider: form.provider().name })
-                : language.t("provider.connect.apiKey.label", { provider: form.provider().name })}
+                ? language.t("provider.connect.token.label", { vendor: form.contextVars().vendor })
+                : language.t("provider.connect.apiKey.label", { vendor: form.contextVars().vendor })}
               placeholder={form.selected()?.type === "token"
                 ? language.t("provider.connect.token.placeholder")
                 : language.t("provider.connect.apiKey.placeholder")}
@@ -328,7 +344,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
             <div>
               {language.t("provider.connect.oauth.auto.visit.prefix")}
               <Link href={store.authorization!.url}>{language.t("provider.connect.oauth.auto.visit.link")}</Link>
-              {language.t("provider.connect.oauth.auto.visit.suffix", { provider: form.provider().name })}
+              {language.t(form.contextKey("provider.connect.oauth.auto.visit.suffix"), form.contextVars())}
             </div>
             <TextField
               label={language.t("provider.connect.oauth.auto.confirmationCode")}
@@ -358,7 +374,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
             <div class="text-14-regular text-text-base">
               {language.t("provider.connect.oauth.code.visit.prefix")}
               <Link href={store.authorization!.url}>{language.t("provider.connect.oauth.code.visit.link")}</Link>
-              {language.t("provider.connect.oauth.code.visit.suffix", { provider: form.provider().name })}
+              {language.t(form.contextKey("provider.connect.oauth.code.visit.suffix"), form.contextVars())}
             </div>
             <TextField
               autofocus
@@ -381,7 +397,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
         <Match when={props.methodPicker === "segmented" && form.selected()?.type === "oauth"}>
           <div class="flex flex-col items-start gap-4">
             <p class="text-14-regular text-text-base max-w-md text-pretty">
-              {language.t("provider.connect.oauth.description", { method: form.selected()?.label ?? "", provider: form.provider().name })}
+              {language.t(form.contextKey("provider.connect.oauth.description"), { method: form.selected()?.label ?? "", ...form.contextVars() })}
             </p>
             <div class="flex items-center gap-3">
               <Button class="w-auto" type="button" size="large" variant="primary" disabled={store.saving} data-action="provider-connect-oauth-start" onClick={() => void form.startOAuth(form.selectedIndex() ?? 0)}>
@@ -415,7 +431,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
         </Match>
         <Match when={true}>
           <div class="text-14-regular text-text-base">
-            {language.t("provider.connect.selectMethod", { provider: form.provider().name })}
+            {language.t("provider.connect.selectMethod", { vendor: form.contextVars().vendor })}
           </div>
           <List
             items={form.methods}

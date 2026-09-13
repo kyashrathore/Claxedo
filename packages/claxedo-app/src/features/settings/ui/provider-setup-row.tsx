@@ -3,6 +3,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { createSignal, Show, type Component } from "solid-js"
 import { ProviderConnectCard } from "@/features/settings/ui/provider-connect-card"
 import { useLanguage } from "@/platform/i18n/provider"
+import { connectContextFor } from "@/platform/identity/harness-catalog"
 
 /** A provider a harness has no credential for, with Connect opening an inset card. */
 export const ProviderSetupRow: Component<{
@@ -51,7 +52,7 @@ export const ProviderSetupRow: Component<{
       <Show when={expanded()}>
         <ProviderConnectCard
           provider={props.providerId}
-          providerName={props.name}
+          context={connectContextFor({ providerId: props.providerId, engine: props.harness, vendor: props.name })}
           harness={props.harness}
           scope={props.scope}
           onConnected={props.onConnected}

@@ -346,7 +346,13 @@ export const appLocal: Policy = {
   // catalog row and the agent row stop sharing one component with two jobs. Both
   // are reached only from the settings feature already in this closure.
   // No new package edge. Measured 1015 / 38.
-  ceilings: { modules: 1015, packages: 38 },
+  // +1 module (2026-09-13): platform/identity/harness-catalog.ts, the single
+  // owner of the words a harness and its vendor are named by. The connect card
+  // used to render the registry's provider id when the model catalog had never
+  // heard of it; both the card and the agent rows now resolve through here, and
+  // it reaches nothing but the harness-id union already in this closure.
+  // No new package edge. Measured 1016 / 38.
+  ceilings: { modules: 1016, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

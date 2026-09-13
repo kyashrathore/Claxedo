@@ -28,6 +28,7 @@ import {
   type AIConnectState,
   type OnboardingDestination,
 } from "./ai-connect-state"
+import { connectContextFor, engineConnectContext } from "@/platform/identity/harness-catalog"
 import type { OnboardingFunnelEvent } from "./funnel"
 import { errorText } from "./error-text"
 
@@ -377,6 +378,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
                 */}
                 <ProviderConnectForm
                   provider="anthropic"
+                  context={engineConnectContext("pi", "Anthropic")}
                   harness="pi"
                   scope="shared"
                   hideHeading
@@ -396,6 +398,11 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
         {(view) => (
           <ProviderConnectForm
             provider={view().providerId}
+            context={connectContextFor({
+              providerId: view().providerId,
+              engine: "pi",
+              vendor: connectionDisplayName(view().providerId),
+            })}
             harness="pi"
             scope={scope()}
             hideHeading

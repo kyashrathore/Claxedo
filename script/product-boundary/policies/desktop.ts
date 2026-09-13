@@ -422,7 +422,9 @@ export const desktopRendererUnsigned: Policy = {
   // reviews. No new package edge. Measured 1064 / 57.
   // +2 modules (2026-09-13): the same agent-harness-row and provider-connect-card
   // owners app-local reviews. No new package edge. Measured 1066 / 57.
-  ceilings: { modules: 1066, packages: 57 },
+  // +1 module (2026-09-13): the same harness-catalog owner app-local reviews.
+  // No new package edge. Measured 1067 / 57.
+  ceilings: { modules: 1067, packages: 57 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -34,6 +34,7 @@ vi.mock("@/platform/i18n/provider", () => ({
 }))
 
 const { ProviderConnectForm } = await import("./provider-connect-form")
+const { engineConnectContext, harnessConnectContext } = await import("@/platform/identity/harness-catalog")
 
 afterEach(() => {
   cleanup()
@@ -46,13 +47,13 @@ describe("ProviderConnectForm", () => {
       { type: "token", label: "Claude subscription token", command: "claude setup-token" },
       { type: "api", label: "API Key" },
     ]
-    render(() => <ProviderConnectForm provider="claude-sdk" harness="claude" hideHeading />)
+    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
     await waitFor(() => expect(screen.getByText("Claude subscription token")).toBeInTheDocument())
     expect(screen.getByText("provider.connect.method.apiKey")).toBeInTheDocument()
 
     fireEvent.click(screen.getByText("Claude subscription token"))
     await waitFor(() => expect(document.querySelector('form[data-method="token"]')).not.toBeNull())
-    expect(screen.getByText("provider.connect.token.description:Claude")).toBeInTheDocument()
+    expect(screen.getByText("provider.connect.token.description")).toBeInTheDocument()
     expect(screen.getByDisplayValue("claude setup-token")).toBeInTheDocument()
 
     const input = document.querySelector<HTMLInputElement>('input[name="apiKey"]')!
@@ -65,7 +66,7 @@ describe("ProviderConnectForm", () => {
 
   test("a pasted credential will not be stored under a name that does not identify the account", async () => {
     state.methods = [{ type: "api", label: "API Key" }]
-    render(() => <ProviderConnectForm provider="claude-sdk" harness="claude" hideHeading />)
+    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
     await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
 
     const input = document.querySelector<HTMLInputElement>('input[name="apiKey"]')!
@@ -78,7 +79,7 @@ describe("ProviderConnectForm", () => {
 
   test("reconnecting replaces the token on the named row and asks for no new name", async () => {
     state.methods = [{ type: "api", label: "API Key" }]
-    render(() => <ProviderConnectForm provider="claude-sdk" harness="claude" credentialId="cred_bad" hideHeading />)
+    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" credentialId="cred_bad" hideHeading />)
     await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
     // The row keeps the name it already has, so there is nothing to ask for.
     expect(document.querySelector('input[name="accountLabel"]')).toBeNull()
@@ -92,12 +93,30 @@ describe("ProviderConnectForm", () => {
     expect(state.puts[0].body).toEqual({ secret: "sk-ant-fresh" })
   })
 
+  test("the card names the harness and the vendor behind its login, never the id it is stored under", async () => {
+    state.methods = [{ type: "api", label: "API Key" }]
+    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+
+    expect(screen.getByText("provider.connect.apiKey.description.harness:Claude Code|Anthropic")).toBeInTheDocument()
+    expect(document.body.textContent).toContain("provider.connect.apiKey.label:Anthropic")
+    expect(document.body.textContent).not.toContain("claude-sdk")
+  })
+
+  test("a vendor being made available inside an engine is a different sentence", async () => {
+    state.methods = [{ type: "api", label: "API Key" }]
+    render(() => <ProviderConnectForm provider="anthropic" context={engineConnectContext("pi", "Anthropic")} harness="pi" hideHeading />)
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+
+    expect(screen.getByText("provider.connect.apiKey.description.engine:Pi|Anthropic")).toBeInTheDocument()
+  })
+
   test("a harness with several methods lists them all instead of assuming a key", async () => {
     state.methods = [
       { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
       { type: "api", label: "API Key" },
     ]
-    render(() => <ProviderConnectForm provider="claude-sdk" harness="codex" hideHeading />)
+    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("codex")} harness="codex" hideHeading />)
     await waitFor(() => expect(screen.getByText("ChatGPT Pro/Plus (headless)")).toBeInTheDocument())
     expect(document.querySelector("form")).toBeNull()
   })
@@ -109,7 +128,7 @@ describe("ProviderConnectForm with a segmented picker", () => {
       { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
       { type: "api", label: "API Key" },
     ]
-    render(() => <ProviderConnectForm provider="claude-sdk" harness="codex" hideHeading methodPicker="segmented" />)
+    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("codex")} harness="codex" hideHeading methodPicker="segmented" />)
     await waitFor(() => expect(document.querySelectorAll('[data-action="provider-connect-method"]')).toHaveLength(2))
     expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).not.toBeNull()
     expect(document.querySelector("form")).toBeNull()
