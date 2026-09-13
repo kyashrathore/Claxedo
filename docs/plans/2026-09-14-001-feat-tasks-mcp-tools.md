@@ -1,6 +1,6 @@
 # Tasks from inside a session: MCP tools over a scoped capability
 
-Status: built and proven live on the local stack (2026-09-14). Branch `feat/tasks-presets`. Follow-up decided by the user: the first-party server becomes a Marketplace plugin the user enables per tool group instead of a runtime injection (defaults pending).
+Status: S1–S4 built and proven live on the local stack (2026-09-14). Branch `feat/tasks-presets`. The first-party server is a built-in Marketplace plugin enabled per tool group; the Tasks capability is minted only when the Tasks group is enabled.
 
 ## Goal
 
@@ -121,11 +121,11 @@ user enables per tool group, activated per project like every other plugin,
 and its Tasks capability is minted only when the Tasks group is enabled, so
 consent and credential are one act.
 
-Assumed defaults, to be confirmed: one switch per tool group (sessions,
-subagents, attention, processes, documents, tasks); a new project starts with
-the runtime-local groups on (sessions, subagents, attention, processes), Tasks
-off, and Documents on where the documents service runs in the same process
-(local) and off where it is an account service (hosted).
+Defaults (user-approved 2026-09-14): one switch per tool group (attention,
+documents, processes, review, sessions, subagents, tasks, workspaces); a new
+project starts with every group on except Tasks, and Documents on where the
+documents service runs in the same process (local) and off where it is an
+account service (hosted).
 
 - Catalog: a first-party entry `claxedo` that is always present, not sourced,
   not removable, whose servers are the tool groups with their tool names.
