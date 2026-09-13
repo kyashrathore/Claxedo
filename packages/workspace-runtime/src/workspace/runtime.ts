@@ -159,9 +159,9 @@ export type WorkspaceHostOptions = {
    * Direct observer for the canonical runtime events produced by this host.
    *
    * The compat bus carries session metadata; this one carries what the harness
-   * said during the turn, which until now only left the process over SSE. A
-   * host that has to keep something a harness reports — a plan's quota windows
-   * outliving the session that heard about them — reads it here.
+   * said during the turn. A host that has to keep something a harness reports —
+   * a plan's quota windows outliving the session that heard about them — reads
+   * it here rather than off the SSE stream.
    */
   onRuntimeEvent?: (event: RuntimeEventEnvelope) => void
   /** Parent-Session authorization and child ownership used by scoped runtime-event streams. */
@@ -694,7 +694,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const sessionAdapterRunners = new Map<string, RuntimeRunner>()
   const adapterRuntimeKeys = new WeakMap<AgentHarnessAdapter, string>()
   const adapterDirectories = new WeakMap<AgentHarnessAdapter, string>()
-  const adapterConfigStamps = new WeakMap<AgentHarnessAdapter, string>()
+  const adapterConfigStamps = new WeakMap<AgentHarnessAdapter, AdapterConfigStamp>()
   const activeTurns = new Map<AgentHarnessAdapter, Set<ActiveTurn>>()
   const activeSessionOwners = new Map<string, { adapter: AgentHarnessAdapter; runtime?: AgentRuntime; directory: string }>()
   let checkpointState: "active" | "freezing" | "frozen" = "active"
@@ -708,6 +708,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
   }>()
 
+  /** What an adapter's applied config is, in the four parts a comparison asks about separately. */
+  type AdapterConfigStamp = { key: string; auth: string; mcp: string; launch: string }
+
   function adapterKey(next: RuntimeRunner) {
     if (next.access === "native") return `native:${next.id}`
     const descriptor = appliedConnections.get(next.id)
@@ -720,8 +723,22 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return runner
   }
 
-  function adapterConfigStamp(nextRunner: RuntimeRunner, auth: Record<string, ProviderProjection>, mcp: Record<string, unknown>, launch: Record<string, unknown>) {
-    return `${adapterKey(nextRunner)}\n${JSON.stringify(auth)}\n${JSON.stringify(mcp)}\n${JSON.stringify(launch)}`
+  function adapterConfigStamp(
+    nextRunner: RuntimeRunner,
+    auth: Record<string, ProviderProjection>,
+    mcp: Record<string, unknown>,
+    launch: Record<string, unknown>,
+  ): AdapterConfigStamp {
+    return {
+      key: adapterKey(nextRunner),
+      auth: JSON.stringify(auth),
+      mcp: JSON.stringify(mcp),
+      launch: JSON.stringify(launch),
+    }
+  }
+
+  function sameAdapterConfig(held: AdapterConfigStamp | undefined, next: AdapterConfigStamp) {
+    return held?.key === next.key && held.auth === next.auth && held.mcp === next.mcp && held.launch === next.launch
   }
 
   /**
@@ -742,8 +759,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const held = adapterConfigStamps.get(target)
     if (!held) return false
     const next = adapterConfigStamp(nextRunner, auth, mcp, launch)
-    const withoutAuth = (stamp: string) => stamp.split("\n").filter((_, index) => index !== 1).join("\n")
-    return held !== next && withoutAuth(held) === withoutAuth(next)
+    return held.auth !== next.auth && held.key === next.key && held.mcp === next.mcp && held.launch === next.launch
   }
 
   async function configureAdapter(next: AgentHarnessAdapter, nextRunner: RuntimeRunner) {
@@ -754,10 +770,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const launch = currentHarnessLaunch[nextRunner.id] ?? {}
     const adapterAuth = configuredConnection(nextRunner) ? {} : currentAuthRaw
     const stamp = adapterConfigStamp(nextRunner, adapterAuth, currentMcp, launch)
-    if (adapterConfigStamps.get(next) === stamp) return
+    if (sameAdapterConfig(adapterConfigStamps.get(next), stamp)) return
     const turns = configuredConnection(nextRunner) ? activeTurns.get(next) : undefined
     if (turns?.size) await Promise.all([...turns].map((turn) => turn.done))
-    if (adapterConfigStamps.get(next) === stamp) return
+    if (sameAdapterConfig(adapterConfigStamps.get(next), stamp)) return
     await next.applyConfig({
       mcp: currentMcp,
       auth: adapterAuth,
@@ -787,7 +803,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     if (Object.keys(descriptor.secretRefs ?? {}).length > 0) {
       throw new WorkspaceHarnessUnavailableError({ id: descriptor.connectionId, access: "connection" })
     }
-    return { secrets: {}, secretLeaseGeneration: `runtime-config:${configApplyRevision}:none` }
+    return { secrets: {}, secretLeaseGeneration: `runtime-config:${configApplyRevision}` }
   }
 
   function resolveAppliedRunner(next: RuntimeRunner): RuntimeRunner {
@@ -1134,15 +1150,32 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
    * The first moment a config push a running turn held back can land. Without
    * it the held snapshot waits for the next adapter acquisition, and a session
    * that never acquires one again keeps its placeholder past its expiry.
+   *
+   * On `applyQueue` so it cannot run beside a snapshot apply reconfiguring the
+   * same adapter, and its failure moves `configApply` to `failed`: the snapshot
+   * that deferred this half already reported `applied`, so nothing else would
+   * ever say the runtime is running on a config it could not finish writing.
    */
   function applyHeldAdapterConfig(target: AgentHarnessAdapter) {
     if (closing) return
     const key = adapterRuntimeKeys.get(target)
     const selection = key ? sessionAdapterRunners.get(key) : undefined
     if (!key || !selection || sessionAdapters.get(key) !== target) return
-    void configureAdapter(target, selection).catch((error) => {
-      Log.create({ service: "workspace-runtime" }).error("Held adapter configuration failed", { error })
+    const configure = () => configureAdapter(target, selection)
+    const pending = applyQueue.then(configure, configure).catch(async (cause) => {
+      Log.create({ service: "workspace-runtime" }).error("Held adapter configuration failed", { error: cause })
+      configApply = {
+        ...configApply,
+        state: "failed",
+        updatedAt: new Date().toISOString(),
+        error: runtimeConfigApplyError(cause),
+      }
+      await persistRuntimeConfigApplyStatus({
+        receiptDir: options.configApplyReceiptDir,
+        status: configApply,
+      }).catch(() => {})
     })
+    applyQueue = pending.catch(() => {})
   }
 
   async function drainActiveTurns(next: AgentHarnessAdapter) {
@@ -1327,7 +1360,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         && nextRunner
         && (activeTurns.get(adapter)?.size ?? 0) > 0
         && (configuredConnection(nextRunner)
-          || projectionOnlyChange(adapter, nextRunner, next.auth, next.mcp, nextHarnessLaunch))
+          || projectionOnlyChange(adapter, nextRunner, next.auth, next.mcp, nextHarnessLaunch[nextRunner.id] ?? {}))
 
       if (!replacing) runner = nextRunner
       if (!adapter && nextRunner) adapter = await ensureSessionAdapter(nextRunner)
