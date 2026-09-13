@@ -106,11 +106,11 @@ test("a bound provider's request reaches the binding and carries its placeholder
     await turn(runtime, scope, () => broker.requests.length > 0)
 
     expect(broker.requests).not.toHaveLength(0)
-    expect(broker.requests[0]!.path).toBe("/v1/chat/completions")
+    expect(broker.requests[0]?.path).toBe("/v1/chat/completions")
     // The placeholder, not a stored key: the broker is what turns it into the
     // operator's own credential, and this process never holds that.
-    expect(broker.requests[0]!.authorization).toBe("Bearer broker-placeholder")
-    expect(broker.requests[0]!.model).toBe("proof")
+    expect(broker.requests[0]?.authorization).toBe("Bearer broker-placeholder")
+    expect(broker.requests[0]?.model).toBe("proof")
   } finally {
     await runtime.close()
     await broker.close()

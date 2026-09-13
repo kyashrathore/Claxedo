@@ -1,4 +1,4 @@
-import type { ProviderBinding, ProviderProjection } from "../../provider-projection"
+import type { ProviderBinding } from "../../provider-projection"
 
 export type ClaudeAuthEnv = {
   ANTHROPIC_BASE_URL?: string
