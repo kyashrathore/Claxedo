@@ -996,3 +996,157 @@ are here so the next person does not re-derive them.
   lost file.** `nextLeaseGeneration` falls back to `Date.now()` when the counter
   is missing; a machine whose clock moved backwards after losing that file can
   issue a generation a live placeholder already names.
+
+### Live Cloudflare deployed run — 2026-09-13
+
+**Outcome: the branch Worker is deployed and serving; the deployed credential
+handler was never exercised.** Three blockers, each with its own owner.
+
+#### What was deployed
+
+From `packages/claxedo-server/scripts/sandbox`:
+
+```sh
+npx tsx build-sandbox-image.ts --bundle-only --out=cloudflare-worker/.build
+```
+
+First run failed: `@claxedo/agent-sdk-runtime`'s `build` runs
+`check:source-shape`, which rejected `src/first-turn-error.ts:10` and
+`src/provider-projection.ts:82` as corrective-history comments, so no sandbox
+image bundle could be produced at all. Both comments were restated from the code
+(commit `466090ee59`); `bun run check:source-shape` then passed and the package's
+own `npm test` ran 752 pass / 9 skip / 0 fail. The bundle emitted build id
+`69b5dafc45`, core 0.8.0.
+
+Then, from `cloudflare-worker`, `wrangler deploy` (wrangler 4.127.1, account
+`683a2c01a4d43b2fa998cde8ddedaf0e`, `kanusdlp@gmail.com`, API token read from
+`.env`):
+
+- **Worker script: deployed.** Version `6da0cc71-06c4-4518-8ff4-d3147a3fb569`,
+  created 2026-09-13T05:26:56Z, 100% of traffic. `wrangler versions view`
+  confirms it is the branch build: compatibility flags `nodejs_compat,
+  enable_ctx_exports` (the flag this branch added) and the `EGRESS_SECRETS` KV
+  binding the native handler requires. The previous deployment was
+  `3309987d-c921-49a7-837f-49a2cdf95bdc` (2026-09-04) — the rollback target,
+  `wrangler rollback --version-id 3309987d-c921-49a7-837f-49a2cdf95bdc`.
+- **Container image: NOT deployed.** `wrangler deploy` uploads the Worker script
+  before it builds the container, so the account is now on the branch's Worker
+  code against the container image built on 2026-09-04
+  (`wrangler containers list`: `claxedo-sandbox-proxy-sandbox`, last modified
+  2026-09-04T08:36:04Z). The handler itself lives in the Worker and is therefore
+  live; the runtime bundle inside the container is five builds stale.
+
+#### Blocker 1 — the container image cannot be built on this machine
+
+```
+#10 ERROR: error committing vqmn3xcjvgrewi2ou3l8463pn:
+  write /var/lib/docker/buildkit/containerd-overlayfs/metadata_v2.db: input/output error
+ERROR: failed to build: failed to solve: Internal: error committing ...
+✘ [ERROR] Docker build exited with code: 100
+```
+
+It failed at Dockerfile line 67 (`npm install` of the runtime's native modules),
+after 4/7 steps succeeded (apt 240s, node24 27s, agent CLIs 377s). The cause is
+not the network: `df -h` reports `/System/Volumes/Data` at **100% capacity with
+485Mi free of 460Gi**, and `docker system df` itself fails with
+`input/output error` reading a content blob. The image needs about 5.3GB.
+
+The instruction to retry once was not carried out, deliberately: writing another
+5GB to a volume with 485MiB free cannot succeed and risks the machine. This
+also supersedes the "use of closed network connection" reading of the earlier
+deployed attempt (item 3) — a full disk produces I/O failures that surface as
+transport errors.
+
+- Unmet criterion: the deployed `claxedo-sandbox-proxy` container runs the
+  branch's runtime image.
+- Evidence: the buildkit error above; host volume at 100%.
+- Owner: the repository owner (free disk, or build and push the image from a
+  machine with headroom).
+- Follow-up: free space, rerun `wrangler deploy` from this directory; the Worker
+  script is already current, so only the container application changes.
+
+#### Blocker 2 — the registry's Cloudflare API token is not the deployed Worker's
+
+With the branch Worker live, one sandbox-backed workspace was created through
+the real route:
+
+```sh
+curl -s -X POST http://127.0.0.1:2595/api/workspace/create -H 'Content-Type: application/json' \
+  -d '{"driver":"cloudflare","repoUrl":"https://github.com/octocat/Hello-World.git",
+       "workspaceName":"cf-broker-probe","remoteDirectory":"/workspace"}'
+```
+
+It returned `ws_mtze7uik_q25w0vq2pytyxfth`, `status: acquiring_sandbox`,
+`driver: cloudflare`. Its lease then went to `backoff` with
+
+```
+last_error = Cloudflare ensure-runtime failed (403): forbidden
+sandbox_id =        (empty)
+```
+
+403 is the Worker's `header.slice(7) !== env.API_TOKEN` branch — a token was
+sent and did not match. The Worker's `API_TOKEN` secret was last changed
+2026-09-04T08:37Z (two `Secret Change` versions that day); the registry's
+`cloudflare` sandbox_driver row was created 2026-08-30T21:16Z and has never been
+updated. The row holds a pre-rotation value. Note also that
+`packages/claxedo-server/.env` sets `CLOUDFLARE_API_TOKEN` to a value that
+`wrangler whoami` accepts as a Cloudflare **account** token, while the driver
+and the README use that same name for the **Worker's** `API_TOKEN` secret; the
+two are not interchangeable and one of them is wrong in this deployment.
+
+No sandbox was created — the gate runs before `getSandbox`, so no Durable Object
+or container instance exists for this attempt. `claxedo-sandbox-proxy-sandbox`
+held 3 live instances before the run and 3 after. The workspace was deleted
+(`DELETE /api/workspace/ws_mtze7uik_q25w0vq2pytyxfth` → 200; no cloud workspace
+and no lease row remain).
+
+- Unmet criterion: a sandbox-backed workspace on the `cloudflare` driver.
+- Evidence: the lease's `last_error`; the Worker's 403 branch; the two dates above.
+- Owner: the repository owner. Resolving it means either writing the registry's
+  current value into the Worker (`wrangler secret put API_TOKEN`) or storing a new
+  shared value in both places — both require handling the secret, which this run
+  was not permitted to do, and the registry row was left untouched.
+- Follow-up: reconcile the two, then rerun the create above.
+
+#### Blocker 3 — nothing produces an AI-provider registration for a sandbox
+
+Independent of the two above, and the reason steps 3–5 could not have passed
+even with a working token. This is a design gap the branch states in its own
+code, not a bug:
+
+- `agent-config/index.ts` (`getRuntimeConfigSnapshot`, commit `9f7d6e0f22`):
+  `const auth = scope === "shared" ? {} : await agentConfigOptions.projectAuth?.(…)`,
+  above the comment "A shared-scope sandbox reaches its credentials through its
+  own provider's edge, which no authority here can mint; that adapter is the
+  next slice."
+- `supervisor/config-sync.ts` gives every cloud or remote workspace
+  `secretScope: "shared"`. So a Cloudflare sandbox receives `auth: {}` — no v4
+  provider projection for `claude-sdk` or any other provider.
+- The only producers of `SandboxBrokeredSecret` are
+  `workspace/repository-clone.ts` (a GitHub clone header) and
+  `agent-plugins/mcp/runtime-preparation.ts` (the MCP gateway token). Neither is
+  a model provider, and `api.anthropic.com` appears in
+  `sandbox-manager/src/hosted-network-policy.ts` only as an allowed host.
+- The driver sends `egress` only when `input.secrets !== undefined`
+  (`drivers/cloudflare.ts`), so a plain create writes no KV registration at all.
+
+- Unmet criterion: the sandbox holds a v4 projection for `claude-sdk`, and the
+  Worker's binding table holds its registration.
+- Evidence: the four source facts above.
+- Owner: the repository owner — this is the shared-scope adapter named in
+  section 5, not a defect to fix in passing.
+- Follow-up: a producer that turns the active registry row into a
+  `SandboxBrokeredSecret` (`ANTHROPIC_API_KEY`, host `api.anthropic.com`, header
+  `x-api-key` or `Authorization` per the account's form) and a shared-scope
+  projection whose `baseUrl` is the vendor and whose placeholder is
+  `claxedo-broker:<name>`. Until it exists, the deployed handler has no product
+  path that reaches it.
+
+#### Unchanged and unverified
+
+The `claude-sdk` row was not reset and no turn was run: no sandbox existed to run
+it in. Withdrawal was not exercised. `EGRESS_SIGNING_SECRET` is still present as
+a Worker secret although the branch's code no longer reads it. Local gates rerun
+in this session: `sandbox-manager` `bun test src/drivers/cloudflare.test.ts
+src/egress-policy.test.ts` 58 pass; `agent-sdk-runtime` `npm test` 752 pass /
+9 skip / 0 fail.
