@@ -144,6 +144,8 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   saveTerminalCommands: lazy("@/features/terminal/core/terminal-commands", "saveTerminalCommands"),
   defaultTerminalCommands: lazy("@/features/terminal/core/terminal-commands", "defaultTerminalCommands"),
   useModelVisibility: lazy("@/features/session/providers/models", "useModelVisibility"),
+  loadHarnessModelOptions: lazy("@/features/session/harness/harness-model-options", "loadHarnessModelOptions"),
+  groupHarnessModels: lazy("@/features/session/harness/harness-model-options", "groupHarnessModels"),
   formatKeybind: lazy("@/app/providers/command", "formatKeybind"),
   parseKeybind: lazy("@/app/providers/command", "parseKeybind"),
   useCommand: lazy("@/app/providers/command", "useCommand"),
@@ -220,9 +222,12 @@ const tasksThunks: Thunks<TasksAppPorts> = {
   request: lazy("@/platform/api/api", "authFetch"),
   useProjects: lazy("@/app/integrations/tasks/tasks-ports", "useTasksProjectsPort"),
   useActiveProjectId: lazy("@/app/integrations/tasks/tasks-ports", "useTasksActiveProjectIdPort"),
-  useCapabilityCatalog: lazy("@/app/integrations/tasks/capability-catalog", "useCapabilityCatalog"),
+  useCapabilityCatalog: lazy("@/app/integrations/tasks/tasks-ports", "useCapabilityCatalogPort"),
   ConfigurationEditor: lazy("@/app/integrations/tasks/preset-configuration-editor", "PresetConfigurationEditor"),
+  ProseEditor: lazy("@/app/integrations/tasks/tasks-prose-editor", "TasksProseEditor"),
   useOpenSession: lazy("@/app/integrations/tasks/open-task-session", "useOpenTaskSession"),
+  useOpenPage: lazy("@/app/integrations/tasks/open-tasks-page", "useOpenTasksPage"),
+  openPresetSettings: lazy("@/app/integrations/tasks/tasks-ports", "openPresetSettings"),
 }
 
 /**

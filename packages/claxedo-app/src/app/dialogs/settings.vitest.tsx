@@ -184,4 +184,54 @@ describe("DialogSettings contributed sections", () => {
     expect(screen.queryByRole("button", { name: "Elsewhere" })).toBeNull()
     expect(screen.queryByText("Elsewhere content")).toBeNull()
   })
+
+  // The counterpart the test above cannot supply on its own: gated against an
+  // empty context every `workspaceId` gate fails, so that one stays green while
+  // the dialog gates against no workspace at all.
+  test("a section gated to the workspace this dialog resolved is offered", async () => {
+    registerSettingsSection({
+      id: "vitest.here",
+      tier: "claxedo-first-party",
+      section: "workspace",
+      label: "Here",
+      gate: { workspaceId: "ws_1" },
+      renderer: () => <div>Here content</div>,
+    })
+
+    mount()
+
+    expect(await screen.findByRole("button", { name: "Here" })).toBeInTheDocument()
+    expect(screen.getByText("Here content")).toBeInTheDocument()
+  })
+
+  test("a contributed desktop section is a tab like the workspace ones", () => {
+    registerSettingsSection({
+      id: "vitest.desktop",
+      tier: "claxedo-first-party",
+      section: "desktop",
+      label: "Contributed desktop",
+      renderer: () => <div>Contributed desktop content</div>,
+    })
+
+    mount()
+
+    expect(screen.getByRole("button", { name: "Contributed desktop" })).toBeInTheDocument()
+    expect(screen.getByText("Contributed desktop content")).toBeInTheDocument()
+  })
+
+  test("a contributed account section brings the account group with it", () => {
+    registerSettingsSection({
+      id: "vitest.account",
+      tier: "claxedo-first-party",
+      section: "account",
+      label: "Contributed account",
+      renderer: () => <div>Contributed account content</div>,
+    })
+
+    mount()
+
+    expect(screen.getByRole("heading", { name: "settings.section.account" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Contributed account" })).toBeInTheDocument()
+    expect(screen.getByText("Contributed account content")).toBeInTheDocument()
+  })
 })

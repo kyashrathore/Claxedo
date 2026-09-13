@@ -1,4 +1,4 @@
-import { createContributionRegistry, type ContributionGateContext, type SettingsContribution, type SettingsSection } from "./registry"
+import { createContributionRegistry, type ContributionGateContext, type SettingsContribution } from "./registry"
 
 /**
  * Settings sections a feature contributes to the Settings dialog.
@@ -15,6 +15,13 @@ export function registerSettingsSection(section: SettingsContribution) {
   registry.addSettings(section)
 }
 
-export function settingsSections(section: SettingsSection, context: ContributionGateContext = {}) {
-  return registry.visibleSettings(context).filter((entry) => entry.section === section)
+/**
+ * Every contributed section this context may see, in registration order.
+ *
+ * Which group each one joins is the dialog's own layout question, so the answer
+ * carries `section` rather than being filtered here: the dialog lists all three
+ * groups and mounts the content for every one of them.
+ */
+export function settingsSections(context: ContributionGateContext) {
+  return registry.visibleSettings(context)
 }

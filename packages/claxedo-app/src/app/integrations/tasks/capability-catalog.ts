@@ -1,7 +1,10 @@
 import { useQuery } from "@tanstack/solid-query"
+import type { Accessor } from "solid-js"
 import type { CapabilityCatalog, CapabilityOption } from "@/features/tasks/view-model"
+import type { TasksScope } from "@/features/tasks/app-ports"
 import { agentPluginApi, type PluginCandidate, type PluginCatalog } from "@/features/agent-plugins/api"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { authFetch } from "@/platform/api/api"
+import { queryKeys } from "@/platform/query/keys"
 
 /**
  * The installed plugins and skills a cloud preset may select from.
@@ -10,12 +13,16 @@ import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
  * retained; Tasks reads it and never builds a second one. Entries whose
  * artifact is unavailable are listed and refused rather than hidden, so a
  * preset cannot quietly shrink to what happens to be reachable today.
+ *
+ * Read under the scope it is given, which is the one every other Tasks read
+ * uses: what an account retained is its own, and a key naming the server alone
+ * would hand the next account to sign in on this machine the previous one's.
  */
-export function useCapabilityCatalog(): () => CapabilityCatalog {
+export function useCapabilityCatalog(scope: Accessor<TasksScope>): () => CapabilityCatalog {
   const catalog = useQuery<PluginCatalog>(() => ({
-    queryKey: ["tasks", "capability-catalog", getClaxedoServerUrl()],
+    queryKey: queryKeys.tasks.capabilityCatalog(scope().serverUrl, scope().scopeId),
     staleTime: 60_000,
-    queryFn: () => agentPluginApi({ baseUrl: getClaxedoServerUrl(), request: authFetch }).catalog(),
+    queryFn: () => agentPluginApi({ baseUrl: scope().serverUrl, request: authFetch }).catalog(),
   }))
 
   return () => {

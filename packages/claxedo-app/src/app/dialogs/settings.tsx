@@ -22,10 +22,22 @@ import { useServer } from "@/app/connection/server"
 import { useNavigate } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
-import { SettingsScopeProvider } from "@/features/settings/scope/settings-scope"
+import { SettingsScopeProvider, useSettingsScope } from "@/features/settings/scope/settings-scope"
 import { settingsSections } from "@/app/integrations/settings-sections"
+import type { SettingsContribution, SettingsSection } from "@/app/integrations/registry"
 
-export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
+export const DialogSettings: Component<{ initialTab?: string }> = (props) => (
+  <SettingsScopeProvider>
+    <SettingsDialogBody initialTab={props.initialTab} />
+  </SettingsScopeProvider>
+)
+
+/**
+ * The dialog itself, under the scope provider: the workspace a contributed
+ * section is gated against is the one this dialog resolved, and only a child of
+ * the provider can read it.
+ */
+const SettingsDialogBody: Component<{ initialTab?: string }> = (props) => {
   const language = useLanguage()
   const dialog = useDialog()
   const server = useServer()
@@ -49,12 +61,19 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   // that started when Settings opened would only keep the promise while
   // Settings was open.
   const autoShare = createMemo(useLocalWorkspaceAutoShareStatus)
-  const contributed = createMemo(() => settingsSections("workspace"))
+  const scope = useSettingsScope()
+  const contributed = createMemo(() => settingsSections({ workspaceId: scope.workspace()?.workspaceId }))
+  const contributedIn = (group: SettingsSection) => contributed().filter((entry) => entry.section === group)
+  const contributedTrigger = (section: SettingsContribution) => (
+    <Tabs.Trigger value={section.id}>
+      <Icon name={section.icon ?? "sliders"} />
+      {section.label}
+    </Tabs.Trigger>
+  )
   const [active, setActive] = createSignal(props.initialTab ?? "general")
   const [mobile, setMobile] = createSignal(false)
 
   return (
-    <SettingsScopeProvider>
       <Dialog size="x-large" transition flush class="flex-1 workspace-page-dialog workspace-page-dialog-shell settings-dialog-shell" aria-label={language.t("sidebar.settings")}>
         <div class="flex flex-col h-full min-h-0">
           <div class="hidden h-10 shrink-0 items-center justify-between border-b border-border-weak-base/60 px-3 max-sm:flex">
@@ -118,6 +137,7 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                           <Icon name="folders" />
                           Orgs & Teams
                         </Tabs.Trigger>
+                        <For each={contributedIn("desktop")}>{contributedTrigger}</For>
                       </div>
                     </div>
 
@@ -132,18 +152,17 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                           <Icon name="models" />
                           {language.t("settings.models.title")}
                         </Tabs.Trigger>
-                        <For each={contributed()}>
-                          {(section) => (
-                            <Tabs.Trigger value={section.id}>
-                              <Icon name={section.icon ?? "sliders"} />
-                              {section.label}
-                            </Tabs.Trigger>
-                          )}
-                        </For>
+                        <For each={contributedIn("workspace")}>{contributedTrigger}</For>
                       </div>
                     </div>
 
-                    <Show when={productUi().settingsConnections || productUi().settingsSandboxProviders}>
+                    <Show
+                      when={
+                        productUi().settingsConnections ||
+                        productUi().settingsSandboxProviders ||
+                        contributedIn("account").length > 0
+                      }
+                    >
                       <div class="flex flex-col gap-1.5">
                         <Tabs.SectionTitle>{language.t("settings.section.account")}</Tabs.SectionTitle>
                         <div class="flex flex-col gap-1.5 w-full">
@@ -159,6 +178,7 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                               Sandbox
                             </Tabs.Trigger>
                           </Show>
+                          <For each={contributedIn("account")}>{contributedTrigger}</For>
                         </div>
                       </div>
                     </Show>
@@ -238,6 +258,5 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
           </Tabs>
         </div>
       </Dialog>
-    </SettingsScopeProvider>
   )
 }

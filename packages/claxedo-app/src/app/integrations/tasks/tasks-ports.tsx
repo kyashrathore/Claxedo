@@ -1,4 +1,4 @@
-import { createMemo, lazy } from "solid-js"
+import { createMemo, lazy, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useLocation } from "@solidjs/router"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
@@ -32,6 +32,32 @@ const TasksProseEditor = lazy(() =>
   import("./tasks-prose-editor").then((module) => ({ default: module.TasksProseEditor })),
 )
 
+export function useTasksScopePort() {
+  const principal = usePrincipal()
+  return createMemo(() => ({
+    serverUrl: getClaxedoServerUrl(),
+    // `null` while a signed principal has no resolved subject: that is not a
+    // scope, and serving the previous one would leak the last account's tasks.
+    scopeId: principalDataScope(principal()) ?? "unresolved",
+  }))
+}
+
+/** The installed capabilities, read in the scope this principal reads Tasks in. */
+export function useCapabilityCatalogPort() {
+  return useCapabilityCatalog(useTasksScopePort())
+}
+
+/**
+ * Sends a Start control to the preset catalog.
+ *
+ * The dialog is loaded rather than imported, so the Tasks chunk does not carry
+ * Settings: the feature asks for "where presets are kept" and the app answers
+ * with the tab it contributed.
+ */
+export function openPresetSettings(dialog: { show: (element: () => JSX.Element) => unknown }) {
+  void openSettings(dialog, () => import("@/app/dialogs/settings"), TASKS_PRESETS_SETTINGS_TAB)
+}
+
 export function useTasksProjectsPort() {
   const queryOptions = useShellQueryOptions()
   const projects = useQuery(() => queryOptions.projects())
@@ -51,16 +77,6 @@ export function useTasksActiveProjectIdPort() {
   })
 }
 
-export function useTasksScopePort() {
-  const principal = usePrincipal()
-  return createMemo(() => ({
-    serverUrl: getClaxedoServerUrl(),
-    // `null` while a signed principal has no resolved subject: that is not a
-    // scope, and serving the previous one would leak the last account's tasks.
-    scopeId: principalDataScope(principal()) ?? "unresolved",
-  }))
-}
-
 /** Bound once from the shell's secondary port wiring, before the shell renders. */
 export function tasksAppPorts(): TasksAppPorts {
   return {
@@ -68,12 +84,11 @@ export function tasksAppPorts(): TasksAppPorts {
     request: (input, init) => authFetch(input, init),
     useProjects: useTasksProjectsPort,
     useActiveProjectId: useTasksActiveProjectIdPort,
-    useCapabilityCatalog,
+    useCapabilityCatalog: useCapabilityCatalogPort,
     ConfigurationEditor: (props: ConfigurationEditorProps) => PresetConfigurationEditor(props),
     ProseEditor: (props: ProseEditorProps) => TasksProseEditor(props),
     useOpenSession: useOpenTaskSession,
     useOpenPage: useOpenTasksPage,
-    openPresetSettings: (dialog) =>
-      void openSettings(dialog, () => import("@/app/dialogs/settings"), TASKS_PRESETS_SETTINGS_TAB),
+    openPresetSettings,
   }
 }

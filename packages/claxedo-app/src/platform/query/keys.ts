@@ -129,6 +129,11 @@ export const queryKeys = {
     scope: (baseUrl: string | undefined, scope: string) => ["tasks", normalized(baseUrl), scope] as const,
     capabilities: (baseUrl: string | undefined, scope: string) =>
       ["tasks", normalized(baseUrl), scope, "capabilities"] as const,
+    // The installed plugins and skills a cloud preset selects from. Scoped like
+    // the rest of the family: the catalog is what one account retained, so a
+    // second account on the same server must not be served the first one's.
+    capabilityCatalog: (baseUrl: string | undefined, scope: string) =>
+      ["tasks", normalized(baseUrl), scope, "capabilityCatalog"] as const,
     presets: (baseUrl: string | undefined, scope: string, includeArchived: boolean) =>
       ["tasks", normalized(baseUrl), scope, "presets", includeArchived] as const,
     list: (baseUrl: string | undefined, scope: string, query: unknown) =>
