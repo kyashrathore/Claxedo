@@ -21,6 +21,8 @@ import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
 export type WorkspaceRuntimePreparation = {
   /** Existing sandbox-manager channel; values never enter runtime config or files. */
   secrets?: SandboxBrokeredSecret[]
+  /** The readable half: what the runtime itself reads at boot and what the agent presents knowingly. */
+  env?: Record<string, string>
   /** Feature-private immutable plan, passed back only to the matching provision hook. */
   state?: unknown
 }

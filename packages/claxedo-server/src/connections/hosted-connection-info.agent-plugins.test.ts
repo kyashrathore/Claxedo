@@ -76,6 +76,7 @@ describe("Agent Plugins cloud readiness gate", () => {
     const { services, signer } = subject(order)
     const preparation = {
       secrets: [{ name: "CLAXEDO_MCP_A", value: "Bearer gateway-token", hosts: ["mcp-a.example"], header: "Authorization" }],
+      env: { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" },
       state: { kind: "test-plan" },
     }
     const provisionRuntime = vi.fn(async () => { order.push("plugins") })
@@ -91,6 +92,7 @@ describe("Agent Plugins cloud readiness gate", () => {
     expect(services.sandbox.sandboxManager!.ensure).toHaveBeenCalledWith("ws_1", {
       homeRegion: "us-east",
       secrets: preparation.secrets,
+      env: preparation.env,
     })
     expect(provisionRuntime).toHaveBeenCalledWith("ws_1", preparation)
     expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })

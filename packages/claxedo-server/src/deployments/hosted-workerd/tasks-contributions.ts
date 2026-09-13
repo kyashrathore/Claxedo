@@ -1,4 +1,3 @@
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import {
   createHostedTasksComposition,
@@ -9,7 +8,6 @@ import {
   createHostedTasksSessionBridge,
   type HostedTasksSessionBridgeInput,
 } from "../../tasks/session-bridge"
-import { createTasksRootCapability } from "../../tasks/root-capability"
 
 /**
  * The hosted Tasks routes a Worker entry mounts, with the session bridge each
@@ -23,18 +21,13 @@ import { createTasksRootCapability } from "../../tasks/root-capability"
 export function hostedTasksRouteContributions(
   input: Omit<HostedTasksCompositionInput, "bridge" | "cloudSelectedCapabilities"> & {
     selectedCapabilities?: NonNullable<HostedTasksSessionBridgeInput["selectedCapabilities"]>
-    /** What the root's project consented to; the grant is minted only when Tasks is among it. */
-    builtinToolGroups: (auth: SignedControlPlaneAuth, projectId: string) => Promise<readonly string[]>
+    /**
+     * The environment the workspace routes launch every cloud root with. A
+     * task's root is launched by the bridge, so it is handed the same one.
+     */
+    rootEnvironment?: NonNullable<HostedTasksSessionBridgeInput["capability"]>
   },
 ): readonly ControlPlaneRouteContribution[] {
-  // One signing key decides both halves: a deployment that can mint a root's
-  // Tasks grant is exactly the one whose routes will verify it.
-  const capability = input.signingEnv
-    ? createTasksRootCapability({
-        signingEnv: input.signingEnv,
-        enabledToolGroups: (root, auth) => input.builtinToolGroups(auth, root.projectId),
-      })
-    : undefined
   return createHostedTasksComposition({
     ...input,
     cloudSelectedCapabilities: Boolean(input.selectedCapabilities),
@@ -45,7 +38,7 @@ export function hostedTasksRouteContributions(
         principal,
         auth,
         ...(input.selectedCapabilities ? { selectedCapabilities: input.selectedCapabilities } : {}),
-        ...(capability ? { capability } : {}),
+        ...(input.rootEnvironment ? { capability: input.rootEnvironment } : {}),
       }),
   }).routeContributions
 }

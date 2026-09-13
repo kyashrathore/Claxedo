@@ -106,6 +106,7 @@ export async function hostedConnectionInfo(
   const ensured = await hostManager.ensure(workspaceId, {
     homeRegion,
     ...(preparation?.secrets?.length ? { secrets: preparation.secrets } : {}),
+    ...(preparation?.env ? { env: preparation.env } : {}),
   })
   captureWorkspaceTelemetry({
     services,

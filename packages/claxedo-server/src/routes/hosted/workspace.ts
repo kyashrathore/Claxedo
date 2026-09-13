@@ -504,6 +504,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             },
             workspaceRoot: directory,
             source,
+            ...(runtimePreparation?.env ? { env: runtimePreparation.env } : {}),
             // Clone token for connected private repos — rides the brokered
             // secret channel (fail-closed in the manager for drivers that
             // cannot broker), never labels or env.

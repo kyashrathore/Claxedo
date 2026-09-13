@@ -10,6 +10,7 @@ import {
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 import { hostedTasksRouteContributions } from "./tasks-contributions"
+import { createTasksRootCapability } from "../../tasks/root-capability"
 
 export { LiveSyncRoom }
 
@@ -46,19 +47,23 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     ...(env.CLAXEDO_CREDENTIALS ? { credentialsNamespace: env.CLAXEDO_CREDENTIALS } : {}),
     ...extra,
   })
+  // One signing key decides both halves: the deployment that mints a root's
+  // Tasks grant is exactly the one whose routes will verify it.
+  const signingEnv = stringEnvironment(env)
   const feature = createHostedAgentPluginsComposition({
     env,
     plane: base.plane,
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
+    tasksGrant: createTasksRootCapability({ signingEnv }),
   })
   const tasks = hostedTasksRouteContributions({
     services: base.plane.services,
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
     selectedCapabilities: feature.selectedCapabilities,
-    builtinToolGroups: feature.builtinToolGroups,
-    signingEnv: stringEnvironment(env),
+    rootEnvironment: feature.rootEnvironment,
+    signingEnv,
   })
   return {
     ...base,

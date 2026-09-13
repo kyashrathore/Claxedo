@@ -797,6 +797,32 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(provisionRuntime).toHaveBeenCalledWith(body.workspaceId, undefined)
   })
 
+  test("launches the sandbox with the readable environment its runtime preparation resolved", async () => {
+    const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
+    const ensure = vi.fn(async () => ({ status: "ready", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
+    const preparation = {
+      env: { WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,subagents" },
+      state: { kind: "test-plan" },
+    }
+    const provisionRuntime = vi.fn(async () => undefined)
+    const { app } = buildApp({
+      authority,
+      sandboxManager: { ensure } as unknown as SandboxManager,
+      options: { prepareRuntime: async () => preparation, provisionRuntime },
+    })
+    const waitUntil = vi.fn()
+    const res = await app.fetch(
+      post("/create", { workspaceName: "Prepared", repoUrl: "https://github.com/a/b" }),
+      undefined,
+      { waitUntil, passThroughOnException() {}, props: {} } as never,
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { workspaceId: string }
+    await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
+    expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ env: preparation.env }))
+    expect(provisionRuntime).toHaveBeenCalledWith(body.workspaceId, preparation)
+  })
+
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {
     const authority = fakeAuthority()
     const { app } = buildApp({ authority: authority })

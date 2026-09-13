@@ -1,9 +1,4 @@
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
-import {
-  builtinPluginInstanceId,
-  resolveBuiltinGroupActivation,
-} from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { D1Database } from "@cloudflare/workers-types"
 import type { Hono } from "hono"
 import { sandboxDriverCatalog, sandboxDriverId } from "@claxedo/sandbox-manager/driver-catalog"
@@ -37,6 +32,7 @@ import { githubEdgeCachedFetch, type EdgeCache } from "./sources/github-edge-cac
 import { oauthMetadataEdgeCachedFetch } from "./mcp/oauth-metadata-edge-cache"
 import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner } from "./runtime/provision"
+import { createCloudRootEnvironment, type CloudRootIdentity } from "./runtime/cloud-root-environment"
 import { createHostedAgentPluginSelfRuntime } from "./runtime/self-runtime"
 import { hostedAgentPluginConnectionIntegrations } from "./mcp/connections"
 import { HostedMcpGatewayRoutes } from "./mcp/routes"
@@ -72,15 +68,15 @@ export type HostedAgentPluginsComposition = {
   prepareRuntime: (workspaceId: string) => Promise<WorkspaceRuntimePreparation>
   provisionRuntime: (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => Promise<void>
   /**
+   * The environment `prepareRuntime` launches a cloud root with, for a caller
+   * that allocates its own workspace and prepares its own selection.
+   */
+  rootEnvironment: (root: CloudRootIdentity) => Promise<Record<string, string>>
+  /**
    * One root's own capability set, for a caller that allocates its own
    * workspace: the same preparation and apply the workspace routes run, over
    * an explicit selection instead of the project's activation defaults.
    */
-  /**
-   * The first-party tool groups one project turned on. The Tasks bridge reads
-   * it to decide whether a cloud root is launched with a Tasks grant at all.
-   */
-  builtinToolGroups: (auth: SignedControlPlaneAuth, projectId: string) => Promise<readonly string[]>
   selectedCapabilities: {
     prepare(input: {
       workspaceId: string
@@ -163,6 +159,8 @@ export function createHostedAgentPluginsComposition(input: {
   plane: HostedControlPlane
   database: D1Database
   authentication: RequestAuthenticationAdapter
+  /** The grant a root whose project turned Tasks on is launched with. */
+  tasksGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
 }): HostedAgentPluginsComposition {
   const bucket = input.env.CLAXEDO_AGENT_PLUGINS
   if (!bucket) throw new Error("Enabled Agent Plugins build requires CLAXEDO_AGENT_PLUGINS R2")
@@ -311,9 +309,20 @@ export function createHostedAgentPluginsComposition(input: {
       .first<{ backing: string; access: string }>()
     return row?.backing === "cloud-vm" && row.access === "cloud"
   }
+  const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant })
   const prepareRuntime = async (workspaceId: string): Promise<WorkspaceRuntimePreparation> => {
     if (!(await cloudWorkspace(workspaceId))) return {}
-    return preparer.forSnapshot(await activations.runtimeSnapshot(workspaceId))
+    const snapshot = await activations.runtimeSnapshot(workspaceId)
+    const [preparation, env] = await Promise.all([
+      preparer.forSnapshot(snapshot),
+      rootEnvironment({
+        userId: snapshot.identity.userId,
+        orgId: snapshot.identity.organizationId,
+        projectId: snapshot.identity.projectId,
+        workspaceId: snapshot.identity.workspaceId,
+      }),
+    ])
+    return { ...preparation, env }
   }
   const provisionRuntime = async (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => {
     if (!(await cloudWorkspace(workspaceId))) return
@@ -395,25 +404,7 @@ export function createHostedAgentPluginsComposition(input: {
     integrationRoutes,
     prepareRuntime,
     provisionRuntime,
-    builtinToolGroups: async (auth, projectId) => {
-      const enabled: (string | undefined)[] = await Promise.all(builtIn.groups.map(async (group) => {
-        const snapshot = await activations.read(auth, {
-          pluginInstanceId: builtinPluginInstanceId(group.id),
-          harnessId: "opencode",
-          projectId,
-        })
-        return resolveBuiltinGroupActivation({
-          group,
-          harnessId: "opencode",
-          deployment: builtIn.deployment,
-          mode: "signed",
-          ...(snapshot.projectOverride === undefined ? {} : { projectOverride: snapshot.projectOverride }),
-          ...(snapshot.userDefault === undefined ? {} : { userDefault: snapshot.userDefault }),
-          ...(snapshot.organizationDefault === undefined ? {} : { organizationDefault: snapshot.organizationDefault }),
-        }) ? group.id : undefined
-      }))
-      return enabled.filter((group): group is string => group !== undefined)
-    },
+    rootEnvironment,
     selectedCapabilities,
   }
 }
