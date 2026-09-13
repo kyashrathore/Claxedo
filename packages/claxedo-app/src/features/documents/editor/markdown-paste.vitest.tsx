@@ -65,6 +65,16 @@ describe("the branch a paste takes", () => {
   test("text outside the rich contract is not markdown this editor can hold", () => {
     expect(markdownFromPaste({ html: "", text: "keep <!-- required instruction --> this\n", inCode: false })).toBeUndefined()
   })
+
+  // The detector reads the body an envelope splits off, so a document whose
+  // frontmatter holds syntax outside the contract would be admitted on the
+  // strength of its body and then inserted whole.
+  test("a document carrying frontmatter is not a fragment to insert", () => {
+    expect(
+      markdownFromPaste({ html: "", text: "---\nnote: |\n  <!-- required instruction -->\n---\n\nbody\n", inCode: false }),
+    ).toBeUndefined()
+    expect(markdownFromPaste({ html: "", text: "---\ntitle: Plan\n---\n\n# Plan\n", inCode: false })).toBeUndefined()
+  })
 })
 
 describe("pasting into a markdown document", () => {
@@ -85,6 +95,55 @@ describe("pasting into a markdown document", () => {
 
     expect(editor.getHTML()).toContain("<h1>Title</h1>")
     expect(editor.$doc.querySelectorAll("listItem")).toHaveLength(2)
+  })
+
+  /**
+   * Measured with the slice opened: the heading and the quote arrived as bare
+   * text inside the paragraph, and only the first list item stayed an item.
+   */
+  test("a heading pasted mid-sentence stays a heading and splits the paragraph", () => {
+    const editor = mountEditor("hello world")
+    editor.commands.setTextSelection(7)
+
+    expect(paste(editor, "# Title")).toEqual({ handled: true, prevented: true })
+
+    expect(editor.getHTML()).toBe("<p>hello </p><h1>Title</h1><p>world</p>")
+  })
+
+  test("a quote pasted mid-sentence stays a quote", () => {
+    const editor = mountEditor("hello world")
+    editor.commands.setTextSelection(7)
+
+    expect(paste(editor, "> quoted")).toEqual({ handled: true, prevented: true })
+
+    expect(editor.getHTML()).toBe("<p>hello </p><blockquote><p>quoted</p></blockquote><p>world</p>")
+  })
+
+  test("every item of a list pasted mid-sentence is still an item", () => {
+    const editor = mountEditor("hello world")
+    editor.commands.setTextSelection(7)
+
+    expect(paste(editor, "- one\n- two\n")).toEqual({ handled: true, prevented: true })
+
+    expect(editor.$doc.querySelectorAll("listItem")).toHaveLength(2)
+    expect(editor.getHTML()).toBe("<p>hello </p><ul><li><p>one</p></li><li><p>two</p></li></ul><p>world</p>")
+  })
+
+  /**
+   * The frontmatter gate keeps the whole document out of the markdown path, so
+   * ProseMirror inserts the clipboard text as it stands — delimiters, metadata
+   * and the comment the parser has no node for.
+   */
+  test("a document carrying frontmatter is pasted as the text it is", () => {
+    const editor = mountEditor("hello world")
+    editor.commands.setTextSelection(7)
+
+    expect(paste(editor, "---\nnote: |\n  <!-- required instruction -->\n---\n\nbody\n")).toEqual({
+      handled: false,
+      prevented: false,
+    })
+
+    expect(editor.getHTML()).toBe("<p>hello world</p>")
   })
 
   /**
