@@ -17,7 +17,12 @@ export type Binding = Readonly<RuntimeIdentity & {
     methods: readonly string[]
     pathPrefixes: readonly string[]
   }>
-  injection: Readonly<{ header: string; scheme?: string }>
+  /**
+   * `header` carries the credential value; `headers` are the fixed companions
+   * the vendor requires alongside it (ChatGPT's account id), which the broker
+   * sets so the harness never has to be told them.
+   */
+  injection: Readonly<{ header: string; scheme?: string; headers?: Readonly<Record<string, string>> }>
 }>
 
 export type BindingFailure = Readonly<{

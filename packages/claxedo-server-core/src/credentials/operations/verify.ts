@@ -1,4 +1,4 @@
-import { jsonNumber, jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { jsonNumber, jsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { CredentialVerificationError } from "../verification-error"
 import {
@@ -8,6 +8,7 @@ import {
   type RefreshedCredentialSecret,
 } from "./refresh"
 import { verifySandboxDriverCredential } from "./sandbox-verify"
+import { credentialSecretMaterial, type CredentialSecretMaterial } from "@claxedo/server-core/credentials/secret-material"
 import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 const log = Log.create({ service: "credentials-verify" })
@@ -76,8 +77,8 @@ export async function verifyCredential(
   }
 
   // Sandbox provider keys probe their own vendors and share nothing with the
-  // model-provider auth shapes below, so they branch before `verificationAuth`
-  // — a driver credential is a field map, not a bearer token.
+  // model-provider auth shapes below, so they branch before the secret is read
+  // as a token — a driver credential is a field map, not a bearer token.
   if (credential.kind === "sandbox_driver") {
     return { health: await verifySandboxDriverCredential(credential.provider_id, material, options) }
   }
@@ -88,10 +89,9 @@ export async function verifyCredential(
   if (!anthropic && !openai && !cursor) {
     throw new CredentialVerificationError("Credential provider does not support verification")
   }
-  const auth = verificationAuth(credential, material)
+  const auth = credentialSecretMaterial({ kind: credential.kind, secret: material })
   if (!auth) throw new CredentialVerificationError("Credential secret has an unsupported shape")
-  const codex = openai && credential.kind === "oauth_token"
-  const probe = providerProbe(credential, auth, anthropic, cursor, codex)
+  const probe = providerProbe(auth, anthropic, cursor, openai && auth.form === "subscription")
   const outcome = (health: CredentialHealth, usage?: CredentialUsageWindow[]): CredentialVerificationOutcome => ({
     health,
     ...(refreshed ? { refreshed } : {}),
@@ -132,8 +132,7 @@ export async function verifyCredential(
  * (Anthropic, OpenAI) or the key-introspection route (Cursor).
  */
 function providerProbe(
-  credential: CredentialMetadata,
-  auth: { token: string; accountId?: string },
+  auth: CredentialSecretMaterial,
   anthropic: boolean,
   cursor: boolean,
   codex: boolean,
@@ -153,7 +152,7 @@ function providerProbe(
       usage: codexUsageWindows,
     }
   }
-  if (anthropic && anthropicOAuth(credential, auth.token)) {
+  if (anthropic && auth.form === "subscription") {
     return {
       url: "https://api.anthropic.com/api/oauth/usage",
       init: {
@@ -271,58 +270,3 @@ function usageResetMs(value: unknown): number | null {
   }
   return null
 }
-
-/**
- * Whether Anthropic must be given this token as OAuth rather than an API key.
- *
- * Decided by the SECRET's shape, not the stored `kind`, because the two
- * disagree by design. A `claude setup-token` value is OAuth material
- * (`sk-ant-oat01-…`, sent as `CLAUDE_CODE_OAUTH_TOKEN`) but is pasted through
- * the API-key path and stored as `api_key` — an asymmetry the cloud-sharing
- * rule depends on to tell a mintable token from an unshareable Keychain login.
- * Reclassifying it would fix verification and break that, so verification reads
- * the prefix instead, exactly as `claudeAuthEnv` already does at spawn time.
- * Presented as `x-api-key`, a subscription token is rejected and a perfectly
- * good credential reports `auth_failed`.
- *
- * Matched against the trimmed value because a token pasted out of a terminal
- * usually arrives with a trailing newline. The desktop form happens to trim
- * before saving, but nothing on the wire enforces that — `secret` is stored
- * verbatim — so an untrimmed token would otherwise miss the prefix and take the
- * API-key branch, which is precisely the failure this predicate exists to stop.
- */
-function anthropicOAuth(credential: CredentialMetadata, token: string) {
-  return credential.kind === "oauth_token" || /^sk-ant-o/i.test(token.trim())
-}
-
-function verificationAuth(
-  credential: CredentialMetadata,
-  secret: string,
-): { token: string; accountId?: string } | undefined {
-  // Trimmed for the same reason the prefix match is: a pasted token can carry
-  // surrounding whitespace, and a leading space survives into the header as
-  // part of the value, so the provider is handed a token that is not the user's.
-  if (credential.kind === "api_key") return { token: secret.trim() }
-  const value = parseJsonRecord(secret)
-  if (!value) return undefined
-  const tokens = jsonRecord(value.tokens)
-  const oauth = jsonRecord(value.oauth)
-  const claude = jsonRecord(value.claudeAiOauth)
-  const token = [
-    value.access,
-    value.access_token,
-    tokens?.access_token,
-    oauth?.access,
-    oauth?.access_token,
-    claude?.accessToken,
-    claude?.access_token,
-  ]
-    .map(jsonString)
-    .find((item) => item !== undefined)
-  if (!token) return undefined
-  const accountId = [value.account_id, value.accountId, tokens?.account_id, oauth?.account_id]
-    .map(jsonString)
-    .find((item) => item !== undefined)
-  return { token, ...(accountId ? { accountId } : {}) }
-}
-

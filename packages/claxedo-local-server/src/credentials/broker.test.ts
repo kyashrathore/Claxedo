@@ -22,13 +22,22 @@ const {
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 const { createLocalCredentialBroker } = await import("./broker")
 
+type Projection = Awaited<ReturnType<ReturnType<typeof createLocalCredentialBroker>["projectAuth"]>>[string]
+
+/** The bound half of a projection; a test that asks for one must not get "unavailable". */
+function bound(projection: Projection | undefined) {
+  if (!projection) throw new Error("expected a projection")
+  if ("unavailable" in projection) throw new Error(`expected a bound projection, got ${projection.reason}`)
+  return projection
+}
+
 const workspaceId = "ws-broker"
 const brokerOrigin = "http://127.0.0.1:2595"
 
-async function activeAnthropicRow(secret: string, providerId = "claude-sdk") {
+async function activeRow(secret: string, providerId = "claude-sdk", kind: "api_key" | "oauth_token" = "api_key") {
   const credential = await putCredential({
     provider_id: providerId,
-    kind: "api_key",
+    kind,
     source: "managed",
     account_id: `acc-${randomUUID().slice(0, 8)}`,
     secret,
@@ -36,6 +45,7 @@ async function activeAnthropicRow(secret: string, providerId = "claude-sdk") {
   expect(setActiveCredentials([credential.id])).toMatchObject({ ok: true })
   return credential
 }
+
 
 function broker(dataDir = root) {
   return createLocalCredentialBroker({ dataDir, brokerOrigin })
@@ -77,11 +87,11 @@ describe("local binding authority", () => {
   })
 
   test("resolve derives the binding for an active row and returns its current secret", async () => {
-    const credential = await activeAnthropicRow("sk-ant-api03-first")
+    const credential = await activeRow("sk-ant-api03-first")
     const local = broker()
-    const projection = (await local.projectAuth({ workspaceId }))["claude-sdk"]
+    const projection = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
 
-    expect(projection).toMatchObject({ authMode: "api-key" })
+    expect(projection).toMatchObject({ authMode: "api-key", apiPath: "/v1" })
     expect(projection.baseUrl.startsWith(`${brokerOrigin}/bindings/`)).toBe(true)
     const resolved = await local.authority.resolve(bindingIdOf(projection.baseUrl))
     expect(resolved?.value).toBe("sk-ant-api03-first")
@@ -96,19 +106,19 @@ describe("local binding authority", () => {
   })
 
   test("a subscription token binds as a bearer, a key as x-api-key", async () => {
-    await activeAnthropicRow("sk-ant-oat01-subscription", "anthropic")
+    await activeRow("sk-ant-oat01-subscription", "anthropic")
     const local = broker()
     const rows = await local.projectAuth({ workspaceId })
 
     expect(rows.anthropic).toMatchObject({ authMode: "bearer" })
-    const resolved = await local.authority.resolve(bindingIdOf(rows.anthropic.baseUrl))
+    const resolved = await local.authority.resolve(bindingIdOf(bound(rows.anthropic).baseUrl))
     expect(resolved?.binding.injection).toEqual({ header: "Authorization", scheme: "Bearer" })
   })
 
   test("a rotated secret is served on the next resolve with no other call", async () => {
-    const credential = await activeAnthropicRow("sk-ant-api03-before")
+    const credential = await activeRow("sk-ant-api03-before")
     const local = broker()
-    const id = bindingIdOf((await local.projectAuth({ workspaceId }))["claude-sdk"].baseUrl)
+    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
     expect((await local.authority.resolve(id))?.value).toBe("sk-ant-api03-before")
 
     await updateCredentialSecret(credential.id, "sk-ant-api03-after")
@@ -117,24 +127,24 @@ describe("local binding authority", () => {
   })
 
   test("a withdrawn row stops resolving, whether it failed auth or was deleted", async () => {
-    const failing = await activeAnthropicRow("sk-ant-api03-failing")
+    const failing = await activeRow("sk-ant-api03-failing")
     const local = broker()
-    const failingId = bindingIdOf((await local.projectAuth({ workspaceId }))["claude-sdk"].baseUrl)
+    const failingId = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
     expect(await local.authority.resolve(failingId)).toBeDefined()
     updateCredentialHealth(failing.id, "auth_failed", Date.now())
     expect(await local.authority.resolve(failingId)).toBeUndefined()
 
-    const deleted = await activeAnthropicRow("sk-ant-api03-deleted")
-    const deletedId = bindingIdOf((await local.projectAuth({ workspaceId }))["claude-sdk"].baseUrl)
+    const deleted = await activeRow("sk-ant-api03-deleted")
+    const deletedId = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
     expect(await local.authority.resolve(deletedId)).toBeDefined()
     await deleteCredential(deleted.id)
     expect(await local.authority.resolve(deletedId)).toBeUndefined()
   })
 
   test("a runtime this process never projected for is not current and resolves nothing", async () => {
-    await activeAnthropicRow("sk-ant-api03-unprojected")
+    await activeRow("sk-ant-api03-unprojected")
     const projecting = broker()
-    const id = bindingIdOf((await projecting.projectAuth({ workspaceId }))["claude-sdk"].baseUrl)
+    const id = bindingIdOf(bound((await projecting.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
 
     const other = broker()
     expect(await other.authority.resolve(id)).toBeUndefined()
@@ -142,14 +152,82 @@ describe("local binding authority", () => {
   })
 
   test("a provider with no destination policy gets no binding at all", async () => {
-    await activeAnthropicRow("gsk-some-key", "groq")
+    await activeRow("gsk-some-key", "groq")
     const local = broker()
 
     expect(await local.projectAuth({ workspaceId })).not.toHaveProperty("groq")
   })
 
+  test("an OpenAI API key binds to the API host, a ChatGPT login to the Codex backend", async () => {
+    await activeRow("sk-proj-openai-key", "openai")
+    const local = broker()
+    const key = bound((await local.projectAuth({ workspaceId })).openai)
+
+    expect(key).toMatchObject({ authMode: "bearer", apiPath: "/v1" })
+    expect((await local.authority.resolve(bindingIdOf(key.baseUrl)))?.binding).toMatchObject({
+      destination: { origin: "https://api.openai.com", methods: ["POST", "GET"], pathPrefixes: ["/v1/"] },
+      injection: { header: "Authorization", scheme: "Bearer" },
+    })
+
+    await activeRow(
+      JSON.stringify({ tokens: { access_token: "chatgpt-access", account_id: "acct-7" } }),
+      "codex-app-server",
+      "oauth_token",
+    )
+    const subscription = bound((await local.projectAuth({ workspaceId }))["codex-app-server"])
+
+    expect(subscription).toMatchObject({ authMode: "bearer", apiPath: "/backend-api/codex" })
+    const resolved = await local.authority.resolve(bindingIdOf(subscription.baseUrl))
+    expect(resolved?.value).toBe("chatgpt-access")
+    expect(resolved?.binding).toMatchObject({
+      destination: {
+        origin: "https://chatgpt.com",
+        methods: ["POST", "GET"],
+        pathPrefixes: ["/backend-api/codex/"],
+      },
+      injection: { header: "Authorization", scheme: "Bearer", headers: { "ChatGPT-Account-Id": "acct-7" } },
+    })
+  })
+
+  test("a Cursor key binds to the backend the SDK targets", async () => {
+    await activeRow("key_cursor", "cursor-sdk")
+    const local = broker()
+    const projection = bound((await local.projectAuth({ workspaceId }))["cursor-sdk"])
+
+    expect(projection).toMatchObject({ authMode: "bearer" })
+    expect(projection.apiPath).toBeUndefined()
+    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.binding).toMatchObject({
+      destination: { origin: "https://api2.cursor.sh" },
+      injection: { header: "Authorization", scheme: "Bearer" },
+    })
+  })
+
+  test("an active row the provider rejected projects unavailable rather than nothing", async () => {
+    const credential = await activeRow("sk-ant-api03-rejected")
+    const local = broker()
+    expect(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl).toContain("/bindings/")
+
+    updateCredentialHealth(credential.id, "auth_failed", Date.now())
+
+    expect((await local.projectAuth({ workspaceId }))["claude-sdk"])
+      .toEqual({ unavailable: true, reason: "auth_failed" })
+  })
+
+  test("a deleted row falls back to the implicit tier, an expired one does not", async () => {
+    const expiring = await activeRow("sk-ant-api03-expiring")
+    const local = broker()
+    updateCredentialHealth(expiring.id, "expired", Date.now())
+
+    expect((await local.projectAuth({ workspaceId }))["claude-sdk"])
+      .toEqual({ unavailable: true, reason: "expired" })
+
+    await deleteCredential(expiring.id)
+
+    expect(await local.projectAuth({ workspaceId })).not.toHaveProperty("claude-sdk")
+  })
+
   test("reportFailure marks the row only for the revision the request used", async () => {
-    const credential = await activeAnthropicRow("sk-ant-api03-reported")
+    const credential = await activeRow("sk-ant-api03-reported")
     const local = broker()
     const failure = { bindingId: "unused", credentialId: credential.id, status: 401 }
 
@@ -162,7 +240,7 @@ describe("local binding authority", () => {
   })
 
   test("a vendor 403 does not withdraw a working credential", async () => {
-    const credential = await activeAnthropicRow("sk-ant-api03-forbidden")
+    const credential = await activeRow("sk-ant-api03-forbidden")
     const local = broker()
 
     await local.authority.reportFailure({

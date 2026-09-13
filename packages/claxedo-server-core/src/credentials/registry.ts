@@ -734,7 +734,36 @@ export function selectCredentialsForScope(
   scope: CredentialSecretScope = "local",
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): CredentialMetadata[] {
-  return activeCredentials(org).filter((c) => fanoutEligible(c) && credentialAvailableForScope(c, scope))
+  return selectActiveCredentialsForScope(scope, org)
+    .flatMap((row) => row.unavailable ? [] : [row.credential])
+}
+
+export type ScopedCredentialSelection = {
+  credential: CredentialMetadata
+  /** Absent when the account can be used; otherwise why it cannot. */
+  unavailable?: string
+}
+
+/**
+ * Every account the operator marked for a provider in this scope, usable or
+ * not.
+ *
+ * A caller that can only consume a working credential reads
+ * `selectCredentialsForScope`. A caller that must distinguish "no account
+ * chosen" from "the chosen account is unusable" reads this instead: dropping a
+ * withdrawn row makes the two indistinguishable, and the harness then runs on
+ * whatever login its machine holds.
+ */
+export function selectActiveCredentialsForScope(
+  scope: CredentialSecretScope = "local",
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): ScopedCredentialSelection[] {
+  return activeCredentials(org)
+    .filter((credential) => fanoutEligible(credential) && credentialSecretInScope(credential, scope))
+    .map((credential) => {
+      const unavailable = credentialUnavailableForScope(credential, scope)
+      return unavailable ? { credential, unavailable } : { credential }
+    })
 }
 
 export async function resolveSecretsForScope(
@@ -762,11 +791,25 @@ export async function resolveSecretsForScope(
 }
 
 function credentialAvailableForScope(credential: CredentialMetadata, scope: CredentialSecretScope) {
-  return credential.status === "available" && !!credential.secure_ref
-    && credential.health !== "expired"
-    && (credential.expires_at == null || credential.expires_at > now())
-    && credentialSecretInScope(credential, scope)
-    && (scope !== "shared" || !!credential.consent)
+  return credentialSecretInScope(credential, scope) && !credentialUnavailableForScope(credential, scope)
+}
+
+/**
+ * Why an in-scope account cannot be used, or `undefined` when it can. The
+ * health is preferred over the status because a health verdict names what the
+ * provider said (`auth_failed`, `no_billing`) where the status only records
+ * that something went wrong.
+ */
+function credentialUnavailableForScope(
+  credential: CredentialMetadata,
+  scope: CredentialSecretScope,
+): string | undefined {
+  if (!credential.secure_ref) return "no_secret"
+  if (credential.health === "expired") return "expired"
+  if (credential.expires_at != null && credential.expires_at <= now()) return "expired"
+  if (credential.status !== "available") return credential.health ?? credential.status
+  if (scope === "shared" && !credential.consent) return "consent_required"
+  return undefined
 }
 
 /** Resolve explicitly referenced connection credentials without provider preference/deduplication. */

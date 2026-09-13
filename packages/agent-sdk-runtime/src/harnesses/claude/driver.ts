@@ -47,7 +47,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { providerProjectionKey, providerProjectionRecord } from "../../provider-projection"
+import { providerBinding, providerProjectionKey, providerProjectionRecord } from "../../provider-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,
@@ -279,11 +279,11 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
    * withheld and the harness runs on that account exactly as before.
    */
   private spawnEnv(extra: Record<string, string> = {}) {
-    const projection = this.auth.anthropic
+    const binding = providerBinding("claude", this.auth.anthropic)
     return claudeSpawnEnv({
       ...process.env,
-      ...claudeAuthEnv(projection),
-      ...(projection
+      ...claudeAuthEnv(binding),
+      ...(binding
         ? {
           CLAUDE_CONFIG_DIR: this.driverOptions.brokeredConfigDir
             ? brokeredClaudeConfigDir(this.driverOptions.brokeredConfigDir)

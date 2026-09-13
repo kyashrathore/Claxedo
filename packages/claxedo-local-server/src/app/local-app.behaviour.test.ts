@@ -547,11 +547,12 @@ describe("local egress broker — the mounted authority", () => {
     })
     expect(setActiveCredentials([credential.id])).toMatchObject({ ok: true })
     const local = createLocalCredentialBroker({ dataDir, brokerOrigin: "http://127.0.0.1" })
-    const projection = (await local.projectAuth({ workspaceId: "ws-mounted" }))["claude-sdk"]
+    const row = (await local.projectAuth({ workspaceId: "ws-mounted" }))["claude-sdk"]
+    if ("unavailable" in row) throw new Error(`expected a bound projection, got ${row.reason}`)
     return {
       instance: app({ egressBroker: local.handler }),
-      projection,
-      bindingId: projection.baseUrl.slice("http://127.0.0.1/bindings/".length),
+      projection: row,
+      bindingId: row.baseUrl.slice("http://127.0.0.1/bindings/".length),
     }
   }
 

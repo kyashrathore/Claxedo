@@ -1,0 +1,118 @@
+/**
+ * Where a provider's binding is allowed to reach, and what the broker puts on
+ * the request when it gets there.
+ *
+ * A provider absent from this table gets no binding at all, so adding a harness
+ * to the broker means adding its row here and nowhere else. The vendor's host,
+ * its allowed methods and paths, and the header shape it accepts are all one
+ * fact about that vendor, which is why they are one row.
+ */
+
+import { credentialSecretMaterial } from "@claxedo/server-core/credentials/secret-material"
+import type { CredentialKind } from "@claxedo/server-core/credentials/types"
+
+export type ProviderDestination = {
+  origin: string
+  methods: readonly string[]
+  pathPrefixes: readonly string[]
+  /**
+   * Where the vendor's API root sits under the binding path. A harness whose
+   * client appends the whole vendor path itself (Claude Code, the Cursor SDK)
+   * configures the binding root; one that is configured with an API root
+   * (Codex, Pi, the OpenCode engine) appends this to it.
+   */
+  apiPath: string
+  injection: { header: string; scheme?: string; headers?: Record<string, string> }
+  /** What the broker injects, which is the token inside a stored login document. */
+  value: string
+}
+
+type ProviderRow = (material: {
+  token: string
+  accountId?: string
+  form: "api-key" | "subscription"
+}) => Omit<ProviderDestination, "value">
+
+const anthropic: ProviderRow = (material) => ({
+  origin: "https://api.anthropic.com",
+  // Claude Code reaches several routes under the API version — messages, models,
+  // token counting — so the prefix is the version rather than one path.
+  methods: ["POST", "GET"],
+  pathPrefixes: ["/v1/"],
+  apiPath: "/v1",
+  injection: material.form === "subscription"
+    ? { header: "Authorization", scheme: "Bearer" }
+    : { header: "x-api-key" },
+})
+
+/**
+ * A ChatGPT subscription is not served by the API host at all: its Codex
+ * traffic answers on `chatgpt.com/backend-api/codex`, and the account header is
+ * what tells that backend which plan the token spends — the same pair the
+ * credential verification probe sends.
+ */
+const openai: ProviderRow = (material) => material.form === "subscription"
+  ? {
+    origin: "https://chatgpt.com",
+    methods: ["POST", "GET"],
+    pathPrefixes: ["/backend-api/codex/"],
+    apiPath: "/backend-api/codex",
+    injection: {
+      header: "Authorization",
+      scheme: "Bearer",
+      ...(material.accountId ? { headers: { "ChatGPT-Account-Id": material.accountId } } : {}),
+    },
+  }
+  : {
+    origin: "https://api.openai.com",
+    methods: ["POST", "GET"],
+    pathPrefixes: ["/v1/"],
+    apiPath: "/v1",
+    injection: { header: "Authorization", scheme: "Bearer" },
+  }
+
+/**
+ * `api2.cursor.sh` is the host the installed SDK's `CURSOR_BACKEND_URL` default
+ * names for the agent itself: the API-key exchange and the Connect services the
+ * turn runs over. The cloud REST host (`api.cursor.com`, the model catalog) is
+ * a different origin the same variable also redirects, so a brokered Cursor
+ * turn cannot read that catalog and falls back to its default model.
+ */
+const cursor: ProviderRow = () => ({
+  origin: "https://api2.cursor.sh",
+  methods: ["POST", "GET"],
+  pathPrefixes: [
+    "/auth/exchange_user_api_key",
+    "/agent.v1.AgentService",
+    "/aiserver.v1.BidiService",
+    "/aiserver.v1.ServerConfigService",
+  ],
+  apiPath: "",
+  injection: { header: "Authorization", scheme: "Bearer" },
+})
+
+const PROVIDER_ROWS: Record<string, ProviderRow> = {
+  anthropic,
+  "claude-sdk": anthropic,
+  openai,
+  "codex-app-server": openai,
+  cursor,
+  "cursor-sdk": cursor,
+}
+
+/** Whether this provider can be bound at all, asked without reading its secret. */
+export function hasProviderDestination(providerId: string): boolean {
+  return providerId in PROVIDER_ROWS
+}
+
+export function providerDestination(input: {
+  providerId: string
+  kind: CredentialKind
+  secret: string
+}): ProviderDestination | undefined {
+  const row = PROVIDER_ROWS[input.providerId]
+  if (!row) return undefined
+  const material = credentialSecretMaterial({ kind: input.kind, secret: input.secret })
+  if (!material) return undefined
+  return { ...row(material), value: material.token }
+}

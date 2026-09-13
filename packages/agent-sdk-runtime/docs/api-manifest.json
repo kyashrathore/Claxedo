@@ -128,9 +128,8 @@
       "GOAL_OPTIONAL_FIELDS",
       "GoalCapabilityError",
       "PermissionCeilingError",
-      "ProviderProjectionUnsupportedError",
+      "ProviderCredentialUnavailableError",
       "RUNTIME_GOAL_STATUSES",
-      "assertNoProviderProjection",
       "chunk",
       "classifyFirstTurnError",
       "comparePermissionLevels",
@@ -165,6 +164,8 @@
       "observeAgentProcess",
       "permissionCeilingAdmits",
       "permissionModeLevel",
+      "isProviderUnavailable",
+      "providerBinding",
       "providerProjection",
       "providerProjectionKey",
       "providerProjectionRecord",
@@ -296,15 +297,20 @@
       "kind": "function",
       "purpose": "Change identity for a held projection, so a renewed placeholder counts as a change."
     },
-    "assertNoProviderProjection": {
+    "isProviderUnavailable": {
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
-      "purpose": "Fail a harness that cannot yet read a projection instead of letting it run on ambient credentials."
+      "purpose": "Whether a projection says the selected account cannot be bound, where refusing the turn would be wrong."
     },
-    "ProviderProjectionUnsupportedError": {
+    "providerBinding": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "The binding a harness may launch on; refuses a selected account the provider will not accept instead of falling back to the machine's login."
+    },
+    "ProviderCredentialUnavailableError": {
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "class",
-      "purpose": "Raised by a harness that has no projection support yet."
+      "purpose": "Raised when the operator's selected account for a provider exists but cannot be bound."
     }
   }
 }

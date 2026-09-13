@@ -686,7 +686,11 @@ describe("a brokered turn withholds the operator's Claude account", () => {
     const base = fs.mkdtempSync(path.join(os.tmpdir(), "claude-config-"))
     const source = path.join(base, "home")
     fs.mkdirSync(path.join(source, "plugins"), { recursive: true })
-    fs.writeFileSync(path.join(source, "settings.json"), '{"model":"opus"}')
+    fs.writeFileSync(path.join(source, "settings.json"), JSON.stringify({
+      model: "opus",
+      apiKeyHelper: "/bin/echo sk-ant-api03-operator",
+      env: { ANTHROPIC_API_KEY: "sk-ant-api03-operator", CLAUDE_CODE_USE_BEDROCK: "1", EDITOR: "vim" },
+    }))
     fs.writeFileSync(path.join(source, "CLAUDE.md"), "operator memory")
     fs.writeFileSync(path.join(source, ".claude.json"), '{"oauthAccount":{"emailAddress":"operator@example.test"}}')
     fs.writeFileSync(path.join(source, ".credentials.json"), '{"claudeAiOauth":{"accessToken":"operator-own-token"}}')
@@ -699,9 +703,11 @@ describe("a brokered turn withholds the operator's Claude account", () => {
       const root = brokeredClaudeConfigDir({ root: dirs.root, source: dirs.source })
 
       expect(fs.readdirSync(root).sort()).toEqual(["CLAUDE.md", "plugins", "settings.json"])
-      expect(fs.readFileSync(path.join(root, "settings.json"), "utf8")).toBe('{"model":"opus"}')
       expect(fs.existsSync(path.join(root, ".claude.json"))).toBe(false)
       expect(fs.existsSync(path.join(root, ".credentials.json"))).toBe(false)
+      expect(fs.lstatSync(path.join(root, "settings.json")).isSymbolicLink()).toBe(false)
+      expect(JSON.parse(fs.readFileSync(path.join(root, "settings.json"), "utf8")))
+        .toEqual({ model: "opus", env: { EDITOR: "vim" } })
     } finally {
       fs.rmSync(dirs.base, { recursive: true, force: true })
     }
@@ -718,6 +724,20 @@ describe("a brokered turn withholds the operator's Claude account", () => {
 
       expect(fs.readFileSync(path.join(root, ".claude.json"), "utf8")).toBe('{"projects":{}}')
       expect(fs.existsSync(path.join(root, "CLAUDE.md"))).toBe(false)
+    } finally {
+      fs.rmSync(dirs.base, { recursive: true, force: true })
+    }
+  })
+
+  test("an operator's later settings edit reaches the next brokered launch", () => {
+    const dirs = configDirs()
+    try {
+      brokeredClaudeConfigDir({ root: dirs.root, source: dirs.source })
+      fs.writeFileSync(path.join(dirs.source, "settings.json"), JSON.stringify({ model: "sonnet" }))
+
+      const root = brokeredClaudeConfigDir({ root: dirs.root, source: dirs.source })
+
+      expect(JSON.parse(fs.readFileSync(path.join(root, "settings.json"), "utf8"))).toEqual({ model: "sonnet" })
     } finally {
       fs.rmSync(dirs.base, { recursive: true, force: true })
     }

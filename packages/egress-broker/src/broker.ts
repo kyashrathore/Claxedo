@@ -55,10 +55,15 @@ export function createEgressBroker(options: BrokerOptions) {
       stripTransportHeaders(headers)
       for (const name of ["authorization", "x-api-key", "cookie", "x-claxedo-egress-target"]) headers.delete(name)
       const injection = binding.injection
-      if (["host", "connection", "content-length", "transfer-encoding", "cookie"].includes(injection.header.toLowerCase())) {
+      const injected = [injection.header, ...Object.keys(injection.headers ?? {})]
+      if (injected.some((name) => ["host", "connection", "content-length", "transfer-encoding", "cookie"].includes(name.toLowerCase()))) {
         return brokerErrorResponse(503, "binding_injection_invalid")
       }
       headers.set(injection.header, injection.scheme ? `${injection.scheme} ${value}` : value)
+      for (const [name, companion] of Object.entries(injection.headers ?? {})) {
+        if (name.toLowerCase() === injection.header.toLowerCase()) return brokerErrorResponse(503, "binding_injection_invalid")
+        headers.set(name, companion)
+      }
       let upstream: Response
       try {
         upstream = await (options.fetch ?? fetch)(target, {
