@@ -541,6 +541,8 @@ The initial test model `gpt-5.3-codex` was rejected by this account. A read-only
 
 The authority and lease identities in this probe are explicit test fixtures. Production account selection, signed-user propagation, renewal, and hosted binding persistence are not exercised or implemented by this result. The alternative `chatgpt_base_url` form was unnecessary and was not tested.
 
+`scripts/codex-subscription-feasibility.ts` and the in-memory delivery adapter it drove have since been deleted: the binding lifecycle has one owner, `claxedo-local-server`'s `credentials/broker.ts`, and the script's copy had already diverged from it on auth mode. The result above stands as a record of that run and is not repeatable from the tree.
+
 ### Access checks — 2026-09-13, items 7–9
 
 - exe.dev: `ssh -oBatchMode=yes -oConnectTimeout=10 -oStrictHostKeyChecking=yes exe.dev help` failed because no trusted host key was configured. Item 7 is **not run: trusted SSH access is not established in this environment**. No host-trust setting or integration was changed.
@@ -595,6 +597,9 @@ The upstream returned only a verdict/revision, and no fixture credential appeare
 in the captured responses. The check destroyed the sandbox and cleared KV.
 `npx wrangler delete --config feasibility/upstream/wrangler.toml --force`
 succeeded; the local dev process was stopped after verified cleanup.
+
+The `cloudflare-worker/feasibility/` harness has since been deleted; the result
+above stands as a record of that run and is not repeatable from the tree.
 
 This supersedes the pending local production-handler acceptance item. It does
 not establish deployed Container interception or deployed KV propagation delay;
