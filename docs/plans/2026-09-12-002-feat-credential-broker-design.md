@@ -689,8 +689,19 @@ placeholder travels as the `apiKey` argument the driver already passed. The
 destination is `https://api2.cursor.sh`, the host the SDK's own default names for
 the API-key exchange and the Connect services a turn runs over; the cloud REST
 host `api.cursor.com` is a second origin the same variable redirects, so a
-brokered Cursor turn cannot read that model catalog. That limitation is recorded,
-not fixed.
+brokered Cursor turn cannot read that model catalog and falls back to its
+default model.
+
+**Still not fixed, and why.** `CURSOR_BACKEND_URL` is one value, so both hosts
+would have to sit on one binding, keyed by path prefix (`/v1/models` →
+`api.cursor.com`, the Connect services → `api2.cursor.sh`). A destination row
+cannot express that on its own: `Binding.destination` in `@claxedo/egress-broker`
+carries a single `origin` beside its `pathPrefixes`, and it is read by the
+broker's target construction, the delivery adapter's admission check
+(`enforceableDestination`) and the local authority's binding construction, with
+four test files pinning the shape. Making the origin per-prefix is a change to
+the shared binding contract for one vendor's split host, not a row, so it is
+left as a follow-up; the fallback to the default model stands until then.
 
 Pi receives a `models.json` overlay `providers.<id>.baseUrl` / `apiKey`, merged
 onto its built-in provider so the wire protocol and model list stay Pi's own.

@@ -467,7 +467,7 @@ describe("workspace runtime host route auth", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          version: 3,
+          version: 4,
           mcp: {},
           connections: [],
           defaultHarness: { kind: "native", harnessId: "pi" },
@@ -608,7 +608,7 @@ describe("workspace runtime host route auth", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          version: 3,
+          version: 4,
           mcp: {},
           connections: [],
           defaultHarness: { kind: "native", harnessId: "pi" },
@@ -954,7 +954,7 @@ describe("relay-host auth middleware (characterization)", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          version: 3,
+          version: 4,
           mcp: {},
           connections: [],
           defaultHarness: { kind: "native", harnessId: "pi" },

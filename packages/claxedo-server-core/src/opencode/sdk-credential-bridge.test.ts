@@ -77,6 +77,23 @@ describe("OpenCode SDK credential bridge", () => {
     expect(fake.removed).toEqual(["cred-old"])
   })
 
+  test("every provider the broker has a destination for reaches the engine as routing", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    // The four below reached the engine as a plaintext copy of the stored key
+    // until the broker took over delivery; an id missing here reaches it not at
+    // all, which is a working account silently going dark.
+    const registryIds = ["claude-sdk", "openai", "openrouter", "google", "groq", "xai"] as const
+    const auth = Object.fromEntries(registryIds.map((id) => [id, brokerProjection])) as Record<string, ProviderProjection>
+    configureAgentConfig({ projectAuth: async () => auth })
+
+    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
+    await reconcileCredentialsIntoSdk()
+
+    expect(Object.keys(fake.bound[0]).sort())
+      .toEqual(["anthropic", "google", "groq", "openai", "openrouter", "xai"])
+  })
+
   test("an unavailable account leaves the provider unbound rather than on the machine's login", async () => {
     const fake = fakeRuntime()
     construct.mockImplementation(() => fake.runtime as never)

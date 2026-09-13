@@ -101,6 +101,30 @@ const cursorDestination: ProviderRow = () => ({
   injection: { header: "Authorization", scheme: "Bearer" },
 })
 
+/**
+ * The OpenAI-compatible model vendors the OpenCode engine and Pi define
+ * providers for.
+ *
+ * They reached those harnesses as a plaintext copy of the stored key until the
+ * broker took over delivery, and a provider with no row here reaches them not
+ * at all — so a row is what keeps each of these accounts working. Each one is
+ * the vendor's own API root and the header its SDK sends the key in.
+ */
+const openAiCompatibleDestination = (input: {
+  origin: string
+  apiPath: string
+  header?: string
+  scheme?: string
+}): ProviderRow => () => ({
+  origin: input.origin,
+  methods: ["POST", "GET"],
+  pathPrefixes: [`${input.apiPath}/`],
+  apiPath: input.apiPath,
+  injection: input.header
+    ? { header: input.header }
+    : { header: "Authorization", scheme: "Bearer" },
+})
+
 const PROVIDER_ROWS: Record<string, ProviderRow> = {
   anthropic: anthropicDestination,
   "claude-sdk": anthropicDestination,
@@ -108,6 +132,15 @@ const PROVIDER_ROWS: Record<string, ProviderRow> = {
   "codex-app-server": openaiDestination,
   cursor: cursorDestination,
   "cursor-sdk": cursorDestination,
+  openrouter: openAiCompatibleDestination({ origin: "https://openrouter.ai", apiPath: "/api/v1" }),
+  // Gemini takes its key in its own header rather than a bearer.
+  google: openAiCompatibleDestination({
+    origin: "https://generativelanguage.googleapis.com",
+    apiPath: "/v1beta",
+    header: "x-goog-api-key",
+  }),
+  groq: openAiCompatibleDestination({ origin: "https://api.groq.com", apiPath: "/openai/v1" }),
+  xai: openAiCompatibleDestination({ origin: "https://api.x.ai", apiPath: "/v1" }),
 }
 
 /** Whether this provider can be bound at all, asked without reading its secret. */

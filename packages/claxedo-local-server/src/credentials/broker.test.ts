@@ -172,10 +172,59 @@ describe("local binding authority", () => {
   })
 
   test("a provider with no destination policy gets no binding at all", async () => {
-    await activeRow("gsk-some-key", "groq")
+    await activeRow("pplx-some-key", "perplexity")
     const local = broker()
 
-    expect(await local.projectAuth({ workspaceId })).not.toHaveProperty("groq")
+    expect(await local.projectAuth({ workspaceId })).not.toHaveProperty("perplexity")
+  })
+
+  /**
+   * These four reached the OpenCode engine and Pi as a plaintext copy of the
+   * stored key until the broker took over delivery; without a row here their
+   * accounts reach those harnesses not at all.
+   */
+  test.each([
+    ["openrouter", "https://openrouter.ai", "/api/v1", { header: "Authorization", scheme: "Bearer" }],
+    ["google", "https://generativelanguage.googleapis.com", "/v1beta", { header: "x-goog-api-key" }],
+    ["groq", "https://api.groq.com", "/openai/v1", { header: "Authorization", scheme: "Bearer" }],
+    ["xai", "https://api.x.ai", "/v1", { header: "Authorization", scheme: "Bearer" }],
+  ] as const)("%s binds to its own API root", async (providerId, origin, apiPath, injection) => {
+    await activeRow(`key-${providerId}`, providerId)
+    const local = broker()
+    const projection = bound((await local.projectAuth({ workspaceId }))[providerId])
+
+    expect(projection.apiPath).toBe(apiPath)
+    expect(projection.authMode).toBe(injection.header === "Authorization" ? "bearer" : "api-key")
+    const resolved = await local.authority.resolve(bindingIdOf(projection.baseUrl))
+    expect(resolved?.value).toBe(`key-${providerId}`)
+    expect(resolved?.binding).toMatchObject({
+      destination: { origin, methods: ["POST", "GET"], pathPrefixes: [`${apiPath}/`] },
+      injection,
+    })
+  })
+
+  test("a Gemini key travels in the header its own SDK sends, and reaches the vendor as the stored one", async () => {
+    await activeRow("AIza-stored-gemini", "google")
+    const local = broker()
+    const projection = bound((await local.projectAuth({ workspaceId })).google)
+    const realFetch = globalThis.fetch
+    const upstream: Request[] = []
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      upstream.push(new Request(url, init))
+      return new Response("{}")
+    }) as typeof fetch
+    try {
+      const response = await local.handler(new Request(
+        `${projection.baseUrl}/v1beta/models/gemini-3-pro:generateContent`,
+        { method: "POST", headers: { "x-goog-api-key": projection.placeholder } },
+      ))
+
+      expect(response.status).toBe(200)
+      expect(upstream[0]?.headers.get("x-goog-api-key")).toBe("AIza-stored-gemini")
+      expect(projection.placeholder).not.toContain("AIza-stored-gemini")
+    } finally {
+      globalThis.fetch = realFetch
+    }
   })
 
   test("an OpenAI API key binds to the API host, a ChatGPT login to the Codex backend", async () => {

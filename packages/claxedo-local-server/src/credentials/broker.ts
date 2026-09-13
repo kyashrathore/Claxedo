@@ -308,7 +308,7 @@ export function createLocalCredentialBroker(input: {
         rows[credential.provider_id] = {
           baseUrl: bindingBaseUrl(input.brokerOrigin, id),
           placeholder: await mintRuntimeToken({ ...identity, bindingIds: [id], expiresAt }, state.signingKey, now()),
-          authMode: destination.injection.header.toLowerCase() === "x-api-key" ? "api-key" : "bearer",
+          authMode: destination.injection.header.toLowerCase() === "authorization" ? "bearer" : "api-key",
           expiresAt,
           ...(destination.apiPath ? { apiPath: destination.apiPath } : {}),
         }

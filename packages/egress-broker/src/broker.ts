@@ -7,6 +7,14 @@ export type BrokerOptions = {
   fetch?: typeof fetch
 }
 
+/**
+ * The headers a harness's own SDK puts an API key in, and therefore the
+ * placeholder. `Authorization: Bearer` is handled beside them; a vendor whose
+ * client sends the key somewhere else needs its name added here before a
+ * binding for it can work.
+ */
+const API_KEY_HEADERS = ["x-api-key", "x-goog-api-key"] as const
+
 function brokerErrorResponse(status: number, error: string) {
   return Response.json({ error }, { status })
 }
@@ -24,9 +32,13 @@ export function createEgressBroker(options: BrokerOptions) {
     const route = /^\/bindings\/([A-Za-z0-9_-]+)(\/.*)?$/.exec(url.pathname)
     if (!route) return brokerErrorResponse(404, "binding_route_required")
     const authorization = request.headers.get("authorization")
-    const apiKey = request.headers.get("x-api-key")
-    const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : apiKey
-    if (!token || (apiKey && authorization && apiKey !== token)) return brokerErrorResponse(401, "runtime_token_required")
+    const keyed = API_KEY_HEADERS.map((name) => request.headers.get(name)).filter((value) => value !== null)
+    const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : keyed[0]
+    // Two different values mean the caller is presenting two identities and the
+    // binding would be spent under whichever one this happened to pick.
+    if (!token || [...keyed, ...(authorization ? [token] : [])].some((value) => value !== token)) {
+      return brokerErrorResponse(401, "runtime_token_required")
+    }
     const claims = await options.verifyToken(token)
     if (!claims) return brokerErrorResponse(401, "runtime_token_invalid")
     const bindingId = route[1]
@@ -53,7 +65,7 @@ export function createEgressBroker(options: BrokerOptions) {
       target.search = url.search
       const headers = new Headers(request.headers)
       stripTransportHeaders(headers)
-      for (const name of ["authorization", "x-api-key", "cookie", "x-claxedo-egress-target"]) headers.delete(name)
+      for (const name of ["authorization", ...API_KEY_HEADERS, "cookie", "x-claxedo-egress-target"]) headers.delete(name)
       const injection = binding.injection
       const injected = [injection.header, ...Object.keys(injection.headers ?? {})]
       if (injected.some((name) => ["host", "connection", "content-length", "transfer-encoding", "cookie"].includes(name.toLowerCase()))) {

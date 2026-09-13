@@ -33,6 +33,10 @@ const PROVIDER_BY_REGISTRY_ID: Readonly<Record<string, string>> = {
   "claude-sdk": "anthropic",
   openai: "openai",
   "codex-app-server": "openai",
+  openrouter: "openrouter",
+  google: "google",
+  groq: "groq",
+  xai: "xai",
 }
 
 const managedLabel = (provider: string) => `Claxedo managed: ${provider}`
