@@ -4,7 +4,7 @@ import type { SessionAccessOperation } from "@claxedo/workspace-runtime/client"
 import type { ClaxedoMcpClient } from "../client/contract"
 import type { McpAudience, McpCredential, McpToolAccess, McpToolContext } from "../context"
 import { createToolRegistry } from "./registry"
-import { CLAXEDO_MCP_TOOL_GROUPS } from "./index"
+import { CLAXEDO_MCP_TOOL_GROUPS, claxedoMcpToolGroupInventory } from "./index"
 import {
   MCP_OPERATIONS_SERVED_ELSEWHERE,
   MCP_OPERATIONS_WITHOUT_TOOLS,
@@ -224,4 +224,21 @@ describe("the registered surface", () => {
 const CHECKPOINT_WRITE: SessionAccessOperation = "checkpoint_write"
 test("checkpoint_write is an operation the session-core routes never name", () => {
   expect(RUNTIME_OPERATIONS.has(CHECKPOINT_WRITE)).toBe(false)
+})
+
+describe("the tool names the catalog publishes", () => {
+  test("are exactly the names a real mount registers, group by group", () => {
+    const declared = surface(userCredential()).declared
+    const published = claxedoMcpToolGroupInventory()
+
+    // The catalog derives its names by running each registration against a
+    // sink with no server, no context and no credential behind it. This is the
+    // assertion that the sink sees what a real registry sees: a name reached
+    // through a constant, or registered under a branch the sink does not
+    // satisfy, would be published as absent and consented to as absent while
+    // the mount served it.
+    expect(published.flatMap((group) => group.tools).toSorted()).toEqual([...declared.keys()].toSorted())
+    expect(published.find((group) => group.id === "attention")?.tools).toContain("permission_reply")
+    expect(new Set(published.flatMap((group) => group.tools)).size).toBe(declared.size)
+  })
 })
