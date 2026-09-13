@@ -421,7 +421,7 @@ export const desktopRendererUnsigned: Policy = {
   // +16 modules, +1 package (2026-09-12): the same Tasks and Presets owners
   // app-local reviews, reaching the renderer through the shell's secondary port
   // wiring. The new package edge is @claxedo/tasks. Measured 1079 / 58.
-  // +1 module (2026-09-12): the same tasks-contributions gate owner app-local
+  // +1 module (2026-09-12): the same tasks-contributions module app-local
   // reviews. No new package edge. Measured 1080 / 58.
   // +5 modules (2026-09-13): the same nested-Tasks-route owners app-local
   // reviews. No new package edge. Measured 1085 / 58.
@@ -463,14 +463,13 @@ export const desktopRendererUnsigned: Policy = {
     ],
     // NO Tasks rule here, and the omission is deliberate. This manifest is the
     // renderer's STATIC closure (`desktopRendererBoundaryManifestPlugin` builds
-    // the base entry without `includeDynamicImports`), so a measured
-    // `CLAXEDO_BUILD_TASKS=1` build carries no Tasks module and no Tasks chunk
-    // either — a forbidden rule would pass on both artifacts and read as
-    // coverage. The renderer source is `@claxedo/app`'s, so the cut is proven
-    // by `app-local`'s emitted manifest, which records the full closure, plus
-    // `claxedo-app/src/architecture/tasks-build-selection.guard.test.ts`. A
-    // desktop-specific emitted proof needs that plugin to record the
-    // renderer's dynamic closure, which today it does not.
+    // the base entry without `includeDynamicImports`) and the only edge into
+    // Tasks is the dynamic import in `secondary-feature-ports.ts`, so no Tasks
+    // module or chunk appears here and a rule about them would read as
+    // coverage it is not. The Tasks chunk is measured by `app-local`'s emitted
+    // manifest, which records the full closure. A desktop-specific emitted
+    // proof needs that plugin to record the renderer's dynamic closure, which
+    // today it does not.
     forbiddenChunkMarkers: ["desktop-hosted-contributions"],
   },
 }

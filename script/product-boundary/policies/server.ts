@@ -1,5 +1,4 @@
 import type { Policy } from "../policy.ts"
-import { TASKS_SELECTED } from "./shared.ts"
 
 const SRC = "packages/claxedo-server/src"
 
@@ -132,8 +131,7 @@ export const serverSelfHosted: Policy = {
   // embedded issuer's bearer verifier and the local SQLite workspace authority
   // — to the kit, and the loopback composition next to it authorizes every
   // project unconditionally. The new package edge is `@claxedo/tasks`, reached
-  // only through that module; `CLAXEDO_BUILD_TASKS=0` folds the branch away
-  // and the emitted bundle carries neither. Measured 115 -> 116 modules and
+  // only through that module. Measured 115 -> 116 modules and
   // 38 -> 39 packages; only the package ceiling is raised, because the module
   // ceiling above already sits well over what this entry reaches.
   ceilings: { modules: 139, packages: 39 },
@@ -148,28 +146,9 @@ export const serverSelfHosted: Policy = {
       "packages/claxedo-local-server/src/self-hosted-execution.ts",
       // Chat SDK adapters remain externalized behind `@claxedo/channels` and
       // are verified by that package rather than duplicated into this bundle.
-      // Tasks, on an enabled build. The positive control for the rule below:
-      // `CLAXEDO_BUILD_TASKS=0` has to remove these, and a forbidden-only rule
-      // also passes when a rename makes them unfindable in both artifacts.
-      ...(TASKS_SELECTED
-        ? [`${SRC}/tasks/self-hosted-composition.ts`, "packages/claxedo-tasks/src/http/routes.ts"]
-        : []),
+      `${SRC}/tasks/self-hosted-composition.ts`,
+      "packages/claxedo-tasks/src/http/routes.ts",
     ],
-    // The source walk reaches Tasks either way — the gate is a `process.env`
-    // comparison esbuild folds — so this is the only half that separates the
-    // two bundles. Measured: 4445 modules with Tasks, 4415 without, and the
-    // `claxedo_task_session_link` DDL present only in the first.
-    ...(TASKS_SELECTED
-      ? {}
-      : {
-          forbiddenModules: [
-            ...FORBIDDEN_MODULES,
-            "packages/claxedo-tasks",
-            `${SRC}/tasks`,
-            "packages/claxedo-server-core/src/tasks-host",
-            "packages/claxedo-local-server/src/tasks",
-          ],
-        }),
   },
 
   isolation: {

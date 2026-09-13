@@ -7,7 +7,8 @@ import type { SettingsContribution } from "@/app/integrations/registry"
  *
  * Contributed rather than listed in `app/dialogs/settings.tsx`: the dialog is
  * reached from every build, and a static import of the catalog from there would
- * put `features/tasks/**` back into a `CLAXEDO_BUILD_TASKS=0` artifact. Like
+ * put `features/tasks/**` into the settings dialog's chunk, which every build
+ * paints. Like
  * the content surface, this module carries nothing but the contribution, so the
  * editor arrives the first time the tab is opened.
  */
