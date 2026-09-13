@@ -1,4 +1,9 @@
-import { HARNESS_TABLE, harnessForProviderId } from "@claxedo/agent-runtime-contract"
+import {
+  harnessBindingIds as tableBindingIds,
+  harnessForProviderId,
+  isHarnessId,
+  HARNESS_TABLE,
+} from "@claxedo/agent-runtime-contract"
 import type { NativeHarnessId } from "@/platform/identity/harness-selection"
 
 /** One harness as this app draws it: the shared record, plus its brand mark. */
@@ -11,6 +16,8 @@ type HarnessEntry = {
   providerIds?: readonly string[]
   /** The provider id a sign-in for this harness is stored against. */
   connectProvider?: string
+  /** The vendor-level id under this harness: models it can run, not its login. */
+  vendorProvider?: string
 }
 
 /**
@@ -127,6 +134,18 @@ export function harnessLabelForProviderId(providerId: string): string | undefine
 /** The provider ids a harness's accounts are stored under, its connect id first. */
 export function harnessProviderIds(id: string): readonly string[] {
   return entry(id)?.providerIds ?? []
+}
+
+/**
+ * Those of them the harness resolves its own auth through.
+ *
+ * A harness's vendor id — `anthropic` under Claude Code — is that vendor's
+ * models routed through the harness, never something signing its CLI in
+ * answers for. Comparing a login's reach against the full list therefore reads
+ * every complete login as partial.
+ */
+export function harnessBindingIds(id: string): readonly string[] {
+  return isHarnessId(id) ? tableBindingIds(id) : harnessProviderIds(id)
 }
 
 export function harnessConnectProvider(id: string): string | undefined {

@@ -33,10 +33,8 @@ type Card = {
   label: Words
   plan?: string
   inUse: boolean
-  /** Where the credential authority says a turn on this account can run. */
-  reach: AccountReach
-  /** An agent Claxedo cannot send a turn to; where it runs is not the reader's to choose. */
-  otherAgent: boolean
+  /** Where the authority says a turn on this account can run, where anywhere. */
+  reach?: AccountReach
   refusedKey?: string
   usageError?: string
   windows: Bar[]
@@ -58,6 +56,7 @@ function card(account: QuotaAccount, index: number): Card {
   const refusedKey = account.health !== undefined && isRefusal(account.health)
     ? VERDICT_KEY[account.health]
     : undefined
+  const reach = accountReach(readAccountDelivery(account))
   return {
     key: account.credentialId ?? `${account.harness}-${index}`,
     harness: account.harness,
@@ -68,8 +67,7 @@ function card(account: QuotaAccount, index: number): Card {
       : { text: account.label },
     ...(account.plan === undefined ? {} : { plan: account.plan }),
     inUse: account.inUse,
-    reach: accountReach(readAccountDelivery(account)),
-    otherAgent: account.otherAgent === true,
+    ...(reach === undefined ? {} : { reach }),
     ...(refusedKey === undefined ? {} : { refusedKey }),
     ...(account.usageError === undefined ? {} : { usageError: account.usageError }),
     // A refusal outranks whatever the plan last read: the account cannot spend
@@ -224,13 +222,8 @@ export function QuotaLimitsView(props: {
                     <Show when={entry.inUse}>
                       <span class="usage-quota-in-use">{language.t("usage.quota.inUse")}</span>
                     </Show>
-                    {/*
-                      An agent Claxedo cannot send a turn to is on this machine
-                      and nowhere else by definition, so where it runs is news
-                      about nothing the reader can act on.
-                    */}
-                    <Show when={!entry.otherAgent}>
-                      <Reach reach={entry.reach} />
+                    <Show when={entry.reach}>
+                      {(reach) => <Reach reach={reach()} />}
                     </Show>
                     <Show when={entry.usageAt}>
                       {(at) => (

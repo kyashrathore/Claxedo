@@ -80,15 +80,20 @@ export function readAccountDelivery(row: unknown): AccountDelivery | undefined {
 }
 
 /**
- * Where a turn on one account can run, as the authority answered.
+ * Where a turn on one account can run, as the authority answered, or nothing
+ * for an account no workspace of ours runs a turn on at all — an agent
+ * installed beside Claxedo, whose plan is worth reading and whose whereabouts
+ * are not the reader's to choose.
  *
  * Never inferred from the kind of row: a stored subscription whose destination
  * needs a companion header is refused in a sandbox exactly as this computer's
  * own login is, so "it is stored, therefore it runs in the cloud" advertises
  * reach the account does not have. An answer that has not arrived is local.
  */
-export function accountReach(delivery: AccountDelivery | undefined): AccountReach {
-  return delivery?.cloud === true ? "local-and-cloud" : "local-only"
+export function accountReach(delivery: AccountDelivery | undefined): AccountReach | undefined {
+  if (delivery === undefined) return "local-only"
+  if (delivery.cloud) return "local-and-cloud"
+  return delivery.local ? "local-only" : undefined
 }
 
 /**

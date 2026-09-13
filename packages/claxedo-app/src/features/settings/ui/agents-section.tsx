@@ -29,7 +29,7 @@ import {
   AgentHarnessRow,
   type AgentAccount,
 } from "@/features/settings/ui/agent-harness-row"
-import { harnessIcon } from "@/platform/identity/harness-catalog"
+import { harnessBindingIds, harnessIcon } from "@/platform/identity/harness-catalog"
 import {
   accountReach,
   isRefusal,
@@ -55,9 +55,17 @@ const MACHINE_REACH: Record<string, readonly string[]> = {
   cursor: ["settings.providers.agents.machineCursorAcp", "settings.providers.agents.machineCursorSdkKey"],
 }
 
-/** Whether the harness runs on bindings this login cannot drive. */
+/**
+ * Whether the harness runs on bindings this login cannot drive.
+ *
+ * Measured against the harness's own bindings rather than every provider id it
+ * resolves auth through: a vendor key stored under the harness is that vendor's
+ * models, and counting it read Claude Code's complete login — which drives both
+ * of its bindings — as partial.
+ */
 function partialMachineLogin(login: MachineLogin) {
-  return login.serves !== undefined && login.serves.length < login.providerIds.length
+  const serves = login.serves
+  return serves !== undefined && harnessBindingIds(login.harness).some((id) => !serves.includes(id))
 }
 
 /**
@@ -301,7 +309,10 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     if (serves === undefined) return false
     const known = effective()
     const inUse = known ? agentInUse({ providerIds: check.providerIds }, known) : undefined
-    return inUse !== undefined && !serves.includes(inUse.providerId)
+    if (inUse === undefined) return false
+    // A vendor key was never this login's to replace: withdrawing its mark hands
+    // the harness back to the CLI login, which is the whole point of the row.
+    return harnessBindingIds(login.harness).includes(inUse.providerId) && !serves.includes(inUse.providerId)
   }
 
   /**

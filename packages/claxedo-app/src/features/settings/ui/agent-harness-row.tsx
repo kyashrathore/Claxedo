@@ -40,8 +40,8 @@ export type AgentAccount = {
   refused?: string
   /** An identity worth having on the row but not worth reading. */
   identity?: string
-  /** Where the credential authority says a turn on this account can run. */
-  reach: AccountReach
+  /** Where the authority says a turn on this account can run, where anywhere. */
+  reach?: AccountReach
   selected: boolean
   /** This computer's own login for the harness, which is never a stored row. */
   machine?: boolean
@@ -111,10 +111,10 @@ export const AgentHarnessRow: Component<{
   )
 
   /** Whether a workspace in a cloud sandbox can run on this account at all. */
-  const Reach: Component<{ account: AgentAccount }> = (self) => (
-    <LabelHint value={language.t(ACCOUNT_REACH_KEYS[self.account.reach].note)} component="agent-account-reach">
+  const Reach: Component<{ reach: AccountReach }> = (self) => (
+    <LabelHint value={language.t(ACCOUNT_REACH_KEYS[self.reach].note)} component="agent-account-reach">
       <AccountReachMarks
-        reach={self.account.reach}
+        reach={self.reach}
         component="agent-account-reach-marks"
         t={language.t}
         class="flex items-center gap-1"
@@ -266,7 +266,9 @@ export const AgentHarnessRow: Component<{
                           </LabelHint>
                         )}
                       </Show>
-                      <Reach account={account} />
+                      <Show when={account.reach}>
+                        {(reach) => <Reach reach={reach()} />}
+                      </Show>
                     </span>
                   )}
                   description={(account.detail ?? account.refused) !== undefined

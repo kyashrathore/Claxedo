@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 const clients = new Set<QueryClient>()
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal, type JSX } from "solid-js"
+import { harnessBindingIds, HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import { nativeHarness, connectionHarness, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { readField, readStringArray } from "@/lib/record"
 
@@ -814,8 +815,8 @@ describe("Settings → Providers reports the agent logins on this machine", () =
   test("a login that drives part of its harness says which part behind the hint, not on the line", async () => {
     state.machineLogins = [{
       harness: "cursor",
-      providerIds: ["cursor-acp", "cursor-sdk"],
-      serves: ["cursor-acp"],
+      providerIds: [...HARNESS_TABLE.cursor.providerIds],
+      serves: [...HARNESS_TABLE.cursor.machineLoginServes],
       state: "signed_in",
     }]
     mount()
@@ -866,8 +867,8 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     ]
     state.machineLogins = [{
       harness: "cursor",
-      providerIds: ["cursor-acp", "cursor-sdk"],
-      serves: ["cursor-acp"],
+      providerIds: [...HARNESS_TABLE.cursor.providerIds],
+      serves: [...HARNESS_TABLE.cursor.machineLoginServes],
       state: "signed_in",
     }]
     mount()
@@ -880,6 +881,59 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       "settings.providers.agents.machineCursorSdkKey",
       "settings.providers.agents.machineStrands:Cursor",
     ].join(" · "))
+  })
+
+  test("a login that drives both of its harness's bindings is whole, whatever vendor id sits beside them", async () => {
+    // Claude Code resolves `anthropic` too, and that is a vendor's models rather
+    // than a binding signing the CLI in was ever going to answer for. Counting
+    // it read this login as partial and hung a hint off a complete row.
+    state.machineLogins = [{
+      harness: "claude",
+      providerIds: [...HARNESS_TABLE.claude.providerIds],
+      serves: [...HARNESS_TABLE.claude.machineLoginServes],
+      state: "signed_in",
+      email: "machine@acme.com",
+    }]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["machine"]))
+    expect(accountNote("anthropic", "machine")).toBe("")
+    expect(accountRow("anthropic", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
+      .toBe(false)
+  })
+
+  test("a login that grows to cover the SDK loses the hint that said it did not", async () => {
+    // The words exist for a login narrower than its harness; what makes it
+    // narrow is the bindings it misses, never how many vendor ids sit beside
+    // them — `cursor` is one of Cursor's provider ids and is not a binding.
+    state.machineLogins = [{
+      harness: "cursor",
+      providerIds: [...HARNESS_TABLE.cursor.providerIds],
+      serves: harnessBindingIds("cursor"),
+      state: "signed_in",
+    }]
+    mount()
+    await waitFor(() => expect(accountIds("cursor")).toEqual(["machine"]))
+    expect(accountNote("cursor", "machine")).toBe("")
+  })
+
+  test("a vendor key in use never strands the login that would replace it", async () => {
+    state.storedCredentials = [
+      { id: "cred_anthropic", provider_id: "anthropic", kind: "api_key", label: "key@acme.com", account_id: "acc_k", is_active: true },
+    ]
+    state.machineLogins = [{
+      harness: "claude",
+      providerIds: [...HARNESS_TABLE.claude.providerIds],
+      serves: [...HARNESS_TABLE.claude.machineLoginServes],
+      state: "signed_in",
+      email: "machine@acme.com",
+    }]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_anthropic", "machine"]))
+    // Withdrawing the key's mark hands Claude Code back to its own login, which
+    // is exactly what choosing this row means; nothing is left without auth.
+    expect(accountRow("anthropic", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
+      .toBe(false)
+    expect(accountNote("anthropic", "machine")).toBe("")
   })
 
   test("a login that drives every binding of its harness is a choice whatever is stored", async () => {

@@ -24,6 +24,7 @@ const snapshot: QuotaSnapshot = {
       label: "work@example.com",
       inUse: true,
       health: "ok",
+      deliverable: { local: true, cloud: true },
       windows: [
         { window: "session", usedPercent: 25, resetsAt: Date.now() + 3 * 3_600_000 + 60_000 },
         { window: "weekly_opus", usedPercent: 40, resetsAt: Date.now() + 4 * 86_400_000 + 60_000 },
@@ -41,6 +42,7 @@ const snapshot: QuotaSnapshot = {
     {
       harness: "codex",
       machineLogin: true,
+      deliverable: { local: true, cloud: false },
       plan: "plus",
       inUse: true,
       windows: [{ window: "weekly", usedPercent: 10, resetsAt: null }],
@@ -131,23 +133,43 @@ describe("quota limits view", () => {
     expect(screen.getByText("usage.quota.summary:27|settings.providers.window.session")).toBeInTheDocument()
   })
 
-  test("a card claims no cloud reach the authority has not granted, and an agent Claxedo cannot run says nothing", async () => {
+  test("each card draws the reach the authority granted it, and an account that runs nowhere of ours draws none", async () => {
     const { container } = await renderView({ snapshot: {
       accounts: [
         ...snapshot.accounts,
-        { harness: "gemini", otherAgent: true, label: "Gemini CLI", inUse: false, windows: [] },
+        {
+          harness: "claude",
+          credentialId: "cred_companion",
+          label: "companion@example.com",
+          inUse: false,
+          // Stored exactly like `cred_work`, and refused in a sandbox: its
+          // destination needs a header only this machine can add.
+          deliverable: { local: true, cloud: false, reason: "companion_header" },
+          windows: [],
+        },
+        {
+          harness: "gemini",
+          otherAgent: true,
+          label: "Gemini CLI",
+          inUse: false,
+          deliverable: { local: false, cloud: false, reason: "other_agent" },
+          windows: [],
+        },
       ],
     } })
     const reach = (key: string) =>
       container.querySelector(`[data-account="${key}"] [data-component="usage-quota-reach"]`)
     const places = (key: string) => [...reach(key)?.querySelectorAll("[data-icon]") ?? []]
       .map((icon) => [icon.getAttribute("data-icon"), icon.getAttribute("aria-label")])
-    // A stored row is not a cloud-capable row: until the snapshot carries the
-    // credential authority's own `deliverable`, no card may draw the cloud.
-    expect(places("cred_work")).toEqual([["monitor", "settings.providers.agents.reachLocal"]])
-    expect(reach("cred_work")?.getAttribute("data-reach")).toBe("local-only")
+    expect(places("cred_work")).toEqual([
+      ["monitor", "settings.providers.agents.reachLocal"],
+      ["cloud", "settings.providers.agents.reachCloud"],
+    ])
+    expect(reach("cred_work")?.getAttribute("data-reach")).toBe("local-and-cloud")
+    // Stored, and local-only: the mark follows the answer, not the kind of row.
+    expect(places("cred_companion")).toEqual([["monitor", "settings.providers.agents.reachLocal"]])
     expect(places("codex-2")).toEqual([["monitor", "settings.providers.agents.reachLocal"]])
-    expect(container.querySelector('[data-account="gemini-3"] [data-component="usage-quota-reach"]')).toBeNull()
+    expect(reach("gemini-4")).toBeNull()
   })
 
   test("the tab states no whole-read verdict of its own", async () => {
