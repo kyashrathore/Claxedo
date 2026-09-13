@@ -1,7 +1,6 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { SessionHarnessId } from "./harness-types"
 import type { AgentCapabilities } from "@claxedo/agent-runtime-contract"
-import type { ProviderProjection } from "./provider-projection"
 
 export type HarnessCapabilityTarget = SessionHarnessId
 export type AdapterCapability = "runtime-config"

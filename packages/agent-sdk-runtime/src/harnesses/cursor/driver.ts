@@ -42,7 +42,13 @@ import {
   providerProjectionRecord,
   type ProviderProjection,
 } from "../../provider-projection"
-import { applyCursorBackendUrl, cursorAuthValue } from "./auth"
+import {
+  applyCursorBackendUrl,
+  cursorAuthValue,
+  CursorBackendUrlFrozenError,
+  freezeCursorBackendUrl,
+  frozenCursorBackendUrl,
+} from "./auth"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,
@@ -505,14 +511,27 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     return agent
   }
 
-  /** Everything `Agent.create`/`Agent.resume` needs; the narrow injection wins. */
-  private loadAgent() {
-    return this.driverOptions.loadAgent?.() ?? this.loadSdk()
+  /**
+   * Everything `Agent.create`/`Agent.resume` needs; the narrow injection wins.
+   *
+   * The backend URL is captured at the same moment, because the module freezes
+   * it as it loads and a binding that names a different one can never be spent
+   * through this process again.
+   */
+  private async loadAgent() {
+    const loaded = await (this.driverOptions.loadAgent?.() ?? this.loadSdk())
+    const required = providerBinding("cursor", this.auth)?.baseUrl
+    const frozen = frozenCursorBackendUrl()
+    if (required && frozen && frozen.value !== required) throw new CursorBackendUrlFrozenError(frozen.value, required)
+    return loaded
   }
 
   /** The full module, required by the `Cursor.models.list` catalog probe. */
   private loadSdk(): Promise<CursorSdkModule> {
-    return this.driverOptions.loadSdk?.() ?? import("@cursor/sdk")
+    const injected = this.driverOptions.loadSdk?.()
+    if (injected) return injected
+    freezeCursorBackendUrl()
+    return import("@cursor/sdk")
   }
 
   private observeAgent(directory: string, sessionId?: string): AgentProcessObserverHandle {

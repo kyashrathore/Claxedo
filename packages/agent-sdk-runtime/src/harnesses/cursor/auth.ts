@@ -29,3 +29,39 @@ export function applyCursorBackendUrl(projection: ProviderProjection | undefined
   if (projection && !isProviderUnavailable(projection)) process.env[CURSOR_BACKEND_URL_ENV] = projection.baseUrl
   else delete process.env[CURSOR_BACKEND_URL_ENV]
 }
+
+/**
+ * The backend URL the installed SDK froze.
+ *
+ * `@cursor/sdk@1.0.24` reads `CURSOR_BACKEND_URL` at module scope
+ * (`const Mh = process.env.CURSOR_BACKEND_URL || "https://api2.cursor.sh"`) and
+ * exposes no per-agent option, so the value in force at the first import is the
+ * one every local agent in this process uses. Setting the variable afterwards
+ * changes nothing, and an agent created then would send the placeholder to
+ * Cursor's own host — or the machine's key to the broker.
+ */
+export function freezeCursorBackendUrl() {
+  loadedBackendUrl ??= { value: process.env[CURSOR_BACKEND_URL_ENV] }
+}
+
+/** What the SDK froze, or nothing when this process has never imported it. */
+export function frozenCursorBackendUrl(): { value: string | undefined } | undefined {
+  return loadedBackendUrl
+}
+
+/** Test seam: the freeze is process state, and a test needs to start over. */
+export function forgetCursorBackendUrl() {
+  loadedBackendUrl = undefined
+}
+
+let loadedBackendUrl: { value: string | undefined } | undefined
+
+export class CursorBackendUrlFrozenError extends Error {
+  constructor(readonly frozen: string | undefined, readonly required: string) {
+    super(
+      "the cursor credential binding cannot be used: the Cursor SDK froze "
+      + `${frozen ?? "its default backend"} at import, before this binding named ${required}`,
+    )
+    this.name = "CursorBackendUrlFrozenError"
+  }
+}

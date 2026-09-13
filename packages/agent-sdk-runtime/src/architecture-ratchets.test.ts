@@ -24,7 +24,9 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       "harnesses/acp/index.ts": 844,
       "harnesses/codex/driver.ts": 632,
       "harnesses/shared/sdk-runtime-adapter.ts": 881,
-      "harnesses/pi/index.ts": 12,
+      // Its one growth is the import of the trim that stops a blank
+      // `PI_CODING_AGENT_DIR` from putting the profile in the process cwd.
+      "harnesses/pi/index.ts": 13,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {
       const lines = fs.readFileSync(path.join(root, file), "utf8").split("\n").length - 1

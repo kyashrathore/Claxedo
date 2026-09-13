@@ -455,6 +455,10 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
         return new Adapter({
           store,
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
+          // Pi's profile holds `models.json`, and that file carries the broker
+          // placeholder; without a store root to scope it, the workspace id is
+          // what keeps one workspace's binding out of another's turns.
+          ...(runner.id === "pi" && options.target ? { workspaceId: options.target.workspaceId } : {}),
           ...(options.eventHub ? { eventHub: options.eventHub } : {}),
           ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
           ...(runner.id === "cursor" && registerTranscript && transcripts ? {

@@ -8,7 +8,8 @@ import {
 } from "./auth"
 import fs from "node:fs/promises"
 import { execFile } from "node:child_process"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
+import { trimToUndefined } from "@claxedo/helpers/string"
 import { observeAgentProcess } from "../../process-observer"
 import { createEvaluatedGoalResource } from "../shared/evaluated-goal-resource"
 import { GOAL_PROMPT_TEXT, goalEvaluatorRequest, parseGoalEvaluation } from "../shared/goal-protocol"
@@ -31,13 +32,24 @@ import { PiJsonLines, PiRpcProcess, type PiRpcMessage } from "./rpc-process"
 import { listPiCatalogModels } from "./catalog"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
 
-export type PiDriverOptions = { binary?: string; agentDir?: string; idleMs?: number }
+export type PiDriverOptions = {
+  binary?: string
+  agentDir?: string
+  /** Scopes the default profile; two workspaces must not share one `models.json`. */
+  workspaceId?: string
+  idleMs?: number
+}
 type Entry = {
   process: PiRpcProcess
   directory: string
   busy: boolean
   idleGeneration: number
   idle?: ReturnType<typeof setTimeout>
+}
+
+/** A workspace id as one path segment; the id itself may contain separators. */
+function piWorkspaceDirName(workspaceId: string | undefined) {
+  return workspaceId ? createHash("sha256").update(workspaceId).digest("hex").slice(0, 16) : "default"
 }
 
 export function createPiRpcDriver(host: SdkRuntimeDriverHost, options: PiDriverOptions = {}): SdkRuntimeDriver {
@@ -194,8 +206,12 @@ class PiRpcDriver implements SdkRuntimeDriver {
       },
     })
     this.goals = this.goalController.resource
-    this.agentDir =
-      options.agentDir ?? process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".claxedo", "pi", "agent")
+    // Per workspace, because the profile holds `models.json` — and that file
+    // carries the broker placeholder. One shared profile lets the workspace
+    // that applied last hand its binding to every other workspace's turns.
+    this.agentDir = options.agentDir
+      ?? trimToUndefined(process.env.PI_CODING_AGENT_DIR)
+      ?? path.join(os.homedir(), ".claxedo", "pi", "agent", piWorkspaceDirName(options.workspaceId))
     this.authProfile = retainPiAuth(this.agentDir)
   }
   async applyConfig(config: Record<string, unknown>) {
