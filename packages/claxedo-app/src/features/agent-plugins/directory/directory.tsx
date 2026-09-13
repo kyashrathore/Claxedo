@@ -153,12 +153,15 @@ export function AgentPluginDirectory(props: {
   const selectedPersonal = createMemo(() => personal().find((entry) => personalEntryKey(entry) === selectedPersonalKey()))
   const projectLabel = () => catalog()?.projects?.find((project) => project.id === projectId())?.label ?? CROSS_PROJECT
 
-  /** The projects a signed choice covers; a deployment that lists none has a cross-project default. */
-  const activationTarget = (current: PluginCatalog) => {
+  /**
+   * Where a signed choice lands: the selected project's own override, or —
+   * from the cross-project view — the user default every project reads.
+   */
+  const activationTarget = () => {
     if (!signed()) return undefined
-    const projectIds = (current.projects ?? []).map((project) => project.id)
-    return projectIds.length > 0
-      ? { scope: "projects" as const, projectIds }
+    const project = projectId()
+    return project
+      ? { scope: "projects" as const, projectIds: [project] }
       : { scope: "all-projects" as const }
   }
 
@@ -208,8 +211,7 @@ export function AgentPluginDirectory(props: {
    * mints a capability, and that is a consent the group's own switch asks for.
    */
   const mutate = async (plugin: PluginCandidate, choice: boolean | null) => {
-    const current = catalog()
-    if (!current) return
+    if (!catalog()) return
     const builtIn = isBuiltIn(plugin)
     const subjects = builtIn
       ? toolGroups(plugin).map((group) => group.pluginInstanceId)
@@ -233,7 +235,7 @@ export function AgentPluginDirectory(props: {
     }
     setPending(plugin.pluginInstanceId)
     try {
-      const receipts = await activateAll(subjects, decision, activationTarget(current))
+      const receipts = await activateAll(subjects, decision, activationTarget())
       const failed = receipts.find((receipt) => receipt.reconciliation.state === "failed")
       if (failed) {
         showToast({
@@ -256,11 +258,10 @@ export function AgentPluginDirectory(props: {
    * takes tools away from the next session and removes no materialized files.
    */
   const setToolGroup = async (plugin: PluginCandidate, group: PluginToolGroup, enabled: boolean) => {
-    const current = catalog()
-    if (!current) return
+    if (!catalog()) return
     setPending(plugin.pluginInstanceId)
     try {
-      await activateAll([group.pluginInstanceId], enabled, activationTarget(current))
+      await activateAll([group.pluginInstanceId], enabled, activationTarget())
       await reread()
     } catch (error) {
       showToast({

@@ -263,6 +263,57 @@ const MACHINE = {
 
 type Recorded = { url: string; method: string; body?: unknown }
 
+type Choice = boolean | null
+
+/**
+ * What the fake control plane remembers of activation posts, resolved the way
+ * the route does: a project's override outranks the user default, and a
+ * cleared choice (`null`) falls through to the next authority.
+ */
+function activationStore() {
+  const overrides = new Map<string, Map<string, Choice>>()
+  const defaults = new Map<string, Choice>()
+  const choiceFor = (pluginInstanceId: string, projectId?: string) =>
+    (projectId ? overrides.get(projectId)?.get(pluginInstanceId) : undefined) ?? defaults.get(pluginInstanceId)
+  return {
+    write(body: { pluginInstanceId: string; choice: Choice; target?: { scope: string; projectIds?: string[] } }) {
+      if (body.target?.scope === "projects") {
+        for (const projectId of body.target.projectIds ?? []) {
+          const project = overrides.get(projectId) ?? new Map<string, Choice>()
+          project.set(body.pluginInstanceId, body.choice)
+          overrides.set(projectId, project)
+        }
+        return
+      }
+      defaults.set(body.pluginInstanceId, body.choice)
+    },
+    resolve(body: Record<string, unknown>, projectId?: string) {
+      const candidates = body.candidates as PluginCandidate[]
+      return {
+        ...body,
+        selectedProjectId: projectId ?? null,
+        candidates: candidates.map((plugin) => {
+          const groups = plugin.groups?.map((group) => ({
+            ...group,
+            enabled: choiceFor(group.pluginInstanceId, projectId) ?? group.enabled,
+          }))
+          const choice = choiceFor(plugin.pluginInstanceId, projectId)
+          const harnesses = choice === undefined
+            ? plugin.harnesses
+            : Object.fromEntries(Object.entries(plugin.harnesses).map(([id, state]) => [id, {
+                ...state,
+                ...(projectId ? { projectOverride: choice } : { userDefault: choice }),
+                effective: { ...state.effective, effective: choice },
+              }])) as PluginCandidate["harnesses"]
+          return { ...plugin, ...(groups ? { groups } : {}), harnesses }
+        }),
+      }
+    },
+  }
+}
+
+const CATALOG_READ = /^\/api\/claxedo\/plugins(?:\/projects\/([^/]+))?(?:\/refresh)?$/
+
 function harness(options: {
   connectionsError?: Error
   catalog?: Record<string, unknown>
@@ -276,13 +327,15 @@ function harness(options: {
   // Every write moves the catalog on, the way the route does, so a caller that
   // reuses one revision across several posts is caught rather than tolerated.
   let revision = 4
+  const activations = activationStore()
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(requestUrl(input))
     const method = init?.method ?? "GET"
     const body = requestJson(init)
     recorded.push({ url: url.pathname, method, ...(body !== undefined ? { body } : {}) })
-    if (url.pathname === "/api/claxedo/plugins" || url.pathname === "/api/claxedo/plugins/refresh") {
-      return Response.json(catalogBody(options.catalog))
+    const read = CATALOG_READ.exec(url.pathname)
+    if (read && method === "GET") {
+      return Response.json(activations.resolve(catalogBody(options.catalog), read[1]))
     }
     if (url.pathname === "/api/claxedo/plugins/sources" && method === "GET") return Response.json(SOURCES)
     if (url.pathname.startsWith("/api/claxedo/plugins/sources/") && method === "DELETE") return new Response(null, { status: 204 })
@@ -300,6 +353,9 @@ function harness(options: {
     }
     if (method === "POST") {
       if (options.activationGate) await options.activationGate
+      if (url.pathname === "/api/claxedo/plugins/activation") {
+        activations.write(body as Parameters<typeof activations.write>[0])
+      }
       revision += 1
       return Response.json({ revision, reconciliation: { state: "applied" } })
     }
@@ -672,7 +728,7 @@ describe("Agent Plugin Directory detail pane", () => {
 })
 
 describe("Agent Plugin Directory actions", () => {
-  test("Enable posts activation with choice true, every harness and the project target", async () => {
+  test("Enable posts activation with choice true, every harness and the view's target", async () => {
     const { recorded } = await renderDirectory()
     const pane = await openPane("clangd")
 
@@ -684,7 +740,7 @@ describe("Agent Plugin Directory actions", () => {
       harnessIds: ["opencode", "claude", "codex", "cursor"],
       choice: true,
       expectedRevision: 4,
-      target: { scope: "projects", projectIds: ["project-1"] },
+      target: { scope: "all-projects" },
     })
   })
 
@@ -936,7 +992,7 @@ describe("Agent Plugin Directory built-in server", () => {
     expect(within(groups).getByText("Changes apply to sessions started from now.")).toBeTruthy()
   })
 
-  test("a switch writes the group's activation for this project", async () => {
+  test("a switch writes the group's activation against the group's own instance id", async () => {
     const { recorded } = await renderDirectory({ catalog: withBuiltIn() })
     const pane = await openPane("claxedo")
 
@@ -948,7 +1004,7 @@ describe("Agent Plugin Directory built-in server", () => {
       harnessIds: ["opencode", "claude", "codex", "cursor"],
       choice: true,
       expectedRevision: 4,
-      target: { scope: "projects", projectIds: ["project-1"] },
+      target: { scope: "all-projects" },
     })
   })
 
@@ -1090,6 +1146,76 @@ describe("Agent Plugin Directory built-in server", () => {
 
     await waitFor(() => expect(screen.queryByRole("button", { name: "composio" })).toBeNull())
     expect(screen.getByRole("button", { name: "claxedo" })).toBeTruthy()
+  })
+})
+
+describe("Agent Plugin Directory project scope", () => {
+  const TWO_PROJECTS = [{ id: "project-a", label: "Project A" }, { id: "project-b", label: "Project B" }]
+  const catalogOf = (recorded: Recorded[], projectId: string) =>
+    recorded.filter((entry) => entry.method === "GET" && entry.url === `/api/claxedo/plugins/projects/${projectId}`)
+
+  /** Picks a project in the header and waits for its catalog to be read. */
+  async function selectProject(recorded: Recorded[], project: { id: string; label: string }) {
+    const before = catalogOf(recorded, project.id).length
+    await fireEvent.click(screen.getByRole("menuitem", { name: project.label }))
+    await waitFor(() => expect(catalogOf(recorded, project.id).length).toBeGreaterThan(before))
+  }
+
+  test("a group switch under a selected project writes that project alone, and the other project reads unchanged", async () => {
+    const { recorded } = await renderDirectory({ catalog: { ...withBuiltIn(), projects: TWO_PROJECTS } })
+    await selectProject(recorded, TWO_PROJECTS[0])
+    const pane = await openPane("claxedo")
+
+    await fireEvent.click(within(pane).getByRole("switch", { name: "tasks" }))
+
+    await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
+    expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toMatchObject({
+      pluginInstanceId: "claxedo:tasks",
+      choice: true,
+      target: { scope: "projects", projectIds: ["project-a"] },
+    })
+    await waitFor(() => expect(within(pane).getByRole("switch", { name: "tasks" })).toBeChecked())
+
+    await selectProject(recorded, TWO_PROJECTS[1])
+    await waitFor(() => expect(within(pane).getByRole("switch", { name: "tasks" })).not.toBeChecked())
+  })
+
+  test("Enable under a selected project writes that project alone, and the other project still offers Enable", async () => {
+    const { recorded } = await renderDirectory({ catalog: { projects: TWO_PROJECTS } })
+    await selectProject(recorded, TWO_PROJECTS[0])
+    const pane = await openPane("clangd")
+
+    await fireEvent.click(within(pane).getByRole("button", { name: "Enable" }))
+
+    await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
+    expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toMatchObject({
+      pluginInstanceId: '["claxedo","clangd"]',
+      choice: true,
+      target: { scope: "projects", projectIds: ["project-a"] },
+    })
+    await waitFor(() => expect(within(pane).getByRole("button", { name: "Disable" })).toBeTruthy())
+
+    await selectProject(recorded, TWO_PROJECTS[1])
+    await waitFor(() => expect(within(pane).getByRole("button", { name: "Enable" })).toBeTruthy())
+  })
+
+  test("the cross-project view writes the all-projects default, which every project then reads", async () => {
+    const { recorded } = await renderDirectory({ catalog: { ...withBuiltIn(), projects: TWO_PROJECTS } })
+    const pane = await openPane("claxedo")
+
+    await fireEvent.click(within(pane).getByRole("switch", { name: "tasks" }))
+
+    await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
+    expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toMatchObject({
+      pluginInstanceId: "claxedo:tasks",
+      choice: true,
+      target: { scope: "all-projects" },
+    })
+
+    for (const project of TWO_PROJECTS) {
+      await selectProject(recorded, project)
+      await waitFor(() => expect(within(pane).getByRole("switch", { name: "tasks" })).toBeChecked())
+    }
   })
 })
 
