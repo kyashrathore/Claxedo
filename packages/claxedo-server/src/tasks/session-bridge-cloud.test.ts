@@ -472,13 +472,14 @@ describe("hosted tasks cloud roots", () => {
     await bridge(composition, selectedCapabilities(), capability).preview(previewCommand("tsk_one"))
 
     // The grant names the workspace's owner as the authority records them, not
-    // the token subject the Tasks actor carries.
+    // the token subject the Tasks actor carries; the signed identity travels
+    // beside it, because what the project consented to is read as that caller.
     expect(capability).toHaveBeenCalledWith({
       userId: "usr_owner",
       orgId: "org",
       projectId: PROJECT,
       workspaceId: (await rootOf("tsk_one"))?.id,
-    })
+    }, expect.objectContaining({ principal: { userId: "usr_owner" } }))
     expect(environments[0]).toMatchObject({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "grant-token" })
   })
 

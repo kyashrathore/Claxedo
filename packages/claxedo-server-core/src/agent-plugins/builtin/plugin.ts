@@ -36,6 +36,15 @@ export function isBuiltinPluginInstanceId(pluginInstanceId: string): boolean {
   return builtinToolGroupId(pluginInstanceId) !== undefined
 }
 
+/**
+ * The group whose consent the Tasks capability is.
+ *
+ * Named here rather than beside the minter because both the minter and the
+ * self-hosted grant have to agree with the default below, and the two of them
+ * sit in different deployments.
+ */
+export const BUILTIN_TASKS_TOOL_GROUP = "tasks"
+
 /** One group as the serving code declares it: its name and the tools it registers. */
 export type BuiltinToolGroup = Readonly<{
   id: string
@@ -64,7 +73,7 @@ export type BuiltinDeployment = Readonly<{
  * wherever the documents service is the account's rather than this process's.
  */
 export function builtinGroupDefault(groupId: string, deployment: BuiltinDeployment): boolean {
-  if (groupId === "tasks") return false
+  if (groupId === BUILTIN_TASKS_TOOL_GROUP) return false
   if (groupId === "documents") return deployment.documentsInProcess
   return true
 }

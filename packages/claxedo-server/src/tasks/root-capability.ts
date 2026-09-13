@@ -6,6 +6,7 @@ import {
   workspaceRuntimeMcpToolGroupsEnv,
   workspaceRuntimeTasksCapabilityEnv,
 } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { TasksCapabilityScope, TasksOperation } from "@claxedo/server-core/tasks-host/capability"
 import { mintTasksCapability } from "./capability"
@@ -28,9 +29,6 @@ export type TasksRootCapabilityInput = Readonly<{
   enabledToolGroups: (root: TasksRootIdentity, auth: SignedControlPlaneAuth) => Promise<readonly string[]>
 }>
 
-/** The tool group whose consent the Tasks grant is. */
-export const TASKS_TOOL_GROUP = "tasks"
-
 /**
  * The first-party consent and credentials one cloud root's sessions launch
  * with, as environment the sandbox reads.
@@ -51,7 +49,7 @@ export function createTasksRootCapability(input: TasksRootCapabilityInput) {
   return async (root: TasksRootIdentity, auth: SignedControlPlaneAuth): Promise<Record<string, string>> => {
     const groups = await input.enabledToolGroups(root, auth)
     const environment = workspaceRuntimeMcpToolGroupsEnv(groups)
-    if (!groups.includes(TASKS_TOOL_GROUP)) return environment
+    if (!groups.includes(BUILTIN_TASKS_TOOL_GROUP)) return environment
     const operations: TasksOperation[] = ["read", "create"]
     if (await crossMachineWrites({ userId: root.userId, orgId: root.orgId })) operations.push("start")
     const minted = await mintTasksCapability(

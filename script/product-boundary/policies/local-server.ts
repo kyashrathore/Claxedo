@@ -110,8 +110,15 @@ export const localServer: Policy = {
   // producer over HTTP or WebSocket. Measured 56 / 24; no new package edge.
   // +1 module: app/local-documents composes the shared repository/managed
   // document backend for unsigned desktop editing. No hosted adapter edge.
-  // Full closure measured at 57 modules / 24 packages.
-  ceilings: { modules: 57, packages: 24 },
+  // +2 modules (2026-09-14): reviewed owner
+  // `agent-plugins/builtin-groups.ts` and the `agent-plugins/activation/sqlite-store.ts`
+  // it reads. The first-party MCP endpoint this product mounts serves only the
+  // tool groups this machine consented to, and those rows are the Marketplace's
+  // own, written by the activation routes in this same package — a second
+  // resolution on the server side would be a second answer to the same
+  // question. No new package edge.
+  // Full closure measured at 59 modules / 24 packages.
+  ceilings: { modules: 59, packages: 24 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
