@@ -623,6 +623,8 @@ export const dict = {
   "settings.providers.agents.checking": "Comprobando…",
   "settings.providers.agents.checkAccount": "Comprobar",
   "settings.providers.agents.scanning": "Analizando este equipo…",
+  "settings.providers.agents.rescanning": "Analizando…",
+  "settings.providers.agents.scanFailed": "No se pudo leer este equipo",
   "settings.providers.agents.scannedNow": "Analizado ahora mismo",
   "settings.providers.agents.scannedAt": "Analizado {{when}}",
   "settings.providers.agents.rescan": "Volver a analizar",

@@ -1,3 +1,4 @@
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createSignal, For, onMount, Show, type Component } from "solid-js"
 import {
@@ -88,6 +89,8 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const language = useLanguage()
   const globalSDK = useGlobalSDK()
   const [scanning, setScanning] = createSignal(false)
+  /** Whether the section's first read of this machine has come back, however it went. */
+  const [opened, setOpened] = createSignal(false)
   const [stored, setStored] = createSignal<readonly StoredCredential[]>([])
   const [machineLogins, setMachineLogins] = createSignal<readonly MachineLogin[]>([])
   const [effective, setEffective] = createSignal<ReadonlyMap<string, EffectiveCredential>>()
@@ -272,6 +275,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       fail(err)
     } finally {
       setScanning(false)
+      setOpened(true)
     }
   }
 
@@ -353,9 +357,16 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     }
   }
 
+  /**
+   * The header's one line. Before the first read comes back the section has no
+   * rows to head, so this is the whole of what it says; after it, a Rescan runs
+   * under the rows that are already on screen and only this line changes.
+   */
   const scannedLabel = () => {
     const at = scannedAt()
-    if (scanning() || at === undefined) return language.t("settings.providers.agents.scanning")
+    if (!opened()) return language.t("settings.providers.agents.scanning")
+    if (scanning()) return language.t("settings.providers.agents.rescanning")
+    if (at === undefined) return language.t("settings.providers.agents.scanFailed")
     return Date.now() - at < 60_000
       ? language.t("settings.providers.agents.scannedNow")
       : language.t("settings.providers.agents.scannedAt", { when: formatRelativeTime(at, language.locale()) })
@@ -380,6 +391,21 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
           </Show>
         </p>
       </div>
+      {/*
+        Nothing is drawn until the first read comes back. The harness list is
+        known before it, so rows would appear at once and then rearrange as the
+        accounts and the machine logins land under them — a first frame the
+        reader can act on and that is not the answer.
+      */}
+      <Show
+        when={opened()}
+        fallback={(
+          <div class="flex items-center gap-2 py-3 text-12-regular text-text-weak" data-component="agents-scanning">
+            <Spinner class="size-4" />
+            <span>{language.t("settings.providers.agents.scanning")}</span>
+          </div>
+        )}
+      >
       <SettingsList>
         <For each={[...localHarnessChecks()]}>
           {(harness) => (
@@ -400,6 +426,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
           )}
         </For>
       </SettingsList>
+      </Show>
     </div>
   )
 }

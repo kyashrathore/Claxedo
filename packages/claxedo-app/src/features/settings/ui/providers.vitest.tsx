@@ -59,6 +59,8 @@ const state = vi.hoisted(() => ({
   machineLogins: [] as Array<Record<string, unknown>>,
   /** When set, the machine-login route answers 500 with this cause instead. */
   machineLoginFailure: undefined as string | undefined,
+  /** When set, the machine-login route waits on it, so the first read can be held open. */
+  machineLoginGate: undefined as Promise<void> | undefined,
   credentialCalls: [] as string[],
   dialogs: [] as Array<() => JSX.Element>,
   /** What every failure told the user, in order. */
@@ -179,7 +181,7 @@ function requestJson(init?: RequestInit): unknown {
 // real request module in place keeps the machine scan on the onboarding engine.
 globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
   const url = new URL(input instanceof Request ? input.url : String(input))
-  state.credentialCalls.push(`${init?.method ?? "GET"} ${url.pathname}`)
+  state.credentialCalls.push(`${init?.method ?? "GET"} ${url.pathname}${url.search}`)
   if (url.pathname === "/api/claxedo/credentials") {
     return new Response(JSON.stringify({ credentials: state.storedCredentials }))
   }
@@ -209,6 +211,7 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
     }))
   }
   if (url.pathname === "/api/claxedo/credentials/machine-logins") {
+    if (state.machineLoginGate) await state.machineLoginGate
     if (state.machineLoginFailure) {
       return new Response(JSON.stringify({
         error: {
@@ -356,6 +359,7 @@ beforeEach(() => {
   state.reconnected.length = 0
   state.machineLogins = []
   state.machineLoginFailure = undefined
+  state.machineLoginGate = undefined
   state.projects = [LOCAL_PROJECT, CLOUD_PROJECT]
   state.catalogs = {
     "workspace:ws_local|pi": ["anthropic", "openai"],
@@ -513,14 +517,62 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/effective")
   })
 
-  test("Rescan runs the machine scan again", async () => {
+  test("the section is a loader until its first read comes back, and the rows arrive once", async () => {
+    state.storedCredentials = [...claudeLogin]
+    state.machineLogins = [{
+      harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com",
+    }]
+    let open = () => {}
+    state.machineLoginGate = new Promise<void>((resolve) => { open = resolve })
+    // Every set of account keys the section ever painted, so a first frame that
+    // differs from the answer is visible rather than merely improbable.
+    const painted: string[] = []
+    const observer = new MutationObserver(() => {
+      const keys = [...document.querySelectorAll<HTMLElement>('[data-component="agents-providers-section"] [data-component="agent-account"]')]
+        .map((node) => node.getAttribute("data-account") ?? "").join(",")
+      if (keys && painted.at(-1) !== keys) painted.push(keys)
+    })
+    mount()
+    observer.observe(document.body, { childList: true, subtree: true })
+
+    await waitFor(() => expect(section("agents").querySelector('[data-component="agents-scanning"]')).not.toBeNull())
+    expect(providerIds("agents")).toEqual([])
+    expect(section("agents").querySelector('[data-component="agents-scanned-at"]')?.textContent)
+      .toBe("settings.providers.agents.scanning")
+
+    open()
+
+    await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
+    observer.disconnect()
+    expect(section("agents").querySelector('[data-component="agents-scanning"]')).toBeNull()
+    expect(accountIds("anthropic")).toEqual(["sdk_work"])
+    expect(accountIds("openai")).toEqual(["machine"])
+    // One painted row set, and it is the answer.
+    expect([...new Set(painted)]).toEqual(["sdk_work,machine"])
+  })
+
+  test("Rescan runs under the rows, which stay on screen while it does", async () => {
+    state.storedCredentials = [...claudeLogin]
     mount()
     await waitFor(() => expect(section("agents").querySelector('[data-action="settings-providers-rescan"]')).not.toBeNull())
     state.credentialCalls.length = 0
+    let open = () => {}
+    state.machineLoginGate = new Promise<void>((resolve) => { open = resolve })
 
     section("agents").querySelector<HTMLButtonElement>('[data-action="settings-providers-rescan"]')!.click()
 
-    await waitFor(() => expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/machine-logins"))
+    await waitFor(() => expect(section("agents").querySelector('[data-component="agents-scanned-at"]')?.textContent)
+      .toBe("settings.providers.agents.rescanning"))
+    // Inline, not a loader: the answer already on screen is not taken away to
+    // ask the same question again.
+    expect(section("agents").querySelector('[data-component="agents-scanning"]')).toBeNull()
+    expect(accountIds("anthropic")).toEqual(["sdk_work"])
+
+    open()
+
+    await waitFor(() => expect(section("agents").querySelector('[data-component="agents-scanned-at"]')?.textContent)
+      .toBe("settings.providers.agents.scannedNow"))
+    expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/machine-logins")
   })
 
   test("a harness with no account and no machine login lists nothing and offers Connect", async () => {
@@ -625,7 +677,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
     await waitFor(() => expect(accountDetail("openai", "machine"))
       .toBe("settings.providers.live.window:settings.providers.window.session|5"))
-    expect(state.credentialCalls).toEqual(["GET /api/claxedo/credentials/machine-logins"])
+    expect(state.credentialCalls).toEqual(["GET /api/claxedo/credentials/machine-logins?harness=codex"])
   })
 
   test("the accounts a harness holds are one radio list, the login in use checked", async () => {
@@ -807,5 +859,11 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     mount()
 
     await waitFor(() => expect(state.toasts).toEqual(["Codex app-server did not answer in time"]))
+    // The loader does not outlive the attempt: the rows are drawn, and the
+    // header says the read did not land rather than claiming a scan.
+    await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
+    expect(section("agents").querySelector('[data-component="agents-scanning"]')).toBeNull()
+    expect(section("agents").querySelector('[data-component="agents-scanned-at"]')?.textContent)
+      .toBe("settings.providers.agents.scanFailed")
   })
 })

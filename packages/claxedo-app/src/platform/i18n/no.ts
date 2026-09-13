@@ -616,6 +616,8 @@ export const dict = {
   "settings.providers.agents.checking": "Sjekker…",
   "settings.providers.agents.checkAccount": "Sjekk",
   "settings.providers.agents.scanning": "Skanner denne maskinen…",
+  "settings.providers.agents.rescanning": "Skanner…",
+  "settings.providers.agents.scanFailed": "Kunne ikke lese denne maskinen",
   "settings.providers.agents.scannedNow": "Skannet nå nettopp",
   "settings.providers.agents.scannedAt": "Skannet {{when}}",
   "settings.providers.agents.rescan": "Skann på nytt",

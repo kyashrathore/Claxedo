@@ -618,6 +618,8 @@ export const dict = {
   "settings.providers.agents.checking": "Provjera…",
   "settings.providers.agents.checkAccount": "Provjeri",
   "settings.providers.agents.scanning": "Skeniranje ovog računara…",
+  "settings.providers.agents.rescanning": "Skeniranje…",
+  "settings.providers.agents.scanFailed": "Nije moguće pročitati ovaj računar",
   "settings.providers.agents.scannedNow": "Upravo skenirano",
   "settings.providers.agents.scannedAt": "Skenirano {{when}}",
   "settings.providers.agents.rescan": "Skeniraj ponovo",

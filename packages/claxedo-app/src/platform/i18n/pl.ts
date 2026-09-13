@@ -544,6 +544,8 @@ export const dict = {
   "settings.providers.agents.checking": "Sprawdzanie…",
   "settings.providers.agents.checkAccount": "Sprawdź",
   "settings.providers.agents.scanning": "Skanowanie tego komputera…",
+  "settings.providers.agents.rescanning": "Skanowanie…",
+  "settings.providers.agents.scanFailed": "Nie udało się odczytać tego komputera",
   "settings.providers.agents.scannedNow": "Przeskanowano przed chwilą",
   "settings.providers.agents.scannedAt": "Przeskanowano {{when}}",
   "settings.providers.agents.rescan": "Skanuj ponownie",

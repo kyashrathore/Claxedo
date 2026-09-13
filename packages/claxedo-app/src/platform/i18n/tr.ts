@@ -628,6 +628,8 @@ export const dict = {
   "settings.providers.agents.checking": "Kontrol ediliyor…",
   "settings.providers.agents.checkAccount": "Kontrol et",
   "settings.providers.agents.scanning": "Bu bilgisayar taranıyor…",
+  "settings.providers.agents.rescanning": "Taranıyor…",
+  "settings.providers.agents.scanFailed": "Bu bilgisayar okunamadı",
   "settings.providers.agents.scannedNow": "Az önce tarandı",
   "settings.providers.agents.scannedAt": "{{when}} tarandı",
   "settings.providers.agents.rescan": "Yeniden tara",

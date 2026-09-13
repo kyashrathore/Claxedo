@@ -551,6 +551,8 @@ export const dict = {
   "settings.providers.agents.checking": "Vérification…",
   "settings.providers.agents.checkAccount": "Vérifier",
   "settings.providers.agents.scanning": "Analyse de cet ordinateur…",
+  "settings.providers.agents.rescanning": "Analyse…",
+  "settings.providers.agents.scanFailed": "Impossible de lire cet ordinateur",
   "settings.providers.agents.scannedNow": "Analysé à l'instant",
   "settings.providers.agents.scannedAt": "Analysé {{when}}",
   "settings.providers.agents.rescan": "Relancer l'analyse",
