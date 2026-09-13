@@ -712,6 +712,28 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return `${adapterKey(nextRunner)}\n${JSON.stringify(auth)}\n${JSON.stringify(mcp)}\n${JSON.stringify(launch)}`
   }
 
+  /**
+   * Whether the only part of this adapter's applied config the snapshot moves
+   * is the projection map. Pi refuses to rotate a placeholder while a turn is
+   * talking to the process that reads it, and a renewal arrives once every half
+   * lifetime, so a session longer than that met the refusal on every push and
+   * each one failed the whole apply. The placeholder the adapter already holds
+   * stays live until its own expiry, so the replacement can wait for the turn.
+   */
+  function projectionOnlyChange(
+    target: AgentHarnessAdapter,
+    nextRunner: RuntimeRunner,
+    auth: Record<string, ProviderProjection>,
+    mcp: Record<string, unknown>,
+    launch: Record<string, unknown>,
+  ) {
+    const held = adapterConfigStamps.get(target)
+    if (!held) return false
+    const next = adapterConfigStamp(nextRunner, auth, mcp, launch)
+    const withoutAuth = (stamp: string) => stamp.split("\n").filter((_, index) => index !== 1).join("\n")
+    return held !== next && withoutAuth(held) === withoutAuth(next)
+  }
+
   async function configureAdapter(next: AgentHarnessAdapter, nextRunner: RuntimeRunner) {
     // `applyConfig` is its own adapter contract: an adapter may take MCP and the
     // per-harness launch payload without advertising the separate
@@ -1087,10 +1109,28 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         turns.delete(turn)
         if (activeSessionOwners.get(input.sessionId) === owner) activeSessionOwners.delete(input.sessionId)
         turn.finish()
-        if (turns.size === 0) activeTurns.delete(input.adapter)
+        if (turns.size === 0) {
+          activeTurns.delete(input.adapter)
+          applyHeldAdapterConfig(input.adapter)
+        }
         notifyCheckpointWaiters()
       },
     }
+  }
+
+  /**
+   * The first moment a config push a running turn held back can land. Without
+   * it the held snapshot waits for the next adapter acquisition, and a session
+   * that never acquires one again keeps its placeholder past its expiry.
+   */
+  function applyHeldAdapterConfig(target: AgentHarnessAdapter) {
+    if (closing) return
+    const key = adapterRuntimeKeys.get(target)
+    const selection = key ? sessionAdapterRunners.get(key) : undefined
+    if (!key || !selection || sessionAdapters.get(key) !== target) return
+    void configureAdapter(target, selection).catch((error) => {
+      Log.create({ service: "workspace-runtime" }).error("Held adapter configuration failed", { error })
+    })
   }
 
   async function drainActiveTurns(next: AgentHarnessAdapter) {
@@ -1273,8 +1313,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       currentHarnessLaunch = nextHarnessLaunch
       const deferDefaultAdapterConfig = adapter
         && nextRunner
-        && configuredConnection(nextRunner)
         && (activeTurns.get(adapter)?.size ?? 0) > 0
+        && (configuredConnection(nextRunner)
+          || projectionOnlyChange(adapter, nextRunner, next.auth, next.mcp, nextHarnessLaunch))
 
       if (!replacing) runner = nextRunner
       if (!adapter && nextRunner) adapter = await ensureSessionAdapter(nextRunner)
