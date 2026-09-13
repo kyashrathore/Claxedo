@@ -722,10 +722,6 @@ export function createSelfHostedApp(
   // @hono/node-ws upgrades, whose Requests lack the node-server internals)
   // so loopback gates verify the socket, not the spoofable Host header.
   app.use(peerAddressStamp())
-  if (options.egressBroker) {
-    const broker = options.egressBroker
-    app.all("/bindings/*", (c) => broker(c.req.raw))
-  }
   // top-level error handler. Hono's
   // default onError swallows route exceptions into bare 500s; this keeps that
   // exact response behavior (HTTPException responses pass through) while
@@ -885,6 +881,9 @@ export function createSelfHostedApp(
         // does when no ACAO is returned. Reflecting any http://localhost:*
         // origin here would let a page on any local port read the tokens.
         if (isConnectionsCredentialPath(c.req.path)) return undefined
+        // The broker turns a runtime token into the operator's stored key. A
+        // loopback page granted an ACAO here could spend it from a browser.
+        if (c.req.path.startsWith("/bindings/")) return undefined
         if (origin.startsWith("http://localhost:")) return origin
         if (origin.startsWith("http://127.0.0.1:")) return origin
         return undefined
@@ -906,6 +905,18 @@ export function createSelfHostedApp(
       authConfig: services.auth.config,
     }),
   )
+
+  if (options.egressBroker) {
+    const broker = options.egressBroker
+    // A signed deployment's guard steps aside, and this server may bind
+    // 0.0.0.0, so the peer check is the gate that keeps the credential proxy
+    // off the network. Serving a remote runtime waits on a signed runtime
+    // token that proves which lease is calling; a bearer the broker itself
+    // minted for a loopback harness does not.
+    app.all("/bindings/*", async (c) => isLoopbackLocalRequest(c.req.raw)
+      ? broker(c.req.raw)
+      : c.json({ error: "loopback_required" }, 403))
+  }
 
   app.post("/api/claxedo/track", async (c) => {
     const body = await c.req.json().catch(() => null)
