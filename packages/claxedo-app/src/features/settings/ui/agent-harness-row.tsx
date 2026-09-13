@@ -1,6 +1,6 @@
 import { Button } from "@opencode-ai/ui/button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { RadioList, RadioListItem } from "@opencode-ai/ui/radio-group"
+import { RadioList, RadioListItem } from "@opencode-ai/ui/radio-list"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { createSignal, For, Show, type Component, type JSX } from "solid-js"
 import { ProviderConnectCard } from "@/features/settings/ui/provider-connect-card"
