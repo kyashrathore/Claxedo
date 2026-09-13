@@ -232,8 +232,8 @@ describe("@claxedo/local-server closure", () => {
     // `@claxedo/tasks`: the kit itself, which reaches hono and helpers only.
     // Nothing outside `src/tasks/` imports either module, so a product entry
     // that does not mount the composition carries neither.
-    // Measured 2026-09-12: 86 modules / 25 packages.
-    expect(modules.size).toBeLessThanOrEqual(86)
+    // Measured 2026-09-13: 87 modules / 25 packages.
+    expect(modules.size).toBeLessThanOrEqual(87)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(25)
   })

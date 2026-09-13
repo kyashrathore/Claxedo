@@ -32,6 +32,11 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
       // shares, and re-implementing it there would be a second copy of the
       // start path rather than a boundary.
       "@claxedo/local-server/tasks/session-bridge",
+      // The signed node serves this machine's Marketplace, so its MCP mount,
+      // its embedded runtimes and its Tasks grant all have to read the very
+      // activation rows those routes write. One reader, named here, rather
+      // than a second copy of the resolution on the server side.
+      "@claxedo/local-server/agent-plugins/builtin-groups",
     ])
     const offenders: string[] = []
     const walk = (dir: string): string[] =>

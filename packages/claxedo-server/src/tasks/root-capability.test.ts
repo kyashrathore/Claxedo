@@ -5,6 +5,11 @@ import { createTasksRootCapability } from "./root-capability"
 
 const root = { userId: "user-1", orgId: "org-1", projectId: "project-a", workspaceId: "ws_root" }
 
+const auth = {} as never
+
+/** What a project that consented to everything reports. */
+const everything = async () => ["sessions", "tasks"]
+
 async function signingEnv() {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   return {
@@ -21,7 +26,7 @@ async function scopeOf(env: Record<string, string | undefined>, variables: Recor
 describe("the grant a cloud root is launched with", () => {
   test("reads and creates in its own project, and cannot start anywhere by default", async () => {
     const env = await signingEnv()
-    const variables = await createTasksRootCapability({ signingEnv: env })(root)
+    const variables = await createTasksRootCapability({ signingEnv: env, enabledToolGroups: everything })(root, auth)
     expect(variables.WORKSPACE_RUNTIME_TASKS_OPERATIONS).toBe("read,create")
     expect(variables.WORKSPACE_RUNTIME_TASKS_PROJECT).toBe(root.projectId)
     expect(await scopeOf(env, variables)).toEqual({ ...root, operations: ["read", "create"] })
@@ -30,13 +35,32 @@ describe("the grant a cloud root is launched with", () => {
   test("starts a task only where the account lets agents act on other machines", async () => {
     const env = await signingEnv()
     const crossMachineWrites = vi.fn(async () => true)
-    const variables = await createTasksRootCapability({ signingEnv: env, crossMachineWrites })(root)
+    const variables = await createTasksRootCapability({ signingEnv: env, crossMachineWrites, enabledToolGroups: everything })(root, auth)
     expect(variables.WORKSPACE_RUNTIME_TASKS_OPERATIONS).toBe("read,create,start")
     expect((await scopeOf(env, variables)).operations).toEqual(["read", "create", "start"])
     expect(crossMachineWrites).toHaveBeenCalledWith({ userId: root.userId, orgId: root.orgId })
   })
 
+  test("carries the project's consented groups, and no grant at all when Tasks is not among them", async () => {
+    const env = await signingEnv()
+    const variables = await createTasksRootCapability({
+      signingEnv: env,
+      enabledToolGroups: async () => ["sessions", "attention"],
+    })(root, auth)
+    expect(variables).toEqual({ WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "sessions,attention" })
+    expect(variables.WORKSPACE_RUNTIME_TASKS_CAPABILITY).toBeUndefined()
+  })
+
+  test("a project that consented to nothing is launched with nothing", async () => {
+    const env = await signingEnv()
+    const variables = await createTasksRootCapability({
+      signingEnv: env,
+      enabledToolGroups: async () => [],
+    })(root, auth)
+    expect(variables).toEqual({ WORKSPACE_RUNTIME_MCP_TOOL_GROUPS: "" })
+  })
+
   test("cannot be minted by a deployment with no signing key", async () => {
-    await expect(createTasksRootCapability({ signingEnv: {} })(root)).rejects.toThrow("runtime signing key")
+    await expect(createTasksRootCapability({ signingEnv: {}, enabledToolGroups: everything })(root, auth)).rejects.toThrow("runtime signing key")
   })
 })

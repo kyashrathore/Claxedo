@@ -16,7 +16,7 @@ import { Hono } from "hono"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
-import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { CLAXEDO_MCP_TOOL_GROUPS, CLAXEDO_MCP_TOOL_GROUP_IDS } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { betterAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
@@ -105,6 +105,7 @@ function node(posture: "signed" | "unsigned", options: { supplyTasks?: boolean }
       ? {}
       : {
           tasks: selfHostedTasksClientInput({
+            enabledToolGroups: () => CLAXEDO_MCP_TOOL_GROUP_IDS,
             app,
             signed: posture === "signed",
             ...(grants ? { grants } : {}),

@@ -64,7 +64,7 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
    * deployment that names none launches roots whose agents have no Tasks
    * tools, which is what a control plane those sessions cannot reach means.
    */
-  capability?: (root: TasksRootIdentity) => Promise<Record<string, string>>
+  capability?: (root: TasksRootIdentity, auth: SignedControlPlaneAuth) => Promise<Record<string, string>>
 }
 
 export function createHostedTasksSessionBridge(input: HostedTasksSessionBridgeInput): TasksSessionBridgePort {
@@ -135,13 +135,13 @@ function createTasksCloudTarget(
         // own name for them; the actor's `ownerId` is the token subject, which
         // no workspace row records.
         const owner = auth?.principal?.userId
-        const env = owner
+        const env = owner && auth
           ? await input.capability?.({
               userId: owner,
               orgId: origin.actor.scopeId,
               projectId: origin.task.projectId,
               workspaceId: workspace.id,
-            })
+            }, auth)
           : undefined
         return { ...(preparation.secrets ? { secrets: preparation.secrets } : {}), ...(env ? { env } : {}) }
       },

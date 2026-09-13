@@ -1,6 +1,27 @@
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import type { TasksOperation } from "@claxedo/server-core/tasks-host/capability"
 
+export const WORKSPACE_RUNTIME_MCP_TOOL_GROUPS = "WORKSPACE_RUNTIME_MCP_TOOL_GROUPS"
+
+/**
+ * The first-party tool groups this root's project turned on.
+ *
+ * A cloud root reads its project's activation once, at launch, and the sandbox
+ * cannot ask again: it has no project route of its own. The variable is always
+ * written, empty included, so an absent one means an older control plane and a
+ * present empty one means a user who turned everything off — a distinction the
+ * mount has to make before it decides whether to serve anything at all.
+ */
+export function workspaceRuntimeMcpToolGroupsEnv(groups: readonly string[]): Record<string, string> {
+  return { [WORKSPACE_RUNTIME_MCP_TOOL_GROUPS]: groups.join(",") }
+}
+
+export function workspaceRuntimeMcpToolGroups(env: Record<string, string | undefined>): readonly string[] | undefined {
+  const declared = env[WORKSPACE_RUNTIME_MCP_TOOL_GROUPS]
+  if (declared === undefined) return undefined
+  return declared.split(",").map((group) => group.trim()).filter(Boolean)
+}
+
 export const WORKSPACE_RUNTIME_TASKS_CAPABILITY = "WORKSPACE_RUNTIME_TASKS_CAPABILITY"
 export const WORKSPACE_RUNTIME_TASKS_OPERATIONS = "WORKSPACE_RUNTIME_TASKS_OPERATIONS"
 export const WORKSPACE_RUNTIME_TASKS_PROJECT = "WORKSPACE_RUNTIME_TASKS_PROJECT"

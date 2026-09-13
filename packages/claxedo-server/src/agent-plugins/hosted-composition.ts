@@ -1,4 +1,9 @@
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { claxedoMcpToolGroupInventory } from "@claxedo/mcp"
+import {
+  builtinPluginInstanceId,
+  resolveBuiltinGroupActivation,
+} from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { D1Database } from "@cloudflare/workers-types"
 import type { Hono } from "hono"
 import { sandboxDriverCatalog, sandboxDriverId } from "@claxedo/sandbox-manager/driver-catalog"
@@ -71,6 +76,11 @@ export type HostedAgentPluginsComposition = {
    * workspace: the same preparation and apply the workspace routes run, over
    * an explicit selection instead of the project's activation defaults.
    */
+  /**
+   * The first-party tool groups one project turned on. The Tasks bridge reads
+   * it to decide whether a cloud root is launched with a Tasks grant at all.
+   */
+  builtinToolGroups: (auth: SignedControlPlaneAuth, projectId: string) => Promise<readonly string[]>
   selectedCapabilities: {
     prepare(input: {
       workspaceId: string
@@ -163,6 +173,10 @@ export function createHostedAgentPluginsComposition(input: {
   const services = input.plane.services
   const authority = requireAuthority(services)
   const artifacts = hostedAgentPluginArtifactStore(bucket)
+  // Hosted, documents are an account service a session reaches across the
+  // network rather than a store in this process, so that group is a decision
+  // rather than an inheritance.
+  const builtIn = { groups: claxedoMcpToolGroupInventory(), deployment: { documentsInProcess: false } }
   const activations = new D1SignedAgentPluginActivationStore({ database: input.database, authority })
   // GitHub reads are cached at the edge across isolates (see github-edge-cache.ts);
   // `caches` exists only inside a Worker isolate, so it is looked up per call.
@@ -358,7 +372,7 @@ export function createHostedAgentPluginsComposition(input: {
     // Hosted, documents are an account service a session reaches across the
     // network rather than a store in this process, so the group is a decision
     // rather than an inheritance.
-    builtIn: { groups: claxedoMcpToolGroupInventory(), deployment: { documentsInProcess: false } },
+    builtIn,
     mcpAuthentication: hostedMcpCatalogAuthentication(oauth),
     mcpClientMetadata: clientMetadata,
     mcpGatewayRoutes: gateway,
@@ -381,6 +395,25 @@ export function createHostedAgentPluginsComposition(input: {
     integrationRoutes,
     prepareRuntime,
     provisionRuntime,
+    builtinToolGroups: async (auth, projectId) => {
+      const enabled: (string | undefined)[] = await Promise.all(builtIn.groups.map(async (group) => {
+        const snapshot = await activations.read(auth, {
+          pluginInstanceId: builtinPluginInstanceId(group.id),
+          harnessId: "opencode",
+          projectId,
+        })
+        return resolveBuiltinGroupActivation({
+          groupId: group.id,
+          harnessId: "opencode",
+          deployment: builtIn.deployment,
+          mode: "signed",
+          ...(snapshot.projectOverride === undefined ? {} : { projectOverride: snapshot.projectOverride }),
+          ...(snapshot.userDefault === undefined ? {} : { userDefault: snapshot.userDefault }),
+          ...(snapshot.organizationDefault === undefined ? {} : { organizationDefault: snapshot.organizationDefault }),
+        }) ? group.id : undefined
+      }))
+      return enabled.filter((group): group is string => group !== undefined)
+    },
     selectedCapabilities,
   }
 }

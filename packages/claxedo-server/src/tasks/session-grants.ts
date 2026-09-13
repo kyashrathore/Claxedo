@@ -2,6 +2,7 @@ import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import { inProcessFetch, type McpClientInputs } from "@claxedo/mcp"
 import type { McpCredential } from "@claxedo/mcp/context"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { TASKS_TOOL_GROUP } from "./root-capability"
 import {
   TASKS_OPERATIONS,
   type TasksCapabilityPort,
@@ -88,11 +89,18 @@ export function selfHostedTasksClientInput(input: {
   app: { request(request: Request): Response | Promise<Response> }
   signed: boolean
   grants?: TasksSessionGrants
+  /**
+   * This machine's consented tool groups. Required: the grant exists so the
+   * Tasks tools can act, and the switch that hides those tools is the same
+   * decision as the one that withholds what they would act with.
+   */
+  enabledToolGroups: () => readonly string[]
 }): (credential: McpCredential) => Promise<McpClientInputs["tasks"]> {
   const loopback = (headers: Readonly<Record<string, string>> = {}) =>
     inProcessFetch((call) => input.app.request(call), headers)
   return async (credential) => {
     if (credential.kind !== "runtime") return undefined
+    if (!input.enabledToolGroups().includes(TASKS_TOOL_GROUP)) return undefined
     if (!input.signed) return { fetch: loopback(), operations: TASKS_OPERATIONS }
     const grant = await input.grants?.issue({
       workspaceId: credential.workspaceId,

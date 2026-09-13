@@ -40,6 +40,7 @@ import {
 import { isLoopbackLocalRequest, peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { CLAXEDO_MCP_TOOL_GROUPS, fullUserCredential, inProcessFetch, type FirstPartyMcpOptions } from "@claxedo/mcp"
+import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugins/builtin-groups"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { bearerToken } from "@claxedo/helpers/string"
 import { firstPartyMcpContribution } from "../../mcp/first-party-mcp"
@@ -1243,6 +1244,7 @@ export function createSelfHostedApp(
     channels: controlPlaneChannels,
   })
 
+  const builtinToolGroups = localBuiltinToolGroupsReader()
   const firstPartyMcp = options.firstPartyMcp
     ? firstPartyMcpContribution({
         mount: "node",
@@ -1273,6 +1275,7 @@ export function createSelfHostedApp(
             }
           : {}),
         tasks: selfHostedTasksClientInput({
+          enabledToolGroups: builtinToolGroups,
           app,
           signed: services.auth.config.enabled,
           ...(options.tasksGrants ? { grants: options.tasksGrants } : {}),
@@ -1556,12 +1559,16 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   mirrorProcessEvents()
   // One process-owned public embedded-SDK runtime: the native `opencode` harness.
   const opencodeRuntime = openCodeSdkRuntime()
+  // One reader for both halves: the runtime decides whether a session gets the
+  // endpoint at all, and the mount decides which tools it serves, from the
+  // same machine-wide activation rows this node's Marketplace writes.
+  const builtinToolGroups = localBuiltinToolGroupsReader()
   configureEmbeddedWorkspaceRuntime({
     opencodeRuntime,
     connectionProviders,
     // The origin this process serves `/api/claxedo/mcp` on; `port` is the one
     // `startServer` binds and every caller reads back as this node's address.
-    firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}` },
+    firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, enabledToolGroups: builtinToolGroups },
     ...(services.auth.config.enabled && services.authority
       ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority) }
       : {}),
@@ -1636,6 +1643,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       verifyRuntimeCredential: verifyEmbeddedRuntimeCredential,
       createClient: (input) => createClaxedoMcpClient(input),
       registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+      enabledToolGroups: builtinToolGroups,
     },
     beforeLocalSessionList: async () => {
       if (localSessionProjectionReady) return

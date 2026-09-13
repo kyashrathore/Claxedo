@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { CLAXEDO_MCP_SERVER_INFO } from "@claxedo/mcp"
+import { CLAXEDO_MCP_SERVER_INFO, CLAXEDO_MCP_TOOL_GROUP_IDS } from "@claxedo/mcp"
 import { createRuntimeCredentialIssuer, createWorkspaceRuntimeApp } from "@claxedo/workspace-runtime"
 import { relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import type { TasksGrant } from "@claxedo/mcp"
@@ -7,15 +7,20 @@ import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 
 const relayAuth = { key: new Uint8Array([1]), workspaceId: "ws_1", hostId: "host_1" }
 
-function runtime(options: { contribute?: boolean; tasks?: TasksGrant } = {}) {
+function runtime(options: { contribute?: boolean; tasks?: TasksGrant; groups?: readonly string[] } = {}) {
   const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
+  const enabledToolGroups = options.groups ?? CLAXEDO_MCP_TOOL_GROUP_IDS
   const app = createWorkspaceRuntimeApp({
     exposure: relayWorkspaceRuntimeExposure(relayAuth),
     target: { workspaceId: "ws_1", directory: process.cwd() },
-    firstPartyMcpLaunch: { baseUrl: "http://127.0.0.1:3002", issuer },
+    firstPartyMcpLaunch: { baseUrl: "http://127.0.0.1:3002", issuer, enabledToolGroups: () => enabledToolGroups },
     routeContributions: options.contribute === false
       ? []
-      : [firstPartyMcpRuntimeContribution(issuer.verify, options.tasks)],
+      : [firstPartyMcpRuntimeContribution({
+          verifyRuntimeCredential: issuer.verify,
+          enabledToolGroups,
+          ...(options.tasks ? { tasks: options.tasks } : {}),
+        })],
   })
   return { ...app, issuer }
 }

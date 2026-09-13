@@ -57,6 +57,7 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
     selectedCapabilities: feature.selectedCapabilities,
+    builtinToolGroups: feature.builtinToolGroups,
     signingEnv: stringEnvironment(env),
   })
   return {

@@ -1,3 +1,4 @@
+import { CLAXEDO_MCP_TOOL_GROUP_IDS } from "@claxedo/mcp"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs"
 import { execFileSync } from "node:child_process"
@@ -458,6 +459,7 @@ describe("local composition — first-party MCP", () => {
     const built = app({
       routeContributions: [{ id: "echo", path: "/api/claxedo/echo", routes: echo }],
       firstPartyMcp: {
+        enabledToolGroups: () => CLAXEDO_MCP_TOOL_GROUP_IDS,
         verifyRuntimeCredential: (token) => (token === "rt" ? claims : undefined),
         createClient: (input) => {
           inputs.push(input)
@@ -488,6 +490,7 @@ describe("local composition — first-party MCP", () => {
     const built = app({
       routeContributions: [{ id: "echo", path: "/api/claxedo/echo", routes: new Hono().get("/", (c) => c.text("ok")) }],
       firstPartyMcp: {
+        enabledToolGroups: () => CLAXEDO_MCP_TOOL_GROUP_IDS,
         verifyRuntimeCredential: (token) => (token === "rt" ? claims : undefined),
         createClient: (input) => {
           inputs.push(input)
@@ -508,7 +511,7 @@ describe("local composition — first-party MCP", () => {
 
   test("reflects no CORS origin on the MCP route even for an origin the shell admits", async () => {
     const built = app({
-      firstPartyMcp: { verifyRuntimeCredential: () => claims, createClient: () => stubClient },
+      firstPartyMcp: { enabledToolGroups: () => CLAXEDO_MCP_TOOL_GROUP_IDS, verifyRuntimeCredential: () => claims, createClient: () => stubClient },
     })
     const headers = { origin: "http://localhost:5173", authorization: "Bearer rt" }
     const shell = await built.request("http://localhost/api/claxedo/health", { headers })

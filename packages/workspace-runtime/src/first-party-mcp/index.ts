@@ -22,6 +22,17 @@ export type WorkspaceFirstPartyMcpLaunchOptions = {
   /** Loopback origin of the process that mounts {@link FIRST_PARTY_MCP_PATH}. */
   baseUrl: string
   issuer: RuntimeCredentialIssuer
+  /**
+   * The tool groups this project has turned on, which is also what the mount
+   * will register. Empty means the built-in is off here, and then no session
+   * gets an entry at all: an endpoint that would answer every call with "no
+   * such tool" is not something to hand a harness.
+   *
+   * Read at each config apply and each launch rather than captured, so a
+   * switch flipped in the Marketplace reaches the next session on a machine
+   * whose runtime is already up.
+   */
+  enabledToolGroups: () => readonly string[]
 }
 
 export type FirstPartyMcpServerEntry = {
@@ -30,7 +41,11 @@ export type FirstPartyMcpServerEntry = {
   headers: Record<string, string>
 }
 
-export function firstPartyMcpServerFor(options: WorkspaceFirstPartyMcpLaunchOptions, sessionId: string): FirstPartyMcpServerEntry {
+export function firstPartyMcpServerFor(
+  options: WorkspaceFirstPartyMcpLaunchOptions,
+  sessionId: string,
+): FirstPartyMcpServerEntry | undefined {
+  if (options.enabledToolGroups().length === 0) return undefined
   const url = new URL(FIRST_PARTY_MCP_PATH, options.baseUrl)
   url.searchParams.set("session", sessionId)
   return {
@@ -46,7 +61,7 @@ export function firstPartyMcpServerFor(options: WorkspaceFirstPartyMcpLaunchOpti
  * refreshed or rotated credential reaches the next launch without a re-apply.
  */
 export function firstPartyMcpAdapterConfig(options: WorkspaceFirstPartyMcpLaunchOptions | undefined) {
-  if (!options) return {}
+  if (!options || options.enabledToolGroups().length === 0) return {}
   return {
     [FIRST_PARTY_MCP_CONFIG_KEY]: {
       server: (sessionId: string) => firstPartyMcpServerFor(options, sessionId),

@@ -367,6 +367,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         })
       },
       registerTools: firstPartyMcp.registerTools ?? [],
+      enabledToolGroups: firstPartyMcp.enabledToolGroups,
       audit: (event) => console.info("[claxedo-local-server] mcp.audit", mcpAuditRecord(event)),
       ...(firstPartyMcp.crossMachineWrites ? { crossMachineWrites: firstPartyMcp.crossMachineWrites } : {}),
     }).routes)

@@ -27,10 +27,13 @@ export const FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID = "claxedo-mcp"
  * built here: those tools leave the workspace for the control plane, carrying
  * the capability this root was launched with.
  */
-export function firstPartyMcpRuntimeContribution(
-  verifyRuntimeCredential: VerifyRuntimeCredential,
-  tasks?: TasksGrant,
-): WorkspaceRuntimeRouteContribution {
+export function firstPartyMcpRuntimeContribution(input: {
+  verifyRuntimeCredential: VerifyRuntimeCredential
+  /** This root's consented groups, read once at boot; the mount registers no others. */
+  enabledToolGroups: readonly string[]
+  tasks?: TasksGrant
+}): WorkspaceRuntimeRouteContribution {
+  const { verifyRuntimeCredential, tasks } = input
   return {
     id: FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID,
     mount(context) {
@@ -45,6 +48,7 @@ export function firstPartyMcpRuntimeContribution(
           ...(tasks ? { tasks } : {}),
         }),
         registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+        enabledToolGroups: () => input.enabledToolGroups,
         audit: (event) => log.info("mcp.audit", mcpAuditRecord(event)),
       })
       return { path: CLAXEDO_MCP_PATH, routes: mount.routes, dispose: mount.dispose }

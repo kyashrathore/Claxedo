@@ -24,7 +24,6 @@ import { Hono } from "hono"
 import { createHash } from "node:crypto"
 import os from "node:os"
 import path from "node:path"
-import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
@@ -47,6 +46,8 @@ import {
   verifyEmbeddedRuntimeCredential,
 } from "../deployments/local/embedded-workspace-runtime"
 import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
+import { localBuiltinToolGroupsReader } from "../agent-plugins/builtin-groups"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { migrateCredentials } from "../credentials/operations/migrate"
@@ -132,10 +133,14 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   // port: `serve()` below is given it explicitly and every caller reads back
   // the same number as this server's address.
   const firstPartyMcpBaseUrl = `http://127.0.0.1:${port}`
+  // One reader for both halves: the runtime decides whether a session gets the
+  // endpoint at all, and the mount decides which tools it serves, from the
+  // same machine-wide activation rows.
+  const builtinToolGroups = localBuiltinToolGroupsReader()
   configureEmbeddedWorkspaceRuntime({
     connectionProviders,
     opencodeRuntime,
-    firstPartyMcpLaunch: { baseUrl: firstPartyMcpBaseUrl },
+    firstPartyMcpLaunch: { baseUrl: firstPartyMcpBaseUrl, enabledToolGroups: builtinToolGroups },
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // No route contributions: hosted capabilities contribute routes, and their
     // absence from an unsigned desktop is this line rather than a runtime flag.
@@ -286,6 +291,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       verifyRuntimeCredential: verifyEmbeddedRuntimeCredential,
       createClient: (input) => createClaxedoMcpClient(input),
       registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+      enabledToolGroups: builtinToolGroups,
     },
   })
 
