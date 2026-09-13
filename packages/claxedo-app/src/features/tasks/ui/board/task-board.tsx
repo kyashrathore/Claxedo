@@ -159,7 +159,6 @@ export function TaskBoard(props: TaskBoardProps) {
                           task={task}
                           busy={props.busyTaskId === task.id}
                           testIdPrefix="tasks-board"
-                          statusTestId={`tasks-board-status-${task.id}`}
                           onStatusChange={(input) => props.onStatusChange(input)}
                         />
                       </span>

@@ -54,10 +54,9 @@ export type TaskDetailProps = {
   onSendTask: (link: TaskSessionLinkView) => void
   onArchive: () => void
   onRestore: () => void
-  /** Absent where the detail is not a page of its own. */
-  onBack?: () => void
+  onBack: () => void
   /** Opens the task list filtered to this task's project. */
-  onOpenProject?: () => void
+  onOpenProject: () => void
   /** Opens the task this one is a subtask of. */
   onOpenParent?: () => void
   /**
@@ -91,26 +90,18 @@ export function TaskDetail(props: TaskDetailProps) {
     <article class="tsk tsk-detail" data-testid="task-detail" aria-label={task().title}>
       <div class="tsk-detail-main">
         <nav class="tsk-crumbs" aria-label="Breadcrumb">
-          <Show when={props.onBack} fallback={<span>Tasks</span>}>
-            {(back) => (
-              <button type="button" class="tsk-crumb-link" data-testid="task-detail-back" onClick={() => back()()}>
-                Tasks
-              </button>
-            )}
-          </Show>
+          <button type="button" class="tsk-crumb-link" data-testid="task-detail-back" onClick={() => props.onBack()}>
+            Tasks
+          </button>
           <span class="tsk-crumb-sep" aria-hidden="true">›</span>
-          <Show when={props.onOpenProject} fallback={<span>{props.projectLabel}</span>}>
-            {(open) => (
-              <button
-                type="button"
-                class="tsk-crumb-link"
-                data-testid="task-detail-project-crumb"
-                onClick={() => open()()}
-              >
-                {props.projectLabel}
-              </button>
-            )}
-          </Show>
+          <button
+            type="button"
+            class="tsk-crumb-link"
+            data-testid="task-detail-project-crumb"
+            onClick={() => props.onOpenProject()}
+          >
+            {props.projectLabel}
+          </button>
           <Show when={props.view.parent}>
             {(parent) => (
               <>

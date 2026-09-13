@@ -203,7 +203,6 @@ export function TaskRowActions(props: {
   task: TaskSummary
   busy?: boolean
   testIdPrefix: string
-  statusTestId: string
   onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void
 }) {
   return (
@@ -224,7 +223,7 @@ export function TaskRowActions(props: {
               status={props.task.status}
               disabled={props.busy || props.task.archivedAt !== null}
               label={`Status of ${props.task.title}`}
-              testId={props.statusTestId}
+              testId={`${props.testIdPrefix}-status-${props.task.id}`}
               onChange={(status) =>
                 props.onStatusChange({ taskId: props.task.id, revision: props.task.revision, status })
               }

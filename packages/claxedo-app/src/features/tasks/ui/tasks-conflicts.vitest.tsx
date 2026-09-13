@@ -15,7 +15,7 @@ import { configureTasksAppPorts, type TasksAppPorts } from "@/features/tasks/app
 import type { TasksScope } from "@/features/tasks/data/queries"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
 import { PresetDraftEditor } from "@/features/tasks/ui/presets/preset-draft-editor"
-import { TaskDetailPanel } from "@/features/tasks/ui/detail/task-detail-panel"
+import { TaskDetailPage } from "@/features/tasks/ui/detail/task-detail-page"
 
 vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("./shared/test-support/host-controls")).dropdownMenuDouble())
 vi.mock("@opencode-ai/ui/select", async () => (await import("./shared/test-support/host-controls")).selectDouble())
@@ -144,7 +144,14 @@ describe("a refused edit rebases onto the record the host returned", () => {
 
     const store = createTasksStore()
     renderWithClient(() => (
-      <TaskDetailPanel store={store} scope={() => SCOPE} taskId={task.id} onOpenTask={() => {}} onBack={() => {}} />
+      <TaskDetailPage
+        store={store}
+        scope={() => SCOPE}
+        taskId={task.id}
+        onOpenTask={() => {}}
+        onBack={() => {}}
+        onOpenProject={() => {}}
+      />
     ))
 
     const titleField = await waitFor(() => screen.getByTestId("task-detail-title"))

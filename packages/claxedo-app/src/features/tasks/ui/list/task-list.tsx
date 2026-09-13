@@ -18,7 +18,7 @@ export type TaskListProps = {
   selectedTaskId?: string
   loading?: boolean
   emptyLabel?: string
-  /** Grouping is presentational, so a caller showing one status can turn it off. */
+  /** Grouping is presentational: off renders the rows as one run, with no status headers. */
   grouped?: boolean
   /** The parent's title for a subtask row, from the rows the caller already holds. */
   parentTitleOf?: (task: TaskSummary) => string | undefined
@@ -173,7 +173,6 @@ function TaskRow(props: {
               task={props.task}
               busy={props.busy}
               testIdPrefix="tasks-list"
-              statusTestId={`tasks-list-status-${props.task.id}`}
               onStatusChange={(input) => change()(input)}
             />
           )}

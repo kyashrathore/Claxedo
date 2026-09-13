@@ -134,6 +134,7 @@ function mountTaskPage() {
       taskId="tsk_1"
       onOpenTask={() => {}}
       onBack={() => {}}
+      onOpenProject={() => {}}
     />
   ))
 }
@@ -289,6 +290,7 @@ describe("a followed list whose next page fails", () => {
         taskId="tsk_1"
         onOpenTask={() => {}}
         onBack={() => {}}
+        onOpenProject={() => {}}
       />
     ))
 

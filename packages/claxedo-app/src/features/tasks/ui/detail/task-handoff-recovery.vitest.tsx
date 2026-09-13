@@ -6,7 +6,7 @@ import { TASKS_ROUTE_PATH, type ModelConfiguration, type SessionHandoffState, ty
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import type { TasksScope } from "@/features/tasks/data/queries"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
-import { TaskDetailPanel } from "@/features/tasks/ui/detail/task-detail-panel"
+import { TaskDetailPage } from "@/features/tasks/ui/detail/task-detail-page"
 
 afterEach(cleanup)
 
@@ -147,7 +147,14 @@ function mount(input: { handoff: SessionHandoffState; refuseStart?: string }) {
   render(() => (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <DialogProvider>
-        <TaskDetailPanel store={createTasksStore()} scope={() => SCOPE} taskId={task.id} onOpenTask={vi.fn()} />
+        <TaskDetailPage
+          store={createTasksStore()}
+          scope={() => SCOPE}
+          taskId={task.id}
+          onOpenTask={vi.fn()}
+          onBack={vi.fn()}
+          onOpenProject={vi.fn()}
+        />
       </DialogProvider>
     </QueryClientProvider>
   ))
