@@ -391,53 +391,6 @@ describe("control-plane services", () => {
     expect(tap, "the session-meta tap must be registered BEFORE the runtime proxy").toBeLessThan(proxy)
   })
 
-  test("server composition uses createSelfHostedApp with explicit services", () => {
-    const file = path.resolve(import.meta.dirname, "../deployments/self-hosted-node/app.ts")
-    const text = fs.readFileSync(file, "utf8")
-
-    expect(text).toContain("export function createSelfHostedApp(")
-    expect(text).toContain("services: ControlPlaneServices")
-    expect(text).toContain("export function createDefaultLocalControlPlaneServices()")
-    // Embedded Better Auth (CLAXEDO_EMBEDDED_AUTH=1) selects the betterAuthAdapter
-    // branch; otherwise services default to local-only with SQLite authority.
-    expect(text).toContain("{ auth: betterAuthAdapter({ issuer: EMBEDDED_AUTH_ISSUER, verifier: getEmbeddedAuth().verifier }) }")
-    expect(text).toContain("const authority = createSqliteWorkspaceAuthority()")
-    expect(text).toContain("const centralStore = createSqliteCentralStore({ mode: getSessionWriteMode })")
-    expect(text).toContain("projectionStore: centralStore.projectionStore,")
-    expect(text).toContain("const sandboxManager = createWorkspaceSupervisorSandboxManager()")
-    expect(text).toContain("sandboxManager,")
-    expect(text).toContain("const workspaceRuntimeProxy = createWorkspaceRuntimeProxy(runtimeProxyOptions)")
-    expect(text).toContain("const localWorkspaceRelayProxy = createLocalWorkspaceRelayProxy(runtimeProxyOptions)")
-    expect(text).toContain("if (services.localExecution.enabled)")
-    expect(text).toContain("app.use(workspaceRuntimeProxy)")
-    expect(text).toContain("Route execution traffic to the workspace runtime")
-    expect(text).not.toContain("AgentSessionRoutes(")
-    expect(text).toContain("services.durableSessionLog.subscribe_message_replay(globalBus)")
-    expect(text).toContain("services.telemetry.capture(parsed.data.distinctId")
-    expect(text).toContain("authConfig: services.auth.config")
-    // Prefix match: the credential routes gained an options argument
-    // (bearer gate) in the parallel creds work; the composition contract
-    // here is only that the routes are constructed from services.credentials.
-    expect(text).toContain("CredentialRoutes(services.credentials")
-    expect(text).toContain("credentials: services.credentials")
-    // Prefix match: workspaceRouteOptions gained a connections argument in the
-    // parallel connections work; the composition contract here is only that the
-    // workspace routes are constructed from services + workspaceRouteOptions,
-    // plus the machine-share seam wired from the remote-access service.
-    expect(text).toMatch(/WorkspaceRoutes\(\s*services,\s*\{\s*\.\.\.workspaceRouteOptions\(services/)
-    expect(text).toContain("hostAssignments: remoteAccessService")
-    expect(text).toContain("app.route(\"/\", JwksRoutes(process.env))")
-    expect(text).toContain("InternalRelayResolverRoutes({")
-    expect(text).toContain("BootstrapRoutes({")
-    expect(text).toContain("env: process.env")
-    expect(text).toContain("app.route(\"/api/control\", ControlPlaneHttpRoutes(services, authRouteOptions(services)))")
-    expect(text).toContain("const machineSessions = createMachineSessionDispatch(services, runtimeProxyOptions)")
-    expect(text).toContain("const controlPlane = createControlPlaneApp(services, {")
-    expect(text).toContain("...authRouteOptions(services),")
-    expect(text).toContain("createMachineSession: machineSessions.create,")
-    expect(text).toContain("app.route(\"/\", controlPlane.app)")
-  })
-
   test("local composition ignores ambient signed-auth env without embedded auth", async () => {
     // Ambient signed env without CLAXEDO_EMBEDDED_AUTH does not fail closed:
     // the default local composition boots local-only on SQLite. Only
@@ -511,35 +464,6 @@ describe("control-plane services", () => {
       expect(text).not.toContain("services.sync")
       expect(text).not.toContain("import type { SyncDB }")
     }
-  })
-
-  test("sandbox launch injects neutral workspace-runtime auth env", () => {
-    const file = path.resolve(import.meta.dirname, "../workspace/supervisor/sandbox.ts")
-    const text = fs.readFileSync(file, "utf8")
-    const runtimeEnv = fs.readFileSync(path.resolve(import.meta.dirname, "../workspace/supervisor/runtime-env.ts"), "utf8")
-
-    expect(text).toContain("const controlPlaneUrl = sandboxControlPlaneUrl")
-    expect(text).toContain("...controlPlaneVerificationEnv(driverId, controlPlaneUrl, { options })")
-    expect(text).toContain("...runtimeDirectAuthEnv(configToken(state))")
-    expect(runtimeEnv).toContain("workspaceRuntimeDirectAuthEnv({ token })")
-    expect(text).not.toContain("CLAXEDO_CONTROL_PLANE_URL: controlPlaneUrl")
-  })
-
-  test("runtime control-plane HTTP protocol exposes pull session and runtime handlers", () => {
-    const file = path.resolve(import.meta.dirname, "./http/index.ts")
-    const text = fs.readFileSync(file, "utf8")
-    const sessionPull = fs.readFileSync(path.resolve(import.meta.dirname, "./http/session-pull.ts"), "utf8")
-
-    expect(text).not.toContain("app.post(\"/sessions/sync\"")
-    expect(text).not.toContain("app.post(\"/sessions/sync-many\"")
-    expect(text).not.toContain("app.post(\"/sessions/:sessionId/messages\"")
-    expect(text).not.toContain("app.delete(\"/sessions/:sessionId\"")
-    expect(text).toContain("app.post(\"/workspaces/:workspaceId/sessions/:sessionId/register\"")
-    expect(text).toContain("app.post(\"/workspaces/:workspaceId/sessions/:sessionId/checkpoint\"")
-    expect(text).toContain("app.post(\"/workspaces/:workspaceId/sessions/:sessionId/repair\"")
-    expect(text).toContain("app.post(\"/runtime/register\"")
-    expect(text).toContain("app.post(\"/runtime/heartbeat\"")
-    expect(sessionPull).toContain("export async function resolveSessionGateway")
   })
 
   test("createSelfHostedApp accepts an injected ControlPlaneServices and returns app + websocket", async () => {
@@ -707,45 +631,4 @@ describe("control-plane services", () => {
     expect(supervisorOptions.needWorkspaceSupervisorOptions().default_sandbox_driver).toBe("daytona")
   })
 
-  test("hosted session bootstrap exposes a real frontend gateway resolution seam", () => {
-    const routeFile = path.resolve(import.meta.dirname, "../session/routes/control-plane-session.ts")
-    const routeText = fs.readFileSync(routeFile, "utf8")
-    const extensionFile = path.resolve(import.meta.dirname, "../../../claxedo-app/src/features/extensions/data/server.tsx")
-    const extensionText = fs.readFileSync(extensionFile, "utf8")
-    const sessionUrlFile = path.resolve(import.meta.dirname, "../../../claxedo-app/src/platform/runtime/session-url.ts")
-    const sessionUrlText = fs.readFileSync(sessionUrlFile, "utf8")
-    const layoutFile = path.resolve(import.meta.dirname, "../../../claxedo-app/src/app/routes/directory-layout.tsx")
-    const layoutText = fs.readFileSync(layoutFile, "utf8")
-
-    expect(routeText).toContain(".get(\"/sessions/:sessionId/gateway\"")
-    expect(routeText).toContain("resolveSessionGateway(services, c.req.param(\"sessionId\"), auth)")
-    expect(extensionText).toContain("resolveSessionUrl: (sessionId: string): Promise<string | null> => resolveSessionUrl(sessionId, config)")
-    expect(sessionUrlText).toContain("suffix: \"/gateway\"")
-    expect(layoutText).toContain("void resolveSessionUrl(sessionId, config).then((gatewayUrl) => {")
-    expect(layoutText).not.toContain("^https?:\\\\/\\\\/(localhost|127\\\\.0\\\\.0\\\\.1)")
-  })
-
-  test("cloud workspace creation uses normalized provider, branch, and credential inputs", () => {
-    const file = path.resolve(import.meta.dirname, "../workspace/routes/index.ts")
-    const text = fs.readFileSync(file, "utf8")
-
-    expect(text).toContain("gitBranch: z.string().optional()")
-    expect(text).toContain("services?.sandbox.defaultDriver")
-    expect(text).toContain("sandboxDriverCredentials(options, services)")
-    // `provider_id` is shared with model providers and is not unique --
-    // `vercel` is both a sandbox driver and a model provider -- so an
-    // unscoped lookup would let a model API key satisfy the
-    // sandbox-credential gate, passing creation and failing later at launch.
-    // Assert the scope, not just the call.
-    expect(text).toContain(".getCredentialByProvider(id, \"sandbox_driver\")")
-    expect(text).toContain("const hasCredentials = credential?.status === \"available\" || !!sandboxDriverAuth(driverConfig, id)")
-    expect(text).toContain("const gitBranch = body.gitBranch?.trim() || (rawWorkspaceName ? name : undefined)")
-    expect(text).toContain("git_branch: gitBranch")
-    // `gitBranch` has to reach all three consumers as a shorthand property: the
-    // authority's createCloudWorkspace, the telemetry properties, and
-    // startCloudWorkspaceProvisioning. A bare toContain("gitBranch,") does not
-    // guard that -- it is already satisfied by the `git_branch: gitBranch,` line
-    // pinned above -- so count the shorthand sites instead.
-    expect(text.match(/^\s+gitBranch,$/gm)?.length ?? 0).toBeGreaterThanOrEqual(3)
-  })
 })

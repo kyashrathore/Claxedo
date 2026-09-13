@@ -147,6 +147,11 @@ const mockCreateDaytonaSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["worker", "node"],
     hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
     targetAccess: "relay",
+    // Declared, because the manager fails closed on a driver that cannot
+    // broker: a fake that omits it is refused every brokered secret, and the
+    // secret-delivery tests below would pass for the wrong reason.
+    secretBrokering: "native",
+    egressControl: "hosts-and-cidrs",
     persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
@@ -164,6 +169,8 @@ const mockCreateCloudflareSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["worker"],
     hostStopBehavior: "not-supported", hostResumeBehavior: "same-host",
     targetAccess: "relay",
+    secretBrokering: "native",
+    egressControl: "none",
     persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
@@ -200,6 +207,8 @@ const mockCreateVercelSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["node"],
     hostStopBehavior: "terminates-host", hostResumeBehavior: "replacement-host",
     targetAccess: "relay",
+    secretBrokering: "native",
+    egressControl: "hosts",
     persistence: {
       resume: "replacement-restore",
       capture: "filesystem",
@@ -225,6 +234,8 @@ const mockCreateBoxSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["node"],
     hostStopBehavior: "suspends-host", hostResumeBehavior: "same-host",
     targetAccess: "relay",
+    secretBrokering: "none",
+    egressControl: "none",
     persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
@@ -243,6 +254,8 @@ const mockCreateDockerSandboxDriver = vi.fn((options: any) => ({
     driverRunsIn: ["local"],
     hostStopBehavior: "terminates-host", hostResumeBehavior: "same-host",
     targetAccess: "loopback",
+    secretBrokering: "none",
+    egressControl: "none",
     persistence: mockNoCapturePersistence,
   },
   ensureHost: async (input: any) => {
@@ -647,14 +660,20 @@ vi.mock("fs", () => {
   }
 })
 
-// Mock fetch for health checks + config push
-globalThis.fetch = vi.fn((url: string | URL | Request) => {
+// Health checks, config push, and the SSE stream. `configPush` records every
+// config the supervisor sent and can be made to refuse, which is the only way
+// a test can tell "the runtime was told" from "the supervisor returned ready".
+const configPush: Array<{ url: string; body: unknown }> = []
+let configPushResponse = () => new Response("{}", { status: 200 })
+
+globalThis.fetch = vi.fn((url: string | URL | Request, init?: RequestInit) => {
   const u = typeof url === "string" ? url : url instanceof URL ? url.toString() : ((url as any).url ?? "")
   if (u.includes("/api/wr/health") || u.includes("/global/health")) {
     return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }))
   }
   if (u.includes("/api/wr/config")) {
-    return Promise.resolve(new Response("{}", { status: 200 }))
+    configPush.push({ url: u, body: JSON.parse(String(init?.body ?? "null")) })
+    return Promise.resolve(configPushResponse())
   }
   // SSE streams — return response that completes immediately
   return Promise.resolve(new Response("data: {}\n\n", { status: 200 }))
@@ -678,6 +697,8 @@ describe("workspace-supervisor", () => {
   beforeEach(() => {
     leases.clear()
     holds.clear()
+    configPush.length = 0
+    configPushResponse = () => new Response("{}", { status: 200 })
     snapshots.length = 0
     store.clear()
     credentials.active.length = 0
@@ -2119,6 +2140,17 @@ describe("workspace-supervisor", () => {
       const entry = await supervisor.syncSupervisorSandbox("ws-sync-1")
 
       expect(entry.status).toBe("ready")
+      expect(configPush.at(-1)).toEqual({
+        url: "https://daytona-sdk.example.com/api/wr/config",
+        body: expect.objectContaining({ version: 2, runners: [{ type: "opencode" }] }),
+      })
+    })
+
+    test("a runtime that refuses the config fails the sync rather than reporting ready", async () => {
+      configPushResponse = () => new Response("config schema rejected", { status: 400 })
+
+      await expect(supervisor.syncSupervisorSandbox("ws-sync-refused"))
+        .rejects.toThrow(/config push failed: 400/)
     })
   })
 

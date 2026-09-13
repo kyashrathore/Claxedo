@@ -83,6 +83,11 @@ async function subject(input: {
         },
       })
   const oauthFetchSpy = oauthFetch(input.publicServer, input.multipleIssuers)
+  // Only the issuer the Connection froze. Registering both let the preparer
+  // pick either one and still resolve, so a wrong pick passed.
+  const preRegistered: Record<string, { clientId: string }> = input.multipleIssuers
+    ? { "https://login-two.example": { clientId: "claxedo-two" } }
+    : { "https://login.example": { clientId: "claxedo" } }
   const preparerInput = {
     activations: { runtimeSnapshot: async () => snapshot() },
     artifacts: {
@@ -101,11 +106,7 @@ async function subject(input: {
     resolveConnection,
     oauth: {
       fetch: oauthFetchSpy,
-      // Only the issuer the Connection froze. Registering both let the
-      // preparer pick either one and still resolve, so a wrong pick passed.
-      preRegistered: input.multipleIssuers
-        ? { "https://login-two.example": { clientId: "claxedo-two" } }
-        : { "https://login.example": { clientId: "claxedo" } },
+      preRegistered,
     },
     gatewayUrl: "https://mcp-gateway.example/",
     signingEnv: env,
