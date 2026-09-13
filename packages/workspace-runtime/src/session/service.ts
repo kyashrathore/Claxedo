@@ -134,13 +134,11 @@ export type SessionPromptTurnResult = {
 
 export type SessionPromptTurnInput = {
   adapter: AgentHarnessAdapter
-  /** Canonical persisted execution binding for this Claxedo-owned session. */
-  binding: AgentExecutionBinding
   sessionId: string
   directory: RuntimeDirectory
   body: SessionPromptBody
-  /** The caller's own admission decision; without it the configuration is read here. */
-  admitted?: AdmittedSessionPromptTurn
+  /** Decided by the caller, so a refusal is the answer its client is waiting on. */
+  admitted: AdmittedSessionPromptTurn
   publishGlobal: (event: CompatEnvelope) => void
   publishStatus: (event: RuntimeSessionBusEvent) => void
   createActiveTurnScope?: (input: {
@@ -263,9 +261,7 @@ function prompt(adapter: AgentHarnessAdapter, body: SessionPromptBody, config?: 
   }
 }
 
-export const SESSION_TURN_REFUSAL_CODES = ["session_configuration_unavailable"] as const
-
-export type SessionTurnRefusalCode = (typeof SESSION_TURN_REFUSAL_CODES)[number]
+export type SessionTurnRefusalCode = "session_configuration_unavailable"
 
 /**
  * Raised only while nothing has been asked to execute, which is what lets a
@@ -283,29 +279,6 @@ export class SessionTurnRefusedError extends AgentRuntimeContractError {
 
 export function sessionTurnRefusal(error: unknown): SessionTurnRefusalCode | undefined {
   return error instanceof SessionTurnRefusedError ? error.refusal : undefined
-}
-
-/**
- * `data.code` is what tells a reader the turn can be retried under the same
- * message id; the classified sentence beside it cannot say that. This reaches
- * everyone watching the session, including readers that never submitted it.
- */
-export function sessionTurnRefused(
-  refusal: SessionTurnRefusalCode,
-  message: string,
-  sessionId: string,
-): CompatEvent {
-  return {
-    id: `session.error:${sessionId}`,
-    type: "session.error",
-    properties: {
-      sessionID: sessionId,
-      error: {
-        name: "SessionTurnRefusedError",
-        data: { ...firstTurnErrorData(message), code: refusal },
-      },
-    },
-  }
 }
 
 /**
@@ -529,13 +502,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
 }
 
 export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promise<SessionPromptTurnResult> {
-  const { binding, prompt: promptInput } = input.admitted ?? await admitSessionPromptTurn({
-    adapter: input.adapter,
-    binding: input.binding,
-    sessionId: input.sessionId,
-    directory: input.directory,
-    body: input.body,
-  })
+  const { binding, prompt: promptInput } = input.admitted
   const scope = compatScope(input.directory, input.sessionId)
 
   let assistantId = promptInput.assistantMessageId ?? mkAssistantId(promptInput.userMessageId)

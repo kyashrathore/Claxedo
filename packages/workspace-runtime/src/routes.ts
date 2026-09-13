@@ -35,10 +35,8 @@ export type { CompatEvent, CompatEnvelope, CompatPart } from "./compat-events"
 export { eventSessionId, toCompatEvent, withDir } from "./compat-events"
 export {
   compatScope,
-  runSessionPromptTurn,
   sessionPromptReply,
   type ActiveTurnScope,
   type SessionPromptBody,
-  type SessionPromptTurnInput,
   type SessionPromptTurnResult,
 } from "./session/service"

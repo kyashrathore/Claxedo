@@ -50,7 +50,6 @@ import {
   runSessionPromptTurn,
   sessionPromptReply,
   sessionTurnRefusal,
-  sessionTurnRefused,
   type ActiveTurnScope,
   type AdmittedSessionPromptTurn,
   type RuntimeSessionBusEvent,
@@ -1740,7 +1739,13 @@ export function createSessionRoutes(opts: Opts) {
               })
             : await runSessionPromptTurn({
                 adapter,
-                binding: await requireExecutionBinding(opts, c, directory, id, adapter),
+                admitted: await admitSessionPromptTurn({
+                  adapter,
+                  binding: await requireExecutionBinding(opts, c, directory, id, adapter),
+                  sessionId: id,
+                  directory,
+                  body,
+                }),
                 sessionId: id,
                 directory,
                 body,
@@ -1772,6 +1777,8 @@ export function createSessionRoutes(opts: Opts) {
       } catch (error) {
         if (turnAdmission.lease?.lost()) return lostTurnResponse(id)
         if (isAgentRuntimeTurnConflictError(error)) return turnAdmissionConflict(c)
+        const refusal = sessionTurnRefusal(error)
+        if (refusal) return turnRefused(c, refusal, streamTurnErrorMessage(error))
         throw error
       } finally {
         await turnAdmission.lease?.release().catch(() => undefined)
@@ -2172,7 +2179,6 @@ export function createSessionRoutes(opts: Opts) {
           }
           runTurn = () => runSessionPromptTurn({
             adapter,
-            binding: admitted.binding,
             admitted,
             sessionId: id,
             directory,
@@ -2203,19 +2209,11 @@ export function createSessionRoutes(opts: Opts) {
           } catch (error) {
             settleAdmission?.(error)
             if (isAgentRuntimeTurnConflictError(error)) return
-            const refusal = sessionTurnRefusal(error)
-            // Nothing executed, so the same message id must submit again.
-            if (refusal) releasePromptAdmission(id, body.messageID)
             // Keep a human-safe headline but never discard the cause: route the real
             // message through sessionError (→ firstTurnErrorData), so it classifies
             // (unmatched → "unknown") and the original text reaches the raw-detail
             // disclosure instead of being flattened to the literal "Stream error".
-            opts.publishGlobal(withDir(
-              compatScope(directory, id),
-              refusal
-                ? sessionTurnRefused(refusal, streamTurnErrorMessage(error), id)
-                : sessionError(streamTurnErrorMessage(error), id),
-            ))
+            opts.publishGlobal(withDir(compatScope(directory, id), sessionError(streamTurnErrorMessage(error), id)))
           } finally {
             const leaseLost = turnAdmission.lease?.lost() ?? false
             if (!leaseLost) {
@@ -2238,11 +2236,6 @@ export function createSessionRoutes(opts: Opts) {
         if (isAgentRuntimeTurnConflictError(admissionError)) {
           releasePromptAdmission(id, body.messageID)
           return turnAdmissionConflict(c)
-        }
-        const admissionRefusal = sessionTurnRefusal(admissionError)
-        if (admissionRefusal) {
-          releasePromptAdmission(id, body.messageID)
-          return turnRefused(c, admissionRefusal, streamTurnErrorMessage(admissionError))
         }
         return c.body(null, 204)
       } finally {

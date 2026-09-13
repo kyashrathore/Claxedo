@@ -2097,10 +2097,8 @@ describe("createSessionRoutes session instructions", () => {
     return { app, creates, turns, entered, model, configRead, events, settled }
   }
 
-  function refusals(events: CompatEnvelope[]) {
-    return events
-      .filter((event) => event.payload.type === "session.error")
-      .map((event) => (event.payload as { properties: { error?: { data?: { code?: string } } } }).properties.error?.data?.code)
+  function sessionErrors(events: CompatEnvelope[]) {
+    return events.filter((event) => event.payload.type === "session.error")
   }
 
   function create(app: ReturnType<typeof createSessionRoutes>, body: Record<string, unknown>) {
@@ -2196,12 +2194,14 @@ describe("createSessionRoutes session instructions", () => {
     expect(turns).toEqual([undefined])
   })
 
-  test("refuses the turn when the config read fails, without asking the harness to run it", async () => {
+  test("refuses the turn when the config read fails, with the same coded answer prompt_async gives", async () => {
     const { app, turns, configRead } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     expect((await create(app, { id: "ses_unreadable", instructions: "Answer only in haiku." })).status).toBe(201)
 
     configRead.fails = true
-    expect((await promptTurn(app, "ses_unreadable")).status).toBe(500)
+    const refused = await promptTurn(app, "ses_unreadable")
+    expect(refused.status).toBe(503)
+    expect(await refused.json()).toMatchObject({ error: { code: "session_configuration_unavailable" } })
     expect(turns).toEqual([])
   })
 
@@ -2217,7 +2217,7 @@ describe("createSessionRoutes session instructions", () => {
     expect(refused.status).toBe(503)
     expect(await refused.json()).toMatchObject({ error: { code: "session_configuration_unavailable" } })
     expect(turns).toEqual([])
-    expect(refusals(events)).toEqual([])
+    expect(sessionErrors(events)).toEqual([])
 
     configRead.fails = false
     expect((await promptAsync(app, "ses_recover", "msg_recover")).status).toBe(204)

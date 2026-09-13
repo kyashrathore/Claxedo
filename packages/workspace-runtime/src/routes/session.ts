@@ -2,7 +2,7 @@ import { HTTPException } from "hono/http-exception"
 import { createSessionRoutes, type SessionRouteContext } from "./session-core"
 import { createChildSessionHost, type ChildWakeAuthor, type PendingChildWake } from "./session-children"
 import { isAgentRuntimeTurnConflictError, type SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime"
-import { runRuntimePromptTurn, runSessionPromptTurn } from "../session/service"
+import { admitSessionPromptTurn, runRuntimePromptTurn, runSessionPromptTurn } from "../session/service"
 import {
   type AgentRuntime,
   type AgentMessage,
@@ -274,10 +274,17 @@ export function SessionRoutes(
         : (async () => {
             const binding = await options?.resolveExecutionBinding?.({ adapter, directory: input.directory, sessionId: input.parentSessionId })
             if (!binding) throw new Error(`Session ${input.parentSessionId} has no complete execution binding`)
+            const admitted = await admitSessionPromptTurn({
+              adapter,
+              binding,
+              sessionId: input.parentSessionId,
+              directory: input.directory,
+              body: input.body,
+            })
             resolve("started")
             return runSessionPromptTurn({
               adapter,
-              binding,
+              admitted,
               sessionId: input.parentSessionId,
               directory: input.directory,
               body: input.body,
