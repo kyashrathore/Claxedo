@@ -123,7 +123,7 @@ describe("Cursor SDK driver", () => {
       await driver.applyConfig({ auth: { "cursor-sdk": { unavailable: true, reason: "auth_failed" } } })
 
       await expect(driver.createAgentSession({ directory: "/workspace", model: "auto", sessionId: "session-d" }))
-        .rejects.toThrow("the account selected for cursor cannot be used: auth_failed")
+        .rejects.toThrow("the cursor credential selected for this workspace cannot be used: auth_failed")
 
       expect(created).toEqual([])
     } finally {

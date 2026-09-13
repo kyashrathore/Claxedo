@@ -161,7 +161,7 @@ test("an unavailable account fails the turn instead of running on the machine lo
 
     expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "models.json"), "utf8"))).toEqual({ providers: {} })
     await expect(adapter.createSession(f.agentDir))
-      .rejects.toThrow("the account selected for pi cannot be used: auth_failed")
+      .rejects.toThrow("the pi credential selected for this workspace cannot be used: auth_failed")
   } finally {
     await adapter.dispose()
     await f.dispose()

@@ -5,6 +5,7 @@ describe("first-turn error taxonomy", () => {
   test.each([
     ["401 Unauthorized: invalid API key", "credential"],
     ["OAuth token expired", "credential"],
+    ["the claude credential selected for this workspace cannot be used: revoked", "credential"],
     ["Claude Code returned an error result: You've reached your Fable 5 limit. Switch to another model to continue.", "usage_limit"],
     ["You've reached your Codex rate limit. It will reset in about 5 hours.", "usage_limit"],
     ["You've reached your Codex usage limit.", "usage_limit"],

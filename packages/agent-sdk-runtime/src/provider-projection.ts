@@ -73,8 +73,13 @@ export function providerProjectionRecord(input: unknown): Record<string, Provide
 }
 
 export class ProviderCredentialUnavailableError extends Error {
+  /**
+   * The word "credential" is in the message because the turn-outcome classifier
+   * reads the message rather than the error: without it the operator is shown a
+   * generic failure for the one problem they can actually fix.
+   */
   constructor(readonly harnessId: string, readonly reason: string) {
-    super(`the account selected for ${harnessId} cannot be used: ${reason}`)
+    super(`the ${harnessId} credential selected for this workspace cannot be used: ${reason}`)
     this.name = "ProviderCredentialUnavailableError"
   }
 }

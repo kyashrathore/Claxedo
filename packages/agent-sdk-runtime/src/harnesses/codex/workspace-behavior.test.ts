@@ -422,7 +422,7 @@ describe("CodexHarnessAdapter", () => {
 
     await adapter.applyConfig({ auth: { "codex-app-server": { unavailable: true, reason: "auth_failed" } } })
     await expect(adapter.createSession(fake.dir))
-      .rejects.toThrow("the account selected for codex cannot be used: auth_failed")
+      .rejects.toThrow("the codex credential selected for this workspace cannot be used: auth_failed")
     await adapter.dispose()
 
     expect(launchedHomes(fake.log)).toEqual([])
