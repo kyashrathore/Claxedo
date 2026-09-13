@@ -64,7 +64,6 @@ describe("runtime config secret scoping", () => {
           secretRefs: { token: shared.id },
         },
       },
-      auth: { legacy: "legacy-local-secret" },
     })
 
     const sharedSnapshot = await getRuntimeConfigSnapshot(undefined, { secretScope: "shared", orgId: "org-a" })
@@ -95,7 +94,7 @@ describe("runtime config secret scoping", () => {
       authMode: "bearer" as const,
       expiresAt: 1_800_000_000_000,
     }
-    await saveUserConfig({ version: 3, mcp: {}, connections: {}, auth: {} })
+    await saveUserConfig({ version: 3, mcp: {}, connections: {} })
     configureAgentConfig({
       projectAuth: async ({ scope }): Promise<Record<string, typeof projection>> =>
         scope === "local" ? { "claude-sdk": projection } : {},
@@ -110,7 +109,6 @@ describe("runtime config secret scoping", () => {
   test("shared runtime snapshots exclude local-only MCP overlays", async () => {
     await saveUserConfig({
       version: 3,
-      auth: {},
       connections: {},
       mcp: {
         "local-stdio": {
