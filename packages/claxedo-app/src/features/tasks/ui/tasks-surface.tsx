@@ -30,14 +30,11 @@ export function TasksSurface(props: TasksSurfaceProps) {
   const page = createMemo(() => props.page?.())
   // The URL owns which task is open; the store carries it so the list marks
   // the row a Back returns to.
-  createEffect(() => {
-    const current = page()
-    store.selectTask(current?.kind === "task" ? current.taskId : undefined)
-  })
+  createEffect(() => store.selectTask(page()?.taskId))
 
   return (
     <Show
-      when={pageOf(page(), "task")}
+      when={page()}
       fallback={
         <TasksView
           store={store}
@@ -62,8 +59,4 @@ export function TasksSurface(props: TasksSurfaceProps) {
       )}
     </Show>
   )
-}
-
-function pageOf(page: TasksPage | undefined, kind: "task") {
-  return page?.kind === kind ? page : undefined
 }

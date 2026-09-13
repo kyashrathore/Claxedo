@@ -79,17 +79,9 @@ const isContentType = (v: unknown): v is ContentType =>
  */
 /** A nested Tasks page is dropped rather than trusted: a restored tab may not deep-link anywhere. */
 function validateTasksPage(input: unknown): TasksPage | undefined {
-  if (!isRecord(input)) return undefined
-  if (input.kind === "presets") return { kind: "presets" }
-  if (input.kind === "task") {
-    const taskId = asString(input.taskId)
-    return taskId === undefined ? undefined : { kind: "task", taskId }
-  }
-  if (input.kind === "preset") {
-    const presetId = asString(input.presetId)
-    return presetId === undefined ? undefined : { kind: "preset", presetId }
-  }
-  return undefined
+  if (!isRecord(input) || input.kind !== "task") return undefined
+  const taskId = asString(input.taskId)
+  return taskId === undefined ? undefined : { kind: "task", taskId }
 }
 
 function validateContentPayload(input: unknown, type: ContentType): ContentPayload | undefined {

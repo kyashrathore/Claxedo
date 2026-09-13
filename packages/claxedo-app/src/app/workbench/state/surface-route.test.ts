@@ -395,29 +395,6 @@ describe("surface route mirroring", () => {
     ).toBe(tasksRoute({ kind: "task", taskId: "tsk_1" }))
   })
 
-  test("mirrors the preset pages, which the task list does not satisfy", () => {
-    const presets: ContentMeta = {
-      id: "surface_1",
-      type: "tasks",
-      scope: "global",
-      content: { type: "tasks", page: { kind: "presets" } },
-    }
-    const preset: ContentMeta = {
-      id: "surface_2",
-      type: "tasks",
-      scope: "global",
-      content: { type: "tasks", page: { kind: "preset", presetId: "pre_1" } },
-    }
-
-    expect(surfaceRoute("", presets)).toBe(tasksRoute({ kind: "presets" }))
-    expect(surfaceRoute("", preset)).toBe(tasksRoute({ kind: "preset", presetId: "pre_1" }))
-    expect(routeMatchesSurface({ tasks: true, tasksPage: { kind: "presets" } }, "", presets)).toBe(true)
-    expect(routeMatchesSurface({ tasks: true, tasksPage: { kind: "presets" } }, "", preset)).toBe(false)
-    expect(
-      routeMatchesSurface({ tasks: true, tasksPage: { kind: "preset", presetId: "pre_1" } }, "", preset),
-    ).toBe(true)
-  })
-
   test("mirrors marketplace surfaces to the global marketplace route", () => {
     expect(
       focusedSurfaceRouteTarget({

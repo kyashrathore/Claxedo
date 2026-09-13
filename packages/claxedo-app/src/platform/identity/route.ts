@@ -8,10 +8,7 @@ import { opaqueWorkspaceRouteId } from "./workspace-route"
  * its own: every Tasks URL opens the same global surface, and a second kind
  * would have to be threaded through every consumer that already handles it.
  */
-export type TasksPage =
-  | { kind: "task"; taskId: string }
-  | { kind: "presets" }
-  | { kind: "preset"; presetId: string }
+export type TasksPage = { kind: "task"; taskId: string }
 
 export type ShellRoute =
   | { kind: "home" }
@@ -67,10 +64,7 @@ export function marketplaceRoute() {
 }
 
 export function tasksRoute(page?: TasksPage) {
-  if (!page) return "/tasks"
-  if (page.kind === "task") return `/tasks/${encodeURIComponent(page.taskId)}`
-  if (page.kind === "preset") return `/tasks/presets/${encodeURIComponent(page.presetId)}`
-  return "/tasks/presets"
+  return page ? `/tasks/${encodeURIComponent(page.taskId)}` : "/tasks"
 }
 
 export function workspaceSessionRoute(workspaceId: string, sessionId?: string) {
@@ -120,10 +114,6 @@ export function legacyDirectoryFromRouteKey(value: string): DirectoryRef | undef
 /** `undefined` is the bare list; `"none"` is a path under /tasks that names no page. */
 function parseTasksPage(parts: string[]): TasksPage | undefined | "none" {
   if (parts.length === 1) return undefined
-  if (parts[1] === "presets") {
-    if (parts.length === 2) return { kind: "presets" }
-    return parts.length === 3 ? { kind: "preset", presetId: segment(parts[2]) } : "none"
-  }
   return parts.length === 2 ? { kind: "task", taskId: segment(parts[1]) } : "none"
 }
 

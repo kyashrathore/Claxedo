@@ -51,10 +51,7 @@ function routeTasksPage(content: RouteContent): TasksPage | undefined {
 
 function sameTasksPage(a: TasksPage | undefined, b: TasksPage | undefined) {
   if (!a || !b) return a === b
-  if (a.kind !== b.kind) return false
-  if (a.kind === "task" && b.kind === "task") return a.taskId === b.taskId
-  if (a.kind === "preset" && b.kind === "preset") return a.presetId === b.presetId
-  return true
+  return a.taskId === b.taskId
 }
 
 function routeSessionRef(content: RouteContent) {
