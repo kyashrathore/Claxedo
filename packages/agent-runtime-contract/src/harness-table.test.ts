@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { HARNESS_IDS, HARNESS_TABLE, harnessForProviderId, isHarnessId } from "./harness-table"
+import { HARNESS_IDS, HARNESS_TABLE, harnessBindingIds, harnessForProviderId, isHarnessId } from "./harness-table"
 
 describe("harness table", () => {
   test("the connect provider leads the list a resolver reads in order", () => {
@@ -36,6 +36,20 @@ describe("harness table", () => {
     expect(HARNESS_TABLE.cursor.machineLoginServes).toEqual(["cursor-acp"])
     expect(HARNESS_TABLE.claude.machineLoginServes).toEqual(["claude-sdk", "claude-acp"])
     expect(HARNESS_TABLE.codex.machineLoginServes).toEqual(HARNESS_TABLE.codex.providerIds)
+  })
+
+  test("the vendor id is one of the harness's own providers and is not its connect provider", () => {
+    for (const harness of HARNESS_IDS) {
+      const record = HARNESS_TABLE[harness]
+      expect(record.providerIds).toContain(record.vendorProvider)
+      expect(record.vendorProvider).not.toBe(record.connectProvider)
+    }
+  })
+
+  test("a harness's own bindings are its providers without the vendor id", () => {
+    expect(harnessBindingIds("claude")).toEqual(["claude-sdk", "claude-acp"])
+    expect(harnessBindingIds("codex")).toEqual(["codex-app-server"])
+    expect(harnessBindingIds("cursor")).toEqual(["cursor-sdk", "cursor-acp"])
   })
 
   test("isHarnessId accepts exactly the listed harnesses", () => {

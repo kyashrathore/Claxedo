@@ -34,6 +34,13 @@ export type HarnessRecord = {
   /** The provider id a sign-in for this harness is stored against. */
   connectProvider: string
   /**
+   * The one id in `providerIds` that names the vendor rather than this
+   * harness's own binding. `providerIds` minus this is the set of bindings the
+   * harness resolves auth through, which is what a reader comparing a login's
+   * reach against the harness's own bindings has to compare with.
+   */
+  vendorProvider: string
+  /**
    * Those of `providerIds` the CLI's own login drives. `cursor-agent login`
    * signs the CLI in and Cursor ACP runs on it; the Cursor SDK takes its key as
    * an `Agent.create` argument and refuses a turn however signed in the CLI is.
@@ -47,6 +54,7 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
     vendor: "Anthropic",
     providerIds: ["claude-sdk", "claude-acp", "anthropic"],
     connectProvider: "claude-sdk",
+    vendorProvider: "anthropic",
     machineLoginServes: ["claude-sdk", "claude-acp"],
   },
   codex: {
@@ -54,6 +62,7 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
     vendor: "OpenAI",
     providerIds: ["codex-app-server", "openai"],
     connectProvider: "codex-app-server",
+    vendorProvider: "openai",
     machineLoginServes: ["codex-app-server", "openai"],
   },
   cursor: {
@@ -61,6 +70,7 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
     vendor: "Cursor",
     providerIds: ["cursor-sdk", "cursor-acp", "cursor"],
     connectProvider: "cursor-sdk",
+    vendorProvider: "cursor",
     machineLoginServes: ["cursor-acp"],
   },
 }
@@ -76,4 +86,10 @@ export function isHarnessId(value: string): value is HarnessId {
  */
 export function harnessForProviderId(id: string): HarnessId | undefined {
   return HARNESS_IDS.find((harness) => HARNESS_TABLE[harness].providerIds.includes(id))
+}
+
+/** The bindings a harness resolves its own auth through: everything but the vendor id. */
+export function harnessBindingIds(harness: HarnessId): string[] {
+  const record = HARNESS_TABLE[harness]
+  return record.providerIds.filter((id) => id !== record.vendorProvider)
 }
