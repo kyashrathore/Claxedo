@@ -1,10 +1,14 @@
+/**
+ * Real native harnesses use an isolated server and scripted model HTTP only.
+ * Offline browser tests keep the server and tool process online; filesystem
+ * completion and canonical messages establish what happened during the outage.
+ */
 import { expectSessionRenamePersistence } from "../helpers/session-rename"
 import { expectSessionReadRecovery } from "../helpers/session-read-recovery"
 import { expectUnsupportedFork } from "../helpers/unsupported-fork"
 import { expectRunningChildCleanup } from "../helpers/running-child-cleanup"
 import { deletePendingQuestion } from "../helpers/question-deletion"
 import { expectToolErrorRecovery } from "../helpers/tool-error-recovery"
-/** Real native-harness browser journeys against an isolated self-host server and scripted model HTTP endpoints. */
 import { expectConcurrentQuestionIsolation } from "../helpers/question-isolation"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { expectPermissionReplyIsolation } from "../helpers/permission-isolation"
@@ -24,6 +28,7 @@ import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount } from "../helpers/turn-oracle-extras"
 import { expectRailRowVisible, expectRailStatusAbsent, expectRailTitleSettled, readRailSessionOrder } from "../helpers/rail-oracle"
 import { readPaintGeometry } from "../helpers/geometry-oracle"
+import { startNetworkProxy } from "../helpers/network-proxy"
 
 const execFileAsync = promisify(execFile)
 
@@ -1775,6 +1780,103 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
+
+  const outageTest = test.extend<{ network: Awaited<ReturnType<typeof startNetworkProxy>> }>({
+    network: async ({ baseURL }, use) => {
+      const network = await startNetworkProxy(new URL(baseURL!))
+      try { await use(network) } finally { await network.close() }
+    },
+    proxy: async ({ network }, use) => {
+      await use({ server: network.url, bypass: "<-loopback>" })
+    },
+  })
+
+  outageTest("Claude tool completion reconciles after the browser reconnects and reloads", async ({ page, network }, testInfo) => {
+    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+    requireBinary(binary, "claude", "install Claude to exercise native tool completion through a browser outage.")
+    const dir = await makeWorkspace("claude-offline-tool", "claude")
+    const releaseFile = path.join(dir, "release-tool")
+    const startedFile = path.join(dir, "tool-started")
+    const completedFile = path.join(dir, "tool-completed")
+    const marker = `OFFLINE_TOOL_DONE_${Date.now()}`
+    const script = path.join(dir, "offline-tool.cjs")
+    await fs.writeFile(script, `
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(startedFile)}, "started");
+const timer = setInterval(() => {
+  if (!fs.existsSync(${JSON.stringify(releaseFile)})) return;
+  clearInterval(timer);
+  fs.writeFileSync(${JSON.stringify(completedFile)}, ${JSON.stringify(marker)});
+  console.log(${JSON.stringify(marker)});
+}, 20);
+setTimeout(() => process.exit(2), 60000).unref();
+`)
+    const sockets: Array<{ url: string; closed: boolean }> = []
+    page.on("websocket", socket => {
+      if (!socket.url().includes("/api/claxedo/events")) return
+      const entry = { url: socket.url(), closed: false }
+      sockets.push(entry)
+      socket.on("close", () => { entry.closed = true })
+    })
+    try {
+      await seedOneProject(page, dir)
+      await page.goto(`/${slug(dir)}/session`)
+      await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible()
+      await switchDraftHarness(page, "claude")
+      await waitForHarnessReady(page)
+      await page.locator('[data-action="prompt-permission-mode"]').last().click()
+      await page.locator('[data-permission-mode-row][data-mode="bypassPermissions"]').click()
+      scripted!.scriptTool({ name: "Bash", input: { command: `node '${script}'`, timeout: 120000 }, whenPromptIncludes: marker })
+      await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Run the requested command, then reply with exactly this one token: ${marker}`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expect.poll(() => fs.readFile(startedFile, "utf8").catch(error => {
+        if (error.code === "ENOENT") return ""
+        throw error
+      }), { message: "the real tool process starts", timeout: 30_000 }).toBe("started")
+      const sessionID = new URL(page.url()).pathname.split("/").at(-1)!
+      const endpoint = `${BACKEND_URL}/session/${sessionID}/message?directory=${encodeURIComponent(dir)}`
+      const readTools = async () => {
+        const response = await fetch(endpoint)
+        expect(response.ok).toBe(true)
+        const rows = await response.json() as Array<{ parts: Array<{ id: string; type: string; state?: { status: string; output?: string } }> }>
+        return rows.flatMap(row => row.parts).filter(part => part.type === "tool")
+      }
+      const tools = await readTools()
+      expect(tools).toHaveLength(1)
+      expect(tools[0].state?.status).toBe("running")
+      const part = page.locator(SELECTORS.toolPart(tools[0].id))
+      const status = part.locator('[data-slot="basic-tool-tool-title"]')
+      await expect(status).toBeVisible()
+      await expect(status).toContainText("Running")
+      const connected = sockets.filter(socket => !socket.closed)
+      expect(connected.length, "the browser has an active central event WebSocket").toBeGreaterThan(0)
+      await page.screenshot({ path: testInfo.outputPath("tool-running-before-disconnect.png") })
+      network.disconnect()
+      await expect.poll(() => connected.every(socket => socket.closed), { message: "the outage closes the existing event connection" }).toBe(true)
+      await fs.writeFile(releaseFile, "release")
+      await expect.poll(() => fs.readFile(completedFile, "utf8").catch(error => {
+        if (error.code === "ENOENT") return ""
+        throw error
+      }), { message: "the real tool completes while the browser is offline" }).toBe(marker)
+      await expect.poll(async () => (await readTools())[0]?.state?.status, { timeout: 30_000 }).toBe("completed")
+      await fs.writeFile(testInfo.outputPath("canonical-tools-while-offline.json"), JSON.stringify(await readTools(), null, 2))
+      await page.screenshot({ path: testInfo.outputPath("tool-after-completion-while-offline.png") })
+      network.reconnect()
+      await expect.poll(() => sockets.some(socket => !socket.closed && !connected.includes(socket)), { message: "the browser opens a new event connection", timeout: 30_000 }).toBe(true)
+      await expectAssistantReplyVisible(page, marker)
+      await expect(status).not.toContainText("Running")
+      await expect(status).toContainText("Ran")
+      await page.screenshot({ path: testInfo.outputPath("tool-settled-after-reconnect.png") })
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expectAssistantReplyVisible(page, marker)
+      await expect(status).not.toContainText("Running")
+      expect((await readTools())[0]?.state).toMatchObject({ status: "completed", output: expect.stringContaining(marker) })
+    } finally {
+      network.reconnect()
+      await fs.writeFile(releaseFile, "release")
+      await fs.writeFile(testInfo.outputPath("event-connections.json"), JSON.stringify(sockets, null, 2))
+    }
+  })
 
   for (const [harness, longOutput, runningCommand] of [["claude", false, false], ["codex", false, false], ["codex", true, false], ["codex", false, true]] as const) {
     test(runningCommand ? "Codex running shell paints its command before completion" : longOutput ? "Codex completed shell exposes all 240 output lines after reload" : `${harness} native long-running tool retains its result through reload`, async ({ page }) => {
