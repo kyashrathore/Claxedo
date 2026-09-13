@@ -149,6 +149,17 @@ export type DaytonaSandboxDriverOptions = {
   operationTimeoutSeconds?: number
   /** Injected for tests. */
   client?: DaytonaClientLike
+  /**
+   * Sink for the two operator-visible events this driver has no other way to
+   * report: a restart it had to force on a live sandbox, and an org secret
+   * under this workspace's prefix that it did not mint and therefore emptied
+   * without mounting.
+   *
+   * Defaults to `console.warn`, deliberately unconditional — the same
+   * reasoning as `onEgressUnenforced` in index.ts. Pass your own to route them
+   * into a logger; pass `() => {}` only if you have another way to see them.
+   */
+  warn?: (message: string) => void
 }
 
 type DaytonaCreateParams = CreateSandboxFromImageParams | CreateSandboxFromSnapshotParams
@@ -167,14 +178,6 @@ const SECRET_LIST_PAGE_SIZE = 200
  * name to an existing mount.
  */
 const SENTINEL_SECRET_ENV = "CLAXEDO_BROKERED_SECRET_SLOT"
-/**
- * Written over a withdrawn secret, with its allowed hosts emptied. Rotations
- * take effect for outbound substitution within seconds, while unmounting or
- * deleting a secret a live sandbox references has no such documented window —
- * so the dead value is what actually ends the credential's authority, and the
- * mount is left alone because changing the mounted names restarts the
- * container.
- */
 const REVOKED_SECRET_VALUE = "claxedo-revoked"
 // A bounded walk, so a client that ignores the "short page ends it" rule costs
 // a finite sweep instead of an infinite one.
@@ -232,21 +235,34 @@ async function listWorkspaceSecrets(secrets: DaytonaSecretServiceLike, workspace
   const prefix = workspaceSecretPrefix(workspaceId)
   const held = new Map<string, DaytonaSecretLike>()
   let cursor: string | undefined
-  do {
-    const page = await secrets.list({ name: prefix, limit: SECRET_LIST_PAGE_SIZE, ...(cursor ? { cursor } : {}) })
-    for (const secret of page.items ?? []) {
+  for (let page = 0; page < MAX_LIST_PAGES; page++) {
+    const result = await secrets.list({ name: prefix, limit: SECRET_LIST_PAGE_SIZE, ...(cursor ? { cursor } : {}) })
+    for (const secret of result.items ?? []) {
       // `name` matches partially, so the page can carry another workspace's
       // secrets; the prefix test is the real filter.
       if (secret.name.startsWith(prefix)) held.set(secret.name, secret)
     }
-    cursor = page.nextCursor ?? undefined
-  } while (cursor)
+    cursor = result.nextCursor ?? undefined
+    if (!cursor) break
+  }
   return held
 }
 
-async function withdrawSecret(secrets: DaytonaSecretServiceLike, secret: DaytonaSecretLike) {
-  await secrets.update(secret.id, { value: REVOKED_SECRET_VALUE })
-  await secrets.delete(secret.id)
+/**
+ * End a secret's authority, and optionally drop the row.
+ *
+ * The dead value and the empty host list are what actually end it: rotations
+ * take effect for outbound substitution within seconds, while unmounting or
+ * deleting a secret a live sandbox references has no such documented window.
+ * `delete` is for a workspace that will never mount the row again.
+ */
+async function withdrawSecret(
+  secrets: DaytonaSecretServiceLike,
+  secret: DaytonaSecretLike,
+  options: { delete: boolean },
+) {
+  await secrets.update(secret.id, { value: REVOKED_SECRET_VALUE, hosts: [] })
+  if (options.delete) await secrets.delete(secret.id)
 }
 
 /** Markers this driver's SDK has been seen to use for a retryable failure. */
@@ -306,6 +322,7 @@ export function createDaytonaSandboxDriver(
   const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
   const previewExpiry = options.previewExpirySeconds ?? DEFAULT_PREVIEW_EXPIRY_S
   const operationTimeout = options.operationTimeoutSeconds ?? DEFAULT_OPERATION_TIMEOUT_S
+  const warn = options.warn ?? ((message: string) => console.warn(message))
 
   function workspaceDirectory(input: SandboxDriverEnsureInput) {
     return input.workspaceRoot ?? workspaceDir
@@ -415,8 +432,9 @@ export function createDaytonaSandboxDriver(
    * Bring the workspace's org secrets to exactly the requested set and return
    * the reference map to mount.
    *
-   * The secrets the workspace holds ARE the previously mounted set, so the
-   * listing is what tells a rotation from a name change.
+   * The org-secret listing is the only inventory of what this workspace last
+   * mounted, so comparing it against the requested set is what tells a value
+   * rotation from a change to the mounted names.
    *
    * `withdraw` is false only on a create whose caller named no secrets at all:
    * "say nothing" is not "remove everything", and org secrets outlive the
@@ -443,6 +461,11 @@ export function createDaytonaSandboxDriver(
       if (secret.hosts.length === 0) {
         throw new Error(`daytona brokered secret "${secret.name}" requires at least one host in its egress allowlist`)
       }
+      // `methods` and `pathPrefixes` are dropped: Daytona substitutes the
+      // placeholder wherever the sandbox wrote it on egress to `hosts` and has
+      // no expression for the request line, so the host allowlist is the whole
+      // containment here. Everything else in the sandbox reaches the same host,
+      // and a vendor host serves more than the routes a turn needs.
       const name = daytonaSecretName(input.workspaceId, secret.name)
       desired.add(name)
       references[secret.name] = name
@@ -454,17 +477,17 @@ export function createDaytonaSandboxDriver(
     if (options.withdraw) {
       for (const [name, secret] of existing) {
         if (desired.has(name)) continue
-        await secrets.update(secret.id, { value: REVOKED_SECRET_VALUE, hosts: [] })
-        // Emptied, not unmounted, on a sandbox that is already running:
-        // dropping the name shrinks the mounted set, and a changed set of names
-        // restarts the container, which on a withdrawal kills whatever turn is
-        // in it. A sandbox being created has nothing to preserve and no turn to
-        // kill, so a dead leftover from an earlier sandbox is not mounted on
-        // it at all. `destroy` is what finally deletes either one.
+        await withdrawSecret(secrets, secret, { delete: false })
+        // Left mounted, on a sandbox that is already running: dropping the name
+        // shrinks the mounted set, and a changed set of names restarts the
+        // container, which on a withdrawal kills whatever turn is in it. A
+        // sandbox being created has nothing to preserve and no turn to kill, so
+        // a dead leftover from an earlier sandbox is not mounted on it at all.
+        // `destroy` is what finally deletes either one.
         if (!options.mountWithdrawn) continue
         const envName = daytonaSecretEnvName(input.workspaceId, name)
         if (!envName) {
-          console.warn(
+          warn(
             `[sandbox-manager] daytona org secret ${name} matches workspace ${input.workspaceId}'s prefix `
             + "but was not minted by this driver; it was emptied and left unmounted",
           )
@@ -480,7 +503,13 @@ export function createDaytonaSandboxDriver(
     return { references, mountedNamesChanged }
   }
 
-  function isRunning(sandbox: DaytonaSandboxLike) {
+  /**
+   * A sandbox this driver must assume is serving a runtime. A client that
+   * reports no state at all is counted in: the cost of a needless restart is a
+   * cold boot, and the cost of skipping a needed one is a turn that never sees
+   * the credential it was just granted.
+   */
+  function mayBeRunning(sandbox: DaytonaSandboxLike) {
     return !sandbox.state || sandbox.state === "started"
   }
 
@@ -491,7 +520,7 @@ export function createDaytonaSandboxDriver(
    * that `readyTarget` finds — or starts — carries the new placeholder.
    */
   async function restartForMountedSecrets(sandbox: DaytonaSandboxLike, workspaceId: string) {
-    console.warn(
+    warn(
       `[sandbox-manager] restarting daytona sandbox ${sandbox.id} (workspace ${workspaceId}): `
       + "the set of brokered secret names changed and mounted env vars only reach processes spawned after the change",
     )
@@ -499,13 +528,10 @@ export function createDaytonaSandboxDriver(
     await sandbox.start(operationTimeout)
   }
 
-  /**
-   * Mount `plan` on a sandbox this call did not create, restarting it when the
-   * names changed. Returns false when the caller must report `provisioning`.
-   */
+  /** Mount `plan` on a sandbox this call did not create, restarting it when the names changed. */
   async function applyBrokeredSecrets(sandbox: DaytonaSandboxLike, plan: BrokeredSecretPlan, workspaceId: string) {
     await sandbox.updateSecrets(plan.references)
-    if (plan.mountedNamesChanged && isRunning(sandbox)) {
+    if (plan.mountedNamesChanged && mayBeRunning(sandbox)) {
       await restartForMountedSecrets(sandbox, workspaceId)
     }
   }
@@ -724,26 +750,28 @@ export function createDaytonaSandboxDriver(
     },
 
     async destroy(target) {
-      // Org secrets are org-scoped, not sandbox-scoped: deleting the sandbox
-      // leaves every credential brokered to it live in the organization, and
-      // `reconcileBrokeredSecrets` — the only other withdrawal — runs solely
-      // while ensuring or resuming the same workspace, which a destroyed one
-      // never reaches again. So destroy is the last place the withdrawal can
-      // happen, and a target that cannot name its workspace cannot name the
-      // secrets either: refuse rather than return with them still spendable.
-      if (!target.workspaceId) {
-        throw new Error(
-          `daytona cannot withdraw the brokered secrets of sandbox ${target.sandboxId}: the destroy target names no workspace`,
-        )
-      }
       await sandboxById(target.sandboxId)
         .then((sandbox) => sandbox.delete(operationTimeout))
         .catch((err) => {
           if (driverErrorSignals(err).status !== 404) throw err
         })
+      // Org secrets are org-scoped, not sandbox-scoped: deleting the sandbox
+      // leaves every credential brokered to it spendable in the organization,
+      // and `reconcileBrokeredSecrets` — the only other withdrawal — runs
+      // solely while ensuring or resuming the same workspace, which a destroyed
+      // one never reaches again. So destroy is the last place the withdrawal
+      // can happen, and a target that cannot name its workspace cannot name the
+      // secrets: raise rather than return with them still spendable. Raised
+      // after the delete, so a caller that cannot name the workspace still
+      // loses the sandbox instead of both.
+      if (!target.workspaceId) {
+        throw new Error(
+          `daytona deleted sandbox ${target.sandboxId} but cannot withdraw its brokered secrets: the destroy target names no workspace`,
+        )
+      }
       const secrets = await brokeredSecretService()
       for (const secret of (await listWorkspaceSecrets(secrets, target.workspaceId)).values()) {
-        await withdrawSecret(secrets, secret)
+        await withdrawSecret(secrets, secret, { delete: true })
       }
     },
 

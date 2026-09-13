@@ -89,13 +89,13 @@ describe("CloudflareSandboxDriver", () => {
     await driver.ensureHost({
       ...createInput,
       env: { MODEL_KEY: "sk-model" },
-      secrets: [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"], header: "Authorization" }],
+      secrets: [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"], header: "Authorization", methods: ["POST"], pathPrefixes: ["/v1"] }],
     })
 
     const ensure = calls.find((c) => c.url.endsWith("/ensure-runtime"))!
     // Egress registration carries the value server-to-server (API_TOKEN-gated).
     expect(ensure.body.egress).toEqual([
-      { name: "NOTION_TOKEN", hosts: ["api.notion.com"], header: "Authorization", value: "ntn-secret" },
+      { name: "NOTION_TOKEN", hosts: ["api.notion.com"], header: "Authorization", value: "ntn-secret", methods: ["POST"], pathPrefixes: ["/v1"] },
     ])
     // The value is NOT in the container env channel.
     expect(JSON.stringify(ensure.body.env)).not.toContain("ntn-secret")
@@ -113,6 +113,8 @@ describe("CloudflareSandboxDriver", () => {
         hosts: ["api.anthropic.com"],
         header: "Authorization",
         scheme: "Bearer",
+        methods: ["POST"],
+        pathPrefixes: ["/v1/messages"],
       }],
     })
 
@@ -122,6 +124,10 @@ describe("CloudflareSandboxDriver", () => {
       hosts: ["api.anthropic.com"],
       header: "Authorization",
       value: "Bearer sk-ant-oat01-fixture",
+      // Forwarded as stated, including empty: the Worker is where the request
+      // is seen and therefore where a route outside them is refused.
+      methods: ["POST"],
+      pathPrefixes: ["/v1/messages"],
     }])
     expect(ensure.body.env.CLAXEDO_PROVIDER_CLAUDE_SDK).toBe("claxedo-broker:CLAXEDO_PROVIDER_CLAUDE_SDK")
     expect(JSON.stringify(ensure.body.env)).not.toContain("sk-ant-oat01-fixture")

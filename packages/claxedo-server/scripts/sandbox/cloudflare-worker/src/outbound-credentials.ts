@@ -1,6 +1,23 @@
 import { isWorkerRecord } from "./worker-json"
 
-export type EgressRegistration = { name: string; hosts: string[]; header: string; value: string }
+export type EgressRegistration = {
+  name: string
+  hosts: string[]
+  header: string
+  value: string
+  /**
+   * The request line the credential may be attached to, on top of `hosts`.
+   * A vendor host serves far more than the routes a turn needs, and everything
+   * sharing the sandbox reaches the same host.
+   *
+   * Empty means the producer named a host and nothing else, and nothing is
+   * spendable at a host alone: the placeholder is then refused everywhere, so a
+   * producer that predates the policy fails closed rather than forwarding the
+   * operator's key to whatever route a request happened to name.
+   */
+  methods: string[]
+  pathPrefixes: string[]
+}
 
 const PLACEHOLDER_PREFIX = "claxedo-broker:"
 
@@ -24,6 +41,7 @@ function presentsPlaceholder(request: Request) {
 }
 
 const HOST_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/
+const METHOD_PATTERN = /^[A-Z]+$/
 
 /** A non-empty list of plain hostnames, or nothing: one bad entry rejects the list. */
 function registrationHosts(value: unknown): string[] | undefined {
@@ -36,24 +54,57 @@ function registrationHosts(value: unknown): string[] | undefined {
   return hosts
 }
 
+/**
+ * A list of strings every entry of which passes `valid`, or nothing: one bad
+ * entry rejects the list, the same rule `registrationHosts` follows. An absent
+ * field is an empty list rather than a rejection, so a producer that predates
+ * the policy still provisions its sandbox and is refused only at the request.
+ */
+function registrationStrings(value: unknown, valid: (entry: string) => boolean): string[] | undefined {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) return undefined
+  const entries: string[] = []
+  for (const entry of value) {
+    if (typeof entry !== "string" || !valid(entry)) return undefined
+    entries.push(entry)
+  }
+  return entries
+}
+
 export function parseRegistrations(input: unknown): EgressRegistration[] {
   if (!Array.isArray(input)) throw new Error("egress must be an array")
   const names = new Set<string>()
   return input.map((entry: unknown) => {
     if (!isWorkerRecord(entry)) throw new Error("invalid egress registration")
     const hosts = registrationHosts(entry.hosts)
+    const methods = registrationStrings(entry.methods, (method) => METHOD_PATTERN.test(method))
+    const pathPrefixes = registrationStrings(entry.pathPrefixes, (prefix) => prefix.startsWith("/"))
     if (typeof entry.name !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(entry.name)
       || names.has(entry.name) || typeof entry.header !== "string" || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(entry.header)
       || typeof entry.value !== "string" || !entry.value || /[\r\n]/.test(entry.value)
-      || !hosts) {
+      || !hosts || !methods || !pathPrefixes) {
       throw new Error("invalid egress registration")
     }
     if (["host", "content-length", "connection", "transfer-encoding", "cookie", "proxy-authorization"].includes(entry.header.toLowerCase())) {
       throw new Error("invalid credential header")
     }
     names.add(entry.name)
-    return { name: entry.name, header: entry.header, value: entry.value, hosts }
+    return { name: entry.name, header: entry.header, value: entry.value, hosts, methods, pathPrefixes }
   })
+}
+
+/**
+ * Whether the credential may ride on this request line.
+ *
+ * Encoded separators and dot segments are refused outright: an upstream router
+ * can decode `%2f` and `%2e%2e` differently from `URL`, so a path that passes
+ * the prefix test here can name another route there.
+ */
+function withinPolicy(row: EgressRegistration, method: string, pathname: string) {
+  if (/%(?:2f|5c|2e|25)/i.test(pathname) || pathname.includes("\\")) return false
+  if (!row.methods.includes(method)) return false
+  return row.pathPrefixes.some((prefix) => pathname === prefix
+    || pathname.startsWith(prefix.endsWith("/") ? prefix : `${prefix}/`))
 }
 
 export async function forwardCredential(request: Request, options: {
@@ -90,6 +141,7 @@ export async function forwardCredential(request: Request, options: {
   })
   if (matches.length !== 1) return new Response("Forbidden", { status: 403 })
   const selected = matches[0]
+  if (!withinPolicy(selected, request.method, url.pathname)) return new Response("Forbidden", { status: 403 })
   const headers = new Headers(request.headers)
   for (const name of ["authorization", "x-api-key", "cookie", "proxy-authorization", "host", "connection", "transfer-encoding", ...registrations.map((row) => row.header)]) headers.delete(name)
   headers.set(selected.header, selected.value)

@@ -13,7 +13,11 @@ describe("brokered placeholder, driver against worker", () => {
   test.each(["CLAXEDO_PROVIDER_CLAUDE_SDK", "CLAXEDO_GITHUB_CLONE_AUTH", "A"])(
     "the driver mints exactly what the worker matches for %s",
     (name) => {
-      expect(brokeredSecretPlaceholder(name)).toBe(credentialPlaceholder(name))
+      // Anchored to the literal as well as to each other: two sides that agreed
+      // on "" would pass a pure equality check while every request went
+      // upstream bare.
+      expect(brokeredSecretPlaceholder(name)).toBe(`claxedo-broker:${name}`)
+      expect(credentialPlaceholder(name)).toBe(`claxedo-broker:${name}`)
     },
   )
 })

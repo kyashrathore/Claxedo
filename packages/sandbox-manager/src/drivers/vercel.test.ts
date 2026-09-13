@@ -61,7 +61,7 @@ describe("VercelSandboxDriver", () => {
     await driver.ensureHost({
       ...input,
       env: { MODEL_KEY: "sk-model" },
-      secrets: [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"], header: "Authorization" }],
+      secrets: [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"], header: "Authorization", methods: ["POST"], pathPrefixes: ["/v1"] }],
     })
 
     // No create-time policy was requested, so egress stays unrestricted — the
@@ -70,7 +70,10 @@ describe("VercelSandboxDriver", () => {
       {
         allow: {
           "*": [],
-          "api.notion.com": [{ transform: [{ headers: { Authorization: "ntn-secret" } }] }],
+          "api.notion.com": [{
+            match: { path: { startsWith: "/v1" }, method: ["POST"] },
+            transform: [{ headers: { Authorization: "ntn-secret" } }],
+          }],
         },
       },
       expect.anything(),
@@ -94,13 +97,16 @@ describe("VercelSandboxDriver", () => {
         hosts: ["api.anthropic.com"],
         header: "Authorization",
         scheme: "Bearer",
+        methods: ["POST"],
+        pathPrefixes: ["/v1/messages"],
       }],
     })
 
     const merged = (created.updateNetworkPolicy as ReturnType<typeof vi.fn>).mock.calls[0][0]
-    expect(merged.allow["api.anthropic.com"]).toEqual([
-      { transform: [{ headers: { Authorization: "Bearer sk-ant-oat01-fixture" } }] },
-    ])
+    expect(merged.allow["api.anthropic.com"]).toEqual([{
+      match: { path: { startsWith: "/v1/messages" }, method: ["POST"] },
+      transform: [{ headers: { Authorization: "Bearer sk-ant-oat01-fixture" } }],
+    }])
     const createArg = (vercel.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(createArg.env.CLAXEDO_PROVIDER_CLAUDE_SDK).toBe("claxedo-broker:CLAXEDO_PROVIDER_CLAUDE_SDK")
     expect(JSON.stringify(createArg.env)).not.toContain("sk-ant-oat01-fixture")
@@ -118,7 +124,7 @@ describe("VercelSandboxDriver", () => {
     await driver.ensureHost({
       ...input,
       net: { mode: "restricted", hosts: ["github.com", "registry.npmjs.org"] },
-      secrets: [{ name: "ANTHROPIC", value: "sk-ant", hosts: ["api.anthropic.com"], header: "x-api-key" }],
+      secrets: [{ name: "ANTHROPIC", value: "sk-ant", hosts: ["api.anthropic.com"], header: "x-api-key", methods: ["POST"], pathPrefixes: ["/v1/messages"] }],
     })
 
     const createArg = (vercel.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
@@ -134,38 +140,46 @@ describe("VercelSandboxDriver", () => {
     // host carries the header transform.
     expect(merged.allow["github.com"]).toEqual([])
     expect(merged.allow["registry.npmjs.org"]).toEqual([])
-    expect(merged.allow["api.anthropic.com"]).toEqual([
-      { transform: [{ headers: { "x-api-key": "sk-ant" } }] },
-    ])
+    expect(merged.allow["api.anthropic.com"]).toEqual([{
+      match: { path: { startsWith: "/v1/messages" }, method: ["POST"] },
+      transform: [{ headers: { "x-api-key": "sk-ant" } }],
+    }])
   })
+
+  const brokered = {
+    name: "A",
+    value: "v",
+    hosts: ["api.a.test"],
+    header: "x-key",
+    methods: ["POST"],
+    pathPrefixes: ["/v1"],
+  }
+  const brokeredRule = {
+    match: { path: { startsWith: "/v1" }, method: ["POST"] },
+    transform: [{ headers: { "x-key": "v" } }],
+  }
 
   test("an unrestricted base merges to allow-all-plus-brokered, a deny-all base to brokered-only", async () => {
     // The base is a required argument precisely because these two differ: an
     // optional parameter defaulting to deny-all-except-brokered would let a
     // caller keep compiling while its egress silently widens.
-    expect(vercelBrokeredNetworkPolicy(
-      [{ name: "A", value: "v", hosts: ["api.a.test"], header: "x-key" }],
-      undefined,
-    )).toEqual({
-      allow: { "*": [], "api.a.test": [{ transform: [{ headers: { "x-key": "v" } }] }] },
+    expect(vercelBrokeredNetworkPolicy([brokered], undefined)).toEqual({
+      allow: { "*": [], "api.a.test": [brokeredRule] },
     })
 
-    expect(vercelBrokeredNetworkPolicy(
-      [{ name: "A", value: "v", hosts: ["api.a.test"], header: "x-key" }],
-      "deny-all",
-    )).toEqual({
-      allow: { "api.a.test": [{ transform: [{ headers: { "x-key": "v" } }] }] },
+    expect(vercelBrokeredNetworkPolicy([brokered], "deny-all")).toEqual({
+      allow: { "api.a.test": [brokeredRule] },
     })
   })
 
   test("a create-time policy's subnet rules survive the brokered merge", async () => {
     expect(vercelBrokeredNetworkPolicy(
-      [{ name: "A", value: "v", hosts: ["api.a.test"], header: "x-key" }],
+      [brokered],
       { allow: ["github.com"], subnets: { allow: ["10.0.0.0/8"], deny: ["10.1.0.0/16"] } },
     )).toEqual({
       allow: {
         "github.com": [],
-        "api.a.test": [{ transform: [{ headers: { "x-key": "v" } }] }],
+        "api.a.test": [brokeredRule],
       },
       subnets: { allow: ["10.0.0.0/8"], deny: ["10.1.0.0/16"] },
     })
@@ -179,12 +193,19 @@ describe("VercelSandboxDriver", () => {
     await driver.ensureHost({
       ...input,
       net: { mode: "restricted", hosts: [] },
-      secrets: [{ name: "ANTHROPIC", value: "sk-ant", hosts: ["api.anthropic.com"], header: "x-api-key" }],
+      secrets: [{ name: "ANTHROPIC", value: "sk-ant", hosts: ["api.anthropic.com"], header: "x-api-key", methods: ["POST"], pathPrefixes: ["/v1/messages"] }],
     })
 
     expect((vercel.create as ReturnType<typeof vi.fn>).mock.calls[0][0].networkPolicy).toBe("deny-all")
     expect(created.updateNetworkPolicy).toHaveBeenCalledWith(
-      { allow: { "api.anthropic.com": [{ transform: [{ headers: { "x-api-key": "sk-ant" } }] }] } },
+      {
+        allow: {
+          "api.anthropic.com": [{
+            match: { path: { startsWith: "/v1/messages" }, method: ["POST"] },
+            transform: [{ headers: { "x-api-key": "sk-ant" } }],
+          }],
+        },
+      },
       expect.anything(),
     )
   })
@@ -192,8 +213,18 @@ describe("VercelSandboxDriver", () => {
   test("brokered secret without a header is rejected (Vercel firewall injects a header)", async () => {
     const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: factory() })
     await expect(
-      driver.ensureHost({ ...input, secrets: [{ name: "X", value: "v", hosts: ["api.x.com"] }] }),
+      driver.ensureHost({ ...input, secrets: [{ name: "X", value: "v", hosts: ["api.x.com"], methods: ["POST"], pathPrefixes: ["/v1"] }] }),
     ).rejects.toThrow(/header/)
+  })
+
+  test("a secret naming no route policy leaves its host reachable and carries the credential nowhere", () => {
+    // The firewall writes the header on every request it matches, so a secret
+    // whose producer stated no policy would otherwise splice the operator's key
+    // onto whatever route a sandbox process names on that host.
+    expect(vercelBrokeredNetworkPolicy(
+      [{ name: "A", value: "v", hosts: ["api.a.test"], header: "x-key" }],
+      "deny-all",
+    )).toEqual({ allow: { "api.a.test": [] } })
   })
 
   test("ensureHost creates a sandbox from snapshot and starts workspace-runtime as a detached command", async () => {

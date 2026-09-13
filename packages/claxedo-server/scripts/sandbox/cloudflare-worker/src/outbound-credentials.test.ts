@@ -1,7 +1,14 @@
 import { expect, test, vi } from "vitest"
 import { credentialPlaceholder, forwardCredential, parseRegistrations } from "./outbound-credentials"
 
-const registration = { name: "KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer first-secret" }
+const registration = {
+  name: "KEY",
+  hosts: ["api.vendor.test"],
+  header: "Authorization",
+  value: "Bearer first-secret",
+  methods: ["GET", "POST"],
+  pathPrefixes: ["/v1"],
+}
 const request = (authorization = `Bearer ${credentialPlaceholder("KEY")}`, url = "https://api.vendor.test/v1/messages") => new Request(url, { headers: { Authorization: authorization, Cookie: "session=private" } })
 
 test("reads authority on every request so rotation and withdrawal affect existing placeholders", async () => {
@@ -98,7 +105,53 @@ test("the upstream request keeps the original url the client asked for", async (
 
 test("registration validation rejects malformed and ambiguous input", () => {
   expect(parseRegistrations([registration])).toEqual([registration])
-  for (const rows of [null, {}, [registration, registration], [{ ...registration, hosts: ["*.vendor.test"] }], [{ ...registration, header: "Host" }], [{ ...registration, value: "bad\r\nheader" }]]) {
+  for (const rows of [
+    null,
+    {},
+    [registration, registration],
+    [{ ...registration, hosts: ["*.vendor.test"] }],
+    [{ ...registration, header: "Host" }],
+    [{ ...registration, value: "bad\r\nheader" }],
+    [{ ...registration, methods: ["post"] }],
+    [{ ...registration, methods: "POST" }],
+    [{ ...registration, pathPrefixes: ["v1/messages"] }],
+  ]) {
     expect(() => parseRegistrations(rows)).toThrow()
   }
+})
+
+test("the credential rides only the routes the destination allows", async () => {
+  const upstream = vi.fn(async (input: Request) => new Response(input.headers.get("Authorization")))
+  const rows = [{ ...registration, pathPrefixes: ["/v1/messages"], methods: ["POST"] }]
+  const options = { registrations: async () => rows, fetch: upstream }
+
+  const allowed = await forwardCredential(
+    new Request("https://api.vendor.test/v1/messages", { method: "POST", headers: { Authorization: `Bearer ${credentialPlaceholder("KEY")}` } }),
+    options,
+  )
+  expect(allowed.status).toBe(200)
+  expect(await allowed.text()).toBe("Bearer first-secret")
+
+  for (const outside of [
+    new Request("https://api.vendor.test/v1/organizations", { method: "POST", headers: { Authorization: `Bearer ${credentialPlaceholder("KEY")}` } }),
+    new Request("https://api.vendor.test/v1/messages-other", { method: "POST", headers: { Authorization: `Bearer ${credentialPlaceholder("KEY")}` } }),
+    new Request("https://api.vendor.test/v1/messages/%2e%2e/organizations", { method: "POST", headers: { Authorization: `Bearer ${credentialPlaceholder("KEY")}` } }),
+    new Request("https://api.vendor.test/v1/messages", { method: "GET", headers: { Authorization: `Bearer ${credentialPlaceholder("KEY")}` } }),
+  ]) {
+    expect((await forwardCredential(outside, options)).status).toBe(403)
+  }
+  expect(upstream).toHaveBeenCalledTimes(1)
+})
+
+test("a registration that states no route policy spends the credential nowhere", async () => {
+  // A producer that predates the policy still provisions its sandbox — the
+  // parse accepts it — and is refused at every request instead of forwarding
+  // the operator's key to whatever route a sandbox process happens to name.
+  const upstream = vi.fn(async () => new Response("forwarded"))
+  const { methods, pathPrefixes, ...stale } = registration
+  const parsed = parseRegistrations([stale])
+  expect(parsed[0]).toMatchObject({ methods: [], pathPrefixes: [] })
+
+  expect((await forwardCredential(request(), { registrations: async () => parsed, fetch: upstream })).status).toBe(403)
+  expect(upstream).not.toHaveBeenCalled()
 })

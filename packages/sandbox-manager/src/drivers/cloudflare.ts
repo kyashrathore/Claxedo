@@ -232,7 +232,17 @@ export function createCloudflareSandboxDriver(
       // The Worker writes this as the whole header value, so the scheme the
       // harness wrote in front of the placeholder has to be composed back in.
       const value = secret.scheme ? `${secret.scheme} ${secret.value}` : secret.value
-      return { name: secret.name, hosts: secret.hosts, header: secret.header, value }
+      // Forwarded verbatim, including empty: the Worker is where the request is
+      // seen, so it is where the refusal belongs, and a policy invented here
+      // would be a second answer to what the destination allows.
+      return {
+        name: secret.name,
+        hosts: secret.hosts,
+        header: secret.header,
+        value,
+        methods: [...secret.methods ?? []],
+        pathPrefixes: [...secret.pathPrefixes ?? []],
+      }
     })
   }
 
