@@ -21,11 +21,15 @@ describe("harness table", () => {
     expect(harnessForProviderId("claude-acp")).toBe("claude")
     expect(harnessForProviderId("cursor-sdk")).toBe("cursor")
     expect(harnessForProviderId("openai")).toBe("codex")
-    expect(harnessForProviderId("anthropic")).toBeUndefined()
+    expect(harnessForProviderId("anthropic")).toBe("claude")
+    expect(harnessForProviderId("cursor")).toBe("cursor")
+    expect(harnessForProviderId("openrouter")).toBeUndefined()
   })
 
-  test("the Cursor SDK is not served by the CLI login", () => {
+  test("a CLI login serves only the bindings it actually drives", () => {
     expect(HARNESS_TABLE.cursor.machineLoginServes).toEqual(["cursor-acp"])
+    expect(HARNESS_TABLE.claude.machineLoginServes).toEqual(["claude-acp", "claude-sdk"])
+    expect(HARNESS_TABLE.codex.machineLoginServes).toEqual(HARNESS_TABLE.codex.providerIds)
   })
 
   test("isHarnessId accepts exactly the listed harnesses", () => {

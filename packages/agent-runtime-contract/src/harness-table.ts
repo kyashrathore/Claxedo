@@ -18,7 +18,13 @@ export type HarnessRecord = {
   /** The product's own name, as every surface writes it. */
   label: string
   vendor: string
-  /** Every registry provider id this harness resolves auth through. */
+  /**
+   * Every registry provider id whose stored row this harness can run on: the
+   * bindings it resolves auth through, then the vendor binding it falls back to
+   * when none of them holds an account. `claudeAuthValue` reads `claude-sdk`
+   * then `anthropic`, and `cursorAuthValue` reads `cursor-sdk` then `cursor`,
+   * so a reader that stopped at the aliases would drop a working account.
+   */
   providerIds: readonly string[]
   /** The provider id a sign-in for this harness is stored against. */
   connectProvider: string
@@ -34,7 +40,7 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
   claude: {
     label: "Claude Code",
     vendor: "Anthropic",
-    providerIds: ["claude-acp", "claude-sdk"],
+    providerIds: ["claude-acp", "claude-sdk", "anthropic"],
     connectProvider: "claude-sdk",
     machineLoginServes: ["claude-acp", "claude-sdk"],
   },
@@ -48,7 +54,7 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
   cursor: {
     label: "Cursor",
     vendor: "Cursor",
-    providerIds: ["cursor-acp", "cursor-sdk"],
+    providerIds: ["cursor-acp", "cursor-sdk", "cursor"],
     connectProvider: "cursor-sdk",
     machineLoginServes: ["cursor-acp"],
   },
