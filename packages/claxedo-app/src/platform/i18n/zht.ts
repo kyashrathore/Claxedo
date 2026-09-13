@@ -613,6 +613,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "未登入 — 執行 {{command}}",
   "settings.providers.agents.machineNotInstalled": "未安裝",
   "settings.providers.agents.machineUnknown": "無法詢問該代理",
+  "settings.providers.agents.machineUsageUnreadable": "無法讀取此登入的用量",
   "settings.providers.agents.machineCursorAcp": "適用於 Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK 需要 API 金鑰",
   "settings.providers.agents.machineStrands": "{{name}} 目前設定使用的是此登入無法取代的已儲存金鑰",

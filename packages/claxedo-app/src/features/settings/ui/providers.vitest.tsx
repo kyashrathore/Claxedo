@@ -693,7 +693,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     ].join(" · "))
   })
 
-  test("Claude has no headless usage read, so its machine row says the plan and the org instead", async () => {
+  test("Claude has no headless usage read, so its machine row says the plan, the org and why", async () => {
     state.machineLogins = [{
       harness: "claude",
       providerIds: ["claude-acp", "claude-sdk"],
@@ -704,7 +704,11 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     }]
     mount()
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["machine"]))
-    expect(accountDetail("anthropic", "machine")).toBe("settings.providers.agents.machinePlan:max · Acme")
+    expect(accountDetail("anthropic", "machine")).toBe([
+      "settings.providers.agents.machinePlan:max",
+      "Acme",
+      "settings.providers.agents.machineUsageUnreadable",
+    ].join(" · "))
   })
 
   test("a signed-out harness still offers its own login, because choosing it stores nothing", async () => {

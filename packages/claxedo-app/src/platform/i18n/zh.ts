@@ -616,6 +616,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "未登录 — 运行 {{command}}",
   "settings.providers.agents.machineNotInstalled": "未安装",
   "settings.providers.agents.machineUnknown": "无法询问该智能体",
+  "settings.providers.agents.machineUsageUnreadable": "无法读取此登录的用量",
   "settings.providers.agents.machineCursorAcp": "适用于 Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK 需要 API 密钥",
   "settings.providers.agents.machineStrands": "{{name}} 当前设定使用的是此登录无法替代的已保存密钥",

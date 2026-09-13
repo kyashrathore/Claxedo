@@ -796,10 +796,9 @@ describe("a brokered turn withholds the operator's Claude account", () => {
   })
 })
 
-describe("Claude rate limits reach the runtime carrying the account the turn ran on", () => {
-  const rateLimits = async (auth: Record<string, unknown> | undefined) => {
+describe("Claude rate limits reach the runtime", () => {
+  test("the driver's runtime maps a vendor rate_limit_event to a rate-limit event", async () => {
     const driver = createClaudeSdkDriver(turnHost(), { query: probeQuery(), executable: () => "/fake/claude" })
-    if (auth) void driver.applyConfig({ auth, mcp: {} })
     const runtime = driver.createRuntime("claude-sdk:session-rate")
     const events: AgentRuntimeEvent[] = []
     await ingestClaudeSdkMessage({
@@ -812,28 +811,13 @@ describe("Claude rate limits reach the runtime carrying the account the turn ran
       session_id: "sdk-session-rate",
       rate_limit_info: { status: "rejected", rateLimitType: "five_hour", utilization: 100, resetsAt: 1_757_700_000 },
     } as never, createClaudeTaskLedger())
-    return events.filter((event) => event.type === "rate-limit")
-  }
-
-  test("a brokered turn names the binding it spawned on", async () => {
-    expect(await rateLimits({ "claude-sdk": brokerProjection })).toMatchObject([{
+    expect(events.filter((event) => event.type === "rate-limit")).toMatchObject([{
       type: "rate-limit",
       status: "limited",
       usedPercent: 100,
       resetsAt: 1_757_700_000_000,
       limitId: "five_hour",
       limitName: "session",
-      metadata: { account: brokerProjection.baseUrl },
     }])
-  })
-
-  test("a turn on this machine's own login names no account", async () => {
-    expect((await rateLimits(undefined))[0]?.metadata).toEqual({ harness: "claude", account: null })
-    expect((await rateLimits({}))[0]?.metadata).toEqual({ harness: "claude", account: null })
-  })
-
-  test("a selected account that cannot be bound names no account instead of failing the turn", async () => {
-    expect((await rateLimits({ "claude-sdk": { unavailable: true, reason: "account_withdrawn" } }))[0]?.metadata)
-      .toEqual({ harness: "claude", account: null })
   })
 })

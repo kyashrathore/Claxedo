@@ -786,7 +786,7 @@ function rateLimitResetMs(value: unknown) {
   return Math.round(reset < 1e12 ? reset * 1000 : reset)
 }
 
-function claudeRateLimitEvent(info: Record<string, unknown>, account: string | null) {
+function claudeRateLimitEvent(info: Record<string, unknown>) {
   const utilization = asFiniteNumber(info.utilization)
   const limitId = text(info.rateLimitType)
   return {
@@ -795,13 +795,10 @@ function claudeRateLimitEvent(info: Record<string, unknown>, account: string | n
     ...(utilization === undefined ? {} : { usedPercent: Math.min(100, Math.max(0, Math.round(utilization))) }),
     resetsAt: rateLimitResetMs(info.resetsAt),
     ...(limitId ? { limitId, limitName: CLAUDE_RATE_LIMIT_WINDOWS[limitId] ?? limitId } : {}),
-    // A window is only storable against a harness and an account, and the
-    // envelope names neither.
-    metadata: { harness: "claude", account },
   } satisfies AgentRuntimeEvent
 }
 
-export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = [], account: string | null = null): HarnessEventAdapter<ClaudeSdkAdapterState> {
+export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): HarnessEventAdapter<ClaudeSdkAdapterState> {
   return {
     name: "claude-sdk",
     createInitialState: () => ({ blocksByIndex: {}, toolsById: {}, streamedAssistantTextByOwner: {}, reconciledAssistantTextByMessageId: {}, tasks: Object.fromEntries(initialTasks.map((task) => [task.id, task])) }),
@@ -1195,7 +1192,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = [], account
             })
 
         case "rate_limit_event":
-          return [claudeRateLimitEvent(asRecord(message.rate_limit_info) ?? {}, account)]
+          return [claudeRateLimitEvent(asRecord(message.rate_limit_info) ?? {})]
 
         case "prompt_suggestion":
           return unmappedSdkEvent({

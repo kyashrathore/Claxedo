@@ -49,6 +49,17 @@ export function engineConnectContext(engine: string, vendor: string): ConnectCon
   return { kind: "engine", engine: harnessLabel(engine) ?? engine, vendor }
 }
 
+/** The brand mark each harness is recognised by; its login is the vendor's. */
+const HARNESS_ICON: Record<string, string> = {
+  claude: "anthropic",
+  codex: "openai",
+  cursor: "cursor",
+}
+
+export function harnessIcon(id: string): string {
+  return HARNESS_ICON[id] ?? id
+}
+
 /**
  * The provider id a harness's own login is stored under, and the id its connect
  * card writes. Every other provider id names a vendor an engine can run, which

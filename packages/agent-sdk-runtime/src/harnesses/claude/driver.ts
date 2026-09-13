@@ -47,7 +47,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { isProviderUnavailable, liveProviderBinding, providerProjectionKey, providerProjectionRecord, type ProviderBinding } from "../../provider-projection"
+import { liveProviderBinding, providerProjectionKey, providerProjectionRecord, type ProviderBinding } from "../../provider-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,
@@ -345,26 +345,13 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     this.goalStore.forget(sessionId)
   }
 
-  /**
-   * Which account this turn's events belong to. Read off the held projection
-   * rather than through `providerBinding`, which throws for a selected but
-   * unusable account: building a runtime happens before the launch that is
-   * allowed to refuse, so it must not fail here. No binding means the turn runs
-   * on this machine's own Claude login.
-   */
-  private turnAccount(): string | null {
-    const projection = this.auth.anthropic
-    if (!projection || isProviderUnavailable(projection)) return null
-    return projection.baseUrl
-  }
-
   createRuntime(threadId: string, todos: Array<{ id?: string; content: string; status: string }> = []): AgentEventRuntime {
     return createAgentEventRuntime({
       harness: this.type,
       threadId,
       adapter: claudeSdkAdapter(todos.flatMap((todo) => todo.id
         ? [{ id: todo.id, description: todo.content, status: todo.status }]
-        : []), this.turnAccount()),
+        : [])),
     })
   }
 

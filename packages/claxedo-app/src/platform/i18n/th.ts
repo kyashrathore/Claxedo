@@ -616,6 +616,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "ยังไม่ได้เข้าสู่ระบบ — รัน {{command}}",
   "settings.providers.agents.machineNotInstalled": "ยังไม่ได้ติดตั้ง",
   "settings.providers.agents.machineUnknown": "ถามเอเจนต์นี้ไม่ได้",
+  "settings.providers.agents.machineUsageUnreadable": "อ่านการใช้งานของการเข้าสู่ระบบนี้ไม่ได้",
   "settings.providers.agents.machineCursorAcp": "ใช้ได้กับ Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK ต้องใช้คีย์ API",
   "settings.providers.agents.machineStrands": "{{name}} ตั้งค่าให้ใช้คีย์ที่บันทึกไว้ซึ่งการเข้าสู่ระบบนี้แทนที่ไม่ได้",

@@ -628,6 +628,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "Sin sesión iniciada: ejecuta {{command}}",
   "settings.providers.agents.machineNotInstalled": "No instalado",
   "settings.providers.agents.machineUnknown": "No se pudo consultar este agente",
+  "settings.providers.agents.machineUsageUnreadable": "el uso no se puede leer para esta sesión",
   "settings.providers.agents.machineCursorAcp": "Funciona con Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "el SDK de Cursor necesita una clave de API",
   "settings.providers.agents.machineStrands": "{{name}} está configurado para usar una clave guardada que este inicio de sesión no puede sustituir",

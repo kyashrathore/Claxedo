@@ -663,6 +663,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "Not signed in — run {{command}}",
   "settings.providers.agents.machineNotInstalled": "Not installed",
   "settings.providers.agents.machineUnknown": "Couldn't ask this agent",
+  "settings.providers.agents.machineUsageUnreadable": "usage not readable for this login",
   "settings.providers.agents.machineCursorAcp": "Works with Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "the Cursor SDK needs an API key",
   "settings.providers.agents.machineStrands": "{{name}} is set to run on a stored key this login can't replace",

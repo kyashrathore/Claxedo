@@ -547,6 +547,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "未ログイン — {{command}} を実行",
   "settings.providers.agents.machineNotInstalled": "未インストール",
   "settings.providers.agents.machineUnknown": "このエージェントに問い合わせできませんでした",
+  "settings.providers.agents.machineUsageUnreadable": "このログインの使用量は読み取れません",
   "settings.providers.agents.machineCursorAcp": "Cursor ACP で動作します",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK には API キーが必要です",
   "settings.providers.agents.machineStrands": "{{name}} はこのログインでは代替できない保存済みキーで動作する設定です",

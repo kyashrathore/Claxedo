@@ -543,6 +543,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "로그인되지 않음 — {{command}} 실행",
   "settings.providers.agents.machineNotInstalled": "설치되지 않음",
   "settings.providers.agents.machineUnknown": "이 에이전트에 물어보지 못했습니다",
+  "settings.providers.agents.machineUsageUnreadable": "이 로그인의 사용량은 읽을 수 없습니다",
   "settings.providers.agents.machineCursorAcp": "Cursor ACP에서 작동합니다",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK에는 API 키가 필요합니다",
   "settings.providers.agents.machineStrands": "{{name}}은(는) 이 로그인으로 대체할 수 없는 저장된 키로 실행되도록 설정되어 있습니다",

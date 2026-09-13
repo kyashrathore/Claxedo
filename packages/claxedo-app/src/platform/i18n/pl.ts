@@ -549,6 +549,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "Nie zalogowano — uruchom {{command}}",
   "settings.providers.agents.machineNotInstalled": "Nie zainstalowano",
   "settings.providers.agents.machineUnknown": "Nie udało się zapytać tego agenta",
+  "settings.providers.agents.machineUsageUnreadable": "użycie niedostępne dla tego logowania",
   "settings.providers.agents.machineCursorAcp": "Działa z Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK wymaga klucza API",
   "settings.providers.agents.machineStrands": "{{name}} korzysta z zapisanego klucza, którego to logowanie nie zastąpi",

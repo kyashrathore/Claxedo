@@ -1451,11 +1451,11 @@ describe("claudeSdkAdapter", () => {
 })
 
 describe("claudeSdkAdapter rate limits", () => {
-  const emitted = (info: Record<string, unknown>, account?: string | null) => {
+  const emitted = (info: Record<string, unknown>) => {
     const agent = createAgentEventRuntime({
       harness: "claude-sdk",
       threadId: "thread-1",
-      adapter: claudeSdkAdapter([], account),
+      adapter: claudeSdkAdapter(),
       clock: () => 0,
       createId: (prefix = "id") => `${prefix}-1`,
     })
@@ -1474,7 +1474,6 @@ describe("claudeSdkAdapter rate limits", () => {
       resetsAt: 1_757_700_000_000,
       limitId: "five_hour",
       limitName: "session",
-      metadata: { harness: "claude", account: null },
     }])
     expect(emitted({ status: "allowed_warning", rateLimitType: "seven_day", utilization: 90 })[0])
       .toMatchObject({ status: "ok", limitId: "seven_day", limitName: "weekly" })
@@ -1495,16 +1494,15 @@ describe("claudeSdkAdapter rate limits", () => {
       resetsAt: 1_757_700_000_000,
       limitId: "five_hour",
       limitName: "session",
-      metadata: { harness: "claude", account: null },
     }])
   })
 
   test("omits the percentage and the window name the vendor left out", () => {
     const [event] = emitted({ status: "allowed" })
-    expect(event).toEqual({ type: "rate-limit", status: "ok", resetsAt: null, metadata: { harness: "claude", account: null } })
+    expect(event).toEqual({ type: "rate-limit", status: "ok", resetsAt: null })
     // `toEqual` passes over a key whose value is `undefined`, which is exactly
     // what an unconditional spread of an absent window would produce.
-    expect(Object.keys(event).sort()).toEqual(["metadata", "resetsAt", "status", "type"])
+    expect(Object.keys(event).sort()).toEqual(["resetsAt", "status", "type"])
   })
 
   test("clamps a utilization outside 0..100", () => {
@@ -1516,10 +1514,5 @@ describe("claudeSdkAdapter rate limits", () => {
     expect(emitted({ status: "allowed", resetsAt: 1_757_700_000 })[0]).toMatchObject({ resetsAt: 1_757_700_000_000 })
     expect(emitted({ status: "allowed", resetsAt: 1_757_700_000_000 })[0]).toMatchObject({ resetsAt: 1_757_700_000_000 })
     expect(emitted({ status: "allowed", resetsAt: "soon" })[0]).toMatchObject({ resetsAt: null })
-  })
-
-  test("carries the account the turn ran on", () => {
-    expect(emitted({ status: "allowed" }, "https://broker.example/bindings/binding-1")[0])
-      .toMatchObject({ metadata: { harness: "claude", account: "https://broker.example/bindings/binding-1" } })
   })
 })

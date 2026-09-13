@@ -621,6 +621,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "Ikke logget inn — kjør {{command}}",
   "settings.providers.agents.machineNotInstalled": "Ikke installert",
   "settings.providers.agents.machineUnknown": "Kunne ikke spørre denne agenten",
+  "settings.providers.agents.machineUsageUnreadable": "bruk kan ikke leses for denne innloggingen",
   "settings.providers.agents.machineCursorAcp": "Fungerer med Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK krever en API-nøkkel",
   "settings.providers.agents.machineStrands": "{{name}} kjører på en lagret nøkkel som denne innloggingen ikke kan erstatte",

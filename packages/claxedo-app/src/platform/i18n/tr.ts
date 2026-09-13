@@ -633,6 +633,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "Oturum açılmadı — {{command}} çalıştırın",
   "settings.providers.agents.machineNotInstalled": "Kurulu değil",
   "settings.providers.agents.machineUnknown": "Bu ajana sorulamadı",
+  "settings.providers.agents.machineUsageUnreadable": "bu oturum için kullanım okunamıyor",
   "settings.providers.agents.machineCursorAcp": "Cursor ACP ile çalışır",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK bir API anahtarı gerektirir",
   "settings.providers.agents.machineStrands": "{{name}}, bu oturumun yerini alamayacağı kayıtlı bir anahtarla çalışacak şekilde ayarlı",

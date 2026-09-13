@@ -29,19 +29,19 @@ import {
   AgentHarnessRow,
   type AgentAccount,
 } from "@/features/settings/ui/agent-harness-row"
-import { HARNESS_CONNECT_PROVIDER } from "@/platform/identity/harness-catalog"
+import { HARNESS_CONNECT_PROVIDER, harnessIcon } from "@/platform/identity/harness-catalog"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useLanguage } from "@/platform/i18n/provider"
 
-/** The brand mark each harness is recognised by; its login is the provider's. */
-const AGENT_ICON: Record<string, string> = {
-  claude: "anthropic",
-  codex: "openai",
-  cursor: "cursor",
-}
-
 /** The entry key this computer's own login is listed under. */
 const MACHINE = "machine"
+
+/**
+ * The harnesses whose own CLI answers with a login and no plan figures. Claude
+ * Code has no headless usage read at all, so its row would otherwise read as a
+ * plan nobody had got around to checking rather than one that cannot be read.
+ */
+const MACHINE_USAGE_UNREADABLE = new Set(["claude"])
 
 /**
  * How far a machine login that drives only part of its harness reaches, for the
@@ -226,11 +226,12 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   /**
    * The machine login's second line: how far the login reaches, then what the
    * harness itself reported — its quota windows where it has them, and
-   * otherwise the plan and organization it named.
+   * otherwise the plan and organization it named, followed by why there are no
+   * windows where the harness cannot report any.
    *
    * Windows always arrive with the time they were read, whether the harness
    * answered now or the server served what it had stored, so the age is part
-   * of the line for both and a stale plan cannot read as a fresh one.
+   * of the line and a stale plan cannot read as a fresh one.
    */
   const machineWords = (login: MachineLogin, check: LocalHarnessCheck) => {
     if (login.state === "absent") return language.t("settings.providers.agents.machineNotInstalled")
@@ -247,6 +248,9 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       ...reachWords(login),
       ...identity,
       ...(login.usageAt === undefined ? [] : [checkedWords(login.usageAt)]),
+      ...(windows.length === 0 && MACHINE_USAGE_UNREADABLE.has(login.harness)
+        ? [language.t("settings.providers.agents.machineUsageUnreadable")]
+        : []),
     ]
     return words.length > 0 ? words.join(" · ") : undefined
   }
@@ -484,7 +488,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
         <For each={[...localHarnessChecks()]}>
           {(harness) => (
             <AgentHarnessRow
-              id={AGENT_ICON[harness.id] ?? harness.id}
+              id={harnessIcon(harness.id)}
               name={harness.label}
               providerId={HARNESS_CONNECT_PROVIDER[harness.id] ?? harness.providerIds[0]}
               harness={harness.id}

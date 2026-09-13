@@ -623,6 +623,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "Вход не выполнен — запустите {{command}}",
   "settings.providers.agents.machineNotInstalled": "Не установлено",
   "settings.providers.agents.machineUnknown": "Не удалось опросить этого агента",
+  "settings.providers.agents.machineUsageUnreadable": "использование для этого входа недоступно",
   "settings.providers.agents.machineCursorAcp": "Работает с Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "для Cursor SDK нужен ключ API",
   "settings.providers.agents.machineStrands": "{{name}} настроен на сохранённый ключ, который этот вход не заменит",

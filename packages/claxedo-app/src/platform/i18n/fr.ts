@@ -556,6 +556,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "Non connecté — lancez {{command}}",
   "settings.providers.agents.machineNotInstalled": "Non installé",
   "settings.providers.agents.machineUnknown": "Impossible d'interroger cet agent",
+  "settings.providers.agents.machineUsageUnreadable": "utilisation illisible pour cette connexion",
   "settings.providers.agents.machineCursorAcp": "Fonctionne avec Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "le SDK Cursor nécessite une clé API",
   "settings.providers.agents.machineStrands": "{{name}} est configuré sur une clé enregistrée que cette connexion ne peut pas remplacer",

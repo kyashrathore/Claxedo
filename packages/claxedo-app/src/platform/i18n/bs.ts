@@ -623,6 +623,7 @@ export const dict = {
   "settings.providers.agents.machineSignedOut": "Niste prijavljeni — pokrenite {{command}}",
   "settings.providers.agents.machineNotInstalled": "Nije instalirano",
   "settings.providers.agents.machineUnknown": "Nije moguće upitati ovog agenta",
+  "settings.providers.agents.machineUsageUnreadable": "korištenje se ne može očitati za ovu prijavu",
   "settings.providers.agents.machineCursorAcp": "Radi s Cursor ACP",
   "settings.providers.agents.machineCursorSdkKey": "Cursor SDK zahtijeva API ključ",
   "settings.providers.agents.machineStrands": "{{name}} koristi sačuvani ključ koji ova prijava ne može zamijeniti",
