@@ -354,8 +354,25 @@ function vercelSandboxDriverCredentialItem(
   }
 }
 
+/**
+ * The user's agent config, or nothing when it cannot be read.
+ *
+ * `loadUserConfig` throws on an unreadable file, invalid JSON or a schema it
+ * does not recognise. Letting that escape makes one bad file blank the whole
+ * scan — the Codex and Claude logins on the same machine are collected from
+ * their own files and have nothing to do with it.
+ */
+async function userConfigOrNone() {
+  try {
+    return await loadUserConfig()
+  } catch (err) {
+    log.warn("Failed to read user agent config while collecting credentials", { error: String(err) })
+    return undefined
+  }
+}
+
 export async function collectLocalCredentials(options: CollectLocalCredentialsOptions = {}) {
-  const cfg = await loadUserConfig()
+  const cfg = await userConfigOrNone()
   const sandboxDriverConfigValue = sandboxDriverConfig(cfg)
   const map = new Map<string, LocalCredentialItem>()
   const codexAccounts = codexAuthCandidates()
@@ -372,7 +389,7 @@ export async function collectLocalCredentials(options: CollectLocalCredentialsOp
   const claudeOAuth = claudeCodeOAuthToken(options)
   put(map, claudeOAuthItem(claudeOAuth))
 
-  for (const [providerId, secret] of Object.entries(cfg.auth ?? {})) {
+  for (const [providerId, secret] of Object.entries(cfg?.auth ?? {})) {
     const txt = trimToUndefined(secret)
     if (!txt) continue
     put(map, {

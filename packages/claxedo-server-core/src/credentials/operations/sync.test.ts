@@ -30,6 +30,7 @@ const prevVercelProject = process.env.VERCEL_PROJECT_ID
 const prevCursor = process.env.CURSOR_API_KEY
 const prevXdgData = process.env.XDG_DATA_HOME
 process.env.CLAXEDO_DATA_DIR = root
+const userConfigFile = path.join(root, "user-agent-config.json")
 
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("@claxedo/server-core/credentials/registry")
@@ -68,6 +69,9 @@ describe("syncLocalCredentials", () => {
       deleteCredentialsByProvider("vercel"),
       deleteCredentialsByProvider("cloudflare"),
     ])
+    // Removed rather than overwritten: `saveUserConfig` reads the file first,
+    // so a test that left an unreadable one behind would fail every test after it.
+    await fs.rm(userConfigFile, { force: true })
     await saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {}, sandbox_driver: {} })
   })
 
@@ -359,6 +363,23 @@ describe("syncLocalCredentials", () => {
     expect(discovered[0].account_id).toBe("shared-account")
     expect(discovered[0].origin).toBe("~/.codex/auth.json")
     expect(JSON.parse(discovered[0].secret).access).toBe("renewed-access")
+  })
+
+  test("an unreadable user agent config leaves every other source collectable", async () => {
+    await fs.writeFile(userConfigFile, "{ not json")
+    const codexDir = path.join(process.env.HOME!, ".codex")
+    mkdirSync(codexDir, { recursive: true })
+    await fs.writeFile(path.join(codexDir, "auth.json"), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: { access_token: "survivor-access", refresh_token: "survivor-refresh", account_id: "survivor" },
+      last_refresh: "2026-04-01T00:00:00.000Z",
+    }))
+    process.env.CURSOR_API_KEY = "cursor-env-key"
+
+    const discovered = await collectLocalCredentialItems()
+
+    expect(discovered.map((item) => item.provider_id).toSorted((a, b) => a.localeCompare(b)))
+      .toEqual(["codex-app-server", "cursor-sdk"])
   })
 
   test("still lists a top-level account that has no accounts-dir copy", async () => {
