@@ -29,7 +29,7 @@ import {
   AgentHarnessRow,
   type AgentAccount,
 } from "@/features/settings/ui/agent-harness-row"
-import { HARNESS_CONNECT_PROVIDER, harnessIcon } from "@/platform/identity/harness-catalog"
+import { HARNESS_CONNECT_PROVIDER, harnessIcon, machineLoginUsageReadable } from "@/platform/identity/harness-catalog"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useLanguage } from "@/platform/i18n/provider"
 
@@ -41,7 +41,6 @@ const MACHINE = "machine"
  * Code has no headless usage read at all, so its row would otherwise read as a
  * plan nobody had got around to checking rather than one that cannot be read.
  */
-const MACHINE_USAGE_UNREADABLE = new Set(["claude"])
 
 /**
  * How far a machine login that drives only part of its harness reaches, for the
@@ -248,7 +247,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       ...reachWords(login),
       ...identity,
       ...(login.usageAt === undefined ? [] : [checkedWords(login.usageAt)]),
-      ...(windows.length === 0 && MACHINE_USAGE_UNREADABLE.has(login.harness)
+      ...(windows.length === 0 && !machineLoginUsageReadable(login.harness)
         ? [language.t("settings.providers.agents.machineUsageUnreadable")]
         : []),
     ]

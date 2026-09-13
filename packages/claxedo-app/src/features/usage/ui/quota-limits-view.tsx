@@ -1,7 +1,7 @@
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { For, Show, createMemo } from "solid-js"
 import type { QuotaAccount, QuotaSnapshot } from "@claxedo/usage-contract"
-import { harnessIcon, harnessLabel } from "@/platform/identity/harness-catalog"
+import { harnessIcon, harnessLabel, machineLoginUsageReadable } from "@/platform/identity/harness-catalog"
 import { formatRelativeTime } from "@/lib/relative-time"
 
 type Bar = { label: string; percent: number; resetsAt: number | null }
@@ -38,7 +38,6 @@ const REFUSALS: Record<string, string> = {
  * Code has no headless usage read at all, so its card would otherwise read as a
  * plan nobody had got around to checking rather than one that cannot be read.
  */
-const USAGE_UNREADABLE = new Set(["claude"])
 
 function windowLabel(name: string) {
   return WINDOW_LABELS[name] ?? name.replaceAll("_", " ")
@@ -78,7 +77,7 @@ function card(account: QuotaAccount, index: number): Card {
     unreadable: refused === undefined
       && account.windows.length === 0
       && account.machineLogin === true
-      && USAGE_UNREADABLE.has(account.harness),
+      && !machineLoginUsageReadable(account.harness),
   }
 }
 

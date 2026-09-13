@@ -83,3 +83,12 @@ export function connectContextFor(input: { providerId: string; engine: string; v
   const harness = harnessForConnectProvider(input.providerId)
   return harness ? harnessConnectContext(harness) : engineConnectContext(input.engine, input.vendor)
 }
+
+/**
+ * Whether a harness's own login can report how much of its plan is used.
+ * Claude Code's `auth status` names the plan but no usage, and it has no
+ * headless usage read, so that row can only say the figure is not readable.
+ */
+export function machineLoginUsageReadable(harness: string): boolean {
+  return harness !== "claude"
+}

@@ -8,7 +8,6 @@
  * a fully up-to-date app.
  */
 
-import { $ } from "bun"
 import * as fs from "fs"
 import * as path from "path"
 

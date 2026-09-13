@@ -20,6 +20,11 @@ export function publishedPackageDistDirs(repoRoot: string): string[] {
   return publishedPackages(repoRoot).map((entry) => path.join(entry.dir, "dist"))
 }
 
+function jsonRecord(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
+  return Object.fromEntries(Object.entries(value))
+}
+
 function publishedPackages(repoRoot: string): { name: string; dir: string }[] {
   const packagesDir = path.join(repoRoot, "packages")
   const names: { name: string; dir: string }[] = []
@@ -27,9 +32,8 @@ function publishedPackages(repoRoot: string): { name: string; dir: string }[] {
     if (!entry.isDirectory()) continue
     const manifestPath = path.join(packagesDir, entry.name, "package.json")
     if (!fs.existsSync(manifestPath)) continue
-    const manifest: unknown = JSON.parse(fs.readFileSync(manifestPath, "utf8"))
-    if (typeof manifest !== "object" || manifest === null) continue
-    const record = manifest as Record<string, unknown>
+    const record = jsonRecord(JSON.parse(fs.readFileSync(manifestPath, "utf8")))
+    if (!record) continue
     const name = record.name
     const scripts = record.scripts
     if (typeof name !== "string" || !name.startsWith("@claxedo/")) continue
