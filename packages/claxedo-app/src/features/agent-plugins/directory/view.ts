@@ -2,9 +2,8 @@ import { oauthServers, type OAuthServer } from "../connections"
 export { oauthServers, type OAuthServer }
 import {
   AGENT_PLUGIN_HARNESSES,
-  BUILT_IN_TOOL_GROUPS,
+  BUILT_IN_TOOL_GROUP_ORDER,
   type AgentPluginHarness,
-  type BuiltInToolGroupId,
   type HarnessActivation,
   type PluginCandidate,
   type PluginToolGroup,
@@ -32,14 +31,21 @@ export function isBuiltIn(plugin: PluginCandidate) {
   return plugin.builtIn === true
 }
 
-/** The built-in's groups in reading order; the catalog emits them in registration order. */
+/**
+ * The built-in's groups in reading order; the catalog emits them in
+ * registration order. A group the order table does not name keeps its place
+ * behind the ones it does, rather than jumping to the front on `indexOf`'s -1.
+ */
 export function toolGroups(plugin: PluginCandidate): PluginToolGroup[] {
-  return [...plugin.groups ?? []]
-    .sort((left, right) => BUILT_IN_TOOL_GROUPS.indexOf(left.id) - BUILT_IN_TOOL_GROUPS.indexOf(right.id))
+  const rank = (group: PluginToolGroup) => {
+    const index = BUILT_IN_TOOL_GROUP_ORDER.indexOf(group.id)
+    return index === -1 ? BUILT_IN_TOOL_GROUP_ORDER.length : index
+  }
+  return [...plugin.groups ?? []].sort((left, right) => rank(left) - rank(right))
 }
 
 /** The tool groups the built-in registers on a session started now. */
-export function enabledToolGroups(plugin: PluginCandidate): BuiltInToolGroupId[] {
+export function enabledToolGroups(plugin: PluginCandidate): string[] {
   return toolGroups(plugin).filter((group) => group.enabled).map((group) => group.id)
 }
 

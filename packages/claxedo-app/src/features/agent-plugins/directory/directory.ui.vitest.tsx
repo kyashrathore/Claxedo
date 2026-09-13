@@ -1043,6 +1043,25 @@ describe("Agent Plugin Directory built-in server", () => {
       && (entry.body as { pluginInstanceId?: string } | undefined)?.pluginInstanceId === "claxedo")).toBe(false)
   })
 
+  test("a group this build's order table does not name still renders, last, with a working switch", async () => {
+    const telemetry = { id: "telemetry", pluginInstanceId: "claxedo:telemetry", enabled: false, tools: ["telemetry_read"] }
+    const { recorded } = await renderDirectory({ catalog: withBuiltIn({ groups: [telemetry, ...BUILT_IN_GROUPS] }) })
+    const pane = await openPane("claxedo")
+
+    const groups = within(pane).getByRole("region", { name: "claxedo tool groups" })
+    expect([...groups.querySelectorAll<HTMLElement>("[data-agent-plugin-tool-group]")]
+      .map((row) => row.dataset.agentPluginToolGroup))
+      .toEqual(["sessions", "subagents", "attention", "processes", "documents", "tasks", "review", "workspaces", "telemetry"])
+
+    await fireEvent.click(within(groups).getByRole("switch", { name: "telemetry" }))
+
+    await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
+    expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toMatchObject({
+      pluginInstanceId: "claxedo:telemetry",
+      choice: true,
+    })
+  })
+
   test("a built-in with every group off says so rather than reporting a harness count", async () => {
     await renderDirectory({
       catalog: withBuiltIn({ groups: BUILT_IN_GROUPS.map((group) => ({ ...group, enabled: false })) }),

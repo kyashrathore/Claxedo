@@ -21,14 +21,15 @@ export type HarnessActivation = {
 export type AgentPluginSourceKind = "claxedo" | "personal" | "organization"
 
 /**
- * The first-party server's tool groups, in the order the pane lists them.
+ * The order the pane lists the first-party server's tool groups in.
  *
- * A group is the unit of consent: enabling it registers its tools on the
- * session's MCP mount and, for Tasks, mints the capability the tools act on.
- * The catalog derives its entries by running each registration, so it emits
- * them in registration order; reading order is this table's to decide.
+ * Reading order only. The catalog derives the groups themselves by running each
+ * registration, so which groups exist is the server's to say and this table
+ * cannot be the authority on it: a group missing from here still renders, after
+ * the ones named here, so that a group the server starts serving is one the
+ * user can see and consent to rather than one that refuses the whole catalog.
  */
-export const BUILT_IN_TOOL_GROUPS = [
+export const BUILT_IN_TOOL_GROUP_ORDER: readonly string[] = [
   "sessions",
   "subagents",
   "attention",
@@ -37,11 +38,14 @@ export const BUILT_IN_TOOL_GROUPS = [
   "tasks",
   "review",
   "workspaces",
-] as const
-export type BuiltInToolGroupId = (typeof BUILT_IN_TOOL_GROUPS)[number]
+]
 
+/**
+ * A group is the unit of consent: enabling it registers its tools on the
+ * session's MCP mount and, for Tasks, mints the capability the tools act on.
+ */
 export type PluginToolGroup = {
-  id: BuiltInToolGroupId
+  id: string
   /** What `activation` names to turn this group on or off; the group is the activation subject. */
   pluginInstanceId: string
   enabled: boolean
@@ -170,13 +174,9 @@ function pluginCategories(value: unknown): value is string[] | undefined {
   return value === undefined || (Array.isArray(value) && value.every(isString))
 }
 
-function toolGroupId(value: unknown): value is BuiltInToolGroupId {
-  return BUILT_IN_TOOL_GROUPS.some((group) => group === value)
-}
-
 function pluginToolGroups(value: unknown): value is PluginToolGroup[] | undefined {
   return value === undefined || (Array.isArray(value) && value.every((group) => isRecord(group)
-    && toolGroupId(group.id)
+    && typeof group.id === "string"
     && typeof group.pluginInstanceId === "string"
     && typeof group.enabled === "boolean"
     && Array.isArray(group.tools)
