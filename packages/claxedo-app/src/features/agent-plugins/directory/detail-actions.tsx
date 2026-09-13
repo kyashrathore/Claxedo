@@ -34,8 +34,9 @@ export function PluginActions(props: {
 }) {
   const installed = () => isInstalled(props.plugin)
   const builtIn = () => isBuiltIn(props.plugin)
-  const retained = () => builtIn() || Boolean(props.plugin.retainedDigest)
-  const mutable = () => props.plugin.sourceAvailable || retained()
+  /** Nothing left to acquire before enabling: bytes already retained, or the product itself. */
+  const acquired = () => builtIn() || Boolean(props.plugin.retainedDigest)
+  const mutable = () => props.plugin.sourceAvailable || acquired()
   const organizationDefaultEnabled = () => props.harnesses
     .some((harness) => props.plugin.harnesses[harness].organizationDefault)
   const organizationEligible = () => props.plugin.sourceKind === "claxedo"
@@ -54,7 +55,7 @@ export function PluginActions(props: {
         when={installed()}
         fallback={
           <Show
-            when={retained()}
+            when={acquired()}
             fallback={
               <Button size="small" variant="primary" disabled={props.pending || !mutable()} onClick={() => props.onAdd()}>
                 Add
