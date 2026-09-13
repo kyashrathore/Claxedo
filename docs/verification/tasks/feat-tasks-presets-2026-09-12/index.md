@@ -235,3 +235,17 @@ Live proof on the running stack (Playwright `keyboard.type` and a real `Clipboar
 Found on the way: the memory store's row-key separator was a raw NUL byte in the source, so git had shown every change to that file as "Binary files differ" since the package landed (`fix(tasks): spell the memory store's row-key separator as an escape`). The running dev server had to be restarted after the contract change: the client's decoder refuses a summary without `children`, so an old server process answered "Response did not match the tasks contract".
 
 Gates at this tip: app vitest tasks + integrations + documents 18 files / 122 pass; kit 188; server-core tasks-host 27; local-server tasks 27; D1 conformance new case green under Miniflare (the whole `src/tasks` directory there is environmentally flaky on `spawn(workerd) ENOENT`, never an assertion); `tsgo -b` and every touched package's typecheck clean; architecture guards 259; ratchets unchanged at 1046 / 58 and 1089 / 58; theme-token lint two pre-existing; root lint three pre-existing.
+
+## Second Codex pass and its fix round (2026-09-13)
+
+`codex-gpt-6-astra-rereview-ui-markdown.md` re-reviewed the first fix round (the second and last consultation on this range under the two-review rule). It rated four of the six prior findings closed and two partially closed, and raised three new ones. Every claim was reproduced before it was fixed; the restart-test finding turned out worse than reported (the fake answered a route the client never posts, so the start threw and was swallowed on every run while the test passed).
+
+| Finding | Verified how | Fix commit | Proof |
+|---|---|---|---|
+| P1 pasted frontmatter bypassed the gate (detector reads the body, handler parsed the whole string) | production handler: the comment vanished and the delimiters became a rule | `fix(documents): paste a markdown document as the blocks it is, and leave an enveloped one to the literal path` | an enveloped paste yields to the literal path; live paste keeps the comment verbatim |
+| P1 an emitted value could inherit a later replacement's rich admission | read: the marker was the text alone | `fix(tasks): let the field's emission carry the detection it was admitted under` | emit → replace → restore ends on the textarea with the comment intact |
+| P2 block pastes flattened into the paragraph | production handler: `# Title` → `hello Titleworld` | same commit as the first | a lone paragraph still fits inline; anything else is inserted closed and keeps its blocks, in tests and live |
+| P2 row Open looked only at the primary slot | read: default `slot = "primary"` | `fix(tasks): open the session of whichever slot ran, and send the start the row's test claimed` | `openableSlot` in the kit beside `slotAttempt`; secondary-only live session opens |
+| P2 the restart test asserted only the preview | read, then found the fake's wrong route | same commit | consistent fake, start asserted with attempt 2 and the digest, navigation asserted; removing the send fails it |
+
+Gates at this tip: app vitest tasks + integrations + documents 18 files / 129 pass; kit 194; architecture guards 259; theme-token lint two pre-existing; root lint three pre-existing. `tsgo -b` and the ratchets are measured again below once the first-project canvas lands, because that lane's uncommitted files hold the only red in both.
