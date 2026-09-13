@@ -192,8 +192,13 @@
 }
 
 .ui-radio-list-item {
+  /* The control centres on the first text line, so a row that wraps keeps it
+     beside the label instead of halfway down the row. */
+  --radio-list-line-height: 20px;
+  --radio-list-control-size: 14px;
+
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 
@@ -206,12 +211,13 @@
     box-sizing: border-box;
     display: flex;
     flex-shrink: 0;
-    height: 14px;
+    height: var(--radio-list-control-size);
     justify-content: center;
+    margin-top: calc((var(--radio-list-line-height) - var(--radio-list-control-size)) / 2);
     transition:
       border-color 180ms ease-out,
       box-shadow 180ms ease-out;
-    width: 14px;
+    width: var(--radio-list-control-size);
   }
 
   .ui-radio-list-item-indicator {
@@ -221,12 +227,22 @@
     width: 6px;
   }
 
-  .ui-radio-list-item-label {
-    align-items: center;
-    cursor: default;
+  .ui-radio-list-item-text {
     display: flex;
     flex: 1;
+    flex-direction: column;
+    gap: 2px;
     min-width: 0;
+  }
+
+  .ui-radio-list-item-label {
+    cursor: default;
+    line-height: var(--radio-list-line-height);
+    user-select: none;
+  }
+
+  .ui-radio-list-item-description {
+    line-height: var(--radio-list-line-height);
     user-select: none;
   }
 
@@ -241,6 +257,16 @@
   [data-slot="radio-list-item-input"]:focus-visible ~ .ui-radio-list-item-control {
     border-color: var(--border-focus);
     box-shadow: var(--shadow-xs-border-focus);
+  }
+
+  &[data-invalid] .ui-radio-list-item-control,
+  &[data-invalid][data-checked] .ui-radio-list-item-control,
+  &[data-invalid]:hover:not([data-disabled]) .ui-radio-list-item-control {
+    border-color: var(--border-critical-selected);
+  }
+
+  &[data-invalid] .ui-radio-list-item-indicator {
+    background-color: var(--icon-critical-base);
   }
 
   &[data-disabled] {

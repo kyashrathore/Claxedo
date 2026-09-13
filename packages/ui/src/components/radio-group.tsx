@@ -1,6 +1,6 @@
 import { RadioGroup as KobalteRadio } from "@kobalte/core/radio-group"
 import { SegmentedControl as Kobalte } from "@kobalte/core/segmented-control"
-import { For, splitProps } from "solid-js"
+import { For, Show, splitProps } from "solid-js"
 import type { ComponentProps, JSX, ParentProps } from "solid-js"
 
 export type RadioGroupProps<T> = Omit<
@@ -106,16 +106,21 @@ export function RadioList(props: RadioListProps) {
 
 export type RadioListItemProps = ComponentProps<typeof KobalteRadio.Item> & {
   label: JSX.Element
+  /** A second line under the label, for whatever the label alone does not say. */
+  description?: JSX.Element
+  /** Rings the control in the danger token: the value is stored but unusable. */
+  invalid?: boolean
   /** Trailing controls; they sit outside the label, so pressing one does not select the row. */
   children?: JSX.Element
 }
 
 export function RadioListItem(props: RadioListItemProps) {
-  const [local, others] = splitProps(props, ["children", "class", "classList", "label"])
+  const [local, others] = splitProps(props, ["children", "class", "classList", "label", "description", "invalid"])
   return (
     <KobalteRadio.Item
       {...others}
       data-slot="radio-list-item"
+      data-invalid={local.invalid ? "" : undefined}
       classList={{
         "ui-radio-list-item": true,
         ...local.classList,
@@ -126,9 +131,18 @@ export function RadioListItem(props: RadioListItemProps) {
       <KobalteRadio.ItemControl data-slot="radio-list-item-control" class="ui-radio-list-item-control">
         <KobalteRadio.ItemIndicator data-slot="radio-list-item-indicator" class="ui-radio-list-item-indicator" />
       </KobalteRadio.ItemControl>
-      <KobalteRadio.ItemLabel data-slot="radio-list-item-label" class="ui-radio-list-item-label">
-        {local.label}
-      </KobalteRadio.ItemLabel>
+      <div data-slot="radio-list-item-text" class="ui-radio-list-item-text">
+        <KobalteRadio.ItemLabel data-slot="radio-list-item-label" class="ui-radio-list-item-label">
+          {local.label}
+        </KobalteRadio.ItemLabel>
+        <Show when={local.description}>
+          {(description) => (
+            <KobalteRadio.ItemDescription data-slot="radio-list-item-description" class="ui-radio-list-item-description">
+              {description()}
+            </KobalteRadio.ItemDescription>
+          )}
+        </Show>
+      </div>
       {local.children}
     </KobalteRadio.Item>
   )
