@@ -1,0 +1,106 @@
+/**
+ * Actual Electron main/preload/renderer and electron-store, using a scratch profile.
+ * Run against `bun run dev` in claxedo-desktop and its healthy local server:
+ * CLAXEDO_E2E_DESKTOP=1 CLAXEDO_E2E_SUITE=core ... desktop-dev-first-interaction.spec.ts
+ * Runtime HTTP responses use the shared fixture; the native clipboard IPC is held
+ * deliberately to prove a late OS read cannot repopulate a submitted draft.
+ */
+import { _electron as electron, expect, test, type ElectronApplication } from "@playwright/test"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { resolve } from "node:path"
+import { createRequire } from "node:module"
+import { sessionListRoute, sessionNavigationListResponse } from "../helpers/contracts/session-list"
+import { installMockRuntime } from "../helpers/mock-runtime"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+
+const desktop = resolve(import.meta.dirname, "../../../claxedo-desktop")
+const require = createRequire(resolve(desktop, "package.json"))
+const directory = "/tmp/e2e-desktop-first-interaction"
+const sessionId = "ses_desktop_first_interaction"
+const projectId = "proj_desktop_first_interaction"
+const png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+afoQAAAAASUVORK5CYII="
+
+test("native paste cancellation and terminal navigation survive a desktop restart @core @surface-desktop @first-interaction", async () => {
+  test.setTimeout(120_000)
+  const profile = await mkdtemp(resolve(tmpdir(), "claxedo-first-interaction-"))
+  const renderer = process.env.CLAXEDO_E2E_DESKTOP_RENDERER_URL ?? "http://localhost:5173"
+  const backend = process.env.CLAXEDO_E2E_DESKTOP_SERVER_URL ?? "http://127.0.0.1:2593"
+  let app: ElectronApplication | undefined
+  const launch = async () => {
+    app = await electron.launch({
+      executablePath: require("electron") as string,
+      args: [desktop],
+      recordVideo: { dir: resolve("test-results/evidence/desktop-first-interaction/video") },
+      env: { ...process.env, ELECTRON_RENDERER_URL: renderer, CLAXEDO_SERVER_URL: backend,
+        CLAXEDO_DESKTOP_USER_DATA_DIR: profile, CLAXEDO_DATA_DIR: resolve(profile, "server-data") },
+    })
+    let page = await app.firstWindow()
+    await expect.poll(async () => {
+      const shell = app!.windows().find(window => window.url().includes("index.local.html"))
+      if (!shell) return false
+      page = shell
+      return true
+    }, { timeout: 60_000 }).toBe(true)
+    await installMockRuntime(page, { dir: directory, sessionId, projectId, harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] }, existingSession: { prompt: "desktop origin", reply: "desktop ready" } })
+    await page.route(sessionListRoute, route => route.fulfill({ status: 200, contentType: "application/json",
+      body: JSON.stringify(sessionNavigationListResponse(route.request().url(), [{ sessionID: sessionId, directory, projectID: projectId, title: "desktop origin", createdAt: Date.now(), updatedAt: Date.now() }])) }))
+    await page.evaluate(async dir => {
+      const api = (window as unknown as { api: { storeSet: (name: string, key: string, value: string) => Promise<void> } }).api
+      await api.storeSet("claxedo.global.dat", "server", JSON.stringify({ list: [], projects: { local: [{ worktree: dir, expanded: true }] }, lastProject: {}, workspaceServer: {}, closedProjects: {} }))
+    }, directory)
+    await page.reload()
+    await expect(page.locator("[data-claxedo]")).toBeVisible()
+    return page
+  }
+  try {
+    let page = await launch()
+    await page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessionId}"]`).first().click()
+    await expectAssistantReplyVisible(page, "desktop ready")
+    const documentUrl = page.url()
+    expect(new URL(documentUrl).pathname).toBe("/index.local.html")
+    await app!.evaluate(({ ipcMain }) => {
+      const state = { started: false, complete: undefined as ((image: { buffer: Uint8Array }) => void) | undefined }
+      Object.assign(globalThis, { __nativePasteProbe: state })
+      ipcMain.removeHandler("read-clipboard-image")
+      ipcMain.handle("read-clipboard-image", () => new Promise(resolve => {
+        state.started = true
+        state.complete = resolve
+      }))
+    })
+    const editor = page.locator('[data-component="prompt-input"]:visible')
+    await ensureComposerModelSelected(page)
+    await editor.fill("native paste cancellation probe")
+    await editor.evaluate(element => element.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: new DataTransfer() })))
+    await expect.poll(() => app!.evaluate(() => (globalThis as unknown as { __nativePasteProbe: { started: boolean } }).__nativePasteProbe.started)).toBe(true)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expectAssistantReplyVisible(page, "ack 1: native paste cancellation probe")
+    await app!.evaluate((_electron, base64) => {
+      const state = (globalThis as unknown as { __nativePasteProbe: { complete: (image: { buffer: Uint8Array }) => void } }).__nativePasteProbe
+      state.complete({ buffer: Uint8Array.from(Buffer.from(base64, "base64")) })
+    }, png)
+    await page.getByRole("button", { name: "New Terminal", exact: true }).last().click()
+    await expect(page.locator('[data-slot="terminal-launcher"][data-launcher-id="shell"]')).toBeVisible()
+    expect(page.url()).toBe(documentUrl)
+    await page.reload()
+    await expect(page.locator('[data-slot="terminal-launcher"][data-launcher-id="shell"]')).toBeVisible()
+    await page.screenshot({ path: "test-results/evidence/desktop-first-interaction/terminal-after-reload.png" })
+    await app!.close()
+    app = undefined
+    page = await launch()
+    await page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessionId}"]`).first().click()
+    await expectAssistantReplyVisible(page, "desktop ready")
+    await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(0)
+    await page.getByRole("button", { name: "New Session", exact: true }).last().click()
+    await expect(page.locator('[data-component="prompt-input"]:visible')).toBeVisible()
+    await expect(page.getByRole("button", { name: "Remove attachment" })).toHaveCount(0)
+  } catch (error) {
+    const page = app?.windows().find(window => window.url().includes("index.local.html"))
+    await page?.screenshot({ path: "test-results/evidence/desktop-first-interaction/failure.png" })
+    console.log("Desktop state:", await page?.locator("body").innerText())
+    throw error
+  } finally {
+    await app?.close()
+    await rm(profile, { recursive: true, force: true })
+  }
+})

@@ -1,0 +1,90 @@
+[
+  {
+    "hash": "576e68805d4695227f0e7aa50e0f509d3e61f3e1",
+    "subject": "test(e2e): preserve reproduced session-rendering regressions",
+    "files": [
+      "packages/claxedo-app/e2e/e2e-decisions.md",
+      "packages/claxedo-app/e2e/fixtures/codex-first-token-geometry.json",
+      "packages/claxedo-app/e2e/fixtures/harness-traces/codex-completed-runtime-replay.json",
+      "packages/claxedo-app/e2e/fixtures/harness-traces/codex-interleaved-failures.json",
+      "packages/claxedo-app/e2e/fixtures/harness-traces/codex-interrupted-command.json",
+      "packages/claxedo-app/e2e/helpers/contracts/session-list.ts",
+      "packages/claxedo-app/e2e/helpers/geometry-oracle.ts",
+      "packages/claxedo-app/e2e/helpers/mock-runtime.ts",
+      "packages/claxedo-app/e2e/helpers/rail-oracle.ts",
+      "packages/claxedo-app/e2e/helpers/real-local-server.ts",
+      "packages/claxedo-app/e2e/helpers/turn-oracle.ts",
+      "packages/claxedo-app/e2e/playwright/core-busy-abort-errors.spec.ts",
+      "packages/claxedo-app/e2e/playwright/core-docks.spec.ts",
+      "packages/claxedo-app/e2e/playwright/core-harness-rendering-matrix.spec.ts",
+      "packages/claxedo-app/e2e/playwright/core-session-rendering-navigation.spec.ts",
+      "packages/claxedo-app/e2e/playwright/core-timeline-rendering-scroll.spec.ts",
+      "packages/claxedo-app/e2e/playwright/desktop-unsigned-embedded.spec.ts",
+      "packages/claxedo-app/e2e/playwright/real-harness-local.spec.ts",
+      "packages/claxedo-app/e2e/playwright/real-session-rendering-harnesses.spec.ts"
+    ]
+  },
+  {
+    "hash": "4c4cd31526bd8146ac6d2c57617cbe7afd06d3ca",
+    "subject": "fix(pi): align runtime and sandbox pins with 0.85.1",
+    "files": [
+      "packages/agent-sdk-runtime/README.md",
+      "packages/agent-sdk-runtime/src/harnesses/pi/executable.test.ts",
+      "packages/agent-sdk-runtime/src/harnesses/pi/executable.ts",
+      "packages/agent-sdk-runtime/src/test-utils/fake-pi-rpc.mjs",
+      "packages/claxedo-server/scripts/sandbox/Dockerfile",
+      "packages/claxedo-server/scripts/sandbox/cloudflare-worker/Dockerfile"
+    ]
+  },
+  {
+    "hash": "243e5a3aeae2838380336cf46a0d217b237f2015",
+    "subject": "test(e2e): support preserved native clipboard and desktop video",
+    "files": [
+      "packages/claxedo-app/e2e/helpers/electron-app.ts",
+      "packages/claxedo-app/e2e/helpers/native-clipboard.swift",
+      "packages/claxedo-app/e2e/helpers/native-clipboard.ts"
+    ]
+  },
+  {
+    "hash": "5740bfb2b66bb1945911f583f161f6dd06b19dce",
+    "subject": "test(e2e): script exact Markdown replies through the model endpoint",
+    "files": [
+      "packages/claxedo-app/e2e/helpers/scripted-model-server.test.ts",
+      "packages/claxedo-app/e2e/helpers/scripted-model-server.ts"
+    ]
+  },
+  {
+    "hash": "dfed52f19a0c992b829f48314e810f269b43da6c",
+    "subject": "test(e2e): verify tool completion across browser disconnection",
+    "files": [
+      "packages/claxedo-app/e2e/helpers/network-proxy.test.ts",
+      "packages/claxedo-app/e2e/helpers/network-proxy.ts",
+      "packages/claxedo-app/e2e/playwright/real-harness-local.spec.ts"
+    ]
+  },
+  {
+    "hash": "0dbad3a21ea36fa665a43b09109c6e6fd2c955b0",
+    "subject": "test(e2e): observe native text chunks during live rendering",
+    "files": [
+      "packages/claxedo-app/e2e/helpers/scripted-model-server.test.ts",
+      "packages/claxedo-app/e2e/helpers/scripted-model-server.ts",
+      "packages/claxedo-app/e2e/helpers/turn-oracle-extras.ts",
+      "packages/claxedo-app/e2e/playwright/real-harness-local.spec.ts"
+    ]
+  },
+  {
+    "hash": "35ad1a76f6d9a5ef9c09daf79c92d080b2e2c78f",
+    "subject": "test(e2e): verify real shell navigation and busy draft state",
+    "files": [
+      "packages/claxedo-app/e2e/INVARIANTS.md",
+      "packages/claxedo-app/e2e/playwright/real-harness-local.spec.ts"
+    ]
+  },
+  {
+    "hash": "edc362ab08a7393710a0ff3a99909a01ce380e17",
+    "subject": "test(e2e): verify running tool interruption across server restart",
+    "files": [
+      "packages/claxedo-app/e2e/playwright/real-harness-local.spec.ts"
+    ]
+  }
+]
