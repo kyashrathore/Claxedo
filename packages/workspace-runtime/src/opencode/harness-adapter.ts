@@ -280,7 +280,6 @@ class EventQueue {
 export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   /** Session config is durable in the Claxedo store; the SDK receives it per turn. */
   readonly sessionConfigOwner = "runtime" as const
-  /** The embedded SDK takes no standing instruction block. */
   readonly instructionChannel = "none" as const
   private readonly runtime: OpenCodeRuntime
   private readonly workspaceID: string
