@@ -798,6 +798,169 @@ Pre-existing red, untouched by this change: `workspace-runtime
 src/server.test.ts` has two cases posting a `version: 3` runtime snapshot that
 the route has required to be `4` since before this branch.
 
+### Live Daytona run — 2026-09-13
+
+Goal: drive a stored `claude-sdk` credential into a real Daytona sandbox
+through the branch's own HTTP routes and see the request reach
+`api.anthropic.com`. It does not get that far. Two blockers, one of them
+architectural.
+
+Setup: worktree `/Users/yashvardhansingh/test/opencode-credentials`, branch
+`feat/credentials-integration` at `2fe61ea1d3`; the self-hosted-node server on
+`http://127.0.0.1:2595` with `CLAXEDO_DATA_DIR` pointed at a scratch copy of the
+dev registry (rows: `daytona` and `cloudflare` `sandbox_driver`, `claude-sdk`
+`api_key` `is_active`).
+
+#### 1. Sandbox-backed workspace: created, never provisioned
+
+```
+curl -s -X POST http://127.0.0.1:2595/api/workspace/create \
+  -H 'Content-Type: application/json' \
+  -d '{"driver":"daytona","repoUrl":"https://github.com/octocat/Hello-World.git",
+       "workspaceName":"cred-feas","projectName":"cred-feas"}'
+```
+
+HTTP 200, `{"workspaceId":"ws_mtzd9zyq_bkya38prqgh74yq9","kind":"cloud",
+"driver":"daytona","status":"acquiring_sandbox", ...}`. Background provisioning
+(`startCloudWorkspaceProvisioning`) then failed, three attempts, same error:
+
+```
+sqlite3 "$CLAXEDO_DATA_DIR/claxedo.db" \
+  "select status,retry_count,last_error,sandbox_id from claxedo_workspace_lease"
+→ backoff | 2 | Snapshot claxedo-workspace-runtime-0-5-2-v8 not found.
+                Did you add it through the Daytona Dashboard? | (empty)
+```
+
+**No Daytona sandbox id was ever issued** — `sandbox_id` and
+`driver_resource_id` stayed empty, and the workspace settled at `stopped`.
+
+Two things the failure does prove, both new since the 2026-09-12 attempt:
+
+- **The registry's Daytona key works.** That message is a Daytona domain error,
+  which only an authenticated call can receive; the `.env` key returns
+  `401 Invalid credentials` before any of it. The supervisor reached it through
+  `sandboxDriverAuthAsync` → `sandboxDriverAuthManaged` → `resolveSecret`
+  (`packages/claxedo-server/src/sandbox/driver-auth.ts`), i.e. the registry row,
+  not the environment. Appendix E item 1's "registry key unreachable" no longer
+  holds for the server itself.
+- **The key has org-secret read and write.** The error comes from
+  `client.create`, and in `ensureHost` (`drivers/daytona.ts`)
+  `reconcileBrokeredSecrets` runs before it, so `secret.list` and
+  `secret.create` had already succeeded. The sentinel slot was created.
+
+Blocker: the org holds no snapshot named `claxedo-workspace-runtime-0-5-2-v8`
+(`defaultSnapshotName()` over `workspaceRuntimeVersion()` `0.5.2` and
+`SNAPSHOT_SCHEMA_VERSION` `8`). Building and registering one needs a container
+build plus a push, and pointing `CLAXEDO_DAYTONA_SNAPSHOT` at an existing
+snapshot needs a listing this session could not make.
+
+#### 2. The v4 projection never reaches a sandbox — by construction
+
+This is the blocker that survives a working snapshot.
+
+`runtimeConfigSnapshot` picks the scope by workspace kind
+(`workspace/supervisor/config-sync.ts`):
+
+```ts
+secretScope: state.remote || state.ws.kind === "cloud" ? "shared" : "local"
+```
+
+and `getRuntimeConfigSnapshot` answers `shared` with nothing
+(`claxedo-server-core/src/agent-config/index.ts`):
+
+```ts
+const auth = scope === "shared" ? {} : await agentConfigOptions.projectAuth?.({ ... }) ?? {}
+```
+
+with the in-code reason: *"A shared-scope sandbox reaches its credentials
+through its own provider's edge, which no authority here can mint; that adapter
+is the next slice."* The branch's own test pins it —
+`claxedo-server-core src/agent-config/index.test.ts`, "shared cloud snapshot
+keeps the v4 contract without implicit selection", `expect(snap.auth).toEqual({})`;
+run here: 1 passed, 34 skipped.
+
+The other half is missing too: **nothing turns a provider credential into a
+`SandboxBrokeredSecret`.** A repository-wide search finds exactly two producers
+— `authenticatedGitHubCloneSource` (a clone token) and the Agent Plugins
+`mcp/runtime-preparation.ts` (an MCP runtime token). The self-hosted create route
+forwards only `provisionSecrets`, and `startSandbox` forwards only
+`bindings?.secrets`, so `input.secrets` at the Daytona driver is `undefined` for
+an ordinary workspace and the only secret mounted is the valueless sentinel.
+
+Consumer side confirms the outcome: `claudeAuthEnv(binding)` in
+`agent-sdk-runtime/src/harnesses/claude/auth.ts` returns `{}` when there is no
+binding, so a Claude turn inside the sandbox would run on whatever login the
+image carries — which is the implicit tier, not the operator's account.
+
+**Unmet acceptance criterion:** "the workspace runtime inside the sandbox
+received the v4 provider projection for `claude-sdk`". It cannot, on this
+branch, for any driver. Owner decision, not a bug: the delivery adapter of
+section 3 / Appendix C is unbuilt.
+
+#### 3. Claude turn: not reachable
+
+No sandbox, no runtime, no turn. Nothing was learned about Daytona's
+substitution behaviour in `x-api-key`, so Appendix E item 1 stays open.
+
+#### 4. Withdrawal: not reachable live, and a defect found in the path
+
+No brokered credential existed to withdraw. Reading the path for it surfaced a
+real defect, fixed on this branch in `1606dfc85f`:
+
+`daytona.ts`'s `destroy` deleted the sandbox and nothing else. Daytona org
+secrets are org-scoped, not sandbox-scoped, and the only withdrawal —
+`reconcileBrokeredSecrets({ withdraw: true })` — runs solely while ensuring or
+resuming the *same* workspace, which a destroyed one never reaches again. So
+every credential brokered to a destroyed workspace stayed live in the
+organization indefinitely. `destroy` now enumerates the workspace's secret
+prefix and withdraws each one through the same revoked-value-then-delete path,
+and refuses a target that names no workspace rather than returning with
+spendable credentials behind it. Gates: `bun test src` in sandbox-manager
+224 pass / 0 fail; `npm run typecheck` in sandbox-manager clean;
+`bun run test:architecture-ratchets` from the root passes;
+`claxedo-server src/workspace/supervisor/cloud.test.ts` 66 pass.
+
+**Related, deliberately not fixed — owner's call.** On the self-hosted
+deployment `DELETE /api/workspace/:id` never reaches `driver.destroy` at all.
+`createWorkspaceSupervisorSandboxManager().destroy` calls
+`discardSupervisorSandbox` → `stopSupervisorSandbox` → `stopSandbox` →
+`manager.stop` → `driver.suspend ?? driver.stop`, so the Daytona sandbox is
+suspended and kept; `sandboxDriverForSupervisor` passes neither
+`autoStopMinutes` nor `autoDeleteMinutes`, so nothing reclaims it later. Until
+that is settled, the fix above only protects the paths that do call `destroy`
+(hosted create/GC). Changing delete to destroy changes workspace-delete
+semantics for every driver, which is a product decision.
+
+#### 5. Teardown
+
+`curl -X DELETE http://127.0.0.1:2595/api/workspace/ws_mtzd9zyq_bkya38prqgh74yq9`
+→ `{"ok":true}`. The lease row is gone and `workspaces.json` holds no `ws_*`
+entry. No sandbox was created, so none is running.
+
+**One artifact could not be removed:** the valueless sentinel org secret
+`reconcileBrokeredSecrets` created before the failing `create`, named
+`claxedo-ws_5Fmtzd9zyq_5Fbkya38prqgh74yq9-CLAXEDO_5FBROKERED_5FSECRET_5FSLOT`.
+It has no value and no allowed hosts, so it carries no authority, but deleting
+it needs a Daytona API call and this session may not decrypt the registry's
+driver key. Follow-up for the owner: delete that one secret from the Daytona
+dashboard, and note that every failed provision leaves one behind.
+
+The `claude-sdk` row was left as found — reset to
+`status='available', health=NULL, last_error=NULL`; `/credentials/effective`
+lists it again.
+
+#### What was not verified
+
+- Whether Daytona substitutes a placeholder inside `x-api-key` (item 1). The
+  synthetic-value probe in `scratchpad/daytona-feasibility/probe2.ts` still
+  needs the registry key, and running it would mean decrypting a stored secret,
+  which this session is not permitted to do. Unchanged from 2026-09-12: the
+  blocker is the permission boundary, not the key.
+- Any Daytona-side state by direct API read (org secrets by name, sandbox list),
+  for the same reason. Every Daytona fact above is inferred from the server's own
+  authenticated calls and their recorded errors.
+- Anything downstream of a provisioned sandbox: runtime env, config push, turn.
+
 ## Appendix F. Open findings from the third review
 
 Each of these was raised, read, and deliberately not fixed on this branch. They
