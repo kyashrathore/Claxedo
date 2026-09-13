@@ -691,6 +691,11 @@ describe("a brokered turn withholds the operator's Claude account", () => {
       apiKeyHelper: "/bin/echo sk-ant-api03-operator",
       env: { ANTHROPIC_API_KEY: "sk-ant-api03-operator", CLAUDE_CODE_USE_BEDROCK: "1", EDITOR: "vim" },
     }))
+    fs.writeFileSync(path.join(source, "settings.local.json"), JSON.stringify({
+      awsAuthRefresh: "/bin/aws sso login",
+      awsCredentialExport: "/bin/aws-export",
+      env: { AWS_BEARER_TOKEN_BEDROCK: "operator-bedrock", VERTEX_API_KEY: "operator-vertex", PAGER: "less" },
+    }))
     fs.writeFileSync(path.join(source, "CLAUDE.md"), "operator memory")
     fs.writeFileSync(path.join(source, ".claude.json"), '{"oauthAccount":{"emailAddress":"operator@example.test"}}')
     fs.writeFileSync(path.join(source, ".credentials.json"), '{"claudeAiOauth":{"accessToken":"operator-own-token"}}')
@@ -702,12 +707,18 @@ describe("a brokered turn withholds the operator's Claude account", () => {
     try {
       const root = brokeredClaudeConfigDir({ root: dirs.root, source: dirs.source })
 
-      expect(fs.readdirSync(root).sort()).toEqual(["CLAUDE.md", "plugins", "settings.json"])
+      expect(fs.readdirSync(root).sort())
+        .toEqual(["CLAUDE.md", "plugins", "settings.json", "settings.local.json"])
       expect(fs.existsSync(path.join(root, ".claude.json"))).toBe(false)
       expect(fs.existsSync(path.join(root, ".credentials.json"))).toBe(false)
       expect(fs.lstatSync(path.join(root, "settings.json")).isSymbolicLink()).toBe(false)
       expect(JSON.parse(fs.readFileSync(path.join(root, "settings.json"), "utf8")))
         .toEqual({ model: "opus", env: { EDITOR: "vim" } })
+      // `settings.local.json` is read alongside `settings.json` and reaches the
+      // vendor the same way; a link here would also let the turn edit it.
+      expect(fs.lstatSync(path.join(root, "settings.local.json")).isSymbolicLink()).toBe(false)
+      expect(JSON.parse(fs.readFileSync(path.join(root, "settings.local.json"), "utf8")))
+        .toEqual({ env: { PAGER: "less" } })
     } finally {
       fs.rmSync(dirs.base, { recursive: true, force: true })
     }
