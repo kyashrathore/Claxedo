@@ -372,8 +372,8 @@ export const appLocal: Policy = {
   // route or content-surface module is reachable from here, and
   // `documents-content-surfaces` remains a forbidden chunk marker.
   //
-  // Measured 1064 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1064, packages: 58 },
+  // Measured 1063 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1063, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

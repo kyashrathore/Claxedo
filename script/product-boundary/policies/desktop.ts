@@ -425,8 +425,8 @@ export const desktopRendererUnsigned: Policy = {
   // edge they add; this renderer already carried the Tiptap edges through its
   // hosted half.
   //
-  // Measured 1107 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1107, packages: 58 },
+  // Measured 1106 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1106, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
