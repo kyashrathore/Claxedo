@@ -46,7 +46,6 @@ export function fakeCapabilities(overrides: Partial<TasksHostCapabilities> = {})
   const host: TasksHostCapabilities = {
     placements: ["local", "cloud"],
     cloudSelectedCapabilities: true,
-    instructions: true,
     ...overrides,
   }
   return {

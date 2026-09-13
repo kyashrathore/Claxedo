@@ -11,7 +11,6 @@ export type TasksHostCapabilities = {
   placements: readonly PresetPlacement[]
   /** False on a host that cannot isolate a cloud root; such a preset saves but cannot start. */
   cloudSelectedCapabilities: boolean
-  instructions: boolean
 }
 
 /**

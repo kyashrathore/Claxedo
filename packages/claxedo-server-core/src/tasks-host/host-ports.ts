@@ -39,7 +39,6 @@ export function createTasksCapabilities(input: TasksCapabilitiesInput): TasksCap
       return {
         placements: input.placements,
         cloudSelectedCapabilities: input.cloudSelectedCapabilities,
-        instructions: true,
       }
     },
     async harness(reference: HarnessReference) {

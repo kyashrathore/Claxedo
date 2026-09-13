@@ -87,7 +87,6 @@ function refusedPresetHost() {
           protocolVersion: 1,
           placements: ["local"],
           cloudSelectedCapabilities: false,
-          instructions: true,
           configurationSlots: ["primary"],
           bounds: TASKS_BOUNDS,
         })

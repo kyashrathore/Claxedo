@@ -385,7 +385,6 @@ export type TasksCapabilities = {
   placements: readonly PresetPlacement[]
   /** Whether this host can honour a cloud preset's selected-only capability set. */
   cloudSelectedCapabilities: boolean
-  instructions: boolean
   configurationSlots: readonly ConfigurationSlot[]
   bounds: TasksBounds
 }

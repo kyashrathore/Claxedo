@@ -358,7 +358,6 @@ export function decodeCapabilitiesResponse(value: unknown): Parsed<TasksCapabili
         return placement
       }),
       cloudSelectedCapabilities: ctx.read.boolean(row?.cloudSelectedCapabilities, "body.cloudSelectedCapabilities") ?? false,
-      instructions: ctx.read.boolean(row?.instructions, "body.instructions") ?? false,
       configurationSlots: slots.map((entry, index) => decodeSlot(ctx, entry, `body.configurationSlots[${index}]`)),
       bounds: boundsOf(ctx, row?.bounds),
     }

@@ -129,7 +129,6 @@ export function createTasksRoutes(options: TasksRoutesOptions): Hono {
       protocolVersion: TASKS_PROTOCOL_VERSION,
       placements: host.placements,
       cloudSelectedCapabilities: host.cloudSelectedCapabilities,
-      instructions: host.instructions,
       configurationSlots: CONFIGURATION_SLOTS,
       bounds: TASKS_BOUNDS,
     }
