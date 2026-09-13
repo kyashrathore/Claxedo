@@ -1,5 +1,5 @@
 import { utf8ByteLength } from "@claxedo/helpers/string"
-import { TASKS_BOUNDS, type TaskDraft, type TaskEditInput, type TaskReparentInput } from "../contracts"
+import { TASKS_BOUNDS, isTaskCreateStatus, type TaskDraft, type TaskEditInput, type TaskReparentInput } from "../contracts"
 import { collectFields, parsedInvalid, parsedOk, type FieldCollector, type Parsed } from "../validation"
 
 function validateTitleAndDescription(fields: FieldCollector, title: string, description: string): void {
@@ -14,6 +14,7 @@ export function validateTaskDraft(draft: TaskDraft): Parsed<TaskDraft> {
   if (draft.projectId.trim().length === 0) fields.add("projectId", "required")
   if (draft.workspaceId !== null && draft.workspaceId.trim().length === 0) fields.add("workspaceId", "required")
   if (draft.parentTaskId !== null && draft.parentTaskId.trim().length === 0) fields.add("parentTaskId", "required")
+  if (draft.status !== undefined && !isTaskCreateStatus(draft.status)) fields.add("status", "unknown_value")
   return fields.ok ? parsedOk(draft) : parsedInvalid(fields.fields)
 }
 

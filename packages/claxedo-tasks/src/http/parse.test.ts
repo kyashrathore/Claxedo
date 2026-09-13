@@ -92,6 +92,35 @@ describe("parseCommandRequest", () => {
     expect(reasons(result)).toEqual({ "command.input.projectId": "type" })
   })
 
+  test("a create carries Backlog, defaults to To do and refuses anything else", () => {
+    const parked = parseCommandRequest({
+      clientRequestId: "r",
+      command: {
+        type: "task.create",
+        input: { projectId: "p", title: "Ship", description: "", workspaceId: null, parentTaskId: null, status: "backlog" },
+      },
+    })
+    expect(parked.ok && parked.value.command.type === "task.create" && parked.value.command.input.status).toBe("backlog")
+
+    const unsaid = parseCommandRequest({
+      clientRequestId: "r",
+      command: {
+        type: "task.create",
+        input: { projectId: "p", title: "Ship", description: "", workspaceId: null, parentTaskId: null },
+      },
+    })
+    expect(unsaid.ok && unsaid.value.command.type === "task.create" && unsaid.value.command.input.status).toBeUndefined()
+
+    const working = parseCommandRequest({
+      clientRequestId: "r",
+      command: {
+        type: "task.create",
+        input: { projectId: "p", title: "Ship", description: "", workspaceId: null, parentTaskId: null, status: "doing" },
+      },
+    })
+    expect(reasons(working)).toEqual({ "command.input.status": "unknown_value" })
+  })
+
   test("a status outside the closed set is refused", () => {
     const result = parseCommandRequest({
       clientRequestId: "r",

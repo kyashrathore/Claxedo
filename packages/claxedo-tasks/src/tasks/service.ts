@@ -326,7 +326,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         parentTaskId: draft.parentTaskId,
         title: draft.title,
         description: draft.description,
-        status: "todo",
+        status: draft.status ?? "todo",
         childSetRevision: 0,
         archivedAt: null,
         createdAt: now,

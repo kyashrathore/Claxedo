@@ -81,12 +81,14 @@ describe("tasks store drafts", () => {
       { ...task({ id: "b", status: "doing" }), hasDescription: false, links: { count: 0 }, children: { total: 0, done: 0 } },
       { ...task({ id: "c", status: "done" }), hasDescription: false, links: { count: 0 }, children: { total: 0, done: 0 } },
       { ...task({ id: "d", status: "todo", archivedAt: 10 }), hasDescription: false, links: { count: 0 }, children: { total: 0, done: 0 } },
+      { ...task({ id: "e", status: "backlog" }), hasDescription: false, links: { count: 0 }, children: { total: 0, done: 0 } },
+      { ...task({ id: "f", status: "needs_you" }), hasDescription: false, links: { count: 0 }, children: { total: 0, done: 0 } },
     ].map(({ description: _description, ...rest }) => rest)
 
-    expect(store.visibleTasks(rows).map((row) => row.id)).toEqual(["a", "b"])
+    expect(store.visibleTasks(rows).map((row) => row.id)).toEqual(["a", "b", "f"])
     store.setCollection("backlog")
-    expect(store.visibleTasks(rows).map((row) => row.id)).toEqual(["a"])
+    expect(store.visibleTasks(rows).map((row) => row.id)).toEqual(["e"])
     store.setCollection("all")
-    expect(store.visibleTasks(rows).map((row) => row.id)).toEqual(["a", "b", "c", "d"])
+    expect(store.visibleTasks(rows).map((row) => row.id)).toEqual(["a", "b", "c", "d", "e", "f"])
   })
 })

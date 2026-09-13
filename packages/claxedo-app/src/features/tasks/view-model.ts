@@ -15,6 +15,7 @@ import type {
 } from "@claxedo/tasks"
 
 export const TASK_STATUS_LABELS: Readonly<Record<TaskStatus, string>> = {
+  backlog: "Backlog",
   todo: "To do",
   doing: "In progress",
   needs_you: "Needs you",

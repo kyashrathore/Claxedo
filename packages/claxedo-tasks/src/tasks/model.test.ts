@@ -9,6 +9,7 @@ function draft(overrides: Partial<TaskDraft> = {}): TaskDraft {
     description: overrides.description ?? "",
     workspaceId: overrides.workspaceId ?? null,
     parentTaskId: overrides.parentTaskId ?? null,
+    ...(overrides.status === undefined ? {} : { status: overrides.status }),
   }
 }
 
@@ -39,6 +40,12 @@ describe("validateTaskDraft", () => {
     expect(reasons(validateTaskDraft(draft({ workspaceId: "" })))).toEqual({ workspaceId: "required" })
     expect(reasons(validateTaskDraft(draft({ parentTaskId: " " })))).toEqual({ parentTaskId: "required" })
     expect(validateTaskDraft(draft({ workspaceId: null, parentTaskId: null })).ok).toBe(true)
+  })
+
+  test("a task may be created in Backlog or To do and in nothing else", () => {
+    expect(validateTaskDraft(draft({ status: "backlog" })).ok).toBe(true)
+    expect(validateTaskDraft(draft({ status: "todo" })).ok).toBe(true)
+    expect(reasons(validateTaskDraft({ ...draft(), status: "doing" as never }))).toEqual({ status: "unknown_value" })
   })
 })
 

@@ -75,6 +75,16 @@ describe("tasks service", () => {
       expect(parent).toBeNull()
     })
 
+    test("creates into Backlog when the draft asks for it, and moves in and out of it freely", async () => {
+      const parked = (await tasks.create(ACTOR, { ...draft(), status: "backlog" })).task
+      expect(parked.status).toBe("backlog")
+
+      const picked = (await tasks.setStatus(ACTOR, { taskId: parked.id, revision: parked.revision, status: "doing" })).task
+      expect(picked.status).toBe("doing")
+      const shelved = await tasks.setStatus(ACTOR, { taskId: picked.id, revision: picked.revision, status: "backlog" })
+      expect(shelved.task.status).toBe("backlog")
+    })
+
     test("numbers each task after the last one in its own project", async () => {
       const first = (await tasks.create(ACTOR, draft())).task
       const second = (await tasks.create(ACTOR, draft())).task

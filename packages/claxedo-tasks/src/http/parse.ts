@@ -1,6 +1,7 @@
 import {
   TASKS_BOUNDS,
   isConfigurationSlot,
+  isTaskCreateStatus,
   isTaskStatus,
   isTasksCommandName,
   type ChildListQuery,
@@ -53,7 +54,12 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
     case "preset.archive":
     case "preset.restore":
       return { type: name, input: { presetId: presetId(), revision: revision() } }
-    case "task.create":
+    case "task.create": {
+      // The only optional key in a command input: a client that says nothing
+      // about status gets To do, and one that names anything but the two a
+      // task may be created in is refused rather than quietly corrected.
+      const created = row?.status
+      if (created !== undefined && !isTaskCreateStatus(created)) ctx.fields.add(`${path}status`, "unknown_value")
       return {
         type: name,
         input: {
@@ -62,8 +68,10 @@ function commandInput(ctx: DecodeContext, name: TasksCommand["type"], value: unk
           description: ctx.read.string(row?.description, `${path}description`) ?? "",
           workspaceId: ctx.read.nullableString(row?.workspaceId, `${path}workspaceId`) ?? null,
           parentTaskId: ctx.read.nullableString(row?.parentTaskId, `${path}parentTaskId`) ?? null,
+          ...(isTaskCreateStatus(created) ? { status: created } : {}),
         },
       }
+    }
     case "task.edit":
       return {
         type: name,

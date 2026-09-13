@@ -157,8 +157,14 @@ export function createTasksStore() {
   }
 }
 
+/**
+ * Active is the work in play, so it holds neither the parked nor the finished;
+ * All is everything, archived rows included, and is the only place an archived
+ * task can be seen at all.
+ */
 function matchesCollection(task: TaskSummary, collection: TaskCollection) {
   if (collection === "all") return true
   if (task.archivedAt !== null) return false
-  return collection === "active" ? task.status !== "done" : task.status === "todo"
+  if (collection === "backlog") return task.status === "backlog"
+  return task.status !== "backlog" && task.status !== "done"
 }

@@ -4,8 +4,9 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { TASK_STATUSES, isTaskStatus, type TaskStatus } from "@claxedo/tasks"
 import { TASK_STATUS_LABELS } from "../../view-model"
 
-const STATUS_ICONS: Readonly<Record<TaskStatus, "circle-dashed" | "circle-half" | "circle-alert" | "circle-check">> = {
-  todo: "circle-dashed",
+const STATUS_ICONS: Readonly<Record<TaskStatus, "circle-dashed" | "circle" | "circle-half" | "circle-alert" | "circle-check">> = {
+  backlog: "circle-dashed",
+  todo: "circle",
   doing: "circle-half",
   needs_you: "circle-alert",
   done: "circle-check",
@@ -29,7 +30,7 @@ export function TaskStatusChip(props: { status: TaskStatus }) {
 }
 
 /**
- * The four statuses as menu rows, wherever a menu is already open.
+ * Every status as a menu row, wherever a menu is already open.
  *
  * A radio group, so the ticked row is the record rather than the last press: a
  * refused change — a parent whose children are still open — re-renders with

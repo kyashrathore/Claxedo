@@ -12,8 +12,15 @@ export const TASKS_PROTOCOL_VERSION = 1
 export const CONFIGURATION_SLOTS = ["primary", "planning", "implementation", "review"] as const
 export type ConfigurationSlot = (typeof CONFIGURATION_SLOTS)[number]
 
-export const TASK_STATUSES = ["todo", "doing", "needs_you", "done"] as const
+export const TASK_STATUSES = ["backlog", "todo", "doing", "needs_you", "done"] as const
 export type TaskStatus = (typeof TASK_STATUSES)[number]
+
+/**
+ * The statuses a task may be created in. The rest are reached by working on
+ * it, so offering them at create would name a state nothing has entered.
+ */
+export const TASK_CREATE_STATUSES = ["backlog", "todo"] as const
+export type TaskCreateStatus = (typeof TASK_CREATE_STATUSES)[number]
 
 export const PRESET_PLACEMENTS = ["local", "cloud"] as const
 export type PresetPlacement = (typeof PRESET_PLACEMENTS)[number]
@@ -254,6 +261,8 @@ export type TaskDraft = {
   description: string
   workspaceId: string | null
   parentTaskId: string | null
+  /** Absent means To do, which is where a task that nobody parked belongs. */
+  status?: TaskCreateStatus
 }
 
 export type PresetCreateInput = PresetDraft
@@ -459,6 +468,10 @@ export function isConfigurationSlot(value: unknown): value is ConfigurationSlot 
 
 export function isTaskStatus(value: unknown): value is TaskStatus {
   return typeof value === "string" && TASK_STATUSES.some((status) => status === value)
+}
+
+export function isTaskCreateStatus(value: unknown): value is TaskCreateStatus {
+  return typeof value === "string" && TASK_CREATE_STATUSES.some((status) => status === value)
 }
 
 export function isTasksCommandName(value: unknown): value is TasksCommandName {
