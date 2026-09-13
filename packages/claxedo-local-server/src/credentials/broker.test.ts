@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -430,6 +430,57 @@ describe("local binding authority", () => {
     // Another tenant's projection of the same workspace derives different
     // binding ids, so a placeholder minted here names nothing over there.
     expect(await local.projectAuth({ workspaceId, orgId: "org-other" })).toEqual({})
+  })
+
+  test("reportFailure marks the row in the org its own binding was minted in", async () => {
+    const org = "org-report"
+    const credential = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      account_id: "acc-org-report",
+      secret: "sk-ant-api03-org-report",
+    }, org)
+    expect(setActiveCredentials([credential.id], org)).toMatchObject({ ok: true })
+    const local = broker()
+    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId, orgId: org }))["claude-sdk"]).baseUrl)
+
+    await local.authority.reportFailure({
+      bindingId: id,
+      credentialId: credential.id,
+      revision: getCredential(credential.id, org)!.revision,
+      status: 401,
+    })
+
+    // Read in the single-tenant org the row is not in, the revision never
+    // matches and a vendor's 401 silently marks nothing at all.
+    expect(getCredential(credential.id, org)?.health).toBe("auth_failed")
+  })
+
+  test("a provider id that names an Object prototype member binds nothing", async () => {
+    // `constructor` reaches `Object.prototype` through a plain-object lookup,
+    // so the row reads as bindable and then has no destination to project.
+    await activeRow("key-constructor", "constructor")
+    const local = broker()
+
+    expect((await local.projectAuth({ workspaceId })).constructor)
+      .toEqual({ unavailable: true, reason: "no_destination" })
+  })
+
+  test("a data directory that becomes writable is opened on the next projection", async () => {
+    const dataDir = path.join(root, `reopen-${randomUUID().slice(0, 8)}`)
+    mkdirSync(dataDir, { recursive: true, mode: 0o500 })
+    await activeRow("sk-ant-api03-reopen")
+    const local = createLocalCredentialBroker({ dataDir, brokerOrigin })
+    const refused = (await local.projectAuth({ workspaceId }))["claude-sdk"]
+    expect(refused).toMatchObject({ unavailable: true })
+
+    chmodSync(dataDir, 0o700)
+
+    // The fault was the operator's to fix, and they fixed it; a broker that
+    // remembers the first failure for the life of the process makes every
+    // account permanently unavailable until the server is restarted.
+    expect(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).placeholder).toBeTruthy()
   })
 
   test("the revision a binding reports counts secret writes, not the clock", async () => {

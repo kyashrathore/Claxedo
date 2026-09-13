@@ -145,9 +145,14 @@ const PROVIDER_ROWS: Record<string, ProviderRow> = {
   xai: openAiCompatibleDestination({ origin: "https://api.x.ai", apiPath: "/v1" }),
 }
 
-/** Whether this provider can be bound at all, asked without reading its secret. */
+/**
+ * Whether this provider can be bound at all, asked without reading its secret.
+ *
+ * `Object.hasOwn`, because `in` reaches `Object.prototype`: a provider id of
+ * `constructor` or `toString` answered true here and then had no row to bind.
+ */
 export function hasProviderDestination(providerId: string): boolean {
-  return providerId in PROVIDER_ROWS
+  return Object.hasOwn(PROVIDER_ROWS, providerId)
 }
 
 export function providerDestination(input: {
@@ -155,7 +160,7 @@ export function providerDestination(input: {
   kind: CredentialKind
   secret: string
 }): ProviderDestination | undefined {
-  const row = PROVIDER_ROWS[input.providerId]
+  const row = Object.hasOwn(PROVIDER_ROWS, input.providerId) ? PROVIDER_ROWS[input.providerId] : undefined
   if (!row) return undefined
   const material = credentialSecretMaterial({ kind: input.kind, secret: input.secret })
   if (!material) return undefined

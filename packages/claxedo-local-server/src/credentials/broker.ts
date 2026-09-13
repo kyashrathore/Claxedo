@@ -135,17 +135,17 @@ export function createLocalCredentialBroker(input: {
    * a provider that says it is unavailable and why.
    */
   let opened: { signingKey: Uint8Array; leaseGeneration: number } | undefined
-  let openFailure: Error | undefined
   function brokerState() {
     if (opened) return opened
-    if (openFailure) throw openFailure
     try {
       const dir = credentialsDir(input.dataDir)
       opened = { signingKey: loadSigningKey(dir), leaseGeneration: nextLeaseGeneration(dir) }
       return opened
     } catch (error) {
-      openFailure = error instanceof Error ? error : new Error(String(error))
-      throw openFailure
+      // Not remembered: the fault is the operator's to fix, and a broker that
+      // holds the first failure for the life of the process leaves every
+      // account unavailable until the server is restarted.
+      throw error instanceof Error ? error : new Error(String(error))
     }
   }
 
@@ -251,15 +251,18 @@ export function createLocalCredentialBroker(input: {
       return projected.has(`${identity.orgId}\n${identity.workspaceId}`)
         && sameRuntime(runtimeIdentity(identity.workspaceId, identity.orgId), identity)
     },
-    async reportFailure({ credentialId, revision, status }) {
+    async reportFailure({ bindingId, credentialId, revision, status }) {
       // A 403 from a model vendor is a permission or region refusal, not a
       // rejected credential; marking on it would withdraw a working account.
       if (status !== 401) return
-      const credential = requireCredential(credentialId)
+      // The org the binding was minted in. Read in the default one instead,
+      // another tenant's row is never found and its 401 marks nothing.
+      const org = minted.get(bindingId)?.orgId ?? defaultOrg
+      const credential = requireCredential(credentialId, org)
       // The revision the request used. A 401 for a value that has since been
       // rotated says nothing about the one stored now.
       if (!credential || credential.revision !== revision) return
-      updateCredentialHealth(credentialId, "auth_failed", now())
+      updateCredentialHealth(credentialId, "auth_failed", now(), org)
     },
   }
 
