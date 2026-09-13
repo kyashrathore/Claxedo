@@ -38,6 +38,7 @@ export {
   TASK_COLLECTION_LABELS,
   TASK_STATUS_LABELS,
   groupLinksBySlot,
+  openableSlot,
   slotAttempt,
   shortAge,
   type CapabilityCatalog,
@@ -48,6 +49,7 @@ export {
   type StartPreviewState,
   type TaskCollection,
   type TaskDetailView,
+  type OpenableSlot,
   type SlotAttempt,
   type TaskLinkGroup,
 } from "./view-model"

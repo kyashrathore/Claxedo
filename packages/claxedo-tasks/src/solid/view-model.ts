@@ -188,6 +188,32 @@ export function slotAttempt(groups: readonly TaskLinkGroup[], slot: Configuratio
 }
 
 /**
+ * The slot an Open that names none means, and the session it leads to.
+ *
+ * A list read carries a link count and no slot, so a task whose only run is on
+ * a secondary slot offered Open and then reported having no session at all.
+ * Primary wins whenever it has run, because that is the slot a task starts in;
+ * otherwise the newest surviving run, and failing that any run, so the refusal
+ * can name the slot whose session is gone instead of denying it exists.
+ */
+export type OpenableSlot = {
+  slot: ConfigurationSlot
+  current: TaskSessionLinkView
+  /** Set only while the host reports the session live. */
+  open: TaskSessionLinkView | undefined
+}
+
+export function openableSlot(groups: readonly TaskLinkGroup[]): OpenableSlot | undefined {
+  const chosen =
+    groups.find((group) => group.slot === "primary" && group.current) ??
+    groups.find((group) => group.current?.liveness === "live") ??
+    groups.find((group) => group.current)
+  const current = chosen?.current
+  if (!chosen || !current) return undefined
+  return { slot: chosen.slot, current, open: slotAttempt(groups, chosen.slot).open }
+}
+
+/**
  * Links folded into one group per slot, highest attempt first.
  *
  * The head of each group is the slot's current link, and `startable` is read

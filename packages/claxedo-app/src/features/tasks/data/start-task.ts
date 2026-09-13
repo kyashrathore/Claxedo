@@ -1,5 +1,5 @@
 import type { ConfigurationSlot, SessionReference, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
-import { groupLinksBySlot, slotAttempt } from "@claxedo/tasks/solid"
+import { SLOT_LABELS, groupLinksBySlot, openableSlot, slotAttempt } from "@claxedo/tasks/solid"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf } from "./tasks-api"
@@ -100,23 +100,22 @@ export function useStartTaskCommands(scope: () => TasksScope) {
 
   /**
    * The session a row's Open goes to, read when it is pressed. A list read
-   * carries a link count and no liveness, so whether the slot's session is
-   * still there is a question only the task's own read answers — and a session
-   * the host reports gone is not somewhere to navigate to.
+   * carries a link count and no liveness, so both which slot ran and whether
+   * its session is still there are questions only the task's own read answers
+   * — and a session the host reports gone is not somewhere to navigate to.
    */
-  const openLatestSession = async (taskId: string, slot: ConfigurationSlot = "primary"): Promise<StartOutcome> => {
+  const openLatestSession = async (taskId: string): Promise<StartOutcome> => {
     try {
       const detail = await client().getTask(taskId)
-      const groups = groupLinksBySlot(detail?.links ?? [])
-      const next = slotAttempt(groups, slot)
-      if (next.open) {
-        openSession(next.open.sessionRef)
+      const chosen = openableSlot(groupLinksBySlot(detail?.links ?? []))
+      if (!chosen) return { ok: false, message: "This task has no session to open." }
+      if (chosen.open) {
+        openSession(chosen.open.sessionRef)
         return { ok: true }
       }
-      if (!next.current) return { ok: false, message: "This task has no session to open." }
       return {
         ok: false,
-        message: `The session for this task is ${next.current.liveness}. Start it again to get a new one.`,
+        message: `The ${SLOT_LABELS[chosen.slot].toLowerCase()} session for this task is ${chosen.current.liveness}. Start it again to get a new one.`,
       }
     } catch (error) {
       return { ok: false, message: refusalOf(error).message }

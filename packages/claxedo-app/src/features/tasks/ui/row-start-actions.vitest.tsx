@@ -5,6 +5,7 @@ import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import {
   TASKS_ROUTE_PATH,
+  type ConfigurationSlot,
   type Preset,
   type SessionReference,
   type Task,
@@ -61,6 +62,9 @@ const summary: TaskSummary = {
   children: { total: 0, done: 0 },
 }
 
+const PREVIEW_DIGEST = "d".repeat(64)
+const STARTED_SESSION = { sessionId: "ses_2", workspaceId: null }
+
 function json(body: unknown) {
   return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } })
 }
@@ -78,16 +82,22 @@ function mount(input: { links?: unknown[]; presets?: Preset[] } = {}) {
     useScope: () => () => ({ serverUrl: SERVER, scopeId: "local" }),
     request: async (url, init) => {
       const path = url.slice(`${SERVER}${TASKS_ROUTE_PATH}`.length)
-      requested.push({ path, body: init?.body ? JSON.parse(String(init.body)) : undefined })
+      const body = init?.body ? JSON.parse(String(init.body)) : undefined
+      requested.push({ path, body })
       if (path.startsWith("/tasks?")) return json({ items: [summary], nextCursor: null })
       if (path.startsWith("/presets")) return json({ items: input.presets ?? [preset], nextCursor: null })
       if (path === "/tasks/tsk_1") return json({ task, links: input.links ?? [] })
       if (path.startsWith("/tasks/tsk_1/children")) return json({ items: [], nextCursor: null })
+      // The service resolves a preview against the slot and attempt it was
+      // asked for and mints a digest bound to them, then admits a start only
+      // for that pair; a fake that answers a different attempt lets a caller
+      // that never sends the digest, or sends it with another attempt, pass.
+      const sent = body as { slot: ConfigurationSlot; attempt: number } | undefined
       if (path.startsWith("/tasks/tsk_1/start-preview")) {
-        return json({ preview: { digest: "d".repeat(64), expiresAt: 0, placement: "local", slot: "primary", attempt: 9, configuration: preset.configurations.primary, capabilities: { mode: "inherit-local" }, available: true, blockers: [], currentSession: null, previousTranscriptReadable: false, destinationDescription: "here" } })
+        return json({ preview: { digest: PREVIEW_DIGEST, expiresAt: 0, placement: "local", slot: sent?.slot, attempt: sent?.attempt, configuration: preset.configurations.primary, capabilities: { mode: "inherit-local" }, available: true, blockers: [], currentSession: null, previousTranscriptReadable: false, destinationDescription: "here" } })
       }
-      if (path === "/tasks/tsk_1/start") {
-        return json({ link: { taskId: "tsk_1", slot: "primary", attempt: 2, sessionRef: { sessionId: "ses_2", workspaceId: null }, continuedFrom: null, presetId: "pre_1", presetRevision: 2, presetNameAtStart: "Careful reviewer", createdAt: 1, liveness: "live", handoff: "sent" }, replayed: false })
+      if (path === "/tasks/tsk_1/sessions") {
+        return json({ link: { taskId: "tsk_1", slot: sent?.slot, attempt: sent?.attempt, sessionRef: STARTED_SESSION, continuedFrom: null, presetId: "pre_1", presetRevision: 2, presetNameAtStart: "Careful reviewer", createdAt: 1, liveness: "live", handoff: "sent" }, created: true })
       }
       throw new Error(`unexpected request ${path}`)
     },
@@ -112,11 +122,11 @@ function mount(input: { links?: unknown[]; presets?: Preset[] } = {}) {
   return { openSession, requested, page }
 }
 
-const link = (liveness: "live" | "deleted") => ({
+const link = (liveness: "live" | "deleted", slot: ConfigurationSlot = "primary") => ({
   taskId: "tsk_1",
-  slot: "primary",
+  slot,
   attempt: 1,
-  sessionRef: { sessionId: "ses_1", workspaceId: null },
+  sessionRef: { sessionId: `ses_${slot}`, workspaceId: null },
   continuedFrom: null,
   presetId: "pre_1",
   presetRevision: 2,
@@ -142,22 +152,26 @@ describe("starting and opening from a list row", () => {
   /**
    * The service accepts the slot's current attempt only while its session is
    * live, and `current + 1` once it is gone. A row that always previewed 1 was
-   * refused by every slot that had already run.
+   * refused by every slot that had already run — and a row that previewed the
+   * right attempt but never sent the start left the user on the list.
    */
-  test("Start on a slot whose session is gone previews the next attempt, not the first", async () => {
-    const { requested } = mount({ links: [link("deleted")] })
+  test("Start on a slot whose session is gone sends the attempt it previewed and opens what came back", async () => {
+    const { requested, openSession } = mount({ links: [link("deleted")] })
 
     // A slot that has run shows Open on the main part, so starting again is
     // the caret's job.
     fireEvent.click(await waitFor(() => screen.getByTestId("tasks-list-start-menu-tsk_1")))
     fireEvent.click(screen.getByTestId("tasks-list-start-tsk_1-pre_1-primary"))
 
-    const preview = await waitFor(() => {
-      const found = requested.find((entry) => entry.path.startsWith("/tasks/tsk_1/start-preview"))
-      if (!found) throw new Error("no preview was requested")
+    const start = await waitFor(() => {
+      const found = requested.find((entry) => entry.path === "/tasks/tsk_1/sessions")
+      if (!found) throw new Error("no start was sent")
       return found
     })
-    expect((preview.body as { attempt: number }).attempt).toBe(2)
+    const preview = requested.find((entry) => entry.path.startsWith("/tasks/tsk_1/start-preview"))
+    expect(preview?.body).toMatchObject({ slot: "primary", attempt: 2 })
+    expect(start.body).toMatchObject({ slot: "primary", attempt: 2, previewDigest: PREVIEW_DIGEST })
+    await waitFor(() => expect(openSession).toHaveBeenCalledWith(STARTED_SESSION))
   })
 
   test("Open does not navigate to a session the host says is gone", async () => {
@@ -176,6 +190,19 @@ describe("starting and opening from a list row", () => {
 
     fireEvent.click(await waitFor(() => screen.getByTestId("tasks-list-open-session-tsk_1")))
 
-    await waitFor(() => expect(openSession).toHaveBeenCalledWith({ sessionId: "ses_1", workspaceId: null }))
+    await waitFor(() => expect(openSession).toHaveBeenCalledWith({ sessionId: "ses_primary", workspaceId: null }))
+  })
+
+  /**
+   * A row offers Open on its link count, which says nothing about the slot.
+   * Assuming primary made a task started on Review alone offer Open and then
+   * report that it had no session at all.
+   */
+  test("Open goes to the session of whichever slot ran", async () => {
+    const { openSession } = mount({ links: [link("live", "review")] })
+
+    fireEvent.click(await waitFor(() => screen.getByTestId("tasks-list-open-session-tsk_1")))
+
+    await waitFor(() => expect(openSession).toHaveBeenCalledWith({ sessionId: "ses_review", workspaceId: null }))
   })
 })
