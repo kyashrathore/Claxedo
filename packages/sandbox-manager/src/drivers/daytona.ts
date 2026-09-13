@@ -168,10 +168,12 @@ const SECRET_LIST_PAGE_SIZE = 200
  */
 const SENTINEL_SECRET_ENV = "CLAXEDO_BROKERED_SECRET_SLOT"
 /**
- * Written over a withdrawn secret before it is deleted. Rotations take effect
- * for outbound substitution within seconds; deletion of a secret a live sandbox
- * still references has no such documented window, so the dead value is what
- * actually ends the credential's authority.
+ * Written over a withdrawn secret, with its allowed hosts emptied. Rotations
+ * take effect for outbound substitution within seconds, while unmounting or
+ * deleting a secret a live sandbox references has no such documented window —
+ * so the dead value is what actually ends the credential's authority, and the
+ * mount is left alone because changing the mounted names restarts the
+ * container.
  */
 const REVOKED_SECRET_VALUE = "claxedo-revoked"
 // A bounded walk, so a client that ignores the "short page ends it" rule costs
@@ -205,9 +207,18 @@ function daytonaSecretName(workspaceId: string, secretName: string) {
   return `${workspaceSecretPrefix(workspaceId)}${encodeSecretSegment(secretName)}`
 }
 
-/** The env var name a workspace-prefixed org secret was minted for. */
+/**
+ * The env var name a workspace-prefixed org secret was minted for, or nothing
+ * when the name did not come from `encodeSecretSegment` — a secret someone
+ * created by hand under this prefix would otherwise fail the whole ensure on a
+ * `URIError` raised while reading an unrelated row.
+ */
 function daytonaSecretEnvName(workspaceId: string, secretName: string) {
-  return decodeURIComponent(secretName.slice(workspaceSecretPrefix(workspaceId).length).replace(/_/g, "%"))
+  try {
+    return decodeURIComponent(secretName.slice(workspaceSecretPrefix(workspaceId).length).replace(/_/g, "%"))
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -413,7 +424,7 @@ export function createDaytonaSandboxDriver(
    */
   async function reconcileBrokeredSecrets(
     input: SandboxDriverEnsureInput,
-    options: { withdraw: boolean },
+    options: { withdraw: boolean; mountWithdrawn: boolean },
   ): Promise<BrokeredSecretPlan> {
     const secrets = await brokeredSecretService()
     const existing = await listWorkspaceSecrets(secrets, input.workspaceId)
@@ -443,14 +454,24 @@ export function createDaytonaSandboxDriver(
     if (options.withdraw) {
       for (const [name, secret] of existing) {
         if (desired.has(name)) continue
-        // Emptied, not unmounted. Dropping the name shrinks the mounted set,
-        // and a changed set of names restarts the container — which on a
-        // withdrawal would kill whatever turn is running in it. A dead value
-        // allowlisted to no host carries no authority, and `destroy` is what
-        // finally deletes the secret.
         await secrets.update(secret.id, { value: REVOKED_SECRET_VALUE, hosts: [] })
+        // Emptied, not unmounted, on a sandbox that is already running:
+        // dropping the name shrinks the mounted set, and a changed set of names
+        // restarts the container, which on a withdrawal kills whatever turn is
+        // in it. A sandbox being created has nothing to preserve and no turn to
+        // kill, so a dead leftover from an earlier sandbox is not mounted on
+        // it at all. `destroy` is what finally deletes either one.
+        if (!options.mountWithdrawn) continue
+        const envName = daytonaSecretEnvName(input.workspaceId, name)
+        if (!envName) {
+          console.warn(
+            `[sandbox-manager] daytona org secret ${name} matches workspace ${input.workspaceId}'s prefix `
+            + "but was not minted by this driver; it was emptied and left unmounted",
+          )
+          continue
+        }
         desired.add(name)
-        references[daytonaSecretEnvName(input.workspaceId, name)] = name
+        references[envName] = name
       }
     }
 
@@ -561,7 +582,10 @@ export function createDaytonaSandboxDriver(
     // reconciles, if only to mount the sentinel slot.
     const plan = existing && input.secrets === undefined
       ? undefined
-      : await reconcileBrokeredSecrets(input, { withdraw: input.secrets !== undefined })
+      : await reconcileBrokeredSecrets(input, {
+        withdraw: input.secrets !== undefined,
+        mountWithdrawn: Boolean(existing),
+      })
     const sandbox = existing ?? await (await resolveClient()).create({
       name: labelName(input.workspaceId),
       ...bootSource,
@@ -669,7 +693,7 @@ export function createDaytonaSandboxDriver(
     async resumeHost(input) {
       const sandbox = await sandboxById(input.lease.sandboxId!)
       if (input.ensure.secrets !== undefined) {
-        const plan = await reconcileBrokeredSecrets(input.ensure, { withdraw: true })
+        const plan = await reconcileBrokeredSecrets(input.ensure, { withdraw: true, mountWithdrawn: true })
         await applyBrokeredSecrets(sandbox, plan, input.ensure.workspaceId)
       }
       if (!(await ensureStarted(sandbox))) return { provisioning: true as const, retryAfterMs: 2_000 }

@@ -192,6 +192,37 @@ describe("DaytonaSandboxDriver", () => {
     expect(JSON.stringify(createArg.envVars)).not.toContain("sk-ant-oat01-fixture")
   })
 
+  test("a new sandbox is not mounted with a withdrawn leftover from an earlier one", async () => {
+    const secret = secretService([{ id: "sec_notion", name: notionSecret }])
+    const created = sandbox()
+    const daytona = client({ secret, create: vi.fn(async () => created) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await driver.ensureHost({ ...input, secrets: [] })
+
+    // The leftover is still emptied — it is spendable until it is — but a
+    // sandbox being created has no running turn to protect and no reason to
+    // carry a dead name.
+    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked", hosts: [] })
+    const createArg = (daytona.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(createArg.secrets).toEqual({ [SENTINEL_ENV]: sentinelSecret })
+  })
+
+  test("an org secret this driver did not mint is emptied and left unmounted", async () => {
+    const secret = secretService([
+      { id: "sec_slot", name: sentinelSecret },
+      { id: "sec_handmade", name: `claxedo-ws_5F1-%not-encoded` },
+    ])
+    const existing = sandbox()
+    const daytona = client({ secret, list: vi.fn(async () => ({ items: [existing] })) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await driver.ensureHost({ ...input, secrets: [] })
+
+    expect(secret.update).toHaveBeenCalledWith("sec_handmade", { value: "claxedo-revoked", hosts: [] })
+    expect(existing.updateSecrets).toHaveBeenCalledWith({ [SENTINEL_ENV]: sentinelSecret })
+  })
+
   test("a sandbox is created with the valueless sentinel secret already mounted", async () => {
     const created = sandbox()
     const daytona = client({ create: vi.fn(async () => created) })
