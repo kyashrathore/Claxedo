@@ -12,6 +12,7 @@ import { removeTestTempDir } from "../shared/test-temp-dir"
 import type { ActiveTurn, SdkRuntimeDriverHost, SdkRuntimeTurnInput } from "../shared/sdk-runtime-driver"
 import type { ClaudeSdkDriverOptions } from "./driver"
 import { createClaudeTaskLedger } from "@claxedo/agent-event-runtime/harnesses/claude"
+import type { AgentRuntimeEvent, RawHarnessEvent } from "@claxedo/agent-event-runtime"
 import {
   claudePluginConfigs,
   CLAUDE_FORWARD_SUBAGENT_TEXT,
@@ -792,5 +793,47 @@ describe("a brokered turn withholds the operator's Claude account", () => {
     } finally {
       fs.rmSync(dirs.base, { recursive: true, force: true })
     }
+  })
+})
+
+describe("Claude rate limits reach the runtime carrying the account the turn ran on", () => {
+  const rateLimits = async (auth: Record<string, unknown> | undefined) => {
+    const driver = createClaudeSdkDriver(turnHost(), { query: probeQuery(), executable: () => "/fake/claude" })
+    if (auth) void driver.applyConfig({ auth, mcp: {} })
+    const runtime = driver.createRuntime("claude-sdk:session-rate")
+    const events: AgentRuntimeEvent[] = []
+    await ingestClaudeSdkMessage({
+      ingest(raw: RawHarnessEvent) { events.push(...runtime.ingest(raw).events) },
+      observeSubagent: async () => ({ event: {} }),
+      rebindAgentSession() {},
+    } as never, {
+      type: "rate_limit_event",
+      uuid: "rate-1",
+      session_id: "sdk-session-rate",
+      rate_limit_info: { status: "rejected", rateLimitType: "five_hour", utilization: 100, resetsAt: 1_757_700_000 },
+    } as never, createClaudeTaskLedger())
+    return events.filter((event) => event.type === "rate-limit")
+  }
+
+  test("a brokered turn names the binding it spawned on", async () => {
+    expect(await rateLimits({ "claude-sdk": brokerProjection })).toMatchObject([{
+      type: "rate-limit",
+      status: "limited",
+      usedPercent: 100,
+      resetsAt: 1_757_700_000_000,
+      limitId: "five_hour",
+      limitName: "session",
+      metadata: { account: brokerProjection.baseUrl },
+    }])
+  })
+
+  test("a turn on this machine's own login names no account", async () => {
+    expect((await rateLimits(undefined))[0]?.metadata).toEqual({ account: null })
+    expect((await rateLimits({}))[0]?.metadata).toEqual({ account: null })
+  })
+
+  test("a selected account that cannot be bound names no account instead of failing the turn", async () => {
+    expect((await rateLimits({ "claude-sdk": { unavailable: true, reason: "account_withdrawn" } }))[0]?.metadata)
+      .toEqual({ account: null })
   })
 })

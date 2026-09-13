@@ -67,6 +67,7 @@ export type WorkspaceRuntimeServerOptions = {
   processObserver?: ProcessObserver
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
   onCompatEvent?: WorkspaceHostOptions["onCompatEvent"]
+  onRuntimeEvent?: WorkspaceHostOptions["onRuntimeEvent"]
   runtimeEventAuthorization?: RuntimeEventAuthorization
   transcripts?: WorkspaceTranscriptRoutesOptions
   relayHostAuth?: RelayHostAuthOptions
@@ -442,6 +443,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
     ...(options.onCompatEvent ? { onCompatEvent: options.onCompatEvent } : {}),
+    ...(options.onRuntimeEvent ? { onRuntimeEvent: options.onRuntimeEvent } : {}),
     ...(options.runtimeEventAuthorization ? { runtimeEventAuthorization: options.runtimeEventAuthorization } : {}),
     ...(options.transcripts ? { transcripts: options.transcripts } : {}),
     ...(options.firstPartyMcpLaunch ? { firstPartyMcpLaunch: options.firstPartyMcpLaunch } : {}),

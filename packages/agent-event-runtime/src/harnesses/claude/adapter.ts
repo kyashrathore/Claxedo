@@ -770,7 +770,36 @@ function permissionFromToolUse(message: Record<string, unknown>, context: Harnes
   }] satisfies AgentRuntimeEvent[]
 }
 
-export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): HarnessEventAdapter<ClaudeSdkAdapterState> {
+const CLAUDE_RATE_LIMIT_WINDOWS: Record<string, string> = {
+  five_hour: "session",
+  seven_day: "weekly",
+  seven_day_opus: "weekly_opus",
+}
+
+/**
+ * `resetsAt` arrives as Unix seconds. 1e12 ms is 2001, which no reset expressed
+ * in seconds reaches and no reset expressed in milliseconds falls below.
+ */
+function rateLimitResetMs(value: unknown) {
+  const reset = asFiniteNumber(value)
+  if (reset === undefined) return null
+  return Math.round(reset < 1e12 ? reset * 1000 : reset)
+}
+
+function rateLimitEvent(info: Record<string, unknown>, account: string | null) {
+  const utilization = asFiniteNumber(info.utilization)
+  const limitId = text(info.rateLimitType)
+  return {
+    type: "rate-limit",
+    status: text(info.status) === "rejected" ? "limited" : "ok",
+    ...(utilization === undefined ? {} : { usedPercent: Math.min(100, Math.max(0, Math.round(utilization))) }),
+    resetsAt: rateLimitResetMs(info.resetsAt),
+    ...(limitId ? { limitId, limitName: CLAUDE_RATE_LIMIT_WINDOWS[limitId] ?? limitId } : {}),
+    metadata: { account },
+  } satisfies AgentRuntimeEvent
+}
+
+export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = [], account: string | null = null): HarnessEventAdapter<ClaudeSdkAdapterState> {
   return {
     name: "claude-sdk",
     createInitialState: () => ({ blocksByIndex: {}, toolsById: {}, streamedAssistantTextByOwner: {}, reconciledAssistantTextByMessageId: {}, tasks: Object.fromEntries(initialTasks.map((task) => [task.id, task])) }),
@@ -1164,11 +1193,7 @@ export function claudeSdkAdapter(initialTasks: ClaudeTrackedTask[] = []): Harnes
             })
 
         case "rate_limit_event":
-          return unmappedSdkEvent({
-            sdkEvent: "SDKRateLimitEvent",
-            reason: "rate limit metadata has no dedicated AgentRuntimeEvent equivalent",
-            event,
-          })
+          return [rateLimitEvent(asRecord(message.rate_limit_info) ?? {}, account)]
 
         case "prompt_suggestion":
           return unmappedSdkEvent({

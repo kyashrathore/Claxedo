@@ -39,7 +39,7 @@ import type { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { workspaceCapabilities } from "../capabilities"
 import { runGit } from "../git"
-import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
+import { createRuntimeEventHub, type RuntimeEventEnvelope, type RuntimeEventHub } from "../runtime-event-hub"
 import type { ProcessObserver } from "../managed-processes/process-observer"
 import { RuntimeStore, type QueuedPromptRecord } from "../store"
 import { assertTarget, withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
@@ -155,6 +155,15 @@ export type WorkspaceHostOptions = {
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
   /** Direct observer for canonical compatibility events produced by this host. */
   onCompatEvent?: (event: CompatEnvelope) => void
+  /**
+   * Direct observer for the canonical runtime events produced by this host.
+   *
+   * The compat bus carries session metadata; this one carries what the harness
+   * said during the turn, which until now only left the process over SSE. A
+   * host that has to keep something a harness reports — a plan's quota windows
+   * outliving the session that heard about them — reads it here.
+   */
+  onRuntimeEvent?: (event: RuntimeEventEnvelope) => void
   /** Parent-Session authorization and child ownership used by scoped runtime-event streams. */
   runtimeEventAuthorization?: RuntimeEventAuthorization
   /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
@@ -629,6 +638,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   // The hub is the canonical producer shared by every adapter.
   const cleanupCompatObserver = options.onCompatEvent
     ? eventHub.subscribeGlobal(options.onCompatEvent)
+    : () => undefined
+  const cleanupRuntimeObserver = options.onRuntimeEvent
+    ? eventHub.subscribeRuntime(options.onRuntimeEvent)
     : () => undefined
   const globalEvents = createIdentityAwareEventSource<CompatEnvelope>({
     subscribe: (fn) => eventHub.subscribeGlobal(fn),
@@ -1878,6 +1890,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         activeSessionOwners.clear()
         adapter = undefined
         cleanupCompatObserver()
+        cleanupRuntimeObserver()
         globalEvents.close()
         sessionToolPrompts.clear()
         opencodeToolSessions.clear()

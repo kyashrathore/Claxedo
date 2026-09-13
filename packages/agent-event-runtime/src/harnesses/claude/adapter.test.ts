@@ -1449,3 +1449,77 @@ describe("claudeSdkAdapter", () => {
     }])
   })
 })
+
+describe("claudeSdkAdapter rate limits", () => {
+  const emitted = (info: Record<string, unknown>, account?: string | null) => {
+    const agent = createAgentEventRuntime({
+      harness: "claude-sdk",
+      threadId: "thread-1",
+      adapter: claudeSdkAdapter([], account),
+      clock: () => 0,
+      createId: (prefix = "id") => `${prefix}-1`,
+    })
+    return agent.ingest({
+      source: "claude.sdk",
+      method: "claude/rate_limit_event",
+      payload: { type: "rate_limit_event", uuid: "rate-1", session_id: "sdk-session-1", rate_limit_info: info },
+    }).events.map(({ harness, threadId, raw, ...event }) => event)
+  }
+
+  test("names the five-hour, weekly and opus windows the way the usage read does", () => {
+    expect(emitted({ status: "allowed", rateLimitType: "five_hour", utilization: 42.4, resetsAt: 1_757_700_000 })).toEqual([{
+      type: "rate-limit",
+      status: "ok",
+      usedPercent: 42,
+      resetsAt: 1_757_700_000_000,
+      limitId: "five_hour",
+      limitName: "session",
+      metadata: { account: null },
+    }])
+    expect(emitted({ status: "allowed_warning", rateLimitType: "seven_day", utilization: 90 })[0])
+      .toMatchObject({ status: "ok", limitId: "seven_day", limitName: "weekly" })
+    expect(emitted({ status: "allowed", rateLimitType: "seven_day_opus", utilization: 5 })[0])
+      .toMatchObject({ limitId: "seven_day_opus", limitName: "weekly_opus" })
+  })
+
+  test("passes a window the vendor added since through under its own name", () => {
+    expect(emitted({ status: "allowed", rateLimitType: "seven_day_sonnet", utilization: 12 })[0])
+      .toMatchObject({ limitId: "seven_day_sonnet", limitName: "seven_day_sonnet" })
+  })
+
+  test("only a rejection is a limit", () => {
+    expect(emitted({ status: "rejected", rateLimitType: "five_hour", utilization: 100, resetsAt: 1_757_700_000 })).toEqual([{
+      type: "rate-limit",
+      status: "limited",
+      usedPercent: 100,
+      resetsAt: 1_757_700_000_000,
+      limitId: "five_hour",
+      limitName: "session",
+      metadata: { account: null },
+    }])
+  })
+
+  test("omits the percentage and the window name the vendor left out", () => {
+    const [event] = emitted({ status: "allowed" })
+    expect(event).toEqual({ type: "rate-limit", status: "ok", resetsAt: null, metadata: { account: null } })
+    // `toEqual` passes over a key whose value is `undefined`, which is exactly
+    // what an unconditional spread of an absent window would produce.
+    expect(Object.keys(event!).sort()).toEqual(["metadata", "resetsAt", "status", "type"])
+  })
+
+  test("clamps a utilization outside 0..100", () => {
+    expect(emitted({ status: "allowed", utilization: 137.6 })[0]).toMatchObject({ usedPercent: 100 })
+    expect(emitted({ status: "allowed", utilization: -4 })[0]).toMatchObject({ usedPercent: 0 })
+  })
+
+  test("normalises the reset to epoch milliseconds, whichever unit the vendor sent", () => {
+    expect(emitted({ status: "allowed", resetsAt: 1_757_700_000 })[0]).toMatchObject({ resetsAt: 1_757_700_000_000 })
+    expect(emitted({ status: "allowed", resetsAt: 1_757_700_000_000 })[0]).toMatchObject({ resetsAt: 1_757_700_000_000 })
+    expect(emitted({ status: "allowed", resetsAt: "soon" })[0]).toMatchObject({ resetsAt: null })
+  })
+
+  test("carries the account the turn ran on", () => {
+    expect(emitted({ status: "allowed" }, "https://broker.example/bindings/binding-1")[0])
+      .toMatchObject({ metadata: { account: "https://broker.example/bindings/binding-1" } })
+  })
+})
