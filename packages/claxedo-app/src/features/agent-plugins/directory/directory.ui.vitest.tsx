@@ -6,7 +6,14 @@ import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 
 const clients = new Set<QueryClient>()
 import type { JSX } from "solid-js"
-import { agentPluginApi, type HarnessActivation, type PluginCandidate, type PluginSkill, type PluginSource } from "../api"
+import {
+  agentPluginApi,
+  type HarnessActivation,
+  type PluginCandidate,
+  type PluginSkill,
+  type PluginSource,
+  type PluginToolGroup,
+} from "../api"
 import type { AgentPluginConnectionPort } from "../connections"
 import { directoryApi } from "./data"
 import { AGENT_PLUGIN_PANE_WIDTH_KEY, readPaneWidth, writePaneWidth } from "./pane-width"
@@ -110,6 +117,106 @@ const PUBLIC: PluginCandidate["mcpServers"][number] = {
   authentication: { state: "public" },
 }
 
+function sourcedCandidates(): PluginCandidate[] {
+  return [
+    candidate({ name: "composio", installed: true, source: CLAXEDO, mcpServers: [OAUTH] }),
+    candidate({
+      name: "context7",
+      installed: true,
+      source: CLAXEDO,
+      updateAvailable: true,
+      mcpServers: [PUBLIC],
+      skills: [{ name: "docs-lookup", description: "Resolve a library id.", path: "skills/docs-lookup" }],
+    }),
+    candidate({ name: "posthog", installed: false, source: CLAXEDO }),
+    candidate({ name: "granola", installed: false, source: ACME, description: "Your meetings in your workflow." }),
+    candidate({ name: "clangd", installed: false, source: CLAXEDO, retained: true }),
+  ]
+}
+
+/**
+ * The first-party server as this catalog serves it: the eight registered
+ * groups, in the registration order the catalog emits, carrying the hosted
+ * defaults — every group on except Tasks, and Documents off because the
+ * documents service is an account service here.
+ */
+const BUILT_IN_GROUPS: PluginToolGroup[] = [
+  { id: "attention", enabled: true, tools: ["sessions_board", "question_reply", "question_reject", "wait_for_attention"] },
+  { id: "documents", enabled: false, tools: ["documents_list", "documents_open"] },
+  { id: "processes", enabled: true, tools: ["processes", "process_start", "process_stop", "process_logs"] },
+  { id: "review", enabled: true, tools: ["session_changes"] },
+  {
+    id: "sessions",
+    enabled: true,
+    tools: [
+      "session_create",
+      "sessions_list",
+      "session_get",
+      "session_transcript",
+      "session_send",
+      "session_abort",
+      "session_handoff",
+      "session_rename",
+      "session_delete",
+    ],
+  },
+  {
+    id: "subagents",
+    enabled: true,
+    tools: ["subagent_capabilities", "create_subagent", "subagent_status", "subagent_list", "subagent_cancel"],
+  },
+  { id: "tasks", enabled: false, tools: ["task_list", "task_get", "task_create", "task_start"] },
+  {
+    id: "workspaces",
+    enabled: true,
+    tools: ["workspaces_list", "workspace_status", "workspace_checkpoint", "workspace_restore", "workspace_lifecycle"],
+  },
+].map((group) => ({ ...group, pluginInstanceId: `claxedo:${group.id}` }))
+
+type BuiltInOverrides = {
+  groups?: PluginToolGroup[]
+  installed?: boolean
+  /** A Claxedo-owned entry is what makes the organization-default items eligible. */
+  sourceKind?: PluginCandidate["sourceKind"]
+  updateAvailable?: boolean
+}
+
+function builtInCandidate(overrides: BuiltInOverrides = {}): PluginCandidate {
+  return {
+    pluginInstanceId: "claxedo",
+    builtIn: true,
+    groups: overrides.groups ?? BUILT_IN_GROUPS,
+    sourceId: null,
+    sourceKind: overrides.sourceKind ?? null,
+    source: null,
+    icon: { kind: "monogram", text: "CX" },
+    skills: [],
+    sourceRevision: null,
+    relativePath: null,
+    candidateDigest: null,
+    sourceAvailable: false,
+    retainedDigest: null,
+    updateAvailable: overrides.updateAvailable ?? false,
+    manifest: {
+      name: "claxedo",
+      description: "Claxedo's own tools, served by the process that runs your sessions.",
+    },
+    componentDiagnostics: [],
+    // The built-in also serves each group as a local MCP server; the pane must
+    // read the groups rather than these rows.
+    mcpServers: (overrides.groups ?? BUILT_IN_GROUPS).map((group) => ({
+      name: group.id,
+      type: "streamable-http" as const,
+      authentication: { state: "local" as const },
+    })),
+    harnesses: harnesses(overrides.installed ?? true),
+  }
+}
+
+function withBuiltIn(overrides: BuiltInOverrides = {}) {
+  return { candidates: [builtInCandidate(overrides), ...sourcedCandidates()] }
+}
+
 function catalogBody(overrides: Record<string, unknown> = {}) {
   return {
     revision: 4,
@@ -118,20 +225,7 @@ function catalogBody(overrides: Record<string, unknown> = {}) {
     selectedProjectId: null,
     canManageOrganizationDefaults: true,
     canManageOrganizationConnections: true,
-    candidates: [
-      candidate({ name: "composio", installed: true, source: CLAXEDO, mcpServers: [OAUTH] }),
-      candidate({
-        name: "context7",
-        installed: true,
-        source: CLAXEDO,
-        updateAvailable: true,
-        mcpServers: [PUBLIC],
-        skills: [{ name: "docs-lookup", description: "Resolve a library id.", path: "skills/docs-lookup" }],
-      }),
-      candidate({ name: "posthog", installed: false, source: CLAXEDO }),
-      candidate({ name: "granola", installed: false, source: ACME, description: "Your meetings in your workflow." }),
-      candidate({ name: "clangd", installed: false, source: CLAXEDO, retained: true }),
-    ],
+    candidates: sourcedCandidates(),
     errors: [],
     ...overrides,
   }
@@ -168,6 +262,8 @@ function harness(options: {
   sourceAdd?: { status: number; body: unknown }
   skill?: { status: number; body: unknown }
   connections?: Array<{ id: string; integrationId: string; scope: "personal" | "team"; status: "connected" | "degraded" | "broken" }>
+  /** Held open so a mutation's pending state is observable while it is in flight. */
+  activationGate?: Promise<void>
 } = {}) {
   const recorded: Recorded[] = []
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -192,7 +288,10 @@ function harness(options: {
       }
       return Response.json(answer.body, { status: answer.status })
     }
-    if (method === "POST") return Response.json({ revision: 5, reconciliation: { state: "applied" } })
+    if (method === "POST") {
+      if (options.activationGate) await options.activationGate
+      return Response.json({ revision: 5, reconciliation: { state: "applied" } })
+    }
     throw new Error(`unexpected request ${url}`)
   })
   const open = vi.fn<AgentPluginConnectionPort["open"]>()
@@ -756,6 +855,144 @@ describe("Agent Plugin Directory unsigned mode", () => {
       choice: false,
       expectedRevision: 4,
     })
+  })
+})
+
+describe("Agent Plugin Directory built-in server", () => {
+  test("the built-in is a card marked built in, whose status names the groups on for this project", async () => {
+    await renderDirectory({ catalog: withBuiltIn() })
+
+    const card = document.querySelector<HTMLElement>("[data-agent-plugin-card=\"claxedo\"]")!
+    expect(within(card).getByText("Built in")).toBeTruthy()
+    expect(within(card).getByText(
+      "On for this project: sessions, subagents, attention, processes, review, workspaces",
+    )).toBeTruthy()
+  })
+
+  test("a built-in that is off is still never offered for install: no Add anywhere, Enable only in the pane", async () => {
+    // A sourced candidate in this state — no retained bytes, no reachable
+    // source — earns a disabled "Add" on its card. The built-in earns nothing.
+    await renderDirectory({ catalog: withBuiltIn({ installed: false }) })
+
+    const card = document.querySelector<HTMLElement>("[data-agent-plugin-card=\"claxedo\"]")!
+    expect(within(card).queryByRole("button", { name: "Add" })).toBeNull()
+    expect(within(card).queryByRole("button", { name: "Enable" })).toBeNull()
+
+    const pane = await openPane("claxedo")
+    expect(within(pane).queryByRole("button", { name: "Add" })).toBeNull()
+    expect(within(pane).getByRole("button", { name: "Enable" })).not.toBeDisabled()
+  })
+
+  test("the built-in's overflow menu offers only the item that follows the default", async () => {
+    // The two conditions that add items to a sourced plugin's menu: Claxedo
+    // ownership makes the organization defaults eligible, and an available
+    // update earns its own row. The built-in has neither an organization to
+    // hand itself to nor an artifact to take.
+    await renderDirectory({ catalog: withBuiltIn({ sourceKind: "claxedo", updateAvailable: true }) })
+    const pane = await openPane("claxedo")
+
+    expect(within(pane).getByRole("button", { name: "Disable" })).toBeTruthy()
+    expect(within(pane).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      expect.stringContaining("Clear my override"),
+    ])
+  })
+
+  test("the pane's server list is one row per tool group, with a switch and the group's tool names", async () => {
+    await renderDirectory({ catalog: withBuiltIn() })
+    const pane = await openPane("claxedo")
+
+    const groups = within(pane).getByRole("region", { name: "claxedo tool groups" })
+    expect(within(groups).getByRole("heading").textContent).toContain("Tool groups")
+
+    // The catalog emits registration order; the pane reads in the order the
+    // product decided.
+    expect([...groups.querySelectorAll<HTMLElement>("[data-agent-plugin-tool-group]")]
+      .map((row) => row.dataset.agentPluginToolGroup))
+      .toEqual(["sessions", "subagents", "attention", "processes", "documents", "tasks", "review", "workspaces"])
+
+    const tasks = groups.querySelector<HTMLElement>("[data-agent-plugin-tool-group=\"tasks\"]")!
+    expect(within(tasks).getByText("task_list, task_get, task_create, task_start")).toBeTruthy()
+    expect(within(tasks).getByRole("switch", { name: "tasks" })).not.toBeChecked()
+    expect(within(groups).getByRole("switch", { name: "sessions" })).toBeChecked()
+
+    expect(within(groups).getByText("Changes apply to sessions started from now.")).toBeTruthy()
+  })
+
+  test("a switch writes the group's activation for this project", async () => {
+    const { recorded } = await renderDirectory({ catalog: withBuiltIn() })
+    const pane = await openPane("claxedo")
+
+    await fireEvent.click(within(pane).getByRole("switch", { name: "tasks" }))
+
+    await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
+    expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toEqual({
+      pluginInstanceId: "claxedo:tasks",
+      harnessIds: ["opencode", "claude", "codex", "cursor"],
+      choice: true,
+      expectedRevision: 4,
+      target: { scope: "projects", projectIds: ["project-1"] },
+    })
+  })
+
+  test("turning a group off writes choice false without the confirm a whole plugin needs", async () => {
+    const { recorded } = await renderDirectory({ catalog: withBuiltIn() })
+    const pane = await openPane("claxedo")
+
+    await fireEvent.click(within(pane).getByRole("switch", { name: "sessions" }))
+
+    await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
+    expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toMatchObject({
+      pluginInstanceId: "claxedo:sessions",
+      choice: false,
+    })
+    expect(screen.queryByRole("dialog")).toBeNull()
+  })
+
+  test("a group in flight shows the same pending state the Enable button shows", async () => {
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    const context = harness({ catalog: withBuiltIn(), activationGate: gate })
+    await renderDirectory({ context, catalog: withBuiltIn() })
+    const pane = await openPane("claxedo")
+
+    await fireEvent.click(within(pane).getByRole("switch", { name: "tasks" }))
+
+    await waitFor(() => expect(within(pane).getByRole("button", { name: "Applying…" })).toBeTruthy())
+    expect(within(pane).getByRole("switch", { name: "sessions" })).toBeDisabled()
+
+    release()
+    await waitFor(() => expect(within(pane).getByRole("button", { name: "Disable" })).toBeTruthy())
+    expect(within(pane).getByRole("switch", { name: "sessions" })).not.toBeDisabled()
+  })
+
+  test("a built-in with every group off says so rather than reporting a harness count", async () => {
+    await renderDirectory({
+      catalog: withBuiltIn({ groups: BUILT_IN_GROUPS.map((group) => ({ ...group, enabled: false })) }),
+    })
+
+    const card = document.querySelector<HTMLElement>("[data-agent-plugin-card=\"claxedo\"]")!
+    const status = card.querySelector<HTMLElement>("[data-component=\"agent-plugin-status\"]")!
+    expect(status.textContent).toBe("No tool groups on for this project")
+    expect(status.dataset.tone).toBe("warning")
+  })
+
+  test("a disabled built-in stays beside the installed plugins instead of becoming an unsourced offer", async () => {
+    await renderDirectory({ catalog: withBuiltIn({ installed: false }) })
+
+    expect(screen.queryByRole("region", { name: "No longer served by a source" })).toBeNull()
+    const installed = screen.getByRole("region", { name: "Installed" })
+    expect(within(installed).getByRole("button", { name: "claxedo" })).toBeTruthy()
+    const card = document.querySelector<HTMLElement>("[data-agent-plugin-card=\"claxedo\"]")!
+    expect(within(card).getByText("Off for this project")).toBeTruthy()
+  })
+
+  test("searching a tool name finds the built-in", async () => {
+    await renderDirectory({ catalog: withBuiltIn() })
+
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Search plugins" }), { target: { value: "task_create" } })
+
+    await waitFor(() => expect(screen.queryByRole("button", { name: "composio" })).toBeNull())
+    expect(screen.getByRole("button", { name: "claxedo" })).toBeTruthy()
   })
 })
 

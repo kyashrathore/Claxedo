@@ -2,7 +2,7 @@ import { Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import type { AgentPluginHarness, PluginCandidate, PluginCatalog } from "../api"
 import { OverflowItem, OverflowMenu } from "./overflow-menu"
-import { defaultOutcome, isInstalled, pluginLabel } from "./view"
+import { defaultOutcome, isBuiltIn, isInstalled, pluginLabel } from "./view"
 
 /**
  * The pane's action row: exactly one main button, everything else behind "…".
@@ -16,6 +16,10 @@ import { defaultOutcome, isInstalled, pluginLabel } from "./view"
  *
  * Organization items are absent, not disabled, when the account cannot manage
  * them: a greyed-out row invites a support question, an absent one does not.
+ *
+ * The built-in has no artifact to add, take or hand to an organization, so it
+ * reaches only the Enable/Disable button and the one item that gives the
+ * decision back to the default.
  */
 export function PluginActions(props: {
   plugin: PluginCandidate
@@ -29,7 +33,8 @@ export function PluginActions(props: {
   onOrganizationDefault: (choice: true | null) => void
 }) {
   const installed = () => isInstalled(props.plugin)
-  const retained = () => Boolean(props.plugin.retainedDigest)
+  const builtIn = () => isBuiltIn(props.plugin)
+  const retained = () => builtIn() || Boolean(props.plugin.retainedDigest)
   const mutable = () => props.plugin.sourceAvailable || retained()
   const organizationDefaultEnabled = () => props.harnesses
     .some((harness) => props.plugin.harnesses[harness].organizationDefault)
@@ -37,6 +42,7 @@ export function PluginActions(props: {
     || props.plugin.sourceKind === "organization"
     || Object.values(props.plugin.harnesses).some((state) => state.organizationDefault)
   const canManageOrganization = () => props.signed
+    && !builtIn()
     && props.catalog.canManageOrganizationDefaults === true
     && organizationEligible()
   const outcome = () => defaultOutcome({ plugin: props.plugin, harnesses: props.harnesses })
@@ -88,7 +94,7 @@ export function PluginActions(props: {
             </OverflowItem>
           </Show>
         </Show>
-        <Show when={props.plugin.updateAvailable}>
+        <Show when={!builtIn() && props.plugin.updateAvailable}>
           <OverflowItem disabled={props.pending} onSelect={() => props.onUpdate()}>
             {version() ? `Update to ${version()}` : "Update to the latest version"}
           </OverflowItem>

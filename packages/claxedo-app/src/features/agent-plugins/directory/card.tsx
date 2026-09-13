@@ -1,10 +1,11 @@
 import { Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
+import { Tag } from "@opencode-ai/ui/tag"
 import type { PluginCandidate } from "../api"
 import { PluginIconTile } from "./plugin-icon"
 import { PluginStatusLine } from "./status"
 import type { PersonalEntry } from "./view"
-import { pluginLabel, type PluginStatus } from "./view"
+import { isBuiltIn, pluginLabel, type PluginStatus } from "./view"
 
 /** The trailing column: one fixed slot, aligned to the title line, never centred. */
 const TRAILING = "relative flex w-40 shrink-0 justify-end pt-0.5"
@@ -18,6 +19,10 @@ const TRAILING = "relative flex w-40 shrink-0 justify-end pt-0.5"
  *
  * The whole card opens the detail pane through an overlay button so the primary
  * action stays a real button beside it instead of nesting one inside another.
+ *
+ * The built-in has nothing to install, so its trailing slot marks what it is
+ * and its status — a list of the tool groups on for this project, too long for
+ * one truncated line — moves under the description where it can wrap.
  */
 export function DirectoryCard(props: {
   plugin: PluginCandidate
@@ -28,6 +33,7 @@ export function DirectoryCard(props: {
   onOpen: () => void
 }) {
   const name = () => pluginLabel(props.plugin)
+  const builtIn = () => isBuiltIn(props.plugin)
   return (
     <div
       data-agent-plugin-card={props.plugin.pluginInstanceId}
@@ -52,14 +58,24 @@ export function DirectoryCard(props: {
         <p class="mt-0.5 line-clamp-2 text-12-regular text-text-weak">
           {props.plugin.manifest?.description ?? "No description"}
         </p>
+        <Show when={builtIn() ? props.status : undefined}>
+          {(status) => <div class="mt-1.5"><PluginStatusLine status={status()} wrap /></div>}
+        </Show>
       </div>
       <div class={TRAILING}>
-        <Show when={props.action} fallback={<Show when={props.status}>{(status) => <PluginStatusLine status={status()} />}</Show>}>
-          {(action) => (
-            <Button size="small" variant="secondary" disabled={action().disabled} onClick={() => action().run()}>
-              {action().label}
-            </Button>
-          )}
+        <Show
+          when={builtIn()}
+          fallback={
+            <Show when={props.action} fallback={<Show when={props.status}>{(status) => <PluginStatusLine status={status()} />}</Show>}>
+              {(action) => (
+                <Button size="small" variant="secondary" disabled={action().disabled} onClick={() => action().run()}>
+                  {action().label}
+                </Button>
+              )}
+            </Show>
+          }
+        >
+          <Tag>Built in</Tag>
         </Show>
       </div>
     </div>

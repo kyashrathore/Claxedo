@@ -8,9 +8,14 @@ import type { PluginStatus } from "./view"
  * the expected outcome and must not compete with the plugin's name; only the
  * states that want the user's hand take a colour.
  */
-export function PluginStatusLine(props: { status: PluginStatus }) {
+export function PluginStatusLine(props: { status: PluginStatus; wrap?: boolean }) {
   return (
-    <span data-component="agent-plugin-status" data-tone={props.status.tone} class="inline-flex items-center gap-1.5">
+    <span
+      data-component="agent-plugin-status"
+      data-tone={props.status.tone}
+      class="inline-flex gap-1.5"
+      classList={{ "items-center": !props.wrap, "items-baseline": props.wrap }}
+    >
       <span
         class="size-1.5 shrink-0 rounded-full"
         classList={{
@@ -21,8 +26,9 @@ export function PluginStatusLine(props: { status: PluginStatus }) {
         }}
       />
       <span
-        class="truncate text-12-regular"
+        class="text-12-regular"
         classList={{
+          truncate: !props.wrap,
           "text-text-weak": props.status.tone === "normal",
           "text-icon-warning-base": props.status.tone === "warning",
           "text-icon-critical-base": props.status.tone === "critical",

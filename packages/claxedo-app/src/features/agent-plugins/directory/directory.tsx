@@ -5,7 +5,14 @@ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { withCurrentRevision, type AgentPluginApi, type AgentPluginHarness, type PluginCandidate, type PluginCatalog } from "../api"
+import {
+  withCurrentRevision,
+  type AgentPluginApi,
+  type AgentPluginHarness,
+  type PluginCandidate,
+  type PluginCatalog,
+  type PluginToolGroup,
+} from "../api"
 import { oauthServers, type AgentPluginConnectionPort, type AgentPluginConnectionSummary } from "../connections"
 import { AddSourceForm } from "./add-source"
 import { requestConfirm } from "./confirm"
@@ -17,6 +24,7 @@ import { PluginDetailPane } from "./detail-pane"
 import {
   categoryChips,
   directorySections,
+  isBuiltIn,
   isInstalled,
   matchesQuery,
   personalEntries,
@@ -144,6 +152,15 @@ export function AgentPluginDirectory(props: {
   const selectedPersonal = createMemo(() => personal().find((entry) => personalEntryKey(entry) === selectedPersonalKey()))
   const projectLabel = () => catalog()?.projects?.find((project) => project.id === projectId())?.label ?? CROSS_PROJECT
 
+  /** The projects a signed choice covers; a deployment that lists none has a cross-project default. */
+  const activationTarget = (current: PluginCatalog) => {
+    if (!signed()) return undefined
+    const projectIds = (current.projects ?? []).map((project) => project.id)
+    return projectIds.length > 0
+      ? { scope: "projects" as const, projectIds }
+      : { scope: "all-projects" as const }
+  }
+
   const mutate = async (plugin: PluginCandidate, choice: boolean | null) => {
     const current = catalog()
     if (!current) return
@@ -159,15 +176,7 @@ export function AgentPluginDirectory(props: {
     }
     setPending(plugin.pluginInstanceId)
     try {
-      // A signed choice names the projects it covers. A deployment that lists
-      // none (a self-hosted box, or an account before its first project) has
-      // nothing to enumerate, so the choice is the user's cross-project default.
-      const projectIds = (current.projects ?? []).map((project) => project.id)
-      const targetSelection = signed()
-        ? projectIds.length > 0
-          ? { scope: "projects" as const, projectIds }
-          : { scope: "all-projects" as const }
-        : undefined
+      const targetSelection = activationTarget(current)
       const result = await withCurrentRevision({
         revision: () => catalog()?.revision,
         reread,
@@ -189,6 +198,40 @@ export function AgentPluginDirectory(props: {
       if (signed() && props.connections) await refetchConnections()
     } catch (error) {
       showToast({ title: "Could not change plugin", description: error instanceof Error ? error.message : String(error) })
+    } finally {
+      setPending(undefined)
+    }
+  }
+
+  /**
+   * A tool group is its own activation subject, so a switch posts the same
+   * activation the Enable button does, against the group's own instance id.
+   * It skips `mutate`'s confirm: turning a group off takes tools away from the
+   * next session and removes no materialized files.
+   */
+  const setToolGroup = async (plugin: PluginCandidate, group: PluginToolGroup, enabled: boolean) => {
+    const current = catalog()
+    if (!current) return
+    setPending(plugin.pluginInstanceId)
+    try {
+      const target = activationTarget(current)
+      await withCurrentRevision({
+        revision: () => catalog()?.revision,
+        reread,
+        run: (expectedRevision) => props.api.activation({
+          pluginInstanceId: group.pluginInstanceId,
+          harnessIds: harnesses(),
+          choice: enabled,
+          expectedRevision,
+          ...(target ? { target } : {}),
+        }),
+      })
+      await reread()
+    } catch (error) {
+      showToast({
+        title: `Could not turn ${group.id} ${enabled ? "on" : "off"}`,
+        description: error instanceof Error ? error.message : String(error),
+      })
     } finally {
       setPending(undefined)
     }
@@ -348,7 +391,9 @@ export function AgentPluginDirectory(props: {
   }
 
   const cardAction = (plugin: PluginCandidate) => {
-    if (isInstalled(plugin)) return undefined
+    // The built-in ships with the product: there is nothing to add or enable
+    // from a card, and its card says which tool groups are on instead.
+    if (isBuiltIn(plugin) || isInstalled(plugin)) return undefined
     const disabled = pending() === plugin.pluginInstanceId || (!plugin.sourceAvailable && !plugin.retainedDigest)
     return plugin.retainedDigest
       ? { label: "Enable", disabled, run: () => void mutate(plugin, true) }
@@ -551,6 +596,7 @@ export function AgentPluginDirectory(props: {
                 onOrganizationDefault={(choice) => void organizationDefault(plugin(), choice)}
                 onConnect={openConnection}
                 onDisconnect={(connection) => void disconnect(connection)}
+                onToolGroup={(group, enabled) => void setToolGroup(plugin(), group, enabled)}
                 onClose={() => setSelectedId(undefined)}
               />
             )}

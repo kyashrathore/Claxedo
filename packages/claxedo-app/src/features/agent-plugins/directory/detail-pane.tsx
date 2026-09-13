@@ -1,6 +1,6 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
-import type { AgentPluginApi, AgentPluginHarness, PluginCandidate, PluginCatalog } from "../api"
+import type { AgentPluginApi, AgentPluginHarness, PluginCandidate, PluginCatalog, PluginToolGroup } from "../api"
 import type { AgentPluginConnectionSummary } from "../connections"
 import { GHOST_ICON_BUTTON, HEADING, ROW } from "./chrome"
 import { PluginActions } from "./detail-actions"
@@ -15,7 +15,7 @@ import {
 import { PluginIconTile } from "./plugin-icon"
 import { SkillView } from "./skill-view"
 import { PluginStatusLine } from "./status"
-import { pluginLabel, pluginStatus } from "./view"
+import { isBuiltIn, pluginLabel, pluginStatus, toolGroups } from "./view"
 
 const RESIZE_STEP = 16
 
@@ -51,6 +51,7 @@ export function PluginDetailPane(props: {
   onOrganizationDefault: (choice: true | null) => void
   onConnect: (input: { serverName: string; integrationId: string; scope: "personal" | "team"; issuer?: string }) => void
   onDisconnect: (connection: AgentPluginConnectionSummary) => void
+  onToolGroup: (group: PluginToolGroup, enabled: boolean) => void
   onClose: () => void
 }) {
   const [skill, setSkill] = createSignal<string>()
@@ -89,6 +90,8 @@ export function PluginDetailPane(props: {
   }
 
   const name = () => pluginLabel(props.plugin)
+  const builtIn = () => isBuiltIn(props.plugin)
+  const servers = () => builtIn() ? toolGroups(props.plugin) : props.plugin.mcpServers
   const status = () => pluginStatus({
     plugin: props.plugin,
     ...(props.connections ? { connections: props.connections } : {}),
@@ -138,7 +141,9 @@ export function PluginDetailPane(props: {
                 <h2 class="truncate text-16-medium text-text-strong">{name()}</h2>
                 <div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-11-regular text-text-weaker">
                   <Show when={props.plugin.manifest?.version}>{(version) => <span>v{version()}</span>}</Show>
-                  <span class="truncate">{props.plugin.source?.label ?? "retained artifact"}</span>
+                  <span class="truncate">
+                    {builtIn() ? "Built in" : props.plugin.source?.label ?? "retained artifact"}
+                  </span>
                   <Show when={props.plugin.relativePath}>
                     {(path) => <span class="truncate text-12-mono">{path()}</span>}
                   </Show>
@@ -212,13 +217,20 @@ export function PluginDetailPane(props: {
               </Show>
             </section>
 
-            <section class="border-t border-border-weak-base px-4 pb-6" aria-label={`${name()} MCP servers`}>
+            <section
+              class="border-t border-border-weak-base px-4 pb-6"
+              aria-label={`${name()} ${builtIn() ? "tool groups" : "MCP servers"}`}
+            >
               <h3 class={`${HEADING} pt-3 pb-2`}>
-                MCP servers <span class="text-text-weaker">{props.plugin.mcpServers.length}</span>
+                {builtIn() ? "Tool groups" : "MCP servers"} <span class="text-text-weaker">{servers().length}</span>
               </h3>
               <Show
-                when={props.plugin.mcpServers.length > 0}
-                fallback={<p class={`${ROW} text-12-regular text-text-weak`}>This plugin has no MCP servers.</p>}
+                when={servers().length > 0}
+                fallback={
+                  <p class={`${ROW} text-12-regular text-text-weak`}>
+                    {builtIn() ? "This plugin has no tool groups." : "This plugin has no MCP servers."}
+                  </p>
+                }
               >
                 <PluginMcpServers
                   plugin={props.plugin}
@@ -229,6 +241,8 @@ export function PluginDetailPane(props: {
                   onRetryConnections={props.onRetryConnections}
                   onConnect={props.onConnect}
                   onDisconnect={props.onDisconnect}
+                  pending={props.pending}
+                  onToolGroup={props.onToolGroup}
                 />
               </Show>
             </section>
