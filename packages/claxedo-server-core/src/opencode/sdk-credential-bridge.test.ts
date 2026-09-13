@@ -114,6 +114,44 @@ describe("OpenCode SDK credential bridge", () => {
     }])
   })
 
+  test("an unavailable alias never disables a provider another account has bound", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    // `anthropic` and `claude-sdk` are one engine provider. Written in order,
+    // the second row wins and a working account goes dark behind the other's
+    // refusal.
+    const auth: Record<string, ProviderProjection> = {
+      anthropic: brokerProjection,
+      "claude-sdk": { unavailable: true, reason: "auth_failed" },
+      "codex-app-server": { unavailable: true, reason: "revoked" },
+      openai: brokerProjection,
+    }
+    configureAgentConfig({ projectAuth: async () => auth })
+
+    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
+    await reconcileCredentialsIntoSdk()
+
+    expect(fake.bound).toEqual([{
+      anthropic: { baseURL: "http://127.0.0.1:2595/bindings/aa11/v1", apiKey: "signed-placeholder" },
+      openai: { baseURL: "http://127.0.0.1:2595/bindings/aa11/v1", apiKey: "signed-placeholder" },
+    }])
+  })
+
+  test("two bound accounts for one engine provider are decided by the exact id", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    const auth: Record<string, ProviderProjection> = {
+      "claude-sdk": { ...brokerProjection, placeholder: "alias-placeholder" },
+      anthropic: { ...brokerProjection, placeholder: "exact-placeholder" },
+    }
+    configureAgentConfig({ projectAuth: async () => auth })
+
+    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
+    await reconcileCredentialsIntoSdk()
+
+    expect(fake.bound[0].anthropic).toMatchObject({ apiKey: "exact-placeholder" })
+  })
+
   test("the engine's placeholders are re-projected when they are half spent, and not before", async () => {
     const fake = fakeRuntime()
     construct.mockImplementation(() => fake.runtime as never)

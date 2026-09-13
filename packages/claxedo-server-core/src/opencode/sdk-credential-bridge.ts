@@ -40,6 +40,23 @@ const PROVIDER_BY_REGISTRY_ID: Readonly<Record<string, string>> = {
 }
 
 /**
+ * Whether a second registry row for the same engine provider replaces the one
+ * already written.
+ *
+ * The map is many-to-one — `anthropic` and `claude-sdk` are both the engine's
+ * `anthropic` — and the loop used to keep whichever row came last, so an
+ * account marked unavailable disabled a provider another account had bound. A
+ * bound row always wins; between two of a kind the registry id that matches the
+ * engine's own decides, and every group in the table contains exactly one.
+ */
+function overridesOverlay(held: ProviderBindingOverlay | undefined, next: ProviderBindingOverlay, exact: boolean) {
+  if (!held) return true
+  const heldBound = !("unavailable" in held)
+  const nextBound = !("unavailable" in next)
+  return heldBound === nextBound ? exact : nextBound
+}
+
+/**
  * When the engine's placeholders have to be replaced. Held here rather than on
  * a workspace runtime: the engine is one process serving every workspace, so
  * nothing in that map expires alongside it.
@@ -122,9 +139,11 @@ export async function reconcileCredentialsIntoSdk(
     if (!projection) continue
     // Carried, not skipped: skipping is indistinguishable from "no account
     // chosen", and the engine answers that by running on its own login.
-    overlays[providerID] = isProviderUnavailable(projection)
+    const overlay: ProviderBindingOverlay = isProviderUnavailable(projection)
       ? { unavailable: true, reason: projection.reason }
       : { baseURL: `${projection.baseUrl}${projection.apiPath ?? ""}`, apiKey: projection.placeholder }
+    if (!overridesOverlay(overlays[providerID], overlay, registryID === providerID)) continue
+    overlays[providerID] = overlay
   }
   const removed = await removeStoredCredentials(runtime)
   await runtime.bindProviders(overlays)
