@@ -3,6 +3,8 @@ import type { ContentSurfaceContribution } from "./content-surface-contract"
 
 let mod: typeof import("./first-party-content-surfaces")
 let documents: typeof import("./documents-content-surfaces")
+let tasks: typeof import("./tasks/content-surface")
+let agentPlugins: typeof import("../composition/agent-plugin-contribution-loader")
 
 beforeAll(async () => {
   vi.doMock("../../features/session/ui/content/session-content", () => ({
@@ -26,6 +28,8 @@ beforeAll(async () => {
   // edge the local composition must not have, which is why the test has to
   // reach for it explicitly.
   documents = await import("./documents-content-surfaces")
+  tasks = await import("./tasks/content-surface")
+  agentPlugins = await import("../composition/agent-plugin-contribution-loader")
 })
 
 describe("content surface contributions", () => {
@@ -96,5 +100,21 @@ describe("content surface contributions", () => {
         toolSandbox: { kind: "local", cwd: "/repo" },
       },
     }, registry)?.id).toBe("surface.content.agent-review")
+  })
+
+  test("a whole-page surface declines the pane grip, and the pane surfaces keep it", () => {
+    const marketplace = agentPlugins.agentPluginContributions().contentSurfaces
+    const registry = mod.createContentSurfaceRegistry([
+      ...mod.localContentSurfaces,
+      tasks.tasksContentSurface,
+      ...marketplace,
+    ])
+
+    expect(mod.contentSurfacePaneDraggable("tasks", registry)).toBe(false)
+    expect(mod.contentSurfacePaneDraggable("marketplace", registry)).toBe(false)
+    expect(mod.contentSurfacePaneDraggable("session", registry)).toBe(true)
+    expect(mod.contentSurfacePaneDraggable("terminal", registry)).toBe(true)
+    // A content type no contribution claims is still the shell's own default.
+    expect(mod.contentSurfacePaneDraggable("page", registry)).toBe(true)
   })
 })

@@ -18,6 +18,7 @@ export type MountOpts = {
   mountPolicy?: "always" | "active-only" | "visible-once"
   maxMountedContents?: number
   mountCapCandidate?: (contentId: string) => boolean
+  paneDraggable?: (contentId: string) => boolean
   retainedHiddenLimit?: () => number
   keyMap?: Partial<KeyMap>
   renderContent?: (id: string, ctx: PaneCtx) => JSX.Element
@@ -57,6 +58,7 @@ export function mountWorkbench(opts: MountOpts = {}) {
         mountPolicy={opts.mountPolicy}
         maxMountedContents={opts.maxMountedContents}
         mountCapCandidate={opts.mountCapCandidate}
+        paneDraggable={opts.paneDraggable}
         retainedHiddenLimit={opts.retainedHiddenLimit}
         keyMap={opts.keyMap}
         onCloseFocusedPane={opts.onCloseFocusedPane}

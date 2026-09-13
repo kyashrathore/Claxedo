@@ -59,6 +59,25 @@ describe("H. drag & drop (pointer)", () => {
     expect(zone.style.pointerEvents).toBe("none")
   })
 
+  test("a pane whose content declines the grip has none, and nothing there starts a drag", () => {
+    const h = mountWorkbench({ paneDraggable: (id) => id !== "tasks" })
+    h.api().contents.add("tasks")
+    h.api().navigation.show("tasks")
+    const paneId = h.api().selectors.contentPane("tasks")!
+
+    expect(h.utils.queryByTestId(`pane-handle-${paneId}`)).toBeNull()
+    expect(h.utils.queryByTestId(`pane-handle-zone-${paneId}`)).toBeNull()
+
+    h.api().contents.add("a")
+    h.api().navigation.show("a")
+    const draggable = h.utils.queryByTestId(`pane-handle-${h.api().selectors.contentPane("a")!}`)!
+    dispatchPointer(draggable, "pointerdown", { clientX: 0, clientY: 0 })
+    dispatchPointer(window, "pointermove", { clientX: 20, clientY: 0 })
+
+    expect(workbenchDrag.active()).toBe(true)
+    expect(workbenchDrag.contentId()).toBe("a")
+  })
+
   test("dragging the pane handle past threshold begins a drag carrying its contentId", () => {
     const h = mountWorkbench()
     h.api().contents.add("a")

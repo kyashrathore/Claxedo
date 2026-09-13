@@ -2,6 +2,7 @@ import { Show, Suspense, createMemo, lazy, type Accessor } from "solid-js"
 import type { NewSessionProjectSelection } from "@/features/session/ui/components/session-new-design-view"
 
 import { Workbench } from "../workbench/index"
+import { contentSurfacePaneDraggable } from "@/app/integrations/first-party-content-surfaces"
 import { createMountIdleGovernor } from "../workbench/mount-idle-governor"
 import { ContentRenderer } from "../content/index"
 import type { ContentMeta } from "../state/index"
@@ -78,6 +79,7 @@ export function RailWorkbenchCanvas(props: {
         maxMountedContents={4}
         mountPolicy="visible-once"
         mountCapCandidate={(id) => props.state.meta.get(id)?.type === "session"}
+        paneDraggable={(id) => contentSurfacePaneDraggable(props.state.meta.get(id)?.type)}
         retainedHiddenLimit={retainedHiddenLimit}
         onCloseFocusedPane={props.onCloseFocusedPane}
         renderEmpty={() => (

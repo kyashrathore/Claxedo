@@ -21,6 +21,7 @@ export const tasksContentSurface: ContentSurfaceContribution = {
   tier: "claxedo-first-party",
   surface: "tasks",
   slot: "workbench",
+  draggablePane: false,
   renderer: (context) => (
     <Suspense fallback={<SurfaceFallback />}>
       <TasksSurface page={() => (context.meta.content?.type === "tasks" ? context.meta.content.page : undefined)} />
