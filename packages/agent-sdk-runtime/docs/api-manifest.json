@@ -177,6 +177,7 @@
       "widestPermissionModeUnder",
       "ProviderProjectionExpiredError",
       "liveProviderBinding",
+      "projectionRenewalDue",
       "projectionRenewalDueAt",
       "accountIdFromClaims"
     ],
@@ -335,6 +336,11 @@
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
       "purpose": "The ChatGPT account id a stored OpenAI login names, including the one carried only inside its id_token claims."
+    },
+    "projectionRenewalDue": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "Whether a held projection is due for replacement, or the caller says the process lost track of time."
     }
   }
 }

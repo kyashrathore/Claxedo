@@ -4,6 +4,7 @@ import path from "node:path"
 import type { ProviderBindingOverlay } from "@claxedo/workspace-runtime/opencode"
 import {
   isProviderUnavailable,
+  projectionRenewalDue,
   projectionRenewalDueAt,
   providerProjectionRecord,
 } from "@claxedo/agent-sdk-runtime"
@@ -28,9 +29,10 @@ const ENGINE_RUNTIME = "opencode-engine"
  * OpenAI providers are both configured with a base URL that already reaches the
  * vendor's API root, so a binding's API path belongs in it.
  *
- * A provider the credential broker has no destination for is absent, and its
- * accounts reach the engine not at all: the engine used to receive a plaintext
- * copy of the stored key, which is the channel this design removes.
+ * A provider the credential broker has no destination for is absent from this
+ * table, and its accounts reach the engine not at all — which is the intended
+ * answer, because the only other way to hand it one is a plaintext copy of the
+ * operator's stored key.
  */
 const PROVIDER_BY_REGISTRY_ID: Readonly<Record<string, string>> = {
   anthropic: "anthropic",
@@ -90,24 +92,30 @@ function withholdEngineProviderEnv(providers: readonly string[]) {
  * already written.
  *
  * The map is many-to-one — `anthropic` and `claude-sdk` are both the engine's
- * `anthropic` — and the loop used to keep whichever row came last, so an
- * account marked unavailable disabled a provider another account had bound. A
- * bound row always wins; between two of a kind the registry id that matches the
- * engine's own decides, and every group in the table contains exactly one.
+ * `anthropic` — so two rows compete for one overlay and keeping whichever came
+ * last lets an account marked unavailable disable a provider another account
+ * has bound. A bound row always wins; between two of a kind the registry id
+ * that matches the engine's own decides, and every group in the table contains
+ * exactly one.
  */
 function overridesOverlay(held: ProviderBindingOverlay | undefined, next: ProviderBindingOverlay, exact: boolean) {
   if (!held) return true
-  const heldBound = !("unavailable" in held)
-  const nextBound = !("unavailable" in next)
+  const heldBound = !isProviderUnavailable(held)
+  const nextBound = !isProviderUnavailable(next)
   return heldBound === nextBound ? exact : nextBound
 }
 
 /**
- * When the engine's placeholders have to be replaced. Held here rather than on
- * a workspace runtime: the engine is one process serving every workspace, so
- * nothing in that map expires alongside it.
+ * When the engine's placeholders have to be replaced, and whose accounts they
+ * are.
+ *
+ * Held here rather than on a workspace runtime: the engine is one process
+ * serving every workspace, so nothing in that map expires alongside it. One
+ * entry rather than one per org for the same reason — `bindProviders` installs
+ * a single overlay set, so exactly one org's accounts are in force, and
+ * renewing under any other one would replace them with a different tenant's.
  */
-let renewAt: number | undefined
+let renewal: { org: CredentialOrgScope; at?: number } | undefined
 
 /**
  * Re-project the engine's credentials when its earliest placeholder is due, or
@@ -116,8 +124,8 @@ let renewAt: number | undefined
  */
 export async function renewSdkCredentialsIfDue(input: { at: number; all?: boolean }): Promise<void> {
   if (!openCodeSdkRuntimeLoaded()) return
-  if (!input.all && (renewAt === undefined || renewAt > input.at)) return
-  await reconcileCredentialsIntoSdk()
+  if (!projectionRenewalDue(input, renewal?.at)) return
+  await reconcileCredentialsIntoSdk(renewal?.org ?? SINGLE_TENANT_ORG)
 }
 
 const managedLabel = (provider: string) => `Claxedo managed: ${provider}`
@@ -139,10 +147,6 @@ function readLedger(): Ledger {
     if (Array.isArray(value)) ledger[key] = value.filter((entry) => typeof entry === "string")
   }
   return ledger
-}
-
-export function sdkProviderFor(providerID: string): string | undefined {
-  return PROVIDER_BY_REGISTRY_ID[providerID]
 }
 
 export type SdkCredentialSyncResult = Readonly<{ bound: readonly string[]; removed: readonly string[] }>
@@ -199,7 +203,8 @@ export async function reconcileCredentialsIntoSdk(
   const bound = Object.keys(overlays)
   withholdEngineProviderEnv(bound)
   await runtime.bindProviders(overlays)
-  renewAt = projectionRenewalDueAt(auth, projectedAt)
+  const dueAt = projectionRenewalDueAt(auth, projectedAt)
+  renewal = { org, ...(dueAt === undefined ? {} : { at: dueAt }) }
   log.info("OpenCode SDK providers bound to the credential broker", { bound: bound.length, removed: removed.length })
   return { bound, removed }
 }

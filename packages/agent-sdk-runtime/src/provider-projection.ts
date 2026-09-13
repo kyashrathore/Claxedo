@@ -60,8 +60,16 @@ const AUTH_MODES = ["api-key", "bearer"] as const
 const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath"])
 const UNAVAILABLE_KEYS = new Set(["unavailable", "reason"])
 
-export function isProviderUnavailable(projection: ProviderProjection): projection is ProviderUnavailable {
-  return "unavailable" in projection
+/**
+ * Whether a row is the refusal rather than a binding.
+ *
+ * Takes any object rather than a `ProviderProjection`, because the same
+ * refusal travels alongside binding shapes this module does not own — the
+ * engine's provider overlay carries `baseURL`/`apiKey` — and a second copy of
+ * the predicate beside each of them is how two of them came to disagree.
+ */
+export function isProviderUnavailable(row: object): row is ProviderUnavailable {
+  return "unavailable" in row
 }
 
 export function providerProjection(
@@ -152,6 +160,15 @@ export function providerProjectionRecord(
  * any interval chosen here. A map carrying no row that expires never needs
  * renewing.
  */
+/**
+ * Whether a held projection is due for replacement. `all` is the caller saying
+ * the process lost track of time — a laptop resumed from sleep reads a clock
+ * later than any tick the timer saw — so nothing that expires may be trusted.
+ */
+export function projectionRenewalDue(input: { at: number; all?: boolean }, renewAt: number | undefined): boolean {
+  return input.all === true || (renewAt !== undefined && renewAt <= input.at)
+}
+
 export function projectionRenewalDueAt(
   auth: Record<string, ProviderProjection>,
   appliedAt: number,

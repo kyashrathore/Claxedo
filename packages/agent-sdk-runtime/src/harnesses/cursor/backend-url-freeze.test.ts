@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, beforeEach, expect, test } from "bun:test"
 import {
   applyCursorBackendUrl,
   CursorBackendUrlFrozenError,
@@ -19,6 +19,12 @@ import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
  */
 const BACKEND_URL = "CURSOR_BACKEND_URL"
 const previous = process.env[BACKEND_URL]
+
+// The freeze is process state every cursor driver in this run shares, so each
+// test starts it over rather than inheriting whatever the last file left.
+beforeEach(() => {
+  forgetCursorBackendUrl()
+})
 
 afterEach(() => {
   forgetCursorBackendUrl()
@@ -53,7 +59,7 @@ test("the value in force at the import is what the SDK keeps", () => {
   process.env[BACKEND_URL] = "http://127.0.0.1:2595/bindings/second"
   freezeCursorBackendUrl()
 
-  expect(frozenCursorBackendUrl()).toMatchObject({ value: "http://127.0.0.1:2595/bindings/first" })
+  expect(frozenCursorBackendUrl()).toEqual({ value: "http://127.0.0.1:2595/bindings/first", binding: false })
 })
 
 test("a binding applied after the SDK loaded refuses the turn instead of spending it elsewhere", async () => {
@@ -94,7 +100,6 @@ test("a process that never imported the SDK freezes nothing and refuses nothing"
 test("the driver's own load is what freezes the value, with nobody calling the freeze", async () => {
   // The production call lives inside the driver's agent load. A test that
   // calls the freeze by hand proves the function, never the call.
-  forgetCursorBackendUrl()
   applyCursorBackendUrl(projection("http://127.0.0.1:2595/bindings/loaded")["cursor-sdk"])
   const driver = createCursorSdkDriver(host(), {
     loadSdk: async () => ({}) as never,
