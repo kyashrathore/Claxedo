@@ -2,6 +2,8 @@
  * Real native harnesses use an isolated server and scripted model HTTP only.
  * Offline browser tests keep the server and tool process online; filesystem
  * completion and canonical messages establish what happened during the outage.
+ * A server-interrupted turn must expose a tool error; only its recovery send
+ * can produce a completed assistant reply for the shared reply oracle.
  */
 import { expectSessionRenamePersistence } from "../helpers/session-rename"
 import { expectSessionReadRecovery } from "../helpers/session-read-recovery"
@@ -1934,6 +1936,77 @@ setTimeout(() => process.exit(2), 60000).unref();
       network.reconnect()
       await fs.writeFile(releaseFile, "release")
       await fs.writeFile(testInfo.outputPath("event-connections.json"), JSON.stringify(sockets, null, 2))
+    }
+  })
+
+  test("Claude running tool becomes interrupted without reload after server restart and a follow-up can complete", async ({ page }, testInfo) => {
+    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+    requireBinary(binary, "claude", "install Claude to exercise interruption of a running native tool.")
+    const dir = await makeWorkspace("claude-tool-server-restart", "claude")
+    const startedFile = path.join(dir, "tool-started")
+    const releaseFile = path.join(dir, "release-tool")
+    const script = path.join(dir, "held-tool.cjs")
+    const marker = `INTERRUPTED_TOOL_${Date.now()}`
+    await fs.writeFile(script, `
+const fs = require("node:fs");
+fs.writeFileSync(${JSON.stringify(startedFile)}, "started");
+const timer = setInterval(() => {
+  if (!fs.existsSync(${JSON.stringify(releaseFile)})) return;
+  clearInterval(timer);
+  console.log(${JSON.stringify(marker)});
+}, 20);
+setTimeout(() => process.exit(2), 90000).unref();
+`)
+    try {
+      await seedOneProject(page, dir)
+      await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, "claude")
+      await waitForHarnessReady(page)
+      await page.locator('[data-action="prompt-permission-mode"]').last().click()
+      await page.locator('[data-permission-mode-row][data-mode="bypassPermissions"]').click()
+      scripted!.scriptTool({ name: "Bash", input: { command: `node '${script}'`, timeout: 120000 }, whenPromptIncludes: marker })
+      await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Run the requested command, then reply with exactly this one token: ${marker}`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expect.poll(() => fs.readFile(startedFile, "utf8").catch(error => {
+        if (error.code === "ENOENT") return ""
+        throw error
+      }), { message: "the real tool starts before the server is restarted", timeout: 30_000 }).toBe("started")
+      const sessionID = new URL(page.url()).pathname.split("/").at(-1)!
+      const readTools = async () => {
+        const response = await page.request.get(`${BACKEND_URL}/session/${sessionID}/message?directory=${encodeURIComponent(dir)}`)
+        expect(response.ok()).toBe(true)
+        const messages = await response.json() as Array<{ parts: Array<{ id: string; type: string; state?: { status: string; error?: string } }> }>
+        return messages.flatMap(message => message.parts).filter(part => part.type === "tool")
+      }
+      const tools = await readTools()
+      expect(tools).toHaveLength(1)
+      expect(tools[0].state?.status).toBe("running")
+      const part = page.locator(SELECTORS.toolPart(tools[0].id))
+      await expect(part).toContainText("Running")
+      await page.screenshot({ path: testInfo.outputPath("tool-before-server-restart.png") })
+      await server!.restart()
+      await expect(part).toBeVisible({ timeout: 30_000 })
+      await fs.writeFile(testInfo.outputPath("tools-after-server-restart.json"), JSON.stringify(await readTools(), null, 2))
+      await expect.soft.poll(async () => (await readTools()).find(tool => tool.id === tools[0].id)?.state?.status, {
+        message: "the interrupted tool has a terminal error state", timeout: 15_000,
+      }).toBe("error")
+      await expect.soft(part).not.toContainText("Running")
+      const errorCard = part.locator('[data-kind="tool-error-card"]')
+      await expect.soft(errorCard).toBeVisible()
+      await page.screenshot({ path: testInfo.outputPath("tool-after-server-restart.png") })
+      expect(testInfo.errors, "server interruption is visible before testing recovery").toHaveLength(0)
+      const interrupted = (await readTools()).find(tool => tool.id === tools[0].id)!
+      expect(interrupted.state?.error).toMatch(/interrupt|restart|abort/i)
+      const reply = `AFTER_TOOL_RESTART_${Date.now()}`
+      await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${reply}. Do not use tools.`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expectAssistantReplyVisible(page, reply)
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await expectAssistantReplyVisible(page, reply)
+      expect((await readTools()).find(tool => tool.id === tools[0].id)).toEqual(interrupted)
+      await expect(part).not.toContainText("Running")
+    } finally {
+      await fs.writeFile(releaseFile, "release")
     }
   })
 
