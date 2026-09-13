@@ -472,6 +472,8 @@ export const dict = {
   "session.goal.metric.iteration": "Iteration {{count}}", "session.goal.metric.tokensUsed": "{{count}} tokens",
   "session.goal.metric.tokenBudget": "{{count}} token budget", "session.goal.metric.timeUsed": "{{seconds}}s",
   "session.question.progress": "{{current}} of {{total}} questions",
+  "session.question.collapse": "Collapse question",
+  "session.question.expand": "Expand question",
   "session.timeline.previousMessages.one": "{{count}} previous message",
   "session.timeline.previousMessages.other": "{{count}} previous messages",
   "session.timeline.collapseTranscript": "Collapse transcript",

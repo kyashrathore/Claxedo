@@ -618,6 +618,8 @@ export const dict = {
 
   "session.todo.progress": "{{done}} 個中 {{total}} 個の Todo が完了",
   "session.question.progress": "{{total}} 問中 {{current}} 問",
+  "session.question.collapse": "質問を折りたたむ",
+  "session.question.expand": "質問を展開する",
   "common.key.ctrl": "Ctrl",
   "common.key.alt": "Alt",
   "common.key.shift": "Shift",

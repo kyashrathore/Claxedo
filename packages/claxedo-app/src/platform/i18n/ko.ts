@@ -614,6 +614,8 @@ export const dict = {
 
   "session.todo.progress": "{{total}}개의 할 일 중 {{done}}개 완료",
   "session.question.progress": "{{total}}개의 질문 중 {{current}}개",
+  "session.question.collapse": "질문 접기",
+  "session.question.expand": "질문 펼치기",
   "common.key.ctrl": "Ctrl",
   "common.key.alt": "Alt",
   "common.key.shift": "Shift",

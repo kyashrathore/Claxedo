@@ -629,6 +629,8 @@ export const dict = {
 
   "session.todo.progress": "{{done}} tâches sur {{total}} terminées",
   "session.question.progress": "{{current}} questions sur {{total}}",
+  "session.question.collapse": "Réduire la question",
+  "session.question.expand": "Développer la question",
   "common.key.ctrl": "Ctrl",
   "common.key.alt": "Alt",
   "common.key.shift": "Maj",

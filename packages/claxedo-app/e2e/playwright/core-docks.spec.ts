@@ -322,6 +322,52 @@ test.describe("core docks — question wizard @core", () => {
     await expect(composerTextbox(page)).toBeVisible({ timeout: 20_000 })
   })
 
+  test("minimize keeps the picked answer and frees the transcript; restoring submits it", async ({ page }) => {
+    const { mock, counters } = await establishSession(page)
+
+    mock.emit({
+      type: "question.asked",
+      properties: {
+        id: "q_minimize",
+        sessionID: SESSION_ID,
+        questions: [
+          {
+            question: "Which approach should I take?",
+            header: "Approach",
+            options: [
+              { label: "Fast", description: "Ship quickly" },
+              { label: "Careful", description: "Take more time" },
+            ],
+            multiple: false,
+          },
+        ],
+      },
+    })
+
+    await expect(questionDock(page)).toBeVisible({ timeout: 20_000 })
+    await expect(page.locator('[data-slot="question-progress-segment"]')).toHaveCount(0)
+
+    await questionOption(page, "Fast").click()
+    await expect(questionOption(page, "Fast")).toHaveAttribute("data-picked", "true")
+
+    const expanded = await questionDock(page).boundingBox()
+    await page.getByRole("button", { name: "Collapse question", exact: true }).click()
+
+    await expect(questionDock(page)).toHaveAttribute("data-collapsed", "true")
+    await expect(page.locator('[data-slot="question-option"]')).toHaveCount(0)
+    await expect(page.getByRole("button", { name: "Submit", exact: true })).toHaveCount(0)
+    await expect(page.locator('[data-slot="question-header-preview"]')).toHaveText("Which approach should I take?")
+    expect((await questionDock(page).boundingBox())!.height).toBeLessThan(expanded!.height)
+    await expect(page.getByText("ack 1: core docks establishing turn").last()).toBeVisible()
+
+    await page.getByRole("button", { name: "Expand question", exact: true }).click()
+    await expect(questionOption(page, "Fast")).toHaveAttribute("data-picked", "true")
+
+    await page.getByRole("button", { name: "Submit", exact: true }).click()
+    await expect.poll(() => counters.questionReply.count, { timeout: 10_000 }).toBe(1)
+    expect(counters.questionReply.bodies[0]).toEqual({ answers: [["Fast"]] })
+  })
+
   test("multi-question: Back/Next preserve per-tab answers; a multiple:true question toggles independently", async ({
     page,
   }) => {

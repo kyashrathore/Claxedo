@@ -9,10 +9,11 @@ Use with form controls or confirmation buttons in the footer.
 
 ### API
 - Required: \`kind\` (question | permission), \`header\`, \`children\`, \`footer\`.
-- Optional: \`ref\` for measuring or focus management.
+- Optional: \`collapsed\` to render the header alone, \`ref\` for measuring or focus management.
 
 ### Variants and states
 - Question and permission layouts (data attributes).
+- Collapsed drops the content and footer, leaving the header as the whole surface.
 
 ### Behavior
 - Pure layout component; behavior handled by parent.
@@ -51,6 +52,16 @@ export default {
 }
 
 export const Basic = story.Basic
+
+export const Collapsed = {
+  args: {
+    kind: "question",
+    header: "1 of 1 questions",
+    children: "Prompt content",
+    footer: "Footer",
+    collapsed: true,
+  },
+}
 
 export const Permission = {
   args: {

@@ -688,6 +688,8 @@ export const dict = {
 
   "session.todo.progress": "เสร็จสิ้น {{done}} จาก {{total}} รายการ",
   "session.question.progress": "{{current}} จาก {{total}} คำถาม",
+  "session.question.collapse": "ย่อคำถาม",
+  "session.question.expand": "ขยายคำถาม",
   "common.key.ctrl": "Ctrl",
   "common.key.alt": "Alt",
   "common.key.shift": "Shift",
