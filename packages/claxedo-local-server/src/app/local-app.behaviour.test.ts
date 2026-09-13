@@ -85,7 +85,6 @@ function services(overrides: Record<string, unknown> = {}) {
 function app(overrides: Partial<LocalAppOptions> = {}) {
   return createLocalApp({
     services: services(),
-    isCredentialPath: (p) => p.startsWith("/api/claxedo/credentials"),
     corsOrigin: (origin) => origin,
     ...overrides,
   }).app
@@ -113,6 +112,17 @@ describe("local composition — CORS", () => {
 
     expect(response.headers.get("access-control-allow-origin")).toBeNull()
   })
+
+  test("withholds it from the broker's binding paths under the same rule", async () => {
+    // The broker spends the operator's stored key at the vendor, so an ACAO
+    // here would let a loopback page do the spending.
+    const response = await app({ egressBroker: async () => new Response(null, { status: 401 }) })
+      .request("http://127.0.0.1/bindings/b1/v1/messages", {
+        headers: { Origin: "http://localhost:4444" },
+      })
+
+    expect(response.headers.get("access-control-allow-origin")).toBeNull()
+  })
 })
 
 describe("local composition — credential routes", () => {
@@ -133,6 +143,38 @@ describe("local composition — credential routes", () => {
     const response = await app().request("http://localhost/api/claxedo/credentials", { method: "GET" })
 
     expect(response.status).toBe(200)
+  })
+
+  test("read the signed caller's own org, not the single-tenant partition", async () => {
+    // The composition's auth adapter is what resolves the tenant. Mounted
+    // without it, every signed caller is answered in `__local__` and sees
+    // another org's accounts.
+    process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
+    const listCredentials = vi.fn(async (_org: string) => [])
+    const instance = createLocalApp({
+      services: services({
+        auth: customVerifierAuthAdapter({
+          issuer: "https://idp.example.test",
+          verifier: async (token, config) => ({
+            mode: "signed" as const,
+            user: {
+              subject: token,
+              tokenIdentifier: `${config.issuer}|${token}`,
+              issuer: config.issuer,
+              orgId: "org-alpha",
+            },
+          }),
+        }),
+        credentials: { listCredentials },
+      }),
+    }).app
+
+    const response = await instance.request("http://localhost/api/claxedo/credentials", {
+      headers: { Authorization: "Bearer alpha-user" },
+    })
+
+    expect(response.status).toBe(200)
+    expect(listCredentials).toHaveBeenCalledWith("org-alpha")
   })
 })
 

@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
@@ -62,7 +63,7 @@ afterEach(async () => {
   rmSync(dataDir, { recursive: true, force: true })
 })
 
-function services() {
+function services(overrides: Record<string, unknown> = {}) {
   return {
     auth: { config: {} },
     credentials: {
@@ -84,6 +85,7 @@ function services() {
     relay: {},
     sandbox: {},
     durableSessionLog: {},
+    ...overrides,
   } as unknown as LocalAppOptions["services"]
 }
 
@@ -92,7 +94,6 @@ async function boot() {
   server = startLocalServer({
     port,
     services: services(),
-    isCredentialPath: (p) => p.startsWith("/api/claxedo/credentials"),
     corsOrigin: (origin) => origin,
   })
   return server
@@ -139,6 +140,40 @@ describe("startLocalServer", () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ ok: true, localExecution: true })
+  }, 30_000)
+
+  test("reads the quota view in the signed caller's own org", async () => {
+    // The quota reader and the credential routes must resolve one tenant. Given
+    // no auth configuration, `requestOrg` answers every signed caller in the
+    // single-tenant partition and the plans drawn are another org's.
+    const listCredentials = vi.fn(async (_org: string) => [])
+    const port = await freePort()
+    server = startLocalServer({
+      port,
+      services: services({
+        auth: customVerifierAuthAdapter({
+          issuer: "https://idp.example.test",
+          verifier: async (token, config) => ({
+            mode: "signed" as const,
+            user: {
+              subject: token,
+              tokenIdentifier: `${config.issuer}|${token}`,
+              issuer: config.issuer,
+              orgId: "org-alpha",
+            },
+          }),
+        }),
+        credentials: { listCredentials },
+      }),
+    })
+    await server.ready
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/claxedo/usage?view=quota&since=0&until=86400000`, {
+      headers: { Authorization: "Bearer alpha-user" },
+    })
+
+    expect(response.status).toBe(200)
+    expect(listCredentials).toHaveBeenCalledWith("org-alpha")
   }, 30_000)
 
   test("ships the unified usage endpoint in the desktop-local composition", async () => {
@@ -210,7 +245,6 @@ describe("createLocalControlPlaneServices", () => {
     server = startLocalServer({
       port,
       services: createLocalControlPlaneServices(),
-      isCredentialPath: (p) => p.startsWith("/api/claxedo/credentials"),
       corsOrigin: (origin) => origin,
     })
 

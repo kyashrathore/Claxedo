@@ -57,7 +57,6 @@ export async function startLiveFirstPartyMcp() {
   const server: LocalServer = startLocalServer({
     port,
     services: createLocalControlPlaneServices(),
-    isCredentialPath: (candidate: string) => candidate.startsWith("/api/claxedo/credentials"),
     corsOrigin: (origin: string) => origin,
   })
   await server.ready

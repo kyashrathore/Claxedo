@@ -137,6 +137,20 @@ describe("local binding authority", () => {
     expect(await local.authority.currentRuntime(local.runtimeIdentity(workspaceId))).toBe(true)
   })
 
+  test("a renewal re-projects onto the binding this broker already minted", async () => {
+    // The renewal timer re-projects every workspace every 30s for the life of
+    // the process. A binding id derived from anything that moves between
+    // projections would strand one entry per tick in the map `resolve` reads,
+    // and none of them is ever evicted.
+    const credential = await activeRow("sk-ant-api03-renewed")
+    const local = broker()
+    const first = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+    const second = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+
+    expect(second).toBe(first)
+    expect((await local.authority.resolve(first))?.binding.credentialId).toBe(credential.id)
+  })
+
   test("a subscription token binds as a bearer, a key as x-api-key", async () => {
     await activeRow("sk-ant-oat01-subscription", "anthropic")
     const local = broker()

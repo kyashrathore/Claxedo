@@ -49,7 +49,7 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credentials-broker" })
 
-export const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
+const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
 
 /**
  * How long one vendor refusal counts towards the next.
@@ -164,16 +164,9 @@ export function createLocalCredentialBroker(input: {
   let opened: { signingKey: Uint8Array; leaseGeneration: number } | undefined
   function brokerState() {
     if (opened) return opened
-    try {
-      const dir = credentialsDir(input.dataDir)
-      opened = { signingKey: loadSigningKey(dir), leaseGeneration: nextLeaseGeneration(dir) }
-      return opened
-    } catch (error) {
-      // Not remembered: the fault is the operator's to fix, and a broker that
-      // holds the first failure for the life of the process leaves every
-      // account unavailable until the server is restarted.
-      throw error instanceof Error ? error : new Error(String(error))
-    }
+    const dir = credentialsDir(input.dataDir)
+    opened = { signingKey: loadSigningKey(dir), leaseGeneration: nextLeaseGeneration(dir) }
+    return opened
   }
 
   /**
@@ -248,18 +241,18 @@ export function createLocalCredentialBroker(input: {
     }
   }
 
-  /**
-   * A turn outlives the operator's choice of account. Re-marking one account
-   * while another is mid-turn must not kill that turn, so a request resolves
-   * against the credential its own binding names rather than against whichever
-   * row currently carries the mark; the next projection is what moves the
-   * harness onto the new account. Withdrawal still stops the running turn — a
-   * revoked, expired or deleted account is one the operator wants unspent now.
-   */
   /** Consecutive vendor refusals per credential, by the org its binding names. */
   const refusals = new Map<string, { revision: number; count: number; at: number }>()
 
   const authority: BindingAuthority = {
+    /**
+     * A turn outlives the operator's choice of account. Re-marking one account
+     * while another is mid-turn must not kill that turn, so a request resolves
+     * against the credential its own binding names rather than against whichever
+     * row currently carries the mark; the next projection is what moves the
+     * harness onto the new account. Withdrawal still stops the running turn — a
+     * revoked, expired or deleted account is one the operator wants unspent now.
+     */
     async resolve(id) {
       const entry = minted.get(id)
       if (!entry) return undefined
