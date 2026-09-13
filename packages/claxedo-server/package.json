@@ -84,6 +84,7 @@
     "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/channels": "workspace:*",
     "@claxedo/connections": "workspace:*",
+    "@claxedo/egress-broker": "workspace:*",
     "@claxedo/helpers": "workspace:*",
     "@claxedo/local-server": "workspace:*",
     "@claxedo/mcp": "workspace:*",

@@ -121,7 +121,15 @@ export const serverSelfHosted: Policy = {
   // reaches only `@claxedo/helpers/string` and the scope module already in
   // this closure. No package edge. Re-measured, no headroom: 139/38.
   // Consent revocation shares platform/auth/oauth-consent-revocation.ts across both OAuth providers.
-  ceilings: { modules: 139, packages: 38 },
+  // +1 package: @claxedo/egress-broker, reviewed owner of the credential
+  // broker's mount policy — the `/bindings/*` pattern, the loopback gate in
+  // front of it and the CORS carve-out that keeps a browser off it. This
+  // deployment holds the credential values (`createLocalCredentialBroker` in
+  // app.ts) and binds 0.0.0.0, so it is a broker host, and the gate it mounts
+  // must be the same one the desktop composition mounts rather than a copy.
+  // The package reaches only jose, @hono/node-server and the runtime contract,
+  // all already in this closure. Re-measured, no headroom: 39 packages.
+  ceilings: { modules: 139, packages: 39 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -154,6 +162,9 @@ export const serverSelfHosted: Policy = {
       { packageDir: "packages/claxedo-channels" },
       { packageDir: "packages/wakes" },
       { packageDir: "packages/workspace-runtime" },
+      // The credential broker this deployment mounts; its published entry is
+      // dist-only and claxedo-local-server bundles against it.
+      { packageDir: "packages/egress-broker" },
       { packageDir: "packages/claxedo-local-server" },
     ],
     packageExports: [{

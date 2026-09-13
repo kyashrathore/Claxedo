@@ -25,6 +25,6 @@ test("every refusal names a code and carries a message the engine will show", ()
   }
 })
 
-test("the shape the broker used to answer with is discarded by that same reader", () => {
+test("a scalar error body is discarded by that same reader", () => {
   expect(decodesLikeProviderMessage({ error: "binding_unavailable" })).toBeUndefined()
 })

@@ -12,6 +12,7 @@ async function fixture() {
     injection: { header: "x-api-key" },
   }
   let current = true
+  let value = "real-key"
   const failures: BindingFailure[] = []
   let reportingUnavailable = false
   const upstream: Request[] = []
@@ -20,7 +21,7 @@ async function fixture() {
   const broker = createEgressBroker({
     verifyToken: (value) => verifyRuntimeToken(value, key),
     authority: {
-      resolve: async () => ({ binding, value: "real-key" }),
+      resolve: async () => ({ binding, value }),
       currentRuntime: async () => current,
       reportFailure: async (failure) => { if (reportingUnavailable) throw Error("failure store unavailable"); failures.push(failure) },
     },
@@ -29,7 +30,8 @@ async function fixture() {
   const request = (pathname = "/v1/messages", init: RequestInit = {}) => broker(new Request(`http://broker.test/bindings/binding${pathname}`, {
     method: "POST", headers: { "x-api-key": token, cookie: "local=private" }, body: "prompt", ...init,
   }))
-  return { request, token, upstream, failures, failReporting: () => { reportingUnavailable = true }, update: (patch: Partial<Binding>) => { binding = { ...binding, ...patch } }, stop: () => { current = false }, respond: (fn: typeof respond) => { respond = fn } }
+  const broker404 = (url: string) => broker(new Request(url, { method: "POST" }))
+  return { request, broker404, token, upstream, failures, failReporting: () => { reportingUnavailable = true }, update: (patch: Partial<Binding>) => { binding = { ...binding, ...patch } }, unreadable: () => { value = "" }, stop: () => { current = false }, respond: (fn: typeof respond) => { respond = fn } }
 }
 
 describe("binding broker HTTP entrypoint", () => {
@@ -73,13 +75,67 @@ describe("binding broker HTTP entrypoint", () => {
     expect(f.upstream).toHaveLength(1)
   })
 
-  test("rejects expired, malformed and differently scoped tokens", async () => {
+  test("names the reason a token is rejected", async () => {
     const f = await fixture()
     const expired = await mintRuntimeToken({ ...identity, bindingIds: ["binding"], expiresAt: Date.now() - 1000 }, key, Date.now() - 5000)
     const other = await mintRuntimeToken({ ...identity, bindingIds: ["other"], expiresAt: Date.now() + 60000 }, key)
+    const refusals = []
     for (const token of [expired, "garbage", other]) {
-      expect([401, 403]).toContain((await f.request("/v1/messages", { headers: { authorization: `Bearer ${token}` } })).status)
+      const response = await f.request("/v1/messages", { headers: { authorization: `Bearer ${token}` } })
+      refusals.push([response.status, (await response.json()).error.code])
     }
+    expect(refusals).toEqual([
+      [401, "runtime_token_invalid"],
+      [401, "runtime_token_invalid"],
+      [403, "binding_not_permitted"],
+    ])
+    expect(f.upstream).toHaveLength(0)
+  })
+
+  test("refuses a caller presenting two different identities", async () => {
+    const f = await fixture()
+    const other = await mintRuntimeToken({ ...identity, bindingIds: ["binding"], expiresAt: Date.now() + 60_000 }, key, Date.now() - 1000)
+    expect(other).not.toBe(f.token)
+    const response = await f.request("/v1/messages", { headers: { authorization: `Bearer ${f.token}`, "x-api-key": other } })
+    expect([response.status, (await response.json()).error.code]).toEqual([401, "runtime_token_required"])
+    expect(f.upstream).toHaveLength(0)
+  })
+
+  test("accepts the token in every header a harness puts an API key in, and forwards none of them", async () => {
+    const f = await fixture()
+    const response = await f.request("/v1/messages", { headers: { "x-goog-api-key": f.token } })
+    expect(response.status).toBe(200)
+    expect(f.upstream[0].headers.get("x-goog-api-key")).toBeNull()
+    expect(f.upstream[0].headers.get("x-api-key")).toBe("real-key")
+  })
+
+  test("refuses an injection policy that would overwrite a transport header or the credential slot", async () => {
+    const policies: Record<string, string>[] = [{ host: "evil.test" }, { "X-Api-Key": "duplicate" }]
+    for (const headers of policies) {
+      const f = await fixture()
+      f.update({ injection: { header: "x-api-key", headers } })
+      const response = await f.request()
+      expect([response.status, (await response.json()).error.code]).toEqual([503, "binding_injection_invalid"])
+      expect(f.upstream).toHaveLength(0)
+    }
+  })
+
+  test.each([
+    { patch: { revision: 0 }, unreadable: false },
+    { patch: {}, unreadable: true },
+  ])("refuses a binding whose credential cannot be spent %j", async ({ patch, unreadable }) => {
+    const f = await fixture()
+    f.update(patch as Partial<Binding>)
+    if (unreadable) f.unreadable()
+    const response = await f.request()
+    expect([response.status, (await response.json()).error.code]).toEqual([503, "credential_unavailable"])
+    expect(f.upstream).toHaveLength(0)
+  })
+
+  test("answers anything off the binding route with 404", async () => {
+    const f = await fixture()
+    const response = await f.broker404("http://broker.test/v1/messages")
+    expect([response.status, (await response.json()).error.code]).toEqual([404, "binding_route_required"])
     expect(f.upstream).toHaveLength(0)
   })
 
