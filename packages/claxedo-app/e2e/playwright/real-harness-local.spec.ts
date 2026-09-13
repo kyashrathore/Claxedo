@@ -1937,6 +1937,59 @@ setTimeout(() => process.exit(2), 60000).unref();
     }
   })
 
+  test("New Terminal creates a working shell and retains terminal focus through reload and chat return", async ({ page }, testInfo) => {
+    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+    requireBinary(binary, "claude", "install Claude to exercise terminal creation from a completed real chat.")
+    const dir = await makeWorkspace("claude-terminal-navigation", "claude")
+    await page.addInitScript(() => {
+      localStorage.setItem("claxedo.terminal.screen-reader-mode", "1")
+    })
+    await seedOneProject(page, dir)
+    const input = await openDraftPrompt(page, dir)
+    await switchDraftHarness(page, "claude")
+    await waitForHarnessReady(page)
+    const reply = `TERMINAL_CHAT_${Date.now()}`
+    await composePrompt(page, input, `Reply with exactly this one token: ${reply}. Do not use tools.`)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expectAssistantReplyVisible(page, reply)
+    const sessionID = new URL(page.url()).pathname.split("/").at(-1)!
+    await page.getByRole("button", { name: "New Terminal", exact: true }).last().click()
+    const launchers = page.locator('[data-component="terminal-new-launchers"]')
+    await expect(launchers).toBeVisible()
+    const createdResponse = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/pty") && response.request().method() === "POST")
+    await launchers.locator('[data-slot="terminal-launcher"][data-launcher-id="shell"]').click()
+    const response = await createdResponse
+    expect(response.ok(), await response.text()).toBe(true)
+    const created = await response.json() as { id: string }
+    expect(created.id).toMatch(/^pty_/)
+    const pane = page.locator(`[data-testid="terminal-pane"][data-terminal-id="${created.id}"]`)
+    const rail = page.locator(`[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${created.id}"]`)
+    await expect(pane).toBeVisible()
+    await expect(rail).toBeVisible()
+    const suffix = String(Date.now())
+    const marker = `TERMINAL_OUTPUT_${suffix}`
+    await pane.click()
+    await page.keyboard.type(`printf 'TERMINAL_OUTPUT_%s\\n' '${suffix}'`)
+    await page.keyboard.press("Enter")
+    await expect(pane.locator(".xterm-accessibility-tree")).toContainText(marker, { timeout: 30_000 })
+    await page.screenshot({ path: testInfo.outputPath("terminal-created-and-running.png") })
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(pane).toBeVisible()
+    await expect(pane.locator(".xterm-accessibility-tree")).toContainText(marker, { timeout: 30_000 })
+    await page.screenshot({ path: testInfo.outputPath("terminal-after-reload.png") })
+    await page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessionID}"]`).first().click()
+    await expectAssistantReplyVisible(page, reply)
+    await rail.click()
+    await expect(pane).toBeVisible()
+    await expect(pane.locator(".xterm-accessibility-tree")).toContainText(marker)
+    const returnMarker = `TERMINAL_RETURN_${suffix}`
+    await pane.click()
+    await page.keyboard.type(`printf 'TERMINAL_RETURN_%s\\n' '${suffix}'`)
+    await page.keyboard.press("Enter")
+    await expect(pane.locator(".xterm-accessibility-tree")).toContainText(returnMarker, { timeout: 30_000 })
+    await page.screenshot({ path: testInfo.outputPath("terminal-after-chat-return.png") })
+  })
+
   for (const [harness, longOutput, runningCommand] of [["claude", false, false], ["codex", false, false], ["codex", true, false], ["codex", false, true]] as const) {
     test(runningCommand ? "Codex running shell paints its command before completion" : longOutput ? "Codex completed shell exposes all 240 output lines after reload" : `${harness} native long-running tool retains its result through reload`, async ({ page }) => {
       test.fixme(longOutput, "Codex tool results contain the full output but the stored and rendered shell retains only the final chunk")
@@ -2044,13 +2097,21 @@ setTimeout(() => process.exit(2), 60000).unref();
           const rows = await response.json() as Array<{ info: { role: string }; parts: Array<{ type: string; text?: string }> }>
           return rows.filter((row) => row.info.role === "user").map((row) => row.parts.filter((part) => part.type === "text").map((part) => part.text).join(""))
         }
+        const readStatus = async () => {
+          const response = await page.request.get(`${BACKEND_URL}/session/status?directory=${encodeURIComponent(dir)}`)
+          expect(response.ok()).toBe(true)
+          const statuses = await response.json() as Record<string, { type: string }>
+          return statuses[sessionID]?.type
+        }
         await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), draft)
-        await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Stop")
+        await expect.poll(readStatus).toBe("busy")
+        await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Send")
         expect(await readUsers()).toEqual([firstPrompt])
         await page.reload({ waitUntil: "domcontentloaded" })
         const editor = page.getByRole("textbox", { name: /Ask anything/i }).last()
         await expect(editor).toHaveText(draft, { useInnerText: true })
-        await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Stop")
+        await expect.poll(readStatus).toBe("busy")
+        await expect(page.locator(SELECTORS.submitControl).last()).toHaveAccessibleName("Send")
         expect(await readUsers()).toEqual([firstPrompt])
         release()
         await expectAssistantReplyVisible(page, first)
