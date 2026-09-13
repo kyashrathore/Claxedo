@@ -1,5 +1,7 @@
 import { Extension } from "@tiptap/core"
+import { Node as ProseMirrorNode, Slice } from "@tiptap/pm/model"
 import { Plugin, PluginKey } from "@tiptap/pm/state"
+import { detectMarkdown } from "@/features/documents/markdown/detector"
 
 /**
  * Plain text pasted into a markdown document is markdown.
@@ -12,14 +14,18 @@ import { Plugin, PluginKey } from "@tiptap/pm/state"
  * Only when the clipboard carries no `text/html`: an editor or a browser that
  * supplies HTML has already described the structure, and re-reading its plain
  * text would throw that away. Never inside a code block, where the text is
- * code and a `#` is a comment. The parse is the editor's own markdown manager,
- * so paste, typing and loading all agree.
+ * code and a `#` is a comment. And only text this extension set can represent,
+ * decided by the same detector that decides rich mode: markdown outside the
+ * contract parses to content with no node to hold it — an HTML comment comes
+ * back as `<"keep ", paragraph, " this">`, which no paragraph accepts — so
+ * that text is left to ProseMirror's own paste, which inserts it literally.
  */
 export function markdownFromPaste(input: { html: string; text: string; inCode: boolean }): string | undefined {
   if (input.inCode) return undefined
   if (input.html.trim().length > 0) return undefined
   const text = input.text
   if (text.trim().length === 0) return undefined
+  if (detectMarkdown(text, "normalizing").status !== "rich") return undefined
   return text
 }
 
@@ -43,8 +49,14 @@ export const MarkdownPaste = Extension.create({
             if (markdown === undefined) return false
             const parsed = editor.markdown?.parse(markdown)
             if (!parsed) return false
+            // An open slice is what the clipboard path replaces a selection
+            // with: a lone paragraph joins the textblock holding the caret
+            // rather than splitting it in two, and anything taller keeps its
+            // blocks.
+            const pasted = ProseMirrorNode.fromJSON(editor.schema, parsed)
             event.preventDefault()
-            return editor.commands.insertContent(parsed)
+            view.dispatch(view.state.tr.replaceSelection(Slice.maxOpen(pasted.content)).scrollIntoView())
+            return true
           },
         },
       }),
