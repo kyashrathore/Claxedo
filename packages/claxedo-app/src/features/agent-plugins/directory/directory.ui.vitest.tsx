@@ -135,13 +135,19 @@ function sourcedCandidates(): PluginCandidate[] {
 }
 
 /**
- * The first-party server as this catalog serves it: the eight registered
- * groups, in the registration order the catalog emits, carrying the hosted
- * defaults — every group on except Tasks, and Documents off because the
- * documents service is an account service here.
+ * The first-party server as the catalog serves it: the eight registered groups
+ * with their real tool names, in the registration order the route emits.
+ *
+ * Documents is off here because this fixture is a hosted catalog, where the
+ * documents service is the account's rather than the process serving the
+ * session; Tasks is off in every deployment until it is asked for.
  */
 const BUILT_IN_GROUPS: PluginToolGroup[] = [
-  { id: "attention", enabled: true, tools: ["sessions_board", "question_reply", "question_reject", "wait_for_attention"] },
+  {
+    id: "attention",
+    enabled: true,
+    tools: ["sessions_board", "permission_reply", "question_reply", "question_reject", "wait_for_attention"],
+  },
   { id: "documents", enabled: false, tools: ["documents_list", "documents_open"] },
   { id: "processes", enabled: true, tools: ["processes", "process_start", "process_stop", "process_logs"] },
   { id: "review", enabled: true, tools: ["session_changes"] },
