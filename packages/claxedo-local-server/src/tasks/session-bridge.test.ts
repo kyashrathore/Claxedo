@@ -28,6 +28,10 @@ import {
   ensureEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
 } from "../deployments/local/embedded-workspace-runtime"
+import {
+  tasksSessionBridgeConformance,
+  type TasksSessionBridgeFixture,
+} from "@claxedo/server-core/tasks-host/session-bridge-conformance"
 import { createLocalTasksSessionBridge } from "./session-bridge"
 
 const CONNECTION_ID = "tasks-fixture"
@@ -240,6 +244,30 @@ async function registerWorkspace(input: { workspaceId: string; projectId: string
   return directory
 }
 
+/** The local host's answer to `tasksSessionBridgeConformance`'s fixture contract. */
+async function bridgeFixture(input: { offeredModelId?: string }): Promise<TasksSessionBridgeFixture> {
+  const host = await harness(input.offeredModelId ? { offeredModelId: input.offeredModelId } : {})
+  return {
+    bridge: host.bridge,
+    actor: { scopeId: "local", ownerId: "local" },
+    task: task({ workspaceId: host.workspaceId, projectId: host.projectId }),
+    projectWorkspaceId: host.workspaceId,
+    preset: preset(),
+    creates: () => host.created.length,
+    instructionsOf: async (sessionId) => host.created.find((row) => row.id === sessionId)?.instructions,
+    // A session this runtime never created: its message read answers 404, which
+    // is the same "would not say" the core refuses a handoff on.
+    unreadableSession: () => ({ sessionId: "ses_tasks_unknown", workspaceId: host.workspaceId }),
+    turns: () => host.turns,
+    archive: async (sessionId) => {
+      await putSessionMeta(sessionId, { archived: Date.now() })
+    },
+    dispose: async () => {
+      await fs.rm(host.root, { recursive: true, force: true })
+    },
+  }
+}
+
 const roots: string[] = []
 
 afterEach(async () => {
@@ -251,6 +279,12 @@ afterEach(async () => {
   configureAgentConfig()
   for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true })
   delete process.env.CLAXEDO_DATA_DIR
+})
+
+describe("local tasks session bridge conformance", () => {
+  for (const testCase of tasksSessionBridgeConformance(bridgeFixture)) {
+    test(testCase.name, testCase.run)
+  }
 })
 
 describe("local tasks session bridge", () => {
@@ -353,17 +387,6 @@ describe("local tasks session bridge", () => {
     const messages = await waitForMessage(host.request, retried.session.sessionRef.sessionId, messageId)
     expect(JSON.stringify(messages)).toContain("Fix the importer")
     expect(host.turns).toEqual([messageId])
-  })
-
-  test("refuses the handoff rather than sending it when the runtime will not say whether it is already there", async () => {
-    const host = await harness()
-    roots.push(host.root)
-    const refused = await host.bridge.handoff(handoffCommand({
-      workspaceId: host.workspaceId,
-      session: { sessionId: "ses_tasks_unknown", workspaceId: host.workspaceId },
-    }))
-    expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
-    expect(host.turns).toEqual([])
   })
 
   test("serializes two starts on one origin, so the second cannot create over the first configuration", async () => {
@@ -564,40 +587,6 @@ describe("local tasks session bridge", () => {
     expect(readable.preview.previousTranscriptReadable).toBe(true)
   })
 
-  test("refuses to adopt the attempt's session for another configuration and leaves its instructions alone", async () => {
-    const host = await harness()
-    roots.push(host.root)
-    const previewCommand = {
-      actor: { scopeId: "local", ownerId: "local" },
-      task: task({ workspaceId: host.workspaceId }),
-      preset: preset(),
-      slot: "primary" as const,
-      attempt: 1,
-      continueFromPrevious: false,
-      currentLink: null,
-      currentState: null,
-      authorizeTranscript: async () => true,
-    }
-    const first = await host.bridge.preview(previewCommand)
-    if (!first.ok) throw new Error("preview refused")
-    const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: first.preview.digest }))
-    if (!started.ok) throw new Error("start refused")
-    const sessionId = started.session.sessionRef.sessionId
-
-    const rewritten: Preset = { ...preset(), revision: 4, instructions: "Ignore the code and rewrite it." }
-    const second = await host.bridge.preview({ ...previewCommand, preset: rewritten })
-    if (!second.ok) throw new Error("preview refused")
-    const refused = await host.bridge.start(
-      await startCommand({ workspaceId: host.workspaceId, digest: second.preview.digest, preset: rewritten }),
-    )
-
-    expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
-    expect(host.created).toHaveLength(1)
-    const config: unknown = await (await host.request(`/session/${sessionId}/config`)).json()
-    expect(config).toMatchObject({ instructions: expect.stringContaining("Read before you write.") })
-    expect(JSON.stringify(config)).not.toContain("Ignore the code")
-  })
-
   test("reserves the origin and the configuration before the create when a signed host supplies one", async () => {
     const host = await harness()
     roots.push(host.root)
@@ -634,35 +623,6 @@ describe("local tasks session bridge", () => {
     expect(host.created).toHaveLength(1)
   })
 
-  test("starts a task with no workspace preference in its project's own workspace", async () => {
-    const host = await harness()
-    roots.push(host.root)
-    const previewed = await host.bridge.preview({
-      actor: { scopeId: "local", ownerId: "local" },
-      task: task({ workspaceId: null, projectId: host.projectId }),
-      preset: preset(),
-      slot: "primary",
-      attempt: 1,
-      continueFromPrevious: false,
-      currentLink: null,
-      currentState: null,
-      authorizeTranscript: async () => true,
-    })
-    expect(previewed).toMatchObject({ ok: true })
-    if (!previewed.ok) return
-    expect(previewed.preview.available).toBe(true)
-
-    const started = await host.bridge.start(await startCommand({
-      workspaceId: null,
-      projectId: host.projectId,
-      digest: previewed.preview.digest,
-    }))
-    expect(started).toMatchObject({ ok: true })
-    if (!started.ok) return
-    expect(started.session.sessionRef.workspaceId).toBe(host.workspaceId)
-    expect(host.created).toHaveLength(1)
-  })
-
   test("refuses to guess when a project holds two workspaces and neither is its root", async () => {
     const host = await harness()
     roots.push(host.root)
@@ -695,34 +655,6 @@ describe("local tasks session bridge", () => {
     }))
     expect(started).toMatchObject({ ok: false, error: { code: "unsupported" } })
     expect(host.created).toEqual([])
-  })
-
-  test("refuses a start whose preview digest no longer describes the configuration", async () => {
-    const host = await harness()
-    roots.push(host.root)
-    const refused = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: "stale" }))
-    expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
-    expect(host.created).toEqual([])
-  })
-
-  test("blocks a model the registered harness does not offer", async () => {
-    const host = await harness({ offeredModelId: "something-else" })
-    roots.push(host.root)
-    const previewed = await host.bridge.preview({
-      actor: { scopeId: "local", ownerId: "local" },
-      task: task({ workspaceId: host.workspaceId }),
-      preset: preset(),
-      slot: "primary",
-      attempt: 1,
-      continueFromPrevious: false,
-      currentLink: null,
-      currentState: null,
-      authorizeTranscript: async () => true,
-    })
-    expect(previewed).toMatchObject({ ok: true })
-    if (!previewed.ok) return
-    expect(previewed.preview.available).toBe(false)
-    expect(previewed.preview.blockers).toEqual([{ code: "model_unavailable", detail: expect.any(String) }])
   })
 
   test("blocks a cloud preset and never starts one", async () => {
@@ -918,52 +850,6 @@ describe("local tasks session bridge", () => {
     expect(await store.links.listByTask(actor.scopeId, created.id)).toHaveLength(1)
     expect(host.turns).toHaveLength(1)
     await waitForMessage(host.request, sessionId, host.turns[0] ?? "")
-  })
-
-  test("reads liveness and handoff state from the projection and the runtime, and stores none of it", async () => {
-    const host = await harness()
-    roots.push(host.root)
-    const previewed = await host.bridge.preview({
-      actor: { scopeId: "local", ownerId: "local" },
-      task: task({ workspaceId: host.workspaceId }),
-      preset: preset(),
-      slot: "primary",
-      attempt: 1,
-      continueFromPrevious: false,
-      currentLink: null,
-      currentState: null,
-      authorizeTranscript: async () => true,
-    })
-    expect(previewed).toMatchObject({ ok: true })
-    if (!previewed.ok) return
-    const started = await host.bridge.start(await startCommand({ workspaceId: host.workspaceId, digest: previewed.preview.digest }))
-    expect(started).toMatchObject({ ok: true })
-    if (!started.ok) return
-    const live = started.session.sessionRef
-
-    const origin = { scopeId: "local", taskId: "tsk_1", slot: "primary" as const, attempt: 1, sessionRef: live }
-
-    expect(await sessionMeta(live.sessionId)).toMatchObject({ workspaceID: host.workspaceId })
-    expect(await host.bridge.sessionState([origin])).toEqual([{ session: live, state: "live", handoff: "pending" }])
-
-    const handed = await host.bridge.handoff(handoffCommand({ workspaceId: host.workspaceId, session: live }))
-    expect(handed).toMatchObject({ ok: true, sent: true })
-    await waitForMessage(host.request, live.sessionId, host.turns[0] ?? "")
-    expect(await host.bridge.sessionState([origin])).toEqual([{ session: live, state: "live", handoff: "sent" }])
-
-    // Another attempt's origin addresses another message id, so this session
-    // is not evidence that its task was handed over.
-    expect(await host.bridge.sessionState([{ ...origin, attempt: 2 }])).toEqual([
-      { session: live, state: "live", handoff: "pending" },
-    ])
-
-    await putSessionMeta(live.sessionId, { archived: Date.now() })
-    expect(await host.bridge.sessionState([origin])).toEqual([{ session: live, state: "archived", handoff: "unknown" }])
-
-    const absent = { sessionId: "ses_missing", workspaceId: host.workspaceId }
-    expect(await host.bridge.sessionState([{ ...origin, sessionRef: absent }])).toEqual([
-      { session: absent, state: "deleted", handoff: "unknown" },
-    ])
   })
 
   test("the session retains the whole resolved group, not just the slot it started under", async () => {

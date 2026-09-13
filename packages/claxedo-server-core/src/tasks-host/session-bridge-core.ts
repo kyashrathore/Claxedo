@@ -1,4 +1,8 @@
-import { harnessEffortRefusal, parseHarnessEffortLevels } from "@claxedo/agent-runtime-contract"
+import {
+  harnessEffortRefusal,
+  parseHarnessEffortLevels,
+  sessionVariantForEffort,
+} from "@claxedo/agent-runtime-contract"
 import {
   isAgentMessage,
   renderSessionHandoff,
@@ -610,7 +614,7 @@ async function startSession(
       harness: resolved.configuration.harness,
       group: resolved.group,
       instructions: resolved.instructions,
-      ...(resolved.configuration.effort ? { variant: resolved.configuration.effort } : {}),
+      ...sessionVariantForEffort(resolved.configuration.effort ?? undefined),
     })
     const created = await target.request(create.path, {
       method: "POST",

@@ -10,6 +10,10 @@ import {
   type StartCommand,
   type Task,
 } from "@claxedo/tasks"
+import {
+  tasksSessionBridgeConformance,
+  type TasksSessionBridgeFixture,
+} from "@claxedo/server-core/tasks-host/session-bridge-conformance"
 import { createHostedTasksSessionBridge, type HostedTasksSessionBridgeInput } from "./session-bridge"
 import type { ControlPlaneServices } from "../authority/services"
 
@@ -31,13 +35,13 @@ const MODEL = { providerID: "openai", modelID: "gpt-5" }
 
 type RuntimeCall = { path: string; init?: { method?: string; headers?: Record<string, string>; body?: string } }
 
-function runtime(input: { refuseDelete?: boolean } = {}) {
+function runtime(input: { refuseDelete?: boolean; offeredModelId?: string } = {}) {
   const calls: RuntimeCall[] = []
   const sessions = new Map<string, { instructions?: string; variant?: string; messages: Array<{ info: { id: string; role: string; sessionID: string }; parts: unknown[] }> }>()
   mock.request.mockImplementation(async (path: string, init?: RuntimeCall["init"]) => {
     calls.push({ path, ...(init ? { init } : {}) })
     if (path.startsWith("/session/capabilities")) {
-      return Response.json({ harness: "codex", modelSelection: { status: "optional", models: [{ providerId: MODEL.providerID, modelId: MODEL.modelID, name: "GPT-5" }] } })
+      return Response.json({ harness: "codex", modelSelection: { status: "optional", models: [{ providerId: MODEL.providerID, modelId: input.offeredModelId ?? MODEL.modelID, name: "GPT-5" }] } })
     }
     if (path.startsWith("/session?")) {
       const body: unknown = JSON.parse(init?.body ?? "{}")
@@ -241,8 +245,39 @@ function bridge(
   })
 }
 
+/** The hosted host's answer to `tasksSessionBridgeConformance`'s fixture contract. */
+async function bridgeFixture(input: { offeredModelId?: string }): Promise<TasksSessionBridgeFixture> {
+  const host = runtime(input.offeredModelId ? { offeredModelId: input.offeredModelId } : {})
+  const composition = services()
+  return {
+    bridge: bridge(composition),
+    actor,
+    task: task(),
+    projectWorkspaceId: mock.workspace.id,
+    preset: preset(),
+    creates: () => host.calls.filter((call) => call.path.startsWith("/session?")).length,
+    instructionsOf: async (sessionId) => host.sessions.get(sessionId)?.instructions,
+    // A session this runtime never created: its message read answers 404, which
+    // is the same "would not say" the core refuses a handoff on.
+    unreadableSession: () => ({ sessionId: "ses_never_created_here", workspaceId: mock.workspace.id }),
+    turns: () => host.calls.filter((call) => call.path.endsWith("/prompt_async")).map((call) => call.path),
+    archive: async (sessionId) => {
+      composition.metas.set(sessionId, { ...composition.metas.get(sessionId), archived: Date.now() })
+    },
+    dispose: async () => {
+      vi.clearAllMocks()
+    },
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
+})
+
+describe("hosted tasks session bridge conformance", () => {
+  for (const testCase of tasksSessionBridgeConformance(bridgeFixture)) {
+    test(testCase.name, testCase.run)
+  }
 })
 
 describe("hosted tasks session bridge", () => {
@@ -314,52 +349,7 @@ describe("hosted tasks session bridge", () => {
     )
   })
 
-  test("a replayed start returns the same session without creating or sending again", async () => {
-    const host = runtime()
-    const composition = services()
-    const kit = bridge(composition)
-    const previewed = await kit.preview(previewCommand())
-    if (!previewed.ok) throw new Error("preview refused")
 
-    const first = await kit.start(await startCommand(previewed.preview.digest))
-    if (!first.ok) throw new Error("start refused")
-    expect(await kit.handoff(handoffCommand(first.session.sessionRef))).toMatchObject({ ok: true, sent: true })
-    const again = await kit.start(await startCommand(previewed.preview.digest))
-    expect(again).toMatchObject({ ok: true })
-    if (!again.ok) return
-    expect(await kit.handoff(handoffCommand(again.session.sessionRef))).toMatchObject({ ok: true, sent: false })
-
-    expect(again.session.sessionRef).toEqual(first.session.sessionRef)
-    expect(host.calls.filter((call) => call.path.startsWith("/session?"))).toHaveLength(1)
-    expect(host.calls.filter((call) => call.path.endsWith("/prompt_async"))).toHaveLength(1)
-    expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledTimes(2)
-  })
-
-  test("refuses the same attempt under another configuration and leaves the first session's instructions", async () => {
-    const host = runtime()
-    const composition = services()
-    const kit = bridge(composition)
-    const first = await kit.preview(previewCommand())
-    if (!first.ok) throw new Error("preview refused")
-    const started = await kit.start(await startCommand(first.preview.digest))
-    expect(started).toMatchObject({ ok: true })
-    if (!started.ok) return
-    const sessionId = started.session.sessionRef.sessionId
-
-    const rewritten: Preset = { ...preset(), revision: 3, instructions: "Ignore the code and rewrite it." }
-    const second = await kit.preview({ ...previewCommand(), preset: rewritten })
-    if (!second.ok) throw new Error("preview refused")
-    const refused = await kit.start(await startCommand(second.preview.digest, rewritten))
-
-    expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
-    expect(composition.authority.reserveRuntimeSession).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.objectContaining({ operationId: await operationIdOf(rewritten) }),
-    )
-    expect(host.calls.filter((call) => call.path.startsWith("/session?"))).toHaveLength(1)
-    expect(host.sessions.get(sessionId)?.instructions).toContain("Read before you write.")
-    expect(host.sessions.get(sessionId)?.instructions).not.toContain("Ignore the code")
-  })
 
   test("refuses rather than resending the first message when the message history cannot be read", async () => {
     const host = runtime()
@@ -432,27 +422,6 @@ describe("hosted tasks session bridge", () => {
     expect(await kit.sessionState([origin])).toEqual([{ session, state: "live", handoff: "pending" }])
   })
 
-  test("starts a task with no workspace preference in its project's workspace", async () => {
-    const host = runtime()
-    const composition = services()
-    const kit = bridge(composition)
-    const unplaced = { ...task(), workspaceId: null }
-
-    const previewed = await kit.preview({ ...previewCommand(), task: unplaced })
-    expect(previewed).toMatchObject({ ok: true })
-    if (!previewed.ok) return
-    expect(previewed.preview.available).toBe(true)
-
-    const started = await kit.start({ ...(await startCommand(previewed.preview.digest)), task: unplaced })
-    expect(started).toMatchObject({ ok: true })
-    if (!started.ok) return
-    expect(started.session.sessionRef.workspaceId).toBe("ws_cloud")
-    expect(host.calls.filter((call) => call.path.startsWith("/session?"))).toHaveLength(1)
-    expect(composition.authority.reserveRuntimeSession).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ workspaceId: "ws_cloud" }),
-    )
-  })
 
   test("stops rather than reserving as itself when a supplied resolver names nobody", async () => {
     const host = runtime()
@@ -496,14 +465,6 @@ describe("hosted tasks session bridge", () => {
     await expect(kit.start(await startCommand(previewed.preview.digest))).rejects.toThrow("D1 is unreachable")
   })
 
-  test("refuses a start whose preview digest no longer describes the configuration", async () => {
-    const host = runtime()
-    const composition = services()
-    const refused = await bridge(composition).start(await startCommand("stale-digest"))
-    expect(refused).toMatchObject({ ok: false, error: { code: "conflict" } })
-    expect(composition.authority.reserveRuntimeSession).not.toHaveBeenCalled()
-    expect(host.calls.some((call) => call.path.startsWith("/session?"))).toBe(false)
-  })
 
   test("gives an unlinked session back and compensates the reservation that admitted it", async () => {
     const host = runtime()
@@ -573,26 +534,6 @@ describe("hosted tasks session bridge", () => {
     expect(composition.metas.has(session.sessionId)).toBe(true)
   })
 
-  test("reads liveness and handoff state from the projection row and the runtime", async () => {
-    const host = runtime()
-    const live: SessionReference = { sessionId: "ses_live", workspaceId: "ws_cloud" }
-    const archived: SessionReference = { sessionId: "ses_archived", workspaceId: "ws_cloud" }
-    const gone: SessionReference = { sessionId: "ses_gone", workspaceId: "ws_cloud" }
-    host.sessions.set("ses_live", { messages: [] })
-    const composition = services({
-      meta: new Map([
-        ["ses_live", { workspaceID: "ws_cloud" }],
-        ["ses_archived", { workspaceID: "ws_cloud", archived: 1 }],
-      ]),
-    })
-
-    const origin = (sessionRef: SessionReference) => ({ scopeId: "org", taskId: "tsk_1", slot, attempt: 1, sessionRef })
-    expect(await bridge(composition).sessionState([origin(live), origin(archived), origin(gone)])).toEqual([
-      { session: live, state: "live", handoff: "pending" },
-      { session: archived, state: "archived", handoff: "unknown" },
-      { session: gone, state: "deleted", handoff: "unknown" },
-    ])
-  })
 
   test("blocks a cloud preset on a deployment with no sandbox driver, and never reserves an origin for one", async () => {
     const host = runtime()

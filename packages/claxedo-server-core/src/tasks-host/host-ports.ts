@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { HARNESS_EFFORT_LEVELS } from "@claxedo/agent-runtime-contract"
 import type { HarnessReference, TasksCapabilitiesPort, TasksClockPort, TasksHostCapabilities, TasksIdsPort } from "@claxedo/tasks"
 
 export function systemTasksClock(): TasksClockPort {
@@ -11,15 +12,6 @@ export function randomTasksIds(): TasksIdsPort {
     taskId: () => `tsk_${randomUUID()}`,
   }
 }
-
-/**
- * The effort vocabulary a saved preset may name. It keeps a preset from
- * storing a word the runtime's `variant` field could never mean, and nothing
- * further: preview validates model availability and not effort, so an effort
- * this list admits and the chosen model does not honour is refused by the
- * runtime when the session is created.
- */
-const TASKS_EFFORT_LEVELS: readonly string[] = ["low", "medium", "high", "xhigh", "max"]
 
 export type TasksCapabilitiesInput = {
   placements: TasksHostCapabilities["placements"]
@@ -41,9 +33,13 @@ export function createTasksCapabilities(input: TasksCapabilitiesInput): TasksCap
         cloudSelectedCapabilities: input.cloudSelectedCapabilities,
       }
     },
+    // The contract's own vocabulary, so a saved preset cannot name a word the
+    // runtime's `variant` field could never mean. Whether the CHOSEN model
+    // honours the word is the session bridge's answer at preview and start:
+    // this list admits every level some harness runs.
     async harness(reference: HarnessReference) {
       if (reference.id.trim().length === 0) return undefined
-      return { id: reference.id, access: reference.access, efforts: TASKS_EFFORT_LEVELS }
+      return { id: reference.id, access: reference.access, efforts: HARNESS_EFFORT_LEVELS }
     },
   }
 }

@@ -16,7 +16,6 @@ import {
   TasksError,
   TasksStoreConflict,
   createTasksCommands,
-  type Task,
   type TaskSessionLink,
   type TasksActor,
   type TasksAuthorizationPort,
