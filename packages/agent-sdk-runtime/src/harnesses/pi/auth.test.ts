@@ -86,17 +86,82 @@ test("the first sync revokes a stale profile left on disk", async () => {
     await adapter.applyConfig({ auth: {} })
     expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({})
     expect((await fs.stat(file)).mode & 0o777).toBe(0o600)
-    await expect(adapter.applyConfig({
-      auth: {
-        anthropic: {
-          baseUrl: "http://127.0.0.1:2595/bindings/7c2d",
-          placeholder: "signed-placeholder",
-          authMode: "bearer",
-          expiresAt: 1_800_000_000_000,
-        },
+  } finally {
+    await adapter.dispose()
+    await f.dispose()
+  }
+})
+
+const piProjection = {
+  baseUrl: "http://127.0.0.1:2595/bindings/7c2d",
+  placeholder: "signed-placeholder",
+  authMode: "bearer" as const,
+  expiresAt: 1_800_000_000_000,
+  apiPath: "/v1",
+}
+
+test("a bound account reaches Pi as a models.json overlay and never as a key", async () => {
+  const f = await installFakePiRpc()
+  const adapter = new PiHarnessAdapter({
+    binary: f.binary,
+    agentDir: f.agentDir,
+    store: createMemoryRuntimeStore(),
+  })
+  const models = path.join(f.agentDir, "models.json")
+  try {
+    await adapter.applyConfig({ auth: { anthropic: piProjection, openai: piProjection } })
+
+    expect(JSON.parse(await fs.readFile(models, "utf8"))).toEqual({
+      providers: {
+        // Pi's own anthropic base URL is the origin; its openai base URL is the API root.
+        anthropic: { baseUrl: "http://127.0.0.1:2595/bindings/7c2d", apiKey: "signed-placeholder" },
+        openai: { baseUrl: "http://127.0.0.1:2595/bindings/7c2d/v1", apiKey: "signed-placeholder" },
       },
-    })).rejects.toThrow("provider projection not supported by this harness yet: pi")
-    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({})
+    })
+    expect((await fs.stat(models)).mode & 0o777).toBe(0o600)
+    expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "auth.json"), "utf8"))).toEqual({})
+
+    await adapter.createSession(f.agentDir)
+    const launched = JSON.parse(await fs.readFile(path.join(f.agentDir, "launch-env.json"), "utf8"))
+    for (const name of ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_OAUTH_TOKEN", "OPENAI_API_KEY"]) {
+      expect(launched).not.toHaveProperty(name)
+    }
+  } finally {
+    await adapter.dispose()
+    await f.dispose()
+  }
+})
+
+test("a projection for another harness leaves Pi on its own machine login", async () => {
+  const f = await installFakePiRpc()
+  const adapter = new PiHarnessAdapter({
+    binary: f.binary,
+    agentDir: f.agentDir,
+    store: createMemoryRuntimeStore(),
+  })
+  try {
+    await adapter.applyConfig({ auth: { "claude-sdk": piProjection, "cursor-sdk": piProjection } })
+
+    expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "models.json"), "utf8"))).toEqual({ providers: {} })
+  } finally {
+    await adapter.dispose()
+    await f.dispose()
+  }
+})
+
+test("an unavailable account fails the turn instead of running on the machine login", async () => {
+  const f = await installFakePiRpc()
+  const adapter = new PiHarnessAdapter({
+    binary: f.binary,
+    agentDir: f.agentDir,
+    store: createMemoryRuntimeStore(),
+  })
+  try {
+    await adapter.applyConfig({ auth: { anthropic: { unavailable: true, reason: "auth_failed" } } })
+
+    expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "models.json"), "utf8"))).toEqual({ providers: {} })
+    await expect(adapter.createSession(f.agentDir))
+      .rejects.toThrow("the account selected for pi cannot be used: auth_failed")
   } finally {
     await adapter.dispose()
     await f.dispose()

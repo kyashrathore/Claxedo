@@ -1,4 +1,11 @@
-import { retainPiAuth, type PiAuthEntries } from "./auth"
+import {
+  assertPiProvidersBindable,
+  piProviderOverrides,
+  piSpawnEnv,
+  retainPiAuth,
+  type PiAuthEntries,
+  type PiProviderOverrides,
+} from "./auth"
 import fs from "node:fs/promises"
 import { execFile } from "node:child_process"
 import { randomUUID } from "node:crypto"
@@ -20,7 +27,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { assertNoProviderProjection } from "../../provider-projection"
+import { providerProjectionRecord, type ProviderProjection } from "../../provider-projection"
 import { PiJsonLines, PiRpcProcess, type PiRpcMessage } from "./rpc-process"
 import { listPiCatalogModels } from "./catalog"
 import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable"
@@ -45,6 +52,8 @@ class PiRpcDriver implements SdkRuntimeDriver {
   private evaluators = 0
   private readonly goalController
   private projectedAuth?: PiAuthEntries
+  private projectedProviders?: PiProviderOverrides
+  private auth: Record<string, ProviderProjection> | undefined
   private entries = new Map<string, Entry>()
   private models: SdkModelEntry[] = []
   private thinking: string[] = []
@@ -191,35 +200,47 @@ class PiRpcDriver implements SdkRuntimeDriver {
     this.authProfile = retainPiAuth(this.agentDir)
   }
   setAuth(keys: SdkRuntimeAuth) {
-    assertNoProviderProjection("pi", keys)
+    this.auth = {
+      ...(keys.anthropic ? { anthropic: keys.anthropic } : {}),
+      ...(keys.openai ? { openai: keys.openai } : {}),
+    }
   }
   async applyConfig(config: Record<string, unknown>) {
-    assertNoProviderProjection("pi", config.auth)
-    // Nothing projects a Pi credential yet, so the managed profile is written
-    // empty: it replaces whatever an earlier build left behind and is scrubbed
-    // when the last adapter sharing it is disposed.
+    const auth = providerProjectionRecord(config.auth)
+    if (config.auth !== undefined && !auth) {
+      throw new Error("pi harness received an auth map that is not provider projections")
+    }
+    this.auth = auth
+    // A brokered account reaches Pi as a `models.json` overlay, never as a key
+    // in the environment or in `auth.json`; the managed profile writes both
+    // files so it also replaces whatever an earlier build left behind, and both
+    // are scrubbed when the last adapter sharing the profile is disposed.
     const projected: PiAuthEntries = {}
-    if (JSON.stringify(projected) !== JSON.stringify(this.projectedAuth)) {
+    const providers = piProviderOverrides(this.auth)
+    if (JSON.stringify([projected, providers]) !== JSON.stringify([this.projectedAuth, this.projectedProviders])) {
       if (this.evaluators || [...this.entries.values()].some((entry) => entry.busy))
         throw new Error("Cannot rotate Pi credentials during an active turn")
       this.closeProcesses()
-      await this.authProfile.write(projected)
+      await this.authProfile.write(projected, providers)
       this.projectedAuth = projected
+      this.projectedProviders = providers
       this.models = []
     }
   }
+
   createRuntime(threadId: string) {
     return createAgentEventRuntime({ harness: "pi", threadId, adapter: piRpcAdapter() })
   }
 
   private environment(): NodeJS.ProcessEnv {
     return {
-      ...process.env,
+      ...piSpawnEnv(process.env, this.auth),
       PI_CODING_AGENT_DIR: this.agentDir,
     }
   }
   private async start(directory: string, args: string[]) {
     if (!directory.trim()) throw new Error("Pi requires a workspace directory")
+    assertPiProvidersBindable(this.auth)
     await fs.mkdir(this.agentDir, { recursive: true, mode: 0o700 })
     await fs.mkdir(path.join(this.agentDir, "sessions"), { recursive: true })
     const binary = this.options.binary ?? requirePiExecutable()

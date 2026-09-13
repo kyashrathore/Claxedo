@@ -25,6 +25,7 @@ const resume = args.includes("--session") ? args[args.indexOf("--session") + 1] 
 const id = resume ? JSON.parse(fs.readFileSync(resume, "utf8")).id : randomUUID()
 const file = resume || path.join(sessionDir, "session_" + id + ".jsonl")
 fs.mkdirSync(sessionDir, { recursive: true }); fs.writeFileSync(file, JSON.stringify({ id }))
+fs.writeFileSync(path.join(sessionDir, "..", "launch-env.json"), JSON.stringify(process.env))
 const emit = value => process.stdout.write(JSON.stringify(value) + "\\n")
 let pending
 const done = text => {
