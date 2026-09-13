@@ -871,7 +871,7 @@ describe("credential routes", () => {
 })
 
 describe("replacing the token on a stored account", () => {
-  test("writes the new secret onto the same row, then verifies it", async () => {
+  test("verifies the new secret first, then writes it onto the same row", async () => {
     const row: CredentialMetadata = {
       ...(await credentials().listCredentials())[0],
       health: "auth_failed",
@@ -894,8 +894,10 @@ describe("replacing the token on a stored account", () => {
     })
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ result: "ok", health: "ok", verified_at: 42 })
-    expect(registry.updateCredentialSecret).toHaveBeenCalledWith("cred_1", "sk-fresh", undefined, SINGLE_TENANT_ORG)
+    await expect(response.json()).resolves.toEqual({ result: "ok", health: "ok", verified_at: 42, stored: true })
+    // `null`, not `undefined`: the stored expiry described the material that
+    // was just replaced, and carrying it over expires a live secret.
+    expect(registry.updateCredentialSecret).toHaveBeenCalledWith("cred_1", "sk-fresh", null, SINGLE_TENANT_ORG)
     expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 42, SINGLE_TENANT_ORG)
     // The new material is what the provider was asked about, not the one the
     // row was rejected for.
@@ -964,6 +966,39 @@ describe("replacing the token on a stored account", () => {
     await secondApp.request("http://localhost/cred_1/reconnect", { method: "POST", body: JSON.stringify({ secret }) })
 
     expect(second.updateCredentialLabel).not.toHaveBeenCalled()
+  })
+
+  test("a secret the provider refuses replaces nothing and marks nothing", async () => {
+    // Writing first deletes the backend reference the working secret lives
+    // behind, so a typo leaves a good account with nothing; writing the verdict first
+    // marks that account broken on the strength of the typo.
+    const row: CredentialMetadata = { ...(await credentials().listCredentials())[0], health: "ok" }
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async () => row),
+      updateCredentialSecret: vi.fn(async () => true),
+      updateCredentialHealth: vi.fn(async () => {}),
+      updateCredentialLabel: vi.fn(async () => true),
+    })
+    const app = CredentialRoutes(registry, {
+      fetch: providerFetch(() => new Response("nope", { status: 401 })) as unknown as typeof fetch,
+      now: () => 42,
+    })
+
+    const response = await app.request("http://localhost/cred_1/reconnect", {
+      method: "POST",
+      body: JSON.stringify({ secret: "sk-typo" }),
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      result: "auth_failed",
+      health: "auth_failed",
+      verified_at: 42,
+      stored: false,
+    })
+    expect(registry.updateCredentialSecret).not.toHaveBeenCalled()
+    expect(registry.updateCredentialHealth).not.toHaveBeenCalled()
+    expect(registry.updateCredentialLabel).not.toHaveBeenCalled()
   })
 
   test("refuses a row outside the caller's org before any secret is written", async () => {

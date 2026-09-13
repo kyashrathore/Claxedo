@@ -291,6 +291,27 @@ describe("native provider delivery", () => {
       .toEqual({ local: true, cloud: false, reason: "no_destination" })
   })
 
+  test("a replacement with no expiry of its own clears the one the replaced material carried", async () => {
+    // The verifier reads a stored expiry as the material's own, so an expiry
+    // carried over from the replaced secret answers "expired" for a key that
+    // has nothing to refresh with, and the reconnect never takes effect.
+    const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
+    await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-first", 1_000)
+    expect(registryModule.getCredential(credential.id)?.expires_at).toBe(1_000)
+
+    await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-second", null)
+
+    const stored = registryModule.getCredential(credential.id)
+    expect(stored?.expires_at).toBeNull()
+    expect(await registryModule.readSecretById(credential.id)).toBe("sk-ant-api03-second")
+
+    // Omitted still means "keep what is stored", which is what an OAuth refresh
+    // that reports no new expiry needs.
+    await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-third", 2_000)
+    await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-fourth")
+    expect(registryModule.getCredential(credential.id)?.expires_at).toBe(2_000)
+  })
+
   test("a none-driver snapshot reaches the runtime saying the credential cannot be delivered", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
     setActiveCredentials([credential.id])

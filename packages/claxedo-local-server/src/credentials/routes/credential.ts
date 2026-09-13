@@ -397,21 +397,23 @@ export function CredentialRoutes(
       if (!credentials.updateCredentialSecret || !credentials.updateCredentialHealth) {
         return c.json(errorBody("credential_reconnect_unavailable", "This host cannot replace stored credential material"), 501)
       }
-      if (!await credentials.updateCredentialSecret(id, body.data.secret, undefined, scope)) {
-        return c.json(errorBody("credential_not_found", "Credential not found"), 404)
+      const outcome = await checkCredential(credentials, credential, {
+        org: scope,
+        secret: body.data.secret,
+        replace: true,
+        ...checkOptions,
+      })
+      const [answer, status] = checkAnswer(id, outcome)
+      if (outcome.status === "checked" && outcome.stored === false) {
+        log.warn("Reconnect rejected by the provider; the stored account is unchanged", {
+          credential_id: id,
+          health: outcome.health,
+        })
       }
-      // The stored expiry described the material that was just replaced. Left
-      // in place it makes the verifier read a freshly pasted secret as stale,
-      // which for an API key — nothing to refresh with — answers "expired".
-      const [answer, status] = checkAnswer(
-        id,
-        await checkCredential(credentials, { ...credential, expires_at: null }, {
-          org: scope,
-          secret: body.data.secret,
-          ...checkOptions,
-        }),
+      return c.json(
+        outcome.status === "checked" ? { ...(answer as object), stored: outcome.stored === true } : answer,
+        status,
       )
-      return c.json(answer, status)
     })
     .post("/activate", async (c) => {
       const body = activateBody.safeParse(await c.req.json().catch(() => null))

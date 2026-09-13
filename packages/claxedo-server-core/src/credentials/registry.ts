@@ -562,8 +562,9 @@ function touchCredential(id: string, org?: CredentialOrgScope) {
 /**
  * Replace stored secret material in place, keeping the credential's identity,
  * scope, and consent. Used when an OAuth credential is renewed during
- * verification — `putCredential` would be the wrong tool: it re-runs the
- * exclusive-kind replacement logic for what is the same login.
+ * verification, and when a user reconnects an account by hand — `putCredential`
+ * would be the wrong tool: it re-runs the exclusive-kind replacement logic for
+ * what is the same login.
  *
  * The stored verdict was reached against the secret being replaced, so it
  * cannot survive the swap: the row is unchecked until something checks the new
@@ -573,7 +574,7 @@ function touchCredential(id: string, org?: CredentialOrgScope) {
 export async function updateCredentialSecret(
   id: string,
   secret: string,
-  expiresAt?: number,
+  expiresAt?: number | null,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<boolean> {
   const credential = getCredential(id, org)
@@ -589,7 +590,10 @@ export async function updateCredentialSecret(
     .update(ClaxedoProviderCredentialTable)
     .set({
       secure_ref: ref,
-      expires_at: expiresAt ?? credential.expires_at ?? null,
+      // `null` is a caller saying the replacement has no expiry, which is a
+      // different fact from not knowing one: the stored expiry described the
+      // material being replaced, so carrying it over expires a live secret.
+      expires_at: expiresAt === undefined ? credential.expires_at ?? null : expiresAt,
       updated_at: now(),
       revision: credential.revision + 1,
       health: null,

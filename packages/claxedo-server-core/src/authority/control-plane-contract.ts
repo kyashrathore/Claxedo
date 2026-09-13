@@ -143,11 +143,21 @@ export type ControlPlaneCredentials = {
     input: { discovery_id: string; items: CredentialDiscoverySelection[] },
     org?: string,
   ) => Promise<{
-    saved: Array<{ credential_id: string; provider_id: string; account_id?: string }>
+    saved: Array<{ credential_id: string; provider_id: string; kind: CredentialKind }>
   }>
   updateCredentialScope?: (id: string, scope: CredentialScope, consentAt: number, org?: string) => Promise<boolean>
-  /** Persist renewed secret material for an existing credential (OAuth refresh). */
-  updateCredentialSecret?: (id: string, secret: string, expiresAt?: number, org?: string) => Promise<boolean>
+  /**
+   * Persist replacement secret material for an existing credential: an OAuth
+   * refresh, or the account a user reconnected by hand. `expiresAt` of `null`
+   * clears the stored expiry, which is what a replacement with no expiry of its
+   * own means; omitting it keeps whatever is stored.
+   */
+  updateCredentialSecret?: (
+    id: string,
+    secret: string,
+    expiresAt?: number | null,
+    org?: string,
+  ) => Promise<boolean>
   /** Rename a credential, leaving the auth material it stores untouched. */
   updateCredentialLabel?: (id: string, label: string, org?: string) => Promise<boolean>
   syncLocalCredentials: (providerIds?: string[], org?: string) => Promise<CredentialSyncResult>
