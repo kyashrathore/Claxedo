@@ -294,6 +294,17 @@ describe("desktop-local product contract", () => {
     expect(await global.json()).toMatchObject({ healthy: true })
   })
 
+  test("tells the Codex connect card which sign-in methods its account has", async () => {
+    const app = localApp()
+
+    const response = await app.request("/api/claxedo/agent-config/providers/auth?nativeHarness=codex")
+    expect(response.status).toBe(200)
+    const methods = (await response.json())["codex-app-server"]
+    // The card signs in with the position, so the position is the contract.
+    expect(methods[0]).toMatchObject({ type: "oauth" })
+    expect(methods.map((method: { type: string }) => method.type)).toEqual(["oauth", "api"])
+  })
+
   test("answers the workspace list in one envelope, signed or not, so the MCP client can read it", async () => {
     const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
     const shared = await ensureWorkspace({ kind: "cloud", workspace_name: "shared box", directory: "/srv/repo", remote_directory: "/srv/repo" })
