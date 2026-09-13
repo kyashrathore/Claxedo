@@ -27,7 +27,7 @@ import type {
 } from "@claxedo/tasks"
 import { admissibleAttempt } from "@claxedo/tasks"
 import { record, text } from "../json"
-import { McpAccessDenied, type McpToolContext } from "../context"
+import type { McpToolContext } from "../context"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
 import type { ToolRegistry } from "./registry"
 import { declaredToolAccess } from "./inventory"
@@ -166,12 +166,6 @@ export function registerTaskTools(registry: ToolRegistry) {
       sessionIdFromHandler: true,
     },
     async (args, ctx, addressed) => tasksRefusals(async () => {
-      if (ctx.credential.kind === "runtime" && !ctx.credential.crossMachineWrites) {
-        throw new McpAccessDenied(
-          "cross-machine",
-          "Starting a task's session from inside a session needs the account setting that lets agents act on other machines",
-        )
-      }
       const client = tasksClient(ctx)
       const detail = await client.getTask(args.task)
       const slot = args.slot ?? "primary"
@@ -233,24 +227,40 @@ function nextAttempt(links: readonly TaskSessionLinkView[], slot: ConfigurationS
 }
 
 /**
- * Which preset to start on.
+ * Which preset to start on: the id, or the name as the user wrote it in
+ * Settings, since an agent rarely holds an id.
  *
  * The routes page a personal catalog by the store's own cursor and record
  * nothing about which preset was used last, so there is no "the usual one" to
  * default to. A single preset is the whole catalog and needs no naming; past
- * that the refusal carries the ids, because nothing else here lists them.
+ * that the refusal carries the ids and names, because nothing else here lists
+ * them.
  */
 async function presetFor(client: TasksClient, requested: string | undefined): Promise<Preset> {
-  if (requested) return client.getPreset(requested)
+  if (requested) {
+    try {
+      return await client.getPreset(requested)
+    } catch (cause) {
+      if (!(cause instanceof TasksApiError) || cause.status !== 404) throw cause
+    }
+    const page = await client.listPresets()
+    const named = page.items.find((preset) => preset.name.toLowerCase() === requested.toLowerCase())
+    if (named) return named
+    throw new RefusalSentence(`No preset is named ${requested}. The presets are: ${catalog(page.items)}.`)
+  }
   const page = await client.listPresets()
   const only = page.items[0]
   if (!only) {
     throw new RefusalSentence("This account has no execution preset, and a task's session starts from one. Create a preset first.")
   }
   if (page.items.length > 1 || page.nextCursor !== null) {
-    throw new RefusalSentence(`Name the preset to start on: ${page.items.map((preset) => `${preset.id} (${preset.name})`).join(", ")}.`)
+    throw new RefusalSentence(`Name the preset to start on: ${catalog(page.items)}.`)
   }
   return only
+}
+
+function catalog(presets: readonly Preset[]): string {
+  return presets.map((preset) => `${preset.id} (${preset.name})`).join(", ")
 }
 
 function taskListRow(task: TaskSummary) {

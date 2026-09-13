@@ -511,17 +511,46 @@ describe("task_start", () => {
     expect(service.calls.some((sent) => sent.path.endsWith("/sessions"))).toBe(false)
   })
 
-  test("refuses a session that may not act on the account's other machines, and reaches the service for nothing", async () => {
+  // The grant is the one gate: whoever minted it applied the account's
+  // cross-machine setting when deciding whether `start` is in it, so a session
+  // holding a grant with `start` is not asked the question a second time.
+  test("a session whose grant carries start starts a task without the cross-machine setting", async () => {
     const service = tasksService()
     const { url, audits } = await listen({ service })
     const client = await connect(url)
 
-    expect(await call(client, "task_start", { task: "tsk_1", preset: "pst_1" })).toEqual({
-      text: "Starting a task's session from inside a session needs the account setting that lets agents act on other machines",
+    expect((await json(client, "task_start", { task: "tsk_1", preset: "pst_1" })).session).toEqual({ sessionId: "ses_started", workspaceId: "ws_local" })
+    expect(audits).toEqual([
+      { tool: "task_start", actor: "runtime:rt_1", client: "runtime:rt_1", workspaceId: "ws_local", callerSessionId: "ses_caller", sessionId: "ses_started" },
+    ])
+  })
+
+  test("resolves a preset by its name when the id is not one the routes know", async () => {
+    const service = tasksService()
+    const { url } = await listen({ service })
+    const client = await connect(url)
+
+    const answer = await json(client, "task_start", { task: "tsk_1", preset: "default" })
+    expect(answer.preset).toEqual({ id: "pst_1", name: "Default" })
+    expect(service.calls.map((sent) => sent.path)).toEqual([
+      "/api/claxedo/tasks/tasks/tsk_1",
+      "/api/claxedo/tasks/presets/default",
+      "/api/claxedo/tasks/presets",
+      "/api/claxedo/tasks/tasks/tsk_1/start-preview",
+      "/api/claxedo/tasks/tasks/tsk_1/sessions",
+    ])
+  })
+
+  test("names every preset when the one asked for exists under neither id nor name", async () => {
+    const service = tasksService()
+    const { url } = await listen({ service })
+    const client = await connect(url)
+
+    expect(await call(client, "task_start", { task: "tsk_1", preset: "Nope" })).toEqual({
+      text: "No preset is named Nope. The presets are: pst_1 (Default).",
       isError: true,
     })
-    expect(service.calls).toEqual([])
-    expect(audits).toEqual([{ tool: "task_start", actor: "runtime:rt_1", client: "runtime:rt_1", workspaceId: "ws_local", callerSessionId: "ses_caller" }])
+    expect(service.calls.some((sent) => sent.path.endsWith("/sessions"))).toBe(false)
   })
 
   test("a person's credential starts a task without the cross-machine setting", async () => {

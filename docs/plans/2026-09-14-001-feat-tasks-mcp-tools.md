@@ -84,8 +84,9 @@ Owner: `packages/claxedo-mcp/**`.
 - Tools `task_create` (title, description, `backlog | todo`, optional parent;
   project defaults to the session's own), `task_list` (status filter),
   `task_get`, `task_start` (task, optional preset id, optional slot,
-  `continue`), each with `access` declarations; `task_start` additionally
-  requires the credential's `crossMachineWrites`.
+  `continue`), each with `access` declarations. The grant is the only gate:
+  whoever minted it applied the account's cross-machine setting when deciding
+  whether `start` is in it, so the tool asks no second question.
 - `tools/list` omits tools whose operation the scope lacks; the handler-side
   check refuses regardless.
 - Refusal sentences for: no Tasks client (deployment without Tasks), control
