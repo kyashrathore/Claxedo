@@ -173,11 +173,26 @@ describe("local binding authority", () => {
     expect(await other.authority.currentRuntime(projecting.runtimeIdentity(workspaceId))).toBe(false)
   })
 
-  test("a provider with no destination policy gets no binding at all", async () => {
+  test("a provider with no destination policy is reported, never dropped", async () => {
     await activeRow("pplx-some-key", "perplexity")
     const local = broker()
 
-    expect(await local.projectAuth({ workspaceId })).not.toHaveProperty("perplexity")
+    // Dropping it is indistinguishable from "no account chosen", which every
+    // harness answers by running on the login its own machine holds.
+    expect((await local.projectAuth({ workspaceId })).perplexity)
+      .toEqual({ unavailable: true, reason: "no_destination" })
+  })
+
+  test("an account the operator revoked is reported as revoked and resolves nothing", async () => {
+    const credential = await activeRow("sk-ant-api03-revoked")
+    const local = broker()
+    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+
+    updateCredentialStatus(credential.id, "revoked")
+
+    expect((await local.projectAuth({ workspaceId }))["claude-sdk"])
+      .toEqual({ unavailable: true, reason: "revoked" })
+    expect(await local.authority.resolve(id)).toBeUndefined()
   })
 
   /**

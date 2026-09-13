@@ -178,10 +178,17 @@ export function createLocalCredentialBroker(input: {
     ].join(" ")).digest("hex").slice(0, 32)
   }
 
-  /** The marked accounts whose provider this broker knows a destination for. */
+  /**
+   * Every marked account, including one whose provider this broker has no
+   * destination row for. Dropping those made an account the operator chose
+   * indistinguishable from no account at all, and the harness answered that by
+   * running on the machine's own login.
+   */
   function selectedCredentials(scope: SecretScope, org: string) {
     return requireActiveCredentialsForScope(scope, org)
-      .filter((row) => hasProviderDestination(row.credential.provider_id))
+      .map((row) => hasProviderDestination(row.credential.provider_id)
+        ? row
+        : { credential: row.credential, unavailable: row.unavailable ?? "no_destination" })
   }
 
   /**
