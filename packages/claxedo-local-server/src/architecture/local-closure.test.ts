@@ -236,8 +236,18 @@ describe("@claxedo/local-server closure", () => {
     // provider's vendor host, allowed methods and paths and header shape is a
     // fact about the vendor rather than about this machine, so it is owned by
     // server-core, where the cloud delivery adapter reads the same rows; it
-    // adds no package edge here. Measured: 85 modules, 25 packages.
-    expect(modules.size).toBeLessThanOrEqual(85)
+    // adds no package edge here.
+    // credentials/machine-credentials.ts is the 86th: the credential port for a
+    // server running on the machine the harnesses live on. Asking a CLI what it
+    // is signed in as, and withdrawing the stored mark so a harness runs on that
+    // login, have no referent on a host where no harness is installed, so they
+    // are composed here rather than in the shared default.
+    // credentials/operations/drop-copied-harness-logins.ts is the 87th: the
+    // one-time delete of the harness logins an older Claxedo copied off this
+    // machine. It belongs to this product because this is the process that ran
+    // that scan. Both reach only the registry and the machine-login reader,
+    // which this closure already holds. Measured: 87 modules, 25 packages.
+    expect(modules.size).toBeLessThanOrEqual(87)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(25)
   })

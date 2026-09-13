@@ -29,6 +29,7 @@ const {
   deleteCredentialsByProvider,
   selectCredentialsForScope,
   setActiveCredentials,
+  clearActiveCredentials,
 } = await import("./registry")
 const { ClaxedoProviderCredentialTable } = await import("./provider-credential.sql")
 
@@ -705,6 +706,134 @@ describe("credential registry", () => {
       await deleteCredential(second.id)
 
       expect(getCredential(first.id)?.is_active).toBe(true)
+    })
+
+    test("a refused active account hands the mark to the oldest account left", async () => {
+      const { first, second } = await twoAccounts("active-refused")
+      const third = await thirdAccount("active-refused")
+      expect(first.is_active).toBe(true)
+
+      updateCredentialHealth(first.id, "auth_failed", 1234)
+
+      expect(getCredential(first.id)).toMatchObject({ is_active: false, health: "auth_failed" })
+      expect(getCredential(second.id)?.is_active).toBe(true)
+      expect(getCredential(third.id)?.is_active).toBe(false)
+      expect(await resolveSecret("active-refused")).toBe("second-secret")
+    })
+
+    test("expiry and a missing subscription move the mark; a rate cap does not", async () => {
+      for (const health of ["expired", "no_billing"] as const) {
+        const { first, second } = await twoAccounts(`active-refused-${health}`)
+        updateCredentialHealth(first.id, health, 1234)
+        expect(getCredential(first.id)?.is_active, health).toBe(false)
+        expect(getCredential(second.id)?.is_active, health).toBe(true)
+      }
+
+      const { first, second } = await twoAccounts("active-rate-capped")
+      updateCredentialHealth(first.id, "rate_capped", 1234)
+
+      expect(getCredential(first.id)).toMatchObject({ is_active: true, health: "rate_capped" })
+      expect(getCredential(second.id)?.is_active).toBe(false)
+    })
+
+    test("a refused account with nowhere to hand the mark keeps it", async () => {
+      const { first, second } = await twoAccounts("active-refused-alone")
+      updateCredentialHealth(second.id, "auth_failed", 1234)
+
+      updateCredentialHealth(first.id, "auth_failed", 1234)
+
+      expect(getCredential(first.id)).toMatchObject({ is_active: true, health: "auth_failed" })
+      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-refused-alone"))
+        .toEqual([])
+    })
+
+    test("a refused account that never held the mark leaves the marked one alone", async () => {
+      const { first, second } = await twoAccounts("active-refused-inactive")
+
+      updateCredentialHealth(second.id, "auth_failed", 1234)
+
+      expect(getCredential(first.id)?.is_active).toBe(true)
+      expect(getCredential(second.id)?.is_active).toBe(false)
+    })
+
+    test("clearActiveCredentials leaves the provider unmarked, so its harness runs on the machine login", async () => {
+      const { first, second } = await twoAccounts("active-clear")
+
+      expect(clearActiveCredentials(["active-clear"])).toEqual({ cleared: [first.id] })
+
+      expect(getCredential(first.id)?.is_active).toBe(false)
+      expect(getCredential(second.id)?.is_active).toBe(false)
+      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-clear")).toEqual([])
+    })
+
+    test("clearActiveCredentials reaches only the org it was asked in", async () => {
+      const mine = await putCredential({
+        provider_id: "active-clear-org",
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_mine",
+        label: "mine",
+        secret: "mine-secret",
+      }, "org-a")
+      const theirs = await putCredential({
+        provider_id: "active-clear-org",
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_theirs",
+        label: "theirs",
+        secret: "theirs-secret",
+      }, "org-b")
+      expect(getCredential(mine.id, "org-a")?.is_active).toBe(true)
+      expect(getCredential(theirs.id, "org-b")?.is_active).toBe(true)
+
+      expect(clearActiveCredentials(["active-clear-org"], "org-a")).toEqual({ cleared: [mine.id] })
+
+      expect(getCredential(mine.id, "org-a")?.is_active).toBe(false)
+      expect(getCredential(theirs.id, "org-b")?.is_active).toBe(true)
+      // And the default partition, which holds neither of them, is untouched by
+      // a call naming the same provider.
+      expect(clearActiveCredentials(["active-clear-org"])).toEqual({ cleared: [] })
+      expect(getCredential(theirs.id, "org-b")?.is_active).toBe(true)
+    })
+
+    test("a sandbox driver key neither holds the mark nor inherits it", async () => {
+      const driver = await putCredential({
+        provider_id: "daytona",
+        kind: "sandbox_driver",
+        source: "managed",
+        label: "driver",
+        secret: "daytona-key",
+      })
+      // Nothing a harness runs on, so the mark never lands on it at save time…
+      expect(driver.is_active).toBe(false)
+
+      const mixed = await putCredential({
+        provider_id: "daytona",
+        kind: "api_key",
+        source: "managed",
+        label: "model key",
+        secret: "sk-daytona-model",
+      })
+      expect(mixed.is_active).toBe(true)
+      expect(setActiveCredentials([driver.id])).toEqual({ ok: false, reason: "not_eligible" })
+
+      // …nor when the account that did hold it is refused and looks for an heir.
+      updateCredentialHealth(mixed.id, "auth_failed", 1234)
+
+      expect(getCredential(driver.id)?.is_active).toBe(false)
+      expect(getCredential(mixed.id)?.is_active).toBe(true)
+      expect(clearActiveCredentials(["daytona"])).toEqual({ cleared: [mixed.id] })
+    })
+
+    test("clearActiveCredentials clears every binding named and nothing else", async () => {
+      const { first } = await twoAccounts("active-clear-a")
+      const other = await twoAccounts("active-clear-b")
+      const untouched = await twoAccounts("active-clear-c")
+
+      expect(clearActiveCredentials(["active-clear-a", "active-clear-b", "active-clear-missing"]).cleared.toSorted())
+        .toEqual([first.id, other.first.id].toSorted())
+
+      expect(getCredential(untouched.first.id)?.is_active).toBe(true)
     })
 
     test("setActiveCredentials moves the mark, and the fanout sends the account it moved to", async () => {

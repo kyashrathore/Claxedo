@@ -23,7 +23,11 @@ export type ClaxedoCredentialRequestInput = {
   providerId?: string
   /** One stored row: named alone it is the row itself, with an action its subpath. */
   credentialId?: string
-  action?: "discover" | "save-discovered" | "verify" | "scope" | "reconnect" | "effective" | "activate"
+  action?: "discover" | "save-discovered" | "verify" | "scope" | "reconnect" | "effective" | "activate" | "machine-logins"
+  /** Narrows a machine-login read to one harness. */
+  harness?: string
+  /** Asks the harness again rather than reusing the answer it last gave. */
+  fresh?: boolean
 }
 
 export async function claxedoCredentialRequest(
@@ -46,6 +50,13 @@ export async function claxedoCredentialRequest(
 function credentialRoute(input?: ClaxedoCredentialRequestInput) {
   if (input?.credentialId && (input.action === "verify" || input.action === "scope" || input.action === "reconnect")) {
     return `/api/claxedo/credentials/${encodeURIComponent(input.credentialId)}/${input.action}`
+  }
+  if (input?.action === "machine-logins") {
+    const query = new URLSearchParams()
+    if (input.harness !== undefined) query.set("harness", input.harness)
+    if (input.fresh === true) query.set("fresh", "1")
+    const search = query.size > 0 ? `?${query.toString()}` : ""
+    return `/api/claxedo/credentials/machine-logins${search}`
   }
   if (input?.action === "discover" || input?.action === "save-discovered" || input?.action === "effective" || input?.action === "activate") {
     return `/api/claxedo/credentials/${input.action}`

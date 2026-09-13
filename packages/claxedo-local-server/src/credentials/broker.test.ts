@@ -76,8 +76,11 @@ async function withRegistryOutage<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   setBackendOverride(createTestBackend())
+  // One store per test: a row left behind by an earlier test is an account this
+  // one never chose, and the mark now moves between accounts on its own.
+  for (const row of listCredentials()) await deleteCredential(row.id)
 })
 
 afterAll(async () => {
@@ -372,15 +375,115 @@ describe("local binding authority", () => {
     expect(await local.projectAuth({ workspaceId })).not.toHaveProperty("claude-sdk")
   })
 
+  test("one vendor refusal changes nothing; the second hands the mark on and the next projection binds the heir", async () => {
+    const rejected = await activeRow("sk-ant-api03-rejected-first")
+    const heir = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      account_id: "acc-heir",
+      secret: "sk-ant-api03-heir",
+    })
+    const local = broker()
+    const refusal = {
+      bindingId: "unused",
+      credentialId: rejected.id,
+      revision: getCredential(rejected.id)!.revision,
+      status: 401,
+    }
+
+    await local.authority.reportFailure(refusal)
+
+    // A single mid-turn hiccup takes nothing away: the account is still the one
+    // the provider runs on, and still usable.
+    expect(getCredential(rejected.id)).toMatchObject({ is_active: true, health: null })
+    expect(getCredential(heir.id)?.is_active).toBe(false)
+
+    await local.authority.reportFailure(refusal)
+
+    expect(getCredential(rejected.id)).toMatchObject({ is_active: false, health: "auth_failed" })
+    expect(getCredential(heir.id)?.is_active).toBe(true)
+    const projection = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.value).toBe("sk-ant-api03-heir")
+  })
+
+  test("the operator's own Check needs no second opinion", async () => {
+    const rejected = await activeRow("sk-ant-api03-checked")
+    const heir = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      account_id: "acc-checked-heir",
+      secret: "sk-ant-api03-checked-heir",
+    })
+
+    // What `POST /:id/verify` writes when the provider rejects the account.
+    updateCredentialHealth(rejected.id, "auth_failed", Date.now())
+
+    expect(getCredential(rejected.id)).toMatchObject({ is_active: false, health: "auth_failed" })
+    expect(getCredential(heir.id)?.is_active).toBe(true)
+  })
+
+  test("a Check that finds the account working resets the run of refusals", async () => {
+    const account = await activeRow("sk-ant-api03-recovered")
+    await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      account_id: "acc-recovered-heir",
+      secret: "sk-ant-api03-recovered-heir",
+    })
+    const local = broker()
+    const refusal = {
+      bindingId: "unused",
+      credentialId: account.id,
+      revision: getCredential(account.id)!.revision,
+      status: 401,
+    }
+
+    await local.authority.reportFailure(refusal)
+    updateCredentialHealth(account.id, "ok", Date.now())
+    await local.authority.reportFailure(refusal)
+
+    // The provider's newer word stands between the two refusals, so the second
+    // one starts a run rather than finishing the first.
+    expect(getCredential(account.id)).toMatchObject({ is_active: true, health: "ok" })
+  })
+
+  test("a refusal for a value that has since been replaced starts over", async () => {
+    const account = await activeRow("sk-ant-api03-rotated")
+    await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      account_id: "acc-rotated-heir",
+      secret: "sk-ant-api03-rotated-heir",
+    })
+    const local = broker()
+    const first = getCredential(account.id)!.revision
+
+    await local.authority.reportFailure({ bindingId: "unused", credentialId: account.id, revision: first, status: 401 })
+    await updateCredentialSecret(account.id, "sk-ant-api03-rotated-again")
+    const second = getCredential(account.id)!.revision
+    await local.authority.reportFailure({ bindingId: "unused", credentialId: account.id, revision: second, status: 401 })
+
+    expect(second).not.toBe(first)
+    expect(getCredential(account.id)).toMatchObject({ is_active: true })
+  })
+
   test("reportFailure marks the row only for the revision the request used", async () => {
     const credential = await activeRow("sk-ant-api03-reported")
     const local = broker()
     const failure = { bindingId: "unused", credentialId: credential.id, status: 401 }
+    const stale = { ...failure, revision: getCredential(credential.id)!.revision - 1 }
+    const current = { ...failure, revision: getCredential(credential.id)!.revision }
 
-    await local.authority.reportFailure({ ...failure, revision: getCredential(credential.id)!.revision - 1 })
+    await local.authority.reportFailure(stale)
+    await local.authority.reportFailure(stale)
     expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
 
-    await local.authority.reportFailure({ ...failure, revision: getCredential(credential.id)!.revision })
+    await local.authority.reportFailure(current)
+    await local.authority.reportFailure(current)
     expect(getCredential(credential.id)?.health).toBe("auth_failed")
     expect(getCredential(credential.id)?.status).toBe("error")
   })
@@ -456,12 +559,14 @@ describe("local binding authority", () => {
     const local = broker()
     const id = bindingIdOf(bound((await local.projectAuth({ workspaceId, orgId: org }))["claude-sdk"]).baseUrl)
 
-    await local.authority.reportFailure({
+    const refusal = {
       bindingId: id,
       credentialId: credential.id,
       revision: getCredential(credential.id, org)!.revision,
       status: 401,
-    })
+    }
+    await local.authority.reportFailure(refusal)
+    await local.authority.reportFailure(refusal)
 
     // Read in the single-tenant org the row is not in, the revision never
     // matches and a vendor's 401 silently marks nothing at all.
@@ -507,8 +612,10 @@ describe("local binding authority", () => {
     expect(second).toBe(first + 1)
 
     await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401 })
+    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401 })
     expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
 
+    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401 })
     await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401 })
     expect(getCredential(credential.id)?.health).toBe("auth_failed")
   })

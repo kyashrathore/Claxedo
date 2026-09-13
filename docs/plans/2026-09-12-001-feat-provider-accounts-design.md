@@ -3,9 +3,11 @@
 Status: proposed; slice 1 not started
 Date: 2026-09-12
 Owner: Yash Rathore
-Revision 4, 2026-09-12 (night). Delivery of a chosen account to a harness
-is decided by `2026-09-12-002-feat-credential-broker-design.md`; this
-document keeps the accounts model and sequences it on top of that one.
+Revision 5, 2026-09-13. A harness's own login is now asked for, never
+copied: rules 5 and 9 and the Settings section below record what shipped.
+Delivery of a chosen account to a harness is decided by
+`2026-09-12-002-feat-credential-broker-design.md`; this document keeps the
+accounts model and sequences it on top of that one.
 The earlier per-session picker, the per-account `CODEX_HOME`, refresh
 write-back through the app-server, and the fanout "send the active row"
 are gone with the plaintext push they assumed. The Background, Prior art,
@@ -96,11 +98,13 @@ What the storage layer already supports and the fanout throws away:
 
 - `putCredential` upserts on `(org, provider_id, kind, account_id)`
   (`registry.ts:95-104`). Two Codex accounts are two rows.
-- The local sync (`credentials/operations/sync.ts:148`) imports every
-  `~/.codex/accounts/*.auth.json` with its `account_id`.
-- The Claude sync (`sync.ts:295`) stores only the access token with **no
-  `account_id`**, so two Claude Code logins collapse into one row at write
-  time, before the fanout runs.
+- The local collector (`credentials/operations/sync.ts`) reads only what this
+  machine handed Claxedo on purpose: keys in the agent config, sandbox driver
+  settings, and provider secrets in the environment. It used to import
+  `~/.codex/accounts/*.auth.json` with its `account_id`, and the Claude
+  Keychain token with **no `account_id`** — so two Claude Code logins collapsed
+  into one row at write time, before the fanout ran. Rule 9 ended both: a
+  harness's own login is asked for rather than imported.
 
 Two defects exist independently of multi-account and get worse with it:
 
@@ -189,13 +193,21 @@ Multiple rows, one winner, chosen by an invisible sort order.
    uses the new account, because local runtimes are rebound through the
    loopback broker at the turn boundary and the operator is the only
    identity on the laptop.
-5. **Removing the active row hands the mark to the oldest account the
-   provider can still run on**, in the delete's own transaction; only an
-   `available` row qualifies, the same test the save-time yield applies.
-   With no such row the provider has no active account: the row in Settings
-   reads "Using this computer's login", and a new sandbox falls to the team
-   binding, else the implicit tier. Sandboxes already bound to the removed row
-   lose it (broker doc, withdraw), and the session says so.
+5. **Losing the active row hands the mark to the oldest account the
+   provider can still run on**, in the losing write's own transaction; only an
+   `available` row qualifies, the same test the save-time yield applies. Two
+   writes lose it: deleting the row, and a verdict that ends it —
+   `auth_failed`, `expired` or `no_billing`. The operator's own Check acts on
+   its first answer, because it is a question they chose to ask. The broker's
+   `reportFailure` does not: one vendor 401 mid-turn is as likely a hiccup as a
+   dead login, so it takes TWO on the same revision, inside five minutes, with
+   no newer word from the provider in between. A rate cap is never one of them:
+   the same login works again once the window resets. With no heir the refused row
+   KEEPS the mark, because falling to the machine login is only ever an
+   explicit choice (rule 9); only a delete can leave a provider unmarked on its
+   own, and then a new sandbox falls to the team binding, else the implicit
+   tier. Sandboxes already bound to the removed row lose it (broker doc,
+   withdraw), and the session says so.
 6. **A saved row is active when it is the first for its provider.** A later
    save never steals the mark from a working account; an active row whose
    `status` is not `available` yields it. Without that yield, pasting a
@@ -220,6 +232,40 @@ Multiple rows, one winner, chosen by an invisible sort order.
    account. The verifier judges the pasted material rather than the expiry the
    replaced secret carried — left in place that reads a fresh API key as
    expired. Rule 6's yield is untouched and still governs the Add path.
+
+9. **A harness's own login is asked for, never copied.** Claxedo reads nothing
+   out of the store a CLI keeps its login in — not the `Claude Code-credentials`
+   Keychain item, not `~/.claude/.credentials.json`, not `~/.codex/auth.json`.
+   There is exactly ONE write to any of them, and it is a write-back rather than
+   a read: `credentials/operations/codex-auth-file.ts` puts a token Claxedo has
+   just renewed back into `~/.codex/auth.json` for a row imported before this
+   rule, so renewing such a row does not leave the user's own `codex` CLI
+   holding a superseded refresh token. `keychain.guard.test.ts` pins that module
+   as the only one naming the file, and pins it handing the caller back nothing
+   it read there. The server asks each harness instead: `claude auth status` prints
+   `{loggedIn, email, orgName, subscriptionType}`, the Codex app-server answers
+   `account/read` and `account/rateLimits/read` (with `codex login status` as
+   the presence fallback when the app-server cannot be started), and
+   `cursor-agent status --format json` answers for Cursor. Claude Code has no
+   headless usage read, so its row carries a plan and an address and never a
+   quota window. `GET /api/claxedo/credentials/machine-logins` serves the
+   answers, optionally for one `?harness=`; the scan spends no vendor request
+   and takes no lock on the user's quota. Choosing that login is the
+   withdrawal of the stored mark —
+   `POST /credentials/activate {"machine_login": {"provider_ids": [...]}}`,
+   `clearActiveCredentials` in the registry — so nothing is stored for it and
+   the implicit tier stays the absence of a row rather than a row of its own.
+   Both operations are composed only where the harnesses actually live
+   (`localControlPlaneCredentials`, and on the self-hosted binary only while the
+   embedded issuer is off, since a signed box has several accounts sharing one
+   machine); every other host leaves them off the port and the routes answer
+   501. The read is loopback-only on top of that.
+
+   Rows the old scan wrote — `desktop_discovery` with no `account_id`, which was
+   only ever a copied Claude Code login — are deleted once on startup
+   (`dropCopiedHarnessLogins`), secret included. Nothing is lost: the login is
+   still in the harness. A discovered row the provider DID name is a second
+   account the user chose to import and is left alone.
 
 ### Claude accounts
 
@@ -275,15 +321,19 @@ miniature — it read as a second account — so there is none.
   tooltip and in a screen-reader-only description. Nothing else: no red text, no
   sentence. Its repair is a Reconnect on its own row, whether or not it is the
   account in use; the header says nothing about it.
-- **"This computer's login" is the last entry** whenever the scan found one, and
-  its origin is its second line. It is last by construction: every stored
+- **"This computer's login" is the last entry**, in every state the harness can
+  be in — choosing it is the withdrawal of a stored account, not a login, so a
+  user whose CLI is signed out still needs to be able to say "run on whatever
+  that holds" and then go and sign in. It is last by construction: every stored
   account is a choice the user made, and this login is the standing fallback
-  underneath all of them. Choosing it saves the scanned login through
-  `save-discovered` and then marks what was saved — saving alone would leave the
-  harness on the entry the user just clicked away from. A saved scan row the
-  provider never named is still shown as this computer's login; one the provider
-  did name (every Codex account) is shown by that name, because a machine can
-  hold several of them.
+  underneath all of them. It is named by the address the harness gave, falling
+  back to "This computer's login". Its second line says which state it is in:
+  the quota windows the harness reports, else the plan and organization ("Max
+  plan · Yash"), else "Not signed in — run `codex login`", else why the harness
+  could not be asked, else "Not installed". The one state that is listed and not
+  selectable is a CLI that is not there, which no choice of ours makes runnable.
+  Its Check re-runs that one harness's self-report, bypassing the short cache
+  the automatic scan reads through.
 - **Saving runs no second check**: `save-discovered` writes the verdict the
   discovery probe already reached onto the row it saved, so a freshly saved
   account reads as checked without spending another request against the user's
@@ -308,7 +358,8 @@ miniature — it read as a second account — so there is none.
   i18n keys, the command, and the URL. A vendor it does not carry is explained
   in generic words naming the vendor, never a registry id.
 - **The scan is automatic**: it runs when the section mounts and after every
-  write, so the rows are derived from one read. The section header reads
+  write, so the rows are derived from one read. It is cheap and local — the
+  harnesses' own self-reports, no vendor call. The section header reads
   "Scanned just now · Rescan".
 - The only state colour is the refused ring. There are no status tags, no dots,
   no "Use this login" button, no header-level Check, and no Make active button.

@@ -128,6 +128,7 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/credentials/activate",
       "/api/claxedo/credentials/discover",
       "/api/claxedo/credentials/effective",
+      "/api/claxedo/credentials/machine-logins",
       "/api/claxedo/credentials/provider/:providerId",
       "/api/claxedo/credentials/save-discovered",
       "/api/claxedo/credentials/sync-local",

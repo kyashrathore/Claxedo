@@ -1,20 +1,19 @@
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createSignal, For, onMount, Show, type Component } from "solid-js"
 import {
   localHarnessChecks,
-  saveDiscoveredAIConnections,
+  loadMachineLogins,
   useGlobalSDK,
-  useServerIsLocal,
   verifyAIConnection,
-  type AIDiscoveryRow,
   type LocalHarnessCheck,
-  type LocalHarnessStatus,
+  type MachineLogin,
 } from "@/features/settings/app-ports"
 import type { AIUsageWindow } from "@/features/onboarding/ai-connect-state"
 import {
   accountIdentity,
   activateCredential,
-  isMachineLogin,
+  activateMachineLogin,
   agentInUse,
   harnessAccounts,
   listEffectiveCredentials,
@@ -23,7 +22,6 @@ import {
   runProviderDetect,
   type EffectiveCredential,
   type HarnessAccount,
-  type ProviderDetectResult,
   type StoredCredential,
 } from "@/features/settings/provider-detect"
 import { SettingsList } from "@/features/settings/ui/list"
@@ -42,17 +40,16 @@ const AGENT_ICON: Record<string, string> = {
   cursor: "cursor",
 }
 
-/** The entry key the login found on this computer is listed under. */
+/** The entry key this computer's own login is listed under. */
 const MACHINE = "machine"
 
 /**
- * What the provider said about the credential a harness runs on, and when.
- * `broken` and `unknown` carry the scan's own sentence; the health values are
- * the verifier's.
+ * What the provider said about one stored account, and when. `unknown` carries
+ * the failure's own sentence; the rest are the verifier's health values.
  */
 type LiveCheck = {
   at: number
-  verdict: "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired" | "broken" | "unknown" | "missing"
+  verdict: "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired" | "unknown"
   usage?: AIUsageWindow[]
   reason?: string
 }
@@ -63,16 +60,8 @@ const VERDICT_KEY: Record<LiveCheck["verdict"], string> = {
   no_billing: "settings.providers.live.noBilling",
   rate_capped: "settings.providers.live.rateCapped",
   expired: "settings.providers.live.expired",
-  broken: "settings.providers.live.broken",
   unknown: "settings.providers.live.unknown",
-  missing: "settings.providers.live.missing",
 }
-
-/**
- * The verdicts only a different credential can answer. A rate cap is not one of
- * them — the same login works again once the window resets — and neither is a
- * check we could not make.
- */
 
 const WINDOW_KEY: Record<string, string> = {
   session: "settings.providers.window.session",
@@ -82,20 +71,11 @@ const WINDOW_KEY: Record<string, string> = {
 
 /** The verdicts only a different credential, or a fresh login, can answer. */
 function unusable(verdict: LiveCheck["verdict"]) {
-  return verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired" || verdict === "broken"
+  return verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired"
 }
 
-function isHealth(value: string): value is Extract<LiveCheck["verdict"], "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired"> {
+function isHealth(value: string): value is Exclude<LiveCheck["verdict"], "unknown"> {
   return value === "ok" || value === "auth_failed" || value === "no_billing" || value === "rate_capped" || value === "expired"
-}
-
-/** The scan's verdict for a harness, as the same shape a stored row's check produces. */
-function scanCheck(status: LocalHarnessStatus | undefined, at: number): LiveCheck | undefined {
-  if (!status) return undefined
-  if (status.state === "working") return { at, verdict: "ok", ...(status.usage ? { usage: status.usage } : {}) }
-  if (status.state === "broken") return { at, verdict: "broken", ...(status.detail ? { reason: status.detail } : {}) }
-  if (status.state === "unverifiable") return { at, verdict: "unknown", ...(status.detail ? { reason: status.detail } : {}) }
-  return { at, verdict: "missing" }
 }
 
 /**
@@ -108,11 +88,11 @@ function scanCheck(status: LocalHarnessStatus | undefined, at: number): LiveChec
 export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promise<void> }> = (props) => {
   const language = useLanguage()
   const globalSDK = useGlobalSDK()
-  const serverIsLocal = useServerIsLocal()
   const [scanning, setScanning] = createSignal(false)
+  /** Whether the section's first read of this machine has come back, however it went. */
+  const [opened, setOpened] = createSignal(false)
   const [stored, setStored] = createSignal<readonly StoredCredential[]>([])
-  const [discovered, setDiscovered] = createSignal<readonly LocalHarnessStatus[]>([])
-  const [discovery, setDiscovery] = createSignal<Pick<ProviderDetectResult, "discoveryId" | "rows">>()
+  const [machineLogins, setMachineLogins] = createSignal<readonly MachineLogin[]>([])
   const [effective, setEffective] = createSignal<ReadonlyMap<string, EffectiveCredential>>()
   const [scannedAt, setScannedAt] = createSignal<number>()
   /** Checks made here, by account id; they outrank the verdict the server stored. */
@@ -142,12 +122,9 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     )
   }
 
-  /** The login the last scan found for this harness, while it is only on disk. */
-  const machineRow = (check: LocalHarnessCheck): AIDiscoveryRow | undefined =>
-    discovery()?.rows.find((row) =>
-      !row.alreadyConnected
-      && row.probe?.state !== "broken"
-      && row.providerIds.some((id) => (check.providerIds as readonly string[]).includes(id)))
+  /** What this harness said about its own login, in whichever of the four states. */
+  const machineLogin = (check: LocalHarnessCheck): MachineLogin | undefined =>
+    machineLogins().find((login) => login.harness === check.id)
 
   /**
    * The provider's last word on one stored account: a check made here first,
@@ -175,7 +152,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     if (match) return match.id
     const active = rows.find((row) => row.isActive)
     if (active) return active.id
-    return machineRow(check) ? MACHINE : undefined
+    return machineLogin(check) ? MACHINE : undefined
   }
 
   /**
@@ -184,7 +161,6 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
    * fingerprint, and this computer's own login is named for being that.
    */
   const accountLabel = (row: StoredCredential) => {
-    if (isMachineLogin(row)) return language.t("settings.providers.agents.machineLogin")
     if (row.label && row.label !== row.providerId) return row.label
     const identity = accountIdentity(row)
     return identity?.readable ? identity.text : row.kind ?? row.providerId
@@ -205,11 +181,6 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     ? language.t("settings.providers.live.checkedNow")
     : language.t("settings.providers.live.checkedAt", { when: formatRelativeTime(live.at, language.locale()) })
 
-  const machineCheck = (check: LocalHarnessCheck) => {
-    const at = scannedAt()
-    return at === undefined ? undefined : scanCheck(discovered().find((status) => status.id === check.id), at)
-  }
-
   /**
    * The second line of one entry, or nothing when the label already said it
    * all. An unchecked account says nothing here: "Not checked" is the absence
@@ -221,6 +192,31 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       ...usageWords(live),
       ...(live === undefined ? [] : [checkedWords(live)]),
     ]
+    return words.length > 0 ? words.join(" · ") : undefined
+  }
+
+  /**
+   * The machine login's second line: what the harness itself reported. The
+   * windows where it has them, and otherwise who it is signed in as — Claude
+   * Code has no headless usage read, so its row never carries a window.
+   */
+  const machineWords = (login: MachineLogin, check: LocalHarnessCheck) => {
+    if (login.state === "absent") return language.t("settings.providers.agents.machineNotInstalled")
+    if (login.state === "signed_out") {
+      return language.t("settings.providers.agents.machineSignedOut", { command: check.signIn })
+    }
+    if (login.state === "unknown") return login.detail ?? language.t("settings.providers.agents.machineUnknown")
+    const windows = (login.usage ?? []).map((window) => {
+      const name = WINDOW_KEY[window.window]
+      return language.t("settings.providers.live.window", {
+        name: name ? language.t(name) : window.window,
+        used: String(window.usedPercent),
+      })
+    })
+    const words = windows.length > 0
+      ? windows
+      : [login.plan ? language.t("settings.providers.agents.machinePlan", { plan: login.plan }) : undefined, login.org]
+        .filter((word): word is string => word !== undefined)
     return words.length > 0 ? words.join(" · ") : undefined
   }
 
@@ -249,26 +245,35 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
         selected: selected === row.id,
       }
     })
-    const machine = machineRow(check)
+    const machine = machineLogin(check)
     if (!machine) return entries
-    const live = machineCheck(check)
-    const detail = detailWords(live, language.t("settings.providers.agents.machineSource", { origin: machine.origin }))
+    const detail = machineWords(machine, check)
+    // Listed in every state, because choosing it is the withdrawal of a stored
+    // account rather than a login: a user whose harness is signed out still
+    // needs to be able to say "run on whatever that CLI holds" and then go and
+    // sign in to it. The one state that cannot be chosen is a CLI that is not
+    // there, which no choice of ours can make runnable.
+    //
     // Last by construction: every stored account is a choice the user made, and
     // this login is the standing fallback underneath all of them.
     return [...entries, {
       key: MACHINE,
       ids: [],
-      label: language.t("settings.providers.agents.machineLogin"),
+      label: machine.state === "signed_in" && machine.email
+        ? machine.email
+        : language.t("settings.providers.agents.machineLogin"),
       ...(detail === undefined ? {} : { detail }),
       selected: selected === MACHINE,
       machine: true,
+      ...(machine.state === "absent" ? { disabled: true } : {}),
     }]
   }
 
   /**
-   * One scan of this machine plus a fresh read of the store. Everything that
-   * changes what is stored ends here, so the machine-login entry appears and
-   * disappears from the same read the header is derived from.
+   * One round of asking every harness on this machine what it is signed in as,
+   * plus a fresh read of the store. Everything that changes what is stored ends
+   * here, so the machine-login entry appears and disappears from the same read
+   * the header is derived from. Local and cheap: no provider is called.
    */
   const scan = async () => {
     setScanning(true)
@@ -276,8 +281,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       const result = await runProviderDetect()
       setStored(result.stored)
       setEffective(result.effective)
-      setDiscovered(result.agents)
-      setDiscovery({ discoveryId: result.discoveryId, rows: result.rows })
+      setMachineLogins(result.machineLogins)
       setScannedAt(Date.now())
       setAccountChecks({})
       await props.onConnected?.()
@@ -285,6 +289,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       fail(err)
     } finally {
       setScanning(false)
+      setOpened(true)
     }
   }
 
@@ -292,32 +297,14 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     void scan()
   })
 
-  /**
-   * Stores the login the scan found, then marks it. Saving alone would leave
-   * the harness on whatever it ran on before, which is the entry the user just
-   * clicked away from.
-   */
-  const useMachineLogin = async (check: LocalHarnessCheck) => {
-    const current = discovery()
-    const row = machineRow(check)
-    if (!current || !row) return
-    const saved = await saveDiscoveredAIConnections({
-      serverUrl: globalSDK.url,
-      discoveryId: current.discoveryId,
-      items: row.providerIds.map((providerId) => ({
-        providerId,
-        ...(row.accountId ? { accountId: row.accountId } : {}),
-        scope: serverIsLocal() ? "local" : "shared",
-      })),
-    })
-    await activateCredential(saved.map((result) => result.credentialId))
-  }
-
   const select = async (check: LocalHarnessCheck, account: AgentAccount) => {
     setSelecting(account.key)
     try {
-      if (account.machine) await useMachineLogin(check)
-      else await activateCredential(account.ids)
+      const machine = account.machine ? machineLogin(check) : undefined
+      // Nothing is stored: the harness runs on its own login exactly when no
+      // stored account of its providers carries the mark.
+      if (machine) await activateMachineLogin(machine.providerIds)
+      else if (!account.machine) await activateCredential(account.ids)
       await scan()
     } catch (err: unknown) {
       fail(err)
@@ -341,13 +328,26 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   }
 
   /**
-   * Asks the provider about one stored account. The check is made against the
-   * first of its rows — the others are the same login under the harness's other
-   * bindings, and the provider would answer each of them identically.
+   * Asks again about one entry. A stored account is put to its provider, and
+   * the check is made against the first of its rows — the others are the same
+   * login under the harness's other bindings, and the provider would answer
+   * each of them identically. This computer's own login is put to its harness,
+   * which is the only thing that knows about it.
    */
-  const check = async (ids: readonly string[]) => {
-    const [first] = ids
-    const row = stored().find((item) => item.id === first)
+  const check = async (harness: LocalHarnessCheck, account: AgentAccount) => {
+    if (account.machine) {
+      setChecking(account.key)
+      try {
+        const reread = await loadMachineLogins({ serverUrl: globalSDK.url, harness: harness.id, fresh: true })
+        setMachineLogins((prev) => [...prev.filter((login) => login.harness !== harness.id), ...reread])
+      } catch (err: unknown) {
+        fail(err)
+      } finally {
+        setChecking(undefined)
+      }
+      return
+    }
+    const row = stored().find((item) => item.id === account.ids[0])
     if (!row) return
     setChecking(row.id)
     try {
@@ -371,9 +371,16 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     }
   }
 
+  /**
+   * The header's one line. Before the first read comes back the section has no
+   * rows to head, so this is the whole of what it says; after it, a Rescan runs
+   * under the rows that are already on screen and only this line changes.
+   */
   const scannedLabel = () => {
     const at = scannedAt()
-    if (scanning() || at === undefined) return language.t("settings.providers.agents.scanning")
+    if (!opened()) return language.t("settings.providers.agents.scanning")
+    if (scanning()) return language.t("settings.providers.agents.rescanning")
+    if (at === undefined) return language.t("settings.providers.agents.scanFailed")
     return Date.now() - at < 60_000
       ? language.t("settings.providers.agents.scannedNow")
       : language.t("settings.providers.agents.scannedAt", { when: formatRelativeTime(at, language.locale()) })
@@ -398,6 +405,21 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
           </Show>
         </p>
       </div>
+      {/*
+        Nothing is drawn until the first read comes back. The harness list is
+        known before it, so rows would appear at once and then rearrange as the
+        accounts and the machine logins land under them — a first frame the
+        reader can act on and that is not the answer.
+      */}
+      <Show
+        when={opened()}
+        fallback={(
+          <div class="flex items-center gap-2 py-3 text-12-regular text-text-weak" data-component="agents-scanning">
+            <Spinner class="size-4" />
+            <span>{language.t("settings.providers.agents.scanning")}</span>
+          </div>
+        )}
+      >
       <SettingsList>
         <For each={[...localHarnessChecks()]}>
           {(harness) => (
@@ -409,7 +431,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
               accounts={listedAccounts(harness)}
               onSelect={(account) => select(harness, account)}
               selecting={selecting()}
-              onCheck={(ids) => check(ids)}
+              onCheck={(account) => check(harness, account)}
               checking={checking()}
               onRemove={(ids) => remove(ids)}
               removing={removing()}
@@ -418,6 +440,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
           )}
         </For>
       </SettingsList>
+      </Show>
     </div>
   )
 }

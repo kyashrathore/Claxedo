@@ -4,7 +4,6 @@ import type * as QueryOptions from "@/app/integrations/sync/query-options"
 import type * as ConnectProvider from "@/app/dialogs/connect-provider"
 import type * as SelectProvider from "@/app/dialogs/select-provider"
 import type * as CustomProvider from "@/app/dialogs/custom-provider"
-import type { Accessor } from "solid-js"
 import type * as AIConnectApi from "@/features/onboarding/ai-connect-api"
 import type * as AIConnectState from "@/features/onboarding/ai-connect-state"
 import type * as TerminalAgents from "@/features/terminal/core/terminal-agents"
@@ -17,8 +16,7 @@ import type * as ProviderConnectFormModule from "@/app/dialogs/provider-connect-
 import type * as LinkModule from "@/app/controls/link"
 import type * as SDK from "@/app/providers/sdk/sdk"
 
-export type LocalHarnessStatus = AIConnectState.LocalHarnessStatus
-export type AIDiscoveryRow = AIConnectState.AIDiscoveryRow
+export type MachineLogin = AIConnectState.MachineLogin
 export type LocalHarnessCheck = (typeof AIConnectState.localHarnessChecks)[number]
 export type TerminalAgentId = TerminalAgents.TerminalAgentId
 export type TerminalCustomCommand = TerminalCommands.CustomCommand
@@ -30,13 +28,11 @@ export type SettingsAppPorts = {
   DialogConnectProvider: typeof ConnectProvider.DialogConnectProvider
   DialogSelectProvider: typeof SelectProvider.DialogSelectProvider
   DialogCustomProvider: typeof CustomProvider.DialogCustomProvider
-  discoverAIConnections: typeof AIConnectApi.discoverAIConnections
-  saveDiscoveredAIConnections: typeof AIConnectApi.saveDiscoveredAIConnections
   verifyAIConnection: typeof AIConnectApi.verifyAIConnection
-  /** Whether the server in view is this machine, which decides the scope a saved login gets. */
-  useServerIsLocal: () => Accessor<boolean>
-  groupDiscoveryItems: typeof AIConnectState.groupDiscoveryItems
-  localHarnessStatuses: typeof AIConnectState.localHarnessStatuses
+  /** What each harness on the server's machine says about the login it would run on. */
+  loadMachineLogins: typeof AIConnectApi.loadMachineLogins
+  /** Withdraws the stored mark, so a harness runs on the login its own CLI holds. */
+  useMachineLogin: typeof AIConnectApi.useMachineLogin
   /** The harness rows the Agents section lists, in the order onboarding declares them. */
   localHarnessChecks: typeof AIConnectState.localHarnessChecks
   /** The CLI agents the Terminals pane edits a command for, in catalog order. */
@@ -90,12 +86,9 @@ export const useShellQueryOptions = bind((ports) => ports.useShellQueryOptions)
 export const DialogConnectProvider = bind((ports) => ports.DialogConnectProvider)
 export const DialogSelectProvider = bind((ports) => ports.DialogSelectProvider)
 export const DialogCustomProvider = bind((ports) => ports.DialogCustomProvider)
-export const discoverAIConnections = bind((ports) => ports.discoverAIConnections)
-export const saveDiscoveredAIConnections = bind((ports) => ports.saveDiscoveredAIConnections)
 export const verifyAIConnection = bind((ports) => ports.verifyAIConnection)
-export const useServerIsLocal = bind((ports) => ports.useServerIsLocal)
-export const groupDiscoveryItems = bind((ports) => ports.groupDiscoveryItems)
-export const localHarnessStatuses = bind((ports) => ports.localHarnessStatuses)
+export const loadMachineLogins = bind((ports) => ports.loadMachineLogins)
+export const useMachineLogin = bind((ports) => ports.useMachineLogin)
 
 /** Not a `bind`: this port is a value, so it is read rather than called through. */
 export function localHarnessChecks() {

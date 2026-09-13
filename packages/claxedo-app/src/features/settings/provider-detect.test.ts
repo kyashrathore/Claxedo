@@ -2,9 +2,9 @@ import { afterEach, beforeAll, describe, expect, test } from "bun:test"
 import {
   accountIdentity,
   activateCredential,
+  activateMachineLogin,
   agentInUse,
   harnessAccounts,
-  isMachineLogin,
   listEffectiveCredentials,
   listStoredCredentials,
   removeCredential,
@@ -146,26 +146,6 @@ describe("accountIdentity", () => {
   })
 })
 
-describe("isMachineLogin", () => {
-  test("a scanned row the provider never named is this computer's login", () => {
-    expect(isMachineLogin(account({ id: "a", providerId: "claude-sdk", consentSurface: "desktop_discovery" }))).toBe(true)
-  })
-
-  test("a scanned row the provider did name is that account, not the machine's", () => {
-    expect(isMachineLogin(account({
-      id: "b",
-      providerId: "codex-app-server",
-      consentSurface: "desktop_discovery",
-      accountId: "acc_1",
-    }))).toBe(false)
-  })
-
-  test("a typed key is never the machine's login", () => {
-    expect(isMachineLogin(account({ id: "c", providerId: "claude-sdk", consentSurface: "api_key" }))).toBe(false)
-    expect(isMachineLogin(account({ id: "d", providerId: "claude-sdk" }))).toBe(false)
-  })
-})
-
 describe("removeCredential", () => {
   test("deletes every row of the account", async () => {
     const sent: Array<{ method?: string; pathname: string }> = []
@@ -221,33 +201,53 @@ describe("activateCredential", () => {
   })
 })
 
+describe("activateMachineLogin", () => {
+  test("names the harness's providers and stores nothing", async () => {
+    const sent: Array<{ pathname: string; body: unknown }> = []
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      sent.push({ pathname: url.pathname, body: requestJson(init) })
+      return new Response(JSON.stringify({ credentials: [], cleared: ["sdk"] }))
+    }) as typeof globalThis.fetch
+
+    await activateMachineLogin(["claude-acp", "claude-sdk"])
+
+    expect(sent).toEqual([{
+      pathname: "/api/claxedo/credentials/activate",
+      body: { machine_login: { provider_ids: ["claude-acp", "claude-sdk"] } },
+    }])
+  })
+})
+
 describe("runProviderDetect", () => {
-  test("one scan answers both halves a row reads, through the onboarding discovery engine", async () => {
+  test("one read answers every half a row needs: the store, the mark, and each harness's own login", async () => {
     const calls = stubNetwork({
       "/api/claxedo/credentials": { credentials: [{ id: "cred_1", provider_id: "claude-sdk", is_active: true }] },
       "/api/claxedo/credentials/effective": { scope: "local", credentials: [{ id: "cred_1", provider_id: "claude-sdk", label: "Claude token" }] },
-      "/api/claxedo/credentials/discover": {
-        discovery_id: "disc_1",
-        items: [
-          { provider_id: "claude-acp", kind: "oauth", label: "Claude Code login · ACP", origin: "keychain", probe: { state: "working" } },
-          { provider_id: "claude-sdk", kind: "oauth", label: "Claude Code login · agent SDK", origin: "keychain", probe: { state: "working" } },
-          { provider_id: "cursor-acp", kind: "oauth", label: "Cursor", origin: "config" },
+      "/api/claxedo/credentials/machine-logins": {
+        machine_logins: [
+          { harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "signed_in", email: "person@acme.com", plan: "max" },
+          { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "absent" },
+          { harness: "cursor", providerIds: ["cursor-acp", "cursor-sdk"], state: "signed_out" },
+          { harness: "nameless" },
         ],
       },
     })
     const result = await runProviderDetect()
 
-    expect(calls.sort()).toEqual(["/api/claxedo/credentials", "/api/claxedo/credentials/discover", "/api/claxedo/credentials/effective"])
+    expect(calls.sort()).toEqual([
+      "/api/claxedo/credentials",
+      "/api/claxedo/credentials/effective",
+      "/api/claxedo/credentials/machine-logins",
+    ])
     expect(result.stored.map((row) => row.providerId)).toEqual(["claude-sdk"])
     expect(agentInUse(claude(), result.effective ?? new Map())?.label).toBe("Claude token")
-    expect(result.agents.map((row) => ({ id: row.id, state: row.state }))).toEqual([
-      { id: "claude", state: "working" },
-      { id: "codex", state: "missing" },
-      { id: "cursor", state: "unverifiable" },
+    expect(result.machineLogins.map((row) => ({ harness: row.harness, state: row.state }))).toEqual([
+      { harness: "claude", state: "signed_in" },
+      { harness: "codex", state: "absent" },
+      { harness: "cursor", state: "signed_out" },
     ])
-    // The scan's rows are kept whole so a row can save the login it found
-    // without asking the machine a second time.
-    expect(result.rows.map((row) => row.providerIds.join("+"))).toEqual(["claude-acp+claude-sdk", "cursor-acp"])
+    expect(result.machineLogins[0]).toMatchObject({ email: "person@acme.com", plan: "max" })
   })
 })
 

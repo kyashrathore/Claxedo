@@ -122,8 +122,14 @@ export const localServer: Policy = {
   // accepts. It belongs beside the broker for the same reason the broker
   // belongs to this product, and reaches only the credential registry and the
   // secret-shape reader this closure already holds. No new package edge.
-  // Full closure measured at 59 modules / 25 packages.
-  ceilings: { modules: 59, packages: 25 },
+  // +1 module: `credentials/machine-credentials.ts`, the credential port for a
+  // server running on the machine the harnesses live on. Asking a CLI what it
+  // is signed in as, and withdrawing the stored mark so a harness runs on that
+  // login, are operations with no referent on a host where no harness is
+  // installed, so they are composed here and left off the shared default.
+  // It reaches only the machine-login reader and the registry.
+  // Full closure measured at 60 modules / 25 packages.
+  ceilings: { modules: 60, packages: 25 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

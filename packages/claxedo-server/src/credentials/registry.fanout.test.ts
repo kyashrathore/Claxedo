@@ -12,6 +12,7 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const {
+  getCredential,
   putCredential,
   readSecretById,
   resolveSecret,
@@ -148,11 +149,14 @@ describe("credential fanout fence", () => {
     expect((await fannedOut("shared"))["multi-account-scope"]).toBe("consented-shared-token")
     expect((await fannedOut("local"))["multi-account-scope"]).toBe("consented-shared-token")
 
-    // Consent is not enough on its own: an expired active account sends nothing
-    // and the local-only one it replaced does not come back.
+    // An expired active account hands the mark to the account left, which is
+    // the local-only one. The shared scope still sends nothing, because that
+    // account was never consented for a sandbox — the substitution the fence
+    // forbids is a scope it was not given, not a mark the user can see move.
     updateCredentialHealth(shared.id, "expired", Date.now())
+    expect(getCredential(local.id)?.is_active).toBe(true)
     expect(await fannedOut("shared")).not.toHaveProperty("multi-account-scope")
-    expect(await fannedOut("local")).not.toHaveProperty("multi-account-scope")
+    expect((await fannedOut("local"))["multi-account-scope"]).toBe("local-token")
     expect(local.id).not.toBe(shared.id)
   })
 })

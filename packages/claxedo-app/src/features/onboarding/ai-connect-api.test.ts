@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test"
 import {
   connectAIKey,
   discoverAIConnections,
+  loadMachineLogins,
   saveDiscoveredAIConnections,
+  useMachineLogin,
   verifyProviderAIConnections,
   type AIConnectRequest,
 } from "./ai-connect-api"
@@ -27,7 +29,7 @@ describe("AI connect API", () => {
         kind: "oauth_token",
         label: "Claude subscription",
         account_id: "ac…12",
-        origin: "macOS Keychain",
+        origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
         fresh_until: 123,
         secret: "must-not-retain",
       }],
@@ -40,12 +42,65 @@ describe("AI connect API", () => {
         kind: "oauth_token",
         label: "Claude subscription",
         accountId: "ac…12",
-        origin: "macOS Keychain",
+        origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
         freshUntil: 123,
       }],
     })
     expect(JSON.stringify(await stub.calls)).not.toContain("must-not-retain")
     expect(stub.calls[0].input).toMatchObject({ action: "discover" })
+  })
+
+  test("reads each harness's own login, dropping a row that names no harness", async () => {
+    const stub = requests([Response.json({
+      machine_logins: [
+        {
+          harness: "codex",
+          providerIds: ["codex-app-server", "openai"],
+          state: "signed_in",
+          email: "person@example.com",
+          plan: "pro",
+          usage: [{ window: "weekly", usedPercent: 64, resetsAt: null }],
+          accessToken: "must-not-retain",
+        },
+        { providerIds: ["cursor-acp"], state: "signed_in" },
+      ],
+    })])
+
+    await expect(loadMachineLogins({ request: stub.request })).resolves.toEqual([{
+      harness: "codex",
+      providerIds: ["codex-app-server", "openai"],
+      state: "signed_in",
+      email: "person@example.com",
+      plan: "pro",
+      usage: [{ window: "weekly", usedPercent: 64, resetsAt: null }],
+    }])
+    expect(JSON.stringify(await stub.calls)).not.toContain("must-not-retain")
+    expect(stub.calls[0].input).toMatchObject({ action: "machine-logins" })
+  })
+
+  test("a host that runs no harness reports no login rather than failing the read", async () => {
+    const stub = requests([new Response("{}", { status: 501 })])
+
+    await expect(loadMachineLogins({ request: stub.request })).resolves.toEqual([])
+  })
+
+  test("one harness's Check asks about that harness alone", async () => {
+    const stub = requests([Response.json({ machine_logins: [] })])
+
+    await loadMachineLogins({ harness: "claude", request: stub.request })
+
+    expect(stub.calls[0].input).toMatchObject({ action: "machine-logins", harness: "claude" })
+  })
+
+  test("choosing this computer's login posts the providers to withdraw the mark from", async () => {
+    const stub = requests([Response.json({ credentials: [], cleared: ["sdk"] })])
+
+    await useMachineLogin({ providerIds: ["claude-acp", "claude-sdk"], request: stub.request })
+
+    expect(stub.calls[0].input).toMatchObject({ action: "activate" })
+    const body = stub.calls[0].init?.body
+    expect(JSON.parse(typeof body === "string" ? body : ""))
+      .toEqual({ machine_login: { provider_ids: ["claude-acp", "claude-sdk"] } })
   })
 
   test("saves only selected discovered providers, then verifies each saved credential", async () => {

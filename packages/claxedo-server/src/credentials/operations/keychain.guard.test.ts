@@ -1,64 +1,158 @@
 import { describe, expect, test } from "vitest"
-import { readdirSync, readFileSync } from "fs"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
 import path from "path"
 
 /**
- * The `Claude Code-credentials` Keychain item belongs to Claude Code, which
- * rotates its access token in place and issues single-use refresh tokens. A
- * write from Claxedo would either be clobbered or would strand the user's own
- * Claude Code holding a credential Anthropic has already invalidated.
+ * Where a harness keeps its own login is that harness's business. Claxedo asks
+ * the harness what it is signed in as and never opens the store behind it — not
+ * the `Claude Code-credentials` Keychain item, which Claude Code rotates in
+ * place and would be stranded by a write of ours, and not the token files
+ * beside it.
  *
- * The behavioural pins live in sync.test.ts and go through the injected exec
- * seam. This guard is the structural half: a future edit that reaches for
- * `execFileSync` directly, or asks `security` for anything other than a read,
- * would slip past an injected spy but not past a read of the source.
+ * The behavioural pins live in machine-login.test.ts and sync.test.ts, through
+ * their injected seams. This guard is the structural half: an edit that reached
+ * for `security`, or ran a harness command other than the self-reports, would
+ * slip past an injected spy but not past a read of the source.
  */
 /**
- * Credential operations now live in two places: the shared engine in
- * `@claxedo/server-core` and this product's own operations beside it. The
- * invariant is about the Keychain, not about a directory, so the guard reads
- * BOTH — a module that moved between packages must not escape it.
+ * Every tree that has ever held credential code, walked whole. Naming
+ * directories one level deep is how the guard came to read three of the ten
+ * that existed — the invariant is about the harnesses' own stores, so the scan
+ * follows the trees rather than a hand-kept list of folders, and a module that
+ * moves between packages or down a level cannot escape it.
+ *
+ * `packages/cli` is here as a whole because the CLI is a credential-bearing
+ * surface with no `credentials` directory of its own: `claxedo creds sync` read
+ * `~/.codex/auth.json` and PUT it into a remote registry, and this is what stops
+ * that coming back under another name.
  */
-const DIRS = [
-  __dirname,
-  path.resolve(__dirname, "../../../../claxedo-server-core/src/credentials/operations"),
+const PACKAGES = path.resolve(__dirname, "../../../..")
+const CREDENTIAL_ROOTS = ["claxedo-server", "claxedo-server-core", "claxedo-local-server"]
+  .map((pkg) => path.join(PACKAGES, pkg, "src", "credentials"))
+const CLI_ROOT = path.join(PACKAGES, "cli", "src")
+
+/**
+ * The self-reports, exactly. Each asks a harness about the login it already
+ * holds: `claude auth status` and `cursor-agent status` print it, and the Codex
+ * app-server answers `account/read` over its own protocol.
+ */
+/**
+ * The quoted path segment, so `document.claudeAiOauth` — a field of a secret WE
+ * hold — does not read as a path into the user's Claude Code directory.
+ */
+const CLAUDE_DIRECTORY_LITERAL = '".claude"'
+
+const SELF_REPORTS = [
+  ["claude", "auth", "status"],
+  ["codex", "app-server", "--listen", "stdio://"],
+  ["codex", "login", "status"],
+  ["cursor-agent", "status", "--format", "json"],
 ]
 
-const sources = DIRS.flatMap((dir) =>
-  readdirSync(dir)
-    .filter((file) => file.endsWith(".ts") && !file.includes(".test."))
-    .map((file) => path.join(dir, file)),
-)
+function walk(dir: string): string[] {
+  if (!existsSync(dir)) return []
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name)
+    if (entry.isDirectory()) return walk(full)
+    return entry.isFile() && entry.name.endsWith(".ts") && !entry.name.includes(".test.") ? [full] : []
+  })
+}
 
-function source(file: string) {
+const sources = CREDENTIAL_ROOTS.flatMap(walk)
+const cliSources = walk(CLI_ROOT)
+
+/**
+ * The file with its comments removed. A guard that matched prose would pass or
+ * fail on how a module describes itself rather than on what it does. The
+ * leading character is required so a `//` inside a URL (`stdio://`) survives.
+ */
+function code(file: string) {
   return readFileSync(file, "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/(^|[\s;{}()])\/\/[^\n]*/gm, "$1")
 }
 
 function named(file: string) {
-  return path.basename(file)
+  return path.relative(PACKAGES, file)
 }
 
-describe("Keychain access guard", () => {
-  test("exactly one module reaches a command line, through exactly one call site", () => {
-    const spawners = sources.filter((file) => /\b(execFileSync|execSync|execFile|spawnSync|spawn)\(/.test(source(file)))
-
-    expect(spawners.map(named)).toEqual(["sync.ts"])
-    expect(source(spawners[0]).match(/\bexecFileSync\(/g)).toHaveLength(1)
-  })
-
-  test("no credentials module can write to or delete the Keychain item", () => {
-    for (const file of sources) {
-      const text = source(file)
-      expect(text).not.toContain("add-generic-password")
-      expect(text).not.toContain("delete-generic-password")
-      expect(text).not.toContain("set-generic-password")
+describe("harness login access guard", () => {
+  test("the scan reaches every credential tree, and reaches below their top level", () => {
+    // A regex that matches nothing passes, so the guard's own reach — the thing
+    // most likely to rot — is asserted rather than assumed.
+    expect(sources.length).toBeGreaterThan(30)
+    expect(cliSources.length).toBeGreaterThan(0)
+    for (const root of [...CREDENTIAL_ROOTS, CLI_ROOT]) {
+      const found = walk(root)
+      expect(found.length, root).toBeGreaterThan(0)
+      expect(found.some((file) => path.relative(root, file).includes(path.sep)), root).toBe(true)
     }
   })
 
-  test("the only security subcommand named anywhere is the read", () => {
-    const subcommands = sources.flatMap((file) => [...source(file).matchAll(/"([a-z]+-generic-password)"/g)]
-      .map((match) => match[1]))
+  test("exactly one module reaches a command line", () => {
+    const spawners = sources.filter((file) => /\b(execFileSync|execSync|execFile|spawnSync|spawn)\(/.test(code(file)))
 
-    expect([...new Set(subcommands)]).toEqual(["find-generic-password"])
+    expect(spawners.map((file) => path.basename(file))).toEqual(["machine-login.ts"])
+  })
+
+  test("the commands that module runs are the harnesses' own self-reports", () => {
+    const text = code(sources.find((file) => path.basename(file) === "machine-login.ts") ?? "")
+    const invocations = [...text.replace(/\s+/g, " ").matchAll(/(?:run|spawn)\( ?"([^"]+)", ?(\[[^\]]*\])/g)]
+      .map((match) => [match[1], ...JSON.parse(match[2]) as string[]])
+
+    expect(invocations.toSorted((a, b) => a.join(" ").localeCompare(b.join(" ")))).toEqual(SELF_REPORTS)
+  })
+
+  test("no credentials module opens the store a harness keeps its login in", () => {
+    for (const file of [...sources, ...cliSources]) {
+      expect(code(file), named(file)).not.toContain("generic-password")
+      expect(code(file), named(file)).not.toContain(".credentials.json")
+      expect(code(file), named(file)).not.toContain(CLAUDE_DIRECTORY_LITERAL)
+    }
+  })
+
+  test("the one module that names a harness's token file writes to it and hands back nothing it read", async () => {
+    const naming = sources.filter((file) => code(file).includes("auth.json"))
+
+    // Codex rotates the refresh token on renewal, so a row imported before
+    // Claxedo stopped importing logins would leave the user's own CLI holding a
+    // superseded pair.
+    expect(naming.map((file) => path.basename(file))).toEqual(["codex-auth-file.ts"])
+
+    const mirror = await import("@claxedo/server-core/credentials/operations/codex-auth-file")
+    const home = mkdtempSync(path.join(tmpdir(), "codex-mirror-guard-"))
+    try {
+      mkdirSync(path.join(home, ".codex", "accounts"), { recursive: true })
+      const onDisk = JSON.stringify({
+        auth_mode: "chatgpt",
+        tokens: { access_token: "ON-DISK-ACCESS", refresh_token: "ON-DISK-REFRESH", account_id: "acct-1" },
+        last_refresh: "2026-04-01T00:00:00.000Z",
+      })
+      writeFileSync(path.join(home, ".codex", "auth.json"), onDisk)
+      writeFileSync(path.join(home, ".codex", "accounts", "someone@example.com.auth.json"), onDisk)
+
+      // Every export, handed a home that holds a real Codex login: none of them
+      // gives the caller any of it back. That is what makes the file this module
+      // names a destination rather than a source.
+      const answers = [
+        mirror.codexAuthFileCandidates(home),
+        mirror.mirrorCodexTokens({ accountId: "acct-1", access: "OURS", refresh: "OURS-REFRESH" }, home),
+        mirror.renewedCodexTokens(JSON.stringify({ access: "OURS", refresh: "OURS-REFRESH" }), "acct-1"),
+        mirror.shouldMirrorCodexTokens({ provider_id: "codex-app-server", kind: "oauth_token", source: "local_only" }),
+      ]
+      expect(JSON.stringify(answers)).not.toContain("ON-DISK")
+      // …and it did write, so the assertion above is not passing on inaction.
+      expect(readFileSync(path.join(home, ".codex", "auth.json"), "utf8")).toContain("OURS-REFRESH")
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  test("the CLI has no command that pushes a harness login anywhere", () => {
+    for (const file of cliSources) {
+      expect(code(file), named(file)).not.toContain(".codex")
+      expect(code(file), named(file)).not.toContain("codex-app-server")
+    }
   })
 })

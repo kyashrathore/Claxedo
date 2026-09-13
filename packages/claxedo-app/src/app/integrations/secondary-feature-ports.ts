@@ -8,7 +8,6 @@ import { configureSettingsAppPorts } from "@/features/settings/app-ports"
 import { configureOnboardingAppPorts } from "@/features/onboarding/app-ports"
 import { configureReviewAppPorts } from "@/features/review/app-ports"
 import * as SDK from "@/app/providers/sdk/sdk"
-import { useServer } from "@/app/connection/server"
 import * as GlobalSDK from "@/app/providers/global-sdk/provider"
 import * as Command from "@/app/providers/command"
 import * as FileContext from "@/app/providers/file"
@@ -76,12 +75,9 @@ configureSettingsAppPorts({
   DialogConnectProvider,
   DialogSelectProvider,
   DialogCustomProvider,
-  discoverAIConnections: AIConnectApi.discoverAIConnections,
-  saveDiscoveredAIConnections: AIConnectApi.saveDiscoveredAIConnections,
   verifyAIConnection: AIConnectApi.verifyAIConnection,
-  useServerIsLocal: () => useServer().isLocal,
-  groupDiscoveryItems: AIConnectState.groupDiscoveryItems,
-  localHarnessStatuses: AIConnectState.localHarnessStatuses,
+  loadMachineLogins: AIConnectApi.loadMachineLogins,
+  useMachineLogin: AIConnectApi.useMachineLogin,
   localHarnessChecks: AIConnectState.localHarnessChecks,
   terminalAgents: TerminalAgents.TERMINAL_AGENTS,
   getTerminalCommands: TerminalCommands.getTerminalCommands,

@@ -75,8 +75,8 @@ import {
 } from "@claxedo/local-server/self-hosted-execution"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
-import { migrateCredentials, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
-import { CredentialRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { dropCopiedHarnessLogins, migrateCredentials, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
+import { CredentialRoutes, localControlPlaneCredentials } from "@claxedo/local-server/self-hosted-execution"
 import { ProviderAuthRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { NetworkPolicyRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { ProjectRemoteRoutes } from "../../workspace/routes/project-remote"
@@ -1438,6 +1438,11 @@ export function createDefaultLocalControlPlaneServices() {
       durableSessionLog: centralStore.durableSessionLog,
     },
     {
+      // The harnesses' own logins belong to whoever is sitting at this machine,
+      // so they are offered only where that person is the only principal. With
+      // the embedded issuer on, several signed accounts share one box and one
+      // of them would otherwise be shown — and handed — the operator's login.
+      ...(embeddedAuth ? {} : { credentials: localControlPlaneCredentials() }),
       // Embedded Better Auth issuer (CLAXEDO_EMBEDDED_AUTH=1) => signed mode
       // backed by the in-process better-auth instance; otherwise local-only.
       ...(embeddedAuth
@@ -1642,6 +1647,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   })
 
   // Migrate legacy plaintext credentials into the managed secret backend.
+  dropCopiedHarnessLogins().catch((err: unknown) => {
+    console.error("[claxedo-server] WARN  could not forget copied harness logins:", err)
+  })
   migrateCredentials().catch((err) => {
     console.error("[claxedo-server] WARN  credential migration failed:", err)
   })

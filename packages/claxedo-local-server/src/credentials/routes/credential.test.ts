@@ -6,6 +6,7 @@ import path from "path"
 import { randomUUID } from "crypto"
 import { CredentialRoutes } from "./credential"
 import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
+import { localControlPlaneCredentials } from "../machine-credentials"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
@@ -953,6 +954,78 @@ describe("replacing the token on a stored account", () => {
   })
 })
 
+describe("what this computer's own logins say", () => {
+  test("reports every harness's self-report, and asks only the harness named", async () => {
+    const machineLogins = vi.fn(async () => [{
+      harness: "claude" as const,
+      providerIds: ["claude-acp", "claude-sdk"],
+      state: "signed_in" as const,
+      email: "person@example.com",
+      plan: "max",
+    }])
+    const app = CredentialRoutes(Object.assign(credentials(), { machineLogins }), {})
+
+    const all = await app.request("http://localhost/machine-logins")
+    expect(all.status).toBe(200)
+    await expect(all.json()).resolves.toMatchObject({
+      machine_logins: [{ harness: "claude", email: "person@example.com", plan: "max" }],
+    })
+    expect(machineLogins).toHaveBeenCalledWith(undefined, { fresh: false })
+
+    await app.request("http://localhost/machine-logins?harness=codex")
+    expect(machineLogins).toHaveBeenLastCalledWith(["codex"], { fresh: false })
+
+    // A row's Check says so, and that is the one read the last answer must not
+    // be reused for.
+    await app.request("http://localhost/machine-logins?harness=codex&fresh=1")
+    expect(machineLogins).toHaveBeenLastCalledWith(["codex"], { fresh: true })
+  })
+
+  test("only a caller on this computer may read, or choose, the login it holds", async () => {
+    const machineLogins = vi.fn(async () => [])
+    const clearActiveCredentials = vi.fn(async () => ({ cleared: [] }))
+    const app = CredentialRoutes(Object.assign(credentials(), { machineLogins, clearActiveCredentials }), {})
+    const reachedOver: Array<{ url: string; headers: Record<string, string> }> = [
+      // A forwarded request destroys the socket-to-client relationship the
+      // unsigned-local gate rests on…
+      { url: "http://localhost", headers: { "X-Forwarded-For": "10.0.0.1" } },
+      // …and a request addressed to a non-loopback host arrived over a network.
+      { url: "http://claxedo.example.com", headers: {} },
+    ]
+
+    for (const { url, headers } of reachedOver) {
+      const read = await app.request(`${url}/machine-logins`, { headers })
+      expect(read.status, url).toBe(403)
+      await expect(read.json()).resolves.toMatchObject({ error: { code: "loopback_required" } })
+
+      const chosen = await app.request(`${url}/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ machine_login: { provider_ids: ["claude-sdk"] } }),
+      })
+      expect(chosen.status, url).toBe(403)
+    }
+
+    expect(machineLogins).not.toHaveBeenCalled()
+    expect(clearActiveCredentials).not.toHaveBeenCalled()
+    expect((await app.request("http://localhost/machine-logins")).status).toBe(200)
+  })
+
+  test("a harness the catalog does not name is refused, and a host that runs none says so", async () => {
+    const machineLogins = vi.fn(async () => [])
+    const refused = await CredentialRoutes(Object.assign(credentials(), { machineLogins }), {})
+      .request("http://localhost/machine-logins?harness=not-a-harness")
+    expect(refused.status).toBe(400)
+    expect(machineLogins).not.toHaveBeenCalled()
+
+    const unsupported = await CredentialRoutes(credentials(), {}).request("http://localhost/machine-logins")
+    expect(unsupported.status).toBe(501)
+    await expect(unsupported.json()).resolves.toMatchObject({
+      error: { code: "credential_machine_login_unavailable" },
+    })
+  })
+})
+
 describe("choosing which account a provider runs on", () => {
   const root = path.join(realpathSync(os.tmpdir()), `credential-activate-${randomUUID().slice(0, 8)}`)
   let registry: typeof import("@claxedo/server-core/credentials/registry")
@@ -966,7 +1039,7 @@ describe("choosing which account a provider runs on", () => {
     const backends = await import("@claxedo/server-core/credentials/backend-registry")
     backends.setBackendOverride(backends.createTestBackend())
     registry = await import("@claxedo/server-core/credentials/registry")
-    app = CredentialRoutes(defaultControlPlaneCredentials(), {})
+    app = CredentialRoutes(localControlPlaneCredentials(), {})
   })
 
   afterAll(async () => {
@@ -1053,6 +1126,69 @@ describe("choosing which account a provider runs on", () => {
     expect(ineligible.status).toBe(409)
     await expect(ineligible.json()).resolves.toMatchObject({ error: { code: "credential_not_activatable" } })
     expect(registry.getCredential(driver.id)?.is_active).toBe(false)
+  })
+
+  test("choosing this computer's login leaves the provider with no marked account", async () => {
+    const first = await account("machine-choice", "acc_first")
+    const second = await account("machine-choice", "acc_second")
+    expect(registry.getCredential(first.id)?.is_active).toBe(true)
+
+    const response = await app.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ machine_login: { provider_ids: ["machine-choice"] } }),
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ credentials: [], cleared: [first.id] })
+    expect(registry.getCredential(first.id)?.is_active).toBe(false)
+    expect(registry.getCredential(second.id)?.is_active).toBe(false)
+    const effective = await (await app.request("http://localhost/effective")).json() as {
+      credentials: Array<{ provider_id: string }>
+    }
+    expect(effective.credentials.filter((row) => row.provider_id === "machine-choice")).toEqual([])
+  })
+
+  test("a body naming both an account and this computer's login is refused rather than half-obeyed", async () => {
+    const first = await account("machine-xor", "acc_first")
+
+    const response = await app.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [first.id], machine_login: { provider_ids: ["machine-xor"] } }),
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_invalid_body" } })
+    expect(registry.getCredential(first.id)?.is_active).toBe(true)
+  })
+
+  test("a host that is not the machine the harnesses live on says so rather than answering", async () => {
+    const hosted = CredentialRoutes(defaultControlPlaneCredentials(), {})
+    const seen = await account("machine-hosted", "acc_hosted")
+
+    const read = await hosted.request("http://localhost/machine-logins")
+    expect(read.status).toBe(501)
+    await expect(read.json()).resolves.toMatchObject({
+      error: { code: "credential_machine_login_unavailable" },
+    })
+
+    const chosen = await hosted.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ machine_login: { provider_ids: ["machine-hosted"] } }),
+    })
+    expect(chosen.status).toBe(501)
+    expect(registry.getCredential(seen.id)?.is_active).toBe(true)
+
+    // The same two calls against the machine's own composition are answered.
+    expect((await app.request("http://localhost/machine-logins")).status).toBe(200)
+    expect((await app.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ machine_login: { provider_ids: ["machine-hosted"] } }),
+    })).status).toBe(200)
+    expect(registry.getCredential(seen.id)?.is_active).toBe(false)
   })
 
   test("two ids competing for one provider are refused as a bad request", async () => {

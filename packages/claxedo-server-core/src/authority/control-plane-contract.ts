@@ -32,6 +32,7 @@ import type {
   SetActiveCredentialsResult,
 } from "../credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/operations/discovery"
+import type { MachineLogin, MachineLoginHarness } from "../credentials/machine-login"
 
 export class ControlPlaneCompositionError extends Error {
   constructor(
@@ -84,6 +85,20 @@ export type ControlPlaneCredentials = {
    * than pretending the choice was made.
    */
   setActiveCredentials?: (ids: readonly string[], org?: string) => Promise<SetActiveCredentialsResult>
+  /**
+   * Leave these providers with no marked account, so each one's harness runs on
+   * the login its own CLI holds. Optional for the same reason as the mark: a
+   * store with one record per provider has no choice to withdraw.
+   */
+  clearActiveCredentials?: (providerIds: readonly string[], org?: string) => Promise<{ cleared: string[] }>
+  /**
+   * What each harness on THIS machine says about the login it would run on.
+   * Absent wherever the host is not the machine the harnesses live on.
+   */
+  machineLogins?: (
+    harnesses?: readonly MachineLoginHarness[],
+    options?: { fresh?: boolean },
+  ) => Promise<MachineLogin[]>
   getCredentialByProvider: (
     providerId: string,
     kind?: CredentialKind,

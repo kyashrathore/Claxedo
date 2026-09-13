@@ -5,12 +5,14 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
-// Keychain lookups must fail in tests so the macOS dev machine's real
-// Claude Code credentials never leak into assertions.
+// Records rather than runs: collecting credentials must reach no command line
+// at all, and an assertion on that has to be able to see an attempt.
+const execFileSyncCalls: Array<{ file: string; args: readonly string[] }> = []
 vi.mock("child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("child_process")>()
-  const execFileSync = () => {
-    throw new Error("keychain unavailable in tests")
+  const execFileSync = (file: string, args: readonly string[] = []) => {
+    execFileSyncCalls.push({ file, args })
+    throw new Error("no command line is available while collecting credentials")
   }
   return { ...actual, default: { ...actual, execFileSync }, execFileSync }
 })
@@ -28,6 +30,7 @@ const prevVercelToken = process.env.VERCEL_TOKEN
 const prevVercelTeam = process.env.VERCEL_TEAM_ID
 const prevVercelProject = process.env.VERCEL_PROJECT_ID
 const prevCursor = process.env.CURSOR_API_KEY
+const prevOpenai = process.env.OPENAI_API_KEY
 const prevXdgData = process.env.XDG_DATA_HOME
 process.env.CLAXEDO_DATA_DIR = root
 const userConfigFile = path.join(root, "user-agent-config.json")
@@ -35,6 +38,7 @@ const userConfigFile = path.join(root, "user-agent-config.json")
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("@claxedo/server-core/credentials/registry")
 const { collectLocalCredentialItems, syncLocalCredentials } = await import("./sync")
+const { credentialDiscovery } = await import("./discovery")
 const { saveUserConfig } = await import("../../agent-config")
 const { ClaxedoDB } = await import("../../platform/db")
 ClaxedoDB.Drizzle()
@@ -57,7 +61,9 @@ describe("syncLocalCredentials", () => {
     delete process.env.VERCEL_TEAM_ID
     delete process.env.VERCEL_PROJECT_ID
     delete process.env.CURSOR_API_KEY
+    delete process.env.OPENAI_API_KEY
     delete process.env.XDG_DATA_HOME
+    execFileSyncCalls.length = 0
     await Promise.all([
       deleteCredentialsByProvider("claude-sdk"),
       deleteCredentialsByProvider("claude-sdk"),
@@ -90,6 +96,7 @@ describe("syncLocalCredentials", () => {
     process.env.VERCEL_TEAM_ID = prevVercelTeam
     process.env.VERCEL_PROJECT_ID = prevVercelProject
     process.env.CURSOR_API_KEY = prevCursor
+    process.env.OPENAI_API_KEY = prevOpenai
     process.env.XDG_DATA_HOME = prevXdgData
   })
 
@@ -125,11 +132,7 @@ describe("syncLocalCredentials", () => {
   })
 
   test("syncs Claude Code OAuth env credentials for the native SDK harness", async () => {
-    process.env.CLAUDE_CODE_OAUTH_TOKEN = JSON.stringify({
-      claudeAiOauth: {
-        accessToken: "sk-ant-oauth-env",
-      },
-    })
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-env"
 
     const result = await syncLocalCredentials(["claude-sdk"])
     const sdk = JSON.parse(await resolveSecret("claude-sdk") ?? "{}") as Record<string, any>
@@ -138,35 +141,12 @@ describe("syncLocalCredentials", () => {
     expect(result.existing).toEqual([])
     expect(result.missing).toEqual([])
     expect(result.failed).toEqual([])
-    expect((await getCredentialByProvider("claude-sdk"))?.source).toBe("managed")
+    expect((await getCredentialByProvider("claude-sdk"))?.source).toBe("env")
+    expect((await getCredentialByProvider("claude-sdk"))?.label).toBe("Synced from CLAUDE_CODE_OAUTH_TOKEN")
     expect(sdk).toEqual({
       type: "claude_code_oauth",
-      claudeAiOauth: { accessToken: "sk-ant-oauth-env" },
+      claudeAiOauth: { accessToken: "sk-ant-oat01-env" },
     })
-  })
-
-  test("falls back to Claude Code credentials file when env and keychain are unavailable", async () => {
-    const dir = path.join(process.env.HOME!, ".claude")
-    mkdirSync(dir, { recursive: true })
-    await fs.writeFile(path.join(dir, ".credentials.json"), JSON.stringify({
-      claudeAiOauth: {
-        accessToken: "sk-ant-oauth-file",
-        refreshToken: "refresh-file",
-        expiresAt: 1_790_000_000_000,
-      },
-    }))
-
-    const result = await syncLocalCredentials(["claude-sdk"])
-    const sdk = JSON.parse(await resolveSecret("claude-sdk") ?? "{}") as Record<string, any>
-
-    expect(result.synced).toEqual(["claude-sdk"])
-    expect(result.missing).toEqual([])
-    expect(result.failed).toEqual([])
-    expect(sdk).toEqual({
-      type: "claude_code_oauth",
-      claudeAiOauth: { accessToken: "sk-ant-oauth-file" },
-    })
-    expect((await getCredentialByProvider("claude-sdk"))?.label).toBe("Claude Code login · agent SDK")
   })
 
   test("syncs complete Vercel sandbox driver credentials as structured managed secret", async () => {
@@ -235,31 +215,6 @@ describe("syncLocalCredentials", () => {
     expect(await resolveSecret("claude-sdk")).toBe("sk-ant-managed")
   })
 
-  test("syncs local Codex auth into managed storage", async () => {
-    const dir = path.join(process.env.HOME!, ".codex")
-    mkdirSync(dir, { recursive: true })
-    await fs.writeFile(path.join(dir, "auth.json"), JSON.stringify({
-      auth_mode: "chatgpt",
-      OPENAI_API_KEY: null,
-      tokens: {
-        id_token: "id-token",
-        access_token: "header.eyJleHAiOjE3OTAwMDAwMDB9.sig",
-        refresh_token: "refresh-token",
-        account_id: "acct-123",
-      },
-      last_refresh: "2026-04-11T00:00:00.000Z",
-    }, null, 2))
-
-    const result = await syncLocalCredentials(["codex-app-server"])
-    const raw = await resolveSecret("codex-app-server")
-    const secret = raw ? JSON.parse(raw) as Record<string, any> : undefined
-
-    expect(result.synced).toEqual(["codex-app-server"])
-    expect(secret?.type).toBe("codex_auth")
-    expect(secret?.tokens?.id_token).toBe("id-token")
-    expect(secret?.oauth?.account_id).toBe("acct-123")
-  })
-
   test("syncs Cursor credentials from the CURSOR_API_KEY env var", async () => {
     process.env.CURSOR_API_KEY = "cursor-env-key"
 
@@ -294,87 +249,10 @@ describe("syncLocalCredentials", () => {
     expect(await resolveSecret("cursor-sdk")).toBeNull()
   })
 
-  test("prefers freshest codex account auth over stale top-level auth", async () => {
-    const codexDir = path.join(process.env.HOME!, ".codex")
-    const accountsDir = path.join(codexDir, "accounts")
-    mkdirSync(accountsDir, { recursive: true })
-    await fs.writeFile(path.join(codexDir, "auth.json"), JSON.stringify({
-      auth_mode: "chatgpt",
-      OPENAI_API_KEY: null,
-      tokens: {
-        access_token: "stale-access",
-        refresh_token: "stale-refresh",
-        account_id: "stale-account",
-      },
-      last_refresh: "2026-04-01T00:00:00.000Z",
-    }, null, 2))
-    await fs.writeFile(path.join(accountsDir, "fresh.auth.json"), JSON.stringify({
-      auth_mode: "chatgpt",
-      OPENAI_API_KEY: null,
-      tokens: {
-        id_token: "fresh-id",
-        access_token: "header.eyJleHAiOjE3OTAwMDAwMDB9.sig",
-        refresh_token: "fresh-refresh",
-        account_id: "fresh-account",
-      },
-      last_refresh: "2026-04-22T00:00:00.000Z",
-    }, null, 2))
-
-    const result = await syncLocalCredentials(["codex-app-server"])
-    const raw = await resolveSecret("codex-app-server")
-    const secret = raw ? JSON.parse(raw) as Record<string, any> : undefined
-
-    expect(result.synced).toEqual(["codex-app-server"])
-    expect(secret?.tokens?.account_id).toBe("fresh-account")
-    expect(secret?.tokens?.id_token).toBe("fresh-id")
-  })
-
-  // Both files can hold the SAME account with different tokens — the CLI
-  // refreshes whichever copy it is using. Importing the accounts-dir copy
-  // wholesale meant picking a months-old token that the provider had already
-  // revoked, while a token refreshed yesterday sat in auth.json.
-  test("prefers the freshest copy of an account across auth.json and the accounts dir", async () => {
-    const codexDir = path.join(process.env.HOME!, ".codex")
-    const accountsDir = path.join(codexDir, "accounts")
-    mkdirSync(accountsDir, { recursive: true })
-    await fs.writeFile(path.join(codexDir, "auth.json"), JSON.stringify({
-      auth_mode: "chatgpt",
-      tokens: {
-        access_token: "renewed-access",
-        refresh_token: "renewed-refresh",
-        account_id: "shared-account",
-      },
-      last_refresh: "2026-07-24T00:00:00.000Z",
-    }))
-    await fs.writeFile(path.join(accountsDir, "shared@example.com.auth.json"), JSON.stringify({
-      auth_mode: "chatgpt",
-      tokens: {
-        access_token: "stale-access",
-        refresh_token: "stale-refresh",
-        account_id: "shared-account",
-      },
-      last_refresh: "2026-06-02T00:00:00.000Z",
-    }))
-
-    const discovered = (await collectLocalCredentialItems())
-      .filter((item) => item.provider_id === "codex-app-server")
-
-    expect(discovered).toHaveLength(1)
-    expect(discovered[0].account_id).toBe("shared-account")
-    expect(discovered[0].origin).toBe("~/.codex/auth.json")
-    expect(JSON.parse(discovered[0].secret).access).toBe("renewed-access")
-  })
-
   test("an unreadable user agent config leaves every other source collectable", async () => {
     await fs.writeFile(userConfigFile, "{ not json")
-    const codexDir = path.join(process.env.HOME!, ".codex")
-    mkdirSync(codexDir, { recursive: true })
-    await fs.writeFile(path.join(codexDir, "auth.json"), JSON.stringify({
-      auth_mode: "chatgpt",
-      tokens: { access_token: "survivor-access", refresh_token: "survivor-refresh", account_id: "survivor" },
-      last_refresh: "2026-04-01T00:00:00.000Z",
-    }))
     process.env.CURSOR_API_KEY = "cursor-env-key"
+    process.env.OPENAI_API_KEY = "sk-openai-env"
 
     const discovered = await collectLocalCredentialItems()
 
@@ -382,260 +260,46 @@ describe("syncLocalCredentials", () => {
       .toEqual(["codex-app-server", "cursor-sdk"])
   })
 
-  test("still lists a top-level account that has no accounts-dir copy", async () => {
-    const codexDir = path.join(process.env.HOME!, ".codex")
-    const accountsDir = path.join(codexDir, "accounts")
+  test("a harness's own CLI login is never collected, from any of the places it is kept", async () => {
+    const home = process.env.HOME!
+    mkdirSync(path.join(home, ".claude"), { recursive: true })
+    await fs.writeFile(path.join(home, ".claude", ".credentials.json"), JSON.stringify({
+      claudeAiOauth: { accessToken: "sk-ant-oauth-file", refreshToken: "refresh-file" },
+    }))
+    const accountsDir = path.join(home, ".codex", "accounts")
     mkdirSync(accountsDir, { recursive: true })
-    await fs.writeFile(path.join(codexDir, "auth.json"), JSON.stringify({
+    const bundle = JSON.stringify({
       auth_mode: "chatgpt",
-      tokens: { access_token: "solo-access", refresh_token: "solo-refresh", account_id: "solo-account" },
+      tokens: { access_token: "codex-access", refresh_token: "codex-refresh", account_id: "acct-1" },
+      last_refresh: "2026-04-01T00:00:00.000Z",
+    })
+    await fs.writeFile(path.join(home, ".codex", "auth.json"), bundle)
+    await fs.writeFile(path.join(accountsDir, "someone@example.com.auth.json"), bundle)
+
+    expect(await collectLocalCredentialItems()).toEqual([])
+    expect(execFileSyncCalls).toEqual([])
+  })
+
+  test("the discovery route offers nothing on a machine whose only logins are its CLIs'", async () => {
+    // The producer behind `POST /credentials/discover`, driven for real rather
+    // than through a fixture: this is what the cloud onboarding step is handed
+    // on a laptop that can run agents locally and has nothing to send anywhere.
+    const home = process.env.HOME!
+    mkdirSync(path.join(home, ".claude"), { recursive: true })
+    await fs.writeFile(path.join(home, ".claude", ".credentials.json"), JSON.stringify({
+      claudeAiOauth: { accessToken: "sk-ant-oauth-file", refreshToken: "refresh-file" },
+    }))
+    mkdirSync(path.join(home, ".codex"), { recursive: true })
+    await fs.writeFile(path.join(home, ".codex", "auth.json"), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: { access_token: "codex-access", refresh_token: "codex-refresh", account_id: "acct-1" },
       last_refresh: "2026-04-01T00:00:00.000Z",
     }))
-    await fs.writeFile(path.join(accountsDir, "other@example.com.auth.json"), JSON.stringify({
-      auth_mode: "chatgpt",
-      tokens: { access_token: "other-access", refresh_token: "other-refresh", account_id: "other-account" },
-      last_refresh: "2026-04-22T00:00:00.000Z",
-    }))
 
-    const discovered = (await collectLocalCredentialItems())
-      .filter((item) => item.provider_id === "codex-app-server")
+    const discovery = await credentialDiscovery.discover()
 
-    expect(discovered.map((item) => item.account_id ?? "").toSorted((a, b) => a.localeCompare(b))).toEqual([
-      "other-account",
-      "solo-account",
-    ])
-  })
-
-  test("discovers every local Codex account without exposing account names in origins", async () => {
-    const accountsDir = path.join(process.env.HOME!, ".codex", "accounts")
-    mkdirSync(accountsDir, { recursive: true })
-    await Promise.all([
-      ["first@example.com.auth.json", "first-account", "2026-04-22T00:00:00.000Z"],
-      ["second@example.com.auth.json", "second-account", "2026-04-21T00:00:00.000Z"],
-    ].map(([file, account, refreshed]) => fs.writeFile(path.join(accountsDir, file), JSON.stringify({
-      auth_mode: "chatgpt",
-      tokens: {
-        access_token: `access-${account}`,
-        refresh_token: `refresh-${account}`,
-        account_id: account,
-      },
-      last_refresh: refreshed,
-    }))))
-
-    const discovered = (await collectLocalCredentialItems())
-      .filter((item) => item.provider_id === "codex-app-server")
-
-    expect(discovered.map((item) => item.account_id)).toEqual(["first-account", "second-account"])
-    expect(discovered.map((item) => item.origin)).toEqual([
-      "~/.codex/accounts/*.auth.json",
-      "~/.codex/accounts/*.auth.json",
-    ])
-  })
-
-  /**
-   * The account name is the only thing that tells two Codex logins apart on the
-   * picker, and the file name is not it — the accounts directory is read as a
-   * glob so the address never reaches `origin`. The claims are the one place
-   * this can be known without asking OpenAI.
-   */
-  test("labels a Codex login with the address its claims name, leaving the origin a glob", async () => {
-    const accountsDir = path.join(process.env.HOME!, ".codex", "accounts")
-    mkdirSync(accountsDir, { recursive: true })
-    const idToken = `eyJhbGciOiJub25lIn0.${Buffer.from(JSON.stringify({
-      email: "signed-in@example.com",
-      chatgpt_account_id: "named-account",
-    })).toString("base64url")}.signature`
-    await fs.writeFile(path.join(accountsDir, "signed-in@example.com.auth.json"), JSON.stringify({
-      auth_mode: "chatgpt",
-      tokens: {
-        id_token: idToken,
-        access_token: "access-named",
-        refresh_token: "refresh-named",
-        account_id: "named-account",
-      },
-      last_refresh: "2026-04-22T00:00:00.000Z",
-    }))
-
-    const discovered = (await collectLocalCredentialItems())
-      .filter((item) => item.provider_id === "codex-app-server")
-
-    expect(discovered.map((item) => item.label)).toEqual(["signed-in@example.com"])
-    expect(discovered.map((item) => item.origin)).toEqual(["~/.codex/accounts/*.auth.json"])
-  })
-
-  test("keeps the generic label for a Codex login whose claims name no address", async () => {
-    const codexDir = path.join(process.env.HOME!, ".codex")
-    mkdirSync(codexDir, { recursive: true })
-    await fs.writeFile(path.join(codexDir, "auth.json"), JSON.stringify({
-      auth_mode: "chatgpt",
-      tokens: {
-        access_token: "anonymous-access",
-        refresh_token: "anonymous-refresh",
-        account_id: "anonymous-account",
-      },
-      last_refresh: "2026-04-22T00:00:00.000Z",
-    }))
-
-    const discovered = (await collectLocalCredentialItems())
-      .filter((item) => item.provider_id === "codex-app-server")
-
-    expect(discovered.map((item) => item.label)).toEqual(["Synced from local Codex auth"])
-    expect(discovered.map((item) => item.origin)).toEqual(["~/.codex/auth.json"])
-  })
-
-  /**
-   * The Keychain item is not ours and is not only ours: `Claude Code-credentials`
-   * holds the user's Claude login next to an `mcpOAuth` map of access tokens
-   * belonging to unrelated third-party MCP servers, and Claude Code rewrites the
-   * item on its own schedule. Both halves of that — read only our field, and
-   * only when the user asked — are pinned here.
-   */
-  describe("the macOS Keychain", () => {
-    const KEYCHAIN_BLOB = JSON.stringify({
-      claudeAiOauth: {
-        accessToken: "sk-ant-oat01-keychain",
-        refreshToken: "refresh-keychain",
-        expiresAt: 1_790_000_000_000,
-      },
-      mcpOAuth: {
-        "posthog-mcp": {
-          accessToken: "phx-third-party-access",
-          refreshToken: "phx-third-party-refresh",
-          clientId: "phx-client-id",
-        },
-      },
-    })
-
-    function darwin() {
-      const original = Object.getOwnPropertyDescriptor(process, "platform")!
-      Object.defineProperty(process, "platform", { value: "darwin", configurable: true })
-      return () => Object.defineProperty(process, "platform", original)
-    }
-
-    function keychain(output: string) {
-      const exec = vi.fn((_file: string, _args: string[]) => output)
-      return { exec, calls: () => exec.mock.calls }
-    }
-
-    test("a Keychain read extracts claudeAiOauth only, leaving no trace of the mcpOAuth sibling", async () => {
-      const restore = darwin()
-      const { exec } = keychain(KEYCHAIN_BLOB)
-      try {
-        const discovered = await collectLocalCredentialItems({ allowKeychainPrompt: true, exec })
-
-        const claude = discovered.filter((item) => item.provider_id.startsWith("claude-"))
-        expect(claude.map((item) => item.provider_id)).toEqual(["claude-sdk"])
-        expect(JSON.parse(claude[0].secret)).toEqual({
-          type: "claude_code_oauth",
-          claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" },
-        })
-        // Not just the Claude rows: nothing the scan produces may carry the
-        // blob's other tenants, its refresh token, or the raw document.
-        const produced = JSON.stringify(discovered)
-        for (const leak of [
-          "mcpOAuth",
-          "phx-third-party-access",
-          "phx-third-party-refresh",
-          "phx-client-id",
-          "refresh-keychain",
-        ]) {
-          expect(produced).not.toContain(leak)
-        }
-      } finally {
-        restore()
-      }
-    })
-
-    test("a Keychain blob with no claudeAiOauth accessToken yields no credential at all", async () => {
-      const restore = darwin()
-      const { exec } = keychain(JSON.stringify({
-        mcpOAuth: {
-          "posthog-mcp": { accessToken: "phx-third-party-access", clientId: "phx-client-id" },
-        },
-      }))
-      try {
-        const discovered = await collectLocalCredentialItems({ allowKeychainPrompt: true, exec })
-
-        expect(discovered.filter((item) => item.provider_id.startsWith("claude-"))).toEqual([])
-        const produced = JSON.stringify(discovered)
-        expect(produced).not.toContain("mcpOAuth")
-        expect(produced).not.toContain("phx-third-party-access")
-        expect(produced).not.toContain("phx-client-id")
-      } finally {
-        restore()
-      }
-    })
-
-    test("a plain (non-JSON) env token is still a token", async () => {
-      process.env.CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-plain-env"
-
-      const discovered = await collectLocalCredentialItems()
-      const claude = discovered.find((item) => item.provider_id === "claude-sdk")
-
-      expect(JSON.parse(claude!.secret)).toEqual({
-        type: "claude_code_oauth",
-        claudeAiOauth: { accessToken: "sk-ant-oat01-plain-env" },
-      })
-    })
-
-    test("without allowKeychainPrompt nothing is spawned, and the credentials file answers instead", async () => {
-      const restore = darwin()
-      const { exec } = keychain(KEYCHAIN_BLOB)
-      const dir = path.join(process.env.HOME!, ".claude")
-      mkdirSync(dir, { recursive: true })
-      await fs.writeFile(path.join(dir, ".credentials.json"), JSON.stringify({
-        claudeAiOauth: { accessToken: "sk-ant-oauth-file" },
-      }))
-      try {
-        const discovered = await collectLocalCredentialItems({ exec })
-
-        expect(exec).not.toHaveBeenCalled()
-        expect(JSON.parse(discovered.find((item) => item.provider_id === "claude-sdk")!.secret)).toEqual({
-          type: "claude_code_oauth",
-          claudeAiOauth: { accessToken: "sk-ant-oauth-file" },
-        })
-      } finally {
-        restore()
-      }
-    })
-
-    test("syncLocalCredentials defaults to not prompting", async () => {
-      const restore = darwin()
-      const { exec } = keychain(KEYCHAIN_BLOB)
-      try {
-        await syncLocalCredentials(["claude-sdk"], undefined, { exec })
-
-        expect(exec).not.toHaveBeenCalled()
-      } finally {
-        restore()
-      }
-    })
-
-    /**
-     * Claude Code owns this item's lifecycle — it rotates the access token in
-     * place and issues a single-use refresh token. A write from Claxedo would
-     * either be clobbered or would strand the user's own Claude Code holding a
-     * credential Anthropic has already invalidated. `find-generic-password` is
-     * therefore the only subcommand this module may ever reach for.
-     */
-    test("only ever reads: no security subcommand other than find-generic-password", async () => {
-      const restore = darwin()
-      const { exec, calls } = keychain(KEYCHAIN_BLOB)
-      try {
-        await collectLocalCredentialItems({ allowKeychainPrompt: true, exec })
-        await syncLocalCredentials(["claude-sdk"], undefined, { allowKeychainPrompt: true, exec })
-
-        expect(calls().length).toBeGreaterThan(0)
-        for (const [file, args] of calls()) {
-          expect(file).toBe("security")
-          expect(args[0]).toBe("find-generic-password")
-          expect(args).not.toContain("add-generic-password")
-          expect(args).not.toContain("delete-generic-password")
-          expect(args).not.toContain("-w-")
-        }
-      } finally {
-        restore()
-      }
-    })
+    expect(discovery.items).toEqual([])
+    expect(discovery.discovery_id).toEqual(expect.any(String))
   })
 })
+

@@ -363,6 +363,52 @@ export function setActiveCredentials(
 }
 
 /**
+ * Leave a provider with no marked account, so its harness runs on the login its
+ * own CLI holds on this machine.
+ *
+ * The implicit tier is the absence of a mark, not a row of its own, so
+ * "use this computer's login" is exactly this clear — one transaction over the
+ * same partitions `setActiveCredentials` writes, for the same reason: a caller
+ * must never see the mark gone from one binding of a harness and standing on
+ * another.
+ */
+export function clearActiveCredentials(
+  providerIds: readonly string[],
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): { cleared: string[] } {
+  const orgId = credentialOrg(org)
+  return ClaxedoDB.transaction((db) => {
+    const cleared: string[] = []
+    for (const providerId of providerIds) {
+      const rows = db
+        .select()
+        .from(ClaxedoProviderCredentialTable)
+        .where(
+          and(
+            inOrg(orgId),
+            eq(ClaxedoProviderCredentialTable.provider_id, providerId),
+            eq(ClaxedoProviderCredentialTable.is_active, true),
+          ),
+        )
+        .all()
+      if (rows.length === 0) continue
+      db.update(ClaxedoProviderCredentialTable)
+        .set({ is_active: false, updated_at: now() })
+        .where(
+          and(
+            inOrg(orgId),
+            eq(ClaxedoProviderCredentialTable.provider_id, providerId),
+            eq(ClaxedoProviderCredentialTable.is_active, true),
+          ),
+        )
+        .run()
+      cleared.push(...rows.map((row) => row.id))
+    }
+    return { cleared }
+  })
+}
+
+/**
  * Get credential metadata by provider ID, optionally scoped to one `kind`.
  *
  * `provider_id` is NOT unique — `putCredential` upserts on (org, provider_id,
@@ -615,14 +661,32 @@ export function updateCredentialStatus(
   )
 }
 
-/** Persist the provider-backed health result consumed by every credential surface. */
+/**
+ * The verdicts that end an account's turn as the one its provider runs on.
+ *
+ * A rate cap is not one of them: the same login works again once the window
+ * resets, and moving off it would spend the next account's quota for nothing.
+ */
+const YIELDS_ACTIVE_MARK: readonly CredentialHealth[] = ["auth_failed", "no_billing", "expired"]
+
+/**
+ * Persist the provider-backed health result consumed by every credential
+ * surface, and hand the mark on when that result ends the account.
+ *
+ * Every refusal reaches here — the operator's Check and the broker's
+ * `reportFailure` both land on this one write — so the move belongs here rather
+ * than at either caller. The mark goes to the oldest account the provider can
+ * still run on, the same heir `deleteCredential` promotes; with no such account
+ * the refused row KEEPS the mark, because clearing it would silently drop the
+ * user onto the machine's own CLI login, which is only ever an explicit choice.
+ */
 export function updateCredentialHealth(
   id: string,
   health: CredentialHealth,
   validatedAt: number,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): void {
-  ClaxedoDB.use((db) =>
+  ClaxedoDB.transaction((db) => {
     db
       .update(ClaxedoProviderCredentialTable)
       .set({
@@ -633,8 +697,29 @@ export function updateCredentialHealth(
         updated_at: now(),
       })
       .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
-      .run(),
-  )
+      .run()
+    if (!YIELDS_ACTIVE_MARK.includes(health)) return
+    const refused = db
+      .select()
+      .from(ClaxedoProviderCredentialTable)
+      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
+      .get()
+    if (!refused?.is_active) return
+    const partition = { provider_id: refused.provider_id, owner: refused.owner ?? null }
+    const heir = oldestAvailable(db, org, partition)
+    if (!heir) return
+    db.update(ClaxedoProviderCredentialTable)
+      .set({ is_active: false, updated_at: now() })
+      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
+      .run()
+    markActive(db, org, heir.id)
+    log.info("Active credential yielded to the next account", {
+      credential_id: id,
+      provider_id: refused.provider_id,
+      health,
+      marked_active: heir.id,
+    })
+  })
 }
 
 /**
@@ -651,12 +736,12 @@ export function updateCredentialHealth(
  * millisecond share `created_at`, so insertion order decides between them and
  * the same account is promoted on every machine.
  */
-function markOldestAvailable(
+function oldestAvailable(
   db: ClaxedoDB.Client,
   org: CredentialOrgScope,
   partition: { provider_id: string; owner: string | null },
 ) {
-  const heir = db
+  return db
     .select()
     .from(ClaxedoProviderCredentialTable)
     .where(
@@ -670,11 +755,23 @@ function markOldestAvailable(
     .orderBy(asc(ClaxedoProviderCredentialTable.created_at), sql`rowid`)
     .all()
     .find((candidate) => fanoutEligible(toMetadata(candidate)))
-  if (!heir) return undefined
+}
+
+function markActive(db: ClaxedoDB.Client, org: CredentialOrgScope, id: string) {
   db.update(ClaxedoProviderCredentialTable)
     .set({ is_active: true, updated_at: now() })
-    .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, heir.id)))
+    .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
     .run()
+}
+
+function markOldestAvailable(
+  db: ClaxedoDB.Client,
+  org: CredentialOrgScope,
+  partition: { provider_id: string; owner: string | null },
+) {
+  const heir = oldestAvailable(db, org, partition)
+  if (!heir) return undefined
+  markActive(db, org, heir.id)
   return heir.id
 }
 

@@ -8,6 +8,7 @@ import { ProviderConnectForm, ProviderList } from "./app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import {
   discoverAIConnections,
+  loadMachineLogins,
   saveDiscoveredAIConnections,
   type AIConnectRequest,
   type AIVerificationResult,
@@ -79,6 +80,27 @@ const cloudHarnessOptions: readonly {
     view: { kind: "connect", providerId: "cursor-sdk" },
   },
 ]
+
+/**
+ * The three ways a harness reaches a cloud sandbox, as rows.
+ *
+ * Shown both where the user is choosing up front and where a scan of this
+ * machine came back with nothing to send — the same list, because it is the
+ * same question and the second is the first arrived at the long way round.
+ */
+const CloudHarnessChoices: Component<{ onChoose: (view: AIConnectView) => void }> = (props) => (
+  <For each={cloudHarnessOptions}>
+    {(option) => (
+      <button type="button" class="setup-row" onClick={() => props.onChoose(option.view)}>
+        <span class="setup-row-copy">
+          <span class="text-13-medium text-text-strong">{option.label}</span>
+          <span class="setup-row-consequence text-12-regular">{option.consequence}</span>
+        </span>
+        <Icon name="chevron-right" size="small" class="setup-row-chevron" />
+      </button>
+    )}
+  </For>
+)
 
 export type AIConnectSurfaceProps = {
   localDiscovery: boolean
@@ -173,22 +195,28 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
   async function discover() {
     props.onViewChange({ kind: "detect" })
     transition({ type: "discovery-started" })
-    await discoverAIConnections({ serverUrl: props.serverUrl, request: props.request })
-      .then((result) => {
-        transition({
-          type: "discovery-succeeded",
-          discoveryId: result.discoveryId,
-          items: result.items,
-          destination: destination(),
+    // A local-only run writes nothing, so there is nothing to collect: the
+    // question is which harnesses on this machine already have a login, and
+    // each harness is the only honest answer to that.
+    if (!stores()) {
+      await loadMachineLogins({ serverUrl: props.serverUrl, request: props.request })
+        .then((logins) => {
+          transition({ type: "machine-logins-read", logins })
+          props.onLocalHarnessesDetected?.(
+            localHarnessStatuses(logins)
+              .filter((harness) => harness.state === "signed_in")
+              .map((harness) => harness.id),
+          )
         })
-        const current = state()
-        if (current.phase !== "confirmed") return
-        props.onLocalHarnessesDetected?.(
-          localHarnessStatuses(current.rows)
-            .filter((harness) => harness.state === "working")
-            .map((harness) => harness.id),
-        )
-      })
+        .catch((error: unknown) => transition({ type: "failed", message: errorText(error) }))
+      return
+    }
+    await discoverAIConnections({ serverUrl: props.serverUrl, request: props.request })
+      .then((result) => transition({
+        type: "discovery-succeeded",
+        discoveryId: result.discoveryId,
+        items: result.items,
+      }))
       .catch((error: unknown) => transition({ type: "failed", message: errorText(error) }))
   }
 
@@ -266,21 +294,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
           }
         >
           <div class="setup-rows">
-            <For each={cloudHarnessOptions}>
-              {(option) => (
-                <button
-                  type="button"
-                  class="setup-row"
-                  onClick={() => props.onViewChange(option.view)}
-                >
-                  <span class="setup-row-copy">
-                    <span class="text-13-medium text-text-strong">{option.label}</span>
-                    <span class="setup-row-consequence text-12-regular">{option.consequence}</span>
-                  </span>
-                  <Icon name="chevron-right" size="small" class="setup-row-chevron" />
-                </button>
-              )}
-            </For>
+            <CloudHarnessChoices onChoose={props.onViewChange} />
             <button type="button" class="setup-row" onClick={() => props.onViewChange({ kind: "providers" })}>
               <span class="setup-row-copy">
                 <span class="text-13-medium text-text-strong">Something else</span>
@@ -428,11 +442,22 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
             <Show
               when={current().items.length > 0}
               fallback={
-                <div class="setup-block">
-                  <p class="text-13-regular text-text-weak">No supported logins found on this machine.</p>
-                  <Button class="self-start" variant="secondary" onClick={() => props.onViewChange({ kind: "providers" })}>
-                    Choose a provider instead
-                  </Button>
+                /*
+                  A sandbox needs a credential of its own, and the logins this
+                  computer holds are not copyable — a Claude Code token is
+                  rotated out from under any copy within hours, and a Codex one
+                  belongs to a file its CLI rewrites. So the honest answer to an
+                  empty scan is not "nothing found" with a dead end, it is the
+                  three ways each harness DOES reach a sandbox.
+                */
+                <div class="setup-block" data-component="cloud-connect-instead">
+                  <p class="text-13-regular text-text-weak">
+                    Nothing on this computer can be sent to a sandbox. The logins your agents use here
+                    belong to their own CLIs. Give each harness a credential of its own instead:
+                  </p>
+                  <div class="setup-rows">
+                    <CloudHarnessChoices onChoose={props.onViewChange} />
+                  </div>
                 </div>
               }
             >
@@ -495,7 +520,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
           {(current) => (
             <div class="setup-block">
               <div class="setup-rows">
-                <For each={localHarnessStatuses(current().rows)}>
+                <For each={localHarnessStatuses(current().logins)}>
                   {(harness) => (
                     <div class="setup-row" data-harness={harness.id} data-state={harness.state}>
                       <span class="setup-row-copy">
@@ -504,24 +529,23 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
                           {harnessDetail(harness)}
                         </span>
                       </span>
-                      <Show when={harness.state === "working"}>
+                      <Show when={harness.state === "signed_in"}>
                         <span class="setup-verified text-12-regular">
                           <Icon name="circle-check" size="small" />
                           Ready
                         </span>
                       </Show>
-                      <Show when={harness.state === "broken"}>
+                      <Show when={harness.state === "unknown"}>
                         <span class="setup-status text-12-regular">
                           <Icon name="warning" size="small" />
                           Needs attention
                         </span>
                       </Show>
-                      {/* Deliberately not a checkmark — see LocalHarnessStatus. */}
-                      <Show when={harness.state === "unverifiable"}>
-                        <span class="setup-status text-12-regular">Signed in</span>
-                      </Show>
-                      <Show when={harness.state === "missing"}>
+                      <Show when={harness.state === "signed_out"}>
                         <span class="setup-status text-12-regular">Not signed in</span>
+                      </Show>
+                      <Show when={harness.state === "absent"}>
+                        <span class="setup-status text-12-regular">Not installed</span>
                       </Show>
                     </div>
                   )}
@@ -530,7 +554,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
               <p class="text-12-regular text-text-weak">
                 Nothing was saved. Sign out of a CLI and agents here lose that access too.
               </p>
-              <Show when={localHarnessStatuses(current().rows).every((harness) => harness.state === "missing")}>
+              <Show when={localHarnessStatuses(current().logins).every((harness) => harness.state !== "signed_in")}>
                 <Button class="self-start" variant="secondary" onClick={() => props.onViewChange({ kind: "providers" })}>
                   Connect a provider instead
                 </Button>
@@ -618,10 +642,12 @@ function probeReason(probe: AIDiscoveryProbe | undefined, state: "broken" | "unk
 
 /** A harness row's sub-line: what the user has, and what to do when they don't. */
 function harnessDetail(harness: LocalHarnessStatus) {
-  if (harness.state === "working") return "Ready to use."
-  if (harness.state === "missing") return `Run \`${harness.signIn}\` to use it here.`
-  // States what is and isn't established, without implying either.
-  if (harness.state === "unverifiable") return `Signed in to ${harness.signIn} works here. We can't check it yet.`
+  if (harness.state === "signed_in") {
+    return [harness.email, harness.plan ? `${harness.plan} plan` : undefined].filter(Boolean).join(" · ")
+      || "Ready to use."
+  }
+  if (harness.state === "signed_out") return `Run \`${harness.signIn}\` to use it here.`
+  if (harness.state === "absent") return `Not installed. Install it, then run \`${harness.signIn}\`.`
   return harness.detail || "Sign in again to use it here."
 }
 

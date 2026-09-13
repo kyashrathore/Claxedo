@@ -51,6 +51,7 @@ import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { migrateCredentials } from "../credentials/operations/migrate"
+import { dropCopiedHarnessLogins } from "../credentials/operations/drop-copied-harness-logins"
 import { createLocalCredentialBroker } from "../credentials/broker"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
 import { getLocalUsageLimits } from "../deployments/local/server-usage-limits"
@@ -173,6 +174,9 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   ClaxedoDB.raw()
 
   // Deferred and non-blocking: a credential migration must never gate startup.
+  dropCopiedHarnessLogins().catch((error: unknown) => {
+    log.warn("Failed to forget copied harness logins", { error: String(error) })
+  })
   migrateCredentials().catch((error) => {
     log.warn("credential migration failed", { error: String(error) })
   })
