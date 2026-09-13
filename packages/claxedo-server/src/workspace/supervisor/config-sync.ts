@@ -7,7 +7,7 @@ import {
 } from "./control-token"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
 import { runtimeWorkspaceDir } from "./state"
-import { supervisorSandboxDriverId } from "./sandbox"
+import { supervisorSandboxDriverId } from "./driver-id"
 import type { WorkspaceRuntimeState } from "./store"
 import { numberField, readJsonRecord } from "@claxedo/server-core/platform/json/index"
 

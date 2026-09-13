@@ -33,6 +33,7 @@ import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
 import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
+import { projectNativeProviderAuth } from "@claxedo/server-core/credentials/native-delivery"
 import {
   mountControlPlaneRouteContributions,
   type ControlPlaneRouteContribution,
@@ -143,6 +144,7 @@ import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
   createLocalCredentialBroker,
   startEmbeddedWorkspaceRuntimeConfigRenewal,
+  type LocalCredentialBroker,
 } from "@claxedo/local-server/self-hosted-execution"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { createLocalDocumentsBackend } from "@claxedo/server-core/documents/backends/local/backend"
@@ -1374,6 +1376,21 @@ export type ControlPlaneStackOptions = {
   routeContributions?: readonly ControlPlaneRouteContribution[]
 }
 
+/**
+ * The credential authority this box installs.
+ *
+ * The loopback broker answers for a runtime on this listener. A cloud sandbox's
+ * credential never traverses it, so that projection is answered with or without
+ * a broker: a composition that answers shared scope with nothing sends the
+ * harness no projection at all, and a harness with no projection runs on
+ * whatever login its image carries.
+ */
+export function selfHostedCredentialAuthority(
+  broker?: Pick<LocalCredentialBroker, "projectAuth">,
+): NonNullable<Parameters<typeof configureAgentConfig>[0]>["projectAuth"] {
+  return (input) => broker ? broker.projectAuth(input) : projectNativeProviderAuth(input)
+}
+
 export function captureControlPlaneStartupTelemetry(
   services: ControlPlaneServices,
   input: { port: number },
@@ -1604,18 +1621,16 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         .map((workspace) => ensureEmbeddedWorkspaceRuntime(workspace, { config: "skip" })),
     )
   }
-  // The credential authority for this box: the value stays in this process and
-  // each harness receives a broker endpoint on this same listener. The
-  // per-harness launch projection is the one other agent-config option; this
-  // deployment does not contribute it.
+  // The credential authority for this box: a local runtime's harness receives a
+  // broker endpoint on this same listener and the value stays in this process.
+  // The per-harness launch projection is the one other agent-config option;
+  // this deployment does not contribute it.
   const credentialBroker = options.egressBroker
     ? undefined
     : createLocalCredentialBroker({ dataDir: dataDir(), brokerOrigin: `http://127.0.0.1:${port}` })
   configureAgentConfig({
     connectionProviders,
-    ...(credentialBroker
-      ? { projectAuth: (input) => credentialBroker.projectAuth(input) }
-      : {}),
+    projectAuth: selfHostedCredentialAuthority(credentialBroker),
   })
   // A placeholder expires; re-projecting on this interval and re-applying the
   // snapshot is what puts the next one in front of the next turn's spawn.

@@ -463,9 +463,9 @@ async function startRuntime(state: WorkspaceRuntimeState, stated?: SandboxBindin
   }
   const authority = await resolveSandboxBindings(state, stated)
   // A warm runtime is served from memory only while it already holds the
-  // authority this ensure demands. Answering on presence rather than on change
-  // sent every message through the driver, which on a replacement-host driver
-  // is a new sandbox per message.
+  // authority this ensure demands. Answering on the presence of an account
+  // rather than on a change to it sends every message through the driver, which
+  // on a replacement-host driver is a new sandbox per message.
   if (state.status === "ready" && state.url && sandboxAuthoritySatisfied(state, authority)) {
     state.used_at = now()
     scheduleStop(state)

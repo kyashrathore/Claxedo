@@ -32,6 +32,7 @@ export {
 
 // ── Local credential authority ──────────────────────────────────────────────
 export { createLocalCredentialBroker } from "./credentials/broker"
+export type { LocalCredentialBroker } from "./credentials/broker"
 
 // ── Local route surface ─────────────────────────────────────────────────────
 export { AgentConfigRoutes } from "./agent-config/routes/index"

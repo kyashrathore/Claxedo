@@ -41,8 +41,7 @@ import {
   type ProviderDestination,
 } from "@claxedo/server-core/credentials/destinations"
 import {
-  nativeProviderAuth,
-  nativeProviderDeliveries,
+  projectNativeProviderAuth,
   type SandboxSecretBrokering,
 } from "@claxedo/server-core/credentials/native-delivery"
 
@@ -305,10 +304,11 @@ export function createLocalCredentialBroker(input: {
       // variable that edge fills. Same authority, same selection, other
       // delivery.
       if (scope === "shared") {
-        return nativeProviderAuth(await nativeProviderDeliveries({
-          org,
+        return await projectNativeProviderAuth({
+          scope,
+          orgId: org,
           ...(secretBrokering ? { secretBrokering } : {}),
-        }))
+        })
       }
       const selection = selectedCredentials(scope, org)
       const rows: Record<string, ProviderProjectionSource> = {}

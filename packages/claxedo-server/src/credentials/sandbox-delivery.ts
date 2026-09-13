@@ -3,6 +3,7 @@ import {
   nativeDeliveryDigest,
   nativeProviderDeliveries,
   nativeProviderSecrets,
+  unreadableDeliveries,
   type SandboxSecretBrokering,
 } from "@claxedo/server-core/credentials/native-delivery"
 
@@ -26,28 +27,38 @@ export type SandboxSecretPlan = {
  * Always the whole desired set, never an addition. A driver reconciles the
  * workspace's secrets against exactly this list, so an account the operator
  * revoked or replaced is withdrawn from the provider edge by being absent from
- * it, and the runtime's next projection says the same. A revoked account is
- * still a marked account, so it keeps this deployment stating the set — which
- * is what withdraws the value it used to carry.
+ * it, and the runtime's next projection says the same.
  *
- * Nothing at all — no stated secret and no marked account — answers with no set
- * and no digest, because an empty set tells the driver to withdraw what the
- * workspace holds, and a deployment with no accounts has no standing to say
- * that about secrets another caller installed. A driver that cannot broker is
- * answered the same way: its turns are refused through the projection, and
- * handing the manager a native secret it must fail closed on would leave the
- * workspace unprovisionable instead.
+ * `installed` is the digest this workspace's sandbox already holds, which is
+ * what separates "nothing to say" from "everything is gone".
  */
 export async function sandboxBrokeredSecrets(input: {
   stated?: readonly SandboxBrokeredSecret[]
   org?: string
   secretBrokering?: SandboxSecretBrokering
+  installed?: string
 }): Promise<SandboxSecretPlan> {
+  // A driver that cannot broker is told nothing: the manager fails closed on a
+  // native secret it is handed, which would leave the workspace unprovisionable
+  // instead of refusing the turn.
   if (input.secretBrokering === "none") {
     return input.stated ? { secrets: [...input.stated] } : {}
   }
   const deliveries = await nativeProviderDeliveries(input.org ? { org: input.org } : {})
-  if (!input.stated && deliveries.length === 0) return {}
+  // Nothing installed and no marked account: say nothing at all, because an
+  // empty set tells the driver to withdraw what the workspace holds and secrets
+  // another caller installed are not ours to remove. Once something of ours IS
+  // installed, having no account left is a change, and the empty set is how the
+  // last one reaches the provider edge as a withdrawal.
+  if (!input.stated && deliveries.length === 0 && input.installed === undefined) return {}
+  // An account whose secret could not be read is not a withdrawn one. Stating a
+  // set without it would write the revoked value over a credential nobody
+  // revoked, so a sandbox that already holds a set keeps it and the next ensure
+  // after the backend answers again reconciles. A caller that stated secrets of
+  // its own is asking for a reconcile this round and gets one.
+  if (unreadableDeliveries(deliveries).length > 0 && input.installed !== undefined && !input.stated) {
+    return { digest: input.installed }
+  }
   const delivered = nativeProviderSecrets(deliveries)
   const stated = input.stated ?? []
   const collision = delivered.find((secret) => stated.some((row) => row.name === secret.name))

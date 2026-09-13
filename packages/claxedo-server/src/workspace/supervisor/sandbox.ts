@@ -21,7 +21,6 @@ import {
 } from "@claxedo/sandbox-manager/lease-policy"
 import { emitProvision } from "../../sandbox/provision-events"
 import { sandboxDriverAuthAsync } from "../../sandbox/driver-auth"
-import { defaultSandboxDriverID } from "@claxedo/sandbox-manager/driver-catalog"
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
@@ -38,6 +37,7 @@ import {
 import { pushRuntimeConfig } from "./config-sync"
 import { sandboxBrokeredSecrets } from "../../credentials/sandbox-delivery"
 import { sandboxDriverCatalog } from "@claxedo/sandbox-manager/driver-catalog"
+import { supervisorSandboxDriverId } from "./driver-id"
 import {
   createSupervisorSandboxLeaseStore,
   getSupervisorSandboxLease,
@@ -94,13 +94,6 @@ export type SandboxAuthority = {
   digest?: string
 }
 
-/** The driver this workspace's sandbox runs on, resolved the way `startSandbox` resolves it. */
-export async function supervisorSandboxDriverId(state: WorkspaceRuntimeState): Promise<SandboxDriverID> {
-  return state.ws.driver
-    ?? needWorkspaceSupervisorOptions().default_sandbox_driver
-    ?? defaultSandboxDriverID(sandboxDriverConfig(await loadUserConfig()))
-}
-
 /**
  * What the caller stated for its own request, plus the operator's active
  * provider accounts, which belong to the deployment rather than to any request.
@@ -117,6 +110,7 @@ export async function resolveSandboxBindings(
   const plan = await sandboxBrokeredSecrets({
     ...(bindings?.secrets ? { stated: bindings.secrets } : {}),
     ...(state.ws.org_id ? { org: state.ws.org_id } : {}),
+    ...(state.installed_secrets === undefined ? {} : { installed: state.installed_secrets }),
     secretBrokering: sandboxDriverCatalog[await supervisorSandboxDriverId(state)].metadata.secretBrokering,
   })
   return {

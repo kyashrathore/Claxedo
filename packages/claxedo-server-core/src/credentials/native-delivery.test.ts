@@ -19,14 +19,20 @@ const {
   nativeProviderAuth,
   nativeProviderDeliveries,
   nativeProviderSecrets,
+  projectNativeProviderAuth,
   providerPlaceholderEnv,
 } = await import("./native-delivery")
+const { configureAgentConfig, disposeAgentConfig } = await import("../agent-config/index")
+const { createClaxedoRuntimeConfig } = await import("../hosts/workspace-runtime/runtime-config")
 const { ClaxedoDB } = await import("../platform/db")
 ClaxedoDB.Drizzle()
 
 const API_KEY = "sk-ant-api03-fixture-key"
 const SUBSCRIPTION = JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat01-fixture" } })
 const consent = { at: 1, surface: "desktop_discovery" } as const
+
+/** Two marks in the same millisecond carry the same `updated_at`; this separates them. */
+const tick = () => new Promise((resolve) => setTimeout(resolve, 5))
 
 async function shared(input: { provider_id: string; kind: "api_key" | "oauth_token"; secret: string; label?: string }) {
   return await putCredential({
@@ -47,6 +53,7 @@ describe("native provider delivery", () => {
   })
 
   afterAll(async () => {
+    disposeAgentConfig()
     setBackendOverride(undefined)
     ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
@@ -197,22 +204,33 @@ describe("native provider delivery", () => {
     })])
   })
 
-  test("a second account on one vendor host is refused rather than left to the edge to pick", async () => {
+  test("the account marked most recently claims a shared vendor host, and the other is told so", async () => {
     const key = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
-    const other = await shared({ provider_id: "anthropic", kind: "oauth_token", secret: SUBSCRIPTION })
-    setActiveCredentials([key.id, other.id])
+    const subscription = await shared({ provider_id: "anthropic", kind: "oauth_token", secret: SUBSCRIPTION })
+    setActiveCredentials([key.id])
+    await tick()
+    setActiveCredentials([subscription.id])
 
-    const deliveries = await nativeProviderDeliveries()
-
-    // Which of the two the resolution reaches first is the registry's row
-    // order; that exactly one is delivered is the guarantee.
-    expect(nativeProviderSecrets(deliveries)).toEqual([expect.objectContaining({
+    const first = await nativeProviderDeliveries()
+    expect(nativeProviderSecrets(first)).toEqual([expect.objectContaining({
+      name: "CLAXEDO_PROVIDER_ANTHROPIC",
       hosts: ["api.anthropic.com"],
     })])
-    expect(Object.values(nativeProviderAuth(deliveries))).toContainEqual({
+    expect(nativeProviderAuth(first)["claude-sdk"]).toEqual({
       unavailable: true,
-      reason: "duplicate_destination_host",
+      reason: "duplicate_destination_host: api.anthropic.com is delivered for anthropic, marked more recently",
     })
+
+    // The mark decides, not the provider id: marking the other one again moves
+    // the host to it.
+    await tick()
+    setActiveCredentials([key.id])
+
+    const second = await nativeProviderDeliveries()
+    expect(nativeProviderSecrets(second)).toEqual([expect.objectContaining({
+      name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+    })])
+    expect(nativeProviderAuth(second).anthropic).toMatchObject({ unavailable: true })
   })
 
   test("the digest moves with a rotation and not with a re-read", async () => {
@@ -225,6 +243,47 @@ describe("native provider delivery", () => {
     await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-rotated")
 
     expect(nativeDeliveryDigest(await nativeProviderDeliveries())).not.toBe(before)
+  })
+
+  test("a none-driver snapshot reaches the runtime saying the credential cannot be delivered", async () => {
+    const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
+    setActiveCredentials([credential.id])
+    configureAgentConfig({ projectAuth: projectNativeProviderAuth })
+
+    const snapshot = await createClaxedoRuntimeConfig({
+      secretScope: "shared",
+      workspaceId: "ws_1",
+      secretBrokering: "none",
+    })
+
+    // The whole path, not the authority alone: a composition that answers
+    // shared scope with nothing sends the harness no projection, and a harness
+    // with no projection runs on the login its image carries.
+    expect(snapshot.auth).toEqual({
+      "claude-sdk": { unavailable: true, reason: "secret_brokering_unsupported" },
+    })
+    expect(JSON.stringify(snapshot)).not.toContain(API_KEY)
+  })
+
+  test("a native-driver snapshot reaches the runtime naming the variable its provider fills", async () => {
+    const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
+    setActiveCredentials([credential.id])
+    configureAgentConfig({ projectAuth: projectNativeProviderAuth })
+
+    const snapshot = await createClaxedoRuntimeConfig({
+      secretScope: "shared",
+      workspaceId: "ws_1",
+      secretBrokering: "native",
+    })
+
+    expect(snapshot.auth).toEqual({
+      "claude-sdk": {
+        baseUrl: "https://api.anthropic.com",
+        placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        authMode: "api-key",
+        apiPath: "/v1",
+      },
+    })
   })
 
   test("an account kept out of shared scope is delivered to nothing", async () => {
