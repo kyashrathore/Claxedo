@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { createProject, projectRequestMessage, type ProjectRecord, type ProjectSource } from "../data/project-api"
 
 /**
@@ -162,29 +163,34 @@ export function ProjectCreateForm(props: {
         }
       >
         <div class="flex flex-col gap-1">
-          <span class={label()}>Project</span>
-          <div class="flex items-center gap-2">
-            <div class={`flex min-w-0 flex-1 items-center ${box()}`} title={folder() || undefined}>
-              <Show
-                when={folder()}
-                fallback={
-                  <span class={comfortable() ? "text-14-regular text-text-weak/60" : "text-13-regular text-text-weak/60"}>
-                    No folder selected
-                  </span>
-                }
-              >
-                <span
-                  class={`truncate font-mono text-text-strong ${comfortable() ? "text-13-regular" : "text-12-regular"}`}
-                  data-slot="project-create-folder"
-                >
-                  {folder()}
+          <span class={label()}>Folder</span>
+          <button
+            type="button"
+            aria-label="Choose folder"
+            title={folder() || undefined}
+            class={`${box()} flex w-full min-w-0 items-center gap-2 text-left transition-colors hover:border-border-interactive-base focus-visible:border-border-interactive-base focus-visible:outline-none`}
+            onClick={() => void chooseFolder()}
+          >
+            <Icon name="folder" size="small" class="shrink-0 text-icon-weak-base" />
+            <Show
+              when={folder()}
+              fallback={
+                <span class={`min-w-0 flex-1 truncate ${comfortable() ? "text-14-regular" : "text-13-regular"} text-text-weak/60`}>
+                  Choose a folder…
                 </span>
-              </Show>
-            </div>
-            <Button type="button" variant="secondary" size={control()} class="shrink-0" onClick={() => void chooseFolder()}>
-              Choose folder
-            </Button>
-          </div>
+              }
+            >
+              <span
+                class={`min-w-0 flex-1 truncate font-mono text-text-strong ${comfortable() ? "text-13-regular" : "text-12-regular"}`}
+                data-slot="project-create-folder"
+              >
+                {folder()}
+              </span>
+            </Show>
+            <span class={`shrink-0 ${comfortable() ? "text-12-medium" : "text-11-medium"} text-text-weak`}>
+              {folder() ? "Change" : "Browse"}
+            </span>
+          </button>
           <span class={hint()}>
             Runs on this machine or in a cloud sandbox; you choose when you start work.
           </span>
