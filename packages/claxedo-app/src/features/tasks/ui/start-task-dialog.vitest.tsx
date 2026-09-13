@@ -143,4 +143,27 @@ describe("start task dialog", () => {
 
     expect(onStart).toHaveBeenCalledTimes(1)
   })
+
+  test("the preview states the guarantee the resolved placement actually makes", () => {
+    mount({ preview: { status: "ready", preview: preview() } })
+    expect(screen.getByTestId("start-task-preview-capabilities").textContent).toContain(
+      "not enforced for local sessions",
+    )
+
+    cleanup()
+    mount({
+      preview: {
+        status: "ready",
+        preview: {
+          ...preview(),
+          placement: "cloud",
+          capabilities: { mode: "selected", plugins: [], skills: [] },
+        },
+      },
+    })
+
+    const notice = screen.getByTestId("start-task-preview-capabilities").textContent ?? ""
+    expect(notice).toContain("only their credentials are brokered")
+    expect(notice).toContain("repository, shell and network still follow the host's policy")
+  })
 })

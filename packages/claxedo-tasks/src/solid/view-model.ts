@@ -36,6 +36,19 @@ export const PLACEMENT_LABELS: Readonly<Record<PresetPlacement, string>> = {
 /** The one sentence the Local placement is allowed to make about capabilities. */
 export const LOCAL_CAPABILITY_TEXT = "Use local skills and plugins"
 
+/**
+ * What each placement guarantees, as the low-level design states it: the
+ * selected-only promise covers registered optional capabilities and their
+ * credentials. It does not cover the repository, the shell or the network,
+ * which the host's own policy governs, and saying otherwise would promise an
+ * isolation this does not build.
+ */
+export const CAPABILITY_GUARANTEE: Readonly<Record<PresetPlacement, string>> = {
+  local: "Uses this machine's current skills and plugins. The selection below is not enforced for local sessions.",
+  cloud:
+    "Only the selected plugins and skills are installed in the isolated cloud workspace, and only their credentials are brokered. The repository, shell and network still follow the host's policy, so this limits registered capabilities, not everything the agent can reach.",
+}
+
 export const TASK_COLLECTIONS = ["active", "backlog", "all"] as const
 export type TaskCollection = (typeof TASK_COLLECTIONS)[number]
 
@@ -90,6 +103,8 @@ export type TaskLinkGroup = {
 
 export type TaskDetailView = {
   task: Task
+  /** The task this one is a subtask of, once its own read has answered. */
+  parent?: { id: string; title: string }
   children: readonly TaskSummary[]
   groups: readonly TaskLinkGroup[]
   /** Slots the chosen presets actually configure; unconfigured slots are not offered. */

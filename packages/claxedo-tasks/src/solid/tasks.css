@@ -1381,3 +1381,49 @@
   outline-offset: 1px;
   border-radius: var(--radius-5);
 }
+
+.tsk-parent-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-start;
+  max-width: 100%;
+  height: 20px;
+  padding: 0 8px;
+  background: var(--surface-weak);
+  border: 0;
+  border-radius: var(--radius-pill);
+  color: var(--text-weak);
+  font: inherit;
+  font-size: var(--font-size-x-small);
+  cursor: pointer;
+}
+
+.tsk-parent-tag:hover:not(:disabled) {
+  color: var(--text-strong);
+}
+
+.tsk-parent-tag:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.tsk-parent-tag:disabled {
+  cursor: default;
+}
+
+.tsk-notice-inline {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-relaxed);
+}
+
+.tsk-notice-glyph {
+  flex: none;
+  color: var(--icon-base);
+  line-height: inherit;
+}

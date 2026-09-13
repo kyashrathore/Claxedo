@@ -17,6 +17,7 @@ import {
   type ConfigurationEditor,
   type PresetEditorDraft,
 } from "./preset-editor-model"
+import { CapabilityNotice } from "./capability-notice"
 import {
   LOCAL_CAPABILITY_TEXT,
   PLACEMENT_LABELS,
@@ -188,14 +189,8 @@ export function PresetEditor(props: PresetEditorProps) {
 
           <section class="tsk-stack" aria-label="Capabilities">
             <h3 class="tsk-section-title">Capabilities</h3>
-            <Show
-              when={isCloud()}
-              fallback={
-                <p class="tsk-hint" data-testid="preset-editor-local-capabilities">
-                  {LOCAL_CAPABILITY_TEXT}
-                </p>
-              }
-            >
+            <CapabilityNotice placement={props.draft.placement} testId="preset-editor-capability-guarantee" />
+            <Show when={isCloud()}>
               <CapabilityPicker draft={props.draft} catalog={props.catalog} onDraftChange={props.onDraftChange} />
             </Show>
           </section>
@@ -308,8 +303,8 @@ function CapabilityPicker(props: {
   return (
     <div class="tsk-stack" data-testid="preset-editor-cloud-capabilities">
       <p class="tsk-hint">
-        Cloud runs only what you select here, plus the platform tools every session needs. An empty selection means none
-        of these optional capabilities.
+        An empty selection means none of these optional capabilities. The platform tools every session needs are always
+        present.
       </p>
       <Show when={catalog().error}>{(message) => <p class="tsk-error">{message()}</p>}</Show>
       <Show when={catalog().loading}>

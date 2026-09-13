@@ -81,6 +81,26 @@ describe("task board", () => {
     expect(onStatusChange).not.toHaveBeenCalled()
   })
 
+  // The title line is a narrow target on a card that is mostly padding and
+  // meta, and a subtask's card is the one most often clicked by its parent's
+  // reader. The card itself opens the task.
+  test("clicking anywhere on a card opens that task, subtask card included", () => {
+    const { onSelect } = mount([{ ...summary("child", "todo"), parentTaskId: "a" }])
+
+    fireEvent.click(screen.getByTestId("tasks-board-card-child"))
+
+    expect(onSelect).toHaveBeenCalledWith("child")
+  })
+
+  test("the row tools swallow their own clicks, so a status change never also opens the task", () => {
+    const { onSelect, onStatusChange } = mount([summary("a", "todo")])
+
+    fireEvent.change(openActions("a"), { target: { value: "doing" } })
+
+    expect(onStatusChange).toHaveBeenCalledWith({ taskId: "a", revision: 4, status: "doing" })
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
   test("an archived card cannot be dragged and its menu is disabled", () => {
     mount([{ ...summary("a", "todo"), archivedAt: 12 }])
 

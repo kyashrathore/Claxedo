@@ -31,6 +31,9 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   const invalidate = useTasksInvalidation(props.scope)
   const detail = useTaskDetail(props.scope, () => props.taskId)
   const children = useTaskChildren(props.scope, () => props.taskId)
+  // A subtask names its parent, which only the parent's own read can title.
+  // Disabled for a top-level task, so a page that has no parent asks for none.
+  const parent = useTaskDetail(props.scope, () => detail.data?.task.parentTaskId ?? undefined)
   const [busy, setBusy] = createSignal(false)
   const [sendError, setSendError] = createSignal<string | undefined>()
 
@@ -102,6 +105,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
           <TaskDetail
             view={{
               task: current(),
+              ...(parent.data?.task ? { parent: { id: parent.data.task.id, title: parent.data.task.title } } : {}),
               children: children.items(),
               groups: groups(),
               // Every slot the host has ever linked, plus Primary, which is
@@ -146,6 +150,9 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             onSendTask={(link) => void sendTask(current(), link)}
             onBack={props.onBack}
             onOpenProject={props.onOpenProject ? () => props.onOpenProject?.(current().projectId) : undefined}
+            onOpenParent={
+              current().parentTaskId ? () => props.onOpenTask(current().parentTaskId!) : undefined
+            }
             onArchive={() =>
               void mutate(
                 () =>
@@ -166,15 +173,14 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                 current().id,
               )
             }
+            // Absent on a subtask: subtasks are one level deep, so there is no
+            // section to show rather than a section that explains itself away.
             subtasks={
+              current().parentTaskId !== null ? undefined : (
               <TaskSubtasks
                 items={children.items()}
-                canAdd={current().parentTaskId === null && current().status !== "done" && current().archivedAt === null}
-                addDisabledReason={
-                  current().parentTaskId === null
-                    ? "Reopen this task to add a subtask."
-                    : "Subtasks are one level deep."
-                }
+                canAdd={current().status !== "done" && current().archivedAt === null}
+                addDisabledReason="Reopen this task to add a subtask."
                 busy={busy()}
                 error={props.store.state.taskErrors[current().id]}
                 more={followRetry(children)}
@@ -200,6 +206,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
                 }
                 onStatusChange={setStatus}
               />
+              )
             }
           />
         )

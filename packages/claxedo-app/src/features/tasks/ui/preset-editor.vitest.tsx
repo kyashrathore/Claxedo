@@ -155,9 +155,31 @@ describe("preset editor", () => {
   test("Local offers no selection controls and says it inherits this machine's configuration", () => {
     mount({ placement: "local" })
 
-    expect(screen.getByTestId("preset-editor-local-capabilities").textContent).toBe("Use local skills and plugins")
+    expect(screen.getByTestId("preset-editor-capability-guarantee").textContent).toContain(
+      "Uses this machine's current skills and plugins",
+    )
     expect(screen.queryByTestId("preset-editor-cloud-capabilities")).toBeNull()
     expect(screen.queryByTestId("preset-editor-plugins")).toBeNull()
+  })
+
+  // The promise is the low-level design's and no wider: it covers registered
+  // optional capabilities and their credentials, not the repository, the shell
+  // or the network.
+  test("Local says the selection it hides is not enforced there", () => {
+    mount({ placement: "local" })
+
+    const notice = screen.getByTestId("preset-editor-capability-guarantee").textContent ?? ""
+    expect(notice).toContain("Uses this machine's current skills and plugins")
+    expect(notice).toContain("not enforced for local sessions")
+  })
+
+  test("Cloud scopes the selected-only promise to capabilities and credentials", () => {
+    mount({ placement: "cloud" })
+
+    const notice = screen.getByTestId("preset-editor-capability-guarantee").textContent ?? ""
+    expect(notice).toContain("Only the selected plugins and skills are installed")
+    expect(notice).toContain("only their credentials are brokered")
+    expect(notice).toContain("repository, shell and network still follow the host's policy")
   })
 
   test("Cloud shows the installed catalog and records the exact selection", () => {

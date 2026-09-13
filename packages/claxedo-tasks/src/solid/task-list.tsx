@@ -152,7 +152,7 @@ function TaskRow(props: {
       </span>
       <span class="tsk-cell tsk-cell-time">{shortAge(props.task.updatedAt, props.now)}</span>
 
-      <span class="tsk-row-tools">
+      <span class="tsk-row-tools" onClick={(event) => event.stopPropagation()}>
         <Show when={props.offer}>
           {(offer) => <TaskStartControl task={props.task} offer={offer()} testIdPrefix="tasks-list" />}
         </Show>

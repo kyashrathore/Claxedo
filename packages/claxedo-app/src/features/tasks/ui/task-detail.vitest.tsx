@@ -71,6 +71,67 @@ function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> =
   return { onStart, onOpenSession, onSendTask }
 }
 
+/**
+ * A subtask page, as the panel composes it: the parent's own read supplies the
+ * title, and the subtasks section is absent rather than present and empty,
+ * because subtasks are one level deep.
+ */
+function mountSubtask(input: { onOpenParent?: () => void } = {}) {
+  render(() => (
+    <TaskDetail
+      view={{
+        task: task({ id: "tsk_child", title: "Write the importer test", parentTaskId: "tsk_1" }),
+        parent: { id: "tsk_1", title: "Ship the importer" },
+        children: [],
+        groups: [],
+        configuredSlots: ["primary"],
+      }}
+      edit={{ title: "Write the importer test", description: "" }}
+      dirty={false}
+      projectLabel="Importer"
+      onEditChange={() => {}}
+      onSave={() => {}}
+      onDiscard={() => {}}
+      onStatusChange={() => {}}
+      onOpenSession={() => {}}
+      onStart={() => {}}
+      onSendTask={() => {}}
+      onArchive={() => {}}
+      onRestore={() => {}}
+      onOpenParent={input.onOpenParent}
+    />
+  ))
+}
+
+describe("a subtask's own page", () => {
+  test("names the task it belongs to, and opens it", () => {
+    const onOpenParent = vi.fn()
+    mountSubtask({ onOpenParent })
+
+    expect(screen.getByTestId("task-detail-parent-tag").textContent).toBe("Subtask of Ship the importer")
+    fireEvent.click(screen.getByTestId("task-detail-parent-crumb"))
+
+    expect(onOpenParent).toHaveBeenCalledTimes(1)
+  })
+
+  test("carries the parent in the breadcrumb chain", () => {
+    mountSubtask({ onOpenParent: () => {} })
+
+    const crumbs = screen.getByLabelText("Breadcrumb").textContent ?? ""
+    expect(crumbs).toContain("Ship the importer")
+    expect(crumbs).toContain("Write the importer test")
+  })
+
+  test("shows no subtasks section at all, not an empty one", () => {
+    mountSubtask()
+
+    expect(screen.queryByTestId("task-subtasks")).toBeNull()
+    expect(screen.queryByText("Subtasks")).toBeNull()
+    expect(screen.queryByText("No subtasks yet.")).toBeNull()
+    expect(screen.queryByText("Subtasks are one level deep.")).toBeNull()
+  })
+})
+
 describe("task detail linked sessions", () => {
   test("a slot with no link offers Start on attempt 1", () => {
     const { onStart } = mount([])

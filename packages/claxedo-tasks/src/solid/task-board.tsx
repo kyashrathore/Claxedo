@@ -90,6 +90,10 @@ export function TaskBoard(props: TaskBoardProps) {
                     data-selected={props.selectedTaskId === task.id ? "true" : undefined}
                     data-dragging={dragging() === task.id ? "true" : undefined}
                     draggable={task.archivedAt === null}
+                    // The card is the target, as a list row is. The title
+                    // button stays for the keyboard and lets its click bubble
+                    // here rather than calling `onSelect` a second time.
+                    onClick={() => props.onSelect(task.id)}
                     onDragStart={() => setDragging(task.id)}
                     onDragEnd={() => {
                       setDragging(undefined)
@@ -101,7 +105,6 @@ export function TaskBoard(props: TaskBoardProps) {
                       class="tsk-card-title"
                       data-testid={`tasks-board-open-${task.id}`}
                       aria-current={props.selectedTaskId === task.id ? "true" : undefined}
-                      onClick={() => props.onSelect(task.id)}
                     >
                       {task.title}
                     </button>
@@ -117,7 +120,7 @@ export function TaskBoard(props: TaskBoardProps) {
                       </Show>
                       <span>{shortAge(task.updatedAt, now)}</span>
                       <span class="tsk-spacer" />
-                      <span class="tsk-row-tools">
+                      <span class="tsk-row-tools" onClick={(event) => event.stopPropagation()}>
                         <Show when={props.startOffer}>
                           {(offer) => <TaskStartControl task={task} offer={offer()(task)} testIdPrefix="tasks-board" />}
                         </Show>

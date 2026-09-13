@@ -36,6 +36,7 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
     <section class="tsk tsk-stack" data-testid="task-subtasks" aria-label="Subtasks">
       <div class="tsk-row tsk-spread">
         <h3 class="tsk-section-title">Subtasks</h3>
+        {/* 0/0 counts nothing; the add row below is the whole of an empty section. */}
         <Show when={props.items.length > 0}>
           <span class="tsk-cell tsk-num">
             {done()}/{props.items.length}
@@ -50,7 +51,7 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
       </Show>
 
       <div>
-        <For each={props.items} fallback={<p class="tsk-hint">No subtasks yet.</p>}>
+        <For each={props.items}>
           {(child) => (
             <div class="tsk-checklist-row">
               <button

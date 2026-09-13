@@ -1,5 +1,6 @@
 import "./tasks.css"
 
+export { CapabilityNotice } from "./capability-notice"
 export { TaskStatusChip, TaskStatusDot, StatusMenu } from "./status-menu"
 export { LoadMore, type MorePages } from "./load-more"
 export { ListFailureNotice, type ListFailure } from "./list-failure"
@@ -28,6 +29,7 @@ export {
   type PresetEditorParse,
 } from "./preset-editor-model"
 export {
+  CAPABILITY_GUARANTEE,
   LOCAL_CAPABILITY_TEXT,
   PLACEMENT_LABELS,
   SLOT_LABELS,

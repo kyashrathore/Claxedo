@@ -41,8 +41,13 @@ export type TaskDetailProps = {
   onBack?: () => void
   /** Opens the task list filtered to this task's project. */
   onOpenProject?: () => void
-  /** The subtasks section, rendered by the caller so the detail owns no data fetch. */
-  subtasks: JSX.Element
+  /** Opens the task this one is a subtask of. */
+  onOpenParent?: () => void
+  /**
+   * The subtasks section, rendered by the caller so the detail owns no data
+   * fetch. Absent on a subtask, which cannot have children of its own.
+   */
+  subtasks?: JSX.Element
 }
 
 export function TaskDetail(props: TaskDetailProps) {
@@ -73,9 +78,42 @@ export function TaskDetail(props: TaskDetailProps) {
               </button>
             )}
           </Show>
+          <Show when={props.view.parent}>
+            {(parent) => (
+              <>
+                <span class="tsk-crumb-sep" aria-hidden="true">›</span>
+                <Show when={props.onOpenParent} fallback={<span>{parent().title}</span>}>
+                  {(open) => (
+                    <button
+                      type="button"
+                      class="tsk-crumb-link"
+                      data-testid="task-detail-parent-crumb"
+                      onClick={() => open()()}
+                    >
+                      {parent().title}
+                    </button>
+                  )}
+                </Show>
+              </>
+            )}
+          </Show>
           <span class="tsk-crumb-sep" aria-hidden="true">›</span>
           <span class="tsk-crumb-current">{task().title}</span>
         </nav>
+
+        <Show when={props.view.parent}>
+          {(parent) => (
+            <button
+              type="button"
+              class="tsk-parent-tag"
+              data-testid="task-detail-parent-tag"
+              disabled={!props.onOpenParent}
+              onClick={() => props.onOpenParent?.()}
+            >
+              Subtask of <span class="tsk-truncate">{parent().title}</span>
+            </button>
+          )}
+        </Show>
 
         <input
           class="tsk-bare-title"
@@ -124,8 +162,14 @@ export function TaskDetail(props: TaskDetailProps) {
           </div>
         </Show>
 
-        <div class="tsk-divider" />
-        {props.subtasks}
+        <Show when={props.subtasks}>
+          {(section) => (
+            <>
+              <div class="tsk-divider" />
+              {section()}
+            </>
+          )}
+        </Show>
       </div>
 
       <aside class="tsk-rail">

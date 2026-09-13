@@ -2,6 +2,7 @@ import { For, Show, type JSX } from "solid-js"
 import { CONFIGURATION_SLOTS, TASKS_BOUNDS, isConfigurationSlot, type Preset } from "../contracts"
 import { ListFailureNotice, type ListFailure } from "./list-failure"
 import { LoadMore, type MorePages } from "./load-more"
+import { CapabilityNotice } from "./capability-notice"
 import { PLACEMENT_LABELS, SLOT_LABELS, type StartDraft, type StartPreviewState } from "./view-model"
 
 export type StartTaskDialogProps = {
@@ -223,10 +224,11 @@ function StartPreviewPanel(props: { preview: StartPreviewState; attempt: number 
               <dt>Effort</dt>
               <dd class="tsk-mono">{preview().configuration.effort ?? "Harness default"}</dd>
               <dt>Capabilities</dt>
-              <dd data-testid="start-task-preview-capabilities">
-                {preview().capabilities.mode === "inherit-local"
-                  ? "Uses this machine's current skills and plugins."
-                  : "Cloud runs only the plugins and skills this preset selects, plus the platform tools every session needs."}
+              <dd>
+                <CapabilityNotice
+                  placement={preview().capabilities.mode === "inherit-local" ? "local" : "cloud"}
+                  testId="start-task-preview-capabilities"
+                />
               </dd>
               <dt>Attempt</dt>
               <dd class="tsk-num">
