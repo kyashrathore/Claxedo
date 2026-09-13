@@ -9,6 +9,8 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { afterAll, describe, expect, test } from "vitest"
+import { presetRow, taskRow, SCOPES } from "@claxedo/tasks/test-support"
+import type { Task } from "@claxedo/tasks"
 
 const roots: string[] = []
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
@@ -16,7 +18,7 @@ const previousDataDir = process.env.CLAXEDO_DATA_DIR
 const { ClaxedoDB } = await import("../platform/db/index")
 const { sqliteTasksStore } = await import("./sqlite-store")
 const { TasksStoredRowError } = await import("./stored-rows")
-const { tasksStoreConformance, tasksCommandReplayConformance, CONFORMANCE_SCOPES } = await import("@claxedo/tasks/conformance")
+const { tasksStoreConformance, tasksCommandReplayConformance } = await import("@claxedo/tasks/conformance")
 
 /**
  * A fresh database file per case, rather than a DELETE sweep between them: the
@@ -58,27 +60,9 @@ describe("SQLite Tasks command replay conformance", () => {
   }
 })
 
-// One number per id, because the project's `(scope, project, number)` index is
-// unique and these rows are written straight past the service that mints them.
-const rowNumbers = ["task-anchor", "task-holding", "task-queued"] as const
-
-function taskRow(id: (typeof rowNumbers)[number]) {
-  return {
-    id,
-    revision: 1,
-    scopeId: "local",
-    projectId: "project-a",
-    number: rowNumbers.indexOf(id) + 1,
-    workspaceId: null,
-    parentTaskId: null,
-    title: id,
-    description: "",
-    status: "todo",
-    childSetRevision: 0,
-    archivedAt: null,
-    createdAt: 1,
-    updatedAt: 1,
-  } as const
+/** The scope this adapter serves. The kit's builders mint a number per id, which the unique index needs. */
+function localTask(id: string): Task {
+  return taskRow({ id, scopeId: "local", title: id })
 }
 
 function deferred(): { reached: Promise<void>; reach: () => void } {
@@ -92,7 +76,7 @@ function deferred(): { reached: Promise<void>; reach: () => void } {
 describe("SQLite Tasks store units", () => {
   test("a write from another module survives a Tasks unit that rolls back", async () => {
     freshDatabase()
-    await sqliteTasksStore.tasks.insert(taskRow("task-anchor"))
+    await sqliteTasksStore.tasks.insert(localTask("task-anchor"))
 
     const opened = deferred()
     const release = deferred()
@@ -121,11 +105,11 @@ describe("SQLite Tasks store units", () => {
 
     const held = deferred()
     const holding = sqliteTasksStore.transaction(async (operations) => {
-      await operations.tasks.insert(taskRow("task-holding"))
+      await operations.tasks.insert(localTask("task-holding"))
       await held.reached
     })
     const queued = sqliteTasksStore.transaction(async (operations) => {
-      await operations.tasks.insert(taskRow("task-queued"))
+      await operations.tasks.insert(localTask("task-queued"))
     })
     held.reach()
 
@@ -137,11 +121,11 @@ describe("SQLite Tasks store units", () => {
 
   test("a create that loses the task-number race is the conflict the hosted store reports", async () => {
     freshDatabase()
-    await sqliteTasksStore.tasks.insert(taskRow("task-holding"))
+    await sqliteTasksStore.tasks.insert(localTask("task-holding"))
 
     const raced = sqliteTasksStore.tasks.insert({
-      ...taskRow("task-queued"),
-      number: taskRow("task-holding").number,
+      ...localTask("task-queued"),
+      number: localTask("task-holding").number,
     })
     await expect(raced).rejects.toMatchObject({ name: "TasksStoreConflict", kind: "number-taken" })
   })
@@ -150,22 +134,17 @@ describe("SQLite Tasks store units", () => {
 describe("SQLite Tasks store persistence", () => {
   test("rows survive a reopened database", async () => {
     freshDatabase()
-    await sqliteTasksStore.tasks.insert({
-      id: "task-persist",
-      revision: 3,
-      scopeId: "local",
-      projectId: "project-a",
-      number: 1,
-      workspaceId: null,
-      parentTaskId: null,
-      title: "Survives a restart",
-      description: "body",
-      status: "doing",
-      childSetRevision: 2,
-      archivedAt: null,
-      createdAt: 10,
-      updatedAt: 20,
-    })
+    await sqliteTasksStore.tasks.insert(
+      taskRow({
+        id: "task-persist",
+        revision: 3,
+        scopeId: "local",
+        title: "Survives a restart",
+        description: "body",
+        status: "doing",
+        childSetRevision: 2,
+      }),
+    )
 
     ClaxedoDB.close()
     ClaxedoDB.Drizzle()
@@ -180,31 +159,27 @@ describe("SQLite Tasks store persistence", () => {
 
   test("a preset's execution and configurations come back as the records they were written from", async () => {
     freshDatabase()
-    await sqliteTasksStore.presets.insert({
-      id: "preset-cloud",
-      revision: 1,
-      scopeId: CONFORMANCE_SCOPES.first,
-      ownerId: "owner-a",
-      name: "Cloud review",
-      instructions: "Read the diff first.",
-      execution: {
-        placement: "cloud",
-        capabilities: {
-          mode: "selected",
-          plugins: [{ sourceId: "github:claxedo/plugins@main", pluginName: "reviewer" }],
-          skills: [{ sourceId: "github:claxedo/plugins@main", skillName: "diff-reading" }],
+    await sqliteTasksStore.presets.insert(
+      presetRow({
+        id: "preset-cloud",
+        name: "Cloud review",
+        instructions: "Read the diff first.",
+        execution: {
+          placement: "cloud",
+          capabilities: {
+            mode: "selected",
+            plugins: [{ sourceId: "github:claxedo/plugins@main", pluginName: "reviewer" }],
+            skills: [{ sourceId: "github:claxedo/plugins@main", skillName: "diff-reading" }],
+          },
         },
-      },
-      configurations: {
-        primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "opus" }, effort: "high" },
-        review: { harness: { id: "connection-7", access: "connection" }, model: { providerID: "openai", modelID: "gpt" }, effort: null },
-      },
-      archivedAt: null,
-      createdAt: 1,
-      updatedAt: 1,
-    })
+        configurations: {
+          primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "opus" }, effort: "high" },
+          review: { harness: { id: "connection-7", access: "connection" }, model: { providerID: "openai", modelID: "gpt" }, effort: null },
+        },
+      }),
+    )
 
-    const stored = await sqliteTasksStore.presets.get(CONFORMANCE_SCOPES.first, "preset-cloud")
+    const stored = await sqliteTasksStore.presets.get(SCOPES.first, "preset-cloud")
     expect(stored?.execution).toEqual({
       placement: "cloud",
       capabilities: {

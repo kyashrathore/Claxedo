@@ -6,6 +6,7 @@ import { Hono } from "hono"
 import { exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
 import { mintRelayHostToken } from "../../../workspace-relay/src/auth"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { NO_HARNESS_EFFORT } from "@claxedo/agent-sdk-runtime"
 import { createAgentRuntime } from "../../../agent-sdk-runtime/src/runtime"
 import type { AgentHarnessAdapter } from "../../../agent-sdk-runtime/src/adapter-contract"
 import { createMemoryRuntimeStore } from "../../../agent-sdk-runtime/src/stores/memory"
@@ -247,6 +248,7 @@ function runtimeAdapter() {
     async updateSessionConfig() {
       return { harness: { id: "pi", access: "native" }, agent: "build", variant: null }
     },
+    instructionChannel: "none" as const,
     readHarnessCapabilities() {
       return {
         harness: "pi",
@@ -263,6 +265,8 @@ function runtimeAdapter() {
         configOptions: false,
         subagents: false,
         goals: false,
+        effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "none" as const,
       }
     },
     async *executeTurn(execution, input) {

@@ -51,7 +51,7 @@ function fixtureProvider(input: { offeredModelId: string; effortLevels?: Harness
     resolve: () => ({ config: {} }),
     createAdapter: () => ({
       sessionConfigOwner: "runtime",
-      adapterCapabilities: ["session-instructions"],
+      instructionChannel: "turn-system-prompt" as const,
       async createSession(_directory, _title, id, options) {
         created.push({ id: id!, ...(options?.instructions ? { instructions: options.instructions } : {}) })
         return { id: id!, agentSessionId: `upstream-${id}` }
@@ -67,6 +67,7 @@ function fixtureProvider(input: { offeredModelId: string; effortLevels?: Harness
         goals: false,
         harness: "tasks-fixture",
         effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "turn-system-prompt" as const,
         modelSelection: {
           status: "optional" as const,
           models: [{ providerId: MODEL.providerID, modelId: input.offeredModelId, name: "Fixture" }],

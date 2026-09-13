@@ -6,11 +6,8 @@
  * and what the authority lets them reach — is decided before the bridge is
  * ever consulted.
  */
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
-import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
@@ -20,31 +17,24 @@ import { createHostedCoreApp } from "../deployments/hosted-shared/hosted-core-ap
 import { STATIC_PRODUCT_DESCRIPTORS } from "../deployments/hosted-shared/deployment-profile"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../authority/hosted-services"
 import type { ControlPlaneServices } from "../authority/services"
+import {
+  miniflareControlPlaneDatabase,
+  type ControlPlaneDatabase,
+} from "../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
 import { createHostedTasksComposition } from "./hosted-composition"
 
 const TASKS = "/api/claxedo/tasks"
-const active: Miniflare[] = []
+const active: ControlPlaneDatabase[] = []
 
 afterEach(async () => {
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
 async function database(): Promise<D1Database> {
-  const instance = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
-    d1Databases: ["CONTROL_PLANE_DB"],
-  })
+  const instance = await miniflareControlPlaneDatabase(["0024_claxedo_tasks.sql"])
   active.push(instance)
-  const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  const path = fileURLToPath(new URL("../../migrations/control-plane/0024_claxedo_tasks.sql", import.meta.url))
-  const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-  for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-    await target.prepare(statement).run()
-  }
-  return target
+  return instance.database
 }
 
 /** alice belongs to org-1 and may write project-a; bob belongs to org-2 and may write nothing of alice's. */

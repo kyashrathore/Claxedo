@@ -7,13 +7,11 @@
  * the conflict it was, which is what lets a duplicate command replay and a
  * losing edit answer 409.
  */
-import { readFile } from "node:fs/promises"
-import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
-import { Miniflare } from "miniflare"
 import type { D1Database } from "@cloudflare/workers-types"
 
-import { tasksStoreConformance, tasksCommandReplayConformance, CONFORMANCE_SCOPES } from "@claxedo/tasks/conformance"
+import { tasksStoreConformance, tasksCommandReplayConformance } from "@claxedo/tasks/conformance"
+import { linkRow, taskRow, SCOPES } from "@claxedo/tasks/test-support"
 import {
   TasksError,
   TasksStoreConflict,
@@ -27,77 +25,42 @@ import {
   type TasksSessionBridgePort,
 } from "@claxedo/tasks"
 
+import {
+  miniflareControlPlaneDatabase,
+  type ControlPlaneDatabase,
+} from "../test-support/control-plane-migrations"
 import { createD1TasksStore } from "./d1-store"
 
 // 0024 owns every table under test and references no auth table, so it is the
-// only migration this store needs. The real file runs — a hand-written schema
-// here would prove the store works against a table that does not ship.
+// only migration this store needs.
 const MIGRATIONS = ["0024_claxedo_tasks.sql"]
 
-const active: Miniflare[] = []
+const active: ControlPlaneDatabase[] = []
 
 afterEach(async () => {
   await Promise.all(active.splice(0).map((instance) => instance.dispose()))
 })
 
 async function database(): Promise<D1Database> {
-  const instance = new Miniflare({
-    modules: true,
-    script: "export default { fetch() { return new Response('ok') } }",
-    compatibilityDate: "2025-05-01",
-    d1Databases: ["CONTROL_PLANE_DB"],
-  })
+  const instance = await miniflareControlPlaneDatabase(MIGRATIONS)
   active.push(instance)
-  const target = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const name of MIGRATIONS) {
-    const path = fileURLToPath(new URL(`../../migrations/control-plane/${name}`, import.meta.url))
-    const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
-      await target.prepare(statement).run()
-    }
-  }
-  return target
-}
-
-function taskRow(input: Partial<Task> & Pick<Task, "id">): Task {
-  return {
-    id: input.id,
-    revision: input.revision ?? 1,
-    scopeId: input.scopeId ?? CONFORMANCE_SCOPES.first,
-    projectId: input.projectId ?? "project-alpha",
-    number: input.number ?? 1,
-    workspaceId: input.workspaceId ?? null,
-    parentTaskId: input.parentTaskId ?? null,
-    title: input.title ?? "Guarded task",
-    description: input.description ?? "",
-    status: input.status ?? "todo",
-    childSetRevision: input.childSetRevision ?? 0,
-    archivedAt: input.archivedAt ?? null,
-    createdAt: input.createdAt ?? 1_000,
-    updatedAt: input.updatedAt ?? 1_000,
-  }
+  return instance.database
 }
 
 const DIGEST = "d".repeat(64)
 
-function linkRow(sessionId: string): TaskSessionLink {
-  return {
-    scopeId: CONFORMANCE_SCOPES.first,
+function linkedSession(sessionId: string): TaskSessionLink {
+  return linkRow({
     taskId: "task-linked",
-    slot: "primary",
     attempt: 1,
     sessionRef: { sessionId, workspaceId: null },
-    continuedFrom: null,
     presetId: "preset-linked",
-    presetRevision: 1,
     presetNameAtStart: "Linked preset",
     configurationDigest: DIGEST,
-    handoffText: null,
-    createdAt: 2_000,
-  }
+  })
 }
 
-const ACTOR: TasksActor = { scopeId: CONFORMANCE_SCOPES.first, ownerId: "owner-a" }
+const ACTOR: TasksActor = { scopeId: SCOPES.first, ownerId: "owner-a" }
 
 const UNREACHABLE = "the bridge is not reached by a task command"
 
@@ -171,13 +134,13 @@ describe("D1 Tasks store units", () => {
       // Another writer commits between this unit's read and its batch.
       await target
         .prepare("update tasks set revision = 7, title = 'Theirs' where scope_id = ? and task_id = ?")
-        .bind(CONFORMANCE_SCOPES.first, "task-guarded")
+        .bind(SCOPES.first, "task-guarded")
         .run()
     })
 
     await expect(refused).rejects.toThrow()
-    expect(await store.tasks.get(CONFORMANCE_SCOPES.first, "task-guarded")).toMatchObject({ revision: 7, title: "Theirs" })
-    expect(await store.tasks.get(CONFORMANCE_SCOPES.first, "task-child")).toBeUndefined()
+    expect(await store.tasks.get(SCOPES.first, "task-guarded")).toMatchObject({ revision: 7, title: "Theirs" })
+    expect(await store.tasks.get(SCOPES.first, "task-child")).toBeUndefined()
     const guards = await target.prepare("select count(*) as rows from task_write_guards").first<{ rows: number }>()
     expect(guards?.rows).toBe(0)
   })
@@ -190,21 +153,21 @@ describe("D1 Tasks store units", () => {
         "insert into task_presets (scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations," +
           " archived_at, created_at, updated_at) values (?, ?, 1, 'owner-a', 'Pinned', '', '{}', '{}', null, 1, 1)",
       )
-      .bind(CONFORMANCE_SCOPES.first, "preset-pinned")
+      .bind(SCOPES.first, "preset-pinned")
       .run()
 
     const refused = store.transaction(async (tx) => {
-      expect(await tx.presets.assertRevision(CONFORMANCE_SCOPES.first, "preset-pinned", 1)).toBe(true)
-      await tx.links.insert(linkRow("session-settling"))
+      expect(await tx.presets.assertRevision(SCOPES.first, "preset-pinned", 1)).toBe(true)
+      await tx.links.insert(linkedSession("session-settling"))
       // Another writer commits between this unit's assertion and its batch.
       await target
         .prepare("update task_presets set revision = 2 where scope_id = ? and preset_id = ?")
-        .bind(CONFORMANCE_SCOPES.first, "preset-pinned")
+        .bind(SCOPES.first, "preset-pinned")
         .run()
     })
 
     await expect(refused).rejects.toThrow(TasksStoreConflict)
-    expect(await store.links.getCurrent(CONFORMANCE_SCOPES.first, "task-linked", "primary")).toBeUndefined()
+    expect(await store.links.getCurrent(SCOPES.first, "task-linked", "primary")).toBeUndefined()
     const guards = await target.prepare("select count(*) as rows from task_write_guards").first<{ rows: number }>()
     expect(guards?.rows).toBe(0)
   })
@@ -217,18 +180,18 @@ describe("D1 Tasks store units", () => {
         "insert into task_presets (scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations," +
           " archived_at, created_at, updated_at) values (?, ?, 1, 'owner-a', 'Pinned', '', '{}', '{}', null, 1, 1)",
       )
-      .bind(CONFORMANCE_SCOPES.first, "preset-pinned")
+      .bind(SCOPES.first, "preset-pinned")
       .run()
 
     await store.transaction(async (tx) => {
-      expect(await tx.presets.assertRevision(CONFORMANCE_SCOPES.first, "preset-pinned", 1)).toBe(true)
+      expect(await tx.presets.assertRevision(SCOPES.first, "preset-pinned", 1)).toBe(true)
       // The list read refuses inside a unit that has written rows, so it is
       // also the check that the assertion wrote none.
-      expect((await tx.links.listByTask(CONFORMANCE_SCOPES.first, "task-linked")).length).toBe(0)
+      expect((await tx.links.listByTask(SCOPES.first, "task-linked")).length).toBe(0)
     })
     const stored = await target
       .prepare("select revision from task_presets where scope_id = ? and preset_id = ?")
-      .bind(CONFORMANCE_SCOPES.first, "preset-pinned")
+      .bind(SCOPES.first, "preset-pinned")
       .first<{ revision: number }>()
     expect(stored?.revision).toBe(1)
   })
@@ -237,17 +200,17 @@ describe("D1 Tasks store units", () => {
     const store = createD1TasksStore({ database: await database() })
     await store.transaction(async (tx) => {
       await tx.tasks.insert(taskRow({ id: "task-pending", revision: 1 }))
-      expect(await tx.tasks.get(CONFORMANCE_SCOPES.first, "task-pending")).toMatchObject({ id: "task-pending" })
+      expect(await tx.tasks.get(SCOPES.first, "task-pending")).toMatchObject({ id: "task-pending" })
       expect(await tx.tasks.update(taskRow({ id: "task-pending", revision: 2, title: "Renamed" }), 1)).toBe(true)
     })
-    expect(await store.tasks.get(CONFORMANCE_SCOPES.first, "task-pending")).toMatchObject({ revision: 2, title: "Renamed" })
+    expect(await store.tasks.get(SCOPES.first, "task-pending")).toMatchObject({ revision: 2, title: "Renamed" })
   })
 
   test("a list read after a write inside one unit is refused rather than answered from committed rows", async () => {
     const store = createD1TasksStore({ database: await database() })
     const refused = store.transaction(async (tx) => {
       await tx.tasks.insert(taskRow({ id: "task-listed", parentTaskId: "task-parent" }))
-      await tx.tasks.countChildren(CONFORMANCE_SCOPES.first, "task-parent", { includeArchived: true, excludeStatus: null })
+      await tx.tasks.countChildren(SCOPES.first, "task-parent", { includeArchived: true, excludeStatus: null })
     })
     await expect(refused).rejects.toThrow(/already written rows/)
   })
@@ -261,13 +224,13 @@ describe("D1 Tasks store units", () => {
       expect(await tx.tasks.update(taskRow({ id: "task-contended", revision: 2, title: "Mine" }), 1)).toBe(true)
       await target
         .prepare("update tasks set revision = 9, title = 'Theirs' where scope_id = ? and task_id = ?")
-        .bind(CONFORMANCE_SCOPES.first, "task-contended")
+        .bind(SCOPES.first, "task-contended")
         .run()
     })
 
     await expect(refused).rejects.toThrow(TasksStoreConflict)
     await expect(refused).rejects.toMatchObject({ kind: "stale-revision" })
-    expect(await store.tasks.get(CONFORMANCE_SCOPES.first, "task-contended")).toMatchObject({ revision: 9, title: "Theirs" })
+    expect(await store.tasks.get(SCOPES.first, "task-contended")).toMatchObject({ revision: 9, title: "Theirs" })
   })
 
   test("a session origin claimed under a committing unit reaches the caller as a link conflict", async () => {
@@ -275,18 +238,18 @@ describe("D1 Tasks store units", () => {
     const store = createD1TasksStore({ database: target })
 
     const refused = store.transaction(async (tx) => {
-      expect((await tx.links.insert(linkRow("session-mine"))).status).toBe("inserted")
+      expect((await tx.links.insert(linkedSession("session-mine"))).status).toBe("inserted")
       await target
         .prepare(
           `insert into task_session_links (scope_id, task_id, slot, attempt, session_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, created_at)` +
             ` values (?, 'task-linked', 'primary', 1, 'session-theirs', 'preset-linked', 1, 'Linked preset', ?, 2000)`,
         )
-        .bind(CONFORMANCE_SCOPES.first, DIGEST)
+        .bind(SCOPES.first, DIGEST)
         .run()
     })
 
     await expect(refused).rejects.toMatchObject({ kind: "link-conflict" })
-    expect((await store.links.getCurrent(CONFORMANCE_SCOPES.first, "task-linked", "primary"))?.sessionRef.sessionId).toBe(
+    expect((await store.links.getCurrent(SCOPES.first, "task-linked", "primary"))?.sessionRef.sessionId).toBe(
       "session-theirs",
     )
   })

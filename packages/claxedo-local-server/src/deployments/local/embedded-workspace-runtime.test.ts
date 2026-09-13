@@ -115,6 +115,7 @@ describe("embedded workspace runtime", () => {
         let ownsProducer = false
         return {
           sessionConfigOwner: "runtime",
+          instructionChannel: "none" as const,
           async createSession(_directory, _title, id) { return { id: id!, agentSessionId: "upstream-held" } },
           async getSession() { return null },
           async getMessages() { return [] },
@@ -122,7 +123,13 @@ describe("embedded workspace runtime", () => {
           async deleteSession() {},
           async getSessionConfig() { throw new Error("runtime-owned config") },
           async updateSessionConfig() { throw new Error("runtime-owned config") },
-          readHarnessCapabilities: () => ({ ...capabilities, goals: false, harness: "held", effortLevels: NO_HARNESS_EFFORT }),
+          readHarnessCapabilities: () => ({
+            ...capabilities,
+            goals: false,
+            harness: "held",
+            effortLevels: NO_HARNESS_EFFORT,
+            instructionChannel: "none" as const,
+          }),
           async *executeTurn(binding) {
             ownsProducer = true
             started.resolve()

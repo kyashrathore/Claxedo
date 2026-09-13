@@ -5,7 +5,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { Hono } from "hono"
-import type { ConnectionProvider } from "@claxedo/agent-sdk-runtime"
+import { NO_HARNESS_EFFORT, type ConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import { sessionIdle } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createWorkspaceHost } from "@claxedo/workspace-runtime/host"
 import { loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
@@ -55,13 +55,20 @@ describe("runtime config secret scoping", () => {
         sessionConfigOwner: "runtime",
         async *executeTurn(input) { used.push(resolved.config as Record<string, string>); yield sessionIdle(input.sessionId) },
         async createSession(_directory, _title, id) { return { id: id! } },
+        instructionChannel: "none" as const,
         async getSession(binding) { return { id: binding.sessionId } },
         async updateSession(binding) { return { id: binding.sessionId } },
         async deleteSession() {},
         async getSessionConfig() { throw new Error("runtime owns config") },
         async updateSessionConfig() { throw new Error("runtime owns config") },
         async getMessages() { return [] },
-        readHarnessCapabilities: () => ({ ...capabilities, goals: false, harness: "fixture" }),
+        readHarnessCapabilities: () => ({
+          ...capabilities,
+          goals: false,
+          harness: "fixture",
+          effortLevels: NO_HARNESS_EFFORT,
+          instructionChannel: "none" as const,
+        }),
         dispose() {},
       }),
     }
