@@ -6,7 +6,6 @@ import type {
   PresetDraft,
   PresetPlacement,
   SkillReference,
-  StartPreview,
   Task,
   TaskDraft,
   TaskSessionLinkView,
@@ -124,25 +123,6 @@ export type TaskDetailView = {
   /** Slots the chosen presets actually configure; unconfigured slots are not offered. */
   configuredSlots: readonly ConfigurationSlot[]
 }
-
-export type StartDraft = {
-  presetId: string | null
-  slot: ConfigurationSlot
-  handoffText: string
-  continueFromPrevious: boolean
-}
-
-export type StartPreviewState =
-  | { status: "idle" }
-  | { status: "loading" }
-  /**
-   * `refreshing` is a resolved preview whose input has since changed — toggling
-   * Continue changes the digest. The panel keeps showing the resolved settings
-   * so the controls that produced the change stay on screen, and Start waits,
-   * because the digest it would send belongs to the previous input.
-   */
-  | { status: "ready"; preview: StartPreview; refreshing?: boolean }
-  | { status: "error"; message: string }
 
 export type { ModelConfiguration, PluginReference, PresetDraft, SkillReference, TaskDraft }
 

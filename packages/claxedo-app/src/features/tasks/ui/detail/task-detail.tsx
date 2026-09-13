@@ -7,11 +7,13 @@ import {
   TASKS_BOUNDS,
   type ConfigurationSlot,
   type SessionReference,
+  type Task,
   type TaskSessionLinkView,
   type TaskStatus,
 } from "@claxedo/tasks"
 import type { ProseEditor } from "../../app-ports"
 import { StatusControl } from "../shared/status-control"
+import { TaskStartControl, type TaskStartOffer } from "../shared/task-row-controls"
 import {
   SLOT_LABELS,
   openableSlot,
@@ -42,7 +44,8 @@ export type TaskDetailProps = {
   onDiscard: () => void
   onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void
   onOpenSession: (sessionRef: SessionReference) => void
-  onStart: (input: { slot: ConfigurationSlot; attempt: number }) => void
+  /** The slot's own Start control, which is how a session is started from this page. */
+  startOffer: (slot: ConfigurationSlot) => TaskStartOffer
   /**
    * Hands the attempt's first message over again. Offered only where the host
    * reports the message absent from a live session, because a resend on any
@@ -247,11 +250,11 @@ export function TaskDetail(props: TaskDetailProps) {
                 {(slot) => (
                   <SlotRow
                     slot={slot}
+                    task={task()}
                     group={props.view.groups.find((entry) => entry.slot === slot)}
-                    archived={task().archivedAt !== null}
+                    offer={props.startOffer(slot)}
                     busy={props.busy}
                     onOpenSession={props.onOpenSession}
-                    onStart={props.onStart}
                     onSendTask={props.onSendTask}
                   />
                 )}
@@ -285,11 +288,11 @@ export function TaskDetail(props: TaskDetailProps) {
 
 function SlotRow(props: {
   slot: ConfigurationSlot
+  task: Task
   group: TaskLinkGroup | undefined
-  archived: boolean
+  offer: TaskStartOffer
   busy?: boolean
   onOpenSession: (sessionRef: SessionReference) => void
-  onStart: (input: { slot: ConfigurationSlot; attempt: number }) => void
   onSendTask: (link: TaskSessionLinkView) => void
 }) {
   // The same rule a list row starts by: which attempt this slot will take and
@@ -316,7 +319,10 @@ function SlotRow(props: {
         <span class="tsk-slot-name">{SLOT_LABELS[props.slot]}</span>
         <span class="tsk-spacer" />
 
-        <Show when={current()?.liveness === "live"}>
+        <Show
+          when={current()?.liveness === "live"}
+          fallback={<TaskStartControl task={props.task} offer={props.offer} testIdPrefix={`task-slot-${props.slot}`} />}
+        >
           <Button
             size="small"
             variant="ghost"
@@ -327,28 +333,6 @@ function SlotRow(props: {
             }}
           >
             Open session
-          </Button>
-        </Show>
-        <Show when={current() === undefined}>
-          <Button
-            size="small"
-            variant="ghost"
-            data-testid={`task-slot-start-${props.slot}`}
-            disabled={props.archived}
-            onClick={() => props.onStart({ slot: props.slot, attempt: next().attempt })}
-          >
-            Start
-          </Button>
-        </Show>
-        <Show when={next().again}>
-          <Button
-            size="small"
-            variant="ghost"
-            data-testid={`task-slot-start-again-${props.slot}`}
-            disabled={props.archived}
-            onClick={() => props.onStart({ slot: props.slot, attempt: next().attempt })}
-          >
-            Start again
           </Button>
         </Show>
       </div>
@@ -367,7 +351,7 @@ function SlotRow(props: {
             variant="ghost"
             class="tsk-slot-resend"
             data-testid={`task-slot-send-${props.slot}`}
-            disabled={props.busy || props.archived}
+            disabled={props.busy || props.task.archivedAt !== null}
             onClick={() => props.onSendTask(link())}
           >
             Send task

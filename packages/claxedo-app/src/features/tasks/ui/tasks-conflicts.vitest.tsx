@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import type { JSX } from "solid-js"
 import {
   TASKS_BOUNDS,
@@ -101,7 +102,9 @@ function ports(request: TasksAppPorts["request"]): TasksAppPorts {
 
 function renderWithClient(node: () => JSX.Element) {
   render(() => (
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{node()}</QueryClientProvider>
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <DialogProvider>{node()}</DialogProvider>
+    </QueryClientProvider>
   ))
 }
 
@@ -118,6 +121,7 @@ describe("a refused edit rebases onto the record the host returned", () => {
         const path = url.slice(`${SERVER}${TASKS_ROUTE_PATH}`.length)
         if (path === `/tasks/${task.id}`) return json({ task: current(), links: [] })
         if (path.startsWith(`/tasks/${task.id}/children`)) return json({ items: [], nextCursor: null })
+        if (path.startsWith("/presets")) return json({ items: [], nextCursor: null })
         if (path === "/commands") {
           const body = JSON.parse(String(init?.body)) as Body
           commands.push(body)
@@ -141,7 +145,7 @@ describe("a refused edit rebases onto the record the host returned", () => {
 
     const store = createTasksStore()
     renderWithClient(() => (
-      <TaskDetailPanel store={store} scope={() => SCOPE} taskId={task.id} onStart={() => {}} onOpenTask={() => {}} onBack={() => {}} />
+      <TaskDetailPanel store={store} scope={() => SCOPE} taskId={task.id} onOpenTask={() => {}} onBack={() => {}} />
     ))
 
     const titleField = await waitFor(() => screen.getByTestId("task-detail-title"))

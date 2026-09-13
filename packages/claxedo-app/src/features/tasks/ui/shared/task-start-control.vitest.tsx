@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import type { Preset, TaskSummary } from "@claxedo/tasks"
-import { TaskStartControl, type StartChoice } from "./task-row-controls"
+import { TaskStartControl, type StartChoice, type TaskStartOffer } from "./task-row-controls"
 
 vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("./test-support/host-controls")).dropdownMenuDouble())
 
@@ -52,26 +52,20 @@ function preset(id: string, name: string, slots: readonly ("planning" | "review"
   }
 }
 
-function mount(input: {
-  task?: TaskSummary
-  presets?: readonly Preset[]
-  defaultPresetId?: string
-  blocker?: string
-  onOpen?: () => void
-}) {
+function mount(input: { task?: TaskSummary } & Partial<TaskStartOffer> = {}) {
+  const { task, ...offer } = input
   const onStart = vi.fn<(choice: StartChoice) => void>()
   const onOpenPresetSettings = vi.fn()
   render(() => (
     <TaskStartControl
-      task={input.task ?? summary()}
+      task={task ?? summary()}
       testIdPrefix="tasks-list"
       offer={{
-        presets: input.presets ?? [preset("pre_1", "Careful reviewer")],
-        defaultPresetId: input.defaultPresetId ?? "pre_1",
-        blocker: input.blocker,
+        presets: [preset("pre_1", "Careful reviewer")],
+        defaultPresetId: "pre_1",
         onStart,
-        ...(input.onOpen ? { onOpen: input.onOpen } : {}),
         onOpenPresetSettings,
+        ...offer,
       }}
     />
   ))
@@ -126,6 +120,51 @@ describe("starting a task from its row", () => {
     fireEvent.click(screen.getByTestId("tasks-list-start-menu-tsk_1"))
 
     expect(screen.getByTestId("tasks-list-start-blocker-tsk_1").textContent).toBe("sonnet is not connected here.")
+  })
+
+  test("a control that belongs to one slot offers each preset once, for that slot", () => {
+    const { onStart } = mount({ slot: "review", presets: [preset("pre_1", "Careful reviewer", ["review"])] })
+
+    fireEvent.click(screen.getByTestId("tasks-list-start-tsk_1"))
+    expect(onStart).toHaveBeenCalledWith({ presetId: "pre_1", slot: "review" })
+
+    fireEvent.click(screen.getByTestId("tasks-list-start-menu-tsk_1"))
+    expect(screen.getByTestId("tasks-list-start-tsk_1-pre_1-review")).toBeTruthy()
+    expect(screen.queryByTestId("tasks-list-start-tsk_1-pre_1-primary")).toBeNull()
+  })
+
+  test("a slot no preset configures says so rather than claiming there are none saved", () => {
+    mount({ slot: "planning", presets: [] })
+
+    fireEvent.click(screen.getByTestId("tasks-list-start-menu-tsk_1"))
+
+    expect(screen.getByText("No preset configures Planning yet.")).toBeTruthy()
+  })
+
+  test("the main part carries the word the caller gave it", () => {
+    mount({ startLabel: "Start again" })
+
+    const control = screen.getByTestId("tasks-list-start-tsk_1")
+    expect(control.textContent).toBe("Start again")
+    expect(control.getAttribute("aria-label")).toBe("Start again Ship the importer")
+  })
+
+  test("the caret carries the previous session where there is one to continue from", () => {
+    const onContinue = vi.fn()
+    mount({ slot: "primary", startLabel: "Start again", onContinue })
+
+    fireEvent.click(screen.getByTestId("tasks-list-start-menu-tsk_1"))
+    fireEvent.click(screen.getByTestId("tasks-list-continue-tsk_1"))
+
+    expect(onContinue).toHaveBeenCalledTimes(1)
+  })
+
+  test("a slot with nothing to continue from offers no continue", () => {
+    mount({ slot: "primary" })
+
+    fireEvent.click(screen.getByTestId("tasks-list-start-menu-tsk_1"))
+
+    expect(screen.queryByTestId("tasks-list-continue-tsk_1")).toBeNull()
   })
 
   test("an archived task can neither be started nor offered alternatives", () => {

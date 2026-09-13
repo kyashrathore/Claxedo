@@ -406,7 +406,10 @@ export const appLocal: Policy = {
   // −2 modules (2026-09-13): the hand-rolled row menu and the kit's own glyph,
   // both replaced by @opencode-ai/ui's DropdownMenu and Icon, which this entry
   // already carried. Measured 1067 / 58.
-  ceilings: { modules: 1067, packages: 58 },
+  // −3 modules (2026-09-13): the Start dialog, its flow and its form. A task
+  // page and a row both start through the one split control, so nothing
+  // reaches them. Measured 1064 / 58.
+  ceilings: { modules: 1064, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

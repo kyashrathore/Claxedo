@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { TASKS_ROUTE_PATH, type ModelConfiguration, type SessionHandoffState, type Task } from "@claxedo/tasks"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import type { TasksScope } from "@/features/tasks/data/queries"
@@ -62,6 +63,7 @@ function mount(input: { handoff: SessionHandoffState; refuseStart?: string }) {
       const path = url.slice(`${SERVER}${TASKS_ROUTE_PATH}`.length)
       const body = init?.body === undefined ? undefined : (JSON.parse(String(init.body)) as Body)
       if (path.startsWith(`/tasks/${task.id}/children`)) return json({ items: [], nextCursor: null })
+      if (path.startsWith("/presets")) return json({ items: [], nextCursor: null })
       if (path === `/tasks/${task.id}`) {
         return json({
           task,
@@ -144,13 +146,9 @@ function mount(input: { handoff: SessionHandoffState; refuseStart?: string }) {
 
   render(() => (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <TaskDetailPanel
-        store={createTasksStore()}
-        scope={() => SCOPE}
-        taskId={task.id}
-        onStart={vi.fn()}
-        onOpenTask={vi.fn()}
-      />
+      <DialogProvider>
+        <TaskDetailPanel store={createTasksStore()} scope={() => SCOPE} taskId={task.id} onOpenTask={vi.fn()} />
+      </DialogProvider>
     </QueryClientProvider>
   ))
   return { starts, previews, openSession }

@@ -45,7 +45,6 @@
   min-width: 0;
 }
 
-.tsk-num,
 .tsk-mono {
   font-variant-numeric: tabular-nums;
 }
@@ -55,14 +54,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.tsk-title {
-  color: var(--text-strong);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: var(--letter-spacing-title);
-  margin: 0;
 }
 
 .tsk-section-title {
@@ -91,23 +82,6 @@
   margin: 0;
   color: var(--text-diff-delete-base);
   font-size: var(--font-size-small);
-}
-
-.tsk-blocker {
-  display: flex;
-  align-items: stretch;
-  gap: 7px;
-  margin: 0;
-  color: var(--text-diff-delete-base);
-  font-size: var(--font-size-small);
-}
-
-.tsk-blocker::before {
-  content: "";
-  flex: none;
-  width: 2px;
-  border-radius: var(--radius-pill);
-  background: var(--icon-critical-base);
 }
 
 /* A plain muted number, as Linear's group counts are: a pill would make a count
@@ -915,7 +889,9 @@
   font-weight: var(--font-weight-medium);
 }
 
-.tsk-slot-head .ui-button {
+/* The ghost Open sits flush with the rail's edge; the split control has a
+   border of its own and stays inside it. */
+.tsk-slot-head > .ui-button {
   margin-right: -8px;
 }
 
@@ -1089,26 +1065,11 @@
 
 /* Dialogs ----------------------------------------------------------------- */
 
-.tsk-create,
-.tsk-start {
+.tsk-create {
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-}
-
-.tsk-start-head {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-width: 0;
-}
-
-.tsk-start-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 8px;
 }
 
 .tsk-chiprow {
@@ -1116,12 +1077,6 @@
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-}
-
-.tsk-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
 }
 
 .tsk-field {
@@ -1137,49 +1092,6 @@
   justify-content: flex-end;
   gap: 8px;
   padding-top: 4px;
-}
-
-.tsk-continue {
-  padding: 2px 0;
-}
-
-/* Label and value rows, no box: the preview states where a start will land, and
-   a panel around it would read as something to fill in. */
-.tsk-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 0;
-  border-top: 1px solid var(--tsk-hairline);
-  border-bottom: 1px solid var(--tsk-hairline);
-}
-
-.tsk-preview-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.tsk-kv {
-  display: grid;
-  grid-template-columns: 108px minmax(0, 1fr);
-  align-items: baseline;
-  gap: 4px 12px;
-  margin: 0;
-}
-
-.tsk-kv > dt {
-  color: var(--text-weak);
-  font-size: var(--font-size-x-small);
-}
-
-.tsk-kv > dd {
-  margin: 0;
-  min-width: 0;
-  color: var(--text-base);
-  font-size: var(--font-size-x-small);
-  overflow-wrap: anywhere;
 }
 
 .tsk-notice-inline {

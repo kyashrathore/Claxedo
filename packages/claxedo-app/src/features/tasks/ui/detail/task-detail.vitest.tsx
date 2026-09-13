@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library"
-import type { SessionHandoffState, SessionLiveness, Task, TaskSessionLinkView } from "@claxedo/tasks"
+import type { ConfigurationSlot, Preset, SessionHandoffState, SessionLiveness, Task, TaskSessionLinkView } from "@claxedo/tasks"
 import { groupLinksBySlot } from "../../view-model"
+import type { TaskStartOffer } from "../shared/task-row-controls"
 import { TaskDetail } from "./task-detail"
 
 vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("../shared/test-support/host-controls")).dropdownMenuDouble())
@@ -66,10 +67,34 @@ function link(
   }
 }
 
-function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> = {}) {
+const preset: Preset = {
+  id: "pre_1",
+  revision: 1,
+  scopeId: "local",
+  ownerId: "owner",
+  name: "Reviewer",
+  instructions: "",
+  execution: { placement: "local", capabilities: { mode: "inherit-local" } },
+  configurations: {
+    primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "opus" }, effort: null },
+  },
+  archivedAt: null,
+  createdAt: 1,
+  updatedAt: 1,
+}
+
+function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> = {}, startLabel?: string) {
   const onStart = vi.fn()
   const onOpenSession = vi.fn()
   const onSendTask = vi.fn()
+  const startOffer = (slot: ConfigurationSlot): TaskStartOffer => ({
+    presets: [preset],
+    defaultPresetId: preset.id,
+    slot,
+    startLabel,
+    onStart,
+    onOpenPresetSettings: () => {},
+  })
   render(() => (
     <TaskDetail
       view={{ task: task(overrides), children: [], groups: groupLinksBySlot(links), configuredSlots: ["primary"] }}
@@ -82,7 +107,7 @@ function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> =
       onDiscard={() => {}}
       onStatusChange={() => {}}
       onOpenSession={onOpenSession}
-      onStart={onStart}
+      startOffer={startOffer}
       onSendTask={onSendTask}
       onArchive={() => {}}
       onRestore={() => {}}
@@ -116,7 +141,7 @@ function mountSubtask(input: { onOpenParent?: () => void } = {}) {
       onDiscard={() => {}}
       onStatusChange={() => {}}
       onOpenSession={() => {}}
-      onStart={() => {}}
+      startOffer={(slot) => ({ presets: [], defaultPresetId: undefined, slot, onStart: () => {}, onOpenPresetSettings: () => {} })}
       onSendTask={() => {}}
       onArchive={() => {}}
       onRestore={() => {}}
@@ -191,20 +216,19 @@ describe("a subtask's own page", () => {
 })
 
 describe("task detail linked sessions", () => {
-  test("a slot with no link offers Start on attempt 1", () => {
+  test("a slot with no link carries its own Start control, which starts the preset it offers", () => {
     const { onStart } = mount([])
 
-    expect(screen.queryByTestId("task-slot-start-again-primary")).toBeNull()
-    fireEvent.click(screen.getByTestId("task-slot-start-primary"))
+    expect(screen.queryByTestId("task-slot-open-primary")).toBeNull()
+    fireEvent.click(screen.getByTestId("task-slot-primary-start-tsk_1"))
 
-    expect(onStart).toHaveBeenCalledWith({ slot: "primary", attempt: 1 })
+    expect(onStart).toHaveBeenCalledWith({ presetId: "pre_1", slot: "primary" })
   })
 
-  test("a live slot opens its session and never offers Start again", () => {
+  test("a live slot opens its session and offers no Start at all", () => {
     const { onStart, onOpenSession } = mount([link(1, "live")])
 
-    expect(screen.queryByTestId("task-slot-start-again-primary")).toBeNull()
-    expect(screen.queryByTestId("task-slot-start-primary")).toBeNull()
+    expect(screen.queryByTestId("task-slot-primary-start-tsk_1")).toBeNull()
     fireEvent.click(screen.getByTestId("task-slot-open-primary"))
 
     expect(onOpenSession).toHaveBeenCalledWith({ sessionId: "ses_1", workspaceId: "ws_1" })
@@ -212,12 +236,15 @@ describe("task detail linked sessions", () => {
   })
 
   for (const liveness of ["archived", "deleted", "unavailable"] as const) {
-    test(`a ${liveness} current session offers Start again on the next attempt`, () => {
-      const { onStart } = mount([link(1, liveness)])
+    test(`a ${liveness} current session is started again from the same control, under the word it was given`, () => {
+      const { onStart } = mount([link(1, liveness)], {}, "Start again")
 
-      fireEvent.click(screen.getByTestId("task-slot-start-again-primary"))
+      expect(screen.queryByTestId("task-slot-open-primary")).toBeNull()
+      const control = screen.getByTestId("task-slot-primary-start-tsk_1")
+      expect(control.textContent).toBe("Start again")
+      fireEvent.click(control)
 
-      expect(onStart).toHaveBeenCalledWith({ slot: "primary", attempt: 2 })
+      expect(onStart).toHaveBeenCalledWith({ presetId: "pre_1", slot: "primary" })
     })
   }
 
@@ -226,7 +253,7 @@ describe("task detail linked sessions", () => {
 
     expect(screen.getByTestId("task-slot-liveness-primary-2").textContent).toBe("live")
     expect(screen.getByTestId("task-slot-liveness-primary-1").textContent).toBe("archived")
-    expect(screen.queryByTestId("task-slot-start-again-primary")).toBeNull()
+    expect(screen.queryByTestId("task-slot-primary-start-tsk_1")).toBeNull()
   })
 
   test("a deleted attempt cannot be opened", () => {
@@ -235,10 +262,11 @@ describe("task detail linked sessions", () => {
     expect(screen.queryByTestId("task-slot-open-attempt-primary-1")).toBeNull()
   })
 
-  test("an archived task offers neither Start nor Start again", () => {
-    mount([link(1, "archived")], { archivedAt: 99 })
+  test("an archived task can neither start nor be offered an alternative", () => {
+    mount([link(1, "archived")], { archivedAt: 99 }, "Start again")
 
-    expect(screen.getByTestId("task-slot-start-again-primary")).toBeDisabled()
+    expect(screen.getByTestId("task-slot-primary-start-tsk_1")).toBeDisabled()
+    expect(screen.getByTestId("task-slot-primary-start-menu-tsk_1")).toBeDisabled()
   })
 
   // The server refuses every Start against an archived task, the recovery one

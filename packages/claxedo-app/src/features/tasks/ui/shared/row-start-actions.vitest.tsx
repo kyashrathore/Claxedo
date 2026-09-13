@@ -7,6 +7,7 @@ import {
   TASKS_ROUTE_PATH,
   type ConfigurationSlot,
   type Preset,
+  type SessionLiveness,
   type SessionReference,
   type Task,
   type TaskSummary,
@@ -77,7 +78,7 @@ function json(body: unknown) {
  * The whole surface, so a navigation is proved by what ends up on screen
  * rather than by a callback having been called.
  */
-function mount(input: { links?: unknown[]; presets?: Preset[] } = {}) {
+function mount(input: { links?: unknown[]; presets?: Preset[]; transcriptReadable?: boolean } = {}) {
   const [page, setPage] = createSignal<TasksPage | undefined>()
   const openSession = vi.fn<(session: SessionReference) => void>()
   const openPresetSettings = vi.fn()
@@ -97,9 +98,9 @@ function mount(input: { links?: unknown[]; presets?: Preset[] } = {}) {
       // asked for and mints a digest bound to them, then admits a start only
       // for that pair; a fake that answers a different attempt lets a caller
       // that never sends the digest, or sends it with another attempt, pass.
-      const sent = body as { slot: ConfigurationSlot; attempt: number } | undefined
+      const sent = body as { slot: ConfigurationSlot; attempt: number; continueFromPrevious?: boolean } | undefined
       if (path.startsWith("/tasks/tsk_1/start-preview")) {
-        return json({ preview: { digest: PREVIEW_DIGEST, expiresAt: 0, placement: "local", slot: sent?.slot, attempt: sent?.attempt, configuration: preset.configurations.primary, capabilities: { mode: "inherit-local" }, available: true, blockers: [], currentSession: null, previousTranscriptReadable: false, destinationDescription: "here" } })
+        return json({ preview: { digest: PREVIEW_DIGEST, expiresAt: 0, placement: "local", slot: sent?.slot, attempt: sent?.attempt, configuration: preset.configurations.primary, capabilities: { mode: "inherit-local" }, available: true, blockers: [], currentSession: null, previousTranscriptReadable: input.transcriptReadable === true, destinationDescription: "here" } })
       }
       if (path === "/tasks/tsk_1/sessions") {
         return json({ link: { taskId: "tsk_1", slot: sent?.slot, attempt: sent?.attempt, sessionRef: STARTED_SESSION, continuedFrom: null, presetId: "pre_1", presetRevision: 2, presetNameAtStart: "Careful reviewer", createdAt: 1, liveness: "live", handoff: "sent" }, created: true })
@@ -128,7 +129,7 @@ function mount(input: { links?: unknown[]; presets?: Preset[] } = {}) {
   return { openSession, openPresetSettings, requested, page }
 }
 
-const link = (liveness: "live" | "deleted", slot: ConfigurationSlot = "primary") => ({
+const link = (liveness: SessionLiveness, slot: ConfigurationSlot = "primary") => ({
   taskId: "tsk_1",
   slot,
   attempt: 1,
@@ -208,5 +209,102 @@ describe("starting and opening from a list row", () => {
     fireEvent.click(await waitFor(() => screen.getByTestId("tasks-list-open-session-tsk_1")))
 
     await waitFor(() => expect(openSession).toHaveBeenCalledWith({ sessionId: "ses_review", workspaceId: null }))
+  })
+})
+
+/**
+ * The task page starts through the same control a row does, so these drive it
+ * the way a person does: open the task, then press what is on the slot.
+ */
+async function openTaskPage() {
+  fireEvent.click(await waitFor(() => screen.getByTestId("tasks-list-row-tsk_1")))
+  return await waitFor(() => screen.getByTestId("task-detail-page"))
+}
+
+function sentTo(requested: { path: string; body?: unknown }[], path: string) {
+  return waitFor(() => {
+    const found = requested.find((entry) => entry.path === path)
+    if (!found) throw new Error(`nothing was sent to ${path}`)
+    return found
+  })
+}
+
+describe("starting a task from its own page", () => {
+  test("Start runs the default preset on the attempt the slot will take", async () => {
+    const { requested, openSession } = mount({ links: [] })
+    await openTaskPage()
+
+    fireEvent.click(await waitFor(() => screen.getByTestId("task-slot-primary-start-tsk_1")))
+
+    const start = await sentTo(requested, "/tasks/tsk_1/sessions")
+    const preview = requested.find((entry) => entry.path.startsWith("/tasks/tsk_1/start-preview"))
+    expect(preview?.body).toMatchObject({ slot: "primary", attempt: 1, continueFromPrevious: false })
+    expect(start.body).toMatchObject({ presetId: "pre_1", slot: "primary", attempt: 1, previewDigest: PREVIEW_DIGEST })
+    await waitFor(() => expect(openSession).toHaveBeenCalledWith(STARTED_SESSION))
+  })
+
+  test("a slot whose session is gone starts again on the next attempt", async () => {
+    const { requested } = mount({ links: [link("deleted")] })
+    await openTaskPage()
+
+    const control = await waitFor(() => screen.getByTestId("task-slot-primary-start-tsk_1"))
+    expect(control.textContent).toBe("Start again")
+    fireEvent.click(control)
+
+    const start = await sentTo(requested, "/tasks/tsk_1/sessions")
+    expect(start.body).toMatchObject({ slot: "primary", attempt: 2 })
+  })
+
+  test("the caret starts the preset it was asked for, not the default", async () => {
+    const other: Preset = { ...preset, id: "pre_2", name: "Alt voice" }
+    const { requested } = mount({ presets: [preset, other] })
+    await openTaskPage()
+
+    fireEvent.click(await waitFor(() => screen.getByTestId("task-slot-primary-start-menu-tsk_1")))
+    fireEvent.click(screen.getByTestId("task-slot-primary-start-tsk_1-pre_2-primary"))
+
+    const start = await sentTo(requested, "/tasks/tsk_1/sessions")
+    expect(start.body).toMatchObject({ presetId: "pre_2", slot: "primary", attempt: 1 })
+  })
+
+  /**
+   * Continue repeats the preset the gone attempt ran, under the next attempt,
+   * with the previous session rendered into it.
+   */
+  test("a gone slot can be continued from, where the host can still read it", async () => {
+    const { requested } = mount({ links: [link("archived")], transcriptReadable: true })
+    await openTaskPage()
+
+    fireEvent.click(await waitFor(() => screen.getByTestId("task-slot-primary-start-menu-tsk_1")))
+    fireEvent.click(screen.getByTestId("task-slot-primary-continue-tsk_1"))
+
+    const start = await sentTo(requested, "/tasks/tsk_1/sessions")
+    expect(start.body).toMatchObject({ presetId: "pre_1", slot: "primary", attempt: 2, continueFromPrevious: true })
+  })
+
+  /**
+   * The service drops a transcript it cannot read and starts a fresh session
+   * anyway, which is not what continuing means — so nothing is sent.
+   */
+  test("a continue the host cannot read is refused instead of started as a fresh session", async () => {
+    const { requested } = mount({ links: [link("archived")], transcriptReadable: false })
+    await openTaskPage()
+
+    fireEvent.click(await waitFor(() => screen.getByTestId("task-slot-primary-start-menu-tsk_1")))
+    fireEvent.click(screen.getByTestId("task-slot-primary-continue-tsk_1"))
+
+    await waitFor(() =>
+      expect(screen.getByTestId("task-slot-primary-start-blocker-tsk_1").textContent).toContain("nothing to continue from"),
+    )
+    expect(requested.some((entry) => entry.path === "/tasks/tsk_1/sessions")).toBe(false)
+  })
+
+  test("a deleted session is not offered as one to continue from", async () => {
+    mount({ links: [link("deleted")], transcriptReadable: true })
+    await openTaskPage()
+
+    fireEvent.click(await waitFor(() => screen.getByTestId("task-slot-primary-start-menu-tsk_1")))
+
+    expect(screen.queryByTestId("task-slot-primary-continue-tsk_1")).toBeNull()
   })
 })

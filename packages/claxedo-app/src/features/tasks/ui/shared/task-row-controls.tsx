@@ -4,22 +4,35 @@ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { CONFIGURATION_SLOTS, type ConfigurationSlot, type Preset, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
+import { ListFailureNotice, type ListFailure } from "./list-failure"
+import { LoadMore, type MorePages } from "./load-more"
 import { StatusMenuItems } from "./status-control"
 import { SLOT_LABELS } from "../../view-model"
 
 export type StartChoice = { presetId: string; slot: ConfigurationSlot }
 
+/** What a Start control may offer. The task page builds one per slot; a row builds one for the task. */
 export type TaskStartOffer = {
   presets: readonly Preset[]
   /** The preset a bare Start uses: the last one started in this scope, else the only or first saved one. */
   defaultPresetId: string | undefined
-  /** A refusal the row already knows about — no preset saved, or the last start was refused here. */
+  /** The one slot this control belongs to; absent on a row, whose menu spans every slot a preset configures. */
+  slot?: ConfigurationSlot
+  /** The word on the main part: "Start" unless the slot has run and its session is gone. */
+  startLabel?: string
+  /** A refusal the surface already knows about — no preset saved, or the last start was refused here. */
   blocker?: string
   busy?: boolean
+  /** A refused preset read. While it stands the menu offers the retry rather than an empty catalog. */
+  presetsFailure?: ListFailure
+  /** The rest of an incomplete preset list: one missing from it cannot be chosen. */
+  morePresets?: MorePages
   onStart: (choice: StartChoice) => void
+  /** Starts the next attempt with the previous session rendered into it; absent where there is none to read. */
+  onContinue?: () => void
   /** Present only where the task already has a session to open. */
   onOpen?: () => void
-  /** Presets are kept in the host's settings, which is where a row sends the user to make one. */
+  /** Presets are kept in the host's settings, which is where a control sends the user to make one. */
   onOpenPresetSettings: () => void
 }
 
@@ -28,13 +41,19 @@ export type TaskStartOffer = {
  * caret.
  *
  * The main part commits to one preset so the common case is one press; the
- * caret is where a different preset or a configuration other than Primary is
- * chosen. Both run the same preview-and-start the dialog runs — a row that
- * started a session another way would be a second path to the same command.
+ * caret is where a different preset, a configuration other than Primary, or
+ * the previous session is chosen. Every one of them runs the same
+ * preview-and-start, so there is no second way to start a task.
  */
-export function TaskStartControl(props: { task: TaskSummary; offer: TaskStartOffer; testIdPrefix: string }) {
+export function TaskStartControl(props: {
+  task: Pick<TaskSummary, "id" | "title" | "archivedAt">
+  offer: TaskStartOffer
+  testIdPrefix: string
+}) {
   const preset = () => props.offer.presets.find((entry) => entry.id === props.offer.defaultPresetId)
-  const slotsOf = (entry: Preset) => CONFIGURATION_SLOTS.filter((slot) => entry.configurations[slot])
+  const slotsOf = (entry: Preset) =>
+    props.offer.slot ? [props.offer.slot] : CONFIGURATION_SLOTS.filter((slot) => entry.configurations[slot])
+  const label = () => props.offer.startLabel ?? "Start"
   const startable = () => props.task.archivedAt === null && props.offer.busy !== true
 
   return (
@@ -44,22 +63,22 @@ export function TaskStartControl(props: { task: TaskSummary; offer: TaskStartOff
         fallback={
           <Button
             size="small"
-                       data-testid={`${props.testIdPrefix}-start-${props.task.id}`}
-            aria-label={`Start ${props.task.title}`}
+            data-testid={`${props.testIdPrefix}-start-${props.task.id}`}
+            aria-label={`${label()} ${props.task.title}`}
             disabled={!startable() || !preset()}
             onClick={() => {
               const entry = preset()
-              if (entry) props.offer.onStart({ presetId: entry.id, slot: "primary" })
+              if (entry) props.offer.onStart({ presetId: entry.id, slot: props.offer.slot ?? "primary" })
             }}
           >
-            Start
+            {label()}
           </Button>
         }
       >
         {(open) => (
           <Button
             size="small"
-                       data-testid={`${props.testIdPrefix}-open-session-${props.task.id}`}
+            data-testid={`${props.testIdPrefix}-open-session-${props.task.id}`}
             aria-label={`Open the session for ${props.task.title}`}
             onClick={() => open()()}
           >
@@ -73,7 +92,7 @@ export function TaskStartControl(props: { task: TaskSummary; offer: TaskStartOff
           as={IconButton}
           icon="chevron-down"
           size="small"
-                   data-testid={`${props.testIdPrefix}-start-menu-${props.task.id}`}
+          data-testid={`${props.testIdPrefix}-start-menu-${props.task.id}`}
           aria-label={`Start ${props.task.title} with a preset`}
           disabled={props.task.archivedAt !== null}
         />
@@ -89,11 +108,38 @@ export function TaskStartControl(props: { task: TaskSummary; offer: TaskStartOff
                 </>
               )}
             </Show>
+            <ListFailureNotice
+              failure={props.offer.presetsFailure}
+              testId={`${props.testIdPrefix}-presets-retry-${props.task.id}`}
+            />
+            <Show when={props.offer.onContinue}>
+              {(run) => (
+                <>
+                  <DropdownMenu.Group>
+                    <DropdownMenu.GroupLabel>Continue</DropdownMenu.GroupLabel>
+                    <DropdownMenu.Item
+                      class="tsk-menu-item"
+                      data-testid={`${props.testIdPrefix}-continue-${props.task.id}`}
+                      disabled={!startable()}
+                      onSelect={() => run()()}
+                    >
+                      <Icon name="fork" size="small" />
+                      <span class="tsk-menu-label">Continue from previous session</span>
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Group>
+                  <DropdownMenu.Separator />
+                </>
+              )}
+            </Show>
             <Show
               when={props.offer.presets.length > 0}
               fallback={
-                <>
-                  <p class="tsk-menu-note">A preset is required to start, and you have none yet.</p>
+                <Show when={props.offer.presetsFailure === undefined}>
+                  <p class="tsk-menu-note">
+                    {props.offer.slot
+                      ? `No preset configures ${SLOT_LABELS[props.offer.slot]} yet.`
+                      : "A preset is required to start, and you have none yet."}
+                  </p>
                   <DropdownMenu.Item
                     class="tsk-menu-item"
                     data-testid={`${props.testIdPrefix}-preset-settings-${props.task.id}`}
@@ -102,7 +148,7 @@ export function TaskStartControl(props: { task: TaskSummary; offer: TaskStartOff
                     <Icon name="settings-gear" size="small" />
                     <span class="tsk-menu-label">Create a preset in Settings</span>
                   </DropdownMenu.Item>
-                </>
+                </Show>
               }
             >
               <DropdownMenu.Group>
@@ -128,6 +174,10 @@ export function TaskStartControl(props: { task: TaskSummary; offer: TaskStartOff
                   )}
                 </For>
               </DropdownMenu.Group>
+              <LoadMore
+                more={props.offer.morePresets}
+                testId={`${props.testIdPrefix}-presets-load-more-${props.task.id}`}
+              />
               <DropdownMenu.Separator />
               <DropdownMenu.Item
                 class="tsk-menu-item"

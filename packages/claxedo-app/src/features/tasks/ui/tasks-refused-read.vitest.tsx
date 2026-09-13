@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import type { JSX } from "solid-js"
-import { TASKS_BOUNDS, TASKS_ROUTE_PATH, type Preset, type SessionReference, type Task } from "@claxedo/tasks"
+import { TASKS_BOUNDS, TASKS_ROUTE_PATH, type Preset, type SessionReference, type Task, type TaskSummary } from "@claxedo/tasks"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import type { TasksPage } from "@/platform/identity/route"
@@ -9,7 +9,7 @@ import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import type { TasksScope } from "@/features/tasks/data/queries"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
 import { PresetsView } from "@/features/tasks/ui/presets/presets-view"
-import { StartTaskFlow } from "@/features/tasks/ui/start/start-task-flow"
+import { TasksView } from "@/features/tasks/ui/tasks-view"
 
 vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("./shared/test-support/host-controls")).dropdownMenuDouble())
 vi.mock("@opencode-ai/ui/select", async () => (await import("./shared/test-support/host-controls")).selectDouble())
@@ -52,6 +52,13 @@ const preset: Preset = {
   updatedAt: 2,
 }
 
+const summary: TaskSummary = {
+  ...(({ description: _description, ...rest }) => rest)(task),
+  hasDescription: false,
+  links: { count: 0 },
+  children: { total: 0, done: 0 },
+}
+
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } })
 }
@@ -74,6 +81,7 @@ function refusedPresetHost() {
           ? json({ items: [preset], nextCursor: null })
           : json({ error: { code: "forbidden", message: "Presets are not readable here." } }, 403)
       }
+      if (path.startsWith("/tasks?")) return json({ items: [summary], nextCursor: null })
       if (path === "/capabilities") {
         return json({
           protocolVersion: 1,
@@ -120,32 +128,29 @@ function provide(view: () => JSX.Element) {
 }
 
 describe("a refused preset read", () => {
-  test("Start reports the refusal and offers nothing to start until a retry succeeds", async () => {
+  test("a row's Start reports the refusal and offers nothing to start until a retry succeeds", async () => {
     const host = refusedPresetHost()
     provide(() => (
-      <StartTaskFlow
-        store={createTasksStore()}
-        scope={() => SCOPE}
-        task={task}
-        slot="primary"
-        attempt={2}
-        onClose={() => {}}
-      />
+      <TasksView store={createTasksStore()} scope={() => SCOPE} projectId={() => "prj_1"} onOpenTask={() => {}} />
     ))
 
-    await waitFor(() => expect(screen.getByTestId("start-task-presets-retry")).toBeTruthy())
+    fireEvent.click(await waitFor(() => screen.getByTestId("tasks-list-start-menu-tsk_1")))
+
+    await waitFor(() => expect(screen.getByTestId("tasks-list-presets-retry-tsk_1")).toBeTruthy())
     expect(screen.getByRole("alert").textContent).toBe("Presets are not readable here.")
-    expect(screen.queryByTestId("start-task-no-presets")).toBeNull()
-    expect(screen.queryByTestId("start-task-preset-settings")).toBeNull()
-    expect(screen.getByTestId<HTMLButtonElement>("start-task-submit").disabled).toBe(true)
+    // An unread catalog is not an empty one, so the menu must not send the
+    // user off to create the preset they may already have.
+    expect(screen.queryByText("A preset is required to start, and you have none yet.")).toBeNull()
+    expect(screen.queryByTestId("tasks-list-preset-settings-tsk_1")).toBeNull()
+    expect(screen.getByTestId<HTMLButtonElement>("tasks-list-start-tsk_1").disabled).toBe(true)
     expect(host.requested.filter((path) => path.startsWith("/presets"))).toHaveLength(1)
 
     host.repair()
-    fireEvent.click(screen.getByTestId("start-task-presets-retry"))
+    fireEvent.click(screen.getByTestId("tasks-list-presets-retry-tsk_1"))
 
-    await waitFor(() => expect(screen.getByTestId("start-task-preset")).toBeTruthy())
-    expect(screen.getByRole("option", { name: preset.name })).toBeTruthy()
-    expect(screen.queryByTestId("start-task-presets-retry")).toBeNull()
+    await waitFor(() => expect(screen.getByTestId("tasks-list-start-tsk_1-pre_1-primary")).toBeTruthy())
+    expect(screen.getByTestId<HTMLButtonElement>("tasks-list-start-tsk_1").disabled).toBe(false)
+    expect(screen.queryByTestId("tasks-list-presets-retry-tsk_1")).toBeNull()
     expect(host.requested.filter((path) => path.startsWith("/presets"))).toHaveLength(2)
   })
 

@@ -442,7 +442,9 @@ export const desktopRendererUnsigned: Policy = {
   // modules rather than kit ones. No new package edge. Measured 1112 / 58.
   // −2 modules (2026-09-13): the same row menu and glyph app-local drops for
   // the host's own menu and icon. Measured 1110 / 58.
-  ceilings: { modules: 1110, packages: 58 },
+  // −3 modules (2026-09-13): the same Start dialog, flow and form app-local
+  // drops for its split control. Measured 1107 / 58.
+  ceilings: { modules: 1107, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

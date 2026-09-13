@@ -6,20 +6,20 @@ import {
   type TaskSessionLinkView,
   type TaskStatus,
 } from "@claxedo/tasks"
-import { groupLinksBySlot } from "../../view-model"
+import { groupLinksBySlot, slotAttempt } from "../../view-model"
 import { TaskDetail } from "./task-detail"
 import { TaskSubtasks } from "./task-subtasks"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../../app-ports"
 import { refusalOf } from "../../data/tasks-api"
 import { followRetry, useTaskChildren, useTaskDetail, useTasksClient, useTasksInvalidation, type TasksScope } from "../../data/queries"
+import { useTaskStartOffers } from "../../data/start-task"
 import type { TasksStore } from "../../store/tasks-store"
 
 export type TaskDetailPanelProps = {
   store: TasksStore
   scope: () => TasksScope
   taskId: string
-  onStart: (input: { task: Task; slot: ConfigurationSlot; attempt: number }) => void
   onOpenTask: (taskId: string) => void
   onBack?: () => void
   onOpenProject?: (projectId: string) => void
@@ -36,25 +36,40 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
   // A subtask names its parent, which only the parent's own read can title.
   // Disabled for a top-level task, so a page that has no parent asks for none.
   const parent = useTaskDetail(props.scope, () => detail.data?.task.parentTaskId ?? undefined)
-  const [busy, setBusy] = createSignal(false)
+  const offers = useTaskStartOffers(props.scope, props.store)
   const [sendError, setSendError] = createSignal<string | undefined>()
 
   const task = () => detail.data?.task
   const groups = createMemo(() => groupLinksBySlot(detail.data?.links ?? []))
+  const busy = () => offers.busyTaskId() === props.taskId
 
-  const mutate = async (run: () => Promise<unknown>, taskId: string) => {
-    setBusy(true)
-    try {
-      await run()
-      await invalidate.everything()
-      invalidate.task(taskId)
-      props.store.taskSaved(taskId)
-    } catch (error) {
-      props.store.refuseTaskEdit(taskId, refusalOf(error))
-    } finally {
-      setBusy(false)
-    }
+  /**
+   * A slot's Start control. The word on it and whether a continue is offered
+   * both come from what the slot's current link says, which is the same rule
+   * the rows above it are drawn from.
+   */
+  const startOffer = (current: Task) => (slot: ConfigurationSlot) => {
+    const next = slotAttempt(groups(), slot)
+    return offers.offerFor(current, {
+      slot,
+      startLabel: next.again ? "Start again" : undefined,
+      // A session the owner reports deleted carries nothing over, and the
+      // service refuses to continue from one.
+      continueWith: next.again && next.current?.liveness !== "deleted" ? next.current?.presetId : undefined,
+    })
   }
+
+  const mutate = (run: () => Promise<unknown>, taskId: string) =>
+    offers.busyWhile(taskId, async () => {
+      try {
+        await run()
+        await invalidate.everything()
+        invalidate.task(taskId)
+        props.store.taskSaved(taskId)
+      } catch (error) {
+        props.store.refuseTaskEdit(taskId, refusalOf(error))
+      }
+    })
 
   const setStatus = (input: { taskId: string; revision: number; status: TaskStatus }) =>
     void mutate(() => client().command({ clientRequestId: uuid(), command: { type: "task.set_status", input } }), input.taskId)
@@ -71,33 +86,32 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
    * The refusal stays in a signal of its own rather than the store's edit
    * channel: a Send neither saves nor rebases what the user has typed.
    */
-  const sendTask = async (current: Task, link: TaskSessionLinkView) => {
-    const request = {
-      taskRevision: current.revision,
-      presetId: link.presetId,
-      presetRevision: link.presetRevision,
-      slot: link.slot,
-      attempt: link.attempt,
-      continueFromPrevious: false,
-    }
-    setBusy(true)
-    setSendError(undefined)
-    try {
-      const previewed = await client().startPreview(current.id, request)
-      await client().start(current.id, {
-        ...request,
-        clientRequestId: uuid(),
-        previewDigest: previewed.preview.digest,
-        handoffText: null,
-      })
-    } catch (error) {
-      setSendError(refusalOf(error).message)
-    } finally {
-      setBusy(false)
-      invalidate.task(current.id)
-      await invalidate.everything()
-    }
-  }
+  const sendTask = (current: Task, link: TaskSessionLinkView) =>
+    offers.busyWhile(current.id, async () => {
+      const request = {
+        taskRevision: current.revision,
+        presetId: link.presetId,
+        presetRevision: link.presetRevision,
+        slot: link.slot,
+        attempt: link.attempt,
+        continueFromPrevious: false,
+      }
+      setSendError(undefined)
+      try {
+        const previewed = await client().startPreview(current.id, request)
+        await client().start(current.id, {
+          ...request,
+          clientRequestId: uuid(),
+          previewDigest: previewed.preview.digest,
+          handoffText: null,
+        })
+      } catch (error) {
+        setSendError(refusalOf(error).message)
+      } finally {
+        invalidate.task(current.id)
+        await invalidate.everything()
+      }
+    })
 
   return (
     <Show when={task()} fallback={<p class="tsk-empty">Select a task.</p>}>
@@ -149,7 +163,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             onDiscard={() => props.store.discardEdit(current().id)}
             onStatusChange={setStatus}
             onOpenSession={(session) => openSession(session)}
-            onStart={(input) => props.onStart({ task: current(), slot: input.slot, attempt: input.attempt })}
+            startOffer={startOffer(current())}
             onSendTask={(link) => void sendTask(current(), link)}
             onBack={props.onBack}
             onOpenProject={props.onOpenProject ? () => props.onOpenProject?.(current().projectId) : undefined}

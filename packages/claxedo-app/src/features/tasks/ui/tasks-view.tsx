@@ -1,16 +1,15 @@
-import { Show, createMemo, createSignal } from "solid-js"
+import { Show, createMemo } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { TaskCreateStatus, TaskStatus, TaskSummary } from "@claxedo/tasks"
 import { TASK_COLLECTION_LABELS } from "../view-model"
 import { TaskBoard } from "./board/task-board"
 import { TaskList } from "./list/task-list"
-import { type StartChoice, type TaskStartOffer } from "./shared/task-row-controls"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf, type TaskListFilter } from "../data/tasks-api"
-import { morePages, usePresetList, useTaskList, useTasksClient, useTasksInvalidation, type TasksScope } from "../data/queries"
-import { useStartTaskCommands } from "../data/start-task"
+import { morePages, useTaskList, useTasksClient, useTasksInvalidation, type TasksScope } from "../data/queries"
+import { useTaskStartOffers } from "../data/start-task"
 import type { TasksStore } from "../store/tasks-store"
 import { DialogCreateTask } from "./dialogs/create-task-dialog"
 import { TasksHeader } from "./tasks-header"
@@ -30,9 +29,7 @@ export function TasksView(props: TasksViewProps) {
   const dialog = useDialog()
   const client = useTasksClient()
   const invalidate = useTasksInvalidation(props.scope)
-  const startTask = useStartTaskCommands(props.scope)
-  const presets = usePresetList(props.scope, () => false)
-  const [busyTaskId, setBusyTaskId] = createSignal<string | undefined>()
+  const offers = useTaskStartOffers(props.scope, props.store)
 
   const filter = createMemo<TaskListFilter | undefined>(() => {
     const projectId = props.projectId()
@@ -57,64 +54,24 @@ export function TasksView(props: TasksViewProps) {
   const subtaskProgress = (taskId: string) =>
     visible().find((task) => task.id === taskId)?.children
 
-  /**
-   * What a row may offer. The default preset is the last one started in this
-   * scope, and otherwise the only one saved — never a guess between several,
-   * which the caret is for.
-   */
-  const defaultPresetId = () => {
-    const saved = presets.items()
-    const last = props.store.state.lastPresetId
-    if (last && saved.some((preset) => preset.id === last)) return last
-    return saved[0]?.id
-  }
-
-  const runStart = async (task: TaskSummary, choice: StartChoice) => {
-    const preset = presets.items().find((entry) => entry.id === choice.presetId)
-    if (!preset) return
-    setBusyTaskId(task.id)
-    const outcome = await startTask.startNow(task, {
-      presetId: preset.id,
-      presetRevision: preset.revision,
-      slot: choice.slot,
+  const startOffer = (task: TaskSummary) =>
+    offers.offerFor(task, {
+      // A row knows a session exists from its link count; which one is current
+      // is read when Open is pressed, because liveness is not in a list read.
+      onOpen: task.links.count > 0 ? () => void offers.openLatestSession(task.id) : undefined,
     })
-    setBusyTaskId(undefined)
-    if (outcome.ok) props.store.startedWith(task.id, preset.id)
-    else props.store.refuseStart(task.id, outcome.message)
-  }
 
-  const openSession = async (task: TaskSummary) => {
-    setBusyTaskId(task.id)
-    const outcome = await startTask.openLatestSession(task.id)
-    setBusyTaskId(undefined)
-    if (!outcome.ok) props.store.refuseStart(task.id, outcome.message)
-  }
-
-  const startOffer = (task: TaskSummary): TaskStartOffer => ({
-    presets: presets.items(),
-    defaultPresetId: defaultPresetId(),
-    blocker: props.store.state.startRefusals[task.id],
-    busy: busyTaskId() === task.id,
-    onStart: (choice) => void runStart(task, choice),
-    // A row knows a session exists from its link count; which one is current
-    // is read when Open is pressed, because liveness is not in a list read.
-    ...(task.links.count > 0 ? { onOpen: () => void openSession(task) } : {}),
-    onOpenPresetSettings: () => ports.openPresetSettings(dialog),
-  })
-
-  const setStatus = async (input: { taskId: string; revision: number; status: TaskStatus }) => {
-    setBusyTaskId(input.taskId)
-    try {
-      await client().command({ clientRequestId: uuid(), command: { type: "task.set_status", input } })
-      await invalidate.everything()
-      invalidate.task(input.taskId)
-      props.store.taskSaved(input.taskId)
-    } catch (error) {
-      props.store.refuseTaskEdit(input.taskId, refusalOf(error))
-    } finally {
-      setBusyTaskId(undefined)
-    }
-  }
+  const setStatus = (input: { taskId: string; revision: number; status: TaskStatus }) =>
+    offers.busyWhile(input.taskId, async () => {
+      try {
+        await client().command({ clientRequestId: uuid(), command: { type: "task.set_status", input } })
+        await invalidate.everything()
+        invalidate.task(input.taskId)
+        props.store.taskSaved(input.taskId)
+      } catch (error) {
+        props.store.refuseTaskEdit(input.taskId, refusalOf(error))
+      }
+    })
 
   const openCreate = (status?: TaskCreateStatus) =>
     void dialog.show(() => (
@@ -168,7 +125,7 @@ export function TasksView(props: TasksViewProps) {
             parentTitleOf={parentTitleOf}
             subtaskProgress={subtaskProgress}
             startOffer={startOffer}
-            busyTaskId={busyTaskId()}
+            busyTaskId={offers.busyTaskId()}
             onSelect={(taskId) => props.onOpenTask(taskId)}
             onCreate={() => openCreate()}
             onStatusChange={(input) => void setStatus(input)}
@@ -183,7 +140,7 @@ export function TasksView(props: TasksViewProps) {
           selectedTaskId={props.store.state.selectedTaskId}
           subtaskProgress={subtaskProgress}
           startOffer={startOffer}
-          busyTaskId={busyTaskId()}
+          busyTaskId={offers.busyTaskId()}
           onSelect={(taskId) => props.onOpenTask(taskId)}
           onCreate={openCreate}
           onStatusChange={(input) => void setStatus(input)}
