@@ -50,7 +50,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
     listed,
     tool<Shape extends McpToolShape>(name: string, definition: McpToolDefinition<Shape>, handler: McpToolHandler<Shape>) {
       declared.set(name, definition.access)
-      if (!toolListed(ctx.credential, definition.access)) return
+      if (!toolListed(ctx.credential, definition.access, ctx.client.tasks?.operations)) return
       listed.push(name)
       // `ToolCallback<Shape>` is a conditional type over the shape; it resolves
       // only for a concrete shape, so a callback written once for every shape
@@ -59,7 +59,7 @@ export function createToolRegistry(server: McpServer, ctx: McpToolContext): Tool
       // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- see above: `ToolCallback<Shape>` resolves only for a concrete shape.
       const callback = (async (args: ShapeOutput<Shape>) => {
           try {
-            assertToolAccess(ctx.credential, name, definition.access)
+            assertToolAccess(ctx.credential, name, definition.access, ctx.client.tasks?.operations)
             if (definition.access.destructive && ctx.elicit) {
               const answer = await ctx.elicit({
                 mode: "form",

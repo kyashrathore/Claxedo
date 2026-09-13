@@ -39,8 +39,8 @@ const userCredential = (readOnly = false): McpCredential => ({
 })
 
 /** Registers every group against one credential and reports what it declared and what it listed. */
-function surface(credential: McpCredential) {
-  const ctx: McpToolContext = { credential, client, audit: () => undefined }
+function surface(credential: McpCredential, tasks?: ClaxedoMcpClient["tasks"]) {
+  const ctx: McpToolContext = { credential, client: { ...client, ...(tasks ? { tasks } : {}) }, audit: () => undefined }
   const registry = createToolRegistry(new McpServer({ name: "claxedo", version: "0.0.0" }), ctx)
   for (const register of CLAXEDO_MCP_TOOL_GROUPS) register(registry)
   return { declared: registry.declared, listed: [...registry.listed].toSorted() }
@@ -150,6 +150,12 @@ describe("the registered surface", () => {
       "subagent_list",
       "subagent_status",
     ])
+  })
+
+  test("adds the Tasks tools the grant covers, and nothing else", () => {
+    const granted = surface(runtimeCredential, { fetch: async () => new Response(null, { status: 204 }), operations: ["read", "create", "start"] })
+    const without = new Set(surface(runtimeCredential).listed)
+    expect(granted.listed.filter((name) => !without.has(name))).toEqual(["task_create", "task_get", "task_list", "task_start"])
   })
 
   test("lists the outside-in set for a user credential", () => {
