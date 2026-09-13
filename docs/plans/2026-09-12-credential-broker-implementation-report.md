@@ -438,3 +438,43 @@ account selection and per-user leases cannot be implemented within the original
 explicit exclusions. External feasibility blockers remain as recorded: deployed
 Cloudflare image upload, Daytona/ exe.dev/Modal account access, and the Vercel
 project/team choice. No dependent store/lease edit or auth setup was performed.
+
+## Resumed worktree validation and lockfile reconciliation — 2026-09-13
+
+The resumed goal found new commits after `3e0b2992c7`:
+
+- `65555767bc` — forward empty secret lists through the sandbox manager.
+- `bb873fa3b6` — upsert Daytona secrets and remount without stale environment values.
+- `3291c64ff5` — preserve ordinary traffic to Cloudflare credential hosts.
+- `be4fca47cf` — reconcile supervisor bindings/policy before reporting ready.
+- `a6e543005b` — pin the existing activation-owner credential subject limitation.
+- `6839235ec7` — withdraw clone headers and report runtime boot failures.
+- `ea2cedaa9c` — bound token mint lifetime, evict replaced generations and reject unusable destinations.
+
+Current-state validation at `ea2cedaa9c`:
+
+- Egress-broker `node node_modules/vitest/vitest.mjs run src`: 28 pass.
+- Sandbox-manager `bun test src/drivers/daytona.test.ts src/manager.test.ts`: 77 pass.
+- Claxedo-server `node node_modules/vitest/vitest.mjs run src/workspace/supervisor/cloud.test.ts src/hosts/workspace-runtime/host-run.test.ts src/hosts/workspace-runtime/runtime-boot.test.ts src/agent-plugins/mcp/runtime-preparation.test.ts scripts/sandbox/cloudflare-worker/src`: 127 pass across six files.
+- `bun run typecheck` in those three packages: all pass.
+- Root `bun run test:architecture-ratchets`: 13 pass; five product/eight source policies and helper ratchet pass without baseline changes.
+
+The new manifest changes were absent from `bun.lock`: egress-broker's
+`@tsconfig/node-lts` dev dependency and sandbox-manager's 0.9.0 workspace version.
+The lockfile now includes exactly those two metadata changes. No resolved
+package version or integrity hash changed.
+
+The default install check hit the repository's three-day age gate for the
+already-pinned Vercel/Modal SDKs. With the documented release-install setting,
+`bun install --frozen-lockfile --lockfile-only --ignore-scripts
+--minimum-release-age=0` wrote the corrected lockfile (Bun's lockfile-only mode
+wrote it despite the frozen flag). The subsequent actual
+`bun install --frozen-lockfile --ignore-scripts --minimum-release-age=0` passed:
+2246 installs checked across 2659 packages, no changes. `git diff --check` passed.
+Only `bun.lock` and this report changed in this validation slice.
+
+The full-design authorization blocker is unchanged: the objective still excludes
+hosted store and per-user lease changes and reserves credential contracts. The
+current registry still calls `ensurePresetForProvider` without workspace scope.
+No renewed live-provider or full-design completion claim follows from these
+focused validation results. The scope decision remains pending.
