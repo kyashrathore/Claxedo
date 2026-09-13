@@ -140,6 +140,7 @@ describe("the Tasks build selection", () => {
     const contributions = stripComments(read("src/app/integrations/tasks-contributions.ts"))
     expect(contributions).toContain("configureTasksAppPorts(tasksAppPorts())")
     expect(contributions).toContain("registerContentSurface(tasksContentSurface)")
+    expect(contributions).toContain("registerSettingsSection(tasksPresetsSettingsSection)")
   })
 
   test("the sidebar row and the /tasks intent are gated by the same identifier", () => {

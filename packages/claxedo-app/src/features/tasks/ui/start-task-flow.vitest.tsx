@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { TASKS_ROUTE_PATH, type Preset, type SessionReference, type StartPreview, type Task } from "@claxedo/tasks"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import { useTaskDetail, type TasksScope } from "@/features/tasks/data/queries"
@@ -173,20 +174,23 @@ function mount(input: {
     ),
     useOpenSession: () => openSession,
     useOpenPage: () => () => {},
+    openPresetSettings: () => {},
   })
 
   const onClose = vi.fn()
   render(() => (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <DetailProbe />
-      <StartTaskFlow
-        store={createTasksStore()}
-        scope={() => SCOPE}
-        task={task}
-        slot="primary"
-        attempt={2}
-        onClose={onClose}
-      />
+      <DialogProvider>
+        <DetailProbe />
+        <StartTaskFlow
+          store={createTasksStore()}
+          scope={() => SCOPE}
+          task={task}
+          slot="primary"
+          attempt={2}
+          onClose={onClose}
+        />
+      </DialogProvider>
     </QueryClientProvider>
   ))
   return { previews, starts, openSession, onClose }

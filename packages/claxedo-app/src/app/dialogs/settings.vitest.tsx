@@ -81,6 +81,7 @@ vi.mock("@/app/providers/config", () => ({
 }))
 
 import { DialogSettings } from "./settings"
+import { registerSettingsSection } from "@/app/integrations/settings-sections"
 
 function mount() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
@@ -145,5 +146,42 @@ describe("DialogSettings section naming", () => {
     state.settingsConnectionsEnabled = true
     mount()
     expect(screen.getByRole("heading", { name: "settings.section.account" })).toBeInTheDocument()
+  })
+})
+
+describe("DialogSettings contributed sections", () => {
+  test("a contributed workspace section is a tab whose value is its id", () => {
+    registerSettingsSection({
+      id: "vitest.presets",
+      tier: "claxedo-first-party",
+      section: "workspace",
+      label: "Contributed",
+      renderer: () => <div>Contributed content</div>,
+    })
+
+    mount()
+
+    const trigger = screen.getByRole("button", { name: "Contributed" })
+    expect(trigger).toBeInTheDocument()
+    // The opener passes this id as `initialTab`, so the trigger and the content
+    // have to answer to it and not to the label.
+    expect(trigger.getAttribute("data-value")).toBe("vitest.presets")
+    expect(screen.getByText("Contributed content")).toBeInTheDocument()
+  })
+
+  test("a section gated to another workspace is not offered", () => {
+    registerSettingsSection({
+      id: "vitest.elsewhere",
+      tier: "claxedo-first-party",
+      section: "workspace",
+      label: "Elsewhere",
+      gate: { workspaceId: "ws_other" },
+      renderer: () => <div>Elsewhere content</div>,
+    })
+
+    mount()
+
+    expect(screen.queryByRole("button", { name: "Elsewhere" })).toBeNull()
+    expect(screen.queryByText("Elsewhere content")).toBeNull()
   })
 })

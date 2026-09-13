@@ -1,38 +1,17 @@
 import type { JSX } from "solid-js"
 
 export type TasksHeaderProps = {
-  active: "tasks" | "presets"
+  title: string
   count?: number
-  onOpenTasks: () => void
-  onOpenPresets: () => void
   /** The page's own primary action, right-aligned. */
   action?: JSX.Element
 }
 
-/** The one header both Tasks pages wear, so the tab switch keeps its place across a navigation. */
+/** The title row the task list and the preset catalog share. */
 export function TasksHeader(props: TasksHeaderProps) {
   return (
     <header class="tsk-surface-head">
-      <div class="tsk-segmented" role="tablist" aria-label="Tasks and presets">
-        <button
-          type="button"
-          role="tab"
-          data-testid="tasks-surface-tab-tasks"
-          aria-selected={props.active === "tasks"}
-          onClick={() => props.onOpenTasks()}
-        >
-          Tasks
-        </button>
-        <button
-          type="button"
-          role="tab"
-          data-testid="tasks-surface-tab-presets"
-          aria-selected={props.active === "presets"}
-          onClick={() => props.onOpenPresets()}
-        >
-          Presets
-        </button>
-      </div>
+      <h2 class="tsk-surface-title">{props.title}</h2>
       <span class="tsk-count">{props.count ?? 0}</span>
       <span class="tsk-spacer" />
       {props.action}

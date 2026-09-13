@@ -6,7 +6,6 @@ import {
   TASK_COLLECTION_LABELS,
   TaskBoard,
   TaskList,
-  emptyPresetEditorDraft,
   type StartChoice,
   type TaskStartOffer,
 } from "@claxedo/tasks/solid"
@@ -26,11 +25,11 @@ export type TasksViewProps = {
   projectId: () => string
   /** Opening a task is a navigation, which the surface owns. */
   onOpenTask: (taskId: string) => void
-  onOpenPresets: () => void
 }
 
 export function TasksView(props: TasksViewProps) {
-  const projects = useTasksAppPorts().useProjects()
+  const ports = useTasksAppPorts()
+  const projects = ports.useProjects()
   const dialog = useDialog()
   const client = useTasksClient()
   const invalidate = useTasksInvalidation(props.scope)
@@ -103,13 +102,7 @@ export function TasksView(props: TasksViewProps) {
     // A row knows a session exists from its link count; which one is current
     // is read when Open is pressed, because liveness is not in a list read.
     ...(task.links.count > 0 ? { onOpen: () => void openSession(task) } : {}),
-    // Opening the draft is only half of it: the editor renders on the Presets
-    // page, so a row that opened one without going there left the user on the
-    // list with nothing on screen.
-    onCreatePreset: () => {
-      props.store.openPresetDraft(emptyPresetEditorDraft())
-      props.onOpenPresets()
-    },
+    onOpenPresetSettings: () => ports.openPresetSettings(dialog),
   })
 
   const setStatus = async (input: { taskId: string; revision: number; status: TaskStatus }) => {
@@ -139,10 +132,8 @@ export function TasksView(props: TasksViewProps) {
   return (
     <div class="tsk tsk-root" data-testid="tasks-view">
       <TasksHeader
-        active="tasks"
+        title="Tasks"
         count={visible().length}
-        onOpenTasks={() => {}}
-        onOpenPresets={() => props.onOpenPresets()}
         action={
           <Button variant="primary" size="small" data-testid="tasks-create" onClick={openCreate}>
             New task

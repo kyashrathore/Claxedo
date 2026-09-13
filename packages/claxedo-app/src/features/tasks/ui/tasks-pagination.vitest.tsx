@@ -96,6 +96,7 @@ function configureHost() {
     ),
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
     useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
+    openPresetSettings: () => {},
   })
 
   return requested
@@ -115,7 +116,6 @@ function mount() {
       scope={() => ({ serverUrl: SERVER, scopeId: "local" })}
       projectId={() => "prj_1"}
       onOpenTask={() => {}}
-      onOpenPresets={() => {}}
     />
   ))
 }
@@ -245,6 +245,7 @@ function failingSecondPageHost() {
     ),
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
     useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
+    openPresetSettings: () => {},
   })
   return {
     requested,
@@ -303,15 +304,8 @@ describe("a followed list whose next page fails", () => {
 
   test("presets stop following, and the refusal is readable where the list is", async () => {
     const host = failingSecondPageHost()
-    provide(() => (
-      <PresetsView
-        store={createTasksStore()}
-        scope={() => ({ serverUrl: SERVER, scopeId: "local" })}
-        presetId={() => undefined}
-        onOpenPreset={() => {}}
-        onOpenTasks={() => {}}
-      />
-    ))
+    const store = createTasksStore()
+    provide(() => <PresetsView store={store} scope={() => ({ serverUrl: SERVER, scopeId: "local" })} />)
 
     await waitFor(() => expect(screen.getByTestId("preset-list-row-pre_1")).toBeTruthy())
     await waitFor(() => expect(screen.getByTestId("preset-list-load-more").textContent).toBe("Retry"))

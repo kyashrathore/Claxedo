@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal, on } from "solid-js"
+import { Show, createSignal } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { PresetList, presetEditorDraftOf, emptyPresetEditorDraft } from "@claxedo/tasks/solid"
 import { uuid } from "@/lib/uuid"
@@ -11,13 +11,9 @@ import { TasksHeader } from "./tasks-header"
 export type PresetsViewProps = {
   store: TasksStore
   scope: () => TasksScope
-  /** The preset the URL names; the editor page opens on it. */
-  presetId: () => string | undefined
-  onOpenPreset: (presetId: string | undefined) => void
-  onOpenTasks: () => void
 }
 
-/** `/tasks/presets` and `/tasks/presets/<presetId>`: the personal preset catalog. */
+/** The personal preset catalog, and the editor for whichever preset is open. */
 export function PresetsView(props: PresetsViewProps) {
   const [includeArchived, showArchived] = createSignal(false)
   const presets = usePresetList(props.scope, includeArchived)
@@ -25,20 +21,17 @@ export function PresetsView(props: PresetsViewProps) {
   const invalidate = useTasksInvalidation(props.scope)
   const [busy, setBusy] = createSignal(false)
 
-  // The URL names the preset; the draft follows it. A preset the catalog has
-  // not read yet leaves the page on the list rather than on an empty form.
-  createEffect(
-    on([props.presetId, () => presets.items()], ([presetId, items]) => {
-      props.store.selectPreset(presetId)
-      if (!presetId) {
-        if (props.store.state.presetDraftId) props.store.closePresetDraft()
-        return
-      }
-      if (props.store.state.presetDraftId === presetId) return
-      const preset = items.find((entry) => entry.id === presetId)
-      if (preset) props.store.openPresetDraft(presetEditorDraftOf(preset), preset)
-    }),
-  )
+  const editPreset = (presetId: string) => {
+    const preset = presets.items().find((entry) => entry.id === presetId)
+    if (!preset) return
+    props.store.selectPreset(presetId)
+    props.store.openPresetDraft(presetEditorDraftOf(preset), preset)
+  }
+
+  const createPreset = () => {
+    props.store.selectPreset(undefined)
+    props.store.openPresetDraft(emptyPresetEditorDraft())
+  }
 
   const archiveOrRestore = async (type: "preset.archive" | "preset.restore", input: { presetId: string; revision: number }) => {
     setBusy(true)
@@ -57,18 +50,11 @@ export function PresetsView(props: PresetsViewProps) {
   return (
     <div class="tsk tsk-root" data-testid="presets-view">
       <TasksHeader
-        active="presets"
+        title="Presets"
         count={presets.items().length}
-        onOpenTasks={() => props.onOpenTasks()}
-        onOpenPresets={() => props.onOpenPreset(undefined)}
         action={
           <Show when={!editing()}>
-            <Button
-              variant="primary"
-              size="small"
-              data-testid="preset-list-create"
-              onClick={() => props.store.openPresetDraft(emptyPresetEditorDraft())}
-            >
+            <Button variant="primary" size="small" data-testid="preset-list-create" onClick={createPreset}>
               New preset
             </Button>
           </Show>
@@ -88,19 +74,15 @@ export function PresetsView(props: PresetsViewProps) {
             error={props.store.state.presetRefusal?.message}
             failure={listFailure(presets)}
             more={followRetry(presets)}
-            onSelect={(presetId) => props.onOpenPreset(presetId)}
-            onCreate={() => props.store.openPresetDraft(emptyPresetEditorDraft())}
+            onSelect={editPreset}
+            onCreate={createPreset}
             onArchive={(input) => void archiveOrRestore("preset.archive", input)}
             onRestore={(input) => void archiveOrRestore("preset.restore", input)}
           />
         }
       >
         <div class="tsk-page">
-          <PresetDraftEditor
-            store={props.store}
-            scope={props.scope}
-            onClose={() => props.onOpenPreset(undefined)}
-          />
+          <PresetDraftEditor store={props.store} scope={props.scope} />
         </div>
       </Show>
     </div>

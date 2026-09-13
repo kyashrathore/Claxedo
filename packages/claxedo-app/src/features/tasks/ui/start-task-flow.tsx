@@ -1,11 +1,12 @@
 import { createEffect, createMemo, createResource, createSignal } from "solid-js"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { ConfigurationSlot, StartPreview, Task } from "@claxedo/tasks"
-import { StartTaskDialog, emptyPresetEditorDraft, type StartDraft, type StartPreviewState } from "@claxedo/tasks/solid"
+import { StartTaskDialog, type StartDraft, type StartPreviewState } from "@claxedo/tasks/solid"
 import { refusalOf } from "../data/tasks-api"
 import { followRetry, listFailure, useTasksClient, usePresetList, type TasksScope } from "../data/queries"
 import { useStartTaskCommands } from "../data/start-task"
+import { useTasksAppPorts } from "../app-ports"
 import type { TasksStore } from "../store/tasks-store"
-import { PresetDraftEditor } from "./preset-draft-editor"
 
 export type StartTaskFlowProps = {
   store: TasksStore
@@ -17,12 +18,13 @@ export type StartTaskFlowProps = {
 }
 
 /**
- * The Start dialog's data half: preview, inline preset creation and the start
- * call itself. The draft lives here, so a failed preview or a refused start
- * re-renders the same choices instead of dropping the user back to an empty
- * dialog.
+ * The Start dialog's data half: the preview and the start call itself. The
+ * draft lives here, so a failed preview or a refused start re-renders the same
+ * choices instead of dropping the user back to an empty dialog.
  */
 export function StartTaskFlow(props: StartTaskFlowProps) {
+  const ports = useTasksAppPorts()
+  const dialog = useDialog()
   const client = useTasksClient()
   const startTask = useStartTaskCommands(props.scope)
   const presets = usePresetList(props.scope, () => false)
@@ -161,18 +163,8 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
       error={startError()}
       morePresets={followRetry(presets)}
       presetsFailure={listFailure(presets)}
-      inlinePresetEditor={
-        props.store.state.presetDraft ? (
-          <PresetDraftEditor
-            store={props.store}
-            scope={props.scope}
-            onSaved={(preset) => setDraft({ ...draft(), presetId: preset.id })}
-            onClose={() => props.store.closePresetDraft()}
-          />
-        ) : undefined
-      }
       onDraftChange={setDraft}
-      onCreatePreset={() => props.store.openPresetDraft(emptyPresetEditorDraft())}
+      onOpenPresetSettings={() => ports.openPresetSettings(dialog)}
       onStart={() => void start()}
       onCancel={() => props.onClose()}
     />

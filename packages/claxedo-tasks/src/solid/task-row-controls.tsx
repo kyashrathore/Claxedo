@@ -16,7 +16,8 @@ export type TaskStartOffer = {
   onStart: (choice: StartChoice) => void
   /** Present only where the task already has a session to open. */
   onOpen?: () => void
-  onCreatePreset: () => void
+  /** Presets are kept in the host's settings, which is where a row sends the user to make one. */
+  onOpenPresetSettings: () => void
 }
 
 /**
@@ -90,13 +91,13 @@ export function TaskStartControl(props: { task: TaskSummary; offer: TaskStartOff
                   <button
                     type="button"
                     class="tsk-menu-item"
-                    data-testid={`${props.testIdPrefix}-create-preset-${props.task.id}`}
+                    data-testid={`${props.testIdPrefix}-preset-settings-${props.task.id}`}
                     onClick={() => {
                       close()
-                      props.offer.onCreatePreset()
+                      props.offer.onOpenPresetSettings()
                     }}
                   >
-                    Create a preset
+                    Create a preset in Settings
                   </button>
                 </>
               }
@@ -127,13 +128,13 @@ export function TaskStartControl(props: { task: TaskSummary; offer: TaskStartOff
               <button
                 type="button"
                 class="tsk-menu-item"
-                data-testid={`${props.testIdPrefix}-create-preset-${props.task.id}`}
+                data-testid={`${props.testIdPrefix}-preset-settings-${props.task.id}`}
                 onClick={() => {
                   close()
-                  props.offer.onCreatePreset()
+                  props.offer.onOpenPresetSettings()
                 }}
               >
-                Create a preset
+                Manage presets in Settings
               </button>
             </Show>
           </div>

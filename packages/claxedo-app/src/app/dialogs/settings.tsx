@@ -1,5 +1,5 @@
 // Claxedo adds mobile settings navigation and Claxedo-owned terminal and sandbox tabs.
-import { Component, Show, createMemo, createSignal } from "solid-js"
+import { Component, For, Show, createMemo, createSignal } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -23,6 +23,7 @@ import { useNavigate } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
 import { SettingsScopeProvider } from "@/features/settings/scope/settings-scope"
+import { settingsSections } from "@/app/integrations/settings-sections"
 
 export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   const language = useLanguage()
@@ -48,6 +49,7 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   // that started when Settings opened would only keep the promise while
   // Settings was open.
   const autoShare = createMemo(useLocalWorkspaceAutoShareStatus)
+  const contributed = createMemo(() => settingsSections("workspace"))
   const [active, setActive] = createSignal(props.initialTab ?? "general")
   const [mobile, setMobile] = createSignal(false)
 
@@ -130,6 +132,14 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                           <Icon name="models" />
                           {language.t("settings.models.title")}
                         </Tabs.Trigger>
+                        <For each={contributed()}>
+                          {(section) => (
+                            <Tabs.Trigger value={section.id}>
+                              <Icon name={section.icon ?? "sliders"} />
+                              {section.label}
+                            </Tabs.Trigger>
+                          )}
+                        </For>
                       </div>
                     </div>
 
@@ -218,6 +228,13 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                 <SandboxSettingsSection />
               </Tabs.Content>
             </Show>
+            <For each={contributed()}>
+              {(section) => (
+                <Tabs.Content value={section.id} class="no-scrollbar">
+                  {section.renderer()}
+                </Tabs.Content>
+              )}
+            </For>
           </Tabs>
         </div>
       </Dialog>

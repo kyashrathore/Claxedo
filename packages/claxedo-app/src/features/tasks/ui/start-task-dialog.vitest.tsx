@@ -40,9 +40,9 @@ function preview(overrides: Partial<StartPreview> = {}): StartPreview {
   }
 }
 
-function mount(input: { presets?: readonly Preset[]; preview: StartPreviewState; inline?: boolean }) {
+function mount(input: { presets?: readonly Preset[]; preview: StartPreviewState }) {
   const onStart = vi.fn()
-  const onCreatePreset = vi.fn()
+  const onOpenPresetSettings = vi.fn()
   const [draft, updateDraft] = createSignal<StartDraft>({
     presetId: (input.presets ?? [preset])[0]?.id ?? null,
     slot: "primary",
@@ -56,14 +56,13 @@ function mount(input: { presets?: readonly Preset[]; preview: StartPreviewState;
       presets={input.presets ?? [preset]}
       draft={draft()}
       preview={input.preview}
-      inlinePresetEditor={input.inline ? <div data-testid="inline-editor" /> : undefined}
       onDraftChange={updateDraft}
-      onCreatePreset={onCreatePreset}
+      onOpenPresetSettings={onOpenPresetSettings}
       onStart={onStart}
       onCancel={() => {}}
     />
   ))
-  return { onStart, onCreatePreset, draft }
+  return { onStart, onOpenPresetSettings, draft }
 }
 
 describe("start task dialog", () => {
@@ -97,28 +96,24 @@ describe("start task dialog", () => {
     expect(onStart).not.toHaveBeenCalled()
   })
 
-  test("with no presets saved there is no default: the dialog offers to create one", () => {
-    const { onCreatePreset, onStart } = mount({ presets: [], preview: { status: "idle" } })
+  test("with no presets saved there is no default: the dialog points at Settings", () => {
+    const { onOpenPresetSettings, onStart } = mount({ presets: [], preview: { status: "idle" } })
 
     expect(screen.getByTestId("start-task-no-presets")).toBeTruthy()
     expect(screen.queryByTestId("start-task-preset")).toBeNull()
-    fireEvent.click(screen.getByTestId("start-task-create-preset"))
+    fireEvent.click(screen.getByTestId("start-task-preset-settings"))
 
-    expect(onCreatePreset).toHaveBeenCalledTimes(1)
+    expect(onOpenPresetSettings).toHaveBeenCalledTimes(1)
     expect(onStart).not.toHaveBeenCalled()
   })
 
-  test("creating a preset inline keeps the start draft", () => {
-    const { draft } = mount({ preview: { status: "ready", preview: preview() } })
+  test("the chooser lists the saved presets and offers Settings beside them", () => {
+    const { onOpenPresetSettings } = mount({ preview: { status: "ready", preview: preview() } })
 
-    fireEvent.input(screen.getByTestId("start-task-handoff"), { target: { value: "keep me" } })
-    fireEvent.click(screen.getByTestId("start-task-create-preset"))
-    cleanup()
+    expect(screen.getByRole("option", { name: preset.name })).toBeTruthy()
+    fireEvent.click(screen.getByTestId("start-task-preset-settings"))
 
-    const inline = mount({ preview: { status: "ready", preview: preview() }, inline: true })
-    expect(screen.getByTestId("inline-editor")).toBeTruthy()
-    expect(draft().handoffText).toBe("keep me")
-    expect(inline.draft().handoffText).toBe("")
+    expect(onOpenPresetSettings).toHaveBeenCalledTimes(1)
   })
 
   test("an unavailable preview names its blockers and blocks Start", () => {

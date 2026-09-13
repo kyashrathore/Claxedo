@@ -76,6 +76,7 @@ function json(body: unknown) {
 function mount(input: { links?: unknown[]; presets?: Preset[] } = {}) {
   const [page, setPage] = createSignal<TasksPage | undefined>()
   const openSession = vi.fn<(session: SessionReference) => void>()
+  const openPresetSettings = vi.fn()
   const requested: { path: string; body?: unknown }[] = []
 
   configureTasksAppPorts({
@@ -110,6 +111,7 @@ function mount(input: { links?: unknown[]; presets?: Preset[] } = {}) {
     ),
     useOpenSession: () => openSession,
     useOpenPage: () => (next?: TasksPage) => setPage(() => next),
+    openPresetSettings,
   })
 
   render(() => (
@@ -119,7 +121,7 @@ function mount(input: { links?: unknown[]; presets?: Preset[] } = {}) {
       </DialogProvider>
     </QueryClientProvider>
   ))
-  return { openSession, requested, page }
+  return { openSession, openPresetSettings, requested, page }
 }
 
 const link = (liveness: "live" | "deleted", slot: ConfigurationSlot = "primary") => ({
@@ -137,16 +139,14 @@ const link = (liveness: "live" | "deleted", slot: ConfigurationSlot = "primary")
 })
 
 describe("starting and opening from a list row", () => {
-  // The editor renders on the Presets page, so opening a draft without going
-  // there left the user on the list with nothing on screen.
-  test("Create a preset from a row's menu lands on the preset editor", async () => {
-    mount({ presets: [] })
+  test("a row with no preset saved sends the user to the Presets settings", async () => {
+    const { openPresetSettings } = mount({ presets: [] })
 
     fireEvent.click(await waitFor(() => screen.getByTestId("tasks-list-start-menu-tsk_1")))
-    fireEvent.click(screen.getByTestId("tasks-list-create-preset-tsk_1"))
+    fireEvent.click(screen.getByTestId("tasks-list-preset-settings-tsk_1"))
 
-    await waitFor(() => expect(screen.getByTestId("preset-editor")).toBeTruthy())
-    expect(screen.queryByTestId("tasks-list")).toBeNull()
+    expect(openPresetSettings).toHaveBeenCalledTimes(1)
+    expect(screen.getByTestId("tasks-list")).toBeTruthy()
   })
 
   /**

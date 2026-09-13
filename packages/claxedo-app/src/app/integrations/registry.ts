@@ -1,6 +1,7 @@
 import type { Command, CommandHandler } from "./command-bus"
 import { createSignal, type JSX } from "solid-js"
 import { hasBacking, workspaceKey, type SessionRef } from "@/platform/identity/session-ref"
+import type { AppIconName } from "@/ui/icons/catalog"
 
 export type ContributionTier = "shell" | "claxedo-first-party" | "lease-bound-agent"
 
@@ -67,12 +68,19 @@ export type RendererContribution = {
   gate?: ContributionGate
 }
 
+/** The group of Settings tabs a contributed section is listed under. */
+export type SettingsSection = "desktop" | "workspace" | "account"
+
 export type SettingsContribution = {
+  /** Also the tab value, which is what `DialogSettings` takes as `initialTab`. */
   id: string
   tier: ContributionTier
   lease?: AgentContributionLease
-  section: string
+  section: SettingsSection
+  label: string
+  icon?: AppIconName
   gate?: ContributionGate
+  renderer: () => JSX.Element
 }
 
 export type ContributionRegistry = {
@@ -169,6 +177,10 @@ export function createContributionRegistry(seed: Partial<ContributionRegistry> =
     visibleCommands(context: ContributionGateContext) {
       track()
       return registry.commands.filter((command) => contributionGateAllows(command.gate, context))
+    },
+    visibleSettings(context: ContributionGateContext) {
+      track()
+      return registry.settings.filter((entry) => contributionGateAllows(entry.gate, context))
     },
   }
 }

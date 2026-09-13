@@ -91,6 +91,7 @@ function ports(request: TasksAppPorts["request"]): TasksAppPorts {
     ),
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
     useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
+    openPresetSettings: () => {},
   }
 }
 
@@ -191,8 +192,7 @@ describe("a refused edit rebases onto the record the host returned", () => {
 
     const store = createTasksStore()
     store.openPresetDraft(presetEditorDraftOf(preset), preset)
-    const onSaved = vi.fn<(saved: Preset) => void>()
-    renderWithClient(() => <PresetDraftEditor store={store} scope={() => SCOPE} onSaved={onSaved} onClose={() => {}} />)
+    renderWithClient(() => <PresetDraftEditor store={store} scope={() => SCOPE} />)
 
     const nameField = await waitFor(() => screen.getByTestId("preset-editor-name"))
     expect(nameField.value).toBe("Careful reviewer")
@@ -208,8 +208,6 @@ describe("a refused edit rebases onto the record the host returned", () => {
     await waitFor(() => expect(commands).toHaveLength(2))
     expect(commands[1]?.command.input.revision).toBe(4)
     expect(commands[1]?.command.input.name).toBe("My preset name")
-    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1))
-    expect(onSaved.mock.calls[0]?.[0]?.name).toBe("My preset name")
-    expect(screen.queryByTestId("preset-editor")).toBeNull()
+    await waitFor(() => expect(screen.queryByTestId("preset-editor")).toBeNull())
   })
 })

@@ -105,8 +105,8 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   recoverMissingWorkspace: lazy("@/features/workspaces/actions/workspace-recovery", "recoverMissingWorkspace"),
   loadManageModelsDialog: () => () => import("@/app/dialogs/manage-models"),
   openSettingsProviders: () => (dialog) => {
-    const { openSettingsProviders } = require("@/features/settings/open-settings-providers") as typeof import("@/features/settings/open-settings-providers")
-    return openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
+    const { openSettings } = require("@/features/settings/open-settings") as typeof import("@/features/settings/open-settings")
+    return openSettings(dialog, () => import("@/app/dialogs/settings"), "providers")
   },
   listDocumentMentions: lazy("@/app/integrations/document-mentions", "listDocumentMentions"),
   documentMentionText: lazy("@/app/integrations/document-mentions", "documentMentionText"),

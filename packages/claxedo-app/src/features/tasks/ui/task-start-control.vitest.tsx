@@ -57,7 +57,7 @@ function mount(input: {
   onOpen?: () => void
 }) {
   const onStart = vi.fn<(choice: StartChoice) => void>()
-  const onCreatePreset = vi.fn()
+  const onOpenPresetSettings = vi.fn()
   render(() => (
     <TaskStartControl
       task={input.task ?? summary()}
@@ -68,11 +68,11 @@ function mount(input: {
         blocker: input.blocker,
         onStart,
         ...(input.onOpen ? { onOpen: input.onOpen } : {}),
-        onCreatePreset,
+        onOpenPresetSettings,
       }}
     />
   ))
-  return { onStart, onCreatePreset }
+  return { onStart, onOpenPresetSettings }
 }
 
 describe("starting a task from its row", () => {
@@ -106,14 +106,14 @@ describe("starting a task from its row", () => {
     expect(onStart).not.toHaveBeenCalled()
   })
 
-  test("with no preset saved the menu offers to create one and starts nothing", () => {
-    const { onStart, onCreatePreset } = mount({ presets: [], defaultPresetId: undefined })
+  test("with no preset saved the menu sends the user to Settings and starts nothing", () => {
+    const { onStart, onOpenPresetSettings } = mount({ presets: [], defaultPresetId: undefined })
 
     expect(screen.getByTestId<HTMLButtonElement>("tasks-list-start-tsk_1").disabled).toBe(true)
     fireEvent.click(screen.getByTestId("tasks-list-start-menu-tsk_1"))
-    fireEvent.click(screen.getByTestId("tasks-list-create-preset-tsk_1"))
+    fireEvent.click(screen.getByTestId("tasks-list-preset-settings-tsk_1"))
 
-    expect(onCreatePreset).toHaveBeenCalledTimes(1)
+    expect(onOpenPresetSettings).toHaveBeenCalledTimes(1)
     expect(onStart).not.toHaveBeenCalled()
   })
 

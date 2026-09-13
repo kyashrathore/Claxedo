@@ -1,5 +1,7 @@
 import { registerContentSurface } from "@/app/integrations/first-party-content-surfaces"
+import { registerSettingsSection } from "@/app/integrations/settings-sections"
 import { tasksContentSurface } from "@/app/integrations/tasks/content-surface"
+import { tasksPresetsSettingsSection } from "@/app/integrations/tasks/settings-section"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import { tasksAppPorts } from "@/app/integrations/tasks/tasks-ports"
 
@@ -20,4 +22,5 @@ import { tasksAppPorts } from "@/app/integrations/tasks/tasks-ports"
 export function loadTasksContributions() {
   configureTasksAppPorts(tasksAppPorts())
   registerContentSurface(tasksContentSurface)
+  registerSettingsSection(tasksPresetsSettingsSection)
 }

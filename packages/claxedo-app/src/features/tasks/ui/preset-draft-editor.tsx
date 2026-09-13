@@ -1,5 +1,4 @@
 import { Show, createSignal } from "solid-js"
-import type { Preset } from "@claxedo/tasks"
 import { PresetEditor, parsePresetEditorDraft, type PresetEditorDraft } from "@claxedo/tasks/solid"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
@@ -10,17 +9,13 @@ import type { TasksStore } from "../store/tasks-store"
 export type PresetDraftEditorProps = {
   store: TasksStore
   scope: () => TasksScope
-  /** Handed the saved record, so an inline create can name it to the flow that asked for it. */
-  onSaved?: (preset: Preset) => void
-  onClose: () => void
 }
 
 /**
  * The open preset draft and the command that saves it.
  *
- * One owner for both the Presets page and the Start dialog's inline create:
- * the draft lives in the store either way, and the only difference between
- * them is where closing goes, which is the caller's to say.
+ * Saving and cancelling both close the draft in the store, which is what takes
+ * the catalog back to its list — the editor never navigates.
  */
 export function PresetDraftEditor(props: PresetDraftEditorProps) {
   const ports = useTasksAppPorts()
@@ -37,7 +32,7 @@ export function PresetDraftEditor(props: PresetDraftEditorProps) {
     const revision = props.store.state.presetRevision
     setBusy(true)
     try {
-      const response = await client().command({
+      await client().command({
         clientRequestId: uuid(),
         command:
           presetId !== undefined && revision !== undefined
@@ -46,10 +41,6 @@ export function PresetDraftEditor(props: PresetDraftEditorProps) {
       })
       await invalidate.everything()
       props.store.closePresetDraft()
-      if (response.result.type === "preset.create" || response.result.type === "preset.edit") {
-        props.onSaved?.(response.result.preset)
-      }
-      props.onClose()
     } catch (error) {
       props.store.refusePreset(refusalOf(error))
     } finally {
@@ -73,10 +64,7 @@ export function PresetDraftEditor(props: PresetDraftEditorProps) {
           fieldErrors={props.store.state.presetRefusal?.fields}
           submitLabel={props.store.state.presetDraftId ? "Save preset" : "Create preset"}
           onSubmit={(next) => void save(next)}
-          onCancel={() => {
-            props.store.closePresetDraft()
-            props.onClose()
-          }}
+          onCancel={() => props.store.closePresetDraft()}
         />
       )}
     </Show>

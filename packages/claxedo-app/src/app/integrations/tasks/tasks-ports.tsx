@@ -9,6 +9,8 @@ import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { useCapabilityCatalog } from "./capability-catalog"
 import { useOpenTaskSession } from "./open-task-session"
 import { useOpenTasksPage } from "./open-tasks-page"
+import { TASKS_PRESETS_SETTINGS_TAB } from "./settings-section"
+import { openSettings } from "@/features/settings/open-settings"
 import type { ConfigurationEditorProps, ProseEditorProps } from "@claxedo/tasks/solid"
 
 /**
@@ -70,5 +72,7 @@ export function tasksAppPorts(): TasksAppPorts {
     ProseEditor: (props: ProseEditorProps) => TasksProseEditor(props),
     useOpenSession: useOpenTaskSession,
     useOpenPage: useOpenTasksPage,
+    openPresetSettings: (dialog) =>
+      void openSettings(dialog, () => import("@/app/dialogs/settings"), TASKS_PRESETS_SETTINGS_TAB),
   }
 }

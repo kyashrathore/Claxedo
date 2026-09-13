@@ -1,4 +1,4 @@
-import type { Accessor } from "solid-js"
+import type { Accessor, JSX } from "solid-js"
 import type { SessionReference } from "@claxedo/tasks"
 import type { TasksPage } from "@/platform/identity/route"
 import type { CapabilityCatalogReader, ConfigurationEditor, ProseEditor } from "@claxedo/tasks/solid"
@@ -27,8 +27,10 @@ export type TasksAppPorts = {
   /** The Documents rich editor: task descriptions and preset instructions are markdown prose. */
   ProseEditor: ProseEditor
   useOpenSession: () => (session: SessionReference) => void
-  /** Navigates the Tasks tab between its list, a task, and the preset pages. */
+  /** Navigates the Tasks tab between its list and a task. */
   useOpenPage: () => (page?: TasksPage) => void
+  /** Presets live in Settings; a feature may not import the dialog that holds them. */
+  openPresetSettings: (dialog: { show: (element: () => JSX.Element) => unknown }) => void
 }
 
 let ports: TasksAppPorts | undefined

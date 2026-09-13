@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import type { JSX } from "solid-js"
 import { TASKS_BOUNDS, TASKS_ROUTE_PATH, type Preset, type SessionReference, type Task } from "@claxedo/tasks"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import type { TasksPage } from "@/platform/identity/route"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import type { TasksScope } from "@/features/tasks/data/queries"
@@ -96,6 +97,7 @@ function refusedPresetHost() {
     ),
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
     useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
+    openPresetSettings: () => {},
   })
   return {
     requested,
@@ -108,7 +110,7 @@ function refusedPresetHost() {
 function provide(view: () => JSX.Element) {
   render(() => (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      {view()}
+      <DialogProvider>{view()}</DialogProvider>
     </QueryClientProvider>
   ))
 }
@@ -130,7 +132,7 @@ describe("a refused preset read", () => {
     await waitFor(() => expect(screen.getByTestId("start-task-presets-retry")).toBeTruthy())
     expect(screen.getByRole("alert").textContent).toBe("Presets are not readable here.")
     expect(screen.queryByTestId("start-task-no-presets")).toBeNull()
-    expect(screen.queryByTestId("start-task-create-preset")).toBeNull()
+    expect(screen.queryByTestId("start-task-preset-settings")).toBeNull()
     expect(screen.getByTestId<HTMLButtonElement>("start-task-submit").disabled).toBe(true)
     expect(host.requested.filter((path) => path.startsWith("/presets"))).toHaveLength(1)
 
@@ -145,15 +147,8 @@ describe("a refused preset read", () => {
 
   test("the Presets view reports the refusal instead of an empty catalog", async () => {
     const host = refusedPresetHost()
-    provide(() => (
-      <PresetsView
-        store={createTasksStore()}
-        scope={() => SCOPE}
-        presetId={() => undefined}
-        onOpenPreset={() => {}}
-        onOpenTasks={() => {}}
-      />
-    ))
+    const store = createTasksStore()
+    provide(() => <PresetsView store={store} scope={() => SCOPE} />)
 
     await waitFor(() => expect(screen.getByTestId("preset-list-retry")).toBeTruthy())
     expect(screen.getByRole("alert").textContent).toBe("Presets are not readable here.")

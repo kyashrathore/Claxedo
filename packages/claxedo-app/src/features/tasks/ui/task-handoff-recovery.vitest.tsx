@@ -138,6 +138,7 @@ function mount(input: { handoff: SessionHandoffState; refuseStart?: string }) {
     ),
     useOpenSession: () => openSession,
     useOpenPage: () => () => {},
+    openPresetSettings: () => {},
   })
 
   render(() => (
