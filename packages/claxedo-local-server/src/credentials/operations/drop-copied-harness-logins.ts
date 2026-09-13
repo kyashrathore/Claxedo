@@ -1,5 +1,6 @@
 import fs from "fs"
 import path from "path"
+import { harnessForProviderId } from "@claxedo/agent-runtime-contract"
 import { deleteCredential, listCredentials } from "@claxedo/server-core/credentials/registry"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
@@ -10,17 +11,18 @@ const log = Log.create({ service: "credentials-drop-copied-logins" })
 const MARKER_FILE = path.join(dataDir(), "credentials", ".harness-logins-dropped")
 
 /**
- * A row the machine scan took off this computer and that no provider ever
- * named.
+ * A row the machine scan took off this computer that is a harness's own login.
  *
- * The pair is what identifies it: `desktop_discovery` says the scan wrote it,
- * and the absent `account_id` says the provider gave it no identity of its own,
- * which was true of exactly one kind of row — the Claude Code login read out of
- * the Keychain or `~/.claude/.credentials.json`. A discovered Codex account
- * carries its ChatGPT id and is a real second account the user chose to import.
+ * Three facts together: the scan wrote it (`desktop_discovery`), it is a
+ * subscription token rather than a key the user pasted (`oauth_token`), and it
+ * is stored against a binding a harness resolves its own auth through. An API
+ * key the same scan found in the environment fails the second, and a vendor
+ * token for an engine to run on fails the third, so neither is reaped.
  */
 function isCopiedHarnessLogin(credential: CredentialMetadata) {
-  return credential.consent?.surface === "desktop_discovery" && !credential.account_id
+  return credential.consent?.surface === "desktop_discovery"
+    && credential.kind === "oauth_token"
+    && harnessForProviderId(credential.provider_id) !== undefined
 }
 
 /**
@@ -38,6 +40,12 @@ function isCopiedHarnessLogin(credential: CredentialMetadata) {
  */
 export async function dropCopiedHarnessLogins(): Promise<{ dropped: number }> {
   if (fs.existsSync(MARKER_FILE)) return { dropped: 0 }
+  // Marked before the first delete, never after: a marker write that fails once
+  // the rows are gone leaves the pass to run again on the next boot, and by
+  // then the rows it reaps are the ones the user re-imported on purpose. An
+  // unwritable marker instead costs this boot's deletes, which the next pass
+  // does.
+  if (!markDropped()) return { dropped: 0 }
   const copied = listCredentials().filter(isCopiedHarnessLogin)
   let dropped = 0
   for (const credential of copied) {
@@ -53,12 +61,17 @@ export async function dropCopiedHarnessLogins(): Promise<{ dropped: number }> {
       })
     }
   }
+  if (dropped > 0) log.info("Forgot harness logins an older Claxedo had copied", { dropped })
+  return { dropped }
+}
+
+function markDropped() {
   try {
     fs.mkdirSync(path.dirname(MARKER_FILE), { recursive: true, mode: 0o700 })
     fs.writeFileSync(MARKER_FILE, new Date().toISOString(), { mode: 0o600 })
+    return true
   } catch (error) {
     log.warn("Failed to record that copied harness logins were forgotten", { error: String(error) })
+    return false
   }
-  if (dropped > 0) log.info("Forgot harness logins an older Claxedo had copied", { dropped })
-  return { dropped }
 }

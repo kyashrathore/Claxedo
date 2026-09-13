@@ -17,7 +17,7 @@ import {
   type CredentialCheckOutcome,
 } from "@claxedo/server-core/credentials/operations/check"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
-import { MACHINE_LOGIN_HARNESSES } from "@claxedo/server-core/credentials/machine-login"
+import { HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
 import type { MachineAgentUsageReader } from "@claxedo/server-core/credentials/machine-agent-usage"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
@@ -58,7 +58,7 @@ const saveDiscoveredBody = z.object({
   discovery_id: z.string().min(1),
   items: z.array(z.object({
     provider_id: z.string().min(1),
-    account_id: z.string().min(1).optional(),
+    kind: z.enum(["api_key", "oauth_token", "subscription_session", "sandbox_driver"]),
     scope: z.enum(["local", "shared"]),
   })),
 })
@@ -80,7 +80,7 @@ const activateBody = z.union([
   }).strict(),
 ])
 
-const machineLoginQuery = z.enum(MACHINE_LOGIN_HARNESSES)
+const machineLoginQuery = z.enum(HARNESS_IDS)
 
 function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialByProvider"]>>) {
   if (!cred) return null

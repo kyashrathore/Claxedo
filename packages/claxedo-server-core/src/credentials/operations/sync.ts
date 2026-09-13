@@ -12,9 +12,7 @@ export type LocalCredentialItem = {
   kind: CredentialKind
   source: CredentialSource
   label: string
-  account_id?: string
   origin: string
-  fresh_until?: number
   secret: string
 }
 
@@ -38,10 +36,20 @@ function itemOrigin(item: Item) {
   return env ?? item.source
 }
 
+/**
+ * What makes two collected candidates the same credential. A provider can be
+ * handed to us twice in different shapes — a pasted `claude-sdk` key in the
+ * agent config and a `CLAUDE_CODE_OAUTH_TOKEN` subscription in the environment
+ * — and those are two accounts to choose between, not one row read twice.
+ */
+export function localCredentialKey(item: { provider_id: string; kind: CredentialKind }) {
+  return `${item.provider_id}\u0000${item.kind}`
+}
+
 function put(map: Map<string, LocalCredentialItem>, item: Item | undefined) {
   if (!item) return
   const normalized = { ...item, origin: itemOrigin(item) }
-  map.set(`${item.provider_id}\u0000${item.kind}\u0000${item.account_id ?? ""}`, normalized)
+  map.set(localCredentialKey(item), normalized)
 }
 
 /**
@@ -305,14 +313,7 @@ export async function syncLocalCredentials(ids?: string[], org?: string) {
       continue
     }
     try {
-      // Carry the collected token expiry through, the same way the discovery
-      // path does. Without it an imported OAuth login is stored with no
-      // `expires_at`, so nothing downstream can tell a fresh account from a
-      // months-old one when a provider has several.
-      await Promise.all(items.map((item) => putCredential({
-        ...item,
-        ...(item.fresh_until ? { expires_at: item.fresh_until } : {}),
-      }, org)))
+      await Promise.all(items.map((item) => putCredential(item, org)))
       synced.push(providerId)
     } catch (err) {
       failed.push({

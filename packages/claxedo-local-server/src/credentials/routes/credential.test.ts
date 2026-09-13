@@ -128,13 +128,11 @@ describe("credential routes", () => {
           provider_id: "openai",
           kind: "oauth_token" as const,
           label: "Codex subscription",
-          account_id: "account…1234567890",
           origin: "~/.codex/auth.json",
-          fresh_until: 123,
         }],
       })),
       saveDiscoveredCredentials: vi.fn(async () => ({
-        saved: [{ credential_id: "cred_1", provider_id: "openai", account_id: "account…1234567890" }],
+        saved: [{ credential_id: "cred_1", provider_id: "openai", kind: "oauth_token" as const }],
       })),
     })
     const app = CredentialRoutes(registry)
@@ -145,7 +143,7 @@ describe("credential routes", () => {
       method: "POST",
       body: JSON.stringify({
         discovery_id: "discovery-1",
-        items: [{ provider_id: "openai", account_id: "account…1234567890", scope: "shared" }],
+        items: [{ provider_id: "openai", kind: "oauth_token", scope: "shared" }],
       }),
     })
     const saved = await save.json()
@@ -154,7 +152,7 @@ describe("credential routes", () => {
     expect(save.status).toBe(200)
     expect(registry.saveDiscoveredCredentials).toHaveBeenCalledWith({
       discovery_id: "discovery-1",
-      items: [{ provider_id: "openai", account_id: "account…1234567890", scope: "shared" }],
+      items: [{ provider_id: "openai", kind: "oauth_token", scope: "shared" }],
     }, SINGLE_TENANT_ORG)
     expect({ preview, saved }).toMatchInlineSnapshot(`
       {
@@ -162,8 +160,6 @@ describe("credential routes", () => {
           "discovery_id": "discovery-1",
           "items": [
             {
-              "account_id": "account…1234567890",
-              "fresh_until": 123,
               "kind": "oauth_token",
               "label": "Codex subscription",
               "origin": "~/.codex/auth.json",
@@ -174,8 +170,8 @@ describe("credential routes", () => {
         "saved": {
           "saved": [
             {
-              "account_id": "account…1234567890",
               "credential_id": "cred_1",
+              "kind": "oauth_token",
               "provider_id": "openai",
             },
           ],
@@ -183,6 +179,24 @@ describe("credential routes", () => {
       }
     `)
     expect(JSON.stringify({ preview, saved })).not.toContain("secret")
+  })
+
+  test("a selection that does not name the candidate's shape is refused", async () => {
+    // Two candidates can share a provider id and differ only by kind, so a
+    // selection without one names neither of them.
+    const registry = Object.assign(credentials(), { saveDiscoveredCredentials: vi.fn() })
+    const app = CredentialRoutes(registry)
+
+    const save = await app.request("http://localhost/save-discovered", {
+      method: "POST",
+      body: JSON.stringify({
+        discovery_id: "discovery-1",
+        items: [{ provider_id: "openai", scope: "shared" }],
+      }),
+    })
+
+    expect(save.status).toBe(400)
+    expect(registry.saveDiscoveredCredentials).not.toHaveBeenCalled()
   })
 
   test("a discovery that throws names its cause in the body and in a warn log", async () => {

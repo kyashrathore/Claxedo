@@ -1,5 +1,5 @@
-import { createHmac, randomBytes, randomUUID } from "crypto"
-import { collectLocalCredentialItems, type LocalCredentialItem } from "./sync"
+import { randomUUID } from "crypto"
+import { collectLocalCredentialItems, localCredentialKey, type LocalCredentialItem } from "./sync"
 import { probeDiscoveredCredential } from "./probe"
 import type { CredentialUsageWindow } from "./verify"
 import { listCredentials, putCredential, updateCredentialHealth } from "@claxedo/server-core/credentials/registry"
@@ -29,16 +29,14 @@ export type CredentialDiscoveryPreview = {
   provider_id: string
   kind: LocalCredentialItem["kind"]
   label: string
-  account_id?: string
   origin: string
-  fresh_until?: number
   already_connected?: boolean
   probe?: CredentialProbe
 }
 
 export type CredentialDiscoverySelection = {
   provider_id: string
-  account_id?: string
+  kind: LocalCredentialItem["kind"]
   scope: CredentialScope
 }
 
@@ -56,13 +54,8 @@ export class CredentialDiscoveryError extends Error {
   }
 }
 
-function maskedAccountId(accountId: string, maskKey: Buffer) {
-  return `account…${createHmac("sha256", maskKey).update(accountId).digest("hex").slice(0, 10)}`
-}
-
 function preview(
   item: LocalCredentialItem,
-  maskKey: Buffer,
   connected: Set<string>,
   probe?: CredentialDiscoveryProbe,
 ): CredentialDiscoveryPreview {
@@ -70,22 +63,16 @@ function preview(
     provider_id: item.provider_id,
     kind: item.kind,
     label: item.label,
-    ...(item.account_id ? { account_id: maskedAccountId(item.account_id, maskKey) } : {}),
     origin: item.origin,
-    ...(item.fresh_until ? { fresh_until: item.fresh_until } : {}),
-    ...(connected.has(selectionKey(item)) ? { already_connected: true } : {}),
+    ...(connected.has(localCredentialKey(item)) ? { already_connected: true } : {}),
     ...(probe ? { probe } : {}),
   }
-}
-
-function selectionKey(input: { provider_id: string; account_id?: string | null }) {
-  return `${input.provider_id}\u0000${input.account_id ?? ""}`
 }
 
 export function createCredentialDiscovery(input: {
   collect: () => Promise<LocalCredentialItem[]>
   save: (item: CredentialWrite, org?: string) => Promise<{ id: string }>
-  connected?: (org?: string) => Array<{ provider_id: string; account_id?: string | null }>
+  connected?: (org?: string) => Array<{ provider_id: string; kind: LocalCredentialItem["kind"] }>
   /**
    * Live-probes a candidate before it is offered. Omitted (or throwing) leaves
    * every row `unknown` — discovery still works, it just cannot promise
@@ -130,24 +117,23 @@ export function createCredentialDiscovery(input: {
     async discover(org?: string) {
       const collected = await input.collect()
       const discovery_id = (input.id ?? randomUUID)()
-      const maskKey = randomBytes(32)
-      const connected = new Set((input.connected?.(org) ?? []).map(selectionKey))
+      const connected = new Set((input.connected?.(org) ?? []).map(localCredentialKey))
       // Probe every candidate before offering it. Reading a token off disk says
       // nothing about whether the provider will accept it, and a credential that
       // is saved and then fails is worse than one that was never found — the
       // user believes setup succeeded. Probes run in parallel and are resolved
       // once per discovery, so the result is stashed rather than re-spent.
       const probes = await Promise.all(collected.map((item) => runProbe(item)))
-      const items = new Map(collected.map((item, index) => {
-        const redacted = preview(item, maskKey, connected)
-        return [selectionKey(redacted), { item, probe: probes[index] }]
-      }))
+      const items = new Map(collected.map((item, index) => [
+        localCredentialKey(item),
+        { item, probe: probes[index] },
+      ]))
       stash.set(discovery_id, { expiresAt: now() + ttl, org, items })
       const timer = setTimeout(() => stash.delete(discovery_id), ttl)
       timer.unref?.()
       return {
         discovery_id,
-        items: collected.map((item, index) => preview(item, maskKey, connected, probes[index])),
+        items: collected.map((item, index) => preview(item, connected, probes[index])),
       }
     },
     async save(request: { discovery_id: string; items: CredentialDiscoverySelection[] }, org?: string) {
@@ -156,26 +142,28 @@ export function createCredentialDiscovery(input: {
       if (now() > discovery.expiresAt) throw new CredentialDiscoveryError("discovery_expired")
       if (org !== discovery.org) throw new CredentialDiscoveryError("discovery_org_mismatch")
 
-      const keys = request.items.map(selectionKey)
+      const keys = request.items.map(localCredentialKey)
       if (new Set(keys).size !== keys.length) throw new CredentialDiscoveryError("discovery_duplicate_item")
-      const selected = keys.map((key) => discovery.items.get(key))
-      if (selected.some((entry) => !entry)) throw new CredentialDiscoveryError("discovery_item_not_found")
+      const selected = keys.flatMap((key) => {
+        const entry = discovery.items.get(key)
+        return entry ? [entry] : []
+      })
+      if (selected.length !== keys.length) throw new CredentialDiscoveryError("discovery_item_not_found")
 
-      const credentials = await Promise.all(selected.map((entry, index) => input.save({
-        provider_id: entry!.item.provider_id,
-        kind: entry!.item.kind,
+      const credentials = await Promise.all(selected.map(({ item }, index) => input.save({
+        provider_id: item.provider_id,
+        kind: item.kind,
         source: request.items[index].scope === "shared" ? "managed" : "local_only",
-        label: entry!.item.label,
-        ...(entry!.item.account_id ? { account_id: entry!.item.account_id } : {}),
-        secret: entry!.item.secret,
-        ...(entry!.item.fresh_until ? { expires_at: entry!.item.fresh_until } : {}),
+        label: item.label,
+        secret: item.secret,
         scope: request.items[index].scope,
         consent: { at: now(), surface: "desktop_discovery" },
       }, org)))
       const validatedAt = now()
-      for (const [index, entry] of selected.entries()) {
-        const health = entry!.probe.health
-        if (health && input.recordHealth) await input.recordHealth(credentials[index].id, health, validatedAt, org)
+      for (const [index, { probe }] of selected.entries()) {
+        if (probe.health && input.recordHealth) {
+          await input.recordHealth(credentials[index].id, probe.health, validatedAt, org)
+        }
       }
       stash.delete(request.discovery_id)
 
@@ -183,7 +171,7 @@ export function createCredentialDiscovery(input: {
         saved: request.items.map((item, index) => ({
           credential_id: credentials[index].id,
           provider_id: item.provider_id,
-          ...(item.account_id ? { account_id: item.account_id } : {}),
+          kind: item.kind,
         })),
       }
     },
