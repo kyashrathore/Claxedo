@@ -1,5 +1,8 @@
 import { For, Show, onCleanup, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
+import { Button } from "@opencode-ai/ui/button"
+import { Icon } from "@opencode-ai/ui/icon"
+import { Tag } from "@opencode-ai/ui/tag"
 import {
   TASKS_BOUNDS,
   type ConfigurationSlot,
@@ -8,8 +11,8 @@ import {
   type TaskStatus,
 } from "@claxedo/tasks"
 import type { ProseEditor } from "../../app-ports"
-import { StatusMenu } from "../shared/status-control"
-import { SLOT_LABELS, TASK_STATUS_LABELS, slotAttempt, type TaskDetailView, type TaskLinkGroup } from "../../view-model"
+import { StatusControl } from "../shared/status-control"
+import { SLOT_LABELS, TASK_STATUS_LABELS, openableSlot, slotAttempt, type TaskDetailView, type TaskLinkGroup } from "../../view-model"
 
 export type TaskDetailEdit = {
   title: string
@@ -57,6 +60,9 @@ export type TaskDetailProps = {
 export function TaskDetail(props: TaskDetailProps) {
   const task = () => props.view.task
   const patch = (input: Partial<TaskDetailEdit>) => props.onEditChange({ ...props.edit, ...input })
+  // The preset the task is actually running under, named by the link the
+  // service wrote at start rather than by whatever the catalog holds now.
+  const presetName = () => openableSlot(props.view.groups)?.current.presetNameAtStart
 
   // Cmd/Ctrl+S saves from wherever the caret is — the editor holds focus while
   // you type, so a handler on this subtree alone would miss the rail. Bound
@@ -120,19 +126,18 @@ export function TaskDetail(props: TaskDetailProps) {
             <span class="tsk-spacer" />
             <span class="tsk-page-actions" data-testid="task-detail-save-row">
               <span class="tsk-hint">Unsaved changes</span>
-              <button type="button" class="tsk-button" data-variant="quiet" data-testid="task-detail-discard" onClick={() => props.onDiscard()}>
+              <Button size="small" variant="ghost" data-testid="task-detail-discard" onClick={() => props.onDiscard()}>
                 Discard
-              </button>
-              <button
-                type="button"
-                class="tsk-button"
-                data-variant="primary"
+              </Button>
+              <Button
+                size="small"
+                variant="primary"
                 data-testid="task-detail-save"
                 disabled={props.busy}
                 onClick={() => props.onSave()}
               >
                 Save
-              </button>
+              </Button>
             </span>
           </Show>
         </nav>
@@ -181,90 +186,109 @@ export function TaskDetail(props: TaskDetailProps) {
         </Show>
         <Show when={props.error}>{(message) => <p class="tsk-error" role="alert">{message()}</p>}</Show>
 
-        <Show when={props.subtasks}>
-          {(section) => (
-            <>
-              <div class="tsk-divider" />
-              {section()}
-            </>
-          )}
-        </Show>
+        <Show when={props.subtasks}>{(section) => section()}</Show>
       </div>
 
       <aside class="tsk-rail">
-        <section class="tsk-stack" aria-label="Properties">
-          <h3 class="tsk-section-title">Properties</h3>
-          <dl class="tsk-props">
-            <dt>Status</dt>
-            <dd>
-              <StatusMenu
-                status={task().status}
-                disabled={props.busy || task().archivedAt !== null}
-                label="Task status"
-                testId="task-detail-status"
-                onChange={(status) => props.onStatusChange({ taskId: task().id, revision: task().revision, status })}
-              />
-            </dd>
-            <dt>Project</dt>
-            <dd>{props.projectLabel}</dd>
+        <section class="tsk-rail-section" aria-label="Properties">
+          <h3 class="tsk-rail-title">Properties</h3>
+          <dl class="tsk-props-list">
+            <div class="tsk-prop">
+              <dt>
+                <Icon name="status" size="small" />
+                Status
+              </dt>
+              <dd>
+                <StatusControl
+                  status={task().status}
+                  disabled={props.busy || task().archivedAt !== null}
+                  label="Task status"
+                  testId="task-detail-status"
+                  onChange={(status) => props.onStatusChange({ taskId: task().id, revision: task().revision, status })}
+                />
+              </dd>
+            </div>
+            <div class="tsk-prop">
+              <dt>
+                <Icon name="folder" size="small" />
+                Project
+              </dt>
+              <dd>{props.projectLabel}</dd>
+            </div>
+            <Show when={presetName()}>
+              {(name) => (
+                <div class="tsk-prop">
+                  <dt>
+                    <Icon name="sliders" size="small" />
+                    Preset
+                  </dt>
+                  <dd class="tsk-truncate">{name()}</dd>
+                </div>
+              )}
+            </Show>
             <Show when={task().workspaceId}>
               {(workspaceId) => (
-                <>
-                  <dt>Workspace</dt>
-                  <dd>{workspaceId()}</dd>
-                </>
+                <div class="tsk-prop">
+                  <dt>
+                    <Icon name="server" size="small" />
+                    Workspace
+                  </dt>
+                  <dd class="tsk-truncate">{workspaceId()}</dd>
+                </div>
               )}
             </Show>
           </dl>
           <p class="tsk-hint">Status is manual: {TASK_STATUS_LABELS[task().status]} until you change it.</p>
         </section>
 
-        <section class="tsk-stack" aria-label="Linked sessions">
-          <h3 class="tsk-section-title">Sessions</h3>
+        <section class="tsk-rail-section" aria-label="Linked sessions">
+          <h3 class="tsk-rail-title">Sessions</h3>
           <Show
             when={props.view.configuredSlots.length > 0}
             fallback={<p class="tsk-hint">Choose a preset to see its configurations.</p>}
           >
-            <For each={props.view.configuredSlots}>
-              {(slot) => (
-                <SlotCard
-                  slot={slot}
-                  group={props.view.groups.find((entry) => entry.slot === slot)}
-                  archived={task().archivedAt !== null}
-                  busy={props.busy}
-                  onOpenSession={props.onOpenSession}
-                  onStart={props.onStart}
-                  onSendTask={props.onSendTask}
-                />
-              )}
-            </For>
+            <div class="tsk-slots">
+              <For each={props.view.configuredSlots}>
+                {(slot) => (
+                  <SlotRow
+                    slot={slot}
+                    group={props.view.groups.find((entry) => entry.slot === slot)}
+                    archived={task().archivedAt !== null}
+                    busy={props.busy}
+                    onOpenSession={props.onOpenSession}
+                    onStart={props.onStart}
+                    onSendTask={props.onSendTask}
+                  />
+                )}
+              </For>
+            </div>
           </Show>
         </section>
 
         <Show
           when={task().archivedAt === null}
           fallback={
-            <button type="button" class="tsk-button" data-testid="task-detail-restore" onClick={() => props.onRestore()}>
+            <Button size="small" variant="ghost" class="tsk-rail-action" data-testid="task-detail-restore" onClick={() => props.onRestore()}>
               Restore this task
-            </button>
+            </Button>
           }
         >
-          <button
-            type="button"
-            class="tsk-button"
-            data-variant="danger"
+          <Button
+            size="small"
+            variant="ghost"
+            class="tsk-rail-action tsk-destructive"
             data-testid="task-detail-archive"
             onClick={() => props.onArchive()}
           >
             Archive this task
-          </button>
+          </Button>
         </Show>
       </aside>
     </article>
   )
 }
 
-function SlotCard(props: {
+function SlotRow(props: {
   slot: ConfigurationSlot
   group: TaskLinkGroup | undefined
   archived: boolean
@@ -286,101 +310,104 @@ function SlotCard(props: {
     if (unsent()) return "Task not sent yet"
     return live()?.handoff === "unknown" ? "Delivery unknown" : undefined
   }
+  const history = () => props.group?.attempts ?? []
 
   return (
     <div class="tsk-slot" data-testid={`task-slot-${props.slot}`}>
-      <div class="tsk-row tsk-spread">
-        <strong class="tsk-label">{SLOT_LABELS[props.slot]}</strong>
-        <Show when={current()}>
+      <div class="tsk-slot-head">
+        <Show when={current()} fallback={<span class="tsk-dot" data-liveness="none" aria-hidden="true" />}>
           {(link) => <span class="tsk-dot" data-liveness={link().liveness} aria-hidden="true" />}
+        </Show>
+        <span class="tsk-slot-name">{SLOT_LABELS[props.slot]}</span>
+        <span class="tsk-spacer" />
+
+        <Show when={current()?.liveness === "live"}>
+          <Button
+            size="small"
+            variant="ghost"
+            data-testid={`task-slot-open-${props.slot}`}
+            onClick={() => {
+              const link = current()
+              if (link) props.onOpenSession(link.sessionRef)
+            }}
+          >
+            Open session
+          </Button>
+        </Show>
+        <Show when={current() === undefined}>
+          <Button
+            size="small"
+            variant="ghost"
+            data-testid={`task-slot-start-${props.slot}`}
+            disabled={props.archived}
+            onClick={() => props.onStart({ slot: props.slot, attempt: next().attempt })}
+          >
+            Start
+          </Button>
+        </Show>
+        <Show when={next().again}>
+          <Button
+            size="small"
+            variant="ghost"
+            data-testid={`task-slot-start-again-${props.slot}`}
+            disabled={props.archived}
+            onClick={() => props.onStart({ slot: props.slot, attempt: next().attempt })}
+          >
+            Start again
+          </Button>
         </Show>
       </div>
 
-      <For each={props.group?.attempts ?? []} fallback={<p class="tsk-hint">No session yet.</p>}>
-        {(link) => (
-          <div class="tsk-attempt" data-testid={`task-slot-attempt-${props.slot}-${link.attempt}`}>
-            <span class="tsk-attempt-no">#{link.attempt}</span>
-            <span class="tsk-truncate">{link.presetNameAtStart}</span>
-            <span data-testid={`task-slot-liveness-${props.slot}-${link.attempt}`}>
-              {link.liveness}
-            </span>
-            <Show when={link.continuedFrom}>
-              <span>continued</span>
-            </Show>
-            <Show when={link.liveness !== "deleted"}>
-              <button
-                type="button"
-                class="tsk-button"
-                data-variant="quiet"
-                data-testid={`task-slot-open-attempt-${props.slot}-${link.attempt}`}
-                onClick={() => props.onOpenSession(link.sessionRef)}
-              >
-                Open
-              </button>
-            </Show>
-          </div>
-        )}
-      </For>
-
       <Show when={handoffNotice()}>
         {(notice) => (
-          <span class="tsk-notice" data-testid={`task-slot-handoff-${props.slot}`}>
+          <p class="tsk-slot-notice" data-testid={`task-slot-handoff-${props.slot}`}>
             {notice()}
-          </span>
+          </p>
         )}
-      </Show>
-
-      <Show when={current()?.liveness === "live"}>
-        <button
-          type="button"
-          class="tsk-button"
-          data-variant="primary"
-          data-testid={`task-slot-open-${props.slot}`}
-          onClick={() => {
-            const link = current()
-            if (link) props.onOpenSession(link.sessionRef)
-          }}
-        >
-          Open session
-        </button>
       </Show>
       <Show when={unsent()}>
         {(link) => (
-          <button
-            type="button"
-            class="tsk-button"
-            data-variant="outline"
+          <Button
+            size="small"
+            variant="ghost"
+            class="tsk-slot-resend"
             data-testid={`task-slot-send-${props.slot}`}
             disabled={props.busy || props.archived}
             onClick={() => props.onSendTask(link())}
           >
             Send task
-          </button>
+          </Button>
         )}
       </Show>
-      <Show when={current() === undefined}>
-        <button
-          type="button"
-          class="tsk-button"
-          data-variant="primary"
-          data-testid={`task-slot-start-${props.slot}`}
-          disabled={props.archived}
-          onClick={() => props.onStart({ slot: props.slot, attempt: next().attempt })}
-        >
-          Start
-        </button>
-      </Show>
-      <Show when={next().again}>
-        <button
-          type="button"
-          class="tsk-button"
-          data-variant="primary"
-          data-testid={`task-slot-start-again-${props.slot}`}
-          disabled={props.archived}
-          onClick={() => props.onStart({ slot: props.slot, attempt: next().attempt })}
-        >
-          Start again
-        </button>
+
+      <Show when={history().length > 0} fallback={<p class="tsk-hint">No session yet.</p>}>
+        <ul class="tsk-attempts">
+          <For each={history()}>
+            {(link) => (
+              <li class="tsk-attempt" data-testid={`task-slot-attempt-${props.slot}-${link.attempt}`}>
+                <span class="tsk-attempt-no">#{link.attempt}</span>
+                <span class="tsk-truncate">{link.presetNameAtStart}</span>
+                <Show when={link.continuedFrom}>
+                  <Tag>continued</Tag>
+                </Show>
+                <span class="tsk-spacer" />
+                <span class="tsk-attempt-liveness" data-testid={`task-slot-liveness-${props.slot}-${link.attempt}`}>
+                  {link.liveness}
+                </span>
+                <Show when={link.liveness !== "deleted"}>
+                  <button
+                    type="button"
+                    class="tsk-attempt-open"
+                    data-testid={`task-slot-open-attempt-${props.slot}-${link.attempt}`}
+                    onClick={() => props.onOpenSession(link.sessionRef)}
+                  >
+                    Open
+                  </button>
+                </Show>
+              </li>
+            )}
+          </For>
+        </ul>
       </Show>
     </div>
   )

@@ -1,7 +1,10 @@
 import { For, Show } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { CONFIGURATION_SLOTS, type ConfigurationSlot, type Preset, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
-import { RowMenu } from "./row-menu"
-import { StatusMenu } from "./status-control"
+import { StatusMenuItems } from "./status-control"
 import { SLOT_LABELS } from "../../view-model"
 
 export type StartChoice = { presetId: string; slot: ConfigurationSlot }
@@ -39,10 +42,9 @@ export function TaskStartControl(props: { task: TaskSummary; offer: TaskStartOff
       <Show
         when={props.offer.onOpen}
         fallback={
-          <button
-            type="button"
-            class="tsk-split-main"
-            data-testid={`${props.testIdPrefix}-start-${props.task.id}`}
+          <Button
+            size="small"
+                       data-testid={`${props.testIdPrefix}-start-${props.task.id}`}
             aria-label={`Start ${props.task.title}`}
             disabled={!startable() || !preset()}
             onClick={() => {
@@ -51,103 +53,102 @@ export function TaskStartControl(props: { task: TaskSummary; offer: TaskStartOff
             }}
           >
             Start
-          </button>
+          </Button>
         }
       >
         {(open) => (
-          <button
-            type="button"
-            class="tsk-split-main"
-            data-testid={`${props.testIdPrefix}-open-session-${props.task.id}`}
+          <Button
+            size="small"
+                       data-testid={`${props.testIdPrefix}-open-session-${props.task.id}`}
             aria-label={`Open the session for ${props.task.title}`}
             onClick={() => open()()}
           >
             Open
-          </button>
+          </Button>
         )}
       </Show>
 
-      <RowMenu
-        ariaLabel={`Start ${props.task.title} with a preset`}
-        triggerClass="tsk-split-caret"
-        triggerTestId={`${props.testIdPrefix}-start-menu-${props.task.id}`}
-        disabled={props.task.archivedAt !== null}
-        label={<span aria-hidden="true">⌄</span>}
-      >
-        {(close) => (
-          <div class="tsk-menu-body">
+      <DropdownMenu placement="bottom-end">
+        <DropdownMenu.Trigger
+          as={IconButton}
+          icon="chevron-down"
+          size="small"
+                   data-testid={`${props.testIdPrefix}-start-menu-${props.task.id}`}
+          aria-label={`Start ${props.task.title} with a preset`}
+          disabled={props.task.archivedAt !== null}
+        />
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content class="tsk-menu-content">
             <Show when={props.offer.blocker}>
               {(message) => (
-                <p class="tsk-blocker" data-testid={`${props.testIdPrefix}-start-blocker-${props.task.id}`}>
-                  {message()}
-                </p>
+                <>
+                  <p class="tsk-menu-note" data-testid={`${props.testIdPrefix}-start-blocker-${props.task.id}`}>
+                    {message()}
+                  </p>
+                  <DropdownMenu.Separator />
+                </>
               )}
             </Show>
             <Show
               when={props.offer.presets.length > 0}
               fallback={
                 <>
-                  <p class="tsk-hint">A preset is required to start, and you have none yet.</p>
-                  <button
-                    type="button"
+                  <p class="tsk-menu-note">A preset is required to start, and you have none yet.</p>
+                  <DropdownMenu.Item
                     class="tsk-menu-item"
                     data-testid={`${props.testIdPrefix}-preset-settings-${props.task.id}`}
-                    onClick={() => {
-                      close()
-                      props.offer.onOpenPresetSettings()
-                    }}
+                    onSelect={() => props.offer.onOpenPresetSettings()}
                   >
-                    Create a preset in Settings
-                  </button>
+                    <Icon name="settings-gear" size="small" />
+                    <span class="tsk-menu-label">Create a preset in Settings</span>
+                  </DropdownMenu.Item>
                 </>
               }
             >
-              <For each={props.offer.presets}>
-                {(entry) => (
-                  <For each={slotsOf(entry)}>
-                    {(slot) => (
-                      <button
-                        type="button"
-                        class="tsk-menu-item"
-                        data-testid={`${props.testIdPrefix}-start-${props.task.id}-${entry.id}-${slot}`}
-                        disabled={!startable()}
-                        onClick={() => {
-                          close()
-                          props.offer.onStart({ presetId: entry.id, slot })
-                        }}
-                      >
-                        <span class="tsk-truncate">{entry.name}</span>
-                        <Show when={slotsOf(entry).length > 1}>
-                          <span class="tsk-menu-note">{SLOT_LABELS[slot]}</span>
-                        </Show>
-                      </button>
-                    )}
-                  </For>
-                )}
-              </For>
-              <button
-                type="button"
+              <DropdownMenu.Group>
+                <DropdownMenu.GroupLabel>Start with</DropdownMenu.GroupLabel>
+                <For each={props.offer.presets}>
+                  {(entry) => (
+                    <For each={slotsOf(entry)}>
+                      {(slot) => (
+                        <DropdownMenu.Item
+                          class="tsk-menu-item"
+                          data-testid={`${props.testIdPrefix}-start-${props.task.id}-${entry.id}-${slot}`}
+                          disabled={!startable()}
+                          onSelect={() => props.offer.onStart({ presetId: entry.id, slot })}
+                        >
+                          <Icon name="new-session" size="small" />
+                          <span class="tsk-menu-label">{entry.name}</span>
+                          <Show when={slotsOf(entry).length > 1}>
+                            <span class="tsk-menu-detail">{SLOT_LABELS[slot]}</span>
+                          </Show>
+                        </DropdownMenu.Item>
+                      )}
+                    </For>
+                  )}
+                </For>
+              </DropdownMenu.Group>
+              <DropdownMenu.Separator />
+              <DropdownMenu.Item
                 class="tsk-menu-item"
                 data-testid={`${props.testIdPrefix}-preset-settings-${props.task.id}`}
-                onClick={() => {
-                  close()
-                  props.offer.onOpenPresetSettings()
-                }}
+                onSelect={() => props.offer.onOpenPresetSettings()}
               >
-                Manage presets in Settings
-              </button>
+                <Icon name="settings-gear" size="small" />
+                <span class="tsk-menu-label">Manage presets in Settings</span>
+              </DropdownMenu.Item>
             </Show>
-          </div>
-        )}
-      </RowMenu>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
     </span>
   )
 }
 
 /**
  * The row's own menu, which is where status lives once the rows are grouped by
- * it. The select is the control, unchanged — the menu only decides when it is
- * on screen.
+ * it. The group header and the board column already name the status, so the
+ * row carries the control rather than a second label.
  */
 export function TaskRowActions(props: {
   task: TaskSummary
@@ -157,24 +158,31 @@ export function TaskRowActions(props: {
   onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void
 }) {
   return (
-    <RowMenu
-      ariaLabel={`Actions for ${props.task.title}`}
-      triggerClass="tsk-icon-button tsk-row-actions"
-      triggerTestId={`${props.testIdPrefix}-actions-${props.task.id}`}
-      label={<span aria-hidden="true">⋯</span>}
-    >
-      {() => (
-        <div class="tsk-menu-body">
-          <span class="tsk-label">Status</span>
-          <StatusMenu
-            status={props.task.status}
-            disabled={props.busy || props.task.archivedAt !== null}
-            label={`Status of ${props.task.title}`}
-            testId={props.statusTestId}
-            onChange={(status) => props.onStatusChange({ taskId: props.task.id, revision: props.task.revision, status })}
-          />
-        </div>
-      )}
-    </RowMenu>
+    <DropdownMenu placement="bottom-end">
+      <DropdownMenu.Trigger
+        as={IconButton}
+        icon="three-dots"
+        size="small"
+        variant="ghost"
+               data-testid={`${props.testIdPrefix}-actions-${props.task.id}`}
+        aria-label={`Actions for ${props.task.title}`}
+      />
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content class="tsk-menu-content">
+          <DropdownMenu.Group>
+            <DropdownMenu.GroupLabel>Status</DropdownMenu.GroupLabel>
+            <StatusMenuItems
+              status={props.task.status}
+              disabled={props.busy || props.task.archivedAt !== null}
+              label={`Status of ${props.task.title}`}
+              testId={props.statusTestId}
+              onChange={(status) =>
+                props.onStatusChange({ taskId: props.task.id, revision: props.task.revision, status })
+              }
+            />
+          </DropdownMenu.Group>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu>
   )
 }

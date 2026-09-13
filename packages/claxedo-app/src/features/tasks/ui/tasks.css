@@ -1,10 +1,17 @@
+/*
+ * Layout, table and board geometry, and the accents that have no host
+ * primitive. Every control on these surfaces is a component from
+ * @opencode-ai/ui, so nothing here restates a button, a menu or a field — the
+ * rules that name `.ui-*` only re-shape a host component into a row of the
+ * table or a segment of a pair.
+ */
 .tsk {
   --tsk-row: 36px;
   --tsk-head: 32px;
-  --tsk-gutter: 14px;
+  --tsk-gutter: 16px;
   --tsk-gap: 8px;
   --tsk-hairline: var(--border-weak-base);
-  --tsk-accent: var(--text-strong);
+  --tsk-tools: 172px;
   color: var(--text-base);
   font-size: var(--font-size-compact);
   letter-spacing: var(--letter-spacing-ui);
@@ -33,35 +40,14 @@
   min-width: 0;
 }
 
-.tsk-spread {
-  justify-content: space-between;
+.tsk-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.tsk-num {
+.tsk-num,
+.tsk-mono {
   font-variant-numeric: tabular-nums;
-}
-
-
-.tsk-title {
-  color: var(--text-strong);
-  font-size: var(--font-size-base);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: var(--letter-spacing-title);
-  margin: 0;
-}
-
-.tsk-eyebrow,
-.tsk-section-title {
-  color: var(--text-weak);
-  font-size: var(--font-size-2x-small);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-section);
-  text-transform: uppercase;
-  margin: 0;
-}
-
-.tsk-muted {
-  color: var(--text-weak);
 }
 
 .tsk-truncate {
@@ -71,7 +57,38 @@
   white-space: nowrap;
 }
 
+.tsk-title {
+  color: var(--text-strong);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-title);
+  margin: 0;
+}
+
+.tsk-section-title {
+  color: var(--text-weak);
+  font-size: var(--font-size-2x-small);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-section);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.tsk-label {
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+}
+
+.tsk-hint {
+  margin: 0;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-relaxed);
+}
+
 .tsk-error {
+  margin: 0;
   color: var(--text-diff-delete-base);
   font-size: var(--font-size-small);
 }
@@ -80,6 +97,7 @@
   display: flex;
   align-items: stretch;
   gap: 7px;
+  margin: 0;
   color: var(--text-diff-delete-base);
   font-size: var(--font-size-small);
 }
@@ -92,423 +110,338 @@
   background: var(--icon-critical-base);
 }
 
+/* A plain muted number, as Linear's group counts are: a pill would make a count
+   look like a control. */
+.tsk-count {
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+  font-variant-numeric: tabular-nums;
+}
+
 .tsk-empty {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 10px;
-  padding: 28px var(--tsk-gutter);
-  color: var(--text-weak);
-}
-
-
-.tsk-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 26px;
-  padding: 0 9px;
-  background: var(--surface-raised-strong);
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-5);
-  color: var(--text-base);
-  font: inherit;
-  font-size: var(--font-size-small);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-ui);
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background 90ms linear,
-    color 90ms linear,
-    border-color 90ms linear;
-}
-
-.tsk-button:hover:not(:disabled) {
-  background: var(--surface-base-hover);
-  color: var(--text-strong);
-}
-
-.tsk-button:focus-visible {
-  outline: 1px solid var(--border-focus);
-  outline-offset: 1px;
-}
-
-/*
- * `.ui-button[data-variant="primary"]` restated. The kit ships without the
- * host's components (no @opencode-ai/ui dependency), so the app half uses the
- * real `Button` and this matches it token for token rather than inventing a
- * second primary.
- */
-.tsk-button[data-variant="primary"] {
-  background: var(--button-primary-base);
-  border-color: var(--border-weak-base);
-  border-radius: var(--radius-md);
-  color: var(--icon-invert-base);
-}
-
-.tsk-button[data-variant="primary"]:hover:not(:disabled) {
-  background: var(--icon-strong-hover);
-  color: var(--icon-invert-base);
-}
-
-.tsk-button[data-variant="outline"] {
-  background: transparent;
-  border-color: var(--border-base);
-}
-
-.tsk-button[data-variant="outline"]:hover:not(:disabled) {
-  background: var(--surface-base-hover);
-  border-color: var(--border-hover);
-}
-
-.tsk-button[data-variant="quiet"] {
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-weak);
-}
-
-.tsk-button[data-variant="quiet"]:hover:not(:disabled) {
-  background: var(--surface-base-hover);
-  color: var(--text-strong);
-}
-
-.tsk-button[data-variant="danger"] {
-  height: auto;
-  padding: 0;
-  background: transparent;
-  border-color: transparent;
-  color: var(--text-diff-delete-base);
-  text-underline-offset: 3px;
-}
-
-.tsk-button[data-variant="danger"]:hover:not(:disabled) {
-  background: transparent;
-  color: var(--text-diff-delete-base);
-  text-decoration: underline;
-  text-decoration-color: var(--border-critical-selected);
-}
-
-.tsk-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.tsk-icon-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-3);
-  color: var(--icon-base);
-  font: inherit;
-  font-size: var(--font-size-base);
-  line-height: var(--line-height-none);
-  cursor: pointer;
-}
-
-.tsk-icon-button:hover:not(:disabled) {
-  background: var(--surface-base-hover);
-  color: var(--icon-active);
-}
-
-.tsk-segmented {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  padding: 2px;
-  background: var(--surface-weak);
-  border-radius: var(--radius-7);
-}
-
-.tsk-segmented > button {
-  height: 22px;
-  padding: 0 10px;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-5);
-  color: var(--text-weak);
-  font: inherit;
-  font-size: var(--font-size-small);
-  font-weight: var(--font-weight-medium);
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background 90ms linear,
-    color 90ms linear;
-}
-
-.tsk-segmented > button:hover {
-  color: var(--text-strong);
-}
-
-.tsk-segmented > button[aria-selected="true"],
-.tsk-segmented > button[aria-pressed="true"] {
-  background: var(--surface-raised-strong);
-  box-shadow: var(--shadow-xs);
-  color: var(--text-strong);
-}
-
-.tsk-segmented > button:focus-visible {
-  outline: 1px solid var(--border-focus);
-  outline-offset: -1px;
-}
-
-.tsk-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  background: var(--surface-weak);
-  border-radius: var(--radius-pill);
-  color: var(--text-weak);
-  font-size: var(--font-size-x-small);
-  font-weight: var(--font-weight-medium);
-  font-variant-numeric: tabular-nums;
-}
-
-.tsk-input,
-.tsk-textarea,
-.tsk-select {
-  width: 100%;
-  min-width: 0;
-  padding: 5px 8px;
-  background: var(--input-base);
-  border: 1px solid var(--border-base);
-  border-radius: var(--radius-5);
-  color: var(--text-strong);
-  font: inherit;
-  font-size: var(--font-size-compact);
-}
-
-.tsk-input:focus-visible,
-.tsk-textarea:focus-visible,
-.tsk-select:focus-visible {
-  outline: none;
-  border-color: var(--border-focus);
-}
-
-.tsk-textarea {
-  min-height: 72px;
-  line-height: var(--line-height-relaxed);
-  resize: vertical;
-}
-
-.tsk-input[aria-invalid="true"],
-.tsk-textarea[aria-invalid="true"] {
-  border-color: var(--border-critical-selected);
-}
-
-.tsk-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-}
-
-.tsk-label {
-  color: var(--text-weak);
-  font-size: var(--font-size-2x-small);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-section);
-  text-transform: uppercase;
-}
-
-.tsk-checkbox {
-  display: flex;
-  align-items: flex-start;
   gap: 8px;
-  padding: 3px 0;
-  color: var(--text-base);
-  cursor: pointer;
-}
-
-.tsk-checkbox input {
-  margin: 2px 0 0;
-  accent-color: var(--text-strong);
-}
-
-.tsk-hint {
+  padding: 32px var(--tsk-gutter);
   color: var(--text-weak);
-  font-size: var(--font-size-small);
-  line-height: var(--line-height-relaxed);
 }
 
-
-/*
- * The rail's status vocabulary, which this surface borrows rather than invents:
- * a 6px filled circle, grey while working and once done, red only where the
- * task needs you, and nothing at all for one not started.
- * `app/workbench/navigation/navigation-row.tsx` is the original.
- */
-.tsk-dot {
-  flex: none;
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-weak);
+.tsk-empty > p {
+  margin: 0;
 }
 
-.tsk-dot[data-status="todo"] {
-  display: none;
+.tsk-empty-action.ui-button {
+  margin-left: -8px;
 }
 
-.tsk-dot[data-status="doing"] {
-  animation: tsk-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+.tsk-inset {
+  padding: 8px var(--tsk-gutter);
 }
 
-.tsk-dot[data-status="needs_you"] {
-  background: var(--icon-critical-base);
+.tsk-divider {
+  height: 1px;
+  background: var(--tsk-hairline);
 }
 
-.tsk-dot[data-liveness] {
-  background: var(--icon-disabled);
-}
-
-.tsk-dot[data-liveness="live"] {
-  background: var(--text-weak);
-  animation: tsk-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-}
-
-/*
- * The chip is the select. A decorative chip layered over it would put the
- * keyboard on one element and the eye on another, so the dot is painted into
- * the control's own padding box and the native arrow is dropped.
- */
-.tsk-status-select {
-  --tsk-chip-dot: var(--text-weak);
-  appearance: none;
+.tsk-cell {
   display: inline-flex;
   align-items: center;
-  width: auto;
-  min-width: 0;
-  height: 22px;
-  padding: 0 8px 0 21px;
-  background-color: transparent;
-  background-image: radial-gradient(circle at 8px center, var(--tsk-chip-dot) 0 3px, transparent 3px);
-  background-repeat: no-repeat;
-  border: 1px solid transparent;
-  border-radius: var(--radius-pill);
-  color: var(--text-base);
-  font: inherit;
+  gap: 4px;
+  color: var(--text-weak);
   font-size: var(--font-size-x-small);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-  transition:
-    background-color 90ms linear,
-    border-color 90ms linear;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
-.tsk-status-select:hover:not(:disabled),
-.tsk-status-select:focus-visible {
-  background-color: var(--surface-base-hover);
-  border-color: var(--border-weak-base);
-  color: var(--text-strong);
+.tsk-cell .ui-icon-svg {
+  color: var(--icon-weak-base, var(--icon-base));
 }
 
-.tsk-status-select:focus-visible {
-  outline: 1px solid var(--border-focus);
-  outline-offset: 1px;
+/* Status ------------------------------------------------------------------ */
+
+/*
+ * The status mark is the host's own circle set — dashed for not started, half
+ * filled while working, an alert once it needs you, a tick when done — carrying
+ * the colour the rail already uses for those states.
+ */
+.tsk-status-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  color: var(--icon-base);
 }
 
-.tsk-status-select:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+.tsk-status-icon[data-status="doing"] {
+  color: var(--icon-warning-base);
 }
 
-.tsk-status-select[data-status="todo"] {
-  --tsk-chip-dot: transparent;
+.tsk-status-icon[data-status="needs_you"] {
+  color: var(--icon-critical-base);
 }
 
-.tsk-status-select[data-status="needs_you"] {
-  --tsk-chip-dot: var(--icon-critical-base);
+.tsk-status-icon[data-status="done"] {
+  color: var(--icon-success-base);
 }
 
 .tsk-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 20px;
-  padding: 0 8px;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-pill);
   color: var(--text-base);
   font-size: var(--font-size-x-small);
-  font-weight: var(--font-weight-medium);
   white-space: nowrap;
 }
 
+.tsk-status-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--text-base);
+  font: inherit;
+  font-size: var(--font-size-x-small);
+  cursor: pointer;
+  transition: background-color 90ms linear;
+}
+
+.tsk-status-trigger:hover:not(:disabled),
+.tsk-status-trigger[data-expanded] {
+  background: var(--surface-base-hover);
+}
+
+.tsk-status-trigger:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
+.tsk-status-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.tsk-status-caret {
+  color: var(--icon-weak-base, var(--icon-base));
+}
+
+/* Menus ------------------------------------------------------------------- */
+
+.tsk-menu-content {
+  min-width: 208px;
+}
+
+.tsk-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tsk-menu-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tsk-menu-detail {
+  flex: none;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-menu-check {
+  flex: none;
+  display: inline-flex;
+  color: var(--icon-base);
+}
+
+.tsk-menu-note {
+  margin: 0;
+  padding: 6px 8px;
+  max-width: 240px;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+  line-height: var(--line-height-relaxed);
+}
+
+.tsk-menu-content .tsk-menu-note:first-child {
+  color: var(--text-diff-delete-base);
+}
+
+/* Row controls ------------------------------------------------------------ */
+
+/*
+ * Start and its caret as one control: the pair carries the border and the
+ * children give theirs up, so the seam between them is a single hairline rather
+ * than two rounded boxes with a gap.
+ */
+.tsk-split {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: var(--radius-md);
+  background: var(--button-secondary-base);
+  box-shadow: var(--shadow-xs-border-base);
+  overflow: hidden;
+}
+
+.tsk-split > .ui-button,
+.tsk-split .ui-icon-button {
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.tsk-split .ui-icon-button {
+  width: 22px;
+  border-left: 1px solid var(--tsk-hairline);
+}
+
+.tsk-split[data-busy="true"] {
+  opacity: 0.6;
+}
+
+.tsk-row-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Pointer-only reveal: a touch screen has no hover to reveal it with, and a
+   keyboard reaches it through :focus-within. */
+@media (hover: hover) and (pointer: fine) {
+  .tsk-tr .tsk-row-tools,
+  .tsk-card .tsk-row-tools,
+  .tsk-column-head .ui-icon-button {
+    opacity: 0;
+    transition: opacity 100ms linear;
+  }
+
+  .tsk-tr:hover .tsk-row-tools,
+  .tsk-tr:focus-within .tsk-row-tools,
+  .tsk-card:hover .tsk-row-tools,
+  .tsk-card:focus-within .tsk-row-tools,
+  .tsk-column:hover .tsk-column-head .ui-icon-button,
+  .tsk-column-head:focus-within .ui-icon-button,
+  /* An open menu portals its focus out of the row, so neither hover nor
+     focus-within survives the press that opened it. */
+  .tsk-row-tools:has([data-expanded]) {
+    opacity: 1;
+  }
+
+  /* The properties and the actions share one reserved column, so revealing the
+     actions moves nothing. */
+  .tsk-tr:hover .tsk-props,
+  .tsk-tr:focus-within .tsk-props,
+  .tsk-tr:has(.tsk-row-tools [data-expanded]) .tsk-props {
+    visibility: hidden;
+  }
+
+  .tsk-tr .ui-button.tsk-row-quiet {
+    opacity: 0;
+    transition: opacity 100ms linear;
+  }
+
+  .tsk-tr:hover .tsk-row-quiet,
+  .tsk-tr:focus-within .tsk-row-quiet {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tsk-tr .tsk-row-tools,
+  .tsk-tr .ui-button.tsk-row-quiet,
+  .tsk-card .tsk-row-tools,
+  .tsk-column-head .ui-icon-button {
+    transition: none;
+  }
+}
+
+/* Page shell -------------------------------------------------------------- */
 
 .tsk-surface-head {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex: none;
-  height: 44px;
+  height: 48px;
   padding: 0 var(--tsk-gutter);
   border-bottom: 1px solid var(--tsk-hairline);
 }
 
 .tsk-surface-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
   margin: 0;
   color: var(--text-strong);
-  font-size: var(--font-size-intermediate);
+  font-size: var(--font-size-base);
   font-weight: var(--font-weight-semibold);
   letter-spacing: var(--letter-spacing-title);
 }
 
+/* No rule under the bar: the first group header is what the table starts with. */
 .tsk-toolbar {
   display: flex;
   align-items: center;
   gap: 6px;
   flex: none;
   flex-wrap: wrap;
-  min-height: var(--tsk-head);
-  padding: 5px var(--tsk-gutter);
-  border-bottom: 1px solid var(--tsk-hairline);
+  min-height: 40px;
+  padding: 4px var(--tsk-gutter);
 }
 
-.tsk-spacer {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.tsk-chip {
+.tsk-segmented {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 4px 0 8px;
-  background: var(--surface-weak);
-  border-radius: var(--radius-pill);
-  color: var(--text-weak);
-  font-size: var(--font-size-x-small);
+  gap: 2px;
+}
+
+.tsk-segmented-wide {
+  width: 100%;
+}
+
+.tsk-segmented-wide > .ui-button {
+  flex: 1 1 0;
+}
+
+.tsk-filter-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.tsk-filter-tag .ui-icon-button {
+  width: 16px;
+  height: 16px;
+  margin-right: -4px;
+}
+
+/* Popovers ---------------------------------------------------------------- */
+
+.tsk-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 252px;
+}
+
+.tsk-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 30px;
+  padding: 0 2px;
+}
+
+.tsk-option-label {
+  color: var(--text-base);
+  font-size: var(--font-size-small);
   white-space: nowrap;
 }
 
-.tsk-chip > b {
-  color: var(--text-strong);
-  font-weight: var(--font-weight-medium);
-}
-
-.tsk-popover-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 224px;
-}
-
+/* List -------------------------------------------------------------------- */
 
 .tsk-listing {
   flex: 1 1 auto;
@@ -517,6 +450,10 @@
   container-type: inline-size;
 }
 
+/*
+ * A band, not a rule: the header names the group and the tint separates it from
+ * the rows above without drawing a line across the page.
+ */
 .tsk-group-head {
   position: sticky;
   top: 0;
@@ -525,51 +462,28 @@
   align-items: center;
   gap: 8px;
   height: var(--tsk-head);
+  margin: 0;
   padding: 0 var(--tsk-gutter);
-  background: var(--background-base);
-  border-bottom: 1px solid var(--tsk-hairline);
+  background: var(--surface-base);
+  backdrop-filter: blur(8px);
   color: var(--text-strong);
   font-size: var(--font-size-x-small);
   font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-label);
-  text-transform: uppercase;
+  letter-spacing: var(--letter-spacing-ui);
+}
+
+.tsk-group-name {
+  color: var(--text-strong);
 }
 
 .tsk-tr {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) var(--tsk-tools);
   align-items: center;
   gap: 10px;
   height: var(--tsk-row);
   padding: 0 var(--tsk-gutter);
-  border-bottom: 1px solid var(--tsk-hairline);
-}
-
-.tsk-thead {
-  position: sticky;
-  top: 0;
-  z-index: 1;
-  display: grid;
-  align-items: center;
-  gap: 10px;
-  height: var(--tsk-head);
-  padding: 0 var(--tsk-gutter);
-  background: var(--background-base);
-  border-bottom: 1px solid var(--tsk-hairline);
-  color: var(--text-weak);
-  font-size: var(--font-size-2x-small);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-section);
-  text-transform: uppercase;
-}
-
-.tsk-tr-preset {
-  grid-template-columns: minmax(0, 1fr) 76px minmax(0, 210px) 112px 60px 76px;
-}
-
-.tsk-inset {
-  padding: 8px var(--tsk-gutter);
 }
 
 .tsk-tr:hover {
@@ -585,13 +499,13 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: 2px;
-  background: var(--tsk-accent);
+  background: var(--text-strong);
 }
 
 .tsk-open {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   min-width: 0;
   height: 100%;
   padding: 0;
@@ -603,9 +517,9 @@
   cursor: pointer;
 }
 
-.tsk-glyph {
-  flex: none;
-  color: var(--icon-base);
+.tsk-open:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -2px;
 }
 
 .tsk-open-name {
@@ -632,93 +546,97 @@
   white-space: nowrap;
 }
 
-.tsk-cell {
-  display: flex;
+.tsk-props {
+  display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 5px;
-  color: var(--text-weak);
-  font-size: var(--font-size-x-small);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.tsk-cell-sub {
-  min-width: 32px;
+  gap: 12px;
 }
 
 .tsk-cell-time {
-  min-width: 38px;
+  min-width: 30px;
+  justify-content: flex-end;
 }
 
-@container (max-width: 520px) {
+/* The actions sit in the column the properties reserved, so nothing shifts when
+   they appear. */
+.tsk-tr .tsk-row-tools {
+  position: absolute;
+  top: 50%;
+  right: var(--tsk-gutter);
+  transform: translateY(-50%);
+}
+
+@container (max-width: 560px) {
   .tsk-cell-sub,
-  .tsk-cell-time,
+  .tsk-cell-session,
   .tsk-parent {
     display: none;
   }
 }
 
+/* Board ------------------------------------------------------------------- */
 
+/* A flat ground: the columns are spacing, and only the cards are surfaces. */
 .tsk-board {
   flex: 1 1 auto;
   display: grid;
-  grid-auto-columns: minmax(232px, 1fr);
+  grid-auto-columns: minmax(248px, 1fr);
   grid-auto-flow: column;
-  gap: 1px;
+  gap: 8px;
   min-height: 0;
-  background: var(--tsk-hairline);
-  border-bottom: 1px solid var(--tsk-hairline);
-  overflow-x: auto;
+  padding: 4px var(--tsk-gutter) var(--tsk-gutter);
+  overflow: auto;
+  background: var(--background-base);
 }
 
 .tsk-column {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  padding: 0 10px 14px;
-  background: var(--background-base);
-  overflow-y: auto;
+  min-height: 0;
+  border-radius: var(--radius-md);
 }
 
 .tsk-column[data-over="true"] {
-  background: var(--surface-base-hover);
+  outline: 1px dashed var(--border-base);
+  outline-offset: -1px;
 }
 
 .tsk-column-head {
-  position: sticky;
-  top: 0;
-  z-index: 1;
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: none;
   height: var(--tsk-head);
-  margin-bottom: 2px;
-  background: var(--background-base);
+  padding: 0 4px;
   color: var(--text-strong);
   font-size: var(--font-size-x-small);
   font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-label);
-  text-transform: uppercase;
+}
+
+.tsk-column-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  padding: 2px;
+  overflow: auto;
 }
 
 .tsk-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 9px 10px;
+  gap: 8px;
+  padding: 10px 10px 8px;
   background: var(--surface-raised-strong);
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-7);
+  border: 1px solid var(--tsk-hairline);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-xs);
+  cursor: pointer;
   transition:
     border-color 90ms linear,
     box-shadow 90ms linear;
-}
-
-.tsk-card[draggable="true"] {
-  cursor: grab;
 }
 
 .tsk-card:hover {
@@ -727,7 +645,7 @@
 }
 
 .tsk-card[data-selected="true"] {
-  border-color: var(--border-active);
+  border-color: var(--text-strong);
 }
 
 .tsk-card[data-dragging="true"] {
@@ -735,66 +653,72 @@
 }
 
 .tsk-card-title {
-  display: block;
-  width: 100%;
   padding: 0;
+  padding-right: 92px;
   background: transparent;
   border: 0;
   color: var(--text-strong);
   font: inherit;
   font-size: var(--font-size-compact);
-  line-height: var(--line-height-snug);
   text-align: left;
   cursor: pointer;
+}
+
+.tsk-card-title:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
 .tsk-card-meta {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--text-base);
-  font-size: var(--font-size-x-small);
-  font-variant-numeric: tabular-nums;
 }
 
+.tsk-card .tsk-row-tools {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}
+
+/* The only mark a drop target needs. */
 .tsk-card-drop {
-  min-height: 48px;
-  border: 1px dashed var(--border-weak-base);
-  border-radius: var(--radius-7);
+  min-height: 56px;
+  border: 1px dashed var(--tsk-hairline);
+  border-radius: var(--radius-md);
 }
 
+/* Task page --------------------------------------------------------------- */
 
 .tsk-detail {
-  flex: 1 1 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 28px;
+  height: 100%;
   min-height: 0;
+  padding: 12px var(--tsk-gutter) var(--tsk-gutter);
   overflow: auto;
   container-type: inline-size;
 }
 
-/* Fluid to the rail, with the same gutter on both sides. A capped column left a
-   dead band across the middle of a wide window; the measure belongs to the
-   prose inside the column, not to the column. */
 .tsk-detail-main {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   min-width: 0;
-  padding: 16px var(--tsk-gutter) 40px;
 }
 
 .tsk-crumbs {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
   color: var(--text-weak);
   font-size: var(--font-size-x-small);
 }
 
 .tsk-crumbs > span {
-  max-width: 220px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -804,574 +728,42 @@
   padding: 0;
   background: transparent;
   border: 0;
+  border-radius: var(--radius-3);
   color: var(--text-weak);
   font: inherit;
-  font-size: var(--font-size-x-small);
-  text-decoration: underline;
-  text-decoration-color: transparent;
-  text-underline-offset: 3px;
   cursor: pointer;
-  transition:
-    color 90ms linear,
-    text-decoration-color 90ms linear;
 }
 
 .tsk-crumb-link:hover,
 .tsk-crumb-link:focus-visible {
   color: var(--text-strong);
-  text-decoration-color: currentcolor;
 }
 
 .tsk-crumb-link:focus-visible {
   outline: 1px solid var(--border-focus);
   outline-offset: 2px;
-  border-radius: var(--radius-3);
 }
 
 .tsk-crumb-sep {
-  color: var(--text-weaker);
+  flex: none;
+  color: var(--icon-disabled);
 }
 
 .tsk-crumb-current {
-  color: var(--text-strong);
-  font-weight: var(--font-weight-medium);
-}
-
-.tsk-page {
-  flex: 1 1 auto;
-  min-height: 0;
-  padding: 16px var(--tsk-gutter) 40px;
-  overflow: auto;
-}
-
-.tsk-crumbs > span:last-child {
-  color: var(--text-weak);
-}
-
-.tsk-bare-title {
-  width: 100%;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  color: var(--text-strong);
-  font: inherit;
-  font-size: var(--font-size-heading-large);
-  font-weight: var(--font-weight-semibold);
-  letter-spacing: var(--letter-spacing-heading);
-  line-height: var(--line-height-snug);
-}
-
-.tsk-bare-title:focus-visible,
-.tsk-bare-text:focus-visible {
-  outline: none;
-}
-
-.tsk-bare-text {
-  width: 100%;
-  max-width: 80ch;
-  min-height: 78px;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
   color: var(--text-base);
-  font: inherit;
-  font-size: var(--font-size-compact);
-  line-height: var(--line-height-relaxed);
-  resize: vertical;
 }
 
-.tsk-bare-title::placeholder,
-.tsk-bare-text::placeholder {
-  color: var(--text-weak);
-  opacity: 0.7;
-}
-
-.tsk-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  min-width: 0;
-  padding: 16px var(--tsk-gutter) 40px;
-  border-left: 1px solid var(--tsk-hairline);
-}
-
-@container (max-width: 720px) {
-  .tsk-detail {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .tsk-rail {
-    border-left: 0;
-    border-top: 1px solid var(--tsk-hairline);
-  }
-}
-
-.tsk-props {
-  display: grid;
-  grid-template-columns: 82px minmax(0, 1fr);
-  align-items: center;
-  gap: 9px 10px;
-}
-
-.tsk-props > dt {
-  color: var(--text-weak);
-  font-size: var(--font-size-2x-small);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-section);
-  text-transform: uppercase;
-}
-
-.tsk-props > dd {
-  min-width: 0;
-  margin: 0;
-  overflow: hidden;
-  color: var(--text-base);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tsk-slot {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  background: var(--surface-raised-strong);
-  border-radius: var(--radius-7);
-}
-
-.tsk-attempt {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-weak);
-  font-size: var(--font-size-x-small);
-  font-variant-numeric: tabular-nums;
-}
-
-.tsk-attempt > .tsk-truncate {
-  flex: 1 1 auto;
-}
-
-.tsk-attempt > span + span::before {
-  content: "·";
-  margin-right: 6px;
-  color: var(--icon-weak-active);
-}
-
-.tsk-attempt > button {
-  margin-left: auto;
-}
-
-.tsk-attempt-no {
-  color: var(--text-weak);
-  font-weight: var(--font-weight-medium);
-}
-
-.tsk-notice {
+.tsk-page-actions {
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text-weak);
-  font-size: var(--font-size-x-small);
-}
-
-
-.tsk-progress {
-  height: 2px;
-  border-radius: var(--radius-pill);
-  background: var(--surface-weak);
-  overflow: hidden;
-}
-
-.tsk-progress > i {
-  display: block;
-  height: 100%;
-  border-radius: var(--radius-pill);
-  background: var(--text-weak);
-  transition: width 220ms cubic-bezier(0.2, 0, 0, 1);
-}
-
-.tsk-checklist-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  border-bottom: 1px solid var(--tsk-hairline);
-}
-
-.tsk-check {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-  height: 30px;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  color: var(--text-base);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.tsk-check:hover .tsk-open-name {
-  color: var(--text-strong);
-}
-
-.tsk-check[data-done="true"] .tsk-open-name {
-  color: var(--text-weak);
-  text-decoration: line-through;
-  text-decoration-color: var(--border-base);
-}
-
-.tsk-add {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding-top: 2px;
-}
-
-.tsk-add .tsk-input {
-  height: 30px;
-  padding-left: 0;
-  background: transparent;
-  border: 0;
-}
-
-
-.tsk-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  background: var(--surface-raised-strong);
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-7);
-}
-
-.tsk-kv {
-  display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
-  align-items: baseline;
-  gap: 7px 12px;
-}
-
-.tsk-kv > dt {
-  color: var(--text-weak);
-  font-size: var(--font-size-2x-small);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-section);
-  text-transform: uppercase;
-}
-
-.tsk-kv > dd {
-  min-width: 0;
-  margin: 0;
-  color: var(--text-base);
-  font-size: var(--font-size-small);
-  line-height: var(--line-height-snug);
-}
-
-.tsk-mono {
-  font-family: var(--font-family-mono);
-  font-size: var(--font-size-x-small);
-}
-
-.tsk-preset-form {
-  max-width: 720px;
-}
-
-.tsk-choosers {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 200px);
-  gap: 12px;
-}
-
-.tsk-divider {
-  height: 1px;
-  background: var(--tsk-hairline);
-}
-
-.tsk-capability-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  max-height: 184px;
-  overflow: auto;
-}
-
-.tsk-pick {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 4px 9px;
-  background: transparent;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-pill);
-  color: var(--text-base);
-  font-size: var(--font-size-x-small);
-  cursor: pointer;
-}
-
-.tsk-pick:hover {
-  border-color: var(--border-base);
-  color: var(--text-strong);
-}
-
-.tsk-pick input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  border: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-}
-
-.tsk-pick:has(input:checked) {
-  background: var(--surface-base-active);
-  border-color: var(--border-active);
-  color: var(--text-strong);
-}
-
-.tsk-pick:has(input:focus-visible) {
-  outline: 1px solid var(--border-focus);
-  outline-offset: 1px;
-}
-
-.tsk-pick:has(input:disabled) {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.tsk-dialog-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 4px;
-}
-
-
-.tsk-rise {
-  animation: tsk-rise 260ms cubic-bezier(0.2, 0, 0, 1) backwards;
-  animation-delay: calc(min(var(--tsk-i, 0), 14) * 20ms);
-}
-
-@keyframes tsk-rise {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tsk-rise {
-    animation: none;
-  }
-
-  .tsk-progress > i {
-    transition: none;
-  }
-}
-
-.tsk-row-tools {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* Pointer-only reveal: a touch screen has no hover to reveal it with, and a
-   keyboard reaches it through :focus-within. */
-@media (hover: hover) and (pointer: fine) {
-  .tsk-tr .tsk-row-tools,
-  .tsk-card .tsk-row-tools {
-    opacity: 0;
-    transition: opacity 90ms linear;
-  }
-
-  .tsk-tr:hover .tsk-row-tools,
-  .tsk-tr:focus-within .tsk-row-tools,
-  .tsk-card:hover .tsk-row-tools,
-  .tsk-card:focus-within .tsk-row-tools,
-  /* An open menu outlives the pointer that opened it: without this the panel
-     fades out from under the cursor as soon as it leaves the row. */
-  .tsk-row-tools:has([aria-expanded="true"]) {
-    opacity: 1;
-  }
-}
-
-.tsk-menu {
-  position: relative;
-  display: inline-flex;
-}
-
-.tsk-menu-panel {
-  position: absolute;
-  top: calc(100% + 4px);
-  z-index: 20;
-  min-width: 184px;
-  max-width: 280px;
-  padding: 6px;
-  background: var(--surface-raised-strong);
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
-}
-
-.tsk-menu-panel[data-align="end"] {
-  right: 0;
-}
-
-.tsk-menu-panel[data-align="start"] {
-  left: 0;
-}
-
-.tsk-menu-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.tsk-menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-  padding: 5px 8px;
-  background: transparent;
-  border: 0;
-  border-radius: var(--radius-5);
-  color: var(--text-base);
-  font: inherit;
-  font-size: var(--font-size-small);
-  text-align: left;
-  cursor: pointer;
-}
-
-.tsk-menu-item:hover:not(:disabled) {
-  background: var(--surface-base-hover);
-  color: var(--text-strong);
-}
-
-.tsk-menu-item:focus-visible {
-  outline: 1px solid var(--border-focus);
-  outline-offset: -1px;
-}
-
-.tsk-menu-item:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.tsk-menu-note {
-  margin-left: auto;
-  color: var(--text-weak);
-  font-size: var(--font-size-x-small);
-}
-
-/* No `overflow: hidden` to round the ends: the caret's own panel is a
-   descendant, and hiding the overflow clipped the menu out of existence. The
-   halves carry the radius instead. */
-.tsk-split {
-  display: inline-flex;
-  align-items: stretch;
-  height: 22px;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-5);
-}
-
-.tsk-split-main,
-.tsk-split-caret {
-  padding: 0 8px;
-  background: var(--surface-raised-strong);
-  border: 0;
-  color: var(--text-base);
-  font: inherit;
-  font-size: var(--font-size-x-small);
-  font-weight: var(--font-weight-medium);
-  line-height: var(--line-height-none);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.tsk-split-main {
-  border-radius: var(--radius-5) 0 0 var(--radius-5);
-}
-
-.tsk-split-caret {
-  padding: 0 5px;
-  border-left: 1px solid var(--border-weak-base);
-  border-radius: 0 var(--radius-5) var(--radius-5) 0;
-}
-
-.tsk-split-main:hover:not(:disabled),
-.tsk-split-caret:hover:not(:disabled) {
-  background: var(--surface-base-hover);
-  color: var(--text-strong);
-}
-
-.tsk-split-main:focus-visible,
-.tsk-split-caret:focus-visible {
-  outline: 1px solid var(--border-focus);
-  outline-offset: -1px;
-}
-
-.tsk-split-main:disabled,
-.tsk-split-caret:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-@keyframes tsk-pulse {
-  50% {
-    opacity: 0.4;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tsk-dot {
-    animation: none;
-  }
-}
-
-.tsk-add-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 30px;
-  padding: 0 8px 0 0;
-  background: transparent;
-  border: 0;
-  color: var(--text-weak);
-  font: inherit;
-  font-size: var(--font-size-compact);
-  cursor: pointer;
-}
-
-.tsk-add-trigger:hover {
-  color: var(--text-strong);
-}
-
-.tsk-add-trigger:focus-visible {
-  outline: 1px solid var(--border-focus);
-  outline-offset: 1px;
-  border-radius: var(--radius-5);
 }
 
 .tsk-parent-tag {
+  align-self: flex-start;
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  align-self: flex-start;
+  gap: 4px;
   max-width: 100%;
   height: 20px;
   padding: 0 8px;
@@ -1397,21 +789,483 @@
   cursor: default;
 }
 
+.tsk-bare-title {
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-strong);
+  font: inherit;
+  font-size: var(--font-size-2x-large);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: var(--letter-spacing-title);
+}
+
+.tsk-bare-title:focus-visible {
+  outline: none;
+}
+
+.tsk-bare-title::placeholder {
+  color: var(--text-weak);
+}
+
+.tsk-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+@container (max-width: 720px) {
+  .tsk-detail {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+}
+
+.tsk-rail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tsk-rail-title {
+  margin: 0 0 2px;
+  color: var(--text-weak);
+  font-size: var(--font-size-2x-small);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-section);
+  text-transform: uppercase;
+}
+
+.tsk-rail-action.ui-button {
+  align-self: flex-start;
+  margin-left: -8px;
+}
+
+.tsk-destructive.ui-button {
+  color: var(--text-diff-delete-base);
+}
+
+/* Icon-and-label rows, not a boxed table. */
+.tsk-props-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.tsk-prop {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.tsk-prop > dt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-prop > dt .ui-icon-svg {
+  color: var(--icon-base);
+}
+
+.tsk-prop > dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-base);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-prop > dd > .tsk-status-trigger {
+  margin-left: -6px;
+}
+
+.tsk-slots {
+  display: flex;
+  flex-direction: column;
+}
+
+.tsk-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid var(--tsk-hairline);
+}
+
+.tsk-slot:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.tsk-slot-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+}
+
+.tsk-slot-name {
+  color: var(--text-base);
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+}
+
+.tsk-slot-head .ui-button {
+  margin-right: -8px;
+}
+
+.tsk-slot-notice,
+.tsk-slot-resend.ui-button {
+  align-self: flex-start;
+  margin: 0;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-slot-resend.ui-button {
+  margin-left: -8px;
+}
+
+.tsk-dot {
+  flex: none;
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--icon-disabled);
+}
+
+.tsk-dot[data-liveness="live"] {
+  background: var(--icon-success-base);
+  animation: tsk-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes tsk-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.tsk-attempts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tsk-attempt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-attempt-no {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.tsk-attempt-liveness {
+  flex: none;
+}
+
+.tsk-attempt-open {
+  flex: none;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-weak);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--border-base);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.tsk-attempt-open:hover {
+  color: var(--text-strong);
+}
+
+/* Subtasks ---------------------------------------------------------------- */
+
+.tsk-subtasks {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.tsk-subtasks-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+}
+
+.tsk-subtask {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 6px 0 0;
+  border-radius: var(--radius-sm);
+}
+
+.tsk-subtask:hover {
+  background: var(--surface-base-hover);
+}
+
+.tsk-subtask-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-base);
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tsk-subtask-open[data-done="true"] {
+  color: var(--text-weak);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-base);
+}
+
+/* A link row, as Linear's "Add sub-issues" is — not a button that competes with
+   the page's own actions. */
+.tsk-add-trigger {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-weak);
+  font: inherit;
+  font-size: var(--font-size-small);
+  cursor: pointer;
+}
+
+.tsk-add-trigger:hover {
+  color: var(--text-strong);
+}
+
+.tsk-add-trigger:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.tsk-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.tsk-add .ui-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Dialogs ----------------------------------------------------------------- */
+
+.tsk-create,
+.tsk-start {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tsk-start-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tsk-start-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.tsk-chiprow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tsk-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.tsk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tsk-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.tsk-continue {
+  padding: 2px 0;
+}
+
+/* Label and value rows, no box: the preview states where a start will land, and
+   a panel around it would read as something to fill in. */
+.tsk-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid var(--tsk-hairline);
+  border-bottom: 1px solid var(--tsk-hairline);
+}
+
+.tsk-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tsk-kv {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px 12px;
+  margin: 0;
+}
+
+.tsk-kv > dt {
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+}
+
+.tsk-kv > dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-base);
+  font-size: var(--font-size-x-small);
+  overflow-wrap: anywhere;
+}
+
 .tsk-notice-inline {
   display: flex;
   align-items: flex-start;
   gap: 6px;
   margin: 0;
   color: var(--text-weak);
-  font-size: var(--font-size-small);
+  font-size: var(--font-size-x-small);
   line-height: var(--line-height-relaxed);
 }
 
 .tsk-notice-glyph {
   flex: none;
+  margin-top: 1px;
   color: var(--icon-base);
-  line-height: inherit;
 }
+
+/* Presets ----------------------------------------------------------------- */
+
+.tsk-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 12px var(--tsk-gutter) var(--tsk-gutter);
+  overflow: auto;
+}
+
+.tsk-page-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tsk-thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: grid;
+  align-items: center;
+  gap: 10px;
+  height: var(--tsk-head);
+  padding: 0 var(--tsk-gutter);
+  background: var(--surface-base);
+  color: var(--text-weak);
+  font-size: var(--font-size-2x-small);
+  font-weight: var(--font-weight-medium);
+  letter-spacing: var(--letter-spacing-section);
+  text-transform: uppercase;
+}
+
+.tsk-tr-preset {
+  grid-template-columns: minmax(0, 1fr) 76px minmax(0, 210px) 112px 60px 84px;
+}
+
+.tsk-row-quiet.ui-button {
+  justify-self: end;
+  color: var(--text-weak);
+}
+
+.tsk-preset-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.tsk-capability-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+
+.tsk-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--text-base);
+  font-size: var(--font-size-small);
+}
+
+/* Prose ------------------------------------------------------------------- */
 
 /* The editor paints its own body; this only gives it the page's measure and a
    focus ring that matches the other borderless fields. */
@@ -1452,8 +1306,7 @@
 
 /* The Documents editor sizes itself for a page: a 200px writing area and a
    160px scroll runway under it. A description is a field on a page that already
-   has both, so this surface asks for neither. Scoped to `.tsk-prose`, which is
-   the kit's own box — the editor keeps its own styling everywhere else. */
+   has both, so this surface asks for neither. */
 .tsk-prose .notion-editor .tiptap {
   min-height: 1.6em;
 }
@@ -1462,59 +1315,27 @@
   display: none;
 }
 
-/* The draft's actions live on the row that names the page, so the text below
-   does not reflow around a bar that appears between paragraphs. */
-.tsk-page-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+/* Motion ------------------------------------------------------------------ */
+
+.tsk-rise {
+  animation: tsk-rise 260ms cubic-bezier(0.2, 0, 0, 1) backwards;
+  animation-delay: calc(min(var(--tsk-i, 0), 14) * 20ms);
 }
 
-.tsk-page-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 26px;
+@keyframes tsk-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
 
-.tsk-create {
-  gap: 10px;
-  min-width: 0;
-}
+@media (prefers-reduced-motion: reduce) {
+  .tsk-rise,
+  .tsk-dot[data-liveness="live"] {
+    animation: none;
+  }
 
-.tsk-create .tsk-bare-title {
-  font-size: var(--font-size-x-large);
-}
-
-.tsk-chiprow {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tsk-chip-select {
-  appearance: none;
-  width: auto;
-  height: 20px;
-  padding: 0 8px;
-  background: transparent;
-  border: 1px solid var(--border-weak-base);
-  border-radius: var(--radius-pill);
-  color: var(--text-base);
-  font: inherit;
-  font-size: var(--font-size-x-small);
-  font-weight: var(--font-weight-medium);
-  cursor: pointer;
-}
-
-.tsk-chip-select:hover,
-.tsk-chip-select:focus-visible {
-  background: var(--surface-base-hover);
-  color: var(--text-strong);
-}
-
-.tsk-chip-select:focus-visible {
-  outline: 1px solid var(--border-focus);
-  outline-offset: 1px;
+  .tsk-card {
+    transition: none;
+  }
 }

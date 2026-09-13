@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library"
 import { createEffect, createSignal } from "solid-js"
 import type { HarnessReference } from "@claxedo/tasks"
 import { emptyPresetEditorDraft, type ConfigurationEditorProps, type PresetEditorDraft } from "../../preset-editor-model"
 import { type CapabilityCatalog } from "../../view-model"
 import { PresetEditor } from "./preset-editor"
+
+vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("../shared/test-support/host-controls")).dropdownMenuDouble())
+vi.mock("@opencode-ai/ui/select", async () => (await import("../shared/test-support/host-controls")).selectDouble())
 
 afterEach(cleanup)
 
@@ -201,7 +204,7 @@ describe("preset editor", () => {
     const { draft } = mount({ placement: "cloud" })
 
     expect(screen.getByTestId("preset-editor-cloud-capabilities")).toBeTruthy()
-    fireEvent.click(screen.getByTestId("preset-editor-plugin-src/linter"))
+    fireEvent.click(within(screen.getByTestId("preset-editor-plugin-src/linter")).getByRole("checkbox"))
 
     expect(draft().plugins).toEqual([{ sourceId: "src", pluginName: "linter" }])
   })
@@ -210,7 +213,7 @@ describe("preset editor", () => {
     mount()
 
     expect(screen.queryByTestId("preset-editor-configuration-planning")).toBeNull()
-    fireEvent.click(screen.getByTestId("preset-editor-slot-planning"))
+    fireEvent.click(within(screen.getByTestId("preset-editor-slot-planning")).getByRole("checkbox"))
 
     expect(screen.getByTestId("preset-editor-configuration-planning")).toBeTruthy()
   })

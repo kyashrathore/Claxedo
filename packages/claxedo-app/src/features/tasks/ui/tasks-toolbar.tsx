@@ -1,6 +1,11 @@
 import { For, Show, createSignal } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
-import { TASK_STATUSES, isTaskStatus } from "@claxedo/tasks"
+import { Select } from "@opencode-ai/ui/select"
+import { Switch } from "@opencode-ai/ui/switch"
+import { Tag } from "@opencode-ai/ui/tag"
+import { TASK_STATUSES, type TaskStatus } from "@claxedo/tasks"
 import { TASK_COLLECTIONS, TASK_COLLECTION_LABELS, TASK_STATUS_LABELS } from "../view-model"
 import type { TasksProjectOption } from "../app-ports"
 import type { TasksStore } from "../store/tasks-store"
@@ -11,62 +16,80 @@ export type TasksToolbarProps = {
   projectId: string
 }
 
+const ANY_STATUS = "any" as const
+type StatusChoice = TaskStatus | typeof ANY_STATUS
+const STATUS_CHOICES: readonly StatusChoice[] = [ANY_STATUS, ...TASK_STATUSES]
+const statusChoiceLabel = (choice: StatusChoice) => (choice === ANY_STATUS ? "Any status" : TASK_STATUS_LABELS[choice])
+
+const GROUPINGS = [
+  { value: true, label: "Status" },
+  { value: false, label: "No grouping" },
+] as const
+type Grouping = (typeof GROUPINGS)[number]
+
 /**
  * Collection, filter and display controls for the task list.
  *
- * The filter selects live in a popover but the view toggle does not: it is the
- * one control that changes what the page is, and a control behind a popover
- * cannot be reached by the keyboard without opening it first.
+ * The view toggle is in the bar as well as in Display: it is the one control
+ * that changes what the page is, and a control behind a popover cannot be
+ * reached by the keyboard without opening it first.
  */
 export function TasksToolbar(props: TasksToolbarProps) {
   const [filterOpen, setFilterOpen] = createSignal(false)
   const [displayOpen, setDisplayOpen] = createSignal(false)
-  const projectLabel = () => props.projects.find((project) => project.id === props.projectId)?.label
+  const project = () => props.projects.find((entry) => entry.id === props.projectId)
   const statusFilter = () => props.store.state.statusFilter
   const board = () => props.store.state.view === "board"
+  const grouping = () => GROUPINGS.find((entry) => entry.value === props.store.state.grouped)
   // Assigned through a call rather than as a literal: an inline object literal
-  // is excess-property-checked against the bare button attributes, which do not
+  // is excess-property-checked against the button's own props, which do not
   // admit `data-*`.
-  const trigger = (testId: string) => ({ type: "button" as const, class: "tsk-button", "data-testid": testId })
+  const trigger = (testId: string, icon?: "sliders") => ({
+    size: "small" as const,
+    variant: "ghost" as const,
+    icon,
+    "data-testid": testId,
+  })
 
   return (
     <div class="tsk-toolbar">
       <div class="tsk-segmented" role="group" aria-label="Task collection">
         <For each={TASK_COLLECTIONS}>
           {(collection) => (
-            <button
-              type="button"
+            <Button
+              size="small"
+              variant="ghost"
               data-testid={`tasks-collection-${collection}`}
+              data-selected={props.store.state.collection === collection ? "true" : undefined}
               aria-pressed={props.store.state.collection === collection}
               onClick={() => props.store.setCollection(collection)}
             >
               {TASK_COLLECTION_LABELS[collection]}
-            </button>
+            </Button>
           )}
         </For>
       </div>
 
-      <Show when={props.projects.length > 1 && projectLabel()}>
-        {(label) => (
-          <span class="tsk-chip">
-            Project <b>{label()}</b>
-          </span>
+      <Show when={props.projects.length > 1 && project()}>
+        {(entry) => (
+          <Tag class="tsk-filter-tag">
+            Project: {entry().label}
+          </Tag>
         )}
       </Show>
       <Show when={statusFilter()}>
         {(status) => (
-          <span class="tsk-chip">
-            Status <b>{TASK_STATUS_LABELS[status()]}</b>
-            <button
-              type="button"
-              class="tsk-icon-button"
+          <Tag class="tsk-filter-tag">
+            {TASK_STATUS_LABELS[status()]}
+            <IconButton
+              icon="close-small"
+              size="small"
+              variant="ghost"
               data-testid="tasks-status-filter-clear"
               aria-label={`Clear the ${TASK_STATUS_LABELS[status()]} filter`}
               onClick={() => props.store.setStatusFilter(null)}
-            >
-              ×
-            </button>
-          </span>
+            />
+          </Tag>
         )}
       </Show>
 
@@ -76,40 +99,39 @@ export function TasksToolbar(props: TasksToolbarProps) {
         open={filterOpen()}
         onOpenChange={setFilterOpen}
         placement="bottom-end"
-        triggerAs="button"
+        triggerAs={Button}
         triggerProps={trigger("tasks-filter")}
         trigger={<span>Filter</span>}
       >
-        <div class="tsk-popover-body">
-          <label class="tsk-field">
-            <span class="tsk-label">Project</span>
-            <select
-              class="tsk-select"
-              data-testid="tasks-project"
-              aria-label="Project"
-              value={props.projectId}
-              onChange={(event) => props.store.setProjectId(event.currentTarget.value)}
-            >
-              <For each={props.projects}>{(project) => <option value={project.id}>{project.label}</option>}</For>
-            </select>
-          </label>
-
-          <label class="tsk-field">
-            <span class="tsk-label">Status</span>
-            <select
-              class="tsk-select"
-              data-testid="tasks-status-filter"
-              aria-label="Status filter"
-              value={statusFilter() ?? ""}
-              onChange={(event) => {
-                const next = event.currentTarget.value
-                props.store.setStatusFilter(isTaskStatus(next) ? next : null)
+        <div class="tsk-popover">
+          <div class="tsk-option">
+            <span class="tsk-option-label">Project</span>
+            <Select
+              size="small"
+              options={[...props.projects]}
+              current={project()}
+              value={(entry: TasksProjectOption) => entry.id}
+              label={(entry: TasksProjectOption) => entry.label}
+              placeholder="Any project"
+              triggerProps={{ "data-testid": "tasks-project", "aria-label": "Project" }}
+              onSelect={(entry) => {
+                if (entry) props.store.setProjectId(entry.id)
               }}
-            >
-              <option value="">Any status</option>
-              <For each={TASK_STATUSES}>{(status) => <option value={status}>{TASK_STATUS_LABELS[status]}</option>}</For>
-            </select>
-          </label>
+            />
+          </div>
+
+          <div class="tsk-option">
+            <span class="tsk-option-label">Status</span>
+            <Select
+              size="small"
+              options={[...STATUS_CHOICES]}
+              current={statusFilter() ?? ANY_STATUS}
+              value={(choice: StatusChoice) => choice}
+              label={statusChoiceLabel}
+              triggerProps={{ "data-testid": "tasks-status-filter", "aria-label": "Status filter" }}
+              onSelect={(choice) => props.store.setStatusFilter(choice && choice !== ANY_STATUS ? choice : null)}
+            />
+          </div>
         </div>
       </Popover>
 
@@ -117,29 +139,58 @@ export function TasksToolbar(props: TasksToolbarProps) {
         open={displayOpen()}
         onOpenChange={setDisplayOpen}
         placement="bottom-end"
-        triggerAs="button"
-        triggerProps={trigger("tasks-display")}
+        triggerAs={Button}
+        triggerProps={trigger("tasks-display", "sliders")}
         trigger={<span>Display</span>}
       >
-        <div class="tsk-popover-body">
-          <label class="tsk-checkbox">
-            <input
-              type="checkbox"
+        <div class="tsk-popover">
+          <div class="tsk-segmented tsk-segmented-wide" role="group" aria-label="View">
+            <Button
+              size="small"
+              variant="ghost"
+              data-selected={board() ? undefined : "true"}
+              aria-pressed={!board()}
+              onClick={() => props.store.setView("list")}
+            >
+              List
+            </Button>
+            <Button
+              size="small"
+              variant="ghost"
+              data-selected={board() ? "true" : undefined}
+              aria-pressed={board()}
+              onClick={() => props.store.setView("board")}
+            >
+              Board
+            </Button>
+          </div>
+
+          <div class="tsk-option">
+            <span class="tsk-option-label">Show subtasks</span>
+            <Switch
               data-testid="tasks-show-children"
               checked={props.store.state.showChildren}
-              onChange={(event) => props.store.setShowChildren(event.currentTarget.checked)}
+              onChange={(value: boolean) => props.store.setShowChildren(value)}
+              hideLabel
+            >
+              Show subtasks
+            </Switch>
+          </div>
+
+          <div class="tsk-option">
+            <span class="tsk-option-label">Grouping</span>
+            <Select
+              size="small"
+              options={[...GROUPINGS]}
+              current={grouping()}
+              value={(entry: Grouping) => String(entry.value)}
+              label={(entry: Grouping) => entry.label}
+              triggerProps={{ "data-testid": "tasks-group-by-status", "aria-label": "Grouping" }}
+              onSelect={(entry) => {
+                if (entry) props.store.setGrouped(entry.value)
+              }}
             />
-            <span>Show subtasks</span>
-          </label>
-          <label class="tsk-checkbox">
-            <input
-              type="checkbox"
-              data-testid="tasks-group-by-status"
-              checked={props.store.state.grouped}
-              onChange={(event) => props.store.setGrouped(event.currentTarget.checked)}
-            />
-            <span>Group by status</span>
-          </label>
+          </div>
         </div>
       </Popover>
 
@@ -148,22 +199,26 @@ export function TasksToolbar(props: TasksToolbarProps) {
         identifies: pressing the view you are already in is not a toggle.
       */}
       <div class="tsk-segmented" role="group" aria-label="View">
-        <button
-          type="button"
+        <Button
+          size="small"
+          variant="ghost"
           data-testid={board() ? "tasks-view-toggle" : undefined}
+          data-selected={board() ? undefined : "true"}
           aria-pressed={!board()}
           onClick={() => props.store.setView("list")}
         >
           List
-        </button>
-        <button
-          type="button"
+        </Button>
+        <Button
+          size="small"
+          variant="ghost"
           data-testid={board() ? undefined : "tasks-view-toggle"}
+          data-selected={board() ? "true" : undefined}
           aria-pressed={board()}
           onClick={() => props.store.setView("board")}
         >
           Board
-        </button>
+        </Button>
       </div>
     </div>
   )

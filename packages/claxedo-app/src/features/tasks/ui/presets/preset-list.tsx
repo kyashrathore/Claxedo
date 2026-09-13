@@ -1,4 +1,6 @@
 import { For, Show } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
+import { Switch } from "@opencode-ai/ui/switch"
 import { CONFIGURATION_SLOTS, type Preset } from "@claxedo/tasks"
 import { ListFailureNotice, type ListFailure } from "../shared/list-failure"
 import { LoadMore, type MorePages } from "../shared/load-more"
@@ -30,15 +32,13 @@ export function PresetList(props: PresetListProps) {
         <p class="tsk-hint tsk-spacer">
           Presets are yours. They describe how and where an agent works, and are reusable across your projects.
         </p>
-        <label class="tsk-checkbox">
-          <input
-            type="checkbox"
-            data-testid="preset-list-include-archived"
-            checked={props.includeArchived}
-            onChange={(event) => props.onIncludeArchivedChange(event.currentTarget.checked)}
-          />
-          <span>Show archived</span>
-        </label>
+        <Switch
+          data-testid="preset-list-include-archived"
+          checked={props.includeArchived}
+          onChange={(value: boolean) => props.onIncludeArchivedChange(value)}
+        >
+          Show archived
+        </Switch>
       </div>
 
       <Show when={props.error}>
@@ -66,9 +66,9 @@ export function PresetList(props: PresetListProps) {
             <Show when={props.failure === undefined}>
               <div class="tsk-empty">
                 <p>No presets yet.</p>
-                <button type="button" class="tsk-button" data-variant="outline" onClick={() => props.onCreate()}>
+                <Button size="small" variant="ghost" class="tsk-empty-action" onClick={() => props.onCreate()}>
                   New preset
-                </button>
+                </Button>
               </div>
             </Show>
           }
@@ -93,9 +93,7 @@ export function PresetList(props: PresetListProps) {
                 </Show>
               </button>
 
-              <span class="tsk-cell">
-                <span class="tsk-status">{PLACEMENT_LABELS[preset.execution.placement]}</span>
-              </span>
+              <span class="tsk-cell">{PLACEMENT_LABELS[preset.execution.placement]}</span>
               <span class="tsk-cell tsk-mono tsk-truncate">{primarySummary(preset)}</span>
               <span class="tsk-cell tsk-truncate">{slotSummary(preset)}</span>
               <span class="tsk-cell tsk-cell-time">{shortAge(preset.updatedAt, now)}</span>
@@ -103,28 +101,28 @@ export function PresetList(props: PresetListProps) {
               <Show
                 when={preset.archivedAt === null}
                 fallback={
-                  <button
-                    type="button"
-                    class="tsk-button"
-                    data-variant="quiet"
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    class="tsk-row-quiet"
                     data-testid={`preset-list-restore-${preset.id}`}
                     disabled={props.busyPresetId === preset.id}
                     onClick={() => props.onRestore({ presetId: preset.id, revision: preset.revision })}
                   >
                     Restore
-                  </button>
+                  </Button>
                 }
               >
-                <button
-                  type="button"
-                  class="tsk-button"
-                  data-variant="quiet"
+                <Button
+                  size="small"
+                  variant="ghost"
+                  class="tsk-row-quiet"
                   data-testid={`preset-list-archive-${preset.id}`}
                   disabled={props.busyPresetId === preset.id}
                   onClick={() => props.onArchive({ presetId: preset.id, revision: preset.revision })}
                 >
                   Archive
-                </button>
+                </Button>
               </Show>
             </div>
           )}

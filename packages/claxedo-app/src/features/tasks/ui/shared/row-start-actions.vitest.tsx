@@ -15,6 +15,9 @@ import type { TasksPage } from "@/platform/identity/route"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import { TasksSurface } from "@/features/tasks/ui/tasks-surface"
 
+vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("./test-support/host-controls")).dropdownMenuDouble())
+vi.mock("@opencode-ai/ui/select", async () => (await import("./test-support/host-controls")).selectDouble())
+
 afterEach(cleanup)
 
 const SERVER = "http://tasks.test"

@@ -1,8 +1,9 @@
 import { For, Show, createMemo } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
+import { Icon } from "@opencode-ai/ui/icon"
 import { TASK_STATUSES, type TaskChildSummary, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { LoadMore, type MorePages } from "../shared/load-more"
-import { TaskGlyph } from "../shared/glyphs"
-import { TaskStatusDot } from "../shared/status-control"
+import { TaskStatusIcon } from "../shared/status-control"
 import { TaskRowActions, TaskStartControl, type TaskStartOffer } from "../shared/task-row-controls"
 import { TASK_STATUS_LABELS, shortAge } from "../../view-model"
 
@@ -56,9 +57,9 @@ export function TaskList(props: TaskListProps) {
               <p>{props.emptyLabel ?? "No tasks here yet."}</p>
               <Show when={props.onCreate}>
                 {(create) => (
-                  <button type="button" class="tsk-button" data-variant="outline" onClick={() => create()()}>
+                  <Button size="small" variant="ghost" class="tsk-empty-action" onClick={() => create()()}>
                     New task
-                  </button>
+                  </Button>
                 )}
               </Show>
             </div>
@@ -70,8 +71,8 @@ export function TaskList(props: TaskListProps) {
                 <Show when={group.status}>
                   {(status) => (
                     <h3 class="tsk-group-head">
-                      <TaskStatusDot status={status()} />
-                      <span>{TASK_STATUS_LABELS[status()]}</span>
+                      <TaskStatusIcon status={status()} />
+                      <span class="tsk-group-name">{TASK_STATUS_LABELS[status()]}</span>
                       <span class="tsk-count">{group.tasks.length}</span>
                     </h3>
                   )}
@@ -130,30 +131,38 @@ function TaskRow(props: {
         aria-current={props.selected ? "true" : undefined}
         onClick={() => props.onSelect(props.task.id)}
       >
-        <TaskGlyph subtask={props.task.parentTaskId !== null} />
         <span class="tsk-open-name">{props.task.title}</span>
-        <Show when={props.parentTitle}>{(title) => <span class="tsk-parent">in {title()}</span>}</Show>
+        <Show when={props.parentTitle}>{(title) => <span class="tsk-parent">{title()}</span>}</Show>
         <Show when={props.task.archivedAt !== null}>
           <span class="tsk-parent">Archived</span>
         </Show>
       </button>
 
-      {/* The group header already names the status, so the row repeats it only
-          when the caller turned grouping off. */}
-      <Show when={!props.grouped}>
-        <span class="tsk-cell">
-          <TaskStatusDot status={props.task.status} />
-          {TASK_STATUS_LABELS[props.task.status]}
-        </span>
-      </Show>
-
-      <span class="tsk-cell tsk-cell-sub">
+      <span class="tsk-props">
+        {/* The group header already names the status, so the row repeats it only
+            when the caller turned grouping off. */}
+        <Show when={!props.grouped}>
+          <span class="tsk-cell">
+            <TaskStatusIcon status={props.task.status} />
+            {TASK_STATUS_LABELS[props.task.status]}
+          </span>
+        </Show>
         {/* A task with no subtasks says nothing rather than `0/0`. */}
         <Show when={props.progress && props.progress.total > 0 ? props.progress : undefined}>
-          {(progress) => `${progress().done}/${progress().total}`}
+          {(progress) => (
+            <span class="tsk-cell tsk-cell-sub">
+              <Icon name="checklist" size="small" />
+              {`${progress().done}/${progress().total}`}
+            </span>
+          )}
         </Show>
+        <Show when={props.task.links.count > 0}>
+          <span class="tsk-cell tsk-cell-session" role="img" aria-label="Has a session">
+            <Icon name="bubble-5" size="small" />
+          </span>
+        </Show>
+        <span class="tsk-cell tsk-cell-time">{shortAge(props.task.updatedAt, props.now)}</span>
       </span>
-      <span class="tsk-cell tsk-cell-time">{shortAge(props.task.updatedAt, props.now)}</span>
 
       <span class="tsk-row-tools" onClick={(event) => event.stopPropagation()}>
         <Show when={props.offer}>

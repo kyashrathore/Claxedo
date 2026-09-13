@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { TASKS_ROUTE_PATH, type Preset, type SessionReference, type StartPreview, type Task } from "@claxedo/tasks"
@@ -7,6 +7,11 @@ import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import { useTaskDetail, type TasksScope } from "@/features/tasks/data/queries"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
 import { StartTaskFlow } from "@/features/tasks/ui/start/start-task-flow"
+
+vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("../shared/test-support/host-controls")).dropdownMenuDouble())
+import { chooseOption, optionLabels } from "../shared/test-support/host-controls"
+
+vi.mock("@opencode-ai/ui/select", async () => (await import("../shared/test-support/host-controls")).selectDouble())
 
 afterEach(cleanup)
 
@@ -197,8 +202,8 @@ function mount(input: {
 }
 
 async function choosePreset() {
-  await waitFor(() => expect(screen.getByTestId("start-task-preset").querySelectorAll("option")).toHaveLength(2))
-  fireEvent.change(screen.getByTestId("start-task-preset"), { target: { value: preset.id } })
+  await waitFor(() => expect(optionLabels("start-task-preset")).toEqual([preset.name]))
+  chooseOption("start-task-preset", preset.name)
 }
 
 async function clickStart() {
@@ -214,9 +219,10 @@ describe("start task flow against a fake host", () => {
     await waitFor(() => expect(previews).toHaveLength(1))
     expect(previews[0].continueFromPrevious).toBe(false)
     const row = await waitFor(() => screen.getByTestId("start-task-continue"))
-    expect((row as HTMLInputElement).checked).toBe(false)
+    const box = within(row).getByRole<HTMLInputElement>("checkbox")
+    expect(box.checked).toBe(false)
 
-    fireEvent.click(row)
+    fireEvent.click(box)
 
     await waitFor(() => expect(previews).toHaveLength(2))
     expect(previews[1].continueFromPrevious).toBe(true)

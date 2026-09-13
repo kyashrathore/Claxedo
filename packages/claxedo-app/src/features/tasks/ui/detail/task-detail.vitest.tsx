@@ -4,6 +4,8 @@ import type { SessionHandoffState, SessionLiveness, Task, TaskSessionLinkView } 
 import { groupLinksBySlot } from "../../view-model"
 import { TaskDetail } from "./task-detail"
 
+vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("../shared/test-support/host-controls")).dropdownMenuDouble())
+
 afterEach(cleanup)
 
 const StubProseEditor = (props: {

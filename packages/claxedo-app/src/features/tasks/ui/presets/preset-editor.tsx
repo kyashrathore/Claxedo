@@ -1,5 +1,8 @@
 import { For, Show, createSignal, untrack } from "solid-js"
 import { Dynamic } from "solid-js/web"
+import { Button } from "@opencode-ai/ui/button"
+import { Checkbox } from "@opencode-ai/ui/checkbox"
+import { TextField } from "@opencode-ai/ui/text-field"
 import {
   CONFIGURATION_SLOTS,
   PRESET_PLACEMENTS,
@@ -79,31 +82,34 @@ export function PresetEditor(props: PresetEditorProps) {
     >
       <div class="tsk-page-head">
         <span class="tsk-spacer" />
-        <button type="button" class="tsk-button" data-variant="quiet" data-testid="preset-editor-cancel" onClick={() => props.onCancel()}>
+        <Button size="small" variant="ghost" data-testid="preset-editor-cancel" onClick={() => props.onCancel()}>
           Cancel
-        </button>
-        <button type="submit" class="tsk-button" data-variant="primary" data-testid="preset-editor-submit" disabled={props.busy}>
+        </Button>
+        <Button type="submit" size="small" variant="primary" data-testid="preset-editor-submit" disabled={props.busy}>
           {props.submitLabel}
-        </button>
+        </Button>
       </div>
 
       <div class="tsk-stack tsk-preset-form">
-        <label class="tsk-field">
+        <div class="tsk-field">
           <span class="tsk-label">Name</span>
-          <input
-            class="tsk-input"
+          <TextField
             data-testid="preset-editor-name"
+            aria-label="Name"
             placeholder="Careful reviewer"
             maxLength={TASKS_BOUNDS.presetNameMax}
-            aria-invalid={fieldError("name") ? "true" : undefined}
+            validationState={fieldError("name") ? "invalid" : "valid"}
             value={props.draft.name}
-            onInput={(event) => patch({ name: event.currentTarget.value })}
+            onChange={(name: string) => patch({ name })}
           />
           <Show when={fieldError("name")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
-        </label>
+        </div>
 
         <fieldset class="tsk-field" data-testid="preset-editor-placement">
           <legend class="tsk-label">Execution</legend>
+          {/* Native radios: the host's RadioGroup is a segmented control with no
+              per-option disabled, and a placement this server cannot run must
+              not be selectable. */}
           <div class="tsk-capability-list">
             <For each={PRESET_PLACEMENTS}>
               {(placement) => (
@@ -151,15 +157,14 @@ export function PresetEditor(props: PresetEditorProps) {
           <div class="tsk-capability-list">
             <For each={OPTIONAL_SLOTS}>
               {(slot) => (
-                <label class="tsk-pick">
-                  <input
-                    type="checkbox"
-                    data-testid={`preset-editor-slot-${slot}`}
-                    checked={props.draft.configurations[slot] !== null}
-                    onChange={(event) => setConfiguration(slot, event.currentTarget.checked ? EMPTY_CONFIGURATION : null)}
-                  />
-                  <span>{SLOT_LABELS[slot]}</span>
-                </label>
+                <Checkbox
+                  class="tsk-pick"
+                  data-testid={`preset-editor-slot-${slot}`}
+                  checked={props.draft.configurations[slot] !== null}
+                  onChange={(checked: boolean) => setConfiguration(slot, checked ? EMPTY_CONFIGURATION : null)}
+                >
+                  {SLOT_LABELS[slot]}
+                </Checkbox>
               )}
             </For>
           </div>
@@ -288,29 +293,24 @@ function CapabilityPicker(props: {
       <div class="tsk-capability-list" data-testid="preset-editor-plugins">
         <For each={catalog().plugins} fallback={<span class="tsk-hint">No installed plugins.</span>}>
           {(option) => (
-            <label
+            <Checkbox
               class="tsk-pick"
-              title={[option.description, option.bundledSkills?.length ? `Bundled skills: ${option.bundledSkills.join(", ")}` : undefined]
-                .filter(Boolean)
-                .join(" — ")}
+              data-testid={`preset-editor-plugin-${option.key}`}
+              description={option.bundledSkills?.length ? `Bundled skills: ${option.bundledSkills.join(", ")}` : option.description}
+              checked={pluginSelected(option.sourceId, option.name)}
+              disabled={!option.available && !pluginSelected(option.sourceId, option.name)}
+              onChange={() =>
+                props.onDraftChange({
+                  ...props.draft,
+                  plugins: togglePluginReference(props.draft.plugins, { sourceId: option.sourceId, pluginName: option.name }),
+                })
+              }
             >
-              <input
-                type="checkbox"
-                data-testid={`preset-editor-plugin-${option.key}`}
-                checked={pluginSelected(option.sourceId, option.name)}
-                disabled={!option.available && !pluginSelected(option.sourceId, option.name)}
-                onChange={() =>
-                  props.onDraftChange({
-                    ...props.draft,
-                    plugins: togglePluginReference(props.draft.plugins, { sourceId: option.sourceId, pluginName: option.name }),
-                  })
-                }
-              />
-              <span class="tsk-truncate">{option.label}</span>
+              {option.label}
               <Show when={!option.available}>
-                <span class="tsk-error">{option.unavailableReason ?? "Unavailable"}</span>
+                <span class="tsk-error"> {option.unavailableReason ?? "Unavailable"}</span>
               </Show>
-            </label>
+            </Checkbox>
           )}
         </For>
       </div>
@@ -319,24 +319,24 @@ function CapabilityPicker(props: {
       <div class="tsk-capability-list" data-testid="preset-editor-skills">
         <For each={catalog().skills} fallback={<span class="tsk-hint">No installed skills.</span>}>
           {(option) => (
-            <label class="tsk-pick" title={option.description}>
-              <input
-                type="checkbox"
-                data-testid={`preset-editor-skill-${option.key}`}
-                checked={skillSelected(option.sourceId, option.name)}
-                disabled={!option.available && !skillSelected(option.sourceId, option.name)}
-                onChange={() =>
-                  props.onDraftChange({
-                    ...props.draft,
-                    skills: toggleSkillReference(props.draft.skills, { sourceId: option.sourceId, skillName: option.name }),
-                  })
-                }
-              />
-              <span class="tsk-truncate">{option.label}</span>
+            <Checkbox
+              class="tsk-pick"
+              data-testid={`preset-editor-skill-${option.key}`}
+              description={option.description}
+              checked={skillSelected(option.sourceId, option.name)}
+              disabled={!option.available && !skillSelected(option.sourceId, option.name)}
+              onChange={() =>
+                props.onDraftChange({
+                  ...props.draft,
+                  skills: toggleSkillReference(props.draft.skills, { sourceId: option.sourceId, skillName: option.name }),
+                })
+              }
+            >
+              {option.label}
               <Show when={!option.available}>
-                <span class="tsk-error">{option.unavailableReason ?? "Unavailable"}</span>
+                <span class="tsk-error"> {option.unavailableReason ?? "Unavailable"}</span>
               </Show>
-            </label>
+            </Checkbox>
           )}
         </For>
       </div>

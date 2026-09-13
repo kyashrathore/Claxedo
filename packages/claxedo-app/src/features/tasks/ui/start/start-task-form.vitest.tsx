@@ -5,6 +5,9 @@ import type { Preset, StartPreview } from "@claxedo/tasks"
 import { type StartDraft, type StartPreviewState } from "../../view-model"
 import { StartTaskForm } from "./start-task-form"
 
+vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("../shared/test-support/host-controls")).dropdownMenuDouble())
+vi.mock("@opencode-ai/ui/select", async () => (await import("../shared/test-support/host-controls")).selectDouble())
+
 afterEach(cleanup)
 
 const preset: Preset = {

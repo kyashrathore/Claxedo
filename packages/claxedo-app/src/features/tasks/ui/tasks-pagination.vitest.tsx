@@ -11,6 +11,9 @@ import { PresetsView } from "@/features/tasks/ui/presets/presets-view"
 import { TaskDetailPage } from "@/features/tasks/ui/detail/task-detail-page"
 import { TasksView } from "@/features/tasks/ui/tasks-view"
 
+vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("./shared/test-support/host-controls")).dropdownMenuDouble())
+vi.mock("@opencode-ai/ui/select", async () => (await import("./shared/test-support/host-controls")).selectDouble())
+
 afterEach(cleanup)
 
 const SERVER = "http://tasks.test"

@@ -1,4 +1,5 @@
 import { Show } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
 
 /**
  * A list read that came back refused, with the retry that runs it again.
@@ -21,16 +22,14 @@ export function ListFailureNotice(props: { failure?: ListFailure; testId: string
           <p class="tsk-error" role="alert">
             {failure().message}
           </p>
-          <button
-            type="button"
-            class="tsk-button"
-            data-variant="outline"
+          <Button
+            size="small"
             data-testid={props.testId}
             disabled={failure().retrying === true}
             onClick={() => failure().onRetry()}
           >
             {failure().retrying === true ? "Retrying…" : "Retry"}
-          </button>
+          </Button>
         </div>
       )}
     </Show>

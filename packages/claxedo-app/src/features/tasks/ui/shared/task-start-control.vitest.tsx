@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import type { Preset, TaskSummary } from "@claxedo/tasks"
 import { TaskStartControl, type StartChoice } from "./task-row-controls"
 
+vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("./test-support/host-controls")).dropdownMenuDouble())
+
 afterEach(cleanup)
 
 function summary(overrides: Partial<TaskSummary> = {}): TaskSummary {

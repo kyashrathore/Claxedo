@@ -440,7 +440,9 @@ export const desktopRendererUnsigned: Policy = {
   // +18 modules (2026-09-13): the same moved Tasks UI owners app-local
   // reviews, visible to the walker for the first time now that they are app
   // modules rather than kit ones. No new package edge. Measured 1112 / 58.
-  ceilings: { modules: 1112, packages: 58 },
+  // −2 modules (2026-09-13): the same row menu and glyph app-local drops for
+  // the host's own menu and icon. Measured 1110 / 58.
+  ceilings: { modules: 1110, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

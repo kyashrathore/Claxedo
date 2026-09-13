@@ -1,9 +1,11 @@
-import { For, Show } from "solid-js"
+import { Show } from "solid-js"
 import { Dynamic } from "solid-js/web"
+import { Button } from "@opencode-ai/ui/button"
+import { Select } from "@opencode-ai/ui/select"
 import { TASKS_BOUNDS, type TaskDraft } from "@claxedo/tasks"
 import type { ProseEditor } from "../../app-ports"
-import { TaskStatusDot } from "../shared/status-control"
-import { TASK_STATUS_LABELS, type FieldErrors } from "../../view-model"
+import { TaskStatusChip } from "../shared/status-control"
+import type { FieldErrors } from "../../view-model"
 
 export type ProjectOption = { id: string; label: string }
 
@@ -32,11 +34,11 @@ export type TaskCreateFormProps = {
 export function TaskCreateForm(props: TaskCreateFormProps) {
   const patch = (input: Partial<TaskDraft>) => props.onDraftChange({ ...props.draft, ...input })
   const fieldError = (path: string) => props.fieldErrors?.[path]
-  const projectLabel = () => props.projects.find((project) => project.id === props.draft.projectId)?.label
+  const project = () => props.projects.find((entry) => entry.id === props.draft.projectId)
 
   return (
     <form
-      class="tsk tsk-stack tsk-create"
+      class="tsk tsk-create"
       data-testid="task-create-dialog"
       onSubmit={(event) => {
         event.preventDefault()
@@ -44,7 +46,7 @@ export function TaskCreateForm(props: TaskCreateFormProps) {
       }}
     >
       <nav class="tsk-crumbs" aria-label="Breadcrumb">
-        <Show when={props.parentTitle} fallback={<span>{projectLabel() ?? "Project"}</span>}>
+        <Show when={props.parentTitle} fallback={<span>{project()?.label ?? "Project"}</span>}>
           {(title) => <span>{title()}</span>}
         </Show>
         <span class="tsk-crumb-sep" aria-hidden="true">
@@ -78,20 +80,20 @@ export function TaskCreateForm(props: TaskCreateFormProps) {
       <Show when={fieldError("description")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
 
       <div class="tsk-chiprow">
-        <span class="tsk-status">
-          <TaskStatusDot status="todo" />
-          {TASK_STATUS_LABELS.todo}
-        </span>
+        <TaskStatusChip status="todo" />
         <Show when={!props.draft.parentTaskId}>
-          <select
-            class="tsk-chip-select"
-            data-testid="task-create-project"
-            aria-label="Project"
-            value={props.draft.projectId}
-            onChange={(event) => patch({ projectId: event.currentTarget.value })}
-          >
-            <For each={props.projects}>{(project) => <option value={project.id}>{project.label}</option>}</For>
-          </select>
+          <Select
+            size="small"
+            options={[...props.projects]}
+            current={project()}
+            value={(entry: ProjectOption) => entry.id}
+            label={(entry: ProjectOption) => entry.label}
+            placeholder="Project"
+            triggerProps={{ "data-testid": "task-create-project", "aria-label": "Project" }}
+            onSelect={(entry) => {
+              if (entry) patch({ projectId: entry.id })
+            }}
+          />
         </Show>
         <Show when={fieldError("projectId")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
       </div>
@@ -105,18 +107,18 @@ export function TaskCreateForm(props: TaskCreateFormProps) {
       </Show>
 
       <div class="tsk-dialog-actions">
-        <button type="button" class="tsk-button" data-variant="quiet" onClick={() => props.onCancel()}>
+        <Button size="small" variant="ghost" onClick={() => props.onCancel()}>
           Cancel
-        </button>
-        <button
+        </Button>
+        <Button
           type="submit"
-          class="tsk-button"
-          data-variant="primary"
+          size="small"
+          variant="primary"
           data-testid="task-create-submit"
           disabled={props.busy || props.draft.title.trim().length === 0 || props.draft.projectId.length === 0}
         >
           Create
-        </button>
+        </Button>
       </div>
     </form>
   )

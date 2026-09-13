@@ -403,7 +403,10 @@ export const appLocal: Policy = {
   // board; the task detail and its subtasks; the preset list and editor; the
   // start form; and the create form. The kit keeps domain, http, client and
   // conformance, so its package edge is unchanged. Measured 1069 / 58.
-  ceilings: { modules: 1069, packages: 58 },
+  // −2 modules (2026-09-13): the hand-rolled row menu and the kit's own glyph,
+  // both replaced by @opencode-ai/ui's DropdownMenu and Icon, which this entry
+  // already carried. Measured 1067 / 58.
+  ceilings: { modules: 1067, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

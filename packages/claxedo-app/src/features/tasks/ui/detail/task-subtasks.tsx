@@ -1,7 +1,10 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
+import { Icon } from "@opencode-ai/ui/icon"
+import { TextField } from "@opencode-ai/ui/text-field"
 import { TASKS_BOUNDS, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { LoadMore, type MorePages } from "../shared/load-more"
-import { StatusMenu } from "../shared/status-control"
+import { StatusControl } from "../shared/status-control"
 
 export type TaskSubtasksProps = {
   /** Not named `children`: Solid gives that prop name its own resolution semantics. */
@@ -33,49 +36,41 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
   }
 
   return (
-    <section class="tsk tsk-stack" data-testid="task-subtasks" aria-label="Subtasks">
-      <div class="tsk-row tsk-spread">
+    <section class="tsk-subtasks" data-testid="task-subtasks" aria-label="Subtasks">
+      <div class="tsk-subtasks-head">
         <h3 class="tsk-section-title">Subtasks</h3>
         {/* 0/0 counts nothing; the add row below is the whole of an empty section. */}
         <Show when={props.items.length > 0}>
-          <span class="tsk-cell tsk-num">
+          <span class="tsk-count">
             {done()}/{props.items.length}
           </span>
         </Show>
       </div>
 
-      <Show when={props.items.length > 0}>
-        <div class="tsk-progress">
-          <i style={{ width: `${Math.round((done() / props.items.length) * 100)}%` }} />
-        </div>
-      </Show>
-
-      <div>
-        <For each={props.items}>
-          {(child) => (
-            <div class="tsk-checklist-row">
-              <button
-                type="button"
-                class="tsk-check"
-                data-done={child.status === "done" ? "true" : undefined}
-                data-testid={`task-subtask-${child.id}`}
-                onClick={() => props.onOpen(child.id)}
-              >
-                <span class="tsk-open-name">{child.title}</span>
-              </button>
-              <Show when={child.archivedAt === null} fallback={<span class="tsk-cell">Archived</span>}>
-                <StatusMenu
-                  status={child.status}
-                  disabled={props.busy}
-                  label={`Status of ${child.title}`}
-                  testId={`task-subtask-status-${child.id}`}
-                  onChange={(status) => props.onStatusChange({ taskId: child.id, revision: child.revision, status })}
-                />
-              </Show>
-            </div>
-          )}
-        </For>
-      </div>
+      <For each={props.items}>
+        {(child) => (
+          <div class="tsk-subtask">
+            <button
+              type="button"
+              class="tsk-subtask-open"
+              data-done={child.status === "done" ? "true" : undefined}
+              data-testid={`task-subtask-${child.id}`}
+              onClick={() => props.onOpen(child.id)}
+            >
+              {child.title}
+            </button>
+            <Show when={child.archivedAt === null} fallback={<span class="tsk-cell">Archived</span>}>
+              <StatusControl
+                status={child.status}
+                disabled={props.busy}
+                label={`Status of ${child.title}`}
+                testId={`task-subtask-status-${child.id}`}
+                onChange={(status) => props.onStatusChange({ taskId: child.id, revision: child.revision, status })}
+              />
+            </Show>
+          </div>
+        )}
+      </For>
 
       <LoadMore more={props.more} testId="task-subtasks-load-more" />
 
@@ -84,7 +79,7 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
         fallback={<p class="tsk-hint">{props.addDisabledReason ?? "Reopen this task to add a subtask."}</p>}
       >
         {/* A placeholder in an always-present field reads as a hint, not as a
-            control. The row is a button until it is pressed. */}
+            control. The row is a link until it is pressed. */}
         <Show
           when={adding()}
           fallback={
@@ -94,7 +89,8 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
               data-testid="task-subtask-add-trigger"
               onClick={() => setAdding(true)}
             >
-              <span aria-hidden="true">+</span> Add subtask
+              <Icon name="plus-small" size="small" />
+              Add a subtask
             </button>
           }
         >
@@ -106,24 +102,23 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
               submit()
             }}
           >
-            <input
-              ref={(element) => queueMicrotask(() => element.focus())}
-              class="tsk-input"
+            <TextField
+              ref={(element: HTMLInputElement) => queueMicrotask(() => element.focus())}
               data-testid="task-subtask-title"
               aria-label="Subtask title"
               maxLength={TASKS_BOUNDS.taskTitleMax}
               placeholder="What needs doing"
               value={title()}
-              onInput={(event) => setTitle(event.currentTarget.value)}
-              onKeyDown={(event) => {
+              onChange={setTitle}
+              onKeyDown={(event: KeyboardEvent) => {
                 if (event.key !== "Escape") return
                 event.stopPropagation()
                 cancel()
               }}
             />
-            <button type="submit" class="tsk-button" disabled={props.busy || title().trim().length === 0}>
+            <Button type="submit" size="small" disabled={props.busy || title().trim().length === 0}>
               Add
-            </button>
+            </Button>
           </form>
         </Show>
       </Show>

@@ -16,6 +16,9 @@ import { createTasksStore } from "@/features/tasks/store/tasks-store"
 import { PresetDraftEditor } from "@/features/tasks/ui/presets/preset-draft-editor"
 import { TaskDetailPanel } from "@/features/tasks/ui/detail/task-detail-panel"
 
+vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("./shared/test-support/host-controls")).dropdownMenuDouble())
+vi.mock("@opencode-ai/ui/select", async () => (await import("./shared/test-support/host-controls")).selectDouble())
+
 afterEach(cleanup)
 
 const SERVER = "http://tasks.test"

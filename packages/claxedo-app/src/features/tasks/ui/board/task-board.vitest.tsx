@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library"
 import type { TaskStatus, TaskSummary } from "@claxedo/tasks"
 import { TaskBoard } from "./task-board"
+
+vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("../shared/test-support/host-controls")).dropdownMenuDouble())
 
 afterEach(cleanup)
 
@@ -26,12 +28,23 @@ function summary(id: string, status: TaskStatus): TaskSummary {
 }
 
 /**
- * The status select lives in the card's actions menu now that the column
- * already names the status, so every case that changes status opens it first.
+ * Status lives in the card's actions menu now that the column already names it,
+ * so every case that changes status opens the menu first and presses the row it
+ * wants.
  */
 function openActions(id: string) {
   fireEvent.click(screen.getByTestId(`tasks-board-actions-${id}`))
-  return screen.getByTestId<HTMLSelectElement>(`tasks-board-status-${id}`)
+  return screen.getByTestId(`tasks-board-status-${id}`)
+}
+
+function chooseStatus(id: string, label: string) {
+  fireEvent.click(within(openActions(id)).getByRole("menuitemradio", { name: label }))
+}
+
+function checkedStatus(id: string) {
+  return within(openActions(id))
+    .getAllByRole("menuitemradio")
+    .find((item) => item.getAttribute("aria-checked") === "true")?.textContent
 }
 
 function mount(tasks: readonly TaskSummary[]) {
@@ -44,11 +57,10 @@ function mount(tasks: readonly TaskSummary[]) {
 describe("task board", () => {
   test("a status change the record does not take leaves the menu showing the record", () => {
     mount([summary("a", "doing")])
-    const menu = openActions("a")
 
-    fireEvent.change(menu, { target: { value: "done" } })
+    chooseStatus("a", "Done")
 
-    expect(menu.value).toBe("doing")
+    expect(checkedStatus("a")).toBe("In progress")
   })
 
   test("every status has a column and cards land in theirs", () => {
@@ -61,7 +73,7 @@ describe("task board", () => {
   test("the per-card menu moves a task without any drag, carrying its expected revision", () => {
     const { onStatusChange } = mount([summary("a", "todo")])
 
-    fireEvent.change(openActions("a"), { target: { value: "doing" } })
+    chooseStatus("a", "In progress")
 
     expect(onStatusChange).toHaveBeenCalledWith({ taskId: "a", revision: 4, status: "doing" })
   })
@@ -70,7 +82,7 @@ describe("task board", () => {
     mount([summary("a", "todo")])
     openActions("a")
 
-    expect(screen.getByLabelText("Status of Task a").tagName).toBe("SELECT")
+    expect(screen.getByLabelText("Status of Task a").getAttribute("role")).toBe("radiogroup")
   })
 
   test("opening a card is separate from changing its status", () => {
@@ -96,7 +108,7 @@ describe("task board", () => {
   test("the row tools swallow their own clicks, so a status change never also opens the task", () => {
     const { onSelect, onStatusChange } = mount([summary("a", "todo")])
 
-    fireEvent.change(openActions("a"), { target: { value: "doing" } })
+    chooseStatus("a", "In progress")
 
     expect(onStatusChange).toHaveBeenCalledWith({ taskId: "a", revision: 4, status: "doing" })
     expect(onSelect).not.toHaveBeenCalled()
@@ -106,6 +118,6 @@ describe("task board", () => {
     mount([{ ...summary("a", "todo"), archivedAt: 12 }])
 
     expect(screen.getByTestId("tasks-board-card-a").getAttribute("draggable")).toBe("false")
-    expect(openActions("a")).toBeDisabled()
+    for (const item of within(openActions("a")).getAllByRole("menuitemradio")) expect(item).toBeDisabled()
   })
 })

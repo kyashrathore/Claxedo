@@ -5,6 +5,8 @@ import type { TaskDraft } from "@claxedo/tasks"
 import { TaskCreateForm } from "./task-create-form"
 import { TasksProseEditor } from "@/app/integrations/tasks/tasks-prose-editor"
 
+vi.mock("@opencode-ai/ui/select", async () => (await import("../shared/test-support/host-controls")).selectDouble())
+
 afterEach(cleanup)
 
 function mount() {
@@ -35,7 +37,7 @@ describe("the New task dialog", () => {
 
     expect(screen.getByLabelText("Breadcrumb").textContent).toContain("Importer")
     expect(screen.getByTestId("task-create-dialog").textContent).toContain("To do")
-    expect(screen.getByTestId<HTMLSelectElement>("task-create-project").value).toBe("prj_1")
+    expect(screen.getByTestId("task-create-project").textContent).toBe("Importer")
   })
 
   // The dialog writes the same records the task page edits, so what it stores

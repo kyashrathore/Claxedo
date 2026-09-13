@@ -1,3 +1,4 @@
+import { Icon } from "@opencode-ai/ui/icon"
 import type { PresetPlacement } from "@claxedo/tasks"
 import { CAPABILITY_GUARANTEE } from "../../view-model"
 
@@ -13,9 +14,7 @@ import { CAPABILITY_GUARANTEE } from "../../view-model"
 export function CapabilityNotice(props: { placement: PresetPlacement; testId?: string }) {
   return (
     <p class="tsk-notice-inline" data-testid={props.testId}>
-      <span class="tsk-notice-glyph" aria-hidden="true">
-        ⓘ
-      </span>
+      <Icon name="circle-alert" size="small" class="tsk-notice-glyph" />
       <span>{CAPABILITY_GUARANTEE[props.placement]}</span>
     </p>
   )

@@ -1,4 +1,5 @@
 import { Show } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
 
 /**
  * The next page of a list the server said it has more of.
@@ -24,16 +25,15 @@ export function LoadMore(props: { more?: MorePages; testId: string }) {
               </p>
             )}
           </Show>
-          <button
-            type="button"
-            class="tsk-button"
-            data-variant="quiet"
+          <Button
+            size="small"
+            variant="ghost"
             data-testid={props.testId}
             disabled={more().loading === true}
             onClick={() => more().onLoadMore()}
           >
             {more().loading === true ? "Loading…" : more().error !== undefined ? "Retry" : "Load more"}
-          </button>
+          </Button>
         </div>
       )}
     </Show>
