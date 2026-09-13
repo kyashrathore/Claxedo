@@ -40,6 +40,16 @@ export function linkCountLookup(rows: readonly { taskId: string; links: number }
 }
 
 /**
+ * Grouped child counts, as the lookup a row reads. A task with no children has
+ * to read as `0/0` rather than as absent, the same way a task with no sessions
+ * reads as zero.
+ */
+export function childCountLookup(rows: readonly { taskId: string; total: number; done: number }[]) {
+  const counts = new Map(rows.map((row) => [row.taskId, { total: row.total, done: row.done }]))
+  return (taskId: string) => counts.get(taskId) ?? { total: 0, done: 0 }
+}
+
+/**
  * The ids of the rows this page will show. The row past the limit only answers
  * "is there more", so counting its links would be a read nothing renders.
  */

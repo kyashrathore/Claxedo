@@ -8,7 +8,6 @@ import {
   TaskList,
   emptyPresetEditorDraft,
   type StartChoice,
-  type SubtaskProgress,
   type TaskStartOffer,
 } from "@claxedo/tasks/solid"
 import { uuid } from "@/lib/uuid"
@@ -56,25 +55,11 @@ export function TasksView(props: TasksViewProps) {
   const parentTitleOf = (task: TaskSummary) =>
     task.parentTaskId === null ? undefined : titleById().get(task.parentTaskId)
 
-  /**
-   * Children the same read already returned, folded per parent. Undefined
-   * where none were read — a task with subtasks the list did not ask for and
-   * a task with none are different answers, and "0/0" would merge them.
-   */
-  const progressById = createMemo(() => {
-    const progress = new Map<string, SubtaskProgress>()
-    if (!props.store.state.showChildren) return progress
-    for (const task of visible()) {
-      if (task.parentTaskId === null) continue
-      const current = progress.get(task.parentTaskId) ?? { done: 0, total: 0 }
-      progress.set(task.parentTaskId, {
-        done: current.done + (task.status === "done" ? 1 : 0),
-        total: current.total + 1,
-      })
-    }
-    return progress
-  })
-  const subtaskProgress = (taskId: string) => progressById().get(taskId)
+  // The store counts every live child; the list only renders what it is told.
+  // Folding the page's own rows reported `0/1` for a parent whose open child
+  // the Active filter had already excluded.
+  const subtaskProgress = (taskId: string) =>
+    visible().find((task) => task.id === taskId)?.children
 
   /**
    * What a row may offer. The default preset is the last one started in this
@@ -118,7 +103,13 @@ export function TasksView(props: TasksViewProps) {
     // A row knows a session exists from its link count; which one is current
     // is read when Open is pressed, because liveness is not in a list read.
     ...(task.links.count > 0 ? { onOpen: () => void openSession(task) } : {}),
-    onCreatePreset: () => props.store.openPresetDraft(emptyPresetEditorDraft()),
+    // Opening the draft is only half of it: the editor renders on the Presets
+    // page, so a row that opened one without going there left the user on the
+    // list with nothing on screen.
+    onCreatePreset: () => {
+      props.store.openPresetDraft(emptyPresetEditorDraft())
+      props.onOpenPresets()
+    },
   })
 
   const setStatus = async (input: { taskId: string; revision: number; status: TaskStatus }) => {

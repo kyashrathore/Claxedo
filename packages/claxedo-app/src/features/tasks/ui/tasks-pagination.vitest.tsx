@@ -31,6 +31,7 @@ function summary(id: string, overrides: Partial<TaskSummary> = {}): TaskSummary 
     updatedAt: 1,
     hasDescription: false,
     links: { count: 0 },
+    children: { total: 0, done: 0 },
     ...overrides,
   }
 }

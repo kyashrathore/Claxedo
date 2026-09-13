@@ -7,7 +7,7 @@
  * row outside the caller's scope is unreachable rather than filtered out
  * afterwards.
  */
-import { and, count, desc, eq, inArray, isNull, lt, ne, or } from "drizzle-orm"
+import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm"
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core"
 import {
   serializedTransactions,
@@ -19,7 +19,7 @@ import {
   type TasksStoreOperations,
   type TasksStorePort,
 } from "@claxedo/tasks"
-import { linkCountLookup, tasksPage, tasksPageBounds, tasksPageRows } from "./paging"
+import { childCountLookup, linkCountLookup, tasksPage, tasksPageBounds, tasksPageRows } from "./paging"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import {
   linkColumns,
@@ -76,14 +76,47 @@ function groupedLinkCounts(use: Reader, scopeId: string, taskIds: readonly strin
   )
 }
 
+/**
+ * One grouped select over the whole page's children. Archived rows are excluded
+ * from both numbers, so a parent whose only child was archived reads as having
+ * none rather than as owing one it can never finish.
+ */
+function groupedChildCounts(use: Reader, scopeId: string, taskIds: readonly string[]) {
+  if (taskIds.length === 0) return childCountLookup([])
+  return childCountLookup(
+    use((db) =>
+      db
+        .select({
+          taskId: ClaxedoTaskTable.parent_task_id,
+          total: count(),
+          done: sql<number>`sum(case when ${ClaxedoTaskTable.status} = 'done' then 1 else 0 end)`,
+        })
+        .from(ClaxedoTaskTable)
+        .where(
+          and(
+            eq(ClaxedoTaskTable.scope_id, scopeId),
+            inArray(ClaxedoTaskTable.parent_task_id, [...taskIds]),
+            isNull(ClaxedoTaskTable.archived_at),
+          ),
+        )
+        .groupBy(ClaxedoTaskTable.parent_task_id)
+        .all(),
+    ).map((row) => ({ taskId: row.taskId ?? "", total: row.total, done: row.done ?? 0 })),
+  )
+}
+
 function taskSummaries(
   use: Reader,
   scopeId: string,
   rows: readonly StoredTaskColumns[],
   limit: number,
 ): Page<TaskSummary> {
-  const links = groupedLinkCounts(use, scopeId, tasksPageRows(rows, limit).map((row) => row.task_id))
-  return tasksPage(rows, limit, (row) => taskSummaryOf(taskOfColumns(row), links(row.task_id)))
+  const ids = tasksPageRows(rows, limit).map((row) => row.task_id)
+  const links = groupedLinkCounts(use, scopeId, ids)
+  const children = groupedChildCounts(use, scopeId, ids)
+  return tasksPage(rows, limit, (row) =>
+    taskSummaryOf(taskOfColumns(row), links(row.task_id), children(row.task_id)),
+  )
 }
 
 type Reader = <T>(callback: (db: ClaxedoDB.Client) => T) => T

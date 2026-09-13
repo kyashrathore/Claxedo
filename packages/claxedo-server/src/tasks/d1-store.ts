@@ -51,6 +51,7 @@ import {
   type StoredTaskColumns,
 } from "@claxedo/server-core/tasks-host/stored-rows"
 import {
+  childCountLookup,
   linkCountLookup,
   tasksPage,
   tasksPageBounds,
@@ -101,6 +102,27 @@ function taskValues(task: Task): unknown[] {
     row.created_at,
     row.updated_at,
   ]
+}
+
+/**
+ * One prepared statement over the whole page's children. Archived rows are
+ * excluded from both numbers, so a parent whose only child was archived reads
+ * as having none rather than as owing one it can never finish.
+ */
+async function preparedChildCounts(database: D1Database, scopeId: string, taskIds: readonly string[]) {
+  if (taskIds.length === 0) return childCountLookup([])
+  const placeholders = taskIds.map(() => "?").join(", ")
+  const rows = await database
+    .prepare(
+      `select parent_task_id, count(*) as total, sum(case when status = 'done' then 1 else 0 end) as done` +
+        ` from tasks where scope_id = ? and parent_task_id in (${placeholders}) and archived_at is null` +
+        ` group by parent_task_id`,
+    )
+    .bind(scopeId, ...taskIds)
+    .all<{ parent_task_id: string; total: number; done: number }>()
+  return childCountLookup(
+    rows.results.map((row) => ({ taskId: row.parent_task_id, total: row.total, done: row.done ?? 0 })),
+  )
 }
 
 /**
@@ -428,8 +450,12 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           )
           .bind(...bindings, ...page.bindings, page.limit + 1)
           .all<StoredTaskColumns>()
-        const links = await preparedLinkCounts(database, scopeId, tasksPageRows(rows.results, page.limit).map((row) => row.task_id))
-        return tasksPage(rows.results, page.limit, (row) => taskSummaryOf(taskOfColumns(row), links(row.task_id)))
+        const ids = tasksPageRows(rows.results, page.limit).map((row) => row.task_id)
+        const links = await preparedLinkCounts(database, scopeId, ids)
+        const children = await preparedChildCounts(database, scopeId, ids)
+        return tasksPage(rows.results, page.limit, (row) =>
+          taskSummaryOf(taskOfColumns(row), links(row.task_id), children(row.task_id)),
+        )
       },
 
       async listChildren(scopeId, parentTaskId, query) {
@@ -443,8 +469,12 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           )
           .bind(scopeId, parentTaskId, ...page.bindings, page.limit + 1)
           .all<StoredTaskColumns>()
-        const links = await preparedLinkCounts(database, scopeId, tasksPageRows(rows.results, page.limit).map((row) => row.task_id))
-        return tasksPage(rows.results, page.limit, (row) => taskSummaryOf(taskOfColumns(row), links(row.task_id)))
+        const ids = tasksPageRows(rows.results, page.limit).map((row) => row.task_id)
+        const links = await preparedLinkCounts(database, scopeId, ids)
+        const children = await preparedChildCounts(database, scopeId, ids)
+        return tasksPage(rows.results, page.limit, (row) =>
+          taskSummaryOf(taskOfColumns(row), links(row.task_id), children(row.task_id)),
+        )
       },
 
       async countChildren(scopeId, parentTaskId, filter) {

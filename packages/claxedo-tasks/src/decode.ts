@@ -206,10 +206,15 @@ function taskSummaryOfValue(ctx: DecodeContext, value: unknown, path: string): T
   // the one field the shared task decoder requires and drops it again.
   const { description: _description, ...task } = taskOf(ctx, { ...row, description: "" }, path)
   const links = ctx.read.record(row?.links, `${path}.links`)
+  const children = ctx.read.record(row?.children, `${path}.children`)
   return {
     ...task,
     hasDescription: ctx.read.boolean(row?.hasDescription, `${path}.hasDescription`) ?? false,
     links: { count: ctx.read.integer(links?.count, `${path}.links.count`) ?? 0 },
+    children: {
+      total: ctx.read.integer(children?.total, `${path}.children.total`) ?? 0,
+      done: ctx.read.integer(children?.done, `${path}.children.done`) ?? 0,
+    },
   }
 }
 

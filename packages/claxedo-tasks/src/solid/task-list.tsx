@@ -1,13 +1,13 @@
 import { For, Show, createMemo } from "solid-js"
-import { TASK_STATUSES, type TaskStatus, type TaskSummary } from "../contracts"
+import { TASK_STATUSES, type TaskChildSummary, type TaskStatus, type TaskSummary } from "../contracts"
 import { LoadMore, type MorePages } from "./load-more"
 import { TaskGlyph } from "./glyphs"
 import { TaskStatusDot } from "./status-menu"
 import { TaskRowActions, TaskStartControl, type TaskStartOffer } from "./task-row-controls"
 import { TASK_STATUS_LABELS, shortAge } from "./view-model"
 
-/** How many of a task's children are done, out of the children the caller holds. */
-export type SubtaskProgress = { done: number; total: number }
+/** The store's own child counts, which is what a row reports. */
+export type SubtaskProgress = TaskChildSummary
 
 export type TaskListProps = {
   /** Flat and already filtered: this renders the rows it is given, in status groups. */
@@ -148,7 +148,10 @@ function TaskRow(props: {
       </Show>
 
       <span class="tsk-cell tsk-cell-sub">
-        <Show when={props.progress}>{(progress) => `${progress().done}/${progress().total}`}</Show>
+        {/* A task with no subtasks says nothing rather than `0/0`. */}
+        <Show when={props.progress && props.progress.total > 0 ? props.progress : undefined}>
+          {(progress) => `${progress().done}/${progress().total}`}
+        </Show>
       </span>
       <span class="tsk-cell tsk-cell-time">{shortAge(props.task.updatedAt, props.now)}</span>
 

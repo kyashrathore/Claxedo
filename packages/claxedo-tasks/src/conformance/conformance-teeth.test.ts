@@ -135,6 +135,26 @@ const COUNTS_LINKS_ACROSS_SCOPES = everywhere((operations) => ({
   },
 }))
 
+/**
+ * Child counts taken from the page's own rows: the shape a view has whenever it
+ * folds the list it was given instead of asking the store, which undercounts as
+ * soon as a filter or a page boundary hides a child.
+ */
+const COUNTS_CHILDREN_FROM_THE_PAGE = everywhere((operations) => ({
+  ...operations,
+  tasks: {
+    ...operations.tasks,
+    list: async (scopeId, query) => {
+      const page = await operations.tasks.list(scopeId, query)
+      const items = page.items.map((row) => {
+        const seen = page.items.filter((other) => other.parentTaskId === row.id && other.archivedAt === null)
+        return { ...row, children: { total: seen.length, done: seen.filter((entry) => entry.status === "done").length } }
+      })
+      return { ...page, items }
+    },
+  },
+}))
+
 const MUTANTS: readonly Mutant[] = [
   {
     breaks: "commits the work of a transaction that threw",
@@ -251,13 +271,17 @@ const MUTANTS: readonly Mutant[] = [
     breaks: "counts another scope's sessions into this scope's list row",
     apply: COUNTS_LINKS_ACROSS_SCOPES,
   },
+  {
+    breaks: "counts only the children the page returned",
+    apply: COUNTS_CHILDREN_FROM_THE_PAGE,
+  },
 ]
 
 describe("tasks store conformance", () => {
   const cases = tasksStoreConformance(async () => ({ store: createMemoryTasksStore() }))
 
   test("the pinned manifest lists exactly the cases the suite runs", () => {
-    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(4)
+    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(5)
     expect(cases.map((entry) => entry.name.replaceAll(/[^a-z]+/g, "_"))).toEqual([...TASKS_STORE_CONFORMANCE_SCOPE.cases])
   })
 

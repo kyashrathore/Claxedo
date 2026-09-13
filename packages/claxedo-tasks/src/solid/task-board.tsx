@@ -112,7 +112,7 @@ export function TaskBoard(props: TaskBoardProps) {
                     {/* The column already names the status, so the card carries
                         the menu that changes it rather than a second label. */}
                     <div class="tsk-card-meta">
-                      <Show when={props.subtaskProgress?.(task.id)}>
+                      <Show when={(props.subtaskProgress?.(task.id)?.total ?? 0) > 0 ? props.subtaskProgress?.(task.id) : undefined}>
                         {(progress) => <span>{`${progress().done}/${progress().total}`}</span>}
                       </Show>
                       <Show when={task.parentTaskId}>

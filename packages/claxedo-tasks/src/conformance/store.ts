@@ -14,7 +14,7 @@
 import type { ConfigurationSlot, Preset, Task, TaskSessionLink } from "../contracts"
 import { TasksStoreConflict, type TasksCommandReceipt, type TasksStorePort } from "../ports/store"
 
-export const TASKS_STORE_CONFORMANCE_VERSION = 4 as const
+export const TASKS_STORE_CONFORMANCE_VERSION = 5 as const
 
 export const TASKS_STORE_CONFORMANCE_SCOPE = {
   cases: [
@@ -31,6 +31,7 @@ export const TASKS_STORE_CONFORMANCE_SCOPE = {
     "overlapping_units_cannot_both_bump_one_row_from_the_same_revision",
     "a_preset_revision_assertion_is_a_predicate_of_the_unit_that_made_it",
     "a_list_row_counts_its_own_links_and_only_this_scope_s",
+    "a_list_row_counts_every_live_child_not_the_ones_a_page_returned",
   ],
   // NOT pinned:
   //
@@ -528,6 +529,49 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
           ?.links.count,
         2,
         "the other scope's row counted this scope's links",
+      )
+    }),
+
+    conformanceCase("a list row counts every live child, not the ones a page returned", async () => {
+      const { store } = await factory()
+      await store.tasks.insert(taskRow({ id: "task-parent", createdAt: 5_000 }))
+      await store.tasks.insert(taskRow({ id: "task-childless", createdAt: 4_000 }))
+      await store.tasks.insert(
+        taskRow({ id: "child-open", parentTaskId: "task-parent", status: "todo", createdAt: 3_000 }),
+      )
+      await store.tasks.insert(
+        taskRow({ id: "child-done", parentTaskId: "task-parent", status: "done", createdAt: 2_000 }),
+      )
+      // Archived children are neither owed nor finished.
+      await store.tasks.insert(
+        taskRow({ id: "child-gone", parentTaskId: "task-parent", status: "todo", archivedAt: 9, createdAt: 1_000 }),
+      )
+      // Another scope's child of the same parent id must not be counted here.
+      await store.tasks.insert(
+        taskRow({
+          id: "child-elsewhere",
+          scopeId: CONFORMANCE_SCOPES.second,
+          parentTaskId: "task-parent",
+          createdAt: 1_500,
+        }),
+      )
+
+      // One row per page, so the counts cannot have come from the page's rows.
+      const page = await store.tasks.list(CONFORMANCE_SCOPES.first, { ...TASK_LIST, limit: 1, parent: "root" })
+      const parent = page.items.find((row) => row.id === "task-parent")
+      assertEqual(parent?.children.total, 2, "the parent did not count every live child it holds")
+      assertEqual(parent?.children.done, 1, "the parent did not count the child that is done")
+
+      const all = await store.tasks.list(CONFORMANCE_SCOPES.first, { ...TASK_LIST, parent: "root" })
+      assertEqual(
+        all.items.find((row) => row.id === "task-childless")?.children.total,
+        0,
+        "a task with no children was not counted as zero",
+      )
+      assertEqual(
+        all.items.find((row) => row.id === "task-childless")?.children.done,
+        0,
+        "a task with no children reported finished work",
       )
     }),
   ]

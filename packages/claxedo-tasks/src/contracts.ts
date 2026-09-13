@@ -132,7 +132,22 @@ export type Task = {
  */
 export type TaskLinkSummary = { count: number }
 
-export type TaskSummary = Omit<Task, "description"> & { hasDescription: boolean; links: TaskLinkSummary }
+/**
+ * How many subtasks the task has, and how many of those are done.
+ *
+ * Archived children count as neither: an archived subtask is not work the
+ * parent still owes. Both numbers are the store's answer over every child the
+ * task holds, not over the children a page happened to return — a row that
+ * counted what the list read would report `0/1` for a parent whose only open
+ * child fell outside the current filter.
+ */
+export type TaskChildSummary = { total: number; done: number }
+
+export type TaskSummary = Omit<Task, "description"> & {
+  hasDescription: boolean
+  links: TaskLinkSummary
+  children: TaskChildSummary
+}
 
 export type TaskSessionLink = {
   scopeId: string
@@ -444,10 +459,10 @@ export function isTasksCommandName(value: unknown): value is TasksCommandName {
   return typeof value === "string" && TASKS_COMMAND_NAMES.some((name) => name === value)
 }
 
-/** `links` is required so a store cannot answer a list read without having counted. */
-export function taskSummaryOf(task: Task, links: TaskLinkSummary): TaskSummary {
+/** Both counts are required so a store cannot answer a list read without having counted. */
+export function taskSummaryOf(task: Task, links: TaskLinkSummary, children: TaskChildSummary): TaskSummary {
   const { description, ...rest } = task
-  return { ...rest, hasDescription: description.length > 0, links }
+  return { ...rest, hasDescription: description.length > 0, links, children }
 }
 
 export function linkView(

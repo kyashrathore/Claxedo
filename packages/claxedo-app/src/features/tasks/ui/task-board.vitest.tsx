@@ -21,6 +21,7 @@ function summary(id: string, status: TaskStatus): TaskSummary {
     updatedAt: 1,
     hasDescription: false,
     links: { count: 0 },
+    children: { total: 0, done: 0 },
   }
 }
 
