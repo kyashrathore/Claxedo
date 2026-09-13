@@ -45,6 +45,7 @@ import { LocalWorkspaceRoutes } from "../workspace/routes/resolve-route"
 import { ShellRoutes } from "../shell/routes"
 import { LocalProjectRoutes } from "../workspace/routes/projects-route"
 import { CredentialRoutes } from "../credentials/routes/credential"
+import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
 import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
 import { NetworkPolicyRoutes } from "../sandbox/network/network-policy-routes"
 import { UserHostedServingRoutes } from "../workspace/user-hosted-serving-routes"
@@ -275,6 +276,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/", BootstrapRoutes({ services, env, ...authRouteOptions(services) }))
   app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   app.route("/api/claxedo/credentials", CredentialRoutes(services.credentials, {
+    agentUsage: readMachineAgentUsage,
     ...(env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
     // Derived from the environment, matching the self-hosted composition —
     // never caller-supplied, since an omitted hook would leave credential

@@ -119,6 +119,8 @@ const QuotaSnapshotSchema = z.object({
       resetsAt: z.number().nullable(),
     })),
     usageAt: z.number().optional(),
+    otherAgent: z.literal(true).optional(),
+    usageError: z.string().optional(),
   })),
 })
 
@@ -126,7 +128,7 @@ const UnifiedUsageResponseSchema: z.ZodType<UnifiedUsageResponse> = z.object({
   version: z.literal(1),
   range: z.object({ since: z.number(), until: z.number(), timeZone: z.string() }),
   quota: z.object({
-    status: z.enum(["available", "unavailable", "degraded"]),
+    status: z.enum(["available", "unavailable"]),
     snapshot: QuotaSnapshotSchema.optional(),
     error: z.string().optional(),
   }),

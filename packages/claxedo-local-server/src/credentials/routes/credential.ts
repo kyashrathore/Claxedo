@@ -19,6 +19,7 @@ import {
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
 import { MACHINE_LOGIN_HARNESSES } from "@claxedo/server-core/credentials/machine-login"
 import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
+import type { MachineAgentUsageReader } from "@claxedo/server-core/credentials/machine-agent-usage"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
   ControlPlaneAuthError,
@@ -124,6 +125,12 @@ export type CredentialRoutesOptions = {
   token?: string
   fetch?: typeof fetch
   now?: () => number
+  /**
+   * The machine-wide plan probe, for the harnesses whose own CLI reports a
+   * login and no figures. Absent leaves those rows saying what the harness
+   * itself said, which is what a host that is not this machine can know.
+   */
+  agentUsage?: MachineAgentUsageReader
   authenticate?: (request: Request) => Promise<void>
   /**
    * Signed-auth configuration used to resolve the caller's org. When absent,
@@ -289,6 +296,7 @@ export function CredentialRoutes(
             ...(harness ? { harnesses: [harness.data] } : {}),
             fresh,
             now: options.now ?? Date.now,
+            ...(options.agentUsage ? { agentUsage: options.agentUsage } : {}),
           }),
         })
       } catch (error) {

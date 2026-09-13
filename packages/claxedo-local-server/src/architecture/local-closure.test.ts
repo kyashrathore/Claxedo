@@ -246,8 +246,14 @@ describe("@claxedo/local-server closure", () => {
     // delete of the harness logins an older Claxedo copied off this machine. It
     // belongs to this product because this is the process that ran that scan.
     // Both reach only the registry and the machine-login reader, which this
-    // closure already holds. Measured: 86 modules, 25 packages.
-    expect(modules.size).toBeLessThanOrEqual(86)
+    // closure already holds.
+    // usage/adapters/token-tracker-usage-limits.ts is the 87th module: the plan
+    // probe for every agent installed on this machine, which only a server
+    // running on that machine can ask. It reaches tokentracker-cli and this
+    // package's JSON narrowing, both already here, so it adds no package edge —
+    // the history adapter beside it already carries that dependency.
+    // Measured: 87 modules, 25 packages.
+    expect(modules.size).toBeLessThanOrEqual(87)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(25)
   })

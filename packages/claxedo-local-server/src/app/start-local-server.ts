@@ -59,6 +59,7 @@ import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteUsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 import { scanTokenTrackerLocalHistory } from "../usage/adapters/token-tracker-local-history"
+import { readMachineAgentUsage } from "../usage/adapters/token-tracker-usage-limits"
 import { createUsageOutboxSync } from "../usage/outbox-sync"
 import { localUsageHostId } from "../usage/host-id"
 import { drainUsageEvents } from "../usage/usage-event-drain"
@@ -229,7 +230,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   }
   // The same tenant the credential routes resolve, because the accounts this
   // reads are the rows those routes list.
-  const readQuota = createUsageQuotaReader({ credentials: services.credentials })
+  const readQuota = createUsageQuotaReader({ credentials: services.credentials, agentUsage: readMachineAgentUsage })
   const usage = {
     local: usageRevisionStore,
     outbox: usageOutbox,

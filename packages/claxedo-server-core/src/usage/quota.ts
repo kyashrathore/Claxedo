@@ -1,14 +1,19 @@
 /**
  * Plan usage for the dashboard's Usage-limits view, composed from the accounts
- * this installation already knows about.
+ * this installation knows about and the agents installed beside it.
  *
- * There is one owner of plan figures: the windows a Check kept against a stored
- * account, and the windows a harness on this machine reported about its own
- * login. Nothing here asks a vendor on a read — a dashboard opening must not
- * spend a request per account — so a read answers from what those two writes
- * left behind, and only an explicit refresh runs them again.
+ * Two writes own the figures for an account Claxedo runs turns on: the windows
+ * a Check kept against a stored account, and the windows a harness on this
+ * machine reported about its own login. Neither is asked again on a read — a
+ * dashboard opening must not spend a vendor request per account — so a read
+ * answers from what they left behind, and only an explicit refresh runs them.
+ *
+ * The machine-wide probe is the third source and answers about agents rather
+ * than accounts, including the agents Claxedo cannot run a turn on at all. It
+ * holds its own answer, so a read costs a vendor request only when it is stale.
  */
 
+import { agentUsageOrNone } from "../credentials/machine-agent-usage"
 import { machineLoginsWithUsage } from "../credentials/machine-login-report"
 import {
   MACHINE_LOGIN_HARNESSES,
@@ -20,6 +25,7 @@ import { checkCredential } from "../credentials/operations/check"
 import { isSubscriptionKind } from "../credentials/secret-material"
 import { Log } from "../platform/runtime/lib/log"
 import type { ControlPlaneCredentials } from "../authority/control-plane-contract"
+import type { MachineAgentUsageReader } from "../credentials/machine-agent-usage"
 import type { CredentialMetadata } from "../credentials/types"
 import type { QuotaAccount, QuotaSnapshot, UnifiedUsageResponse } from "@claxedo/usage-contract"
 
@@ -35,6 +41,8 @@ export function createUsageQuotaReader(input: {
   now?: () => number
   fetch?: typeof fetch
   refreshIntervalMs?: number
+  /** Absent wherever the host is not the machine the agents are installed on. */
+  agentUsage?: MachineAgentUsageReader
 }): UsageQuotaReader {
   const now = input.now ?? Date.now
   const interval = input.refreshIntervalMs ?? REFRESH_INTERVAL_MS
@@ -42,23 +50,25 @@ export function createUsageQuotaReader(input: {
   return async ({ org, refresh }) => {
     if (refresh && now() - (lastRefresh.get(org) ?? Number.NEGATIVE_INFINITY) >= interval) {
       lastRefresh.set(org, now())
-      await runChecks(input.credentials, org, { now, ...(input.fetch ? { fetch: input.fetch } : {}) })
+      await runChecks(input.credentials, org, {
+        now,
+        ...(input.fetch ? { fetch: input.fetch } : {}),
+        ...(input.agentUsage ? { agentUsage: input.agentUsage } : {}),
+      })
     }
-    const snapshot = await composeSnapshot(input.credentials, org, now)
+    const snapshot = await composeSnapshot(input.credentials, org, now, input.agentUsage)
     return { status: quotaStatus(snapshot), snapshot }
   }
 }
 
 /**
- * `available` only when every account this names has windows. An account listed
- * with none is the case the reader has to be able to tell apart: the plan is not
- * at zero, it is unread.
+ * Whether there is anything to draw. What is true of one account — unread,
+ * refused, reporting no plan — travels on that account, because a view that
+ * summarised those into one word could only say something vaguer than each
+ * card already says.
  */
 function quotaStatus(snapshot: QuotaSnapshot): UnifiedUsageResponse["quota"]["status"] {
-  if (snapshot.accounts.length === 0) return "unavailable"
-  const read = snapshot.accounts.filter((account) => account.windows.length > 0)
-  if (read.length === 0) return "unavailable"
-  return read.length === snapshot.accounts.length ? "available" : "degraded"
+  return snapshot.accounts.some((account) => account.windows.length > 0) ? "available" : "unavailable"
 }
 
 /** One stored login is one row per binding its harness resolves auth through. */
@@ -75,6 +85,7 @@ async function composeSnapshot(
   credentials: ControlPlaneCredentials,
   org: string,
   now: () => number,
+  agentUsage?: MachineAgentUsageReader,
 ): Promise<QuotaSnapshot> {
   const stored = storedAccounts(await credentials.listCredentials(org))
   const inUse = await accountsInUse(credentials, org, stored)
@@ -94,7 +105,12 @@ async function composeSnapshot(
       ...(read?.usage_at == null ? {} : { usageAt: read.usage_at }),
     }
   })
-  for (const login of await machineLoginsWithUsage(credentials, { fresh: false, now })) {
+  const logins = await machineLoginsWithUsage(credentials, {
+    fresh: false,
+    now,
+    ...(agentUsage ? { agentUsage } : {}),
+  })
+  for (const login of logins) {
     if (login.state !== "signed_in") continue
     accounts.push({
       harness: login.harness,
@@ -106,6 +122,23 @@ async function composeSnapshot(
       inUse: !accounts.some((account) => account.harness === login.harness && account.inUse),
       windows: login.usage ?? [],
       ...(login.usageAt === undefined ? {} : { usageAt: login.usageAt }),
+      ...(login.usageError === undefined ? {} : { usageError: login.usageError }),
+    })
+  }
+  for (const agent of await agentUsageOrNone(agentUsage, { fresh: false })) {
+    // An agent the probe knows as a harness is already a card above, drawn from
+    // the login Claxedo would run a turn on rather than from the probe's view
+    // of the same machine.
+    if (agent.harness !== undefined) continue
+    accounts.push({
+      harness: agent.agent,
+      otherAgent: true,
+      label: agent.label,
+      ...(agent.plan === undefined ? {} : { plan: agent.plan }),
+      inUse: false,
+      windows: agent.windows,
+      usageAt: agent.at,
+      ...(agent.error === undefined ? {} : { usageError: agent.error }),
     })
   }
   return { accounts: orderAccounts(accounts) }
@@ -113,13 +146,19 @@ async function composeSnapshot(
 
 /**
  * Harnesses in the order the Providers list shows them, and within each one the
- * account its next turn runs on first.
+ * account its next turn runs on first. The agents Claxedo cannot run come last
+ * whatever they are called: they answer a different question from every card
+ * above them, and a reader looking for their own plan reads downwards.
  */
 function orderAccounts(accounts: readonly QuotaAccount[]): QuotaAccount[] {
-  const rank = (harness: string) =>
-    isMachineLoginHarness(harness) ? MACHINE_LOGIN_HARNESSES.indexOf(harness) : MACHINE_LOGIN_HARNESSES.length
+  const rank = (account: QuotaAccount) =>
+    account.otherAgent
+      ? MACHINE_LOGIN_HARNESSES.length + 1
+      : isMachineLoginHarness(account.harness)
+        ? MACHINE_LOGIN_HARNESSES.indexOf(account.harness)
+        : MACHINE_LOGIN_HARNESSES.length
   return [...accounts].sort((a, b) =>
-    rank(a.harness) - rank(b.harness)
+    rank(a) - rank(b)
     || a.harness.localeCompare(b.harness)
     || Number(b.inUse) - Number(a.inUse))
 }
@@ -174,8 +213,9 @@ async function accountsInUse(
 }
 
 /**
- * The refresh: the same Check the Providers list runs per stored account, and
- * the same self-report it runs per harness on this machine.
+ * The refresh: the same Check the Providers list runs per stored account, the
+ * same self-report it runs per harness on this machine, and the probe asked for
+ * figures newer than the ones it is holding.
  *
  * One account's failure is not the view's: a revoked login should leave every
  * other plan on screen, so a Check that fails is logged and the next account is
@@ -184,14 +224,19 @@ async function accountsInUse(
 async function runChecks(
   credentials: ControlPlaneCredentials,
   org: string,
-  options: { now: () => number; fetch?: typeof fetch },
+  options: { now: () => number; fetch?: typeof fetch; agentUsage?: MachineAgentUsageReader },
 ) {
+  const { agentUsage, ...check } = options
   const rows = (await credentials.listCredentials(org)).filter((row) => isSubscriptionKind(row.kind))
   for (const row of rows) {
-    const outcome = await checkCredential(credentials, row, { org, ...options })
+    const outcome = await checkCredential(credentials, row, { org, ...check })
     if (outcome.status === "failed") {
       log.warn("quota check failed", { credential_id: row.id, ...outcome.detail })
     }
   }
-  await machineLoginsWithUsage(credentials, { fresh: true, now: options.now })
+  await machineLoginsWithUsage(credentials, {
+    fresh: true,
+    now: options.now,
+    ...(agentUsage ? { agentUsage } : {}),
+  })
 }

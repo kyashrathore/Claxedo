@@ -581,13 +581,13 @@ describe("local unified usage route", () => {
     expect(shifted.filterOptions.total.app ?? []).not.toContain("codex")
   })
 
-  test("answers the quota view with what the reader composed, and degrades when it throws", async () => {
+  test("answers the quota view with what the reader composed, and says why when it throws", async () => {
     const snapshot = {
-      harnesses: [{ harness: "codex", accounts: [{ credentialIds: ["cred_1"], label: "a@b.c", windows: [], usageAt: 5 }] }],
+      accounts: [{ harness: "codex", credentialId: "cred_1", label: "a@b.c", inUse: true, windows: [], usageAt: 5 }],
     }
     const quota = vi
       .fn()
-      .mockResolvedValueOnce({ status: "degraded", snapshot })
+      .mockResolvedValueOnce({ status: "available", snapshot })
       .mockRejectedValueOnce(new Error("registry offline"))
     const app = LocalUsageRoutes({
       local: { current: async () => [], pendingOutbox: async () => [] } as never,
@@ -596,10 +596,12 @@ describe("local unified usage route", () => {
       quota,
     })
     const request = "/?since=0&until=20&timezone=UTC&view=quota"
-    expect(((await (await app.request(request)).json())).quota).toEqual({ status: "degraded", snapshot })
+    expect(((await (await app.request(request)).json())).quota).toEqual({ status: "available", snapshot })
     expect(quota.mock.calls[0]?.[0]).toMatchObject({ refresh: false })
+    // A read that threw has nothing to draw, and the view's empty state is
+    // where the reason belongs — there is no half-answer to report.
     expect(((await (await app.request(`${request}&refresh_nonce=3`)).json())).quota).toEqual({
-      status: "degraded",
+      status: "unavailable",
       error: "registry offline",
     })
     expect(quota.mock.calls[1]?.[0]).toMatchObject({ refresh: true })

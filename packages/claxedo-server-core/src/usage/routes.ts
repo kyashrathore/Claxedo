@@ -1152,7 +1152,7 @@ export function LocalUsageRoutes(input: {
     if (view === "quota") {
       const quota: UnifiedUsageResponse["quota"] = input.quota
         ? await deadline(input.quota({ request: c.req.raw, refresh }), "quota read").catch((error: unknown) => ({
-            status: "degraded" as const,
+            status: "unavailable" as const,
             error: error instanceof Error ? error.message : String(error),
           }))
         : { status: "unavailable" }

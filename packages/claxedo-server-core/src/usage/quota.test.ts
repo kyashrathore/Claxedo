@@ -1,6 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
 import { createUsageQuotaReader } from "./quota"
 import type { ControlPlaneCredentials } from "../authority/control-plane-contract"
+import type { MachineAgentUsage, MachineAgentUsageReader } from "../credentials/machine-agent-usage"
 import type { CredentialMetadata } from "../credentials/types"
 
 const ORG = "__local__"
@@ -50,6 +51,14 @@ function store(input: {
     updateCredentialHealth: ReturnType<typeof vi.fn>
     updateCredentialUsage: ReturnType<typeof vi.fn>
   }
+}
+
+function agent(input: Partial<MachineAgentUsage> & { agent: string; label: string }): MachineAgentUsage {
+  return { windows: [], at: 9, ...input }
+}
+
+function probe(agents: MachineAgentUsage[]): MachineAgentUsageReader {
+  return vi.fn(async () => agents)
 }
 
 describe("usage quota reader", () => {
@@ -164,7 +173,7 @@ describe("usage quota reader", () => {
     expect((await read({ org: ORG, refresh: false })).snapshot?.accounts[0]).toMatchObject({ health: "auth_failed" })
   })
 
-  test("an account with no windows degrades the read, and none at all makes it unavailable", async () => {
+  test("one account's windows are enough to draw, and an account without any is the card's own business", async () => {
     const unread = createUsageQuotaReader({
       credentials: store({
         rows: [
@@ -179,7 +188,9 @@ describe("usage quota reader", () => {
       }),
       now: () => 1_000,
     })
-    expect((await unread({ org: ORG, refresh: false })).status).toBe("degraded")
+    const read = await unread({ org: ORG, refresh: false })
+    expect(read.status).toBe("available")
+    expect(read.snapshot?.accounts.map((account) => account.windows.length)).toEqual([1, 0])
 
     const none = createUsageQuotaReader({
       credentials: store({ rows: [credential({ id: "b", account_id: "acct_b" })] }),
@@ -256,6 +267,56 @@ describe("usage quota reader", () => {
       fetch: (async () => { throw new Error("offline") }) as unknown as typeof fetch,
     })
     expect((await read({ org: ORG, refresh: true })).status).toBe("available")
+  })
+
+  test("an agent this machine runs outside Claxedo is a card of its own, after every account", async () => {
+    const credentials = store({
+      rows: [credential({ id: "a", account_id: "acct_a", usage_windows: [{ window: "session", usedPercent: 5, resetsAt: null }], usage_at: 9 })],
+      logins: [{ harness: "codex", providerIds: ["codex-app-server"], state: "signed_in", email: "codex@example.com" }],
+    })
+    const read = createUsageQuotaReader({
+      credentials,
+      now: () => 1_000,
+      agentUsage: probe([
+        agent({ agent: "gemini", label: "Gemini", plan: "Pro", windows: [{ window: "primary", usedPercent: 80, resetsAt: null }] }),
+        agent({ agent: "copilot", label: "Copilot", error: "Copilot usage request timed out." }),
+        // The probe sees the same Codex login the harness does; the card for it
+        // is the one built from the login, not a second one from here.
+        agent({ agent: "codex", harness: "codex", label: "Codex", windows: [{ window: "weekly", usedPercent: 12, resetsAt: 700 }] }),
+      ]),
+    })
+
+    const { snapshot } = await read({ org: ORG, refresh: false })
+    expect(snapshot?.accounts.map((account) => [account.harness, account.otherAgent === true])).toEqual([
+      ["claude", false],
+      ["codex", false],
+      ["copilot", true],
+      ["gemini", true],
+    ])
+    expect(snapshot?.accounts[1]).toMatchObject({
+      machineLogin: true,
+      windows: [{ window: "weekly", usedPercent: 12, resetsAt: 700 }],
+    })
+    expect(snapshot?.accounts[2]).toEqual({
+      harness: "copilot",
+      otherAgent: true,
+      label: "Copilot",
+      inUse: false,
+      windows: [],
+      usageAt: 9,
+      usageError: "Copilot usage request timed out.",
+    })
+  })
+
+  test("a refresh asks the probe for figures newer than the ones it holds", async () => {
+    const agentUsage = probe([agent({ agent: "gemini", label: "Gemini" })])
+    const read = createUsageQuotaReader({ credentials: store({}), now: () => 1_000, agentUsage })
+
+    await read({ org: ORG, refresh: false })
+    expect(agentUsage).toHaveBeenCalledWith({ fresh: false })
+
+    await read({ org: ORG, refresh: true })
+    expect(agentUsage).toHaveBeenCalledWith({ fresh: true })
   })
 
   test("a host with no machine logins reads only its stored accounts", async () => {

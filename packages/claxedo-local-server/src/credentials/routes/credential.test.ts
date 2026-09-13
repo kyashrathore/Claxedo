@@ -1342,6 +1342,31 @@ describe("how much of a plan is left, kept between reads", () => {
     })
   })
 
+  test("a harness that reports no figures of its own is answered with the machine's probe", async () => {
+    const probed = [{ window: "session", usedPercent: 25, resetsAt: 1_757_700_000_000 }]
+    const app = CredentialRoutes(
+      Object.assign(localControlPlaneCredentials(), {
+        machineLogins: vi.fn(async () => [{
+          harness: "claude" as const,
+          providerIds: ["claude-acp", "claude-sdk"],
+          state: "signed_in" as const,
+          email: "person@example.com",
+        }]),
+      }),
+      {
+        now: () => 5000,
+        agentUsage: vi.fn(async () => [
+          { agent: "claude", harness: "claude" as const, label: "Claude Code", windows: probed, at: 4_000 },
+        ]),
+      },
+    )
+
+    const response = await app.request("http://localhost/machine-logins")
+    await expect(response.json()).resolves.toMatchObject({
+      machine_logins: [{ harness: "claude", usage: probed, usageAt: 4_000 }],
+    })
+  })
+
   test("a harness with no stored plan and none to report is left as it answered", async () => {
     const app = CredentialRoutes(
       Object.assign(localControlPlaneCredentials(), {

@@ -2,11 +2,9 @@
  * The local usage history other agents already wrote, read through
  * tokentracker-cli's library surface.
  *
- * Security constraints on that dependency (bunfig.toml exempts it from the
- * release-age gate):
- * - Library-only. Never invoke its CLI (`sync`/`serve`): those paths contain an
- *   `npx --yes` self-update and a localhost dashboard that must not ship.
- * - Exact-pinned. Bumping requires a tarball diff against the previous pin.
+ * The security constraints on that dependency — library-only, exact-pinned, and
+ * what its readers may touch — are written down once, in
+ * `token-tracker-usage-limits.ts` beside this file, and bind this reader too.
  *
  * Node-only (fs/child_process): loaded lazily so it can never enter the Worker
  * import graph.

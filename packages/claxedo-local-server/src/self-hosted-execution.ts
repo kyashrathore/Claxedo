@@ -51,6 +51,7 @@ export { mountWorkspaceRuntimePtyWebSocketProxy } from "./deployments/local/serv
 export { createSqliteUsageLedger, type SqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 export { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 export { scanTokenTrackerLocalHistory, type LocalHistorySnapshot } from "./usage/adapters/token-tracker-local-history"
+export { readMachineAgentUsage } from "./usage/adapters/token-tracker-usage-limits"
 export { createUsageOutboxSync, type UsageOutboxSync } from "./usage/outbox-sync"
 export { LocalUsageRoutes, UsageRoutes, type UsageLedger } from "@claxedo/server-core/usage/routes"
 export { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"

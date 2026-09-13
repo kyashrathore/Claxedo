@@ -74,12 +74,23 @@ export type QuotaWindow = {
  * so a reader that grouped by provider would draw the same account twice.
  */
 export type QuotaAccount = {
-  /** `claude`, `codex`, `cursor` — the harness this account runs. */
+  /**
+   * `claude`, `codex`, `cursor` — the harness this account runs. For an
+   * `otherAgent` it is the id of the agent that reported the plan, which no
+   * harness answers to.
+   */
   harness: string
   /** The stored row this account is keyed by; absent for `machineLogin`. */
   credentialId?: string
   /** Set for the login a harness on this machine holds, which is no stored row. */
   machineLogin?: true
+  /**
+   * Set for an agent installed on this machine that Claxedo cannot run a turn
+   * on. Its plan is worth showing — it is the same budget the user is spending
+   * — but it is never a login Claxedo would send a turn to, so it can neither
+   * be in use nor be reconnected from here.
+   */
+  otherAgent?: true
   /**
    * What names this account: the address the vendor gave it, or the name the
    * user gave the stored row. Absent only where the harness names no address,
@@ -95,6 +106,12 @@ export type QuotaAccount = {
   windows: readonly QuotaWindow[]
   /** When those windows were read; absent on an account nothing has read yet. */
   usageAt?: number
+  /**
+   * Why this account carries no windows, where the reader was told. Distinct
+   * from `health`, which is the provider's verdict on the credential itself: a
+   * usable login can still have a plan read that was throttled or expired.
+   */
+  usageError?: string
 }
 
 /** Plan usage for every account this installation can name. */
@@ -103,7 +120,13 @@ export type QuotaSnapshot = { accounts: readonly QuotaAccount[] }
 export type UnifiedUsageResponse = {
   version: 1
   range: { since: number; until: number; timeZone: string }
-  quota: { status: "available" | "unavailable" | "degraded"; snapshot?: QuotaSnapshot; error?: string }
+  /**
+   * Whether the read itself produced anything. What is true of one account —
+   * unread, refused, reporting no plan — is on that account and not here, so
+   * `unavailable` means only that there is nothing to draw, and it carries the
+   * `error` when a failure is why.
+   */
+  quota: { status: "available" | "unavailable"; snapshot?: QuotaSnapshot; error?: string }
   claxedo: UsageSeries & {
     cost: UsageCost
     locationShare: { localTokens: number; cloudTokens: number }

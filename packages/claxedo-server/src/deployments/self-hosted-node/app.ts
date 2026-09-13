@@ -166,7 +166,7 @@ import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import type { UsageLedger } from "../../platform/telemetry/product/metering"
 import { createUsageOutboxSync, type UsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
-import { scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
+import { readMachineAgentUsage, scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
@@ -1171,6 +1171,7 @@ export function createSelfHostedApp(
   app.route(
     "/api/claxedo/credentials",
     CredentialRoutes(services.credentials, {
+      agentUsage: readMachineAgentUsage,
       // Public/deployed boxes MUST set CLAXEDO_CREDENTIALS_TOKEN (see
       // CredentialRoutesOptions.token). Local loopback dev may leave it unset.
       ...(process.env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: process.env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
@@ -1204,7 +1205,7 @@ export function createSelfHostedApp(
   if (options.usageRevisionStore) {
     // The same tenant the credential routes resolve, because the accounts this
     // reads are the rows those routes list.
-    const readQuota = createUsageQuotaReader({ credentials: services.credentials })
+    const readQuota = createUsageQuotaReader({ credentials: services.credentials, agentUsage: readMachineAgentUsage })
     app.route("/api/claxedo/usage", LocalUsageRoutes({
       local: options.usageRevisionStore,
       ...(options.usageLedger ? { central: options.usageLedger } : {}),
