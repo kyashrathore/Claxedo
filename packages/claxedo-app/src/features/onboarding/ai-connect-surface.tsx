@@ -8,6 +8,7 @@ import { ProviderConnectForm, ProviderList } from "./app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import {
   discoverAIConnections,
+  readMachineLogins,
   saveDiscoveredAIConnections,
   type AIConnectRequest,
   type AIVerificationResult,
@@ -173,22 +174,28 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
   async function discover() {
     props.onViewChange({ kind: "detect" })
     transition({ type: "discovery-started" })
-    await discoverAIConnections({ serverUrl: props.serverUrl, request: props.request })
-      .then((result) => {
-        transition({
-          type: "discovery-succeeded",
-          discoveryId: result.discoveryId,
-          items: result.items,
-          destination: destination(),
+    // A local-only run writes nothing, so there is nothing to collect: the
+    // question is which harnesses on this machine already have a login, and
+    // each harness is the only honest answer to that.
+    if (!stores()) {
+      await readMachineLogins({ serverUrl: props.serverUrl, request: props.request })
+        .then((logins) => {
+          transition({ type: "machine-logins-read", logins })
+          props.onLocalHarnessesDetected?.(
+            localHarnessStatuses(logins)
+              .filter((harness) => harness.state === "signed_in")
+              .map((harness) => harness.id),
+          )
         })
-        const current = state()
-        if (current.phase !== "confirmed") return
-        props.onLocalHarnessesDetected?.(
-          localHarnessStatuses(current.rows)
-            .filter((harness) => harness.state === "working")
-            .map((harness) => harness.id),
-        )
-      })
+        .catch((error: unknown) => transition({ type: "failed", message: errorText(error) }))
+      return
+    }
+    await discoverAIConnections({ serverUrl: props.serverUrl, request: props.request })
+      .then((result) => transition({
+        type: "discovery-succeeded",
+        discoveryId: result.discoveryId,
+        items: result.items,
+      }))
       .catch((error: unknown) => transition({ type: "failed", message: errorText(error) }))
   }
 
@@ -495,7 +502,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
           {(current) => (
             <div class="setup-block">
               <div class="setup-rows">
-                <For each={localHarnessStatuses(current().rows)}>
+                <For each={localHarnessStatuses(current().logins)}>
                   {(harness) => (
                     <div class="setup-row" data-harness={harness.id} data-state={harness.state}>
                       <span class="setup-row-copy">
@@ -504,24 +511,23 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
                           {harnessDetail(harness)}
                         </span>
                       </span>
-                      <Show when={harness.state === "working"}>
+                      <Show when={harness.state === "signed_in"}>
                         <span class="setup-verified text-12-regular">
                           <Icon name="circle-check" size="small" />
                           Ready
                         </span>
                       </Show>
-                      <Show when={harness.state === "broken"}>
+                      <Show when={harness.state === "unknown"}>
                         <span class="setup-status text-12-regular">
                           <Icon name="warning" size="small" />
                           Needs attention
                         </span>
                       </Show>
-                      {/* Deliberately not a checkmark — see LocalHarnessStatus. */}
-                      <Show when={harness.state === "unverifiable"}>
-                        <span class="setup-status text-12-regular">Signed in</span>
-                      </Show>
-                      <Show when={harness.state === "missing"}>
+                      <Show when={harness.state === "signed_out"}>
                         <span class="setup-status text-12-regular">Not signed in</span>
+                      </Show>
+                      <Show when={harness.state === "absent"}>
+                        <span class="setup-status text-12-regular">Not installed</span>
                       </Show>
                     </div>
                   )}
@@ -530,7 +536,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
               <p class="text-12-regular text-text-weak">
                 Nothing was saved. Sign out of a CLI and agents here lose that access too.
               </p>
-              <Show when={localHarnessStatuses(current().rows).every((harness) => harness.state === "missing")}>
+              <Show when={localHarnessStatuses(current().logins).every((harness) => harness.state !== "signed_in")}>
                 <Button class="self-start" variant="secondary" onClick={() => props.onViewChange({ kind: "providers" })}>
                   Connect a provider instead
                 </Button>
@@ -618,10 +624,12 @@ function probeReason(probe: AIDiscoveryProbe | undefined, state: "broken" | "unk
 
 /** A harness row's sub-line: what the user has, and what to do when they don't. */
 function harnessDetail(harness: LocalHarnessStatus) {
-  if (harness.state === "working") return "Ready to use."
-  if (harness.state === "missing") return `Run \`${harness.signIn}\` to use it here.`
-  // States what is and isn't established, without implying either.
-  if (harness.state === "unverifiable") return `Signed in to ${harness.signIn} works here. We can't check it yet.`
+  if (harness.state === "signed_in") {
+    return [harness.email, harness.plan ? `${harness.plan} plan` : undefined].filter(Boolean).join(" · ")
+      || "Ready to use."
+  }
+  if (harness.state === "signed_out") return `Run \`${harness.signIn}\` to use it here.`
+  if (harness.state === "absent") return `Not installed. Install it, then run \`${harness.signIn}\`.`
   return harness.detail || "Sign in again to use it here."
 }
 

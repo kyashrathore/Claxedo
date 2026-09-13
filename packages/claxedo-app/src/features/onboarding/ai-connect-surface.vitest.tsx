@@ -54,8 +54,7 @@ describe("opening straight onto the harness check", () => {
     // screen opens on nothing.
     stubPorts()
     const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{ provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login", origin: "Keychain", probe: { state: "working" } }],
+      machine_logins: [{ harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "signed_in", email: "person@acme.com" }],
     })])
     render(() => <Harness destination="local" autoDiscover request={stub.request} initialView={{ kind: "detect" }} />)
 
@@ -139,11 +138,13 @@ describe("AIConnectSurface", () => {
     // One response only: a save would need a second, so an attempted write
     // fails this test rather than passing quietly.
     const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [
-        { provider_id: "claude-acp", kind: "oauth_token", label: "Claude Code login · ACP adapter", origin: "macOS Keychain", probe: { state: "working" } },
-        { provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "macOS Keychain", probe: { state: "working" } },
-      ],
+      machine_logins: [{
+        harness: "claude",
+        providerIds: ["claude-acp", "claude-sdk"],
+        state: "signed_in",
+        email: "person@acme.com",
+        plan: "max",
+      }],
     })])
     const submit = vi.fn()
     const detected = vi.fn()
@@ -163,7 +164,8 @@ describe("AIConnectSurface", () => {
     // The registry holds nothing for this provider because nothing was sent:
     // discovery is the only request that ever went out.
     expect(stub.calls).toHaveLength(1)
-    expect(stub.calls[0].input).toMatchObject({ action: "discover" })
+    expect(stub.calls[0].input).toMatchObject({ action: "machine-logins" })
+    expect(screen.getByText("person@acme.com · max plan")).toBeInTheDocument()
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument()
     expect(detected).toHaveBeenCalledWith(["claude"])
   })
@@ -171,32 +173,34 @@ describe("AIConnectSurface", () => {
   test("every harness gets a row, so a missing one is an answer rather than an omission", async () => {
     stubPorts()
     const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{ provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "macOS Keychain", probe: { state: "working" } }],
+      machine_logins: [
+        { harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "signed_in" },
+        { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_out" },
+        { harness: "cursor", providerIds: ["cursor-acp", "cursor-sdk"], state: "absent" },
+      ],
     })])
     render(() => <Harness destination="local" request={stub.request} />)
 
     fireEvent.click(screen.getByRole("button", { name: "Check my logins" }))
     await screen.findByText("Ready")
 
-    // Codex and Cursor were not found. Saying so is the point of the screen —
-    // a user who expected Cursor to work needs to know it is not signed in.
+    // Codex is signed out and Cursor is not installed. Saying so is the point
+    // of the screen, and the repair differs between the two.
     expect(screen.getByText("Codex")).toBeInTheDocument()
     expect(screen.getByText("Cursor")).toBeInTheDocument()
-    expect(screen.getAllByText("Not signed in")).toHaveLength(2)
+    expect(screen.getByText("Not signed in")).toBeInTheDocument()
+    expect(screen.getByText("Not installed")).toBeInTheDocument()
     expect(screen.getByText(/cursor-agent login/)).toBeInTheDocument()
   })
 
-  test("a harness Claxedo cannot verify is never given a checkmark", async () => {
+  test("a harness that could not be asked is never given a checkmark", async () => {
     stubPorts()
-    // `verify.ts` has no cursor branch, so its probe comes back `unknown`. A
-    // tick here would mean "present" while the tick beside Claude means
-    // "proven" — and the user would find out at first turn.
+    // The CLI is there and answered with something we cannot read. A tick here
+    // would mean "present" while the tick beside Claude means "signed in".
     const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [
-        { provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "macOS Keychain", probe: { state: "working" } },
-        { provider_id: "cursor-acp", kind: "api_key", label: "Cursor", origin: "CURSOR_API_KEY", probe: { state: "unknown", reason: "Claxedo can't check this provider yet — it will be used as-is." } },
+      machine_logins: [
+        { harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "signed_in" },
+        { harness: "cursor", providerIds: ["cursor-acp"], state: "unknown", detail: "Cursor did not answer with a login status." },
       ],
     })])
     render(() => <Harness destination="local" request={stub.request} />)
@@ -205,32 +209,35 @@ describe("AIConnectSurface", () => {
     await screen.findByText("Ready")
 
     const cursor = document.querySelector('[data-harness="cursor"]')!
-    expect(cursor.getAttribute("data-state")).toBe("unverifiable")
-    expect(cursor.textContent).toContain("Signed in")
+    expect(cursor.getAttribute("data-state")).toBe("unknown")
+    expect(cursor.textContent).toContain("Cursor did not answer with a login status.")
     expect(cursor.textContent).not.toContain("Ready")
-    // Exactly one harness earned a checkmark, and it is the probed one.
+    // Exactly one harness earned a checkmark, and it is the one that answered.
     expect(screen.getAllByText("Ready")).toHaveLength(1)
   })
 
-  test("a rejected local login says so instead of quietly reading as fine", async () => {
+  test("a harness that could not be asked says what went wrong rather than quietly reading as fine", async () => {
     stubPorts()
     const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{ provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } }],
+      machine_logins: [{
+        harness: "codex",
+        providerIds: ["codex-app-server", "openai"],
+        state: "unknown",
+        detail: "Codex did not answer with a login status.",
+      }],
     })])
     render(() => <Harness destination="local" request={stub.request} />)
 
     fireEvent.click(screen.getByRole("button", { name: "Check my logins" }))
 
     expect(await screen.findByText("Needs attention")).toBeInTheDocument()
-    expect(screen.getByText("The provider rejected this credential.")).toBeInTheDocument()
+    expect(screen.getByText("Codex did not answer with a login status.")).toBeInTheDocument()
   })
 
   test("a local-only run's primary action never offers a save", async () => {
     stubPorts()
     const stub = requests([Response.json({
-      discovery_id: "discovery-1",
-      items: [{ provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "macOS Keychain", probe: { state: "working" } }],
+      machine_logins: [{ harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "signed_in" }],
     })])
     const submits: Array<{ run: () => Promise<void>; count: () => number }> = []
     render(() => <Harness destination="local" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />)

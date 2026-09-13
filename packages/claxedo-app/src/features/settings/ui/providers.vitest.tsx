@@ -6,7 +6,7 @@ const clients = new Set<QueryClient>()
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal, type JSX } from "solid-js"
 import { nativeHarness, connectionHarness, type HarnessSelection } from "@/platform/identity/harness-selection"
-import { readStringArray } from "@/lib/record"
+import { readField, readStringArray } from "@/lib/record"
 
 type CatalogProject = {
   id: string
@@ -51,14 +51,14 @@ const state = vi.hoisted(() => ({
   activated: [] as string[][],
   /** Every credential row the page asked the store to forget, in order. */
   removed: [] as string[],
-  /** The provider ids each save-discovered call named, in order. */
-  saved: [] as string[][],
+  /** The provider ids each machine-login activation named, in order. */
+  machineActivated: [] as string[][],
   /** Every row whose token was replaced in place, in order. */
   reconnected: [] as string[],
-  /** What a machine scan finds, as the discovery route reports it. */
-  discoveryItems: [] as Array<Record<string, unknown>>,
-  /** When set, the discovery route answers 500 with this cause instead of a scan. */
-  discoveryFailure: undefined as string | undefined,
+  /** What each harness on this machine says about its own login. */
+  machineLogins: [] as Array<Record<string, unknown>>,
+  /** When set, the machine-login route answers 500 with this cause instead. */
+  machineLoginFailure: undefined as string | undefined,
   credentialCalls: [] as string[],
   dialogs: [] as Array<() => JSX.Element>,
   /** What every failure told the user, in order. */
@@ -67,16 +67,13 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@/features/settings/app-ports", async () => {
   const { useProviders } = await import("@/app/providers/use-providers")
-  const { discoverAIConnections, verifyAIConnection } = await import("@/features/onboarding/ai-connect-api")
-  const { groupDiscoveryItems, localHarnessChecks, localHarnessStatuses } = await import(
-    "@/features/onboarding/ai-connect-state"
-  )
+  const { readMachineLogins, useMachineLogin, verifyAIConnection } = await import("@/features/onboarding/ai-connect-api")
+  const { localHarnessChecks } = await import("@/features/onboarding/ai-connect-state")
   return {
     useProviders,
-    discoverAIConnections,
     verifyAIConnection,
-    groupDiscoveryItems,
-    localHarnessStatuses,
+    readMachineLogins,
+    useMachineLogin,
     localHarnessChecks: () => localHarnessChecks,
     useShellQueryOptions: () => ({
       projects: () => ({
@@ -93,18 +90,6 @@ vi.mock("@/features/settings/app-ports", async () => {
       { key: "opencode", label: "External OpenCode" },
       { key: "pi", label: "External Pi" },
     ],
-    saveDiscoveredAIConnections: async (input: { items: Array<{ providerId: string }> }) => {
-      state.saved.push(input.items.map((item) => item.providerId))
-      return input.items.map((item, index) => {
-        const id = `saved_${item.providerId}`
-        state.storedCredentials = [
-          ...state.storedCredentials,
-          { id, provider_id: item.providerId, kind: "oauth_token", label: "machine@acme.com", account_id: "acc_machine", is_active: false },
-        ]
-        return { credentialId: id, providerId: item.providerId, result: "ok" as const, ...(index === 0 ? {} : {}) }
-      })
-    },
-    useServerIsLocal: () => () => true,
     useGlobalSDK: () => ({ url: "http://127.0.0.1:2593" }),
     DialogCustomProvider: (props: { scope?: string }) => (
       <div data-testid="custom-provider-dialog" data-scope={props.scope ?? ""} />
@@ -205,7 +190,15 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
     }))
   }
   if (url.pathname === "/api/claxedo/credentials/activate") {
-    const ids = readStringArray(requestJson(init), "ids") ?? []
+    const body = requestJson(init)
+    const machine = readStringArray(readField(body, "machine_login"), "provider_ids")
+    if (machine) {
+      state.machineActivated.push(machine)
+      state.storedCredentials = state.storedCredentials.map((row) =>
+        machine.includes(String(row.provider_id)) ? { ...row, is_active: false } : row)
+      return new Response(JSON.stringify({ credentials: [], cleared: [] }))
+    }
+    const ids = readStringArray(body, "ids") ?? []
     state.activated.push(ids)
     // The route marks every id and clears the mark across each id's provider.
     const providers = new Set(state.storedCredentials.filter((row) => ids.includes(String(row.id))).map((row) => row.provider_id))
@@ -215,17 +208,20 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
       credentials: state.storedCredentials.filter((row) => ids.includes(String(row.id))),
     }))
   }
-  if (url.pathname === "/api/claxedo/credentials/discover") {
-    if (state.discoveryFailure) {
+  if (url.pathname === "/api/claxedo/credentials/machine-logins") {
+    if (state.machineLoginFailure) {
       return new Response(JSON.stringify({
         error: {
-          code: "credential_discovery_failed",
-          message: "Failed to discover credentials",
-          details: { detail: { name: "Error", message: state.discoveryFailure } },
+          code: "credential_machine_login_failed",
+          message: "Failed to read this computer's logins",
+          details: { detail: { name: "Error", message: state.machineLoginFailure } },
         },
       }), { status: 500 })
     }
-    return new Response(JSON.stringify({ discovery_id: "disc_1", items: state.discoveryItems }))
+    const asked = url.searchParams.get("harness")
+    return new Response(JSON.stringify({
+      machine_logins: state.machineLogins.filter((login) => asked === null || login.harness === asked),
+    }))
   }
   if (url.pathname.endsWith("/reconnect")) {
     const id = decodeURIComponent(url.pathname.split("/").at(-2) ?? "")
@@ -356,10 +352,10 @@ beforeEach(() => {
   state.storedCredentials = []
   state.activated.length = 0
   state.removed.length = 0
-  state.saved.length = 0
+  state.machineActivated.length = 0
   state.reconnected.length = 0
-  state.discoveryItems = []
-  state.discoveryFailure = undefined
+  state.machineLogins = []
+  state.machineLoginFailure = undefined
   state.projects = [LOCAL_PROJECT, CLOUD_PROJECT]
   state.catalogs = {
     "workspace:ws_local|pi": ["anthropic", "openai"],
@@ -512,7 +508,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(providerIds("agents")).toEqual(["anthropic", "cursor", "openai"]))
     await waitFor(() => expect(section("agents").querySelector('[data-component="agents-scanned-at"]')?.textContent)
       .toBe("settings.providers.agents.scannedNow"))
-    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/discover")
+    expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/machine-logins")
     expect(state.credentialCalls).toContain("GET /api/claxedo/credentials")
     expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/effective")
   })
@@ -524,7 +520,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
     section("agents").querySelector<HTMLButtonElement>('[data-action="settings-providers-rescan"]')!.click()
 
-    await waitFor(() => expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/discover"))
+    await waitFor(() => expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/machine-logins"))
   })
 
   test("a harness with no account and no machine login lists nothing and offers Connect", async () => {
@@ -566,19 +562,70 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       .toBe("cred_bad")
   })
 
-  test("the login on this computer is a row named for where it was read from, with the scan's usage", async () => {
-    state.discoveryItems = [{
-      provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json",
-      probe: { state: "working", usage: [{ window: "weekly", usedPercent: 64, resetsAt: null }] },
+  test("this computer's Codex login is named by its address and carries the usage the harness reported", async () => {
+    state.machineLogins = [{
+      harness: "codex",
+      providerIds: ["codex-app-server", "openai"],
+      state: "signed_in",
+      email: "machine@acme.com",
+      plan: "pro",
+      usage: [{ window: "weekly", usedPercent: 64, resetsAt: null }],
     }]
     mount()
     await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
-    expect(accountRow("openai", "machine").textContent).toContain("settings.providers.agents.machineLogin")
+    expect(accountRow("openai", "machine").textContent).toContain("machine@acme.com")
     expect(accountDetail("openai", "machine"))
-      .toContain("settings.providers.agents.machineSource:~/.codex/auth.json")
-    expect(accountDetail("openai", "machine"))
-      .toContain("settings.providers.live.window:settings.providers.window.weekly|64")
+      .toBe("settings.providers.live.window:settings.providers.window.weekly|64")
+    expect(selectedAccount("openai")).toBe("machine")
     expect(agentAction("openai")).toBe("")
+  })
+
+  test("Claude has no headless usage read, so its machine row says the plan and the org instead", async () => {
+    state.machineLogins = [{
+      harness: "claude",
+      providerIds: ["claude-acp", "claude-sdk"],
+      state: "signed_in",
+      email: "person@acme.com",
+      plan: "max",
+      org: "Acme",
+    }]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["machine"]))
+    expect(accountDetail("anthropic", "machine")).toBe("settings.providers.agents.machinePlan:max · Acme")
+  })
+
+  test("a harness that is not installed, or signed out of, lists no machine row at all", async () => {
+    state.machineLogins = [
+      { harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "absent" },
+      { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_out" },
+    ]
+    mount()
+    await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
+    expect(accountIds("anthropic")).toEqual([])
+    expect(accountIds("openai")).toEqual([])
+    expect(agentAction("anthropic")).toBe("agent-connect")
+  })
+
+  test("Check on this computer's login asks that harness again, and nothing else", async () => {
+    state.machineLogins = [{
+      harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com", plan: "pro",
+    }]
+    mount()
+    await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
+    state.machineLogins = [{
+      harness: "codex",
+      providerIds: ["codex-app-server", "openai"],
+      state: "signed_in",
+      email: "machine@acme.com",
+      usage: [{ window: "session", usedPercent: 5, resetsAt: null }],
+    }]
+    state.credentialCalls.length = 0
+
+    rowAction("openai", "machine", "check").click()
+
+    await waitFor(() => expect(accountDetail("openai", "machine"))
+      .toBe("settings.providers.live.window:settings.providers.window.session|5"))
+    expect(state.credentialCalls).toEqual(["GET /api/claxedo/credentials/machine-logins"])
   })
 
   test("the accounts a harness holds are one radio list, the login in use checked", async () => {
@@ -642,28 +689,21 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
   test("this computer's login is listed last, even while a stored account is the one in use", async () => {
     state.storedCredentials = [...claudeLogin]
-    state.discoveryItems = [{
-      provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json",
-      probe: { state: "working" },
-    }, {
-      provider_id: "claude-sdk", kind: "oauth_token", label: "Another Claude login", account_id: "acc_other", origin: "keychain",
-      probe: { state: "working" },
+    state.machineLogins = [{
+      harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "signed_in", email: "machine@acme.com",
     }]
     mount()
 
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "machine"]))
     expect(selectedAccount("anthropic")).toBe("sdk_work")
-    expect(accountRow("anthropic", "machine").textContent)
-      .toContain("settings.providers.agents.machineSource:keychain")
   })
 
-  test("choosing this computer's login stores it first, then marks what was stored", async () => {
+  test("choosing this computer's login withdraws the mark rather than storing anything", async () => {
     state.storedCredentials = [
       { id: "cred_codex", provider_id: "codex-app-server", kind: "api_key", label: "spare@acme.com", account_id: "fp_0123abcd…wxyz", is_active: true },
     ]
-    state.discoveryItems = [{
-      provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", account_id: "acc_machine", origin: "~/.codex/auth.json",
-      probe: { state: "working" },
+    state.machineLogins = [{
+      harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_in", email: "machine@acme.com",
     }]
     mount()
     await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine"]))
@@ -672,9 +712,11 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     accountRow("openai", "machine")
       .querySelector<HTMLInputElement>('input[type="radio"]')!.click()
 
-    await waitFor(() => expect(state.saved).toEqual([["codex-app-server"]]))
-    // Saving alone would leave the harness on whatever it ran on before.
-    expect(state.activated).toEqual([["saved_codex-app-server"]])
+    await waitFor(() => expect(selectedAccount("openai")).toBe("machine"))
+    expect(state.machineActivated).toEqual([["codex-app-server", "openai"]])
+    // Nothing was copied: the store holds exactly the account it held before.
+    expect(state.activated).toEqual([])
+    expect(state.storedCredentials.map((row) => row.id)).toEqual(["cred_codex"])
   })
 
   test("Check asks the provider and rewrites that entry's status", async () => {
@@ -757,13 +799,13 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
     within(agentRow("cursor")).getByTestId("provider-connect-save").click()
 
-    await waitFor(() => expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/discover"))
+    await waitFor(() => expect(state.credentialCalls).toContain("GET /api/claxedo/credentials/machine-logins"))
   })
 
   test("a scan that fails tells the user what broke, not that a scan failed", async () => {
-    state.discoveryFailure = "User agent config contains invalid JSON"
+    state.machineLoginFailure = "Codex app-server did not answer in time"
     mount()
 
-    await waitFor(() => expect(state.toasts).toEqual(["User agent config contains invalid JSON"]))
+    await waitFor(() => expect(state.toasts).toEqual(["Codex app-server did not answer in time"]))
   })
 })

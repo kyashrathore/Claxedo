@@ -21,7 +21,7 @@ export type AgentAccount = {
   /** An identity worth having on the row but not worth reading. */
   identity?: string
   selected: boolean
-  /** The scan found this login on this computer; choosing it stores it first. */
+  /** This computer's own login for the harness, which is never a stored row. */
   machine?: boolean
 }
 
@@ -44,7 +44,7 @@ export const AgentHarnessRow: Component<{
   onSelect: (account: AgentAccount) => void | Promise<void>
   /** The entry whose switch is in flight. */
   selecting?: string
-  onCheck: (credentialIds: readonly string[]) => void | Promise<void>
+  onCheck: (account: AgentAccount) => void | Promise<void>
   /** The entry whose check is in flight. */
   checking?: string
   onRemove: (credentialIds: readonly string[]) => void | Promise<void>
@@ -72,7 +72,7 @@ export const AgentHarnessRow: Component<{
    * it just asked cannot vanish under the pointer.
    */
   const AccountActions: Component<{ account: AgentAccount }> = (self) => (
-    <Show when={self.account.ids.length > 0}>
+    <Show when={self.account.ids.length > 0 || self.account.machine}>
       <span
         class="flex shrink-0 items-center gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
         classList={{ "opacity-0": confirmingRemove() !== self.account.key }}
@@ -89,16 +89,18 @@ export const AgentHarnessRow: Component<{
                 data-action="agent-account-check"
                 aria-label={language.t("settings.providers.agents.checkAccount")}
                 disabled={props.checking !== undefined}
-                onClick={() => void props.onCheck(self.account.ids)}
+                onClick={() => void props.onCheck(self.account)}
               />
-              <ClaxedoIconButton
-                icon="trash"
-                size="small"
-                variant="ghost"
-                data-action="agent-account-remove"
-                aria-label={language.t("settings.providers.agents.removeAccount")}
-                onClick={() => setConfirmingRemove(self.account.key)}
-              />
+              <Show when={self.account.ids.length > 0}>
+                <ClaxedoIconButton
+                  icon="trash"
+                  size="small"
+                  variant="ghost"
+                  data-action="agent-account-remove"
+                  aria-label={language.t("settings.providers.agents.removeAccount")}
+                  onClick={() => setConfirmingRemove(self.account.key)}
+                />
+              </Show>
             </>
           )}
         >

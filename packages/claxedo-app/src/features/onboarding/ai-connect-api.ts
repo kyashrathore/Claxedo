@@ -1,6 +1,6 @@
 import { claxedoCredentialRequest, type ClaxedoCredentialRequestInput } from "@/platform/api/credential-request"
 import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
-import type { AICredentialVerification, AIDiscoveryItem, AIDiscoveryProbe, AIUsageWindow } from "./ai-connect-state"
+import type { AICredentialVerification, AIDiscoveryItem, AIDiscoveryProbe, AIUsageWindow, MachineLogin } from "./ai-connect-state"
 
 export type AIConnectRequest = (input?: ClaxedoCredentialRequestInput, init?: RequestInit) => Promise<Response>
 
@@ -36,6 +36,42 @@ export async function discoverAIConnections(input: {
     discoveryId,
     items: items.flatMap(redactedDiscoveryItem),
   }
+}
+
+/**
+ * What each harness on the server's machine says about its own login. `harness`
+ * narrows the read to one row, which is what a single row's Check needs: asking
+ * the others would start processes nobody is waiting on.
+ */
+export async function readMachineLogins(input: {
+  serverUrl?: string
+  harness?: string
+  request?: AIConnectRequest
+} = {}) {
+  const res = await (input.request ?? claxedoCredentialRequest)({
+    serverUrl: input.serverUrl,
+    action: "machine-logins",
+    ...(input.harness === undefined ? {} : { harness: input.harness }),
+  }, { accept: [501] })
+  if (res.status === 501) return []
+  const rows = readArray(await res.json(), "machine_logins")
+  if (!rows) throw new Error("The machine login read returned an invalid response")
+  return rows.flatMap(redactedMachineLogin)
+}
+
+/**
+ * Leave these providers with no stored account marked, so their harness runs on
+ * the login its own CLI holds.
+ */
+export async function useMachineLogin(input: {
+  serverUrl?: string
+  providerIds: readonly string[]
+  request?: AIConnectRequest
+}) {
+  await (input.request ?? claxedoCredentialRequest)({ serverUrl: input.serverUrl, action: "activate" }, {
+    method: "POST",
+    body: JSON.stringify({ machine_login: { provider_ids: input.providerIds } }),
+  })
 }
 
 export async function saveDiscoveredAIConnections(input: {
@@ -155,6 +191,29 @@ function redactedDiscoveryItem(value: unknown): AIDiscoveryItem[] {
     ...(freshUntil === undefined ? {} : { freshUntil }),
     ...(readBoolean(value, "already_connected") === true ? { alreadyConnected: true } : {}),
     ...(probe ? { probe } : {}),
+  }]
+}
+
+function redactedMachineLogin(value: unknown): MachineLogin[] {
+  const harness = readString(value, "harness")
+  const state = readString(value, "state")
+  const providerIds = readArray(value, "providerIds")?.filter((id): id is string => typeof id === "string")
+  if (harness === undefined || !providerIds) return []
+  if (state !== "signed_in" && state !== "signed_out" && state !== "absent" && state !== "unknown") return []
+  const email = readString(value, "email")
+  const plan = readString(value, "plan")
+  const org = readString(value, "org")
+  const detail = readString(value, "detail")
+  const usage = redactedUsage(readField(value, "usage"))
+  return [{
+    harness,
+    providerIds,
+    state,
+    ...(email === undefined ? {} : { email }),
+    ...(plan === undefined ? {} : { plan }),
+    ...(org === undefined ? {} : { org }),
+    ...(detail === undefined ? {} : { detail }),
+    ...(usage ? { usage } : {}),
   }]
 }
 

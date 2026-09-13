@@ -1,11 +1,5 @@
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
-import {
-  discoverAIConnections,
-  groupDiscoveryItems,
-  localHarnessStatuses,
-  type AIDiscoveryRow,
-  type LocalHarnessStatus,
-} from "@/features/settings/app-ports"
+import { readMachineLogins, useMachineLogin, type MachineLogin } from "@/features/settings/app-ports"
 import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
 
 /** What the server would hand a harness for a provider: the row, without its secret. */
@@ -70,17 +64,6 @@ export type StoredCredential = EffectiveCredential & {
   expiresAt?: number
   /** The surface the account was stored from; the machine scan is one of them. */
   consentSurface?: string
-}
-
-/**
- * The row is this computer's own login for its harness: the scan read it off
- * the machine, and the provider gave it no account identity, so there is
- * nothing to name it by but where it came from. A discovered row that does
- * carry an identity — every Codex account does — is named by that instead,
- * because a machine can hold several of them.
- */
-export function isMachineLogin(row: StoredCredential) {
-  return row.consentSurface === "desktop_discovery" && row.accountId === undefined
 }
 
 /** Every account the server holds, in the order the store listed them. */
@@ -207,22 +190,27 @@ export async function removeCredential(credentialIds: readonly string[]) {
   }
 }
 
+/**
+ * Leave a harness's providers with no marked account, which is what makes it run
+ * on the login its own CLI holds. Never a save: that login is not ours to copy.
+ */
+export async function activateMachineLogin(providerIds: readonly string[]) {
+  await useMachineLogin({ providerIds })
+}
+
 export type ProviderDetectResult = {
   stored: StoredCredential[]
   effective: ReadonlyMap<string, EffectiveCredential> | undefined
-  agents: LocalHarnessStatus[]
-  /** The scan's id and rows, kept so a row can save the login it found without a second scan. */
-  discoveryId: string
-  rows: AIDiscoveryRow[]
+  /** What each harness on this machine says about the login it would run on. */
+  machineLogins: MachineLogin[]
 }
 
-/** One scan of this machine, with the store read alongside it. */
+/** One read of this machine's harnesses, with the store read alongside it. */
 export async function runProviderDetect(): Promise<ProviderDetectResult> {
-  const [discovery, stored, effective] = await Promise.all([
-    discoverAIConnections({}),
+  const [machineLogins, stored, effective] = await Promise.all([
+    readMachineLogins({}),
     listStoredCredentials(),
     listEffectiveCredentials(),
   ])
-  const rows = groupDiscoveryItems(discovery.items)
-  return { stored, effective, agents: localHarnessStatuses(rows), discoveryId: discovery.discoveryId, rows }
+  return { stored, effective, machineLogins }
 }

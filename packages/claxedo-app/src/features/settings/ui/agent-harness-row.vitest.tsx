@@ -31,8 +31,8 @@ const machineLogin = (over: Partial<AgentAccount> = {}): AgentAccount =>
   account({
     key: "machine",
     ids: [],
-    label: "This computer's login",
-    detail: "from ~/.codex/auth.json",
+    label: "machine@acme.com",
+    detail: "Weekly 64% used",
     selected: false,
     machine: true,
     ...over,
@@ -143,13 +143,18 @@ describe("AgentHarnessRow accounts", () => {
     expect(entry("cred_2").querySelector('[data-slot="radio-list-item-description"]')).toBeNull()
   })
 
-  test("this computer's login is a row like any other, named by where it was read from", () => {
-    row({ accounts: [account(), machineLogin()] })
+  test("this computer's login is a row like any other, and its Check asks the harness again", () => {
+    const checked: string[] = []
+    row({ accounts: [account(), machineLogin()], onCheck: (entry) => void checked.push(entry.key) })
 
     expect(entries()).toEqual(["cred_1", "machine"])
-    expect(entry("machine").textContent).toContain("from ~/.codex/auth.json")
-    // Nothing is stored for it yet, so there is nothing to check or forget.
-    expect(entry("machine").querySelector('[data-component="agent-account-actions"]')).toBeNull()
+    expect(entry("machine").textContent).toContain("Weekly 64% used")
+    // Nothing is stored for it, so there is a Check but nothing to forget.
+    expect(entry("machine").querySelector('[data-action="agent-account-remove"]')).toBeNull()
+
+    click("machine", "agent-account-check")
+
+    expect(checked).toEqual(["machine"])
   })
 
   test("an id the reader cannot match to an account is a tooltip, never a line", () => {
@@ -190,8 +195,8 @@ describe("AgentHarnessRow accounts", () => {
   })
 
   test("the two actions are hidden at rest and arrive with the pointer or the keyboard", () => {
-    const checked: string[][] = []
-    row({ onCheck: (ids) => void checked.push([...ids]) })
+    const checked: string[] = []
+    row({ onCheck: (entry) => void checked.push(entry.key) })
 
     const actions = entry("cred_1").querySelector('[data-component="agent-account-actions"]')!
     expect(actions.className).toContain("opacity-0")
@@ -202,7 +207,7 @@ describe("AgentHarnessRow accounts", () => {
 
     click("cred_1", "agent-account-check")
 
-    expect(checked).toEqual([["cred_1"]])
+    expect(checked).toEqual(["cred_1"])
   })
 
   test("Remove asks before it forgets, holds the question on screen, and Cancel keeps the account", () => {

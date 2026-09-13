@@ -86,18 +86,16 @@ describe("AI connect state", () => {
     expect(preview.phase === "preview" && preview.items[0].selected).toBe(true)
   })
 
-  test("a local-only destination confirms what it found and never opens a save", () => {
+  test("a local-only run lands on what the harnesses reported, with nothing to commit", () => {
     // The whole point of A0: nothing to commit, so there is no discovery id to
     // commit it against and no checkbox implying there is a choice to make.
     const confirmed = aiConnectTransition({ phase: "discovering" }, {
-      type: "discovery-succeeded",
-      discoveryId: "discovery-1",
-      destination: "local",
-      items: claudeBindings,
+      type: "machine-logins-read",
+      logins: [{ harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "signed_in", email: "person@acme.com" }],
     })
 
     expect(confirmed.phase).toBe("confirmed")
-    expect(confirmed.phase === "confirmed" && confirmed.rows.map((row) => row.label)).toEqual(["Claude Code login"])
+    expect(confirmed.phase === "confirmed" && confirmed.logins.map((login) => login.email)).toEqual(["person@acme.com"])
     expect(JSON.stringify(confirmed)).not.toContain("discovery-1")
   })
 
@@ -105,7 +103,6 @@ describe("AI connect state", () => {
     const state = aiConnectTransition({ phase: "discovering" }, {
       type: "discovery-succeeded",
       discoveryId: "discovery-1",
-      destination,
       items: claudeBindings,
     })
 
@@ -185,70 +182,44 @@ describe("AI connect state", () => {
     ])
   })
 
-  test("a harness with no login reports missing rather than being left out", () => {
-    const statuses = localHarnessStatuses(groupDiscoveryItems(claudeBindings))
+  test("every harness the local checks name gets a row, whatever the reports contain", () => {
+    const statuses = localHarnessStatuses([
+      { harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "signed_in", email: "person@acme.com", plan: "max" },
+    ])
 
     expect(statuses.map((harness) => harness.id)).toEqual(["claude", "codex", "cursor"])
-    expect(statuses.filter((harness) => harness.state === "missing").map((harness) => harness.id))
-      .toEqual(["codex", "cursor"])
+    expect(statuses.map((harness) => harness.state)).toEqual(["signed_in", "absent", "absent"])
+    expect(statuses[0]).toMatchObject({ label: "Claude Code", signIn: "claude", email: "person@acme.com", plan: "max" })
   })
 
-  test("a probe we could not run is 'unverifiable', never conflated with working", () => {
-    // The distinction the whole checklist rests on: a tick must mean the
-    // provider answered, not that a file exists on disk.
-    const statuses = localHarnessStatuses(groupDiscoveryItems([
-      { providerId: "cursor-acp", kind: "api_key", label: "Cursor", origin: "CURSOR_API_KEY", probe: { state: "unknown", reason: "Claxedo can't check this provider yet." } },
-    ]))
-
-    expect(statuses.find((harness) => harness.id === "cursor")).toMatchObject({
-      state: "unverifiable",
-      detail: "Claxedo can't check this provider yet.",
-    })
-  })
-
-  test("a working login's usage windows ride along on the harness status", () => {
-    const statuses = localHarnessStatuses(groupDiscoveryItems([
+  test("a harness's own answer rides along whole: its quota windows, and why it could not be asked", () => {
+    const statuses = localHarnessStatuses([
       {
-        providerId: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json",
-        probe: { state: "working", usage: [{ window: "weekly", usedPercent: 64, resetsAt: 1_757_700_000_000 }] },
+        harness: "codex",
+        providerIds: ["codex-app-server", "openai"],
+        state: "signed_in",
+        usage: [{ window: "weekly", usedPercent: 64, resetsAt: 1_757_700_000_000 }],
       },
-    ]))
+      { harness: "cursor", providerIds: ["cursor-acp"], state: "unknown", detail: "Cursor did not answer with a login status." },
+    ])
 
     expect(statuses.find((harness) => harness.id === "codex")).toMatchObject({
-      state: "working",
+      state: "signed_in",
       usage: [{ window: "weekly", usedPercent: 64, resetsAt: 1_757_700_000_000 }],
     })
-  })
-
-  test("a found login with no probe at all is unverifiable, not assumed good", () => {
-    const statuses = localHarnessStatuses(groupDiscoveryItems([
-      { providerId: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json" },
-    ]))
-
-    expect(statuses.find((harness) => harness.id === "codex")?.state).toBe("unverifiable")
-  })
-
-  test("one working binding is enough — a harness reports its best outcome", () => {
-    // Claude's two bindings carry the same secret. If either answered, the
-    // harness runs; a second row would ask the user to weigh a distinction
-    // that does not change what they can do next.
-    const statuses = localHarnessStatuses(groupDiscoveryItems([
-      { ...claudeBindings[0], origin: "macOS Keychain", probe: { state: "working" } },
-      { ...claudeBindings[1], origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN", probe: { state: "broken", reason: "rejected" } },
-    ]))
-
-    expect(statuses.find((harness) => harness.id === "claude")?.state).toBe("working")
-  })
-
-  test("a rejected login is broken and carries its reason", () => {
-    const statuses = localHarnessStatuses(groupDiscoveryItems([
-      { providerId: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } },
-    ]))
-
-    expect(statuses.find((harness) => harness.id === "codex")).toMatchObject({
-      state: "broken",
-      detail: "The provider rejected this credential.",
+    expect(statuses.find((harness) => harness.id === "cursor")).toMatchObject({
+      state: "unknown",
+      detail: "Cursor did not answer with a login status.",
     })
+  })
+
+  test("signed out and not installed stay apart, because the repair differs", () => {
+    const statuses = localHarnessStatuses([
+      { harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "signed_out" },
+      { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "absent" },
+    ])
+
+    expect(statuses.map((harness) => harness.state)).toEqual(["signed_out", "absent", "absent"])
   })
 
   test("a settled row is named, never shown as a raw provider id", () => {
