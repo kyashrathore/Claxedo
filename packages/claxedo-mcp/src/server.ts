@@ -16,7 +16,7 @@ import {
   type RequestId,
 } from "@modelcontextprotocol/sdk/types.js"
 import { bearerToken } from "@claxedo/helpers/string"
-import type { ClaxedoFetch, ClaxedoMcpClient, WorkspaceTarget } from "./client/contract"
+import type { ClaxedoFetch, ClaxedoMcpClient, TasksGrant, WorkspaceTarget } from "./client/contract"
 import { MCP_SCOPES, type McpAuditEvent, type McpCredential, type McpToolContext } from "./context"
 import { createToolRegistry } from "./tools/registry"
 import { isLoopbackRequest } from "./endpoint/loopback"
@@ -26,6 +26,7 @@ import { createInFlightCounter, releaseWhenSettled } from "./endpoint/in-flight"
 import type { McpToolGroup } from "./tools/index"
 export { CLAXEDO_MCP_TOOL_GROUPS } from "./tools/index"
 export type { McpToolGroup }
+export type { TasksGrant, TasksOperation } from "./client/contract"
 
 export const CLAXEDO_MCP_PATH = "/api/claxedo/mcp"
 export const OAUTH_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource"
@@ -66,6 +67,7 @@ export type McpClientInputs = Readonly<{
   local?: Readonly<{ fetch: ClaxedoFetch; workspace: WorkspaceTarget }>
   controlPlane?: Readonly<{ fetch: ClaxedoFetch }>
   documents?: Readonly<{ fetch: ClaxedoFetch }>
+  tasks?: TasksGrant
 }>
 
 /** The option every mount takes from its composition root. */
