@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest"
+import { spawn } from "child_process"
 import {
   createMachineLoginCache,
   readMachineLogins,
+  stopAppServer,
   type MachineLogin,
   type MachineLoginHarness,
   type MachineLoginProbes,
@@ -240,4 +242,41 @@ describe("the harnesses are not asked twice at once, nor again straight away", (
 
     expect(probe.reads).toEqual(["claude", "codex"])
   })
+})
+
+describe("stopping the app-server", () => {
+  test("a child that ignores SIGTERM is killed anyway", async () => {
+    // The app-server owns children of its own, so one that outlives a read
+    // accumulates for as long as the app is open.
+    const stubborn = spawn(process.execPath, [
+      "-e",
+      "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); console.log('ready')",
+    ], { stdio: ["ignore", "pipe", "ignore"] })
+    // Waiting on "spawn" is not enough: the signal would arrive before node has
+    // evaluated the script that installs the handler, and the child would die
+    // on SIGTERM for the wrong reason.
+    await new Promise((resolve) => stubborn.stdout.once("data", resolve))
+
+    stopAppServer(stubborn)
+
+    const signal = await new Promise<string | null>((resolve) => {
+      stubborn.once("exit", (_code, exitSignal) => resolve(exitSignal))
+    })
+    expect(signal).toBe("SIGKILL")
+  }, 10_000)
+
+  test("a child that stops on its own is not killed", async () => {
+    const polite = spawn(process.execPath, [
+      "-e",
+      "setInterval(() => {}, 1000); console.log('ready')",
+    ], { stdio: ["ignore", "pipe", "ignore"] })
+    await new Promise((resolve) => polite.stdout.once("data", resolve))
+
+    stopAppServer(polite)
+
+    const signal = await new Promise<string | null>((resolve) => {
+      polite.once("exit", (_code, exitSignal) => resolve(exitSignal))
+    })
+    expect(signal).toBe("SIGTERM")
+  }, 10_000)
 })

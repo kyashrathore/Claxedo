@@ -337,10 +337,15 @@ async function codexAccountRead(): Promise<{ account: unknown; rateLimits: unkno
 const KILL_GRACE_MS = 1_000
 
 /**
+ * Ask the child to stop, then insist.
+ *
  * The app-server owns MCP servers and plugin children of its own, and a build
- * that ignores SIGTERM would otherwise outlive every read the section makes.
+ * that ignores SIGTERM would otherwise outlive every read the section makes —
+ * one process per read, accumulating for as long as the app is open. Exported
+ * because that escalation is the whole behaviour and a caller cannot observe it
+ * through `readMachineLogins`.
  */
-function stopAppServer(child: ReturnType<typeof spawn>) {
+export function stopAppServer(child: ReturnType<typeof spawn>) {
   child.kill("SIGTERM")
   if (child.exitCode !== null || child.signalCode !== null) return
   const timer = setTimeout(() => {

@@ -981,6 +981,36 @@ describe("what this computer's own logins say", () => {
     expect(machineLogins).toHaveBeenLastCalledWith(["codex"], { fresh: true })
   })
 
+  test("only a caller on this computer may read, or choose, the login it holds", async () => {
+    const machineLogins = vi.fn(async () => [])
+    const clearActiveCredentials = vi.fn(async () => ({ cleared: [] }))
+    const app = CredentialRoutes(Object.assign(credentials(), { machineLogins, clearActiveCredentials }), {})
+    const reachedOver: Array<{ url: string; headers: Record<string, string> }> = [
+      // A forwarded request destroys the socket-to-client relationship the
+      // unsigned-local gate rests on…
+      { url: "http://localhost", headers: { "X-Forwarded-For": "10.0.0.1" } },
+      // …and a request addressed to a non-loopback host arrived over a network.
+      { url: "http://claxedo.example.com", headers: {} },
+    ]
+
+    for (const { url, headers } of reachedOver) {
+      const read = await app.request(`${url}/machine-logins`, { headers })
+      expect(read.status, url).toBe(403)
+      await expect(read.json()).resolves.toMatchObject({ error: { code: "loopback_required" } })
+
+      const chosen = await app.request(`${url}/activate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ machine_login: { provider_ids: ["claude-sdk"] } }),
+      })
+      expect(chosen.status, url).toBe(403)
+    }
+
+    expect(machineLogins).not.toHaveBeenCalled()
+    expect(clearActiveCredentials).not.toHaveBeenCalled()
+    expect((await app.request("http://localhost/machine-logins")).status).toBe(200)
+  })
+
   test("a harness the catalog does not name is refused, and a host that runs none says so", async () => {
     const machineLogins = vi.fn(async () => [])
     const refused = await CredentialRoutes(Object.assign(credentials(), { machineLogins }), {})
