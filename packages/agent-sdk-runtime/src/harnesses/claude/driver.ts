@@ -47,7 +47,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { providerBinding, providerProjectionKey, providerProjectionRecord } from "../../provider-projection"
+import { freshProviderBinding, providerProjectionKey, providerProjectionRecord, type ProviderBinding } from "../../provider-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,
@@ -278,8 +278,21 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
    * means the projection is never sent. Without a projection nothing is
    * withheld and the harness runs on that account exactly as before.
    */
-  private spawnEnv(extra: Record<string, string> = {}) {
-    const binding = providerBinding("claude", this.auth.anthropic)
+  /**
+   * The binding this spawn runs on, replaced first when the placeholder it
+   * holds has already expired. Spawning on an expired one sends the vendor a
+   * token it will reject, and that 401 is then attributed to the operator's
+   * account rather than to the renewal that did not happen.
+   */
+  private launchBinding() {
+    return freshProviderBinding({
+      harnessId: "claude",
+      read: () => this.auth.anthropic,
+      ...(this.host.renewProjections ? { renew: this.host.renewProjections } : {}),
+    })
+  }
+
+  private spawnEnv(binding: ProviderBinding | undefined, extra: Record<string, string> = {}) {
     return claudeSpawnEnv({
       ...process.env,
       ...claudeAuthEnv(binding),
@@ -375,6 +388,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     // Claude persists its Stop hook in the session transcript. Kill and drain
     // its current query before reopening that same session to clear the hook.
     await interruptGoalTurn(sessionId, this.host.lifecycle())
+    const goalBinding = await this.launchBinding()
     const abortController = new AbortController()
     let cleared = false
     const q = (this.driverOptions.query ?? query)({
@@ -387,7 +401,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         tools: [],
         maxTurns: 1,
         canUseTool: async () => ({ behavior: "deny", message: "Clearing the session Goal does not execute tools" }),
-        env: this.spawnEnv(),
+        env: this.spawnEnv(goalBinding),
         spawnClaudeCodeProcess: (options) => spawnObservedClaudeCodeProcess({
           options, observer: this.host.processObserver, role: "harness", sessionId,
         }),
@@ -559,6 +573,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     const systemPrompt = claudeSystemPrompt(input.input.system)
     const permissionModeId = this.permissionSelection.currentId(input.sessionId)
     const permissions = readClaudePermissionState(this.host.getSessionConfig(input.sessionId)?.permissionState)
+    const turnBinding = await this.launchBinding()
     const q: Query = (this.driverOptions.query ?? query)({
       prompt,
       options: {
@@ -599,7 +614,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           : { resume: input.getAgentSessionId() }),
         ...this.mcpServersFor(input.sessionId),
         ...(this.currentPlugins.length ? { plugins: this.currentPlugins } : {}),
-        env: this.spawnEnv({
+        env: this.spawnEnv(turnBinding, {
           CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0",
           CLAUDE_CODE_ENABLE_TODO_TOOLS: "1",
           CLAUDE_CODE_ENABLE_TASKS: "1",
@@ -693,6 +708,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
    * The never-yielding prompt stream keeps the CLI idle until `close()`.
    */
   private async fetchModels(directory?: string): Promise<SdkModelEntry[]> {
+    const probeBinding = await this.launchBinding()
     const abort = new AbortController()
     const q: Query = (this.driverOptions.query ?? query)({
         prompt: idlePrompt(),
@@ -700,7 +716,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         cwd: directory ?? process.cwd(),
         pathToClaudeCodeExecutable: (this.driverOptions.executable ?? requireClaudeExecutable)(),
         abortController: abort,
-        env: this.spawnEnv({ CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0" }),
+        env: this.spawnEnv(probeBinding, { CLAUDE_AGENT_SDK_CLIENT_APP: "claxedo-workspace-runtime/0.1.0" }),
         spawnClaudeCodeProcess: (options) => spawnObservedClaudeCodeProcess({
           options,
           observer: this.host.processObserver,

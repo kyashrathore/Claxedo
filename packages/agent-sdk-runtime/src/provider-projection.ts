@@ -85,6 +85,45 @@ export class ProviderCredentialUnavailableError extends Error {
 }
 
 /**
+ * A placeholder whose lifetime ran out before the harness was spawned.
+ *
+ * Named rather than left to the vendor's 401: an expired placeholder reaches
+ * the vendor as an ordinary bad token, and attributing that to the operator's
+ * account is how a working credential gets marked broken. The word
+ * "credential" is in the message for the same reason it is in
+ * `ProviderCredentialUnavailableError`.
+ */
+export class ProviderProjectionExpiredError extends Error {
+  constructor(readonly harnessId: string, readonly expiresAt: number) {
+    super(`the ${harnessId} credential binding expired at ${new Date(expiresAt).toISOString()} and was not renewed`)
+    this.name = "ProviderProjectionExpiredError"
+  }
+}
+
+/**
+ * The binding to launch on, after asking for a replacement when the one held
+ * has already expired. A driver that spawned on an expired placeholder would
+ * turn a renewal that did not happen into a vendor authentication failure.
+ */
+export async function freshProviderBinding(input: {
+  harnessId: string
+  read: () => ProviderProjection | undefined
+  renew?: () => Promise<void>
+  now?: () => number
+}): Promise<ProviderBinding | undefined> {
+  const held = providerBinding(input.harnessId, input.read())
+  if (!held) return undefined
+  const now = input.now ?? Date.now
+  if (held.expiresAt > now()) return held
+  if (input.renew) {
+    await input.renew()
+    const renewed = providerBinding(input.harnessId, input.read())
+    if (renewed && renewed.expiresAt > now()) return renewed
+  }
+  throw new ProviderProjectionExpiredError(input.harnessId, held.expiresAt)
+}
+
+/**
  * The binding a harness may launch on, or nothing when no account is selected
  * for this provider. Every driver reads its projection through this rather than
  * off the field, so a selected-but-unusable account stops the launch here

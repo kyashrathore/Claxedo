@@ -149,6 +149,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     this.interactions = new SdkRuntimeInteractions(this.store)
     this.driver = options.driver({
       lifecycle: () => this.lifecycle(),
+      ...(options.renewProjections ? { renewProjections: options.renewProjections } : {}),
       pendingPermissions: this.interactions.permissions,
       pendingQuestions: this.interactions.questions,
       processObserver: options.processObserver,

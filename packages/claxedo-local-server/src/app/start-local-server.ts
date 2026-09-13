@@ -51,7 +51,7 @@ import { CLAXEDO_MCP_TOOL_GROUPS } from "@claxedo/mcp"
 import { createClaxedoMcpClient } from "@claxedo/mcp/client"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { migrateCredentials } from "../credentials/operations/migrate"
-import { BROKER_RENEWAL_INTERVAL_MS, createLocalCredentialBroker } from "../credentials/broker"
+import { createLocalCredentialBroker } from "../credentials/broker"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
 import { getLocalUsageLimits } from "../deployments/local/server-usage-limits"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
@@ -166,7 +166,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   })
   // A placeholder expires; re-projecting on this interval and re-applying the
   // snapshot is what puts the next one in front of the next turn's spawn.
-  const stopConfigRenewal = startEmbeddedWorkspaceRuntimeConfigRenewal(BROKER_RENEWAL_INTERVAL_MS)
+  const stopConfigRenewal = startEmbeddedWorkspaceRuntimeConfigRenewal()
 
   // Opened here so the first session-list request does not pay for migrations,
   // repair checks and statement preparation.

@@ -167,12 +167,14 @@ export {
 export { modelConfigOption } from "./sdk-model-options"
 export type { SdkModelEntry } from "./sdk-model-options"
 export {
+  freshProviderBinding,
   isProviderUnavailable,
   providerBinding,
   providerProjection,
   providerProjectionKey,
   providerProjectionRecord,
   ProviderCredentialUnavailableError,
+  ProviderProjectionExpiredError,
 } from "./provider-projection"
 export type { ProviderBinding, ProviderProjection, ProviderUnavailable } from "./provider-projection"
 export { createLiveModelSource } from "./live-model-source"

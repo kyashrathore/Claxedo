@@ -141,7 +141,6 @@ import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/se
 import { getLocalUsageLimits } from "@claxedo/local-server/self-hosted-execution"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import {
-  BROKER_RENEWAL_INTERVAL_MS,
   createLocalCredentialBroker,
   startEmbeddedWorkspaceRuntimeConfigRenewal,
 } from "@claxedo/local-server/self-hosted-execution"
@@ -1620,7 +1619,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   })
   // A placeholder expires; re-projecting on this interval and re-applying the
   // snapshot is what puts the next one in front of the next turn's spawn.
-  const stopConfigRenewal = startEmbeddedWorkspaceRuntimeConfigRenewal(BROKER_RENEWAL_INTERVAL_MS)
+  const stopConfigRenewal = startEmbeddedWorkspaceRuntimeConfigRenewal()
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),

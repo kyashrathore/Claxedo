@@ -27,10 +27,13 @@ import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/wo
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
 import {
   createAcpConnectionProvider,
+  isProviderUnavailable,
   type AgentTurnOutcome,
   type CompatEnvelope,
   type ConnectionProvider,
   type ConnectionSecretResolver,
+  type ProviderBinding,
+  type ProviderProjection,
 } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
@@ -42,6 +45,9 @@ type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   applying?: Promise<void>
   reconcilingSessionMetadata?: Promise<void>
   diagnosticsOwner?: ProcessOwnerHandle
+  /** When this runtime's earliest placeholder must be replaced; absent when it holds none. */
+  renewAt?: number
+  renewFailures?: number
 }
 
 export type EmbeddedWorkspaceRuntimeConfigMode = "skip" | "sync"
@@ -235,10 +241,31 @@ function options(
 }
 
 async function apply(runtime: EmbeddedRuntime) {
-  await runtime.host.apply(await createClaxedoAppliedRuntimeConfig({
+  const appliedAt = Date.now()
+  const snapshot = await createClaxedoAppliedRuntimeConfig({
     workspaceDir: runtime.workspace.directory,
     workspaceId: runtime.workspace.id,
-  }))
+  })
+  await runtime.host.apply(snapshot)
+  runtime.renewAt = renewalDueAt(snapshot.auth, appliedAt)
+  runtime.renewFailures = 0
+}
+
+/**
+ * When this snapshot's earliest placeholder has to be replaced: half of its own
+ * lifetime before it expires, so a turn that starts just before renewal still
+ * finishes on a valid one.
+ *
+ * Read from `expiresAt` rather than from a fixed interval because the lifetime
+ * belongs to the authority that minted the placeholder — a shorter one there
+ * used to expire silently between two ticks of a timer sized for the old one.
+ * A snapshot carrying no bound row never needs renewing.
+ */
+function renewalDueAt(auth: Record<string, ProviderProjection>, appliedAt: number): number | undefined {
+  const due = Object.values(auth)
+    .filter((row): row is ProviderBinding => !isProviderUnavailable(row))
+    .map((row) => row.expiresAt - Math.max(row.expiresAt - appliedAt, 0) / 2)
+  return due.length ? Math.min(...due) : undefined
 }
 
 function configure(runtime: EmbeddedRuntime) {
@@ -406,13 +433,51 @@ export async function syncEmbeddedWorkspaceRuntimes() {
   await Promise.allSettled([...hosts.values()].map((runtime) => configure(runtime)))
 }
 
+/** How often the renewal check runs; what it renews is decided from each placeholder's expiry. */
+export const RENEWAL_CHECK_INTERVAL_MS = 30_000
+const RENEWAL_RETRY_BASE_MS = 5_000
+const RENEWAL_RETRY_CEILING_MS = 5 * 60_000
+
 /**
- * Re-push every live runtime's config on an interval. The snapshot carries
- * broker placeholders that expire, so the push is what keeps the next turn's
- * spawn on a valid one. Returns the stop.
+ * Re-push the config of every runtime whose placeholder is due, and of every
+ * runtime at all when the process has just come back from a sleep.
+ *
+ * A suspended laptop resumes with placeholders older than any tick the timer
+ * saw, and the elapsed wall clock is the only evidence the process gets that
+ * it was gone.
+ *
+ * A failure is retried with backoff rather than settled and dropped: an
+ * unrenewed placeholder expires inside the harness, and the turn that then
+ * fails authentication carries nothing naming the renewal that did not happen.
  */
-export function startEmbeddedWorkspaceRuntimeConfigRenewal(intervalMs: number) {
-  const timer = setInterval(() => { void syncEmbeddedWorkspaceRuntimes() }, intervalMs)
+export async function renewEmbeddedWorkspaceRuntimeConfigs(input: { at: number; all?: boolean }) {
+  for (const runtime of hosts.values()) {
+    if (!input.all && (runtime.renewAt === undefined || runtime.renewAt > input.at)) continue
+    try {
+      await configure(runtime)
+    } catch (error) {
+      const failures = (runtime.renewFailures ?? 0) + 1
+      runtime.renewFailures = failures
+      runtime.renewAt = input.at
+        + Math.min(RENEWAL_RETRY_BASE_MS * 2 ** (failures - 1), RENEWAL_RETRY_CEILING_MS)
+      console.warn(
+        `[claxedo] renewing workspace ${runtime.workspace.id} credentials failed (attempt ${failures})`,
+        error,
+      )
+    }
+  }
+}
+
+/** Drive {@link renewEmbeddedWorkspaceRuntimeConfigs} off a timer. Returns the stop. */
+export function startEmbeddedWorkspaceRuntimeConfigRenewal(options: { now?: () => number } = {}) {
+  const now = options.now ?? Date.now
+  let lastCheck = now()
+  const timer = setInterval(() => {
+    const at = now()
+    const slept = at - lastCheck > RENEWAL_CHECK_INTERVAL_MS * 2
+    lastCheck = at
+    void renewEmbeddedWorkspaceRuntimeConfigs({ at, all: slept })
+  }, RENEWAL_CHECK_INTERVAL_MS)
   timer.unref()
   return () => clearInterval(timer)
 }

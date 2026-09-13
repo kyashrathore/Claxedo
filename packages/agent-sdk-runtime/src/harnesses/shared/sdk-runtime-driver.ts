@@ -47,6 +47,8 @@ export type SdkRuntimeAdapterOptions = AgentHarnessAdapterProcessOptions & {
   createStore?: (storeRoot?: string) => SdkRuntimeStore
   eventHub?: RuntimeEventHub
   transcriptRegistrar?: SdkRuntimeTranscriptRegistrar
+  /** Handed to the driver as `SdkRuntimeDriverHost.renewProjections`. */
+  renewProjections?: () => Promise<void>
 }
 
 export type PendingPermission = {
@@ -81,6 +83,13 @@ export type SdkRuntimeAuth = {
 
 export type SdkRuntimeDriverHost = {
   lifecycle: () => SessionTurnLifecycle<ActiveTurn>
+  /**
+   * Ask the authority that minted this runtime's projections for new ones and
+   * push them back through `applyConfig`. Absent in a composition whose config
+   * only ever arrives as a push it cannot request, where an expired
+   * placeholder is a refused launch rather than a renewal.
+   */
+  renewProjections?: () => Promise<void>
   pendingPermissions: Map<string, PendingPermission>
   pendingQuestions: Map<string, PendingQuestion>
   processObserver?: AgentProcessObserver

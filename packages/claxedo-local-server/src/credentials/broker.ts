@@ -37,8 +37,6 @@ import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { hasProviderDestination, providerDestination, type ProviderDestination } from "./destinations"
 
 export const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
-/** Half the token lifetime: a turn started just before renewal still finishes on a valid placeholder. */
-export const BROKER_RENEWAL_INTERVAL_MS = BROKER_TOKEN_TTL_MS / 2
 
 /** The window a brokered request re-marks the row it spent, at most once within. */
 const USE_MARK_INTERVAL_MS = 60 * 1000

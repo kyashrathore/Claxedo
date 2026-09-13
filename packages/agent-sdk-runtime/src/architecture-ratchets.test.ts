@@ -18,11 +18,12 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // `harnesses/codex/plugin-launch.ts` and `turn/steer` to
       // `harnesses/codex/protocol.ts`; `harnesses/shared/sdk-runtime-adapter.ts`
       // delegates steering to `harnesses/shared/turn-steering.ts` and keeps only
-      // the entrypoint.
+      // the entrypoint; its one growth since is the renewal hook the host hands
+      // the driver, which has no other route from the composition to the driver.
       "runtime.ts": 819,
       "harnesses/acp/index.ts": 844,
       "harnesses/codex/driver.ts": 632,
-      "harnesses/shared/sdk-runtime-adapter.ts": 880,
+      "harnesses/shared/sdk-runtime-adapter.ts": 881,
       "harnesses/pi/index.ts": 12,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {
