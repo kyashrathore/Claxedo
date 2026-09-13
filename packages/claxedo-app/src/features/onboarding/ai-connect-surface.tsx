@@ -81,6 +81,27 @@ const cloudHarnessOptions: readonly {
   },
 ]
 
+/**
+ * The three ways a harness reaches a cloud sandbox, as rows.
+ *
+ * Shown both where the user is choosing up front and where a scan of this
+ * machine came back with nothing to send — the same list, because it is the
+ * same question and the second is the first arrived at the long way round.
+ */
+const CloudHarnessChoices: Component<{ onChoose: (view: AIConnectView) => void }> = (props) => (
+  <For each={cloudHarnessOptions}>
+    {(option) => (
+      <button type="button" class="setup-row" onClick={() => props.onChoose(option.view)}>
+        <span class="setup-row-copy">
+          <span class="text-13-medium text-text-strong">{option.label}</span>
+          <span class="setup-row-consequence text-12-regular">{option.consequence}</span>
+        </span>
+        <Icon name="chevron-right" size="small" class="setup-row-chevron" />
+      </button>
+    )}
+  </For>
+)
+
 export type AIConnectSurfaceProps = {
   localDiscovery: boolean
   serverUrl?: string
@@ -273,21 +294,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
           }
         >
           <div class="setup-rows">
-            <For each={cloudHarnessOptions}>
-              {(option) => (
-                <button
-                  type="button"
-                  class="setup-row"
-                  onClick={() => props.onViewChange(option.view)}
-                >
-                  <span class="setup-row-copy">
-                    <span class="text-13-medium text-text-strong">{option.label}</span>
-                    <span class="setup-row-consequence text-12-regular">{option.consequence}</span>
-                  </span>
-                  <Icon name="chevron-right" size="small" class="setup-row-chevron" />
-                </button>
-              )}
-            </For>
+            <CloudHarnessChoices onChoose={props.onViewChange} />
             <button type="button" class="setup-row" onClick={() => props.onViewChange({ kind: "providers" })}>
               <span class="setup-row-copy">
                 <span class="text-13-medium text-text-strong">Something else</span>
@@ -435,11 +442,22 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
             <Show
               when={current().items.length > 0}
               fallback={
-                <div class="setup-block">
-                  <p class="text-13-regular text-text-weak">No supported logins found on this machine.</p>
-                  <Button class="self-start" variant="secondary" onClick={() => props.onViewChange({ kind: "providers" })}>
-                    Choose a provider instead
-                  </Button>
+                /*
+                  A sandbox needs a credential of its own, and the logins this
+                  computer holds are not copyable — a Claude Code token is
+                  rotated out from under any copy within hours, and a Codex one
+                  belongs to a file its CLI rewrites. So the honest answer to an
+                  empty scan is not "nothing found" with a dead end, it is the
+                  three ways each harness DOES reach a sandbox.
+                */
+                <div class="setup-block" data-component="cloud-connect-instead">
+                  <p class="text-13-regular text-text-weak">
+                    Nothing on this computer can be sent to a sandbox. The logins your agents use here
+                    belong to their own CLIs. Give each harness a credential of its own instead:
+                  </p>
+                  <div class="setup-rows">
+                    <CloudHarnessChoices onChoose={props.onViewChange} />
+                  </div>
                 </div>
               }
             >

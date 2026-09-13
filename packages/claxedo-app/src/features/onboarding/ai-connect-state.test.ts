@@ -16,13 +16,13 @@ const claudeBindings = [
     providerId: "claude-acp",
     kind: "oauth_token",
     label: "Claude Code login · ACP adapter",
-    origin: "macOS Keychain or ~/.claude/.credentials.json",
+    origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
   },
   {
     providerId: "claude-sdk",
     kind: "oauth_token",
     label: "Claude Code login · agent SDK",
-    origin: "macOS Keychain or ~/.claude/.credentials.json",
+    origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
   },
 ]
 
@@ -79,7 +79,7 @@ describe("AI connect state", () => {
     const preview = aiConnectTransition(discovering, {
       type: "discovery-succeeded",
       discoveryId: "discovery-1",
-      items: [{ providerId: "anthropic", kind: "oauth_token", label: "Claude subscription", origin: "macOS Keychain" }],
+      items: [{ providerId: "anthropic", kind: "oauth_token", label: "Claude subscription", origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN" }],
     })
 
     expect(preview).toMatchObject({ phase: "preview", discoveryId: "discovery-1" })
@@ -150,7 +150,7 @@ describe("AI connect state", () => {
 
   test("two Codex accounts stay two rows — different accounts are different credentials", () => {
     const rows = groupDiscoveryItems([
-      { providerId: "codex-app-server", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…a", origin: "~/.codex/auth.json" },
+      { providerId: "codex-app-server", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…a", origin: "Synced from OPENAI_API_KEY" },
       { providerId: "codex-app-server", kind: "oauth_token", label: "Synced from local Codex auth", accountId: "account…b", origin: "~/.codex/accounts/b.auth.json" },
     ])
 

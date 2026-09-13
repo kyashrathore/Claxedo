@@ -26,6 +26,8 @@ export type ClaxedoCredentialRequestInput = {
   action?: "discover" | "save-discovered" | "verify" | "scope" | "reconnect" | "effective" | "activate" | "machine-logins"
   /** Narrows a machine-login read to one harness. */
   harness?: string
+  /** Asks the harness again rather than reusing the answer it last gave. */
+  fresh?: boolean
 }
 
 export async function claxedoCredentialRequest(
@@ -50,8 +52,11 @@ function credentialRoute(input?: ClaxedoCredentialRequestInput) {
     return `/api/claxedo/credentials/${encodeURIComponent(input.credentialId)}/${input.action}`
   }
   if (input?.action === "machine-logins") {
-    const harness = input.harness === undefined ? "" : `?harness=${encodeURIComponent(input.harness)}`
-    return `/api/claxedo/credentials/machine-logins${harness}`
+    const query = new URLSearchParams()
+    if (input.harness !== undefined) query.set("harness", input.harness)
+    if (input.fresh === true) query.set("fresh", "1")
+    const search = query.size > 0 ? `?${query.toString()}` : ""
+    return `/api/claxedo/credentials/machine-logins${search}`
   }
   if (input?.action === "discover" || input?.action === "save-discovered" || input?.action === "effective" || input?.action === "activate") {
     return `/api/claxedo/credentials/${input.action}`

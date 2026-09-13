@@ -23,6 +23,8 @@ export type AgentAccount = {
   selected: boolean
   /** This computer's own login for the harness, which is never a stored row. */
   machine?: boolean
+  /** Listed, and not a choice: the harness it belongs to is not installed. */
+  disabled?: boolean
 }
 
 /**
@@ -172,6 +174,7 @@ export const AgentHarnessRow: Component<{
                 <RadioListItem
                   class="group py-1"
                   value={account.key}
+                  disabled={account.disabled === true}
                   invalid={account.refused !== undefined}
                   data-component="agent-account"
                   data-account={account.key}

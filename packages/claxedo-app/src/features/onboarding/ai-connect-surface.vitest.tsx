@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
+import { fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { describe, expect, test, vi } from "vitest"
 import { AIConnectSurface, type AIConnectView } from "./ai-connect-surface"
@@ -124,7 +124,7 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([Response.json({
       discovery_id: "discovery-1",
-      items: [{ provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } }],
+      items: [{ provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "Synced from OPENAI_API_KEY", probe: { state: "working" } }],
     })])
     render(() => <Harness destination="cloud" request={stub.request} />)
 
@@ -258,8 +258,8 @@ describe("AIConnectSurface", () => {
       Response.json({
         discovery_id: "discovery-1",
         items: [
-          { provider_id: "claude-acp", kind: "oauth_token", label: "Claude Code login · ACP adapter", origin: "macOS Keychain", probe: { state: "working" } },
-          { provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "macOS Keychain", probe: { state: "working" } },
+          { provider_id: "claude-acp", kind: "oauth_token", label: "Claude Code login · ACP adapter", origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN", probe: { state: "working" } },
+          { provider_id: "claude-sdk", kind: "oauth_token", label: "Claude Code login · agent SDK", origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN", probe: { state: "working" } },
         ],
       }),
       Response.json({ saved: [
@@ -300,7 +300,7 @@ describe("AIConnectSurface", () => {
     const stub = requests([Response.json({
       discovery_id: "discovery-1",
       items: [
-        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex A", account_id: "account-a", origin: "~/.codex/auth.json", probe: { state: "working" } },
+        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex A", account_id: "account-a", origin: "Synced from OPENAI_API_KEY", probe: { state: "working" } },
         { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex B", account_id: "account-b", origin: "~/.codex/accounts/b.auth.json", probe: { state: "working" } },
       ],
     })])
@@ -370,7 +370,7 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([Response.json({
       discovery_id: "discovery-1",
-      items: [{ provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "broken", reason: "The provider rejected this credential." } }],
+      items: [{ provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "Synced from OPENAI_API_KEY", probe: { state: "broken", reason: "The provider rejected this credential." } }],
     })])
     const submits: Array<{ count: () => number }> = []
     render(() => <Harness destination="cloud" request={stub.request} registerSubmit={(submit) => submits.push(submit)} />)
@@ -386,7 +386,7 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([
       Response.json({ discovery_id: "discovery-1", items: [
-        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
+        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "Synced from OPENAI_API_KEY", probe: { state: "working" } },
       ] }),
       Response.json({ saved: [{ credential_id: "cred-codex", provider_id: "codex-app-server" }] }),
       Response.json({ result: "ok" }),
@@ -414,7 +414,7 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([
       Response.json({ discovery_id: "discovery-1", items: [
-        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
+        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "Synced from OPENAI_API_KEY", probe: { state: "working" } },
         { provider_id: "openai", kind: "api_key", label: "OpenAI", origin: "OpenCode auth", probe: { state: "working" } },
       ] }),
       Response.json({ saved: [
@@ -449,7 +449,7 @@ describe("AIConnectSurface", () => {
     stubPorts()
     const stub = requests([
       Response.json({ discovery_id: "discovery-1", items: [
-        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json", probe: { state: "working" } },
+        { provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "Synced from OPENAI_API_KEY", probe: { state: "working" } },
         { provider_id: "openai", kind: "api_key", label: "OpenAI", origin: "OpenCode auth", probe: { state: "working" } },
       ] }),
       Response.json({ saved: [
@@ -470,16 +470,25 @@ describe("AIConnectSurface", () => {
     expect(screen.getByText(/rejected this credential/i)).toBeInTheDocument()
   })
 
-  test("a scan that finds nothing offers the provider catalog instead of a dead end", async () => {
+  test("a scan with nothing to send offers each harness its own way in, not a dead end", async () => {
+    // What the collector now returns on a machine whose only logins are its
+    // CLIs': those are not copyable, so the cloud step has to ask for a
+    // credential of the harness's own rather than report an absence.
     stubPorts()
     const stub = requests([Response.json({ discovery_id: "discovery-1", items: [] })])
     render(() => <Harness destination="cloud" request={stub.request} />)
 
     fireEvent.click(screen.getByText("Send a login from this computer"))
 
-    expect(await screen.findByText(/No supported logins found/i)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Choose a provider instead" }))
-    expect(screen.getByRole("button", { name: "Anthropic" })).toBeInTheDocument()
+    expect(await screen.findByText(/belong to their own CLIs/i)).toBeInTheDocument()
+    const offered = document.querySelector('[data-component="cloud-connect-instead"]')!
+    expect([...offered.querySelectorAll(".setup-row-copy .text-13-medium")].map((node) => node.textContent))
+      .toEqual(["Codex", "Claude", "Cursor"])
+
+    // And each row opens the connect card for that harness's own auth id.
+    fireEvent.click(within(offered as HTMLElement).getByText("Cursor"))
+
+    expect(screen.getByTestId("connect-form").getAttribute("data-provider")).toBe("cursor-sdk")
   })
 })
 

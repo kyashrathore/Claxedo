@@ -46,12 +46,15 @@ export async function discoverAIConnections(input: {
 export async function loadMachineLogins(input: {
   serverUrl?: string
   harness?: string
+  /** Ask the harness again rather than reusing the answer it last gave. */
+  fresh?: boolean
   request?: AIConnectRequest
 } = {}) {
   const res = await (input.request ?? claxedoCredentialRequest)({
     serverUrl: input.serverUrl,
     action: "machine-logins",
     ...(input.harness === undefined ? {} : { harness: input.harness }),
+    ...(input.fresh === true ? { fresh: true } : {}),
   }, { accept: [501] })
   if (res.status === 501) return []
   const rows = readArray(await res.json(), "machine_logins")

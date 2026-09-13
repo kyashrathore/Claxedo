@@ -646,16 +646,50 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(accountDetail("anthropic", "machine")).toBe("settings.providers.agents.machinePlan:max · Acme")
   })
 
-  test("a harness that is not installed, or signed out of, lists no machine row at all", async () => {
+  test("a signed-out harness still offers its own login, because choosing it stores nothing", async () => {
+    // A stored account holds the mark, so the machine row is a choice to make
+    // rather than the one already made.
+    state.storedCredentials = [
+      { id: "cred_codex", provider_id: "codex-app-server", kind: "oauth_token", label: "work@acme.com", account_id: "acc_1", is_active: true },
+    ]
     state.machineLogins = [
-      { harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "absent" },
       { harness: "codex", providerIds: ["codex-app-server", "openai"], state: "signed_out" },
     ]
     mount()
-    await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
-    expect(accountIds("anthropic")).toEqual([])
-    expect(accountIds("openai")).toEqual([])
-    expect(agentAction("anthropic")).toBe("agent-connect")
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "machine"]))
+    const radio = accountRow("openai", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!
+    expect(radio.disabled).toBe(false)
+    expect(accountRow("openai", "machine").textContent).toContain("settings.providers.agents.machineLogin")
+    expect(accountDetail("openai", "machine")).toBe("settings.providers.agents.machineSignedOut:codex login")
+
+    radio.click()
+
+    await waitFor(() => expect(state.machineActivated).toEqual([["codex-app-server", "openai"]]))
+  })
+
+  test("a harness that is not installed is listed and is not a choice", async () => {
+    state.machineLogins = [
+      { harness: "claude", providerIds: ["claude-acp", "claude-sdk"], state: "absent" },
+    ]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["machine"]))
+    expect(accountRow("anthropic", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
+      .toBe(true)
+    expect(accountDetail("anthropic", "machine")).toBe("settings.providers.agents.machineNotInstalled")
+  })
+
+  test("a harness that could not be asked says so rather than reading as signed out", async () => {
+    state.machineLogins = [{
+      harness: "cursor",
+      providerIds: ["cursor-acp", "cursor-sdk"],
+      state: "unknown",
+      detail: "Cursor did not answer with a login status.",
+    }]
+    mount()
+    await waitFor(() => expect(accountIds("cursor")).toEqual(["machine"]))
+    expect(accountRow("cursor", "machine").querySelector<HTMLInputElement>('input[type="radio"]')!.disabled)
+      .toBe(false)
+    expect(accountDetail("cursor", "machine")).toBe("Cursor did not answer with a login status.")
   })
 
   test("Check on this computer's login asks that harness again, and nothing else", async () => {
@@ -677,7 +711,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
     await waitFor(() => expect(accountDetail("openai", "machine"))
       .toBe("settings.providers.live.window:settings.providers.window.session|5"))
-    expect(state.credentialCalls).toEqual(["GET /api/claxedo/credentials/machine-logins?harness=codex"])
+    expect(state.credentialCalls).toEqual(["GET /api/claxedo/credentials/machine-logins?harness=codex&fresh=1"])
   })
 
   test("the accounts a harness holds are one radio list, the login in use checked", async () => {

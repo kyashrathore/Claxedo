@@ -29,7 +29,7 @@ describe("AI connect API", () => {
         kind: "oauth_token",
         label: "Claude subscription",
         account_id: "ac…12",
-        origin: "macOS Keychain",
+        origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
         fresh_until: 123,
         secret: "must-not-retain",
       }],
@@ -42,7 +42,7 @@ describe("AI connect API", () => {
         kind: "oauth_token",
         label: "Claude subscription",
         accountId: "ac…12",
-        origin: "macOS Keychain",
+        origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
         freshUntil: 123,
       }],
     })

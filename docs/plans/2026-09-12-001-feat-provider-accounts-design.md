@@ -197,9 +197,12 @@ Multiple rows, one winner, chosen by an invisible sort order.
    provider can still run on**, in the losing write's own transaction; only an
    `available` row qualifies, the same test the save-time yield applies. Two
    writes lose it: deleting the row, and a verdict that ends it —
-   `auth_failed`, `expired` or `no_billing`, whether the operator's Check or
-   the broker's `reportFailure` reached it. A rate cap is not one of them: the
-   same login works again once the window resets. With no heir the refused row
+   `auth_failed`, `expired` or `no_billing`. The operator's own Check acts on
+   its first answer, because it is a question they chose to ask. The broker's
+   `reportFailure` does not: one vendor 401 mid-turn is as likely a hiccup as a
+   dead login, so it takes TWO on the same revision, inside five minutes, with
+   no newer word from the provider in between. A rate cap is never one of them:
+   the same login works again once the window resets. With no heir the refused row
    KEEPS the mark, because falling to the machine login is only ever an
    explicit choice (rule 9); only a delete can leave a provider unmarked on its
    own, and then a new sandbox falls to the team binding, else the implicit
@@ -230,10 +233,16 @@ Multiple rows, one winner, chosen by an invisible sort order.
    replaced secret carried — left in place that reads a fresh API key as
    expired. Rule 6's yield is untouched and still governs the Add path.
 
-9. **A harness's own login is asked for, never copied.** Claxedo does not open
-   the store a CLI keeps its login in — not the `Claude Code-credentials`
+9. **A harness's own login is asked for, never copied.** Claxedo reads nothing
+   out of the store a CLI keeps its login in — not the `Claude Code-credentials`
    Keychain item, not `~/.claude/.credentials.json`, not `~/.codex/auth.json`.
-   The server asks each harness instead: `claude auth status` prints
+   There is exactly ONE write to any of them, and it is a write-back rather than
+   a read: `credentials/operations/codex-auth-file.ts` puts a token Claxedo has
+   just renewed back into `~/.codex/auth.json` for a row imported before this
+   rule, so renewing such a row does not leave the user's own `codex` CLI
+   holding a superseded refresh token. `keychain.guard.test.ts` pins that module
+   as the only one naming the file, and pins it handing the caller back nothing
+   it read there. The server asks each harness instead: `claude auth status` prints
    `{loggedIn, email, orgName, subscriptionType}`, the Codex app-server answers
    `account/read` and `account/rateLimits/read` (with `codex login status` as
    the presence fallback when the app-server cannot be started), and
@@ -246,9 +255,17 @@ Multiple rows, one winner, chosen by an invisible sort order.
    `POST /credentials/activate {"machine_login": {"provider_ids": [...]}}`,
    `clearActiveCredentials` in the registry — so nothing is stored for it and
    the implicit tier stays the absence of a row rather than a row of its own.
-   Rows imported by the sync that preceded this are ordinary stored accounts;
-   the one thing still written to `~/.codex/auth.json` is the refresh
-   write-back that keeps such a row from stranding the user's own Codex CLI.
+   Both operations are composed only where the harnesses actually live
+   (`localControlPlaneCredentials`, and on the self-hosted binary only while the
+   embedded issuer is off, since a signed box has several accounts sharing one
+   machine); every other host leaves them off the port and the routes answer
+   501. The read is loopback-only on top of that.
+
+   Rows the old scan wrote — `desktop_discovery` with no `account_id`, which was
+   only ever a copied Claude Code login — are deleted once on startup
+   (`dropCopiedHarnessLogins`), secret included. Nothing is lost: the login is
+   still in the harness. A discovered row the provider DID name is a second
+   account the user chose to import and is left alone.
 
 ### Claude accounts
 
@@ -304,15 +321,19 @@ miniature — it read as a second account — so there is none.
   tooltip and in a screen-reader-only description. Nothing else: no red text, no
   sentence. Where it is the account in use, its action is the header's
   Reconnect; where it is not, it is an account to forget like any other.
-- **"This computer's login" is the last entry** whenever the harness reports one.
-  It is last by construction: every stored account is a choice the user made,
-  and this login is the standing fallback underneath all of them. It is named by
-  the address the harness gave, falling back to "This computer's login" where
-  the harness names none. Its second line is the quota windows the harness
-  reports, else the plan and organization ("Max plan · Yash"), else nothing. Its
-  Check re-runs that one harness's self-report. Choosing it withdraws the mark
-  from the harness's providers and stores nothing (rule 9). A harness that is
-  not installed, or signed out of, has no entry at all.
+- **"This computer's login" is the last entry**, in every state the harness can
+  be in — choosing it is the withdrawal of a stored account, not a login, so a
+  user whose CLI is signed out still needs to be able to say "run on whatever
+  that holds" and then go and sign in. It is last by construction: every stored
+  account is a choice the user made, and this login is the standing fallback
+  underneath all of them. It is named by the address the harness gave, falling
+  back to "This computer's login". Its second line says which state it is in:
+  the quota windows the harness reports, else the plan and organization ("Max
+  plan · Yash"), else "Not signed in — run `codex login`", else why the harness
+  could not be asked, else "Not installed". The one state that is listed and not
+  selectable is a CLI that is not there, which no choice of ours makes runnable.
+  Its Check re-runs that one harness's self-report, bypassing the short cache
+  the automatic scan reads through.
 - **Saving runs no second check**: `save-discovered` writes the verdict the
   discovery probe already reached onto the row it saved, so a freshly saved
   account reads as checked without spending another request against the user's

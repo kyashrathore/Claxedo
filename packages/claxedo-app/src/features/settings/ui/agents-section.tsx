@@ -122,9 +122,9 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     )
   }
 
-  /** This computer's own login for the harness, when the harness reports one. */
+  /** What this harness said about its own login, in whichever of the four states. */
   const machineLogin = (check: LocalHarnessCheck): MachineLogin | undefined =>
-    machineLogins().find((login) => login.harness === check.id && login.state === "signed_in")
+    machineLogins().find((login) => login.harness === check.id)
 
   /**
    * The provider's last word on one stored account: a check made here first,
@@ -200,7 +200,12 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
    * windows where it has them, and otherwise who it is signed in as — Claude
    * Code has no headless usage read, so its row never carries a window.
    */
-  const machineWords = (login: MachineLogin) => {
+  const machineWords = (login: MachineLogin, check: LocalHarnessCheck) => {
+    if (login.state === "absent") return language.t("settings.providers.agents.machineNotInstalled")
+    if (login.state === "signed_out") {
+      return language.t("settings.providers.agents.machineSignedOut", { command: check.signIn })
+    }
+    if (login.state === "unknown") return login.detail ?? language.t("settings.providers.agents.machineUnknown")
     const windows = (login.usage ?? []).map((window) => {
       const name = WINDOW_KEY[window.window]
       return language.t("settings.providers.live.window", {
@@ -242,16 +247,25 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     })
     const machine = machineLogin(check)
     if (!machine) return entries
-    const detail = machineWords(machine)
+    const detail = machineWords(machine, check)
+    // Listed in every state, because choosing it is the withdrawal of a stored
+    // account rather than a login: a user whose harness is signed out still
+    // needs to be able to say "run on whatever that CLI holds" and then go and
+    // sign in to it. The one state that cannot be chosen is a CLI that is not
+    // there, which no choice of ours can make runnable.
+    //
     // Last by construction: every stored account is a choice the user made, and
     // this login is the standing fallback underneath all of them.
     return [...entries, {
       key: MACHINE,
       ids: [],
-      label: machine.email ?? language.t("settings.providers.agents.machineLogin"),
+      label: machine.state === "signed_in" && machine.email
+        ? machine.email
+        : language.t("settings.providers.agents.machineLogin"),
       ...(detail === undefined ? {} : { detail }),
       selected: selected === MACHINE,
       machine: true,
+      ...(machine.state === "absent" ? { disabled: true } : {}),
     }]
   }
 
@@ -324,7 +338,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     if (account.machine) {
       setChecking(account.key)
       try {
-        const reread = await loadMachineLogins({ serverUrl: globalSDK.url, harness: harness.id })
+        const reread = await loadMachineLogins({ serverUrl: globalSDK.url, harness: harness.id, fresh: true })
         setMachineLogins((prev) => [...prev.filter((login) => login.harness !== harness.id), ...reread])
       } catch (err: unknown) {
         fail(err)
