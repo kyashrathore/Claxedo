@@ -378,7 +378,7 @@ test.describe("core workspace lifecycle @core", () => {
 
     // The folder source opens `DialogSelectDirectory`, titled by `command.project.open`,
     // which the cloud string override renders as "New Project".
-    await form.getByRole("button", { name: "Select project" }).click()
+    await form.getByRole("button", { name: "Choose folder" }).click()
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("New Project")
 
     // Not `[data-slot="list-search-input"]`: `TextField` overrides any caller-supplied

@@ -1,6 +1,5 @@
 import { createEffect, createMemo, createSignal, Show, type JSX } from "solid-js"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
-import { Button } from "@opencode-ai/ui/button"
 import { useNavigate, useSearchParams } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
@@ -43,7 +42,11 @@ import { sessionInventoryQueryOptions } from "@/features/session/data/sync/queri
 
 export function OnboardingEmptyState(props: {
   projectDirectory?: string
-  fallback?: JSX.Element | false
+  /**
+   * What the canvas shows while setup has nothing to ask. `false` is the
+   * overlay host, which sits over a surface that is already there.
+   */
+  fallback: JSX.Element | false
   overlay?: boolean
   onDiagnostics?: () => void
   onNewProject?: () => void
@@ -264,23 +267,7 @@ export function OnboardingEmptyState(props: {
       data-usable-credential={String(state().hasUsableCredential)}
       data-dismissals={dismissals.ids().join(",")}
     >
-      <Show
-        when={visible()}
-        fallback={props.fallback === false ? undefined : props.fallback ?? (
-          <div class="flex h-full flex-col items-center justify-center gap-4 text-text-weak">
-            <h1 class="sr-only">No projects yet</h1>
-            <span class="text-14-regular">No projects yet. Create one to get started.</span>
-            <Button icon="plus-small" onClick={() => props.onNewProject?.()}>New Project</Button>
-            <Show when={props.onDiagnostics}>
-              {(onDiagnostics) => (
-                <Button data-testid="empty-diagnostics-trigger" variant="ghost" onClick={onDiagnostics()}>
-                  Diagnostics
-                </Button>
-              )}
-            </Show>
-          </div>
-        )}
-      >
+      <Show when={visible()} fallback={props.fallback === false ? undefined : props.fallback}>
         <div
           class="h-full min-h-0"
           classList={{ "absolute inset-0 z-20 bg-background-base": props.overlay }}

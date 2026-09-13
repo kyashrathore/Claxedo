@@ -938,7 +938,7 @@ test.describe("core cloud project creation on a hosted control plane @core", () 
       await expect(form).toBeVisible({ timeout: 20_000 })
 
       // No folder, no source switch, no provider control: execution is not this form's question.
-      await expect(form.getByRole("button", { name: "Select project" })).toHaveCount(0)
+      await expect(form.getByRole("button", { name: "Choose folder" })).toHaveCount(0)
       await expect(form.locator('[data-slot="project-create-source"]')).toHaveCount(0)
       await expect(page.getByText("Sandbox Provider")).toHaveCount(0)
       const repoUrl = form.getByRole("textbox", { name: "Repository URL" })

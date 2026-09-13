@@ -381,7 +381,13 @@ export const appLocal: Policy = {
   // converts as you type — both under features/documents/editor, both reached
   // through the extension list the editor already mounted. No new package edge.
   // Measured 1046 / 58.
-  ceilings: { modules: 1046, packages: 58 },
+  // +2 modules (2026-09-13): the first-project canvas and its stylesheet,
+  // app/workbench/rail/first-project-canvas.{tsx,css}. The rail canvas is the
+  // screen this entry boots to before a project exists, and it now renders the
+  // create form inline instead of mounting the draft composer with an empty
+  // project, so both modules belong to the local product. No new package edge.
+  // Measured 1048 / 58.
+  ceilings: { modules: 1048, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
