@@ -112,9 +112,37 @@ describe("Agent Plugins cloud readiness gate", () => {
       runtimeAccessTokenSigner: signer,
       prepareRuntime: async () => ({ secrets: [] }),
     }
+    // The preceding preparation carried a secret, so `[]` is a withdrawal and
+    // not a first ensure: a wake that omitted it would leave the previous
+    // credential installed at the provider edge.
+    const warm = await hostedConnectionInfo(services, {
+      ...options,
+      prepareRuntime: async () => ({
+        secrets: [{ name: "CLAXEDO_MCP_A", value: "Bearer gateway-token", hosts: ["mcp-a.example"], header: "Authorization" }],
+      }),
+    }, auth, "ws_1", "https://control.test")
+    expect(warm).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
+
     const result = await hostedConnectionInfo(services, options, auth, "ws_1", "https://control.test")
     expect(result).toMatchObject({ connection: { runtimeAccessToken: "runtime-token" } })
-    expect(services.sandbox.sandboxManager!.ensure).toHaveBeenCalledWith("ws_1", expect.objectContaining({ secrets: [] }))
+    expect(services.sandbox.sandboxManager!.ensure).toHaveBeenLastCalledWith("ws_1", expect.objectContaining({ secrets: [] }))
+  })
+
+  test("a preparation that throws denies the wake and never reaches the driver", async () => {
+    const { services, signer } = subject([])
+
+    const result = await hostedConnectionInfo(services, {
+      relayUrl: "wss://relay.test",
+      runtimeAccessTokenSigner: signer,
+      prepareRuntime: async () => { throw new Error("gateway signing key unavailable") },
+    }, auth, "ws_1", "https://control.test")
+
+    expect(result).toMatchObject({
+      status: 409,
+      error: { code: "runtime_prepare_failed", message: "gateway signing key unavailable" },
+    })
+    expect(services.sandbox.sandboxManager!.ensure).not.toHaveBeenCalled()
+    expect(signer).not.toHaveBeenCalled()
   })
 
   test("a failed plugin apply denies handoff and never mints a runtime token", async () => {
@@ -203,6 +231,26 @@ describe("Agent Plugins user-hosted readiness gate", () => {
     expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: "ws_local" }, preparation)
     expect(result).toMatchObject({
       connection: { access: "user-hosted", backing: "local-worktree", runtimeAccessToken: "runtime-token" },
+    })
+  })
+
+  test("a preparation that throws denies the local session before any plugin apply", async () => {
+    const order: string[] = []
+    const { services, signer } = userHostedSubject(order)
+
+    const result = await userHostedConnectionInfo(services, {
+      defaultHomeRegion: "us-east",
+      relayUrl: "wss://relay.test",
+      runtimeAccessTokenSigner: signer,
+      prepareRuntime: async () => { throw new Error("gateway signing key unavailable") },
+      provisionRuntime: async () => { order.push("plugins") },
+    }, auth, "ws_local")
+
+    expect(order).toEqual([])
+    expect(signer).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      status: 409,
+      error: { code: "runtime_prepare_failed", message: "gateway signing key unavailable" },
     })
   })
 
