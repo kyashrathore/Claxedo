@@ -2,6 +2,7 @@ import { execFile, spawn } from "child_process"
 import { HARNESS_IDS, HARNESS_TABLE, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { jsonNumber, jsonRecord, jsonString, jsonText, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { clampPercent, codexWindowName, usageResetMs } from "./usage-windows"
 import type { CredentialUsageWindow } from "./operations/verify"
 
 const log = Log.create({ service: "credentials-machine-login" })
@@ -230,15 +231,11 @@ async function cursorMachineLogin(run: NonNullable<MachineLoginProbes["run"]>): 
   return report("cursor", { state: status.isAuthenticated === true ? "signed_in" : "signed_out" })
 }
 
-const CODEX_SESSION_WINDOW_MINUTES = 300
-const CODEX_WEEKLY_WINDOW_MINUTES = 10_080
-
 /**
  * `rateLimits.primary` / `secondary` as the Codex app-server spells them, which
  * is not how the ChatGPT HTTP usage read spells the same quota: camelCase keys,
- * `windowDurationMins` rather than `limit_window_seconds`. A window is
- * named by `windowDurationMins`, not by its slot: a plan that has only a weekly
- * limit delivers it in the primary slot. `resetsAt` is Unix seconds.
+ * `windowDurationMins` rather than `limit_window_seconds`, and a slot named
+ * `primary` rather than `primary_window`.
  */
 function appServerUsageWindows(input: unknown): CredentialUsageWindow[] {
   const limits = jsonRecord(jsonRecord(input)?.rateLimits)
@@ -247,16 +244,10 @@ function appServerUsageWindows(input: unknown): CredentialUsageWindow[] {
     const used = jsonNumber(window?.usedPercent)
     if (!window || used === undefined) return []
     const minutes = jsonNumber(window.windowDurationMins)
-    const name = minutes === CODEX_SESSION_WINDOW_MINUTES
-      ? "session"
-      : minutes === CODEX_WEEKLY_WINDOW_MINUTES
-        ? "weekly"
-        : slot
-    const resetsAt = jsonNumber(window.resetsAt)
     return [{
-      window: name,
-      usedPercent: Math.min(100, Math.max(0, Math.round(used))),
-      resetsAt: resetsAt === undefined ? null : resetsAt * 1000,
+      window: codexWindowName(`${slot}_window`, minutes === undefined ? undefined : minutes * 60),
+      usedPercent: clampPercent(used),
+      resetsAt: usageResetMs(jsonNumber(window.resetsAt)),
     }]
   })
 }

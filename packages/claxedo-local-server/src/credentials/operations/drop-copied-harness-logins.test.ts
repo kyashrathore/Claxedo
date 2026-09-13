@@ -77,7 +77,7 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
     // purpose, and a vendor binding is an engine's provider rather than a
     // harness's own login — neither is a token a CLI rotates behind us.
     const scannedKey = await scanned("claude-sdk", "api_key")
-    const vendorToken = await scanned("anthropic")
+    const vendorToken = await scanned("openrouter")
     const typed = await putCredential({
       provider_id: "anthropic",
       kind: "api_key",

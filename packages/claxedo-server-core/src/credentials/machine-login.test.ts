@@ -39,7 +39,8 @@ describe("readMachineLogins", () => {
 
     expect(claude).toEqual({
       harness: "claude",
-      providerIds: ["claude-acp", "claude-sdk"],
+      providerIds: ["claude-sdk", "claude-acp", "anthropic"],
+      serves: ["claude-sdk", "claude-acp"],
       state: "signed_in",
       email: "person@example.com",
       plan: "max",
@@ -153,11 +154,11 @@ describe("readMachineLogins", () => {
 
     expect(seen).toEqual(["cursor-agent status --format json"])
     expect(signedIn.state).toBe("signed_in")
-    expect(signedIn.providerIds).toEqual(["cursor-acp", "cursor-sdk"])
+    expect(signedIn.providerIds).toEqual(["cursor-sdk", "cursor-acp", "cursor"])
     expect(signedOut.state).toBe("signed_out")
   })
 
-  test("the Cursor login reports serving ACP alone, because the SDK takes a key of its own", async () => {
+  test("a login reports the bindings it drives only where that is narrower than the ones it resolves", async () => {
     const [cursor] = await readMachineLogins(["cursor"], {
       run: runner({ "cursor-agent": { found: true, ok: true, stdout: JSON.stringify({ isAuthenticated: true }) } }),
     })
@@ -169,8 +170,10 @@ describe("readMachineLogins", () => {
       codexAccount: () => Promise.reject(new Error("not asked")),
     })
 
+    // Cursor's SDK takes an explicit key, and neither CLI login drives the
+    // vendor binding its harness falls back to.
     expect(cursor.serves).toEqual(["cursor-acp"])
-    expect(claude.serves).toBeUndefined()
+    expect(claude.serves).toEqual(["claude-sdk", "claude-acp"])
     expect(codex.serves).toBeUndefined()
   })
 

@@ -1,3 +1,4 @@
+import { USAGE_WINDOW_NAMES } from "@claxedo/usage-contract"
 import { jsonNumber, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { CredentialVerificationError } from "../verification-error"
@@ -8,6 +9,7 @@ import {
   type RefreshedCredentialSecret,
 } from "./refresh"
 import { verifySandboxDriverCredential } from "./sandbox-verify"
+import { clampPercent, codexWindowName, usageResetMs, usageWindowName } from "@claxedo/server-core/credentials/usage-windows"
 import { credentialSecretMaterial, type CredentialSecretMaterial } from "@claxedo/server-core/credentials/secret-material"
 import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow } from "@claxedo/server-core/credentials/types"
 
@@ -255,52 +257,32 @@ function providerProbe(
   }
 }
 
-const CODEX_SESSION_WINDOW_SECONDS = 18_000
-const CODEX_WEEKLY_WINDOW_SECONDS = 604_800
-
-/**
- * `rate_limit.primary_window` / `secondary_window` from the ChatGPT usage read.
- * A window is named by its `limit_window_seconds`, not its slot: a free plan
- * gets only the weekly window, delivered in the primary slot.
- */
+/** `rate_limit.primary_window` / `secondary_window` from the ChatGPT usage read. */
 function codexUsageWindows(body: unknown): CredentialUsageWindow[] {
   const rateLimit = jsonRecord(jsonRecord(body)?.rate_limit)
   return (["primary_window", "secondary_window"] as const).flatMap((slot) => {
     const window = jsonRecord(rateLimit?.[slot])
     const used = jsonNumber(window?.used_percent)
     if (!window || used === undefined) return []
-    const seconds = jsonNumber(window.limit_window_seconds)
-    const name = seconds === CODEX_SESSION_WINDOW_SECONDS
-      ? "session"
-      : seconds === CODEX_WEEKLY_WINDOW_SECONDS
-        ? "weekly"
-        : slot
-    return [{ window: name, usedPercent: clampPercent(used), resetsAt: usageResetMs(window.reset_at) }]
+    return [{
+      window: codexWindowName(slot, jsonNumber(window.limit_window_seconds)),
+      usedPercent: clampPercent(used),
+      resetsAt: usageResetMs(window.reset_at),
+    }]
   })
 }
 
 /** `five_hour` / `seven_day` / `seven_day_opus` from Anthropic's OAuth usage read. */
 function anthropicUsageWindows(body: unknown): CredentialUsageWindow[] {
   const record = jsonRecord(body)
-  const slots = [["five_hour", "session"], ["seven_day", "weekly"], ["seven_day_opus", "weekly_opus"]] as const
-  return slots.flatMap(([key, name]) => {
-    const window = jsonRecord(record?.[key])
+  return Object.keys(USAGE_WINDOW_NAMES.claude).flatMap((slot) => {
+    const window = jsonRecord(record?.[slot])
     const used = jsonNumber(window?.utilization)
     if (!window || used === undefined) return []
-    return [{ window: name, usedPercent: clampPercent(used), resetsAt: usageResetMs(window.resets_at) }]
+    return [{
+      window: usageWindowName("claude", slot),
+      usedPercent: clampPercent(used),
+      resetsAt: usageResetMs(window.resets_at),
+    }]
   })
-}
-
-function clampPercent(value: number) {
-  return Math.min(100, Math.max(0, Math.round(value)))
-}
-
-/** ChatGPT sends reset times as Unix seconds, Anthropic as ISO strings. */
-function usageResetMs(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value < 1e12 ? value * 1000 : value
-  if (typeof value === "string") {
-    const parsed = Date.parse(value)
-    return Number.isFinite(parsed) ? parsed : null
-  }
-  return null
 }

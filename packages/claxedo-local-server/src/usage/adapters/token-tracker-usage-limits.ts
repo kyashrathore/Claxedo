@@ -24,6 +24,7 @@
 import os from "node:os"
 import { createMachineAgentUsageCache } from "@claxedo/server-core/credentials/machine-agent-usage"
 import { isHarnessId } from "@claxedo/agent-runtime-contract"
+import { clampPercent, usageResetMs, usageWindowName } from "@claxedo/server-core/credentials/usage-windows"
 import type { MachineAgentUsage } from "@claxedo/server-core/credentials/machine-agent-usage"
 import type { CredentialUsageWindow } from "@claxedo/server-core/credentials/types"
 import { num, record, text } from "../../platform/json"
@@ -55,45 +56,22 @@ const AGENT_LABEL: Record<string, string> = {
   codingPlan: "Ark Coding Plan",
 }
 
-/**
- * The slots Claxedo already has a name for, per agent.
- *
- * One table across agents would label half of them wrongly: `primary_window`
- * is a session for Codex, the whole billing cycle for Cursor and the Pro model
- * lane for Gemini. An agent, or a slot, that is not listed keeps the probe's
- * own field name, because inventing a tier name for it would rot on the next
- * vendor change without anything failing.
- */
-const WINDOW_NAME: Record<string, Record<string, string>> = {
-  claude: { five_hour: "session", seven_day: "weekly", seven_day_opus: "weekly_opus" },
-  codex: {
-    primary_window: "session",
-    secondary_window: "weekly",
-    credit_window: "credits",
-    spark_primary_window: "spark_session",
-    spark_secondary_window: "spark_weekly",
-  },
-  cursor: { primary_window: "plan", secondary_window: "auto", tertiary_window: "api" },
-}
-
-function usedPercent(window: Record<string, unknown>): number | undefined {
-  const value = num(window.utilization) ?? num(window.used_percent)
-  return value === undefined ? undefined : Math.max(0, Math.min(100, value))
-}
-
-function resetsAt(window: Record<string, unknown>): number | null {
-  const at = Date.parse(text(window.reset_at) ?? text(window.resets_at) ?? "")
-  return Number.isFinite(at) ? at : null
+/** An unnamed slot keeps the probe's own field, minus the suffix every one of them carries. */
+function slotName(agent: string, field: string) {
+  const named = usageWindowName(agent, field)
+  return named === field ? field.replace(/_window$/, "") : named
 }
 
 function windowAt(agent: string, field: string, value: unknown): CredentialUsageWindow | undefined {
   const window = record(value)
-  const percent = window === undefined ? undefined : usedPercent(window)
+  const percent = window === undefined ? undefined : num(window.utilization) ?? num(window.used_percent)
   if (window === undefined || percent === undefined) return undefined
+  // The probe labels some slots itself, and that label is the vendor's own word
+  // for a window Claxedo has no name for, so it wins over the fallback.
   return {
-    window: text(window.label) ?? WINDOW_NAME[agent]?.[field] ?? field.replace(/_window$/, ""),
-    usedPercent: percent,
-    resetsAt: resetsAt(window),
+    window: text(window.label) ?? slotName(agent, field),
+    usedPercent: clampPercent(percent),
+    resetsAt: usageResetMs(window.reset_at ?? window.resets_at),
   }
 }
 

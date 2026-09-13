@@ -1,14 +1,53 @@
 /**
- * The JSON round-trip for stored quota windows.
+ * Quota windows: the vocabulary a vendor's answer is read into, and the JSON
+ * round-trip the two tables that store them share.
  *
- * Two tables hold the verifier's `CredentialUsageWindow[]` as text — one per
- * stored account, one per machine login — and both read it back through here,
- * so text that no longer parses reads as "no usage" in one place rather than
- * throwing out of whichever read reached it first.
+ * Four readers ask a vendor how much of a plan is left — the HTTP verifier, the
+ * Codex app-server self-report, the machine-wide probe and Anthropic's OAuth
+ * usage read — and each spells the same three windows differently. Naming,
+ * clamping and reset parsing are here so a slot a vendor renames is renamed
+ * once; `@claxedo/usage-contract` owns the names themselves, because the app
+ * labels the same windows from the same table.
  */
 
+import { CODEX_WINDOW_NAME_BY_SECONDS, USAGE_WINDOW_NAMES } from "@claxedo/usage-contract"
 import { jsonNumber, jsonRecord, jsonString } from "@claxedo/server-core/platform/runtime/lib/json"
 import type { CredentialUsageWindow } from "./types"
+
+/** A surface draws this as a bar, so a fraction or an out-of-range figure cannot reach one. */
+export function clampPercent(value: number) {
+  return Math.min(100, Math.max(0, Math.round(value)))
+}
+
+/** ChatGPT sends reset times as Unix seconds, Anthropic as ISO strings. */
+export function usageResetMs(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value < 1e12 ? value * 1000 : value
+  if (typeof value === "string") {
+    const parsed = Date.parse(value)
+    return Number.isFinite(parsed) ? parsed : null
+  }
+  return null
+}
+
+/**
+ * Claxedo's name for a slot, or the vendor's own where there is none. Inventing
+ * a tier name for an unlisted slot would rot on the next vendor change without
+ * anything failing.
+ */
+export function usageWindowName(harness: string, slot: string) {
+  return USAGE_WINDOW_NAMES[harness]?.[slot] ?? slot
+}
+
+/**
+ * Codex names a window by how long it runs rather than by the slot it arrives
+ * in: a free plan gets only the weekly window, delivered in the primary slot.
+ * The HTTP read gives `limit_window_seconds` and the app-server gives
+ * `windowDurationMins`, so a caller converts to seconds before asking.
+ */
+export function codexWindowName(slot: string, seconds: number | undefined) {
+  return (seconds === undefined ? undefined : CODEX_WINDOW_NAME_BY_SECONDS[seconds])
+    ?? usageWindowName("codex", slot)
+}
 
 export function serializeUsageWindows(windows: readonly CredentialUsageWindow[]): string {
   return JSON.stringify(windows)

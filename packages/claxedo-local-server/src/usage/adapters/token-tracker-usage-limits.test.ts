@@ -50,9 +50,11 @@ describe("tokentracker usage limits mapping", () => {
       ["gemini", undefined, "Gemini", "Pro"],
       ["copilot", undefined, "Copilot", undefined],
     ])
+    // 60.4 arrives as 60: every surface draws this as a bar and prints it as a
+    // whole number, and the stored-account path rounds the same figure.
     expect(agents[0]?.windows).toEqual([
       { window: "session", usedPercent: 25, resetsAt: Date.parse("2026-09-13T15:00:00.000Z") },
-      { window: "weekly", usedPercent: 60.4, resetsAt: null },
+      { window: "weekly", usedPercent: 60, resetsAt: null },
       { window: "Opus", usedPercent: 12, resetsAt: Date.parse("2026-09-20T00:00:00.000Z") },
     ])
     // `primary_window` is a session for Codex and the whole plan for Cursor, so
