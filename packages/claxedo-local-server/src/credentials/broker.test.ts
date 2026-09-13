@@ -14,6 +14,7 @@ const { createTestBackend, setBackendOverride } = await import("@claxedo/server-
 const {
   deleteCredential,
   getCredential,
+  listCredentials,
   putCredential,
   setActiveCredentials,
   updateCredentialHealth,
@@ -348,7 +349,7 @@ describe("local binding authority", () => {
       .toEqual({ unavailable: true, reason: "auth_failed" })
   })
 
-  test("a deleted row falls back to the implicit tier, an expired one does not", async () => {
+  test("a provider with no account left falls back to the implicit tier, an expired one does not", async () => {
     const expiring = await activeRow("sk-ant-api03-expiring")
     const local = broker()
     updateCredentialHealth(expiring.id, "expired", Date.now())
@@ -356,7 +357,11 @@ describe("local binding authority", () => {
     expect((await local.projectAuth({ workspaceId }))["claude-sdk"])
       .toEqual({ unavailable: true, reason: "expired" })
 
-    await deleteCredential(expiring.id)
+    // Removing the marked row hands the mark to any account left, so the
+    // implicit tier is what the provider falls to only once none remain.
+    for (const row of listCredentials().filter((row) => row.provider_id === "claude-sdk")) {
+      await deleteCredential(row.id)
+    }
 
     expect(await local.projectAuth({ workspaceId })).not.toHaveProperty("claude-sdk")
   })
