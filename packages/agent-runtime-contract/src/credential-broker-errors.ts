@@ -72,8 +72,24 @@ export const CREDENTIAL_BROKER_ERRORS = {
 
 export type CredentialBrokerErrorCode = keyof typeof CREDENTIAL_BROKER_ERRORS
 
-/** The code a message carries, read from the JSON body a harness echoed. */
+/**
+ * The code a message carries.
+ *
+ * The JSON body a harness echoed first: one that retried names its earlier
+ * failure in its own prose, and the verdict belongs to the response it gave up
+ * on. The bare code in that prose is the fallback, for a harness that
+ * summarises the body rather than quoting it.
+ */
 export function credentialBrokerErrorCode(message: string): CredentialBrokerErrorCode | undefined {
+  const inBody = codeFromBody(message)
+  if (inBody) return inBody
+  const inProse = codeInProse.exec(message)?.[1]
+  return inProse && isCredentialBrokerErrorCode(inProse) ? inProse : undefined
+}
+
+const codeInProse = new RegExp(`\\b(${Object.keys(CREDENTIAL_BROKER_ERRORS).join("|")})\\b`)
+
+function codeFromBody(message: string): CredentialBrokerErrorCode | undefined {
   const start = message.indexOf("{")
   const end = message.lastIndexOf("}")
   if (start === -1 || end <= start) return undefined

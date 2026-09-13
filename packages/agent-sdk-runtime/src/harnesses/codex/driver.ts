@@ -40,7 +40,7 @@ import {
 } from "../shared/permission-modes"
 import { requireCodexExecutable } from "./executable"
 import { CodexAppServerProcess } from "./app-server-process"
-import { CODEX_BROKER_PROVIDER, CodexBrokerProvider, codexAuthValue } from "./broker"
+import { CODEX_BROKER_PROVIDER, CodexBrokerProvider, codexAuthFailure, codexAuthValue } from "./broker"
 import { CodexOperatorLogin } from "./operator-login"
 import { codexPluginLaunch, type CodexPluginLaunch } from "./plugin-launch"
 import { codexConfigOptions, fetchCodexModels } from "./model-options"
@@ -300,9 +300,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       failTurn(new Error("Codex turn aborted"))
     }
     const onStderr = (message: string) => {
-      if (message.includes("401 Unauthorized")) {
-        failTurn(new Error("Codex authentication failed with 401 Unauthorized. Run `codex login` or sync a valid Codex credential, then retry."))
-      }
+      if (message.includes("401 Unauthorized")) failTurn(new Error(codexAuthFailure(message, this.broker.selected)))
     }
     const model = codexTurnModel(input.input, input.model)
     const effort = resolveSupportedEffort(

@@ -1,3 +1,4 @@
+import { credentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -89,4 +90,20 @@ export class CodexBrokerProvider {
     const binding = providerBinding("codex", this.projection)
     return binding ? writeCodexBrokerHome(this.root, binding) : operatorHome
   }
+}
+
+/**
+ * What a 401 on Codex's stderr means, as the turn's error.
+ *
+ * A line that already names a broker code is passed through: the code says what
+ * was refused, and the classifier reads it. Replacing it with a login
+ * instruction throws that away and sends the operator to re-authenticate an
+ * account a brokered turn never uses — `codex login` writes the operator's own,
+ * which is exactly the one the broker withholds.
+ */
+export function codexAuthFailure(stderr: string, brokered: boolean): string {
+  if (credentialBrokerErrorCode(stderr)) return stderr
+  return brokered
+    ? "Codex authentication failed with 401 Unauthorized: the vendor refused the credential binding this turn ran on."
+    : "Codex authentication failed with 401 Unauthorized. Run `codex login` or sync a valid Codex credential, then retry."
 }

@@ -1,8 +1,4 @@
-import {
-  credentialBrokerErrorCode,
-  CREDENTIAL_BROKER_ERRORS,
-  isCredentialBrokerErrorCode,
-} from "@claxedo/agent-runtime-contract"
+import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS } from "@claxedo/agent-runtime-contract"
 
 export const FIRST_TURN_ERROR_CLASSES = ["credential", "harness", "model", "usage_limit", "workspace", "session", "unknown"] as const
 
@@ -17,14 +13,9 @@ export type FirstTurnErrorClass = (typeof FIRST_TURN_ERROR_CLASSES)[number]
  * told the operator to replace a working account for a request the harness
  * should never have made.
  */
-const brokerError = new RegExp(`\\b(${Object.keys(CREDENTIAL_BROKER_ERRORS).join("|")})\\b`)
-
 function brokerFault(message: string): FirstTurnErrorClass | undefined {
   const code = credentialBrokerErrorCode(message)
-    // A harness that summarises the body rather than quoting it leaves no JSON
-    // to read, so the bare code in its prose is the fallback.
-    ?? brokerError.exec(message)?.[1]
-  return code && isCredentialBrokerErrorCode(code) ? CREDENTIAL_BROKER_ERRORS[code].fault : undefined
+  return code ? CREDENTIAL_BROKER_ERRORS[code].fault : undefined
 }
 
 const credential = /\b(401|403|unauthori[sz]ed|api[ _-]?key|oauth|token|credential|authentication|billing|payment|quota)\b/i
