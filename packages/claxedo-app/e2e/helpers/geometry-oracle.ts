@@ -1,13 +1,147 @@
-// Geometric assertions for the sidebar rail, measured with `getBoundingClientRect()`.
-// CSS-visibility checks do not see position: a status dot that exists, carries the right
-// `data-sidebar-status`, and passes `toBeVisible()` can still sit in the wrong column.
-//
-// DOM contract:
-//   - session title:  `[data-slot="session-navigation-title"]`
-//   - terminal title: the terminal row's untagged `flex-1` span (no `data-slot`)
-//   - status dot:     `[data-sidebar-status]`, inside `[data-slot="navigation-row-glyph"]`
-import { expect, type Page } from "@playwright/test"
+// CSS visibility alone misses displaced rows, transparent ancestors, and overlays.
+import { expect, type Locator, type Page } from "@playwright/test"
 import { captureEvidence, type Evidence } from "./visual-evidence"
+
+export function timelineScroller(page: Page) {
+  return page.locator('[data-slot="session-timeline-scroll"] [data-scrollable]:visible').first()
+}
+
+export async function scrollTimelineToTop(page: Page) {
+  const scroller = timelineScroller(page)
+  await scroller.hover()
+  for (let attempt = 0; attempt < 40; attempt++) {
+    await page.mouse.wheel(0, -500)
+    // Two frames let gesture tracking observe the wheel before testing its offset.
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    if (await scroller.evaluate(element => element.scrollTop) < 100) break
+  }
+}
+
+export async function readPaintGeometry(locator: Locator) {
+  return locator.evaluate(element => {
+    const { x, y, width, height } = element.getBoundingClientRect()
+    let opacity = 1
+    let visibility = true
+    for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor)
+      opacity *= Number(style.opacity)
+      visibility &&= style.visibility !== "hidden" && style.visibility !== "collapse"
+    }
+    const hit = document.elementFromPoint(x + width / 2, y + height / 2)
+    return { x, y, width, height, opacity, visibility, hit: !!hit && element.contains(hit) }
+  })
+}
+
+export async function readControlLabelSpacing(locator: Locator) {
+  return locator.evaluate(control => {
+    const label = control.querySelector('[data-slot="composer-control-label"]')
+    const caret = control.lastElementChild
+    if (!label || !caret) throw new Error("control label or trailing icon is missing")
+    const range = document.createRange()
+    range.selectNodeContents(label)
+    const text = range.getBoundingClientRect()
+    const end = caret.getBoundingClientRect()
+    return { width: control.getBoundingClientRect().width, label: label.textContent, textWidth: text.width, caretGap: end.left - text.right }
+  })
+}
+
+export async function readTextRangeGeometry(locator: Locator, text: string) {
+  return locator.evaluate((element, text) => {
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      const index = node.textContent?.indexOf(text) ?? -1
+      if (index < 0) continue
+      const range = document.createRange()
+      range.setStart(node, index)
+      range.setEnd(node, index + text.length)
+      const { x, y, width, height } = range.getBoundingClientRect()
+      return { x, y, width, height }
+    }
+    throw new Error(`Text range not found: ${text}`)
+  }, text)
+}
+
+export async function readScrollPosition(locator: Locator) {
+  return locator.evaluate(element => ({ top: element.scrollTop, max: element.scrollHeight - element.clientHeight }))
+}
+
+export async function sampleElementDuringAction(page: Page, selector: string, action: () => Promise<void>) {
+  const probe = await page.evaluateHandle((selector) => {
+    const samples: Array<{
+      time: number; path: string; visible: number; messageIDs: Array<string | null>
+      elements: Array<{ messageID: string | null; slot: string | null; hasText: boolean; painted: boolean }>
+    }> = []
+    let frame = 0
+    const sample = () => {
+      const visible = [...document.querySelectorAll(selector)].filter(element => {
+        const rect = element.getBoundingClientRect()
+        if (rect.width <= 0 || rect.height <= 0) return false
+        for (let ancestor: Element | null = element; ancestor; ancestor = ancestor.parentElement) {
+          const style = getComputedStyle(ancestor)
+          if (style.visibility === "hidden" || style.opacity === "0") return false
+        }
+        return true
+      })
+      samples.push({
+        time: performance.now(), path: location.pathname, visible: visible.length,
+        messageIDs: visible.map(element => element.closest("[data-message-id]")?.getAttribute("data-message-id") ?? null),
+        elements: visible.map(element => {
+          const rect = element.getBoundingClientRect()
+          const left = Math.max(0, rect.left)
+          const right = Math.min(innerWidth, rect.right)
+          const top = Math.max(0, rect.top)
+          const bottom = Math.min(innerHeight, rect.bottom)
+          const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
+          return {
+            messageID: element.closest("[data-message-id]")?.getAttribute("data-message-id") ?? null,
+            slot: element.getAttribute("data-slot"), hasText: !!element.textContent?.trim(),
+            painted: right > left && bottom > top && element.getAttribute("aria-hidden") !== "true" && !!hit && element.contains(hit),
+          }
+        }),
+      })
+      frame = requestAnimationFrame(sample)
+    }
+    sample()
+    return { samples, stop: () => cancelAnimationFrame(frame) }
+  }, selector)
+  try {
+    await action()
+    return await probe.evaluate(async (probe) => {
+      await new Promise(requestAnimationFrame)
+      await new Promise(requestAnimationFrame)
+      probe.stop()
+      return probe.samples
+    })
+  } finally {
+    if (!page.isClosed()) await probe.evaluate(probe => probe.stop())
+    await probe.dispose()
+  }
+}
+
+export async function sampleTranscriptGeometry(page: Page, input: {
+  rowSelector: string
+  composerSelector: string
+  submitSelector: string
+  frames: number
+}) {
+  return page.evaluate(async ({ rowSelector, composerSelector, submitSelector, frames }) => {
+    const visible = (selector: string) => [...document.querySelectorAll(selector)]
+      .find(element => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().height > 0)
+    const row = visible(rowSelector)
+    const composer = visible(composerSelector)
+    const rect = (element: Element | undefined) => {
+      if (!element?.isConnected) return null
+      const { x, y, width, height } = element.getBoundingClientRect()
+      return { x, y, width, height }
+    }
+    const samples = []
+    for (let frame = 0; frame < frames; frame++) {
+      samples.push({ row: rect(row), composer: rect(composer), submitIcon: visible(submitSelector)?.getAttribute("data-icon") })
+      await new Promise(requestAnimationFrame)
+    }
+    return samples
+  }, input)
+}
 
 export const GEOMETRY_SELECTORS = {
   sessionRow: '[data-testid="rail-sidebar-session-row"]',

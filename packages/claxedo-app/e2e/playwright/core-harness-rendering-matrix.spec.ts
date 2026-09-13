@@ -1,9 +1,10 @@
 /**
- * Renderer-only replay of canonical presentation fixtures.
+ * Renderer replay through presentation and canonical runtime event transports.
  *
- * These tests inject already-projected message parts, so they cover timeline
- * renderers, lifecycle updates, and dock presentation — not adapter translation,
- * auth, or connectivity. A fixture name records where a trace came from, not what
+ * Stored snapshots and retained streams are independent: a completed snapshot can
+ * be followed by its earlier busy and tool-start events on a reattached stream.
+ * Fixtures cover rendering and client projection, not provider binaries or auth.
+ * A fixture name records where a trace came from, not what
  * that provider advertises today. Protocol coverage lives in the adapter tests in
  * packages/opencode-server-adapter.
  */
@@ -15,9 +16,13 @@ import {
   installMockRuntime,
   type MockRuntimeChildSession,
   type MockRuntimeHandles,
+  type MockMessageRow,
   type MockRuntimeSubagentRow,
 } from "../helpers/mock-runtime"
-import { ensureComposerModelSelected, expectAssistantReplyVisible, selectComposerAgent, SELECTORS } from "../helpers/turn-oracle"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, expectAssistantTextOccurrences, selectComposerAgent, SELECTORS } from "../helpers/turn-oracle"
+import { sampleElementDuringAction, scrollTimelineToTop } from "../helpers/geometry-oracle"
+import { expectRailRowVisible } from "../helpers/rail-oracle"
+import { writeFile } from "node:fs/promises"
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "harness-traces")
 
@@ -326,7 +331,7 @@ function subagentScenario(input: SubagentHarnessCase) {
 function subagentChip(page: Page, subagentKey: string) {
   const within = (tag: string) =>
     `[data-component="subagent-chip-row"] ${tag}[data-component="subagent-chip"][data-subagent-key="${subagentKey}"]`
-  return { chip: page.locator(within("")), openControl: page.locator(within("button")) }
+  return { chip: page.locator(within("")), openControl: page.locator(within(":is(button, a[href])")) }
 }
 
 /** The workspace-panel tab a chip opens, addressed by the child session it holds. */
@@ -485,6 +490,238 @@ async function revealTurn(page: Page) {
 }
 
 test.describe("core harness rendering matrix @core", () => {
+  test("a manually closed latest Codex turn stays closed through retained runtime replay", async ({ page }, testInfo) => {
+    test.fixme(true, "closed completed Codex work exposes its tool rows during session-return replay")
+    const fixture = JSON.parse(readFileSync(join(FIXTURES_DIR, "codex-completed-runtime-replay.json"), "utf-8")) as {
+      messages: MockMessageRow[]; events: Array<Parameters<MockRuntimeHandles["emitRuntime"]>[0]>
+    }
+    const sessionId = fixture.messages[0].info.sessionID
+    const userId = fixture.messages[0].info.id
+    const otherId = "ses_fold_other"
+    const dir = "/tmp/e2e-completed-fold-replay"
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "codex-app-server",
+      existingSession: { messages: fixture.messages },
+      otherSessions: [{ id: otherId, title: "Other fold session", prompt: "Other prompt", reply: "Other completed reply" }],
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session/${sessionId}`)
+    await expectAssistantReplyVisible(page, "QA_FIRST_DONE_1164", { spec: "core-harness-rendering-matrix", scenario: `fold-before-${testInfo.repeatEachIndex}` })
+    await scrollTimelineToTop(page)
+    const foldSelector = `[data-message-id="${userId}"][data-timeline-row="TurnFold"] button`
+    const fold = page.locator(foldSelector)
+    await expect(fold).toBeVisible()
+    if (await fold.getAttribute("aria-expanded") !== "true") await fold.click()
+    await expect(fold).toHaveAttribute("aria-expanded", "true")
+    await fold.click()
+    await expect(fold).toHaveAttribute("aria-expanded", "false")
+    const otherStream = page.waitForResponse(response => new URL(response.url()).searchParams.get("parentSessionId") === otherId && new URL(response.url()).pathname.endsWith("/runtime-events") && response.status() === 200)
+    await (await expectRailRowVisible({ page, sessionId: otherId })).click()
+    await otherStream
+    await expectAssistantReplyVisible(page, "Other completed reply", { spec: "core-harness-rendering-matrix", scenario: `fold-other-${testInfo.repeatEachIndex}` })
+    for (const event of fixture.events) mock.emitRuntime({ ...event, directory: dir })
+    const row = await expectRailRowVisible({ page, sessionId })
+    const samples = await sampleElementDuringAction(page, '[data-component="tool-part-wrapper"]', async () => {
+      const replay = page.waitForResponse(async response => new URL(response.url()).pathname.endsWith("/runtime-events") && new URL(response.url()).searchParams.get("parentSessionId") === sessionId && (await response.text()).includes(fixture.events[0].assistantMessageId!))
+      await row.click()
+      await replay
+      await expectAssistantReplyVisible(page, "QA_FIRST_DONE_1164", { spec: "core-harness-rendering-matrix", scenario: `fold-return-${testInfo.repeatEachIndex}` })
+    })
+    await writeFile(testInfo.outputPath("fold-return-frames.json"), JSON.stringify(samples, null, 2))
+    expect(mock.requests.unhandled).toEqual([])
+    expect(samples.length).toBeGreaterThan(2)
+    expect(samples.filter(sample => sample.elements.some(element => element.painted)), "closed completed work exposes tool rows during runtime replay").toEqual([])
+    await expect(fold).toHaveAttribute("aria-expanded", "false")
+  })
+
+  test("restored Codex failure commentary renders each reply passage once", async ({ page }, testInfo) => {
+    const messages = JSON.parse(readFileSync(join(FIXTURES_DIR, "codex-interleaved-failures.json"), "utf-8")) as MockMessageRow[]
+    const sessionId = messages[0].info.sessionID
+    const dir = "/tmp/e2e-codex-interleaved-failures"
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID,
+      harness: "codex-app-server", existingSession: { messages },
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session/${sessionId}`)
+    await ensureComposerModelSelected(page)
+    await page.getByRole("textbox", { name: /Ask anything/i }).last().fill("Snapshot restoration probe")
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expectAssistantReplyVisible(page, "ack 1: Snapshot restoration probe")
+    for (const phase of ["restored", "reloaded"]) {
+      if (phase === "reloaded") await page.reload()
+      const fold = page.locator(`[data-message-id="${messages[0].info.id}"][data-timeline-row="TurnFold"] button`)
+      await expect(fold).toBeVisible()
+      if (await fold.getAttribute("aria-expanded") !== "true") await fold.click()
+      await scrollTimelineToTop(page)
+      for (const [index, text] of [
+        "Running the first command exactly and recording its exit code.",
+        "The first command exited with code 1. Running the separate grep command now.",
+        "false: exit code 1",
+        "grep QA_IMPOSSIBLE_MARKER_985312 package.json: exit code 1",
+      ].entries()) {
+        await expectAssistantReplyVisible(page, text, {
+          spec: "core-harness-rendering-matrix",
+          scenario: `restored-failure-${phase}-${index}-${testInfo.repeatEachIndex}`,
+        })
+        await expectAssistantTextOccurrences(page, text, 1)
+      }
+      await page.screenshot({ path: testInfo.outputPath(`${phase}-commentary.png`) })
+    }
+    expect(mock.requests.promptCount).toBe(1)
+  })
+
+  test("enabling live folding preserves a manually opened Codex shell output", async ({ page }, testInfo) => {
+    test.fixme(true, "enabling live folding hides manually opened Codex shell output")
+    const dir = "/tmp/e2e-live-fold-manual-output"
+    const sessionId = "ses_live_fold_manual_output"
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID,
+      harness: "codex-app-server", holdTurn: true,
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session`)
+    await selectComposerAgent(page, "Codex")
+    await ensureComposerModelSelected(page)
+    const setLiveFolding = async (checked: boolean) => {
+      await page.getByTestId("rail-account-trigger").click()
+      await page.getByRole("menuitem", { name: "Settings", exact: true }).click()
+      const dialog = page.locator('[data-slot="dialog-container"]').last()
+      const setting = dialog.locator('[data-action="settings-feed-timeline-fold-while-running"]')
+      const input = setting.locator("input")
+      await expect(input).toBeAttached()
+      if (await input.isChecked() !== checked) await setting.locator('[data-slot="switch-control"]').click()
+      await expect(input).toBeChecked({ checked })
+      await page.keyboard.press("Escape")
+      await expect(dialog).toBeHidden()
+    }
+    await setLiveFolding(false)
+    await page.getByRole("textbox", { name: /Ask anything/i }).last().fill("Keep my shell output open")
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect(page).toHaveURL(sessionUrlPattern(sessionId))
+    await expect(page.locator(SELECTORS.submitControl).last()).toHaveAttribute("data-icon", "stop")
+    let assistantInfo: Record<string, unknown> = {}
+    await expect.poll(async () => {
+      const body = await page.evaluate(async id => (await fetch(`/session/${id}/message`)).json(), sessionId)
+      assistantInfo = body.messages?.find((row: { info: { id: string } }) => row.info.id === mock.requests.promptBodies[0]?.assistantID)?.info ?? {}
+      return assistantInfo.id
+    }).toBeTruthy()
+    const assistantId = String(assistantInfo.id)
+    for (const item of [
+      { id: "live_fold_read_before", tool: "read", input: { filePath: "before.ts" }, output: "before" },
+      { id: "live_fold_shell", tool: "bash", input: { command: "pwd" }, output: "/tmp/manual-output" },
+      { id: "live_fold_read_after", tool: "read", input: { filePath: "after.ts" }, output: "after" },
+    ]) mock.emit({ type: "message.part.updated", properties: { part: {
+      id: item.id, sessionID: sessionId, messageID: assistantId, type: "tool", callID: item.id, tool: item.tool,
+      state: { status: "completed", input: item.input, output: item.output, title: item.tool, metadata: {}, time: { start: Date.now() - 100, end: Date.now() } },
+    } } } as never, dir)
+    const shell = page.locator('[data-timeline-part-id="live_fold_shell"]')
+    const trigger = shell.locator('[data-slot="collapsible-trigger"]')
+    await expect(trigger).toBeVisible()
+    if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click()
+    const output = shell.locator('[data-slot="bash-pre"]')
+    await expect(output).toBeVisible()
+    await expect(output).toContainText("/tmp/manual-output")
+    await page.screenshot({ path: testInfo.outputPath("manual-output-before.png") })
+    await setLiveFolding(true)
+    await expect(page.locator(SELECTORS.submitControl).last()).toHaveAttribute("data-icon", "stop")
+    await expect.soft(output, "the manually opened output remains visible when live folding is enabled").toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath("manual-output-after.png") })
+    mock.emit({ type: "message.part.updated", properties: { part: {
+      id: `${assistantId}_text`, sessionID: sessionId, messageID: assistantId, type: "text", text: "Manual folding probe complete",
+    } } } as never, dir)
+    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: {
+      ...assistantInfo, time: { ...(assistantInfo.time as Record<string, unknown>), completed: Date.now() },
+    } } } as never, dir)
+    mock.emit({ type: "session.idle", properties: { sessionID: sessionId } } as never, dir)
+    await expectAssistantReplyVisible(page, "Manual folding probe complete")
+    expect(mock.requests.promptCount).toBe(1)
+  })
+
+  test("a consecutive MCP group names the tools hidden inside it", async ({ page }, testInfo) => {
+    test.fixme(true, "a mixed MCP group hides its tool names behind a generic count")
+    const { mock, dir, sessionId, assistantId, assistantInfo } = await primeHarness(page, "codex-app-server")
+    for (const [index, name] of ["sessions_list", "processes"].entries()) {
+      mock.emit({ type: "message.part.updated", properties: { part: {
+        id: `mcp_count_${index}`, sessionID: sessionId, messageID: assistantId, type: "tool", callID: `mcp_count_${index}`, tool: name,
+        state: { status: "completed", input: {}, output: "[]", title: name, metadata: { intent: "mcp", kind: "mcp_tool_call", server: "claxedo" }, time: { start: Date.now() - 1000, end: Date.now() } },
+      } } } as never, dir)
+    }
+    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: assistantInfo } } as never, dir)
+    await expectAssistantReplyVisible(page, "ack 1: matrix probe codex-app-server")
+    const group = page.locator('[data-timeline-part-ids="mcp_count_0,mcp_count_1"]')
+    await expect(group).toBeVisible()
+    const header = group.locator('[data-component="work-group-trigger"]')
+    await expect(header).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath("mcp-group-header.png") })
+    await expect.soft(header).toContainText(/sessions[_ ]list/i)
+    await expect.soft(header).toContainText(/processes/i)
+    await header.click()
+    await expect(group.locator(SELECTORS.toolPart("mcp_count_0"))).toBeVisible()
+    await expect(group.locator(SELECTORS.toolPart("mcp_count_1"))).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath("mcp-group-expanded.png") })
+  })
+
+  test("a manually folded Codex turn retains its three-group count after completion", async ({ page }, testInfo) => {
+    test.fixme(true, "the collapsed Codex turn header omits its tool-group count")
+    const { mock, dir, sessionId, assistantId, assistantInfo } = await primeHarness(page, "codex-app-server")
+    mock.emit({ type: "session.status", properties: { sessionID: sessionId, status: { type: "busy" } } } as never, dir)
+    const entries = [
+      { id: "count1_read", tool: "read", input: { filePath: "a.ts" } },
+      { id: "count2_read", tool: "read", input: { filePath: "b.ts" } },
+      { id: "count3_bash", tool: "bash", input: { command: "echo hi" } },
+      { id: "count4_read", tool: "read", input: { filePath: "c.ts" } },
+    ]
+    for (const item of entries) mock.emit({ type: "message.part.updated", properties: { part: {
+      id: item.id, tool: item.tool, sessionID: sessionId, messageID: assistantId, type: "tool", callID: item.id,
+      state: { status: "completed", input: item.input, output: "hi", title: item.tool, metadata: {}, time: { start: Date.now() - 1000, end: Date.now() } },
+    } } } as never, dir)
+    await revealTurn(page)
+    const fold = page.locator('[data-component="turn-fold"] button').first()
+    await expect(fold).toContainText("Working")
+    if (await fold.getAttribute("aria-expanded") === "false") await fold.click()
+    await expect(fold).toHaveAttribute("aria-expanded", "true")
+    await expect(page.locator('[data-timeline-part-ids="count1_read,count2_read"]')).toHaveCount(1)
+    await expect(page.locator('[data-timeline-part-id="count3_bash"]')).toHaveCount(1)
+    await expect(page.locator('[data-timeline-part-ids="count4_read"]')).toHaveCount(1)
+    await page.screenshot({ path: testInfo.outputPath("running-three-groups.png") })
+    await fold.click()
+    await expect(fold).toHaveAttribute("aria-expanded", "false")
+    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: assistantInfo } } as never, dir)
+    mock.emit({ type: "session.status", properties: { sessionID: sessionId, status: { type: "idle" } } } as never, dir)
+    await expectAssistantReplyVisible(page, "ack 1: matrix probe codex-app-server")
+    await expect(fold).toHaveAttribute("aria-expanded", "false")
+    await expect(fold).toContainText("Worked")
+    await page.screenshot({ path: testInfo.outputPath("completed-three-group-fold.png") })
+    await expect(fold, "the collapsed header identifies all three tool groups").toContainText(/\b3 groups?\b/)
+  })
+
+  test("process inspection output does not turn an MCP endpoint into a Local preview", async ({ page }, testInfo) => {
+    test.fixme(true, "process-list output promotes an MCP control URL and serialized header text into a Local preview")
+    const { mock, dir, sessionId, assistantId, assistantInfo } = await primeHarness(page, "codex-app-server")
+    const cases = [
+      { id: "tool_process_inspection", command: "ps -axo pid=,ppid=,comm=,args=", output: JSON.stringify({ url: "http://127.0.0.1:2593/api/claxedo/mcp?session=qa", headers: { Authorization: "Bearer REDACTED" } }), preview: undefined },
+      { id: "tool_development_server", command: "bun run dev", output: "Local: http://127.0.0.1:8766/", preview: "http://127.0.0.1:8766/" },
+    ]
+    for (const item of cases) {
+      mock.emit({ type: "message.part.updated", properties: { part: {
+        id: item.id, sessionID: sessionId, messageID: assistantId, type: "tool", callID: item.id, tool: "bash",
+        state: { status: "completed", input: { command: item.command }, output: item.output, title: "bash", metadata: { exitCode: 0 }, time: { start: Date.now() - 1000, end: Date.now() } },
+      } } } as never, dir)
+    }
+    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: assistantInfo } } as never, dir)
+    await expectAssistantReplyVisible(page, "ack 1: matrix probe codex-app-server")
+    await revealTurn(page)
+    await page.screenshot({ path: testInfo.outputPath("local-preview-targets.png") })
+    for (const item of cases) {
+      const part = page.locator(SELECTORS.toolPart(item.id))
+      await expect(part).toBeVisible()
+      const preview = part.locator('[data-component="local-preview-row"]')
+      if (item.preview) await expect(preview).toHaveAttribute("href", item.preview)
+      else await expect.soft(preview, "an MCP control endpoint is not a development server").toHaveCount(0)
+    }
+  })
+
   test("renderer-only canonical fixture — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
@@ -618,6 +855,32 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(errorTrigger).toBeVisible({ timeout: 30_000 })
     await errorTrigger.click()
     await expect(content.getByText("exit code 1")).toBeVisible({ timeout: 30_000 })
+  })
+
+  test("Codex interrupted command remains terminal after message-page reload", async ({ page }, testInfo) => {
+    const { mock, dir, sessionId, assistantId, assistantInfo } = await primeHarness(page, "codex-app-server")
+    const captured = JSON.parse(readFileSync(join(FIXTURES_DIR, "codex-interrupted-command.json"), "utf8"))
+    const part = { ...captured, sessionID: sessionId, messageID: assistantId }
+    const row = page.locator(SELECTORS.toolPart(part.id))
+    mock.emit({
+      type: "message.part.updated",
+      properties: { part: {
+        ...part,
+        state: { status: "running", input: part.state.input, metadata: part.state.metadata, time: { start: part.state.time.start } },
+      } },
+    } as never, dir)
+    await expect(row).toBeVisible()
+    await expect(row).toContainText("Running")
+    await page.screenshot({ path: testInfo.outputPath("command-running.png") })
+    mock.emit({ type: "message.part.updated", properties: { part } } as never, dir)
+    mock.emit({ type: "message.updated", properties: { sessionID: sessionId, info: assistantInfo } } as never, dir)
+    await expect(row).toContainText(/Failed|Interrupted/)
+    await page.reload()
+    await expectAssistantReplyVisible(page, "ack 1: matrix probe codex-app-server")
+    await expect(row).toBeVisible()
+    await page.screenshot({ path: testInfo.outputPath("interrupted-command-reloaded.png") })
+    await expect(row).toContainText(/Failed|Interrupted/)
+    await expect(row).not.toContainText("Running")
   })
 
   test("renderer-only canonical fixture — session.diff routes to the diff cache, never a phantom message row", async ({ page }) => {

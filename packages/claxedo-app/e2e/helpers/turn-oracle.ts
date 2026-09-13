@@ -20,6 +20,7 @@ export const SELECTORS = {
   userMessageContent: '[data-slot="session-turn-message-content"]',
   thinkingRow: '[data-slot="session-turn-thinking"]',
   submitControl: '[data-action="prompt-submit"]',
+  toolPart: (partId: string) => `[data-timeline-part-id="${partId}"]`,
 } as const
 
 export type Evidence = {
@@ -220,7 +221,7 @@ async function geometricTruth(page: Page, locator: Locator) {
                 )
                 .join(" > ")
             : ""
-          const timeline = document.querySelector<HTMLElement>('[data-slot="session-timeline-scroll"]')
+          const timeline = element.closest('[data-slot="session-timeline-scroll"]')?.querySelector<HTMLElement>('[data-scrollable]')
           return {
             box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
             found: !!inside,
@@ -275,7 +276,13 @@ async function geometricTruth(page: Page, locator: Locator) {
  */
 async function captureEvidence(page: Page, evidence: Evidence) {
   const path = evidencePath(evidence, packageRoot())
-  await page.screenshot({ path })
+  const screenshot = await page.screenshot({ path })
+  const info = test.info()
+  // Scenario paths can repeat across replies and retries; attachments preserve each observation.
+  await info.attach(`assistant-reply-${info.attachments.length}`, {
+    body: screenshot,
+    contentType: "image/png",
+  })
   return path
 }
 
@@ -342,6 +349,16 @@ export async function expectNoDuplicateRows(page: Page) {
   }
   dupes("user", userTexts)
   dupes("assistant", assistantTexts)
+}
+
+/** Identical tool cards can be legitimate; count the specific reply prose instead. */
+export async function expectAssistantTextOccurrences(page: Page, text: string, count: number) {
+  const normalized = text.replace(/\s+/g, " ").trim()
+  if (!normalized) throw new Error("Expected reply text must not be empty")
+  await expect.poll(async () => {
+    const rows = await page.locator(SELECTORS.assistantContentVisible).allTextContents()
+    return rows.reduce((total, row) => total + row.replace(/\s+/g, " ").split(normalized).length - 1, 0)
+  }, { message: `expected reply prose ${JSON.stringify(text)} exactly ${count} time(s)` }).toBe(count)
 }
 
 /** Re-exported for specs that need the raw selectors for a narrower assertion. */
