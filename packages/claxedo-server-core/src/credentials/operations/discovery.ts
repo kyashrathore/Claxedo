@@ -2,8 +2,8 @@ import { createHmac, randomBytes, randomUUID } from "crypto"
 import { collectLocalCredentialItems, type LocalCredentialItem } from "./sync"
 import { probeDiscoveredCredential } from "./probe"
 import type { CredentialUsageWindow } from "./verify"
-import { listCredentials, putCredential } from "@claxedo/server-core/credentials/registry"
-import type { CredentialScope, CredentialWrite } from "@claxedo/server-core/credentials/types"
+import { listCredentials, putCredential, updateCredentialHealth } from "@claxedo/server-core/credentials/registry"
+import type { CredentialHealth, CredentialScope, CredentialWrite } from "@claxedo/server-core/credentials/types"
 
 const ttl = 5 * 60 * 1000
 
@@ -18,6 +18,12 @@ export type CredentialProbe =
   | { state: "working"; usage?: CredentialUsageWindow[] }
   | { state: "broken"; reason: string }
   | { state: "unknown"; reason: string }
+
+/**
+ * A probe plus the verdict it came from, where it reached one. `unknown` is the
+ * absence of a verdict and so carries no health.
+ */
+export type CredentialDiscoveryProbe = CredentialProbe & { health?: CredentialHealth }
 
 export type CredentialDiscoveryPreview = {
   provider_id: string
@@ -58,7 +64,7 @@ function preview(
   item: LocalCredentialItem,
   maskKey: Buffer,
   connected: Set<string>,
-  probe?: CredentialProbe,
+  probe?: CredentialDiscoveryProbe,
 ): CredentialDiscoveryPreview {
   return {
     provider_id: item.provider_id,
@@ -85,14 +91,20 @@ export function createCredentialDiscovery(input: {
    * every row `unknown` — discovery still works, it just cannot promise
    * anything, which is the honest degradation.
    */
-  probe?: (item: LocalCredentialItem) => Promise<CredentialProbe>
+  probe?: (item: LocalCredentialItem) => Promise<CredentialDiscoveryProbe>
+  /**
+   * Writes the verdict the discovery probe already reached onto the row that
+   * was just saved, so a freshly saved account reads as checked without
+   * spending a second request against the user's own quota.
+   */
+  recordHealth?: (id: string, health: CredentialHealth, validatedAt: number, org?: string) => void | Promise<void>
   now?: () => number
   id?: () => string
 }) {
   const stash = new Map<string, {
     expiresAt: number
     org?: string
-    items: Map<string, LocalCredentialItem>
+    items: Map<string, { item: LocalCredentialItem; probe: CredentialDiscoveryProbe }>
   }>()
   const now = input.now ?? Date.now
 
@@ -100,7 +112,7 @@ export function createCredentialDiscovery(input: {
    * A probe that throws is an unknown, never a broken: a DNS failure or an
    * offline laptop must not tell the user their credential is bad.
    */
-  async function runProbe(item: LocalCredentialItem): Promise<CredentialProbe> {
+  async function runProbe(item: LocalCredentialItem): Promise<CredentialDiscoveryProbe> {
     if (!input.probe) return { state: "unknown", reason: "This credential can't be checked here." }
     try {
       return await input.probe(item)
@@ -126,9 +138,9 @@ export function createCredentialDiscovery(input: {
       // user believes setup succeeded. Probes run in parallel and are resolved
       // once per discovery, so the result is stashed rather than re-spent.
       const probes = await Promise.all(collected.map((item) => runProbe(item)))
-      const items = new Map(collected.map((item) => {
+      const items = new Map(collected.map((item, index) => {
         const redacted = preview(item, maskKey, connected)
-        return [selectionKey(redacted), item]
+        return [selectionKey(redacted), { item, probe: probes[index] }]
       }))
       stash.set(discovery_id, { expiresAt: now() + ttl, org, items })
       const timer = setTimeout(() => stash.delete(discovery_id), ttl)
@@ -147,19 +159,24 @@ export function createCredentialDiscovery(input: {
       const keys = request.items.map(selectionKey)
       if (new Set(keys).size !== keys.length) throw new CredentialDiscoveryError("discovery_duplicate_item")
       const selected = keys.map((key) => discovery.items.get(key))
-      if (selected.some((item) => !item)) throw new CredentialDiscoveryError("discovery_item_not_found")
+      if (selected.some((entry) => !entry)) throw new CredentialDiscoveryError("discovery_item_not_found")
 
-      const credentials = await Promise.all(selected.map((item, index) => input.save({
-        provider_id: item!.provider_id,
-        kind: item!.kind,
+      const credentials = await Promise.all(selected.map((entry, index) => input.save({
+        provider_id: entry!.item.provider_id,
+        kind: entry!.item.kind,
         source: request.items[index].scope === "shared" ? "managed" : "local_only",
-        label: item!.label,
-        ...(item!.account_id ? { account_id: item!.account_id } : {}),
-        secret: item!.secret,
-        ...(item!.fresh_until ? { expires_at: item!.fresh_until } : {}),
+        label: entry!.item.label,
+        ...(entry!.item.account_id ? { account_id: entry!.item.account_id } : {}),
+        secret: entry!.item.secret,
+        ...(entry!.item.fresh_until ? { expires_at: entry!.item.fresh_until } : {}),
         scope: request.items[index].scope,
         consent: { at: now(), surface: "desktop_discovery" },
       }, org)))
+      const validatedAt = now()
+      for (const [index, entry] of selected.entries()) {
+        const health = entry!.probe.health
+        if (health && input.recordHealth) await input.recordHealth(credentials[index].id, health, validatedAt, org)
+      }
       stash.delete(request.discovery_id)
 
       return {
@@ -183,4 +200,5 @@ export const credentialDiscovery = createCredentialDiscovery({
   save: putCredential,
   connected: listCredentials,
   probe: probeDiscoveredCredential,
+  recordHealth: updateCredentialHealth,
 })

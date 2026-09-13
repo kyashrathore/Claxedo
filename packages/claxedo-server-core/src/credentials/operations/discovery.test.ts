@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest"
-import { createCredentialDiscovery, type CredentialProbe } from "./discovery"
+import { createCredentialDiscovery, type CredentialDiscoveryProbe } from "./discovery"
 import type { LocalCredentialItem } from "./sync"
-import type { CredentialWrite } from "@claxedo/server-core/credentials/types"
+import type { CredentialHealth, CredentialWrite } from "@claxedo/server-core/credentials/types"
 
 const items: LocalCredentialItem[] = [
   {
@@ -36,17 +36,19 @@ const items: LocalCredentialItem[] = [
 function setup(input?: {
   now?: () => number
   collected?: LocalCredentialItem[]
-  probe?: (item: LocalCredentialItem) => Promise<CredentialProbe>
+  probe?: (item: LocalCredentialItem) => Promise<CredentialDiscoveryProbe>
 }) {
   const save = vi.fn(async (item: CredentialWrite) => ({ id: `saved-${item.account_id ?? item.provider_id}` }))
+  const recorded: Array<{ id: string; health: CredentialHealth; validatedAt: number }> = []
   const service = createCredentialDiscovery({
     collect: async () => input?.collected ?? items,
     save,
+    recordHealth: (id, health, validatedAt) => void recorded.push({ id, health, validatedAt }),
     ...(input?.probe ? { probe: input.probe } : {}),
     now: input?.now ?? (() => 100),
     id: () => "discovery-id",
   })
-  return { save, service }
+  return { save, service, recorded }
 }
 
 describe("credential discovery", () => {
@@ -206,7 +208,7 @@ describe("live probing during discovery", () => {
   test("probes every candidate exactly once per scan", async () => {
     // The Codex probe spends real subscription quota, so a scan must not
     // re-spend it per row or per re-render.
-    const probe = vi.fn(async (): Promise<CredentialProbe> => ({ state: "working" }))
+    const probe = vi.fn(async (): Promise<CredentialDiscoveryProbe> => ({ state: "working" }))
     const { service } = setup({ probe })
 
     await service.discover()
@@ -238,6 +240,32 @@ describe("live probing during discovery", () => {
     await service.discover()
 
     expect(save).not.toHaveBeenCalled()
+  })
+
+  test("saving writes the verdict the probe already reached instead of asking again", async () => {
+    // The Codex probe spends real subscription quota. A row saved right after
+    // being probed must not read as unchecked, and must not cost a second ask.
+    const { service, recorded } = setup({ probe: async () => ({ state: "working", health: "ok" }) })
+    const discovery = await service.discover()
+
+    await service.save({
+      discovery_id: discovery.discovery_id,
+      items: [{ provider_id: "anthropic", scope: "local" }],
+    })
+
+    expect(recorded).toEqual([{ id: "saved-anthropic", health: "ok", validatedAt: 100 }])
+  })
+
+  test("a verdict the probe could not reach writes no health at all", async () => {
+    const { service, recorded } = setup({ probe: async () => ({ state: "unknown", reason: "offline" }) })
+    const discovery = await service.discover()
+
+    await service.save({
+      discovery_id: discovery.discovery_id,
+      items: [{ provider_id: "anthropic", scope: "local" }],
+    })
+
+    expect(recorded).toEqual([])
   })
 
   test("a broken candidate can still be saved when the user overrides", async () => {

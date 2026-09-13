@@ -96,6 +96,9 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
     expires_at: cred.expires_at,
     last_validated_at: cred.last_validated_at,
     scope: cred.scope ?? "local",
+    // The surface says where the row came from; "desktop_discovery" is the only
+    // record that a login was taken off this machine rather than typed in.
+    consent: cred.consent ?? null,
     last_used_at: cred.last_used_at ?? null,
     last_error: cred.last_error,
     created_at: cred.created_at,

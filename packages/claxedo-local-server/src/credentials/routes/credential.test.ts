@@ -500,6 +500,7 @@ describe("credential routes", () => {
           "credentials": [
             {
               "account_id": null,
+              "consent": null,
               "created_at": 1,
               "expires_at": null,
               "has_secret": true,
@@ -619,6 +620,21 @@ describe("credential routes", () => {
     expect(JSON.stringify(body)).toContain("store rejected [redacted]")
   })
 
+  test("the surface a row was consented from survives redaction", async () => {
+    // It is the only record that a login was read off this machine rather than
+    // typed in, and Settings names the row from it.
+    const row = {
+      ...(await credentials().listCredentials())[0],
+      consent: { at: 5, surface: "desktop_discovery" as const },
+    }
+    const registry = Object.assign(credentials(), { listCredentials: vi.fn(async () => [row]) })
+
+    const list = await CredentialRoutes(registry).request("http://localhost/")
+
+    const body = await list.json() as { credentials: Array<{ consent: unknown }> }
+    expect(body.credentials[0].consent).toEqual({ at: 5, surface: "desktop_discovery" })
+  })
+
   test("uses injected credential registry and redacts secret references", async () => {
     const registry = credentials()
     const app = CredentialRoutes(registry)
@@ -641,6 +657,7 @@ describe("credential routes", () => {
         expires_at: null,
         last_validated_at: 1,
         scope: "local",
+        consent: null,
         last_used_at: null,
         last_error: null,
         created_at: 1,

@@ -1,8 +1,8 @@
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { LocalCredentialItem } from "./sync"
-import type { CredentialProbe } from "./discovery"
+import type { CredentialDiscoveryProbe } from "./discovery"
 import { CredentialVerificationError, verifyCredential, type CredentialUsageWindow } from "./verify"
-import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
+import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
 const log = Log.create({ service: "credentials-probe" })
 
@@ -19,7 +19,7 @@ const log = Log.create({ service: "credentials-probe" })
 export async function probeDiscoveredCredential(
   item: LocalCredentialItem,
   options: { fetch?: typeof fetch; now?: () => number } = {},
-): Promise<CredentialProbe> {
+): Promise<CredentialDiscoveryProbe> {
   const now = options.now ?? Date.now
   const at = now()
   // The metadata a saved credential would have, so the probe exercises the same
@@ -56,19 +56,19 @@ export async function probeDiscoveredCredential(
   }
 }
 
-function verdict(health: string, usage: CredentialUsageWindow[] | undefined): CredentialProbe {
+function verdict(health: CredentialHealth, usage: CredentialUsageWindow[] | undefined): CredentialDiscoveryProbe {
   // A quota-capped subscription authenticated: the provider answered us and
   // will again once the window rolls over. That is working, not broken.
-  if (health === "ok") return { state: "working", ...(usage?.length ? { usage } : {}) }
-  if (health === "rate_capped") return { state: "working" }
+  if (health === "ok") return { state: "working", health, ...(usage?.length ? { usage } : {}) }
+  if (health === "rate_capped") return { state: "working", health }
   if (health === "auth_failed") {
-    return { state: "broken", reason: "The provider rejected this credential." }
+    return { state: "broken", health, reason: "The provider rejected this credential." }
   }
   if (health === "expired") {
-    return { state: "broken", reason: "This credential has expired and couldn't be renewed." }
+    return { state: "broken", health, reason: "This credential has expired and couldn't be renewed." }
   }
   if (health === "no_billing") {
-    return { state: "broken", reason: "The provider reports no active billing for this account." }
+    return { state: "broken", health, reason: "The provider reports no active billing for this account." }
   }
   return { state: "unknown", reason: "The provider gave an answer we couldn't read." }
 }
