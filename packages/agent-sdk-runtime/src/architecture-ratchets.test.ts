@@ -18,12 +18,11 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // `harnesses/codex/plugin-launch.ts` and `turn/steer` to
       // `harnesses/codex/protocol.ts`; `harnesses/shared/sdk-runtime-adapter.ts`
       // delegates steering to `harnesses/shared/turn-steering.ts` and keeps only
-      // the entrypoint; its one growth since is the renewal hook the host hands
-      // the driver, which has no other route from the composition to the driver.
+      // the entrypoint.
       "runtime.ts": 819,
       "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 632,
-      "harnesses/shared/sdk-runtime-adapter.ts": 881,
+      "harnesses/codex/driver.ts": 627,
+      "harnesses/shared/sdk-runtime-adapter.ts": 876,
       // Its one growth is the import of the trim that stops a blank
       // `PI_CODING_AGENT_DIR` from putting the profile in the process cwd.
       "harnesses/pi/index.ts": 13,

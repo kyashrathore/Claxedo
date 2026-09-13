@@ -176,7 +176,7 @@
       "safeAgentProcessDescriptor",
       "widestPermissionModeUnder",
       "ProviderProjectionExpiredError",
-      "freshProviderBinding",
+      "liveProviderBinding",
       "projectionRenewalDueAt",
       "accountIdFromClaims"
     ],
@@ -321,10 +321,10 @@
       "kind": "class",
       "purpose": "Raised when a placeholder's lifetime ran out before the harness was spawned, so the vendor's 401 is never attributed to the stored account."
     },
-    "freshProviderBinding": {
+    "liveProviderBinding": {
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
-      "purpose": "The binding to launch on, asking the authority for a replacement first when the one held has expired."
+      "purpose": "The binding to launch on, refusing one whose lifetime has already run out."
     },
     "projectionRenewalDueAt": {
       "import": "@claxedo/agent-sdk-runtime",

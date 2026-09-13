@@ -47,7 +47,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { freshProviderBinding, providerProjectionKey, providerProjectionRecord, type ProviderBinding } from "../../provider-projection"
+import { liveProviderBinding, providerProjectionKey, providerProjectionRecord, type ProviderBinding } from "../../provider-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,
@@ -279,17 +279,13 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
    * withheld and the harness runs on that account exactly as before.
    */
   /**
-   * The binding this spawn runs on, replaced first when the placeholder it
-   * holds has already expired. Spawning on an expired one sends the vendor a
-   * token it will reject, and that 401 is then attributed to the operator's
-   * account rather than to the renewal that did not happen.
+   * The binding this spawn runs on, refused when the placeholder it holds has
+   * already expired. Spawning on an expired one sends the vendor a token it
+   * will reject, and that 401 is then attributed to the operator's account
+   * rather than to the renewal that did not happen.
    */
   private launchBinding() {
-    return freshProviderBinding({
-      harnessId: "claude",
-      read: () => this.auth.anthropic,
-      ...(this.host.renewProjections ? { renew: this.host.renewProjections } : {}),
-    })
+    return liveProviderBinding("claude", this.auth.anthropic)
   }
 
   private spawnEnv(binding: ProviderBinding | undefined, extra: Record<string, string> = {}) {
@@ -379,7 +375,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     // Claude persists its Stop hook in the session transcript. Kill and drain
     // its current query before reopening that same session to clear the hook.
     await interruptGoalTurn(sessionId, this.host.lifecycle())
-    const goalBinding = await this.launchBinding()
+    const goalBinding = this.launchBinding()
     const abortController = new AbortController()
     let cleared = false
     const q = (this.driverOptions.query ?? query)({
@@ -564,7 +560,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     const systemPrompt = claudeSystemPrompt(input.input.system)
     const permissionModeId = this.permissionSelection.currentId(input.sessionId)
     const permissions = readClaudePermissionState(this.host.getSessionConfig(input.sessionId)?.permissionState)
-    const turnBinding = await this.launchBinding()
+    const turnBinding = this.launchBinding()
     const q: Query = (this.driverOptions.query ?? query)({
       prompt,
       options: {
@@ -699,7 +695,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
    * The never-yielding prompt stream keeps the CLI idle until `close()`.
    */
   private async fetchModels(directory?: string): Promise<SdkModelEntry[]> {
-    const probeBinding = await this.launchBinding()
+    const probeBinding = this.launchBinding()
     const abort = new AbortController()
     const q: Query = (this.driverOptions.query ?? query)({
         prompt: idlePrompt(),

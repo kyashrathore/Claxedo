@@ -168,8 +168,8 @@ export { accountIdFromClaims } from "./harnesses/codex/auth-file"
 export { modelConfigOption } from "./sdk-model-options"
 export type { SdkModelEntry } from "./sdk-model-options"
 export {
-  freshProviderBinding,
   isProviderUnavailable,
+  liveProviderBinding,
   providerBinding,
   providerProjection,
   providerProjectionKey,

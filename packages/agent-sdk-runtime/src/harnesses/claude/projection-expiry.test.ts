@@ -64,47 +64,12 @@ test("a turn refuses to spawn on a placeholder whose lifetime has run out", asyn
   expect(calls).toHaveLength(0)
 })
 
-test("an expired placeholder is replaced by a renewal before the spawn, not after the vendor rejects it", async () => {
+test("a live placeholder is the token the spawn carries", async () => {
   const { calls, query } = spawns()
-  let auth = projection(Date.now() - 1_000, "stale")
-  const driver = createClaudeSdkDriver(
-    host({ renewProjections: async () => { await driver.applyConfig({ auth }) } }),
-    { query, executable: () => "/fake/claude" },
-  )
-  await driver.applyConfig({ auth })
-  auth = projection(Date.now() + 60 * 60 * 1000, "renewed")
-
-  await driver.runTurn(turn())
-
-  expect(calls).toHaveLength(1)
-  expect((calls[0].options!.env as Record<string, string>).ANTHROPIC_AUTH_TOKEN).toBe("renewed")
-})
-
-test("a renewal that does not produce a live placeholder refuses rather than spawning anyway", async () => {
-  const { calls, query } = spawns()
-  let renewals = 0
-  const driver = createClaudeSdkDriver(
-    host({ renewProjections: async () => { renewals++ } }),
-    { query, executable: () => "/fake/claude" },
-  )
-  await driver.applyConfig({ auth: projection(Date.now() - 1_000) })
-
-  await expect(driver.runTurn(turn())).rejects.toThrow(/credential binding expired/)
-  expect(renewals).toBe(1)
-  expect(calls).toHaveLength(0)
-})
-
-test("a live placeholder spawns without asking for a renewal", async () => {
-  const { calls, query } = spawns()
-  let renewals = 0
-  const driver = createClaudeSdkDriver(
-    host({ renewProjections: async () => { renewals++ } }),
-    { query, executable: () => "/fake/claude" },
-  )
+  const driver = createClaudeSdkDriver(host(), { query, executable: () => "/fake/claude" })
   await driver.applyConfig({ auth: projection(Date.now() + 60 * 60 * 1000, "live") })
 
   await driver.runTurn(turn())
 
-  expect(renewals).toBe(0)
   expect((calls[0].options!.env as Record<string, string>).ANTHROPIC_AUTH_TOKEN).toBe("live")
 })

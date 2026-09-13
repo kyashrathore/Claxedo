@@ -121,26 +121,24 @@ export class ProviderProjectionExpiredError extends Error {
 }
 
 /**
- * The binding to launch on, after asking for a replacement when the one held
- * has already expired. A driver that spawned on an expired placeholder would
- * turn a renewal that did not happen into a vendor authentication failure.
+ * The binding to launch on, refusing one whose lifetime has already run out.
+ * A driver that spawned on an expired placeholder would turn a renewal that
+ * did not happen into a vendor authentication failure.
+ *
+ * Renewal itself belongs to the host that minted the projection and pushes a
+ * replacement through `applyConfig`; a launch reads what is held and refuses,
+ * because a push into an adapter mid-turn is deferred to the turn boundary and
+ * so cannot answer a request made from inside a launch.
  */
-export async function freshProviderBinding(input: {
-  harnessId: string
-  read: () => ProviderProjection | undefined
-  renew?: () => Promise<void>
-  now?: () => number
-}): Promise<ProviderBinding | undefined> {
-  const held = providerBinding(input.harnessId, input.read())
+export function liveProviderBinding(
+  harnessId: string,
+  projection: ProviderProjection | undefined,
+  now: () => number = Date.now,
+): ProviderBinding | undefined {
+  const held = providerBinding(harnessId, projection)
   if (!held) return undefined
-  const now = input.now ?? Date.now
-  if (held.expiresAt > now()) return held
-  if (input.renew) {
-    await input.renew()
-    const renewed = providerBinding(input.harnessId, input.read())
-    if (renewed && renewed.expiresAt > now()) return renewed
-  }
-  throw new ProviderProjectionExpiredError(input.harnessId, held.expiresAt)
+  if (held.expiresAt <= now()) throw new ProviderProjectionExpiredError(harnessId, held.expiresAt)
+  return held
 }
 
 /**
