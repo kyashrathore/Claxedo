@@ -5,7 +5,8 @@ import type {
   EffectiveActivationInput,
 } from "./types"
 
-type Selected =
+/** Which authority decided, and what it decided, before any artifact is considered. */
+export type ActivationSelection =
   | { enabled: false; winner: ActivationWinner }
   | {
       enabled: true
@@ -13,7 +14,7 @@ type Selected =
       digest?: ArtifactDigest
     }
 
-function signedSelection(input: Extract<EffectiveActivationInput, { mode: "signed" }>): Selected {
+function signedSelection(input: Extract<EffectiveActivationInput, { mode: "signed" }>): ActivationSelection {
   if (input.projectOverride !== undefined) {
     return { enabled: input.projectOverride, winner: "project", digest: input.pins.user }
   }
@@ -29,7 +30,7 @@ function signedSelection(input: Extract<EffectiveActivationInput, { mode: "signe
   return { enabled: false, winner: "none" }
 }
 
-function unsignedSelection(input: Extract<EffectiveActivationInput, { mode: "unsigned" }>): Selected {
+function unsignedSelection(input: Extract<EffectiveActivationInput, { mode: "unsigned" }>): ActivationSelection {
   if (input.machineOverride !== undefined) {
     return { enabled: input.machineOverride, winner: "machine", digest: input.pins.localMachine }
   }
@@ -48,8 +49,12 @@ function unsignedSelection(input: Extract<EffectiveActivationInput, { mode: "uns
  * artifact remains visibly desired and unavailable; it is never collapsed to
  * disabled.
  */
+export function selectActivationAuthority(input: EffectiveActivationInput): ActivationSelection {
+  return input.mode === "signed" ? signedSelection(input) : unsignedSelection(input)
+}
+
 export function resolveEffectiveActivation(input: EffectiveActivationInput): EffectiveActivation {
-  const selected = input.mode === "signed" ? signedSelection(input) : unsignedSelection(input)
+  const selected = selectActivationAuthority(input)
   if (!selected.enabled) {
     return { status: "ready", effective: false, winner: selected.winner }
   }
