@@ -473,6 +473,426 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
 
 ---
 
+### 42. core-session-rendering-navigation — browser Back and Forward preserve a chat visit made through the rail
+
+- **Status**: skipped after a reproduced build-preview failure (1 failed, 0 retries).
+- **Tests**: `browser Back and Forward preserve a chat visit made through the rail @core`.
+- **Expected**: after opening New Session and selecting the completed chat through the rail, Back restores New Session and Forward restores the visible chat reply.
+- **Why**: the Back assertion expects `/w/ws_mock_runtime/session` but receives `/s/ses_browser_history`. Both preceding assistant-reply oracle checks pass; the reviewed failure screenshot shows the chat still painted. Forward is not reached in the failing run. Evidence is retained in `docs/verification/session-rendering/2026-09-12/evidence/history-e2e-1049/`.
+- **Options**:
+  - **A (recommended)**: fix the canonical workbench route publication so user navigation creates traversable history entries, then enable and validate the regression. M.
+  - **B**: change the product contract to make session navigation replace history and explicitly remove browser-history support. Requires a product decision; weakens the requested behavior.
+  - **C**: retain the known failure and leave browser Back unreliable across rail visits.
+- **Decision**:
+
+### 43. core-timeline-rendering-scroll — user Markdown image loading preserves reserved space
+
+- **Status**: skipped after a reproduced build-preview geometry failure (1 failed, 0 retries).
+- **Tests**: `loading a user Markdown image preserves its reserved space and the existing transcript position`.
+- **Expected**: approximately 80 × 80 CSS-pixel thumbnail tiles matching the user-provided Codex reference, with identical loading/loaded/corrupt/HTTP-404 dimensions, no transcript or composer movement, and full-image viewing on click.
+- **Why**: the updated compact-tile assertion fails on a loading width of 645.75px versus the 80px target (`Expected <= 1; Received 565.75` width deviation), recorded in `docs/verification/session-rendering/2026-09-12/evidence/image-reference-1063/`. Run 1070 extends the same test to corrupt bytes: browser decoding fails, the corrupt tile measures 645.75 × 37.1875px, and loading the adjacent valid image moves the same row upward 416px with unchanged composer geometry. Soft geometry assertions allow the click-to-preview check to run; it fails with `Expected: visible; Error: element(s) not found`. Reviewed before/after/click screenshots and the trace are retained in `docs/verification/session-rendering/2026-09-12/evidence/image-corrupt-1070/`. Closing a preview remains unverified. Runs 1228/1229 additionally prove HTTP 404 renders the same incorrectly sized 645.75 × 37.1875px box in both auth modes. Thirty post-decode samples catch 449px/474px upward movement, avoiding the single-frame timing gap observed in 1227. Both reply oracles and before/after screenshots were reviewed; full videos remain unreviewed. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/image-404-1228/` and `image-404-1229/`. The earlier expansion reproduction shows the placeholder is 37.1875px high and the loaded image is 512px high. The same message row moves from y=276 to y=-79; the composer stays at y=691 with height=52. The reserved-space assertion reports `Expected: <= 1; Received: 474.8125`. Both preceding reply oracles pass. Before/after screenshots were reviewed; the video and geometry are retained in `docs/verification/session-rendering/2026-09-12/evidence/image-e2e-1062/`.
+- **Options**:
+  - **A (recommended)**: use fixed compact thumbnail tiles in the canonical Markdown media renderer, retaining those dimensions through loading and failure, and invoke the existing image preview on click. M.
+  - **B**: explicitly accept expanding image layout and revise the product's no-shift contract. Requires a product decision.
+  - **C**: retain the known failure and leave image-load transcript shifts unresolved.
+- **Decision**:
+
+### 44. core-docks — completed todo list survives the end of the turn and reload
+
+- **Status**: skipped after a reproduced build-preview failure (1 failed, 0 retries).
+- **Tests**: `todo dock preserves all five completed steps after the turn ends and reloads`.
+- **Expected**: the final list retains exactly five completed steps after the turn ends and after reload.
+- **Why**: the completed SSE batch contains all five completed steps before reload; the reply oracle passes after reload, but the final dock assertion fails: `Expected: visible; Error: element(s) not found`. The reviewed screenshot shows the reply and composer without a todo list. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/todo-e2e-1067/`. The initial run without a delivery guard is retained as unqualified evidence. Final checkbox assertions are not reached.
+- **Options**:
+  - **A (recommended)**: retain the final todo state in the canonical session surface and enable the regression. M.
+  - **B**: explicitly change the product contract to discard completed lists. Requires a product decision.
+  - **C**: retain the known failure with the final task state unavailable.
+- **Decision**:
+
+### 45. real-harness-local — Codex retains the selected answer card after completion and reload
+
+- **Status**: skipped after a reproduced Tier R build-preview failure (1 failed, 0 retries).
+- **Tests**: `codex native question retains the selected answer card after completion and reload`.
+- **Expected**: the completed question retains its question text and selected Staging answer after reload.
+- **Why**: the real Codex binary returns Staging in its function-call output to the scripted endpoint; both completion and reload reply oracles pass. The result-card assertion fails with `Expected: visible; Error: element(s) not found`. The replayed messages contain only text parts. The reviewed screenshot shows the completed reply without a question card or a fold control. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/question-retained-1068/`. This scenario makes no route interceptions; the existing answer-delivery scenario remains enabled. Custom and dismissal retention are not exercised by this run.
+- **Options**:
+  - **A (recommended)**: preserve resolved question information in the canonical runtime presentation contract so the existing renderer can show it. M.
+  - **B**: explicitly remove resolved question cards from the product contract. Requires a product decision.
+  - **C**: leave completed questions without a visible record of the user's answer.
+- **Decision**:
+
+### 46. real-harness-local — Codex sends synchronize rail order across browser tabs
+
+- **Status**: skipped after a reproduced Tier R build-preview failure (1 failed, 0 retries).
+- **Tests**: `Codex sends converge on the same session order in both browser tabs`.
+- **Expected**: after a new send to the older session, both tabs place it first and show the same complete rail order.
+- **Why**: both tabs begin with `[newer, older]`; the real Codex send completes and its reply passes the oracle in both tabs. The sender becomes `[older, newer]`, while the receiver stays `[newer, older]` through the 15-second index assertion. The expected first id is `dca246b4-2544-4b91-9d45-87cb38f39039`; the receiver returns `8fb8a83f-1be5-45c1-98c5-653cbdf3b3db`. Both screenshots were reviewed. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/rail-sync-1073/`. The scenario uses a real server and binary with only the model HTTP endpoint scripted; no route interception. The OpenCode variation remains untested by this scenario.
+- **Options**:
+  - **A (recommended)**: publish and apply the canonical human-turn ordering timestamp to all clients, then enable this regression. M.
+  - **B**: explicitly make rail order window-local. Requires a product decision and contradicts the requested synchronization.
+  - **C**: retain inconsistent ordering across windows.
+- **Decision**:
+
+### 47. real-harness-local — Codex failed shell header identifies its command
+
+- **Status**: skipped after a reproduced Tier R build-preview failure (1 failed, 0 retries).
+- **Tests**: `Codex failed shell header retains its command and exit code after reload`.
+- **Expected**: the failed shell header identifies the command and shows exit code 23 after reload and a subsequent successful tool.
+- **Why**: actual failed and recovery scripts execute through Codex; persisted error and output checks pass. The stored failed part contains the full `fail.cjs` command and exitCode 23. The header assertion expects `fail.cjs` but receives `ShellFailedexit 23`. The separate exit-code assertion passes and the reviewed screenshot confirms it is legible. This narrows the older live report: the remaining reproduced defect is the missing command, not the exit chip in this case. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/shell-exit-1074/`. Existing failure/recovery cases stay enabled; this added presentation case has no route interceptions.
+- **Options**:
+  - **A (recommended)**: render the authoritative failed command in the canonical error-card header and enable this test. S.
+  - **B**: explicitly accept a generic failed header while requiring users to find the command elsewhere. Requires a product decision.
+  - **C**: retain the missing command context for failed shells.
+- **Decision**:
+
+### 48. real-harness-local — Codex preserves the full completed shell output
+
+- **Status**: skipped after two reproduced Tier R build-preview failures (each 1 failed, 0 retries).
+- **Tests**: `Codex completed shell exposes all 240 output lines after reload`.
+- **Expected**: the expanded completed command retains all 240 output lines after reload and offers Show all for its overflowing output.
+- **Why**: the real command prints 240 lines, waits eight seconds, then prints a final marker. Codex returns all 240 lines in its function-call output to the scripted model endpoint; the captured list is verified in order. Claxedo's stored completed part contains only the final marker, as does the reviewed expanded row. The assertion expects `OUTPUT_LINE_1` but receives only the command and `LONG_RESULT_1789276952882`. Both reply oracles and persistence checks pass. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/shell-output-1076/`. The final-line and Show all assertions are not reached. Exact internal cause remains unproven, but the loss is already present in stored presentation data and cannot be repaired solely in the renderer. Existing short-output persistence tests stay enabled.
+- **Options**:
+  - **A (recommended)**: preserve the complete authoritative command output through runtime presentation updates, then enable the regression. M.
+  - **B**: explicitly document final-chunk-only output as a product limitation. Requires a product decision.
+  - **C**: leave earlier command output unavailable to readers.
+- **Decision**:
+
+### 49. core-timeline-rendering-scroll — streaming tables and lists paint as complete blocks
+
+- **Status**: skipped after a reproduced build-preview failure (1 failed, 0 retries).
+- **Tests**: `streamed tables and ordered lists first appear as complete blocks`.
+- **Expected**: every sampled block has either zero items or its complete item count: thirty table rows and eight list items. Both completed replies remain readable.
+- **Why**: of 211 sampled frames, 59 show fifteen rows, 135 show none, and 17 show all thirty. The first and last partial samples span about 1.96 seconds. The reviewed first-visible screenshot shows row 15 ending in `Chec` while Thinking remains; the final screenshot shows all thirty rows and TABLE_DONE. The completed reply oracle passes. The assertion expects no partial frames and receives 59. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/table-1078/`. The viewport is 1280 × 2400 so the entire thirty-row reply satisfies the shared geometric oracle. An earlier 1600px-high run fails that prerequisite and is not the registered red assertion. The combined run 1079 also reproduces the ordered list: 66 frames show five of eight items and 16 show all eight; the first-visible screenshot shows item 5 containing only `S`. That run records 76 partial-table frames and passes both completed reply oracles. The list screenshots were reviewed. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/blocks-1079/`.
+- **Options**:
+  - **A (recommended)**: keep incomplete structured blocks unpainted until their boundary is known, then enable the regression. M.
+  - **B**: explicitly permit progressive table growth and revise the requested whole-block rendering contract. Requires a product decision.
+  - **C**: retain the visible partial-table growth.
+- **Decision**:
+
+### 50. core-harness-rendering-matrix — process inspection does not create an app preview
+
+- **Status**: skipped after a reproduced Tier M build-preview failure (1 failed, 0 retries).
+- **Tests**: `process inspection output does not turn an MCP endpoint into a Local preview`.
+- **Expected**: a process-list result containing an MCP control endpoint creates no Local preview; a development server announcing port 8766 creates the correct preview link.
+- **Why**: the negative assertion expects zero preview rows and receives one. The separate positive development-server link assertion passes. The reviewed screenshot shows the control URL with serialized header syntax promoted into a preview, matching the original live screenshot. The fixture is sanitized and reconstructed from that screenshot; it is not a retained raw provider payload. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/preview-1081/`. No preview navigation or Browser-tab persistence is tested.
+- **Options**:
+  - **A (recommended)**: identify app server announcements in the canonical preview producer and exclude control endpoints and serialized configuration, then enable this test. M.
+  - **B**: require explicit user selection before promoting an arbitrary output URL to an app preview. Requires a product decision.
+  - **C**: retain incorrect preview targets from process inspection output.
+- **Decision**:
+
+### 51. real-harness-local — Codex running command remains painted
+
+- **Status**: reproduced intermittent Tier R build-preview failure (2 failed, 1 passed, 0 retries); skipped after reproduction.
+- **Tests**: `Codex running shell paints its command before completion`.
+- **Expected**: the running shell command becomes painted after its entrance animation and stays readable when reloaded during execution. Its completed result survives reload.
+- **Why**: two of three runs keep the initial command at effective opacity zero through a one-second poll, despite nonzero dimensions, a successful hit-test, and a Running row. Expected opacity greater than 0.9, received 0. The reviewed screenshot shows Running and an empty command area, matching the original live observation. Reload restores the command in all three runs; completed reply oracles and stored output checks pass. The one-second bound exceeds the renderer's 320ms entrance animation; earlier immediate snapshots were rejected as timing-sensitive evidence. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/running-1086/`. This scenario uses a real server and Codex binary with only the model HTTP endpoint scripted. The heavy-session rail-return variation remains unproven, and full video review is outstanding.
+- **Options**:
+  - **A (recommended)**: ensure the canonical shell command animation reaches its visible state through reactive updates, then enable this regression. M.
+  - **B**: remove the command entrance animation and display the command immediately. Requires a design decision.
+  - **C**: retain intermittent invisible commands while work runs.
+- **Decision**:
+
+### 52. core-harness-rendering-matrix — collapsed turn identifies its tool-group count
+
+- **Status**: reproduced Tier M build-preview failure (1 failed, 0 retries); skipped after reproduction.
+- **Tests**: `a manually folded Codex turn retains its three-group count after completion`.
+- **Expected**: after three foldable tool groups are manually collapsed and the turn completes, the header remains collapsed and identifies three groups.
+- **Why**: the two-read context group, standalone shell, and trailing read all pass their group-presence assertions. Manual collapse persists through completion and the completed reply passes its oracle. The count assertion expects `3 groups` but receives only `Worked for 0s`; the reviewed screenshot confirms no count is displayed. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/fold-count-1088/`. The fixture uses normalized tool parts through the shared mock transport. This is the missing-count branch of the live observation, not a failure to retain the manual fold. Unsigned run 1090 also fails at the same count assertion after explicitly observing Working and all three groups; expanded and completed screenshots were reviewed. Unsigned run 1089 stopped in setup and is not qualified evidence.
+- **Options**:
+  - **A (recommended)**: pass the canonical foldable-group count to the fold header and render it, then enable this test. S.
+  - **B**: remove the fold-count requirement from the product contract. Requires a product decision.
+  - **C**: keep the collapsed header without a group count.
+- **Decision**:
+
+### 53. core-harness-rendering-matrix — MCP group header identifies its members
+
+- **Status**: reproduced Tier M build-preview failure (1 failed, 0 retries); skipped after reproduction.
+- **Tests**: `a consecutive MCP group names the tools hidden inside it`.
+- **Expected**: a group containing consecutive sessions_list and processes calls identifies those tools in its collapsed header.
+- **Why**: both header-name assertions receive only `Used 2 tools`. Expanding the group reveals both member rows, and both member visibility checks pass. Collapsed and expanded screenshots were reviewed. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/mcp-group-1091/`. The fixture uses normalized tool names corresponding to the live observation; it is not a retained raw MCP payload and does not test MCP execution. This is one shared regression for states 26 and 51; skill-tool coverage remains separate. Unsigned run 1092 also fails on both missing names, with both expanded-member checks passing and both screenshots reviewed. The assertion accepts either an underscore or a space in Sessions list so presentation normalization does not itself fail the test.
+- **Options**:
+  - **A (recommended)**: retain descriptive member names in the canonical mixed-tool group summary, then enable this test. S.
+  - **B**: explicitly accept a count-only summary for mixed MCP tools. Requires a product decision.
+  - **C**: leave the grouped tools unidentified until expanded.
+- **Decision**:
+
+### 54. core-session-rendering-navigation — permission control appears before hydration
+
+- **Status**: skipped after reproduced Tier M build-preview failures: test-user at 1280px (1 failed), unsigned-local at 1280px and 720px (2 failed), zero retries.
+- **Tests**: `permission control is visible before hydration and preserves composer geometry at 1280px` and its 720px parameter.
+- **Expected**: the composer includes a visible permission control before its delayed harness/permission reports arrive, preserves its geometry when they resolve, and accepts a subsequent send.
+- **Why**: the toolbar and editor are visible, both requests are observed and held, but the permission trigger does not exist. After release, the permission control appears; outer geometry checks and the send/reply oracle pass. The first run's before-hydration and completed-send screenshots were reviewed. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/permission-first-1093/` and `permission-first-1094/`. The former geometry-only tests missed this content-appearance failure. Their scenarios are extended in place, with permission response control owned by the shared mock. Known/default mode content, animation quality, and stale stored selections need additional coverage; this assertion does not require inventing an effective permission value before it is known.
+- **Options**:
+  - **A (recommended)**: keep the permission control visible with the authoritative known selection during hydration and retain its final dimensions; resolve genuinely unknown state explicitly. M.
+  - **B**: show an explicit loading state when no authoritative default is available. Requires a design decision about first-boot content.
+  - **C**: retain the empty slot followed by a late-appearing control.
+- **Decision**:
+
+### 55. core-session-rendering-navigation — harness caret stays adjacent to its model label
+
+- **Status**: reproduced Tier M build-preview failure (1 failed, 0 retries); skipped after reproduction.
+- **Tests**: `the harness selector keeps its caret beside a short model label`.
+- **Expected**: a short model label uses a compact trigger with an adjacent caret. The regression permits a 16px gap as a concrete QA interpretation of adjacency, not a measurement supplied by the user.
+- **Why**: after selecting Claude and completing a send through the reply oracle, the trigger measures 260px wide; Sonnet 4.6 text measures 65.734375px and the caret gap is 140.265625px. Expected gap at most 16px, received 140.265625px. The screenshot was reviewed and matches the reported distant caret. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/caret-1095/`. Geometry measures the actual text range, not the stretched label container. This covers the closed trigger with no effort label between model and caret; open-menu width and long-label/effort variants remain untested. Unsigned run 1096 fails on the same 140.265625px gap with its reply oracle passing; visual review of that run remains outstanding.
+- **Options**:
+  - **A (recommended)**: size the trigger to its contents within the available composer space and retain a consistent text/caret gap, then enable this regression. S.
+  - **B**: retain a fixed outer reservation but align the visible label and caret together within it. Requires a design decision.
+  - **C**: keep the distant caret and excess internal whitespace.
+- **Decision**:
+
+### 56. core-timeline-rendering-scroll — keyboard reaches the first transcript turn
+
+- **Status**: skipped after reproduced Tier M build-preview failures in both auth modes (1 failed per mode, 0 retries).
+- **Tests**: `Home and End reach the endpoints of a fully loaded heavy transcript`.
+- **Expected**: after all 61 turns are revealed and the transcript receives focus, Home reaches the first user row and scroll offset zero; End reaches the final prompt at the bottom.
+- **Why**: Home remains at scrollTop 12777 after ten seconds and the first UserMessage row is not mounted. The reviewed screenshot shows turns 26–29. End reaches the bottom and its final prompt viewport assertion passes; the reviewed screenshot shows the final prompt and reply. A successful send/reply oracle precedes keyboard interaction. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/home-end-1102/`. Earlier run 1101 had two incorrect row selectors (pinned title and an exact-text wrapper); they are corrected in this run. This reproduces the shared endpoint branch of live state 84; transient blanking and OpenCode's first-End variation remain uncovered. Test-user run 1106 reproduces the same two Home failures at scrollTop 12778; End passes, and both endpoint screenshots were reviewed. Run 1105 ran no tests because the runtime-contract dist export was stale; its declared build script refreshed it before 1106. No internal cause is claimed.
+- **Options**:
+  - **A (recommended)**: make the canonical transcript keyboard navigation reach the requested endpoint through virtualizer measurement, then enable this test. M.
+  - **B**: explicitly replace Home/End navigation with another accessible endpoint control and revise the interaction contract. Requires a product decision.
+  - **C**: retain Home stopping in the middle of loaded history.
+- **Decision**:
+
+### 57. core-timeline-rendering-scroll — expanded output survives virtualized unmount
+
+- **Status**: skipped after reproduced Tier M build-preview failures in both auth modes (1 failed per mode, 0 retries).
+- **Tests**: `expanded shell output survives scrolling out of the virtualized transcript`.
+- **Expected**: a manually revealed 300-line output retains Show less after scrolling to the final turn, unmounting its row, and returning.
+- **Why**: the initial Show less assertion passes, the tool row is confirmed absent at the final prompt, and the outer tool accordion remains expanded on return. Its output toggle nevertheless changes to Show all, failing the retention assertion. All three stage screenshots were reviewed in each mode. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/output-retention-1103/` and `output-retention-1104/`. The initial send passes the shared reply oracle. The normalized fixture exercises the shared renderer; it does not rerun a real Codex command. ScrollableOutput owns a component-local revealed signal, so persistence across virtualized unmount is not provided by that owner. Full video review remains outstanding. The separate reading-position shift on Show all is not covered here.
+- **Options**:
+  - **A (recommended)**: keep output expansion with canonical per-part UI state that survives row virtualization and pass it to the output renderer, then enable the test. M.
+  - **B**: keep expanded output mounted outside the virtualized lifecycle. Requires review of memory and rendering cost.
+  - **C**: retain loss of manual output expansion when the row leaves the rendered range.
+- **Decision**:
+
+### 58. core-timeline-rendering-scroll — Show all preserves output reading position
+
+- **Status**: skipped after reproduced Tier M build-preview failures in both auth modes (1 failed per mode, 0 retries).
+- **Tests**: `Show all preserves the visible line in already scrolled shell output`.
+- **Expected**: revealing a 300-line shell output while reading line 16 preserves that named line's vertical position within 2px.
+- **Why**: line 16 is initially inside the capped output at y204. After Show all it first moves to y484, then to y-5642 by the post-screenshot measurement: a 5846px displacement. Reviewed before/after screenshots show lines 12–22 replaced by lines 290–300. The unsigned run reproduces the same measurements, and its reply-oracle screenshot was reviewed. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/output-reading-1109/` and `output-reading-1110/`. The test uses the shared mock and a real send/reply oracle, then measures the same text range through the shared geometry helper. It reproduces output reading-position loss in a standalone shell; the original nested tool-group variation remains separate. Sampled video frames were reviewed for 1109; a full frame-by-frame review remains outstanding. No internal cause is claimed.
+- **Options**:
+  - **A (recommended)**: preserve the visible output anchor when removing the cap and coordinate that change with transcript scrolling, then enable this test. M.
+  - **B**: expand output in a separate viewer with an explicit reading-position contract. Requires a product decision.
+  - **C**: retain the jump to another part of the output on expansion.
+- **Decision**:
+
+### 59. core-busy-abort-errors — Thinking survives completion refresh latency
+
+- **Status**: skipped after three reproduced Tier M failures per auth mode with the final shared WebSocket transport (1128/1129), zero retries.
+- **Tests**: `Thinking stays painted until the follow-up reply begins`.
+- **Expected**: the active prompt retains painted Thinking until its assistant text starts painting, including when Idle arrives before the completed message refresh.
+- **Why**: real OpenCode follow-ups 1118 and 1119 show sampled gaps of 508ms and 615ms. The latter captures Busy/Busy/Idle lifecycle frames without message events; the pre-Idle REST snapshot has an unfinished empty assistant, and the completed snapshot response arrives 691ms after Idle. The shared mock models lifecycle-only delivery and 700ms message-response latency. Run 1121 fails with 59 absent samples over approximately 722ms; reviewed video frames show the blank interval and subsequent reply. Both repeats in 1123 also fail. Unsigned passes 1122/1124 missed the central WebSocket transport and are invalid as continuity coverage. The shared EventBus now serves that WebSocket without a real server connection. Final runs 1128/1129 reproduce the gap three times per auth mode (716–733ms). Both normal-turn controls pass three times per mode, 12 passes total. Every run has reviewed transition or busy/final frames. The regression requires an intercepted central WebSocket so a missing mock transport cannot silently pass. Both sends use the shared reply oracle. Evidence: `docs/verification/session-rendering/2026-09-12/live-ordering-1119/` and `evidence/thinking-gap-1121/`, `thinking-gap-1122/`, `thinking-gap-1123/`. Full recording review remains outstanding. The initial delayed-response prototype read mutable messages after its wait and passed; the retained helper snapshots messages at request time.
+- **Options**:
+  - **A (recommended)**: make the canonical turn presentation retain pending work until the completed transcript is available, then enable the regression. M.
+  - **B**: coordinate lifecycle and transcript delivery so completion is visible before Idle, with end-to-end proof under delayed reads. Requires producer-contract review.
+  - **C**: retain the blank interval between Thinking and the reply.
+- **Decision**:
+
+### 60. core-busy-abort-errors — Stop presents the canonical cancellation outcome
+
+- **Status**: skipped after reproduced Tier M build-preview failures in both auth modes (one failure per mode, zero retries).
+- **Tests**: `Stop shows the canonical cancelled-turn outcome without reloading`.
+- **Expected**: a stopped turn shows its interruption explanation without requiring navigation or reload; the composer returns to ready.
+- **Why**: real OpenCode probes 1130/1131 stop without an interruption explanation, then reload reveals You stopped. Probe 1131 records an HTTP 200 abort response with `status: cancelled`, an Idle lifecycle event, and no interruption explanation during the following 20-second capture. The session metadata loaded on reload carries `lastTurn.status: cancelled` with the matching assistant ID; message snapshots carry no abort error. The shared mock models this through a held turn, persisted cancellation outcome, and lifecycle delivery. Runs 1132/1133 fail the pre-reload visibility assertion after 15 seconds; the ready-control and post-reload divider assertions pass. Before/after screenshots were reviewed in both modes. The stopped turn intentionally has no reply text, so its divider is the outcome oracle; the existing completed turn also passes the shared reply oracle. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/live-stop-1131/`, `stop-outcome-1132/`, `stop-outcome-1133/`. Full video review, interruption during tool execution, repeated Stop, later-turn retention, and automatic fold behavior remain unverified by this regression.
+- **Options**:
+  - **A (recommended)**: reconcile the canonical session outcome on Stop/Idle before settling the transcript presentation, then enable this test. M.
+  - **B**: deliver the canonical outcome with the terminal lifecycle event and update its single client owner. Requires event-contract review.
+  - **C**: retain interruption explanations appearing only after reload.
+- **Decision**:
+
+### 61. core-harness-rendering-matrix — live folding preserves manual output expansion
+
+- **Status**: skipped after reproduced Tier M build-preview failures in both auth modes (one failure per mode, zero retries).
+- **Tests**: `enabling live folding preserves a manually opened Codex shell output`.
+- **Expected**: enabling live folding during a turn preserves shell output the user explicitly opened.
+- **Why**: live state 15 shows a manually opened pwd card disappear when the setting is enabled. The regression sends a real mocked prompt into a held pending turn, delivers three normalized tool groups through the shared runtime, opens the middle shell output, and enables the setting through Settings. Runs 1134/1135 fail the output visibility assertion after 10 seconds. The pre-toggle output, busy state, one-prompt count, and completed reply oracle pass. Before/after screenshots and the final oracle screenshot were reviewed in both auth modes. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/live-fold-1134/` and `live-fold-1135/`. Full video review, disabling the setting, and retention across subsequent tool events remain outstanding.
+- **Options**:
+  - **A (recommended)**: preserve explicit user expansion in the canonical folding owner when automatic folding changes, then enable this test. M.
+  - **B**: defer automatic folding changes until the next turn, with explicit product review.
+  - **C**: retain the disappearance of manually opened output when the setting changes.
+- **Decision**:
+
+### 62. core-harness-rendering-matrix — withdrawn title-overlap classification
+
+- **Status**: withdrawn as a product finding; the fixme is removed. Corrected restoration control passes three times per auth mode (runs 1142/1143, zero retries); every commentary screenshot and follow-up oracle frame is reviewed.
+- **Tests**: `restored Codex failure commentary renders each reply passage once`.
+- **Expected**: ordinary upward scrolling makes the expanded preceding commentary readable, and each stored passage renders once after restoration and reload.
+- **Why**: runs 1139/1140 hit the sticky title after Playwright scrollIntoViewIfNeeded. That did not prove the text was unreachable. Real Codex probe 1141 completes two turns, expands the preceding work, and recovers its opening commentary with ordinary upward scrolling. The diagnostic also read the outer ScrollView wrapper (always zero) instead of its data-scrollable viewport. The shared reply oracle now reports the actual viewport associated with the measured element. The existing wheel-to-top helper is shared between the scroll and harness specs; the corrected control uses it before checking readability. No product layout change is made. The historical duplicate-reply finding remains open and requires its original streaming/event sequence. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/live-commentary-1141/`; old failures 1137–1140 remain archived as superseded test evidence.
+- **Options**:
+  - **A (selected)**: withdraw the unsupported product classification and retain accurate restoration coverage.
+  - **B**: reclassify only if ordinary user scrolling also fails in a qualified reproduction.
+  - **C**: retain the unsupported inaccessible-text claim.
+- **Decision**: A. The live recovery contradicts the claimed inability to reach the text.
+
+### 63. core-docks — answered question flashes on a session-to-session return
+
+- **Status**: skipped after reproduced Tier M failures in both auth modes (1150/1151, one failure each, zero retries).
+- **Tests**: `Codex questions answered while away stay absent on rail return`.
+- **Expected**: a question resolved while this client visits another session never repaints as pending when the client returns, including after a missed resolution event and retained runtime replay.
+- **Why**: live cross-tab probe 1144 shows two pending flashes after another tab visibly completes its answer; both return question-list responses are empty. The regression drives a real mocked first send, opens a pending question through shared transports, visits another existing session through the rail, waits for that session's runtime stream and completed reply, removes the server's pending snapshot without delivering a resolution to this client, and returns. It requires the retained question body to actually arrive on the runtime stream. The no-visible-question assertion fails with three painted samples in each auth mode; both return flashes and the settled reply are visually reviewed. The mock now supplies other completed root sessions through its canonical navigation projection and filters runtime envelopes by requested parent. Earlier immediate draft-return tests never changed stream scope; their green result did not cover this flow. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/runtime-question-1150/` and `runtime-question-1151/`. The test models a missed resolution; it does not prove which live transport lost or reordered that event. Reload, OpenCode, and all event-order variations remain unverified.
+- **Options**:
+  - **A (recommended)**: reconcile resolved requests and retained replay through the canonical request owner before painting a pending dock, then enable this test. M.
+  - **B**: explicitly present request hydration as a stable loading state pending product review.
+  - **C**: retain transient pending questions during navigation.
+- **Decision**:
+
+### 64. core-docks — approved permission replays after switching sessions
+
+- **Status**: skipped after reproduced Tier M build-preview failures in both auth modes (1158/1159, one failure each, zero retries).
+- **Tests**: `an approved Codex permission stays absent after switching sessions and replaying runtime events`.
+- **Expected**: after Allow once succeeds, visiting another session and returning never paints the same permission as pending again.
+- **Why**: live state 74 shows an already-approved parent command reappear during a session round trip. The regression sends a real mocked prompt, publishes the canonical permission request on both presentation and runtime transports, clicks Allow once, validates exactly one `once` response, and publishes the authoritative permission resolution. It then visits another existing session, verifies its scoped stream and completed reply, and returns through the rail. The return must receive the retained runtime request body; the pending-dock assertion fails with one painted sample among 35 in each auth mode. The flash and all six first/other/return reply screenshots were visually reviewed. The permission-response count stays one and no request escapes the shared mock. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/permission-replay-1158/` and `permission-replay-1159/`. Full video review, child-panel opening, repeated round trips, and other harness variants remain outstanding.
+- **Options**:
+  - **A (recommended)**: preserve canonical resolution ordering across request hydration and retained runtime replay, then enable the test. M.
+  - **B**: explicitly reserve a stable request-hydration surface pending product review.
+  - **C**: retain transient actionable approval controls for an already-approved request.
+- **Decision**:
+
+### 65. core-harness-rendering-matrix — closed completed work exposes tools during replay
+
+- **Status**: skipped after reproduced Tier M build-preview failures in both auth modes (1165/1166, one failure each, zero retries).
+- **Tests**: `a manually closed latest Codex turn stays closed through retained runtime replay`.
+- **Expected**: completed work that the user closes stays closed throughout a session-to-session return and retained runtime replay.
+- **Why**: fresh real Codex first-visit probe 1164 initially shows a folded completed turn, removes the fold and exposes both completed commands for about 0.9 seconds, then folds again. The fixture retains its two stored messages and 35 normalized rendering events, without raw diagnostics. The regression explicitly expands and closes the latest completed turn, visits another existing session, waits for its scoped stream and reply, and returns through the rail with a required retained-runtime body. Fourteen of 99 unsigned samples and twelve of 87 test-user samples contain painted tool rows. All six reply-oracle screenshots and return transition frames are reviewed. A prior selector watched only an expanded fold button and missed the disappearance of the entire fold. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/fold-first-open-1164/`, `fold-replay-1165/`, and `fold-replay-1166/`. This is completed-turn restoration coverage; it intentionally sends no follow-up that would turn the subject into an older turn. Cold first-visit automation, reload, other harnesses, and full-video review remain outstanding.
+- **Options**:
+  - **A (recommended)**: preserve authoritative completion and explicit fold state while reconciling retained runtime events, then enable the test. M.
+  - **B**: introduce a stable hydration presentation only with explicit product review.
+  - **C**: retain transient tool exposure and transcript movement on return.
+- **Decision**:
+
+### 66. core-session-rendering-navigation — workspace file selection leaks across sessions
+
+- **Status**: skipped after Tier M build-preview reproductions in both auth modes (1186/1187, one failure each, zero retries).
+- **Tests**: `workspace file selection returns to the file chosen by each session @core`.
+- **Expected**: returning through the rail restores the workspace file selected by that session.
+- **Why**: live Codex recheck 1183 returns to a session that selected README.md but shows CLAUDE.md after a neighbour selected it. The shared-mock regression sends a first prompt, verifies the reply, selects first.txt, visits a second populated session, selects second.txt and returns. The final attribute assertion expects file://first.txt and receives file://second.txt throughout its 10-second polling interval. All six reply-oracle screenshots and six selection screenshots across the two modes are reviewed; the return shows second.txt contents beside the first session's reply. The first selection screenshot precedes content loading, so first-file content rendering is not claimed. Live previews fail to fetch. This covers file selection, not child/browser selection, reload or continuous geometry. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/file-scope-1183/`, `file-scope-1186/`, `file-scope-1187/`.
+- **Options**:
+  - **A (recommended)**: retain each session's chosen file selection while preserving the canonical workspace file data owner, then enable this regression. M.
+  - **B**: explicitly revise the per-session selection requirement after product review to use workspace-wide selection.
+  - **C**: leave selection changes on session return unresolved.
+- **Decision**:
+
+### 67. core-timeline-rendering-scroll — idle session return restores the middle
+
+- **Status**: skipped after reproduced Tier M build-preview failures in both auth modes (1188/1189, one failure each, zero retries).
+- **Tests**: `returning to an idle heavy session opens its first turn instead of restoring the middle`.
+- **Expected**: an idle heavy session opens at its first turn on return, as the session-rendering QA brief requires.
+- **Why**: recorded live OpenCode and Codex returns retain scrollTop 13340 and 13127 respectively. The regression loads all 60 seeded turns, sends and verifies another completed turn, leaves the transcript in the middle, visits a distinct populated session through the rail and returns. Both auth modes retain scrollTop 12492 (maximum 23475); the expected top of at most 2 pixels never arrives within ten seconds. The measurement and return screenshot precede any recovery scroll. A subsequent explicit scroll to the top and reply oracle prove that the first reply remains available. All six oracle screenshots and four middle/return screenshots are reviewed. This covers settled position only; first-frame blanking, folds/title timing, live-session bottom anchoring and full-video review remain outstanding. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/idle-return-1188/` and `idle-return-1189/`.
+- **Options**:
+  - **A (recommended)**: apply the requested idle-return position policy through the canonical session view owner, then enable the regression. M.
+  - **B**: explicitly revise the brief after product review to preserve the reader's prior position.
+  - **C**: leave the implementation and acceptance requirement inconsistent.
+- **Decision**:
+
+### 68. real-session-rendering-harnesses — OpenCode rejects its advertised default agent
+
+- **Status**: skipped after real-server build-preview reproductions in unsigned and test-user modes (opencode-ui-1198/1199, one failure each, zero retries).
+- **Tests**: `OpenCode default agent completes a browser-submitted prompt @core @tier-real @surface-web`.
+- **Expected**: the default agent advertised by OpenCode accepts the browser-submitted prompt and renders the completed assistant reply.
+- **Why**: the real agent catalog returns `name: "Build"`; the browser submits `agent: "Build"`; the engine stores `Agent not found: "Build"` and makes no model request. The shared reply oracle fails after 20 seconds because no reply appears. Both reviewed failure screenshots visibly show the submitted prompt and the same agent error. This is an agent identity failure before tool execution, not the original missing-tool-data rendering regression. The isolated API probe that omits an explicit agent can execute the tool, but that does not repair this browser flow. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/opencode-ui-1198/` and `opencode-ui-1199/`.
+- **Options**:
+  - **A (recommended)**: preserve the executable agent identity through the canonical catalog and selection contract, then enable this regression.
+  - **B**: remove unsupported agents from the authoritative catalog and explicitly expose only executable selections.
+  - **C**: leave default-agent sends failing before model execution.
+- **Decision**:
+
+### 69. core-timeline-rendering-scroll — first reply token moves the existing prompt
+
+- **Status**: skipped after Tier M build-preview reproductions in both auth modes (first-token-1206/1207, one failure each, zero retries).
+- **Tests**: `a Codex first reply token preserves the existing prompt with a stationary composer`.
+- **Expected**: inserting the first reply token preserves the existing prompt's viewport position while the composer stays stationary.
+- **Why**: the portable fixture retains the recorded preceding turns and completed shell from the live Codex sequence. After a stable baseline, the first text moves the same prompt from y517 to y459, a 58px upward shift; scrollTop changes from 388 to 446. Composer y752/height52 remain unchanged. The final assertion checks 89 animation-frame samples and reports Expected <=1px, Received58px in both auth modes. The helper's synchronous initial sample is retained for diagnosis but excluded from painted-frame assertions. Both preceding and completed reply oracles pass per mode. All eight before/arrival and reply-oracle images were reviewed. Earlier recordings were reviewed frame-by-frame from60 through139 in both modes and corroborate58px; they do not establish the larger initial synchronous layout measurement as painted motion. This qualifies only the Codex first-token variation, not send, OpenCode, child-chip or separate tool-transition variants. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/first-token-1206/` and `first-token-1207/`.
+- **Options**:
+  - **A (recommended)**: preserve the existing prompt's viewport anchor through first-token insertion, then enable the regression.
+  - **B**: reserve the first response row's space before its text arrives.
+  - **C**: explicitly revise the position-stability requirement to allow this movement.
+- **Decision**:
+
+### 70. real-harness-local — Pi first send references missing native history
+
+- **Status**: skipped after real build-preview failures in both auth modes (native-first-send-1202/1203, zero retries).
+- **Tests**: `pi-workspace harness completes exact turns, reload, and visible usage`.
+- **Expected**: a new native Pi session accepts its first browser prompt and visibly renders the assistant reply before the existing reload/usage assertions.
+- **Why**: the existing ordinary draft → composer → Submit journey renders the user prompt, then `Pi session file is missing for …`. The first shared reply oracle fails before any scripted model request. Both author and primary agent reviewed the unsigned and test-user error screenshots. Captured browser message responses corroborate the same errors; the initial extra diagnostic request omitted directory and returned404, which is excluded. Pinned Pi0.85.0 is used in the Pi run. This preserves the existing test rather than adding duplicate first-send coverage. It does not qualify the blocked image or Browser assertions. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/native-first-send-1202/` and `native-first-send-1203/`.
+- **Options**:
+  - **A (recommended)**: correct native session creation and durable identity ownership, then enable the existing journey.
+  - **B**: explicitly distinguish new-session startup from resuming native history in the canonical contract.
+  - **C**: defer exposing the affected native first-send flow until corrected.
+- **Decision**:
+
+### 71. real-harness-local — Codex first send references missing native history
+
+- **Status**: skipped after real build-preview failures in both auth modes (native-first-send-1202/1203, zero retries).
+- **Tests**: `codex native SDK harness completes exact turns, reload, and visible usage`.
+- **Expected**: a new native Codex session accepts its first browser prompt and visibly renders the assistant reply before the existing reload/usage assertions.
+- **Why**: the existing ordinary draft → composer → Submit journey renders the user prompt, then `no rollout found for thread id …`. The first shared reply oracle fails before any scripted model request. Both author and primary agent reviewed the unsigned and test-user error screenshots. Captured browser message responses corroborate the same errors; the initial extra diagnostic request omitted directory and returned404, which is excluded. Pinned Pi0.85.0 is used in the Pi run. This preserves the existing test rather than adding duplicate first-send coverage. It does not qualify the blocked image or Browser assertions. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/native-first-send-1202/` and `native-first-send-1203/`.
+- **Options**:
+  - **A (recommended)**: correct native session creation and durable identity ownership, then enable the existing journey.
+  - **B**: explicitly distinguish new-session startup from resuming native history in the canonical contract.
+  - **C**: defer exposing the affected native first-send flow until corrected.
+- **Decision**:
+
+### 72. real-session-rendering-harnesses — restored OpenCode shell loses command and output
+
+- **Status**: skipped after real build-preview failures in both auth modes (api-tool-1208 and api-rendering-1209, zero retries).
+- **Tests**: `API-started OpenCode shell retains its executed command and result in the restored transcript`.
+- **Expected**: a completed shell tool retains its executed command and returned stdout when the browser opens and reloads the real session.
+- **Why**: a real API-started OpenCode turn executes `printf OPENCODE_API_TOOL_RESULT`; two model requests prove returned stdout reaches the model. Stored presentation data instead has `call_1` and empty input/output. Both completed-reply oracles pass, but the expanded tool shows only “Call 1,” failing both command/output checks. The author reviewed all four tool reply-oracle images and both expanded outcomes; the primary agent independently reviewed the unsigned expanded tool. Full videos remain unreviewed. This qualifies the restored-shell variant of the existing tool-data family, not read/edit/MCP/permission, grouping, exits, or live-command rendering. API session/message creation does not prove browser first-send recovery. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/api-tool-1208/result.json` and `api-rendering-1209/result.json`.
+- **Options**:
+  - **A (recommended)**: preserve canonical tool name, input and result through the authoritative OpenCode presentation producer, then enable this regression.
+  - **B**: explicitly revise the product contract for which completed shell details must be retained, with equivalent user-visible execution evidence.
+  - **C**: defer the affected tool-detail surface until the contract is implemented and verified.
+- **Decision**:
+
+### 73. real-session-rendering-harnesses — restored OpenCode local-file image renders only alt text
+
+- **Status**: skipped after real build-preview failures in both auth modes (api-rendering-1209 and api-image-1210, zero retries).
+- **Tests**: `API-started OpenCode local-file image restores as a compact tile with a full preview`.
+- **Expected**: a real existing local PNG referenced by the assistant renders as an approximately 80×80px tile, with full image available on click after browser restoration/reload.
+- **Why**: the API-started real OpenCode turn completes and stores Markdown referencing an existing 512×512 PNG; both completed-reply oracles pass on open/reload. The browser shows only “QA local image” alt text and no matching image element. The image-presence assertion fails, so tile geometry and preview checks are unreached. The author reviewed all four image reply-oracle images and both restored outcomes; the primary agent independently reviewed the test-user restored image. Full videos remain unreviewed. This qualifies the OpenCode web variant of the original file-image family; desktop and other harnesses remain open. API session/message creation does not prove browser first-send recovery. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/api-rendering-1209/result.json` and `api-image-1210/result.json`.
+- **Options**:
+  - **A (recommended)**: make the canonical local-image delivery and Markdown rendering path supply an actual image in the fixed-size tile, then enable the full preview regression.
+  - **B**: explicitly revise the local-file image contract and corresponding user-visible behavior before adjusting acceptance.
+  - **C**: defer exposing local-file image rendering until delivery, fixed-size loading/error states and preview are verified.
+- **Decision**:
+
+### 74. core-session-rendering-navigation — splash disappears before visible composer readiness
+
+- **Status**: skipped after build-preview failures in both auth modes (boot-handoff-1216/1217; 0 pass / 1 fail each, zero retries).
+- **Tests**: `cold boot keeps one steady logo through shell readiness and accepts the first prompt`.
+- **Expected**: cold draft entry retains the splash until the main draft composer is visibly rendered, then accepts one first UI prompt with its completed reply visible.
+- **Why**: the shell container becomes present before meaningful main content. The strengthened visibility probe includes ancestor opacity and records three unsigned / six test-user samples with neither splash nor composer. All 291 encoded video frames were reviewed through full-frame contact sheets, with native-resolution boundary checks: splash at 0.720s, missing main content at 0.760s, composer at 0.800s. The test-user sidebar remains visible. Both runs subsequently create one session, send one UI prompt and render the completed reply, with zero unhandled mock API requests. Signed Reconnecting persists after visual settlement. Earlier 1211/1212 greens checked the weaker shell-container condition and do not establish continuity. DOM and video sampling are separate clocks; exact gap duration is not inferred. This qualifies a shared-mock browser boot handoff, not real-provider or packaged-desktop reliability. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/boot-handoff-1216/result.json` and `boot-handoff-1217/result.json`.
+- **Options**:
+  - **A (recommended)**: make the canonical readiness owner retain the splash until the actual main composer is visible, then enable the strengthened journey.
+  - **B**: define and implement a stable intermediate main-content presentation as an explicit handoff contract before revising acceptance.
+  - **C**: defer the affected cold-entry flow until continuity and first-prompt readiness are verified.
+- **Decision**:
+
+### 75. real-session-rendering-harnesses — steering intermittently hides a completed OpenCode reply
+
+- **Status**: skipped after intermittent real build-preview failure: unsigned 1213/1214 totals 3 pass / 0 fail; test-user 1215 has 1 pass / 2 fail; zero retries.
+- **Tests**: `API-started OpenCode steering keeps the completed reply visible through reload`.
+- **Expected**: after a steering addition completes in canonical stored messages, the live browser transcript visibly retains its assistant reply before reload.
+- **Why**: both failed 20-second shared reply oracles see two user prompts only, while full canonical messages contain completed `OPENCODE_STEERING_INITIALOPENCODE_STEERING_FINAL`. Actual browser latest-surface/latest-turn responses retain only the steering user. The 24-request analysis establishes that failed repeat 1's initial empty history completed approximately 47ms before the first API prompt; a still-pending initial hydration alone is insufficient to explain the failure. The primary agent reviewed eight passing reply-oracle observations and two failure screenshots; full videos remain unreviewed. Failed runs never reach reload. API-started live steering qualifies this variation of the original missing-reply family, not browser first-send, native restart or mature-session variations. Runtime stream contents and the passing repeat's network trace are unavailable; event loss and an exact internal cause are not claimed. The proposed exact-session history guard is not implemented; the tested body is unchanged except fixme. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/steering-reply-1213/result.json`, `steering-reply-1214/result.json`, `steering-reply-1215/result.json` and `steering-reply-1215/analysis/network-ordering.json`.
+- **Options**:
+  - **A (recommended)**: correct the canonical latest-view and steering-turn association so the completed assistant remains in the visible turn, then enable the existing regression.
+  - **B**: explicitly revise the canonical turn-association contract for steering additions while preserving the completed reply in all supported views.
+  - **C**: defer the affected steering flow until canonical visibility and the relevant lifecycle variants are verified.
+- **Decision**:
+
+### 76. desktop-unsigned-embedded — Browser loses its loaded page on session return
+
+- **Status**: skipped after the intended failure in packaged native run 1225 (0 pass / 1 fail, zero retries).
+- **Tests**: `the native Browser retains its address and page after a Claude session round trip`.
+- **Expected**: a loaded Browser tab retains its address and page when the user switches to another completed chat and back.
+- **Why**: both genuine UI sends reach the real Claude binary and scripted model endpoint. The Browser initially loads a real loopback HTTP page; the address and Electron guest URL/body match. After rail navigation away and back, the tab remains but the address is empty and the guest is `about:blank` with an empty body. All five reply-oracle screenshots and before/return page images were reviewed. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/browser-return-1225/`. This qualifies the unsigned Claude variation of the historical Browser-loss family. It does not prove the original Codex variation, signed-native behavior, or the separate early-navigation lead in 1222. Full video timing remains unreviewed.
+- **Options**:
+  - **A (recommended)**: retain the Browser's canonical URL and restore it when its session panel remounts, then enable this regression.
+  - **B**: keep each session's Browser guest mounted through session switches while preserving resource limits and session isolation.
+  - **C**: defer Browser persistence until a documented lifecycle contract and acceptance test are implemented.
+- **Decision**:
+
 ## 3. Live-suite skips (not in core CI)
 
 These four `*.spec.ts` suites are gated behind `CLAXEDO_E2E_LIVE=1` (Tier L: real claxedo-server, real relay/tunnel, real MCP subprocess, real harness binaries) and do **not** run in core CI. Within them, the following bodies are `test.fixme` (real app bug/gap) or `test.skip` (missing prereq). Listed for triage; not blocking core CI.

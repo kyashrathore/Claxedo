@@ -22,7 +22,8 @@ import { startRealLocalServer, type RealLocalServer } from "../helpers/real-loca
 import { composeText as composePrompt, selectScriptedModel } from "../helpers/web-signed-relay-harness"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount } from "../helpers/turn-oracle-extras"
-import { expectRailRowVisible, expectRailStatusAbsent, expectRailTitleSettled } from "../helpers/rail-oracle"
+import { expectRailRowVisible, expectRailStatusAbsent, expectRailTitleSettled, readRailSessionOrder } from "../helpers/rail-oracle"
+import { readPaintGeometry } from "../helpers/geometry-oracle"
 
 const execFileAsync = promisify(execFile)
 
@@ -912,7 +913,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     testInfo.setTimeout(240_000)
   })
 
-  test.afterEach(async () => {
+  test.afterEach(async ({ page }) => {
     const testInfo = test.info()
     // The server's stdout/stderr is buffered into `serverLog` and otherwise
     // surfaced only on GATING boot failures. On a FAILED test it is the only
@@ -921,8 +922,14 @@ test.describe("real harness journeys @core @tier-real", () => {
     // round because the picker said "No model results" and nothing said why.
     if (testInfo.status !== testInfo.expectedStatus && server) {
       await testInfo.attach("claxedo-server.log", { body: server.log(), contentType: "text/plain" })
+      const sessionID = /(?:\/s\/|\/session\/)([^/]+)$/.exec(new URL(page.url()).pathname)?.[1]
+      if (sessionID) {
+        const directory = await page.evaluate(() => (window as typeof window & { __CLAXEDO__?: { activeDirectory?: string } }).__CLAXEDO__?.activeDirectory)
+        const response = await page.request.get(`${BACKEND_URL}/session/${sessionID}/message?directory=${encodeURIComponent(directory ?? "")}`)
+        await testInfo.attach("stored-session-messages.json", { body: await response.text(), contentType: "application/json" })
+      }
     }
-    if (testInfo.status !== testInfo.expectedStatus && scripted?.requests.length) {
+    if (testInfo.status !== testInfo.expectedStatus && scripted) {
       await testInfo.attach("scripted-model-requests.json", {
         body: JSON.stringify(scripted.requests.map((request) => ({
           dialect: request.dialect,
@@ -936,6 +943,7 @@ test.describe("real harness journeys @core @tier-real", () => {
   })
 
   test("pi-workspace harness completes exact turns, reload, and visible usage", async ({ page }) => {
+    test.fixme(true, "Pi first send fails because the newly created native session file is missing")
     const dir = await makeWorkspace("pi-workspace")
     await seedOneProject(page, dir)
     await runRealHarnessJourney(page, dir, { id: "pi-workspace", dialect: "responses" })
@@ -1321,8 +1329,53 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   }
 
-  for (const [action, goalMode] of [["answer", false], ["multiple", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false], ["delete-response-lost", false]] as const) {
-    test(`codex native structured question ${action} reaches the question dock${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
+  test("Codex sends converge on the same session order in both browser tabs", async ({ page, context }) => {
+    test.fixme(true, "a Codex send updates rail order only in the sending tab despite both tabs receiving its reply")
+    const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
+    requireBinary(binary, "codex", "install the Codex CLI to exercise cross-tab session updates.")
+    const dir = await makeWorkspace("codex-rail-sync", "codex")
+    await seedOneProject(page, dir)
+    const visits: Array<{ id: string; url: string; reply: string }> = []
+    for (const name of ["OLDER", "NEWER"]) {
+      const input = await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, "codex")
+      await waitForHarnessReady(page)
+      const reply = `RAIL-${name}-${Date.now()}`
+      await composePrompt(page, input, `Reply with exactly this one token: ${reply}`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expectAssistantReplyVisible(page, reply)
+      visits.push({ id: new URL(page.url()).pathname.split("/").at(-1)!, url: page.url(), reply })
+    }
+    const [older, newer] = visits
+    await (await expectRailRowVisible({ page, sessionId: older.id })).click()
+    await expectAssistantReplyVisible(page, older.reply)
+    const receiver = await context.newPage()
+    try {
+      await seedOneProject(receiver, dir)
+      await receiver.goto(older.url)
+      await expectAssistantReplyVisible(receiver, older.reply)
+      await expectRailRowVisible({ page: receiver, sessionId: newer.id })
+      const before = { sender: await readRailSessionOrder(page), receiver: await readRailSessionOrder(receiver) }
+      const reply = `RAIL-SYNC-${Date.now()}`
+      await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${reply}`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expectAssistantReplyVisible(page, reply)
+      await expectAssistantReplyVisible(receiver, reply)
+      await page.screenshot({ path: test.info().outputPath("rail-sender.png") })
+      await receiver.screenshot({ path: test.info().outputPath("rail-receiver.png") })
+      const after = { sender: await readRailSessionOrder(page), receiver: await readRailSessionOrder(receiver) }
+      await fs.writeFile(test.info().outputPath("rail-orders.json"), JSON.stringify({ visits, before, after }, null, 2))
+      await expectRailRowVisible({ page, sessionId: older.id, index: 0 })
+      await expectRailRowVisible({ page: receiver, sessionId: older.id, index: 0 })
+      expect(await readRailSessionOrder(receiver)).toEqual(await readRailSessionOrder(page))
+    } finally {
+      await receiver.close()
+    }
+  })
+
+  for (const [action, goalMode] of [["answer", false], ["answer-retained", false], ["multiple", false], ["custom", false], ["dismiss", false], ["stop", false], ["stop", true], ["delete", false], ["delete-response-lost", false]] as const) {
+    test(action === "answer-retained" ? "codex native question retains the selected answer card after completion and reload" : `codex native structured question ${action} reaches the question dock${goalMode ? " in Goal mode" : ""}`, async ({ page }) => {
+      test.fixme(action === "answer-retained", "Codex delivers the selected answer but retains no resolved question card after reload")
       const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
       requireBinary(binary, "codex", "install the Codex CLI to exercise its structured question tool.")
       const dir = await makeWorkspace("codex-question", "codex")
@@ -1407,7 +1460,7 @@ test.describe("real harness journeys @core @tier-real", () => {
         }
         await expectAssistantReplyVisible(page, marker)
         expect(toolResults().length).toBeGreaterThan(0)
-        if (action === "answer") expect(JSON.stringify(toolResults())).toContain("Staging")
+        if (action === "answer" || action === "answer-retained") expect(JSON.stringify(toolResults())).toContain("Staging")
         else if (action === "multiple") {
           expect(JSON.stringify(toolResults())).toContain("Staging")
           expect(JSON.stringify(toolResults())).toContain("Unit")
@@ -1415,6 +1468,16 @@ test.describe("real harness journeys @core @tier-real", () => {
         }
         else if (action === "custom") expect(JSON.stringify(toolResults())).toContain("Preview café 日本語")
         else expect(JSON.stringify(toolResults())).not.toContain("Staging")
+        if (action === "answer-retained") {
+          await fs.writeFile(test.info().outputPath("question-tool-results.json"), JSON.stringify(toolResults(), null, 2))
+          await page.reload({ waitUntil: "domcontentloaded" })
+          await expectAssistantReplyVisible(page, marker)
+          await page.screenshot({ path: test.info().outputPath("answered-question-after-reload.png") })
+          const card = page.locator('[data-component="question-card"]').filter({ hasText: "Which environment?" })
+          await expect(card, "answered question retains its result card").toBeVisible({ timeout: 10_000 })
+          await expect(card.locator('[data-slot="answer-text"]')).toHaveText("Staging")
+          await expect(dock).toHaveCount(0)
+        }
       } finally {
         await test.info().attach("codex-question-tool-contract.json", {
           contentType: "application/json",
@@ -1659,6 +1722,7 @@ test.describe("real harness journeys @core @tier-real", () => {
   test("codex native SDK harness completes exact turns, reload, and visible usage", async ({
     page,
   }) => {
+    test.fixme(true, "Codex first send fails because no rollout exists for the newly created native thread")
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
     requireBinary(binary, "codex", "the native codex harness drives the same CLI's `app-server` subcommand.")
     const dir = await makeWorkspace("codex-sdk", "codex")
@@ -1712,8 +1776,10 @@ test.describe("real harness journeys @core @tier-real", () => {
   })
 
 
-  for (const harness of ["claude", "codex"] as const) {
-    test(`${harness} native long-running tool retains its result through reload`, async ({ page }) => {
+  for (const [harness, longOutput, runningCommand] of [["claude", false, false], ["codex", false, false], ["codex", true, false], ["codex", false, true]] as const) {
+    test(runningCommand ? "Codex running shell paints its command before completion" : longOutput ? "Codex completed shell exposes all 240 output lines after reload" : `${harness} native long-running tool retains its result through reload`, async ({ page }) => {
+      test.fixme(longOutput, "Codex tool results contain the full output but the stored and rendered shell retains only the final chunk")
+      test.fixme(runningCommand, "Codex running shell commands intermittently remain transparent until the row remounts")
       const dir = await makeWorkspace(`${harness}-long-result`, harness)
       await seedOneProject(page, dir)
       await openDraftPrompt(page, dir)
@@ -1723,11 +1789,40 @@ test.describe("real harness journeys @core @tier-real", () => {
       await page.locator(`[data-permission-mode-row][data-mode="${harness === "claude" ? "bypassPermissions" : "full-access"}"]`).click()
       const marker = `LONG_RESULT_${Date.now()}`
       const script = path.join(dir, "long-result.cjs")
-      await fs.writeFile(script, `setTimeout(() => console.log(${JSON.stringify(marker)}), 8000);`)
+      await fs.writeFile(script, `${longOutput ? 'for (let i = 1; i <= 240; i++) console.log("OUTPUT_LINE_" + i);' : ""} setTimeout(() => console.log(${JSON.stringify(marker)}), 8000);`)
       const command = `node '${script}'`
       scripted!.scriptTool({ name: harness === "claude" ? "Bash" : "exec_command", input: harness === "claude" ? { command, timeout: 120000 } : { cmd: command, yield_time_ms: 30000 }, whenPromptIncludes: marker })
       await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Run the requested command, then reply with exactly this one token: ${marker}`)
       await page.locator(SELECTORS.submitControl).last().click()
+      if (runningCommand) {
+        const active = page.locator('[data-component="tool-part-wrapper"]').filter({ hasText: "Running" }).last()
+        await expect(active).toBeVisible()
+        const label = active.getByText(command, { exact: true })
+        await expect(label).toHaveCount(1)
+        await expect.soft.poll(async () => (await readPaintGeometry(label)).opacity, { timeout: 1000, message: "the running command finishes its entrance animation" }).toBeGreaterThan(0.9)
+        const geometry = await readPaintGeometry(label)
+        await fs.writeFile(test.info().outputPath("running-command-geometry.json"), JSON.stringify({ command, geometry }, null, 2))
+        await page.screenshot({ path: test.info().outputPath("running-command.png") })
+        await expect(active).toContainText("Running")
+        expect.soft(geometry.opacity, "the running command is painted, not transparent").toBeGreaterThan(0.9)
+        expect.soft(geometry.visibility).toBe(true)
+        expect.soft(geometry.width).toBeGreaterThan(0)
+        expect.soft(geometry.height).toBeGreaterThan(0)
+        expect.soft(geometry.hit, "the running command is not covered").toBe(true)
+        await page.reload({ waitUntil: "domcontentloaded" })
+        await expect(active).toBeVisible()
+        await expect(label).toHaveCount(1)
+        await expect.soft.poll(async () => (await readPaintGeometry(label)).opacity, { timeout: 1000, message: "the restored command finishes its entrance animation" }).toBeGreaterThan(0.9)
+        const restored = await readPaintGeometry(label)
+        await fs.writeFile(test.info().outputPath("restored-running-command-geometry.json"), JSON.stringify({ command, geometry: restored }, null, 2))
+        await page.screenshot({ path: test.info().outputPath("restored-running-command.png") })
+        await expect(active).toContainText("Running")
+        expect.soft(restored.opacity, "the restored running command is painted").toBeGreaterThan(0.9)
+        expect.soft(restored.visibility).toBe(true)
+        expect.soft(restored.width).toBeGreaterThan(0)
+        expect.soft(restored.height).toBeGreaterThan(0)
+        expect.soft(restored.hit, "the restored running command is not covered").toBe(true)
+      }
       await expectAssistantReplyVisible(page, marker)
       const sessionID = new URL(page.url()).pathname.split("/").at(-1)!
       const read = async () => {
@@ -1742,6 +1837,25 @@ test.describe("real harness journeys @core @tier-real", () => {
       await page.reload({ waitUntil: "domcontentloaded" })
       await expectAssistantReplyVisible(page, marker)
       expect(await read()).toEqual(tools)
+      if (longOutput) {
+        await fs.writeFile(test.info().outputPath("command-source.cjs"), await fs.readFile(script))
+        const results = scripted!.requests.flatMap(({ body }) => "input" in body && Array.isArray(body.input)
+          ? body.input.filter(item => item.type === "function_call_output") : [])
+        await fs.writeFile(test.info().outputPath("native-tool-results.json"), JSON.stringify(results, null, 2))
+        expect(JSON.stringify(results).match(/OUTPUT_LINE_\d+/g), "Codex returns all lines to the model endpoint").toEqual(
+          Array.from({ length: 240 }, (_, index) => `OUTPUT_LINE_${index + 1}`),
+        )
+        await fs.writeFile(test.info().outputPath("completed-shell-part.json"), JSON.stringify(tools[0], null, 2))
+        const part = page.locator(SELECTORS.toolPart(tools[0].id))
+        await part.scrollIntoViewIfNeeded()
+        await part.locator('[data-component="tool-trigger"]').click()
+        await page.screenshot({ path: test.info().outputPath("completed-shell-expanded.png") })
+        const output = part.locator('[data-slot="bash-pre"]')
+        await expect(output).toBeVisible()
+        await expect(output, "expanded command retains the first output line").toContainText("OUTPUT_LINE_1")
+        await expect(output, "expanded command retains the final output line").toContainText("OUTPUT_LINE_240")
+        await expect(part.getByRole("button", { name: "Show all", exact: true })).toBeVisible()
+      }
     })
   }
 
@@ -1899,8 +2013,9 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   }
 
-  for (const harness of ["claude", "codex"] as const) {
-    test(`${harness} native tool failure survives reload and a successful next tool`, async ({ page }) => {
+  for (const [harness, presentation] of [["claude", false], ["codex", false], ["codex", true]] as const) {
+    test(presentation ? "Codex failed shell header retains its command and exit code after reload" : `${harness} native tool failure survives reload and a successful next tool`, async ({ page }) => {
+      test.fixme(presentation, "Codex failed shell headers omit the command even when the stored tool input contains it")
       const dir = await makeWorkspace(`${harness}-tool-error`, harness)
       await seedOneProject(page, dir)
       await openDraftPrompt(page, dir)
@@ -1908,7 +2023,7 @@ test.describe("real harness journeys @core @tier-real", () => {
       await waitForHarnessReady(page)
       await page.locator('[data-action="prompt-permission-mode"]').last().click()
       await page.locator(`[data-permission-mode-row][data-mode="${harness === "claude" ? "bypassPermissions" : "full-access"}"]`).click()
-      await expectToolErrorRecovery({ page, directory: dir, backend: BACKEND_URL, run: async (command, marker) => {
+      const result = await expectToolErrorRecovery({ page, directory: dir, backend: BACKEND_URL, run: async (command, marker) => {
         scripted!.scriptTool({ name: harness === "claude" ? "Bash" : "exec_command",
           input: harness === "claude" ? { command } : { cmd: command }, whenPromptIncludes: marker })
         await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(),
@@ -1916,6 +2031,15 @@ test.describe("real harness journeys @core @tier-real", () => {
         await page.locator(SELECTORS.submitControl).last().click()
         await expectAssistantReplyVisible(page, marker)
       } })
+      if (presentation) {
+        const part = page.locator(SELECTORS.toolPart(result.failed.id))
+        await part.scrollIntoViewIfNeeded()
+        await page.screenshot({ path: test.info().outputPath("failed-shell-header.png") })
+        await fs.writeFile(test.info().outputPath("failed-shell-part.json"), JSON.stringify(result.failed, null, 2))
+        const trigger = part.locator('[data-component="tool-trigger"]')
+        await expect.soft(trigger, "failed shell header identifies the command").toContainText("fail.cjs")
+        await expect(part.locator('[data-slot="basic-tool-tool-exit"]'), "failed shell retains a visible exit code").toHaveText(/23/)
+      }
     })
   }
 
