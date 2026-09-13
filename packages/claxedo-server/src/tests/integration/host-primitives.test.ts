@@ -50,17 +50,32 @@ function lease(input: Partial<SandboxLeaseRow> & { workspace_id: string }): Sand
 }
 
 describe("host primitives package surface", () => {
-  test("exports existing lifecycle, storage, relay, projection, and channel primitives from the package root", () => {
-    expect(createSandboxManager).toBeTypeOf("function")
-    expect(createMemoryLeaseStore).toBeTypeOf("function")
-    expect(createSqliteLeaseStore).toBeTypeOf("function")
-    expect(createControlPlaneRelayProvider).toBeTypeOf("function")
-    expect(createProjectionStore).toBeTypeOf("function")
-    expect(createDurableSessionLog).toBeTypeOf("function")
-    expect(createProjectionDedupStore).toBeTypeOf("function")
-    expect(claimChannelDelivery).toBeTypeOf("function")
-    expect(recordChannelRunAudit).toBeTypeOf("function")
-    expect(sandboxLease({ workspaceId: "ws_1" }).workspaceId).toBe("ws_1")
+  test("the lease primitives the package root exports compose into a working store", async () => {
+    // Each of these is re-exported for an embedder's composition root, where
+    // the first thing that runs is a lease acquire. A name that re-exports
+    // nothing usable compiles and fails there.
+    const store = createMemoryLeaseStore([sandboxLease({ workspaceId: "ws_seed", driver: "modal" })])
+
+    const acquired = await store.acquire("ws_1", { homeRegion: "us-east", driver: "modal", staleAfterMs: 1_000 })
+
+    expect(acquired.acquired).toBe(true)
+    expect(await store.get("ws_1")).toMatchObject({ workspaceId: "ws_1", status: "acquiring", epoch: 1 })
+    expect((await store.list()).map((lease) => lease.workspaceId).toSorted()).toEqual(["ws_1", "ws_seed"])
+  })
+
+  test("the remaining primitives are exported as callable values, not type-only names", () => {
+    for (const primitive of [
+      createSandboxManager,
+      createSqliteLeaseStore,
+      createControlPlaneRelayProvider,
+      createProjectionStore,
+      createDurableSessionLog,
+      createProjectionDedupStore,
+      claimChannelDelivery,
+      recordChannelRunAudit,
+    ]) {
+      expect(primitive).toBeTypeOf("function")
+    }
   })
 
   test("creates an instance-owned mirror controller with injected event subscription", () => {
@@ -89,7 +104,7 @@ describe("host primitives package surface", () => {
     expect(unsubscribe).toHaveBeenCalledTimes(1)
   })
 
-  test("composes hosted control plane primitives with a structural workspace authority", () => {
+  test("composes hosted control plane primitives with a structural workspace authority", async () => {
     const authority = {
       usersMe: vi.fn(async () => ({ id: "user_1" })),
       listWorkspaces: vi.fn(async () => []),
@@ -210,5 +225,15 @@ describe("host primitives package surface", () => {
 
     expect(services.authority).toBe(authority)
     expect(services.sandbox.sandboxManager).toBe(lifecycle)
+
+    // Driven, not compared: the composition has to expose the injected
+    // credential port as the one a route calls, and identity on the services
+    // bag says nothing about which object answers that call.
+    await expect(services.credentials.putCredential({
+      provider_id: "daytona",
+      kind: "sandbox_driver",
+      source: "managed",
+      secret: "dtn-key",
+    })).resolves.toMatchObject({ id: "cred_daytona", provider_id: "daytona", status: "available", revision: 1 })
   })
 })
