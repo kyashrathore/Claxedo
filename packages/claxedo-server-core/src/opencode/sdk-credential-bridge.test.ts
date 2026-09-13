@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ProviderProjection } from "@claxedo/agent-sdk-runtime"
 import { configureAgentConfig, disposeAgentConfig } from "../agent-config/index"
+import { reconcileCredentialsIntoSdk, renewSdkCredentialsIfDue, syncCredentialsToSdk } from "./sdk-credential-bridge"
 
 const loaded = vi.fn(() => false)
 const construct = vi.fn(() => { throw new Error("a credential write must not boot the SDK") })
@@ -56,7 +57,6 @@ describe("OpenCode SDK credential bridge", () => {
   })
 
   test("a credential write against a cold SDK host is deferred to the boot reconcile", async () => {
-    const { syncCredentialsToSdk } = await import("./sdk-credential-bridge")
     await expect(syncCredentialsToSdk()).resolves.toEqual({ bound: [], removed: [] })
     expect(construct).not.toHaveBeenCalled()
   })
@@ -64,7 +64,6 @@ describe("OpenCode SDK credential bridge", () => {
   test("a running SDK host receives the write", async () => {
     loaded.mockReturnValue(true)
     construct.mockImplementation(() => { throw new Error("a credential write must not boot the SDK") })
-    const { syncCredentialsToSdk } = await import("./sdk-credential-bridge")
     await expect(syncCredentialsToSdk()).rejects.toThrow("a credential write must not boot the SDK")
     expect(construct).toHaveBeenCalledTimes(1)
   })
@@ -75,7 +74,6 @@ describe("OpenCode SDK credential bridge", () => {
     const auth: Record<string, ProviderProjection> = { "claude-sdk": brokerProjection }
     configureAgentConfig({ projectAuth: async () => auth })
 
-    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
     await expect(reconcileCredentialsIntoSdk()).resolves.toEqual({ bound: ["anthropic"], removed: ["anthropic"] })
 
     expect(fake.bound).toEqual([{
@@ -94,7 +92,6 @@ describe("OpenCode SDK credential bridge", () => {
     const auth = Object.fromEntries(registryIds.map((id) => [id, brokerProjection])) as Record<string, ProviderProjection>
     configureAgentConfig({ projectAuth: async () => auth })
 
-    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
     await reconcileCredentialsIntoSdk()
 
     expect(Object.keys(fake.bound[0]).sort())
@@ -110,7 +107,6 @@ describe("OpenCode SDK credential bridge", () => {
     }
     configureAgentConfig({ projectAuth: async () => auth })
 
-    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
     await reconcileCredentialsIntoSdk()
 
     // Silence is what the engine reads as "no account chosen", and it answers
@@ -135,7 +131,6 @@ describe("OpenCode SDK credential bridge", () => {
     }
     configureAgentConfig({ projectAuth: async () => auth })
 
-    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
     await reconcileCredentialsIntoSdk()
 
     expect(fake.bound).toEqual([{
@@ -153,7 +148,6 @@ describe("OpenCode SDK credential bridge", () => {
     }
     configureAgentConfig({ projectAuth: async () => auth })
 
-    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
     await reconcileCredentialsIntoSdk()
 
     expect(fake.bound[0].anthropic).toMatchObject({ apiKey: "exact-placeholder" })
@@ -170,7 +164,6 @@ describe("OpenCode SDK credential bridge", () => {
     process.env.OPENAI_API_KEY = "sk-operator-openai"
     configureAgentConfig({ projectAuth: async () => ({ "claude-sdk": brokerProjection }) })
 
-    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
     await reconcileCredentialsIntoSdk()
 
     expect(process.env.ANTHROPIC_API_KEY).toBeUndefined()
@@ -187,7 +180,6 @@ describe("OpenCode SDK credential bridge", () => {
     let auth: Record<string, ProviderProjection> = { "claude-sdk": brokerProjection }
     configureAgentConfig({ projectAuth: async () => auth })
 
-    const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
     await reconcileCredentialsIntoSdk()
     expect(process.env.ANTHROPIC_API_KEY).toBeUndefined()
 
@@ -208,20 +200,18 @@ describe("OpenCode SDK credential bridge", () => {
       }),
     })
 
-    const bridge = await import("./sdk-credential-bridge")
-    await bridge.reconcileCredentialsIntoSdk()
+    await reconcileCredentialsIntoSdk()
     expect(fake.bound).toHaveLength(1)
 
-    await bridge.renewSdkCredentialsIfDue({ at: projectedAt + 29 * 60 * 1000 })
+    await renewSdkCredentialsIfDue({ at: projectedAt + 29 * 60 * 1000 })
     expect(fake.bound).toHaveLength(1)
 
-    await bridge.renewSdkCredentialsIfDue({ at: projectedAt + 31 * 60 * 1000 })
+    await renewSdkCredentialsIfDue({ at: projectedAt + 31 * 60 * 1000 })
     expect(fake.bound).toHaveLength(2)
   })
 
   test("a cold engine holds no placeholder and is never renewed", async () => {
-    const bridge = await import("./sdk-credential-bridge")
-    await expect(bridge.renewSdkCredentialsIfDue({ at: Date.now(), all: true })).resolves.toBeUndefined()
+    await expect(renewSdkCredentialsIfDue({ at: Date.now(), all: true })).resolves.toBeUndefined()
     expect(construct).not.toHaveBeenCalled()
   })
 })
