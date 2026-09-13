@@ -725,7 +725,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     // The save the card makes is the server's: the rejected active row yields
     // the mark to the row written after it.
     state.storedCredentials = [
-      { ...state.storedCredentials[0]!, is_active: false },
+      { id: "cred_bad", provider_id: "claude-sdk", kind: "api_key", label: "Old key", is_active: false, health: "auth_failed", last_validated_at: 7 },
       { id: "cred_good", provider_id: "claude-sdk", kind: "api_key", label: "New key", is_active: true },
     ]
     within(agentRow("anthropic")).getByTestId("provider-connect-save").click()
