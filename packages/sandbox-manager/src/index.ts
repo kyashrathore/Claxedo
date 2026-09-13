@@ -274,6 +274,39 @@ export type SandboxBrokeredSecret = {
    * the sandbox to attach itself (Daytona).
    */
   header?: string
+  /**
+   * The authentication scheme `header` carries, when it has one (`Bearer`).
+   *
+   * A driver that WRITES the whole header composes `"<scheme> <value>"`; one
+   * that SUBSTITUTES a placeholder the sandbox already wrote after the scheme
+   * ignores it, because the scheme is in the request before the value is.
+   */
+  scheme?: string
+}
+
+/**
+ * What the sandbox presents so a header-injecting driver recognizes the request
+ * as one asking for that secret.
+ *
+ * Carries no authority: the value is attached at the edge, keyed by the host
+ * and this string, and the string itself is never accepted by a vendor. The
+ * prefix must stay equal to `PLACEHOLDER_PREFIX` in the Cloudflare sandbox
+ * Worker's `outbound-credentials.ts`, which matches on it.
+ */
+export function brokeredSecretPlaceholder(name: string) {
+  return `claxedo-broker:${name}`
+}
+
+/**
+ * The environment a header-injecting driver must add so the sandbox can present
+ * each secret. Daytona is absent from this: its own mount fills the same
+ * variables with the placeholder it substitutes, and an env entry would shadow
+ * it with a string Daytona does not know.
+ */
+export function brokeredPlaceholderEnv(
+  secrets: readonly SandboxBrokeredSecret[] | undefined,
+): Record<string, string> {
+  return Object.fromEntries((secrets ?? []).map((secret) => [secret.name, brokeredSecretPlaceholder(secret.name)]))
 }
 
 export type SandboxExposure =

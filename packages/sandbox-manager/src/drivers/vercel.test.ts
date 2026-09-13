@@ -80,6 +80,32 @@ describe("VercelSandboxDriver", () => {
     expect(JSON.stringify(createArg.env)).not.toContain("ntn-secret")
   })
 
+  test("a scheme is composed into the transformed header, and the sandbox boots with only the placeholder", async () => {
+    const created = sandbox()
+    const vercel = factory({ create: vi.fn(async () => created) })
+    const driver = createVercelSandboxDriver({ ...baseOptions, sandbox: vercel })
+
+    await driver.ensureHost({
+      ...input,
+      env: { CLAXEDO_PROVIDER_CLAUDE_SDK: "caller-chosen" },
+      secrets: [{
+        name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        value: "sk-ant-oat01-fixture",
+        hosts: ["api.anthropic.com"],
+        header: "Authorization",
+        scheme: "Bearer",
+      }],
+    })
+
+    const merged = (created.updateNetworkPolicy as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(merged.allow["api.anthropic.com"]).toEqual([
+      { transform: [{ headers: { Authorization: "Bearer sk-ant-oat01-fixture" } }] },
+    ])
+    const createArg = (vercel.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(createArg.env.CLAXEDO_PROVIDER_CLAUDE_SDK).toBe("claxedo-broker:CLAXEDO_PROVIDER_CLAUDE_SDK")
+    expect(JSON.stringify(createArg.env)).not.toContain("sk-ant-oat01-fixture")
+  })
+
   test("brokering MERGES the brokered hosts into the create-time allow-list, never replacing it", async () => {
     // updateNetworkPolicy overwrites the whole policy, so replacing would strip
     // the git host and npm registry the sandbox was granted — the agent's next

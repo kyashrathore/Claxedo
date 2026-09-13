@@ -163,6 +163,35 @@ describe("DaytonaSandboxDriver", () => {
     expect(serialized).not.toContain("ntn-secret")
   })
 
+  test("a provider account is mounted under its own variable, which no env entry shadows", async () => {
+    const created = sandbox()
+    const daytona = client({ create: vi.fn(async () => created) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await driver.ensureHost({
+      ...input,
+      secrets: [{
+        name: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+        value: "sk-ant-oat01-fixture",
+        hosts: ["api.anthropic.com"],
+        header: "Authorization",
+        scheme: "Bearer",
+      }],
+    })
+
+    expect(daytona.secret.create).toHaveBeenCalledWith({
+      name: `claxedo-ws_5F1-CLAXEDO_5FPROVIDER_5FCLAUDE_5FSDK`,
+      // The bare token: Daytona substitutes it for the placeholder the harness
+      // already wrote after `Bearer`, so composing the scheme in would send it
+      // twice.
+      value: "sk-ant-oat01-fixture",
+      hosts: ["api.anthropic.com"],
+    })
+    const createArg = (daytona.create as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(createArg.envVars).not.toHaveProperty("CLAXEDO_PROVIDER_CLAUDE_SDK")
+    expect(JSON.stringify(createArg.envVars)).not.toContain("sk-ant-oat01-fixture")
+  })
+
   test("a sandbox is created with the valueless sentinel secret already mounted", async () => {
     const created = sandbox()
     const daytona = client({ create: vi.fn(async () => created) })

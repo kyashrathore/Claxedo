@@ -23,11 +23,12 @@
 // runtime, which enforces it — the proxy route is intentionally not behind the
 // Worker's admin API_TOKEN gate (that gate still protects control actions).
 import { sandboxDriverCatalog } from "../driver-catalog"
-import type {
-  SandboxDriver,
-  SandboxDriverEnsureInput,
-  SandboxListingUnsupported,
-  SandboxTarget,
+import {
+  brokeredPlaceholderEnv,
+  type SandboxDriver,
+  type SandboxDriverEnsureInput,
+  type SandboxListingUnsupported,
+  type SandboxTarget,
 } from ".."
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "../constants"
 import { record, text } from "../json"
@@ -204,6 +205,9 @@ export function createCloudflareSandboxDriver(
         CLAXEDO_DATA_DIR: RUNTIME_DATA_DIR,
         ...input.env,
         ...await options.env?.(input, { id: hostId }),
+        // Last, so no caller-supplied variable of the same name can stand in
+        // for a placeholder the outbound handler matches on.
+        ...brokeredPlaceholderEnv(input.secrets),
       },
       runner: options.runner,
       controlEnv: options.controlEnv,
@@ -225,7 +229,10 @@ export function createCloudflareSandboxDriver(
       if (secret.hosts.length === 0) {
         throw new Error(`cloudflare brokered secret "${secret.name}" requires at least one host in its egress allowlist`)
       }
-      return { name: secret.name, hosts: secret.hosts, header: secret.header, value: secret.value }
+      // The Worker writes this as the whole header value, so the scheme the
+      // harness wrote in front of the placeholder has to be composed back in.
+      const value = secret.scheme ? `${secret.scheme} ${secret.value}` : secret.value
+      return { name: secret.name, hosts: secret.hosts, header: secret.header, value }
     })
   }
 
