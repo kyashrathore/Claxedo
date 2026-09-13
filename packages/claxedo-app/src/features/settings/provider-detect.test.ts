@@ -7,6 +7,7 @@ import {
   harnessAccounts,
   listEffectiveCredentials,
   listStoredCredentials,
+  removeCredential,
   runProviderDetect,
   storedCredentialProviders,
   type StoredCredential,
@@ -170,6 +171,35 @@ describe("accountIdentity", () => {
     expect(accountIdentity(account({ id: "a", providerId: "codex-app-server", accountId: "acc_1234" }))).toBe("acc_1234")
     expect(accountIdentity(account({ id: "b", providerId: "claude-sdk", accountId: "fp_0123abcd…wxyz" }))).toBe("…wxyz")
     expect(accountIdentity(account({ id: "c", providerId: "claude-sdk" }))).toBeUndefined()
+  })
+})
+
+describe("removeCredential", () => {
+  test("deletes every row of the account", async () => {
+    const sent: Array<{ method?: string; pathname: string }> = []
+    globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      sent.push({ method: init?.method, pathname: url.pathname })
+      return new Response(JSON.stringify({ deleted: true }))
+    }) as typeof globalThis.fetch
+
+    await removeCredential(["sdk", "acp"])
+
+    expect(sent).toEqual([
+      { method: "DELETE", pathname: "/api/claxedo/credentials/sdk" },
+      { method: "DELETE", pathname: "/api/claxedo/credentials/acp" },
+    ])
+  })
+
+  test("a refusal reaches the caller as the server's own message", async () => {
+    stubNetwork({
+      "/api/claxedo/credentials/cred_3": new Response(
+        JSON.stringify({ error: { code: "credential_not_found", message: "Credential not found" } }),
+        { status: 404 },
+      ),
+    })
+
+    await expect(removeCredential(["cred_3"])).rejects.toThrow("Credential not found")
   })
 })
 

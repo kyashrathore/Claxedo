@@ -179,6 +179,19 @@ export async function activateCredential(credentialIds: readonly string[]) {
 }
 
 /**
+ * Forget one account, naming every row that stores it, so a login saved once
+ * per binding cannot survive under the binding the list stopped showing.
+ *
+ * The rows go one at a time because each removal is its own decision about
+ * which account that provider runs on next.
+ */
+export async function removeCredential(credentialIds: readonly string[]) {
+  for (const id of credentialIds) {
+    await claxedoCredentialRequest({ credentialId: id }, { method: "DELETE" })
+  }
+}
+
+/**
  * What one harness row says, from the two things that can be known about it: a
  * credential Claxedo already holds, and what the last scan of this machine found.
  *

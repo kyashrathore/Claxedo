@@ -36,6 +36,13 @@ describe("claxedoCredentialRequest", () => {
     expect(calls[0].url).toBe("http://127.0.0.1:3001/api/claxedo/credentials/provider/openrouter%2Fcustom")
   })
 
+  test("requests one stored row by id", async () => {
+    await claxedoCredentialRequest({ serverUrl: "http://127.0.0.1:3001/", credentialId: "cred/id" }, { method: "DELETE" })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].url).toBe("http://127.0.0.1:3001/api/claxedo/credentials/cred%2Fid")
+  })
+
   test("requests discover, save, and verification credential routes", async () => {
     await claxedoCredentialRequest({ serverUrl: "http://127.0.0.1:3001/", action: "discover" }, { method: "POST" })
     await claxedoCredentialRequest({ serverUrl: "http://127.0.0.1:3001/", action: "save-discovered" }, { method: "POST" })

@@ -21,6 +21,7 @@ export function credentialRequestOrigin(input?: ClaxedoCredentialRequestInput): 
 export type ClaxedoCredentialRequestInput = {
   serverUrl?: string
   providerId?: string
+  /** One stored row: named alone it is the row itself, with an action its subpath. */
   credentialId?: string
   action?: "discover" | "save-discovered" | "verify" | "scope" | "effective" | "activate"
 }
@@ -49,6 +50,7 @@ function credentialRoute(input?: ClaxedoCredentialRequestInput) {
   if (input?.action === "discover" || input?.action === "save-discovered" || input?.action === "effective" || input?.action === "activate") {
     return `/api/claxedo/credentials/${input.action}`
   }
+  if (input?.credentialId) return `/api/claxedo/credentials/${encodeURIComponent(input.credentialId)}`
   if (input?.providerId) return `/api/claxedo/credentials/provider/${encodeURIComponent(input.providerId)}`
   return "/api/claxedo/credentials"
 }
