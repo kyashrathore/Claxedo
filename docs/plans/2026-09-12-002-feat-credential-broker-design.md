@@ -645,3 +645,123 @@ configuration alone.
 and the harness silently runs on the operator's own machine login and succeeds.
 A selected-but-unusable account must fail the turn instead; the projection shape
 has no way to say "this provider is bound and unavailable" today.
+
+### Codex through a Claxedo-owned home — 2026-09-13
+
+A projection becomes `model_providers.broker` with `wire_api = "responses"`,
+`requires_openai_auth = false`, `base_url` = the binding plus the destination's
+API path, and `http_headers.Authorization` carrying the placeholder — the exact
+form Appendix E item 4 proved. The app-server is spawned with `CODEX_HOME`
+pointing at `~/.claxedo/codex/home`, rebuilt on every launch and holding only
+that `config.toml`; `thread/start` selects `modelProvider: "broker"`.
+
+The `account/login/start` path is **deleted**, not kept for the implicit tier.
+It could never serve that tier: the app-server reads its own home's `auth.json`,
+and the driver's only caller passed `undefined`, so no login params were ever
+sent. The ChatGPT token refresh the app-server requests is still served, from
+`harnesses/codex/operator-login.ts`, against the operator's own home.
+
+Tests (`harnesses/codex/workspace-behavior.test.ts`): a `claude-sdk` projection
+leaves Codex on the operator home and builds no brokered home; a
+`codex-app-server` projection launches on the brokered home, whose config
+carries the base URL and placeholder and not the operator's stored token, with
+no `account/login/start`; an `unavailable` projection throws before any process
+is spawned.
+
+**Live, operator machine login, no row bound.** Server on :2595 over the dev
+registry copy. `POST /api/claxedo/agent-config/harness` selected `codex`, a
+session was created, and `Reply with exactly the word OK and nothing else.`
+answered `OK`. `~/.codex/auth.json` sha256 was
+`a2eead700192c654252468fcdaf6ad34cffac5a9541905d89fe50a29a5f0334d` before and
+after, and `~/.claxedo/codex` was never created.
+
+**Live, brokered: not run — no stored Codex account.** `GET
+/api/claxedo/credentials` in that registry holds `daytona`, `cloudflare` and one
+`claude-sdk` row; no `codex-app-server` row exists, and none was created from the
+machine login.
+
+### Cursor, Pi and the OpenCode engine — 2026-09-13
+
+Cursor writes `CURSOR_BACKEND_URL` (not `CURSOR_API_ENDPOINT`) when the config is
+applied, before the driver's lazy `import("@cursor/sdk")`, because the installed
+SDK reads that variable at module scope and exposes no option for it. The
+placeholder travels as the `apiKey` argument the driver already passed. The
+destination is `https://api2.cursor.sh`, the host the SDK's own default names for
+the API-key exchange and the Connect services a turn runs over; the cloud REST
+host `api.cursor.com` is a second origin the same variable redirects, so a
+brokered Cursor turn cannot read that model catalog. That limitation is recorded,
+not fixed.
+
+Pi receives a `models.json` overlay `providers.<id>.baseUrl` / `apiKey`, merged
+onto its built-in provider so the wire protocol and model list stay Pi's own.
+Pi's `anthropic` base URL is the vendor origin and its `openai` base URL the API
+root, so only the second takes the binding's API path. A bound provider's own
+credential variables are withheld from the launch environment, and the managed
+profile scrubs `models.json` alongside `auth.json`.
+
+The OpenCode engine receives `provider.<id>` routing through a catalog transform
+(`workspace-runtime/src/opencode/provider-binding.ts`), and the bridge's
+`connectKey` path is deleted along with the ledger it kept — that store held a
+plaintext copy of the user's key.
+
+Command from `packages/workspace-runtime`: `node
+scripts/node-provider-binding-feasibility.mjs`.
+Result: **yes for a provider the engine defines itself.** A real engine, a real
+session and a real turn; the request arrived at
+`/bindings/proof/v1/chat/completions` with `Authorization: Bearer
+broker-placeholder`. The endpoint deliberately answers 401, so this establishes
+endpoint and placeholder routing only, not vendor acceptance.
+
+**Measured negative, same mechanism:** an overlay does **not** win against a
+provider declared in the engine's own config document. An earlier run of the same
+script declared `proof` via `configContent` pointing at an unreachable host and
+bound it to the live endpoint; no request ever reached that endpoint. Claxedo
+binds `anthropic` and `openai`, which are built-ins, so this does not affect the
+shipped path — but a future binding for a config-declared provider needs another
+mechanism.
+
+Providers the broker has no destination for (`openrouter`, `google`, `groq`,
+`xai`) previously reached the engine as stored plaintext keys and now reach it
+not at all. That is a deliberate narrowing, and the same rule every other harness
+follows.
+
+### Bound but unavailable — 2026-09-13
+
+A withdrawn account used to project nothing, which a harness cannot tell from
+"no account chosen": the next turn ran on the machine's own login and succeeded,
+under an identity the operator did not select. `auth[providerId]` can now be
+`{ unavailable: true, reason }`, produced whenever the marked row for a provider
+exists and cannot be bound (`auth_failed`, expired, a status that is not
+available, an unreadable secret). Only a provider with no marked row at all falls
+to the implicit tier. Every driver reads its projection through
+`providerBinding`, which throws `ProviderCredentialUnavailableError` rather than
+answering; each driver refuses at launch, never at config apply, so an unusable
+account fails the turn instead of the workspace.
+
+`assertNoProviderProjection` is deleted. It failed a harness when ANY provider in
+the map carried a projection, and the runtime hands every adapter the whole map,
+so one bound `claude-sdk` row made a Codex, Cursor or Pi workspace fail to become
+ready. Each driver now reads only the providers it consumes and ignores the rest;
+there is a cross-provider test per harness.
+
+**Live.** The dev registry's one `claude-sdk` row is `is_active` with status
+`revoked`. A Claude turn ended in milliseconds with
+`{"message":"the claude credential selected for this workspace cannot be used:
+revoked","firstTurnErrorClass":"credential"}` and no assistant parts — a named
+credential error, not a hang and not a silent fallback to the machine login. The
+message names the credential because the turn-outcome classifier reads the
+message rather than the error type.
+
+Gates: `bun run typecheck` in agent-sdk-runtime, workspace-runtime,
+claxedo-server-core, claxedo-local-server and egress-broker — all pass.
+`bun test src` in agent-sdk-runtime: 723 pass / 9 skip / 0 fail.
+`npx vitest run` in egress-broker: 29 pass; claxedo-local-server
+`src/credentials src/app/local-app.behaviour.test.ts`: 81 pass;
+claxedo-server-core `src/opencode src/credentials src/agent-config`: 216 pass.
+`bunx oxlint` on every touched file: 0 warnings, 0 errors.
+`bun run test:architecture-ratchets` from the root: passes, after raising the
+local-server closure to the re-measured 59 modules / 25 packages (and the
+package's own published ceiling to 86) for `credentials/destinations.ts`.
+Pre-existing red, untouched by this change: `workspace-runtime
+src/server.test.ts` has two cases posting a `version: 3` runtime snapshot that
+the route has required to be `4` since before this branch.
