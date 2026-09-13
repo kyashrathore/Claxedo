@@ -888,15 +888,6 @@
   opacity: 0.7;
 }
 
-.tsk-savebar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
-  background: var(--surface-raised-strong);
-  border-radius: var(--radius-7);
-}
-
 .tsk-rail {
   display: flex;
   flex-direction: column;
@@ -1478,4 +1469,61 @@
 
 .tsk-prose .notion-bottom-space {
   display: none;
+}
+
+/* The draft's actions live on the row that names the page, so the text below
+   does not reflow around a bar that appears between paragraphs. */
+.tsk-page-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tsk-page-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.tsk-create {
+  gap: 10px;
+  min-width: 0;
+}
+
+.tsk-create .tsk-bare-title {
+  font-size: var(--font-size-x-large);
+}
+
+.tsk-chiprow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tsk-chip-select {
+  appearance: none;
+  width: auto;
+  height: 20px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-pill);
+  color: var(--text-base);
+  font: inherit;
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+  cursor: pointer;
+}
+
+.tsk-chip-select:hover,
+.tsk-chip-select:focus-visible {
+  background: var(--surface-base-hover);
+  color: var(--text-strong);
+}
+
+.tsk-chip-select:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
 }

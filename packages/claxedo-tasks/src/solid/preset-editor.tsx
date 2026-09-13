@@ -78,6 +78,16 @@ export function PresetEditor(props: PresetEditorProps) {
         submit()
       }}
     >
+      <div class="tsk-page-head">
+        <span class="tsk-spacer" />
+        <button type="button" class="tsk-button" data-variant="quiet" data-testid="preset-editor-cancel" onClick={() => props.onCancel()}>
+          Cancel
+        </button>
+        <button type="submit" class="tsk-button" data-variant="primary" data-testid="preset-editor-submit" disabled={props.busy}>
+          {props.submitLabel}
+        </button>
+      </div>
+
       <div class="tsk-form-split">
         <div class="tsk-stack">
           <label class="tsk-field">
@@ -229,14 +239,6 @@ export function PresetEditor(props: PresetEditorProps) {
 
       <Show when={props.error}>{(message) => <p class="tsk-error" role="alert">{message()}</p>}</Show>
 
-      <div class="tsk-dialog-actions">
-        <button type="button" class="tsk-button" data-testid="preset-editor-cancel" onClick={() => props.onCancel()}>
-          Cancel
-        </button>
-        <button type="submit" class="tsk-button" data-variant="primary" data-testid="preset-editor-submit" disabled={props.busy}>
-          {props.submitLabel}
-        </button>
-      </div>
     </form>
   )
 }

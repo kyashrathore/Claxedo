@@ -1,4 +1,4 @@
-import { For, Show, type JSX } from "solid-js"
+import { For, Show, onCleanup, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import {
   TASKS_BOUNDS,
@@ -58,6 +58,18 @@ export function TaskDetail(props: TaskDetailProps) {
   const task = () => props.view.task
   const patch = (input: Partial<TaskDetailEdit>) => props.onEditChange({ ...props.edit, ...input })
 
+  // Cmd/Ctrl+S saves from wherever the caret is — the editor holds focus while
+  // you type, so a handler on this subtree alone would miss the rail. Bound
+  // only while there is something to save, and it stops the browser's own save.
+  const save = (event: KeyboardEvent) => {
+    if (event.key !== "s" || !(event.metaKey || event.ctrlKey) || event.altKey) return
+    if (!props.dirty || props.busy) return
+    event.preventDefault()
+    props.onSave()
+  }
+  window.addEventListener("keydown", save)
+  onCleanup(() => window.removeEventListener("keydown", save))
+
   return (
     <article class="tsk tsk-detail" data-testid="task-detail" aria-label={task().title}>
       <div class="tsk-detail-main">
@@ -103,6 +115,26 @@ export function TaskDetail(props: TaskDetailProps) {
           </Show>
           <span class="tsk-crumb-sep" aria-hidden="true">›</span>
           <span class="tsk-crumb-current">{task().title}</span>
+
+          <Show when={props.dirty}>
+            <span class="tsk-spacer" />
+            <span class="tsk-page-actions" data-testid="task-detail-save-row">
+              <span class="tsk-hint">Unsaved changes</span>
+              <button type="button" class="tsk-button" data-variant="quiet" data-testid="task-detail-discard" onClick={() => props.onDiscard()}>
+                Discard
+              </button>
+              <button
+                type="button"
+                class="tsk-button"
+                data-variant="primary"
+                data-testid="task-detail-save"
+                disabled={props.busy}
+                onClick={() => props.onSave()}
+              >
+                Save
+              </button>
+            </span>
+          </Show>
         </nav>
 
         <Show when={props.view.parent}>
@@ -148,25 +180,6 @@ export function TaskDetail(props: TaskDetailProps) {
           )}
         </Show>
         <Show when={props.error}>{(message) => <p class="tsk-error" role="alert">{message()}</p>}</Show>
-
-        <Show when={props.dirty}>
-          <div class="tsk-savebar" data-testid="task-detail-save-row">
-            <span class="tsk-hint tsk-spacer">Unsaved changes</span>
-            <button type="button" class="tsk-button" data-testid="task-detail-discard" onClick={() => props.onDiscard()}>
-              Discard
-            </button>
-            <button
-              type="button"
-              class="tsk-button"
-              data-variant="primary"
-              data-testid="task-detail-save"
-              disabled={props.busy}
-              onClick={() => props.onSave()}
-            >
-              Save
-            </button>
-          </div>
-        </Show>
 
         <Show when={props.subtasks}>
           {(section) => (

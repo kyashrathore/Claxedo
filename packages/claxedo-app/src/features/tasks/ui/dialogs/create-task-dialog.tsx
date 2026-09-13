@@ -15,7 +15,8 @@ export type DialogCreateTaskProps = {
 }
 
 export function DialogCreateTask(props: DialogCreateTaskProps) {
-  const projects = useTasksAppPorts().useProjects()
+  const ports = useTasksAppPorts()
+  const projects = ports.useProjects()
   const client = useTasksClient()
   const invalidate = useTasksInvalidation(props.scope)
   const [draft, setDraft] = createSignal({
@@ -49,6 +50,7 @@ export function DialogCreateTask(props: DialogCreateTaskProps) {
       <TaskCreateDialog
         draft={draft()}
         projects={projects()}
+        proseEditor={ports.ProseEditor}
         parentTitle={props.parent?.title}
         busy={busy()}
         error={refusal()?.message}
