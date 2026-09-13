@@ -81,7 +81,7 @@ async function listen(service?: ReturnType<typeof documentsService>) {
         },
         ...(service ? { documents: { fetch: service.fetch } } : {}),
       }),
-    registerTools: [registerDocumentTools],
+    registerTools: [{ id: "documents", register: registerDocumentTools }],
     audit: () => undefined,
   })
   mounts.push(routes)

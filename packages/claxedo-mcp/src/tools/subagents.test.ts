@@ -296,6 +296,7 @@ async function mount(runtime: ReturnType<typeof fakeRuntime>, options: Partial<C
   runtimes.push(runtime)
   const routes = createClaxedoMcpRoutes({
     mount: "loopback",
+    enabledToolGroups: () => ["subagents"],
     verifyRuntimeCredential: (token) =>
       token.startsWith("rt-token:")
         ? { runtimeId: "rt_1", workspaceId: WORKSPACE, sessionId: token.slice("rt-token:".length), userId: "user_1", permissionMode: "ask", expiresAt: Number.MAX_SAFE_INTEGER }
@@ -304,7 +305,7 @@ async function mount(runtime: ReturnType<typeof fakeRuntime>, options: Partial<C
       deployment: "loopback",
       local: { fetch: inProcessFetch((request) => runtime.app.fetch(request)), workspace: { workspaceId: WORKSPACE, directory: DIRECTORY } },
     }),
-    registerTools: [registerSubagentTools],
+    registerTools: [{ id: "subagents", register: registerSubagentTools }],
     audit: () => undefined,
     ...options,
   })

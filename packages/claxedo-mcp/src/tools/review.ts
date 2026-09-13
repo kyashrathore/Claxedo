@@ -11,7 +11,7 @@
 import { z } from "zod"
 import { asRecord } from "@claxedo/helpers/guards"
 import { num, records, text } from "../json"
-import type { ToolRegistry } from "./registry"
+import type { ToolRegistrar } from "./registry"
 import { declaredToolAccess } from "./inventory"
 import { targetScope, toolTarget, toolText, WORKSPACE_TARGET_SCHEMA } from "./target"
 
@@ -21,7 +21,7 @@ type FileChange = Readonly<{ file: string; additions: number; deletions: number;
 
 const STATUS_LETTER: Readonly<Record<string, string>> = { added: "A", deleted: "D", modified: "M" }
 
-export function registerReviewTools(registry: ToolRegistry) {
+export function registerReviewTools(registry: ToolRegistrar) {
   registry.tool(
     "session_changes",
     {

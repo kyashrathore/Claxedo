@@ -25,9 +25,17 @@ export type McpToolHandler<Shape extends McpToolShape> = (
   addressed?: (sessionId: string) => void,
 ) => Promise<McpToolResult>
 
-export type ToolRegistry = {
-  readonly ctx: McpToolContext
+/**
+ * The half of {@link ToolRegistry} a group's registration uses. Named apart so
+ * the tool-name inventory can run a registration against a sink that has no
+ * server, no context and no credential behind it.
+ */
+export type ToolRegistrar = {
   tool<Shape extends McpToolShape>(name: string, definition: McpToolDefinition<Shape>, handler: McpToolHandler<Shape>): void
+}
+
+export type ToolRegistry = ToolRegistrar & {
+  readonly ctx: McpToolContext
   /** Every name registered, listed or not, with its access; the pinned-list tests read this. */
   readonly declared: ReadonlyMap<string, McpToolAccess>
   readonly listed: readonly string[]

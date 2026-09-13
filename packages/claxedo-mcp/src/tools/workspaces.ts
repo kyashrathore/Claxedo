@@ -13,7 +13,7 @@ import { workspaceRuntimeClientError } from "@claxedo/workspace-runtime/client"
 import { record, text } from "../json"
 import type { ClaxedoFetch, WorkspaceSummary } from "../client/contract"
 import type { McpToolContext } from "../context"
-import type { ToolRegistry } from "./registry"
+import type { ToolRegistrar } from "./registry"
 import { declaredToolAccess } from "./inventory"
 import { toolJson, toolText } from "./target"
 
@@ -21,7 +21,7 @@ const WORKSPACE_ARG = { workspace: z.string().trim().min(1).describe("Workspace 
 
 const LIFECYCLE_OPERATIONS = ["stop", "replace", "cleanup", "destroy"] as const
 
-export function registerWorkspaceTools(registry: ToolRegistry) {
+export function registerWorkspaceTools(registry: ToolRegistrar) {
   registry.tool(
     "workspaces_list",
     {

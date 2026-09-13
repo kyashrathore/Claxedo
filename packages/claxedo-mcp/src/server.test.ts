@@ -11,6 +11,9 @@ import type { McpAuditEvent } from "./context"
 import {
   CLAXEDO_MCP_PATH,
   CLAXEDO_MCP_SERVER_INFO,
+  CLAXEDO_MCP_TOOL_GROUP_IDS,
+  CLAXEDO_MCP_TOOL_GROUPS,
+  claxedoMcpToolGroupInventory,
   createClaxedoMcpRoutes,
   fullUserCredential,
   type ClaxedoMcpMountOptions,
@@ -31,7 +34,7 @@ const runtimeClaims = { runtimeId: "rt_1", workspaceId: "ws_1", sessionId: "ses_
 
 /** Two audiences, one write with a session, one destructive, one that waits. */
 function fixtureTools(gate: { release?: () => void }): McpToolGroup {
-  return (registry) => {
+  return { id: "fixture", register: (registry) => {
     registry.tool("runtime_ping", {
       description: "runtime only",
       inputSchema: {},
@@ -61,7 +64,7 @@ function fixtureTools(gate: { release?: () => void }): McpToolGroup {
       await new Promise<void>((resolve) => { gate.release = resolve })
       return { content: [{ type: "text", text: "released" }] }
     })
-  }
+  } }
 }
 
 const servers: Array<ReturnType<typeof serve>> = []
@@ -95,7 +98,12 @@ async function listen(options: Partial<ClaxedoMcpMountOptions> & Pick<ClaxedoMcp
 }
 
 const loopback = (options: Partial<ClaxedoMcpMountOptions> = {}) =>
-  listen({ mount: "loopback", verifyRuntimeCredential: (token) => token === "rt-token" ? runtimeClaims : undefined, ...options })
+  listen({
+    mount: "loopback",
+    verifyRuntimeCredential: (token) => token === "rt-token" ? runtimeClaims : undefined,
+    enabledToolGroups: () => ["fixture"],
+    ...options,
+  })
 
 const hosted = (options: Partial<ClaxedoMcpMountOptions> = {}) =>
   listen({
@@ -416,5 +424,52 @@ describe("composition", () => {
     expect(await toolNames(writer.client)).toContain("session_send")
     const reader = await connect(url, { authorization: "Bearer reader" })
     expect(await toolNames(reader.client)).toEqual(["user_ping", "wait"])
+  })
+})
+
+describe("tool groups", () => {
+  const inventory = claxedoMcpToolGroupInventory()
+  const toolsOf = (...ids: string[]) =>
+    inventory.filter((group) => ids.includes(group.id)).flatMap((group) => group.tools).toSorted()
+
+  test("every registered group's inventory is the names its registration declares", () => {
+    expect(inventory.map((group) => group.id)).toEqual(CLAXEDO_MCP_TOOL_GROUP_IDS)
+    expect(inventory.every((group) => group.tools.length > 0)).toBe(true)
+    expect(toolsOf("tasks")).toEqual(["task_create", "task_get", "task_list", "task_start"])
+  })
+
+  test("a mount serving a subset lists and admits exactly that subset's tools", async () => {
+    const { url } = await hosted({
+      registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+      enabledToolGroups: () => ["review", "workspaces"],
+    })
+    const { client } = await connect(url, { authorization: "Bearer cli-jwt" })
+    expect(await toolNames(client)).toEqual(toolsOf("review", "workspaces"))
+    expect(await client.callTool({ name: "session_create", arguments: {} })).toEqual(unknownTool("session_create"))
+  })
+
+  test("a group turned off takes its tools with it, by name as well as from the list", async () => {
+    const enabled = new Set(["review", "workspaces"])
+    const { url } = await hosted({
+      registerTools: CLAXEDO_MCP_TOOL_GROUPS,
+      enabledToolGroups: () => [...enabled],
+    })
+    const before = await connect(url, { authorization: "Bearer cli-jwt" })
+    expect(await toolNames(before.client)).toContain("workspaces_list")
+    enabled.delete("workspaces")
+    const after = await connect(url, { authorization: "Bearer cli-jwt" })
+    expect(await toolNames(after.client)).toEqual(toolsOf("review"))
+    expect(await after.client.callTool({ name: "workspaces_list", arguments: {} }))
+      .toEqual(unknownTool("workspaces_list"))
+  })
+
+  test("a loopback mount cannot be built without a consent resolver", () => {
+    expect(() => createClaxedoMcpRoutes({
+      mount: "loopback",
+      verifyRuntimeCredential: () => runtimeClaims,
+      createClient: () => stubClient,
+      registerTools: [],
+      audit: () => undefined,
+    })).toThrow(/consented tool groups/)
   })
 })

@@ -15,7 +15,7 @@ import { McpAccessDenied, type McpToolContext } from "../context"
 import { McpHttpError, mcpHttpError } from "../http-error"
 import { num, oneOf, record, records, text } from "../json"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
-import type { ToolRegistry } from "./registry"
+import type { ToolRegistrar } from "./registry"
 
 /** The self-identifying marker `hostSubagentBinding` looks for in a `create_subagent` result. */
 const SUBAGENT_RESULT_KIND = "claxedo.subagent"
@@ -62,7 +62,7 @@ const childLocator = {
 
 type ChildLocator = { subagentKey?: string; sessionId?: string }
 
-export function registerSubagentTools(registry: ToolRegistry): void {
+export function registerSubagentTools(registry: ToolRegistrar): void {
   registry.tool("subagent_capabilities", {
     description:
       "Whether this session may run a subagent, which harnesses the runtime can start one on, the permission ceiling a child inherits, and how many children are already active.",

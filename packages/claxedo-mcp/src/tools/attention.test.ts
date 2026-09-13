@@ -187,7 +187,8 @@ async function listen(input: MountInput) {
         ...(mount === "hosted" ? {} : { local: { fetch: inProcessFetch(runtime), workspace: { workspaceId: "ws_local", directory: DIRECTORY } } }),
         ...(control ? { controlPlane: { fetch: control } } : {}),
       }),
-    registerTools: [registerAttentionTools],
+    registerTools: [{ id: "attention", register: registerAttentionTools }],
+    enabledToolGroups: () => ["attention"],
     audit: (event) => { audits.push(event) },
   })
   mounts.push(routes)

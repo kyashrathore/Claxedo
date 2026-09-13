@@ -12,7 +12,7 @@ import { asRecord } from "@claxedo/helpers/guards"
 import type { RuntimeNativeHarnessId } from "@claxedo/workspace-runtime/config"
 import { McpAccessDenied, type McpToolContext } from "../context"
 import type { WorkspaceSummary, WorkspaceTarget } from "../client/contract"
-import type { ToolRegistry } from "./registry"
+import type { ToolRegistrar } from "./registry"
 import { runtimeToolAccess } from "./inventory"
 import { assertWritableTarget, targetScope, toolJson, toolTarget, WORKSPACE_TARGET_SCHEMA, type WorkspaceTargetArgs } from "./target"
 
@@ -52,7 +52,7 @@ const placementSchema = z
 
 type Placement = z.infer<typeof placementSchema>
 
-export function registerSessionTools(registry: ToolRegistry) {
+export function registerSessionTools(registry: ToolRegistrar) {
   registry.tool(
     "session_create",
     {

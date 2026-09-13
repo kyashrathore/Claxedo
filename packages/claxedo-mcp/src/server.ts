@@ -23,9 +23,14 @@ import { isLoopbackRequest } from "./endpoint/loopback"
 import { createMcpSessionStore } from "./endpoint/sessions"
 import { createInFlightCounter, releaseWhenSettled } from "./endpoint/in-flight"
 
-import type { McpToolGroup } from "./tools/index"
-export { CLAXEDO_MCP_TOOL_GROUPS } from "./tools/index"
-export type { McpToolGroup }
+import type { ClaxedoMcpToolGroupDescription, ClaxedoMcpToolGroupId, McpToolGroup } from "./tools/index"
+export {
+  CLAXEDO_MCP_TOOL_GROUPS,
+  CLAXEDO_MCP_TOOL_GROUP_IDS,
+  claxedoMcpToolGroupInventory,
+  claxedoMcpToolGroupsFor,
+} from "./tools/index"
+export type { ClaxedoMcpToolGroupDescription, ClaxedoMcpToolGroupId, McpToolGroup }
 export type { TasksGrant, TasksOperation } from "./client/contract"
 
 export const CLAXEDO_MCP_PATH = "/api/claxedo/mcp"
@@ -75,6 +80,7 @@ export type FirstPartyMcpOptions = Readonly<{
   verifyRuntimeCredential?: VerifyRuntimeCredential
   createClient: (input: McpClientInputs) => ClaxedoMcpClient | Promise<ClaxedoMcpClient>
   registerTools?: ReadonlyArray<McpToolGroup>
+  enabledToolGroups?: (credential: McpCredential) => readonly string[] | Promise<readonly string[]>
   crossMachineWrites?: (claims: RuntimeCredentialClaims) => boolean
 }>
 
@@ -94,6 +100,16 @@ export type ClaxedoMcpMountOptions = Readonly<{
   resolveUserCredential?: (request: Request) => Promise<McpCredential | undefined>
   createClient: (credential: McpCredential, request: Request) => ClaxedoMcpClient | Promise<ClaxedoMcpClient>
   registerTools: ReadonlyArray<McpToolGroup>
+  /**
+   * The tool groups this caller consented to, out of `registerTools`.
+   *
+   * A group left out is never registered, so it is absent from `tools/list`
+   * and unknown to `tools/call`: consent decides the surface, and a tool asked
+   * for by name outside it is refused by not existing. Absent means this mount
+   * gates nothing, which a loopback mount — the one a session reaches — is not
+   * allowed to be.
+   */
+  enabledToolGroups?: (credential: McpCredential) => readonly string[] | Promise<readonly string[]>
   audit: (event: McpAuditEvent) => void | Promise<void>
   crossMachineWrites?: (claims: RuntimeCredentialClaims) => boolean
   maxInFlightPerCredential?: number
@@ -168,6 +184,9 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
   if (options.mount === "loopback" && !options.verifyRuntimeCredential) {
     throw new Error("A loopback MCP mount admits only runtime credentials and was given no verifier")
   }
+  if (options.mount === "loopback" && !options.enabledToolGroups) {
+    throw new Error("A loopback MCP mount serves a session's consented tool groups and was given no resolver")
+  }
   if (!options.verifyRuntimeCredential && !options.resolveUserCredential) {
     throw new Error(`A ${options.mount} MCP mount was given no way to resolve a credential`)
   }
@@ -215,7 +234,12 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     })
   }
 
-  const createSession = async (credential: McpCredential, request: Request, key: string): Promise<McpSession> => {
+  const createSession = async (
+    credential: McpCredential,
+    request: Request,
+    key: string,
+    enabled: readonly string[] | undefined,
+  ): Promise<McpSession> => {
     const client = await options.createClient(credential, request)
     const server = new McpServer(CLAXEDO_MCP_SERVER_INFO)
     const inFlightCalls = new Set<RequestId>()
@@ -234,7 +258,10 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
       },
     }
     const registry = createToolRegistry(server, ctx)
-    for (const register of options.registerTools) register(registry)
+    const groups = enabled
+      ? options.registerTools.filter((group) => enabled.includes(group.id))
+      : options.registerTools
+    for (const group of groups) group.register(registry)
     if (registry.listed.length === 0) {
       server.server.registerCapabilities({ tools: {} })
       server.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: [] }))
@@ -270,14 +297,19 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     return session
   }
 
-  const dispatch = async (request: Request, credential: McpCredential, key: string): Promise<Response> => {
+  const dispatch = async (
+    request: Request,
+    credential: McpCredential,
+    key: string,
+    enabled: readonly string[] | undefined,
+  ): Promise<Response> => {
     const sessionId = request.headers.get("mcp-session-id")
     if (sessionId) {
       const session = sessions.get(sessionId, key)
       if (!session) return jsonRpcError(404, -32001, "Session not found")
       return session.transport.handleRequest(request)
     }
-    const session = await createSession(credential, request, key)
+    const session = await createSession(credential, request, key, enabled)
     const response = await session.transport.handleRequest(request)
     if (!session.transport.sessionId) await session.close()
     return response
@@ -289,7 +321,12 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
     }
     const credential = await resolveCredential(request)
     if (!credential) return unauthorized(request)
-    const key = credentialKey(credential)
+    // Resolved per request, not per session: the enabled set is a live consent
+    // read, so a group turned off reaches the next request rather than waiting
+    // for the client to reconnect. It is part of the session key for the same
+    // reason — a session built under the old set is not this caller's session.
+    const enabled = await options.enabledToolGroups?.(credential)
+    const key = `${credentialKey(credential)}:${enabled ? enabled.join(",") : "*"}`
     const release = request.method === "POST" ? inFlight.acquire(key) : () => undefined
     if (!release) {
       return mcpMountRefusal(429, "mcp_too_many_requests", "This credential already has the maximum number of requests open", {
@@ -300,7 +337,7 @@ export function createClaxedoMcpRoutes(options: ClaxedoMcpMountOptions): Claxedo
       // The client captures the original bearer for downstream requests. A refreshed token must initialize a new client.
       const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(request.headers.get("authorization") ?? ""))
       const tokenKey = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")
-      return releaseWhenSettled(await dispatch(request, credential, `${key}:${tokenKey}`), release)
+      return releaseWhenSettled(await dispatch(request, credential, `${key}:${tokenKey}`, enabled), release)
     } catch (error) {
       release()
       throw error

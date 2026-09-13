@@ -42,7 +42,7 @@ const userCredential = (readOnly = false): McpCredential => ({
 function surface(credential: McpCredential, tasks?: ClaxedoMcpClient["tasks"]) {
   const ctx: McpToolContext = { credential, client: { ...client, ...(tasks ? { tasks } : {}) }, audit: () => undefined }
   const registry = createToolRegistry(new McpServer({ name: "claxedo", version: "0.0.0" }), ctx)
-  for (const register of CLAXEDO_MCP_TOOL_GROUPS) register(registry)
+  for (const group of CLAXEDO_MCP_TOOL_GROUPS) group.register(registry)
   return { declared: registry.declared, listed: [...registry.listed].toSorted() }
 }
 

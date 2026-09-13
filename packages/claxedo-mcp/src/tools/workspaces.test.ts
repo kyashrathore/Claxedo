@@ -87,7 +87,7 @@ async function listen() {
     resolveUserCredential: async (request) =>
       request.headers.get("authorization") === "Bearer cli-jwt" ? fullUserCredential({ actorId: "actor_1", clientId: "cli" }) : undefined,
     createClient: () => createClaxedoMcpClient({ deployment: "hosted", controlPlane: { fetch: control.fetch } }),
-    registerTools: [registerWorkspaceTools],
+    registerTools: [{ id: "workspaces", register: registerWorkspaceTools }],
     audit: () => undefined,
   })
   mounts.push(routes)

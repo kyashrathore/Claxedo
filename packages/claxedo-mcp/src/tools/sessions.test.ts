@@ -284,7 +284,7 @@ async function listen(input: MountInput) {
         controlPlane: { fetch: control.fetch },
         fetch: relay(all),
       }),
-    registerTools: [registerSessionTools],
+    registerTools: [{ id: "sessions", register: registerSessionTools }],
     audit: (event) => { audits.push(event) },
   })
   mounts.push(routes)

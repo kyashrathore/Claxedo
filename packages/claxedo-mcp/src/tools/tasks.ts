@@ -29,7 +29,7 @@ import { admissibleAttempt } from "@claxedo/tasks"
 import { record, text } from "../json"
 import type { McpToolContext } from "../context"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
-import type { ToolRegistry } from "./registry"
+import type { ToolRegistrar } from "./registry"
 import { declaredToolAccess } from "./inventory"
 import { targetScope, toolJson, toolTarget } from "./target"
 
@@ -53,7 +53,7 @@ const PROJECT_ARG = {
 
 const TASK_ARG = { task: z.string().trim().min(1).describe("Task id.") } as const
 
-export function registerTaskTools(registry: ToolRegistry) {
+export function registerTaskTools(registry: ToolRegistrar) {
   registry.tool(
     "task_list",
     {

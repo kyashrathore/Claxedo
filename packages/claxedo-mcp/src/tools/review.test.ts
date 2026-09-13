@@ -115,7 +115,7 @@ async function listen() {
         deployment: "node",
         local: { fetch: inProcessFetch((request) => app.fetch(request)), workspace: { workspaceId: "ws_local", directory: repository } },
       }),
-    registerTools: [registerReviewTools],
+    registerTools: [{ id: "review", register: registerReviewTools }],
     audit: () => undefined,
   })
   mounts.push(routes)
