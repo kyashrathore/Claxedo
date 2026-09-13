@@ -37,7 +37,8 @@ function store(input: {
     updateCredentialLabel,
     resolveCredentialSecretById,
   } as unknown as ControlPlaneCredentials
-  const fetch = vi.fn(async () => (input.answer ?? (() => Response.json({ id: "msg_1" })))())
+  const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) =>
+    (input.answer ?? (() => Response.json({ id: "msg_1" })))())
   return {
     credentials,
     fetch: fetch as unknown as typeof globalThis.fetch,

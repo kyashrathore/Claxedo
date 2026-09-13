@@ -218,14 +218,16 @@ export async function nativeProviderDeliveries(input: {
 }
 
 /**
- * Most recently marked first. `setActiveCredentials` stamps `updated_at` on the
- * row it marks, so this is the order the operator last stated; the id breaks a
- * tie so two rows written in the same millisecond still resolve the same way on
- * every call.
+ * Most recently marked first: the order the operator last stated, which is what
+ * decides a vendor host two marked accounts both answer on. `activated_at` and
+ * not `updated_at`, because a Check and a rename stamp `updated_at` too, and
+ * checking one alias would otherwise hand it the host. The creation time and
+ * then the id break a tie, so two rows marked in the same millisecond resolve
+ * the same way on every call.
  */
 function byMostRecentMark<T extends { credential: CredentialMetadata }>(rows: readonly T[]): T[] {
   return [...rows].sort((left, right) =>
-    right.credential.updated_at - left.credential.updated_at
+    (right.credential.activated_at ?? 0) - (left.credential.activated_at ?? 0)
     || right.credential.created_at - left.credential.created_at
     || left.credential.id.localeCompare(right.credential.id))
 }

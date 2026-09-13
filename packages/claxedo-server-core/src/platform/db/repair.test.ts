@@ -394,6 +394,7 @@ describe("claxedo schema", () => {
       "claxedo_provider_credential.usage_at",
       "claxedo_provider_credential.owner",
       "claxedo_provider_credential.is_active",
+      "claxedo_provider_credential.activated_at",
       "claxedo_provider_credential.active_idx",
     ]))
     // A drizzle `select()` names every column, so one missing column fails
@@ -401,7 +402,7 @@ describe("claxedo schema", () => {
     expect(
       sqlite
         .prepare(`
-          SELECT id, org_id, owner, is_active, revision, usage_windows, usage_at
+          SELECT id, org_id, owner, is_active, activated_at, revision, usage_windows, usage_at
           FROM claxedo_provider_credential
         `)
         .get(),
@@ -410,6 +411,7 @@ describe("claxedo schema", () => {
       org_id: "__local__",
       owner: null,
       is_active: 0,
+      activated_at: null,
       revision: 1,
       usage_windows: null,
       usage_at: null,

@@ -238,10 +238,11 @@ export async function putCredential(
       .all()
       .filter((other) => other.id !== id)
     const usable = holders.some((other) => other.status === "available")
-    const row = { ...fields, is_active: fanoutEligibleAuth(input.kind, input.provider_id) && !usable }
+    const active = fanoutEligibleAuth(input.kind, input.provider_id) && !usable
+    const row = { ...fields, is_active: active, activated_at: active ? ts : null }
     if (row.is_active && holders.length > 0) {
       db.update(ClaxedoProviderCredentialTable)
-        .set({ is_active: false, updated_at: ts })
+        .set({ is_active: false, activated_at: null, updated_at: ts })
         .where(and(inOrg(orgId), inArray(ClaxedoProviderCredentialTable.id, holders.map((other) => other.id))))
         .run()
     }
@@ -296,13 +297,15 @@ export function listCredentials(org: CredentialOrgScope = SINGLE_TENANT_ORG): Cr
  * exists — a user with two ChatGPT accounts has two native Codex credentials.
  *
  * The account the user marked active answers that question; it is the only
- * choice a surface can show and the only one they can change. Below the mark
- * the most recent write wins, which decides only between rows that never carry
- * one: sandbox driver tokens and `integration:`/`channel:` secrets, of which a
- * provider holds a single row per kind.
+ * choice a surface can show and the only one they can change, and the most
+ * recent mark leads. Below the mark the most recent write wins, which decides
+ * only between rows that never carry one: sandbox driver tokens and
+ * `integration:`/`channel:` secrets, of which a provider holds a single row per
+ * kind.
  */
 const activeFirst = [
   desc(ClaxedoProviderCredentialTable.is_active),
+  desc(ClaxedoProviderCredentialTable.activated_at),
   desc(ClaxedoProviderCredentialTable.updated_at),
 ]
 
@@ -348,7 +351,7 @@ export function setActiveCredentials(
     const ts = now()
     for (const row of rows) {
       db.update(ClaxedoProviderCredentialTable)
-        .set({ is_active: false, updated_at: ts })
+        .set({ is_active: false, activated_at: null, updated_at: ts })
         .where(
           and(
             inOrg(orgId),
@@ -361,11 +364,14 @@ export function setActiveCredentials(
     }
     for (const row of rows) {
       db.update(ClaxedoProviderCredentialTable)
-        .set({ is_active: true, updated_at: ts })
+        .set({ is_active: true, activated_at: ts, updated_at: ts })
         .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, row.id)))
         .run()
     }
-    return { ok: true, credentials: rows.map((row) => toMetadata({ ...row, is_active: true, updated_at: ts })) }
+    return {
+      ok: true,
+      credentials: rows.map((row) => toMetadata({ ...row, is_active: true, activated_at: ts, updated_at: ts })),
+    }
   })
 }
 
@@ -400,7 +406,7 @@ export function clearActiveCredentials(
         .all()
       if (rows.length === 0) continue
       db.update(ClaxedoProviderCredentialTable)
-        .set({ is_active: false, updated_at: now() })
+        .set({ is_active: false, activated_at: null, updated_at: now() })
         .where(
           and(
             inOrg(orgId),
@@ -720,7 +726,7 @@ export function updateCredentialHealth(
     const heir = oldestAvailable(db, org, partition)
     if (!heir) return
     db.update(ClaxedoProviderCredentialTable)
-      .set({ is_active: false, updated_at: now() })
+      .set({ is_active: false, activated_at: null, updated_at: now() })
       .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
       .run()
     markActive(db, org, heir.id)
@@ -792,7 +798,7 @@ function oldestAvailable(
 
 function markActive(db: ClaxedoDB.Client, org: CredentialOrgScope, id: string) {
   db.update(ClaxedoProviderCredentialTable)
-    .set({ is_active: true, updated_at: now() })
+    .set({ is_active: true, activated_at: now(), updated_at: now() })
     .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
     .run()
 }
@@ -1012,10 +1018,6 @@ function scopedSelection(
     })
 }
 
-function credentialAvailableForScope(credential: CredentialMetadata, scope: CredentialSecretScope) {
-  return credentialSecretInScope(credential, scope) && !credentialUnavailableForScope(credential, scope)
-}
-
 /**
  * Why an in-scope account cannot be used, or `undefined` when it can. The
  * health is preferred over the status because a health verdict names what the
@@ -1034,21 +1036,3 @@ export function credentialUnavailableForScope(
   return undefined
 }
 
-/** Resolve explicitly referenced connection credentials without provider preference/deduplication. */
-export async function resolveCredentialReferencesForScope(
-  references: Iterable<string>,
-  scope: CredentialSecretScope,
-  org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): Promise<Record<string, string>> {
-  const result: Record<string, string> = {}
-  for (const id of new Set(references)) {
-    const row = ClaxedoDB.use((db) => db.select().from(ClaxedoProviderCredentialTable)
-      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id))).get())
-    if (!row) continue
-    const credential = toMetadata(row)
-    if (!FANOUT_ELIGIBLE_KINDS.has(credential.kind) || !credentialAvailableForScope(credential, scope)) continue
-    const secret = await getBackend().get(credential.secure_ref!)
-    if (secret) result[id] = secret
-  }
-  return result
-}

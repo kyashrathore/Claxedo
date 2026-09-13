@@ -6,7 +6,7 @@ import { columnInfo, hasColumn, hasIndex, hasTable, type SqliteSchemaReader } fr
  * stored fingerprint and forces one full repair pass per database even when
  * the schema itself has not changed.
  */
-export const REPAIR_VERSION = 3
+export const REPAIR_VERSION = 4
 
 type SqliteInstance = SqliteSchemaReader & {
   exec(sql: string): unknown
@@ -401,6 +401,11 @@ function ensureProviderCredentialColumns(db: SqliteInstance, out: string[]) {
   if (!hasColumn(db, "claxedo_provider_credential", "is_active")) {
     db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `is_active` integer NOT NULL DEFAULT 0")
     out.push("claxedo_provider_credential.is_active")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "activated_at")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `activated_at` integer")
+    db.exec("UPDATE `claxedo_provider_credential` SET `activated_at` = `updated_at` WHERE `is_active` = 1")
+    out.push("claxedo_provider_credential.activated_at")
   }
   db.exec("UPDATE `claxedo_provider_credential` SET `org_id` = '__local__' WHERE `org_id` IS NULL OR trim(`org_id`) = ''")
   db.exec("CREATE INDEX IF NOT EXISTS `claxedo_provider_credential_org_idx` ON `claxedo_provider_credential` (`org_id`)")

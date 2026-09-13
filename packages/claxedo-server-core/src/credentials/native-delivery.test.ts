@@ -235,6 +235,25 @@ describe("native provider delivery", () => {
     expect(nativeProviderAuth(second).anthropic).toMatchObject({ unavailable: true })
   })
 
+  test("checking or renaming an account does not hand it a host another account claimed", async () => {
+    // `updated_at` moves on a Check and on a rename, so reading it here let a
+    // Check press the host away from the account the operator chose.
+    const key = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
+    const subscription = await shared({ provider_id: "anthropic", kind: "oauth_token", secret: SUBSCRIPTION })
+    setActiveCredentials([key.id])
+    await tick()
+    setActiveCredentials([subscription.id])
+    setActiveCredentials([key.id, subscription.id])
+
+    await tick()
+    updateCredentialHealth(key.id, "ok", Date.now())
+    await registryModule.updateCredentialLabel(key.id, "work key")
+
+    expect(nativeProviderSecrets(await nativeProviderDeliveries())).toEqual([expect.objectContaining({
+      name: "CLAXEDO_PROVIDER_ANTHROPIC",
+    })])
+  })
+
   test("the digest moves with a rotation and not with a re-read", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
     setActiveCredentials([credential.id])
