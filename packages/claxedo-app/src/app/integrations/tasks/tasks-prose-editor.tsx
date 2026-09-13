@@ -22,18 +22,21 @@ import { splitMarkdownEnvelope } from "@/features/documents/markdown/frontmatter
  * swaps the surface out mid-sentence.
  */
 export function TasksProseEditor(props: ProseEditorProps) {
-  let emitted: string | undefined
+  // The emission carries its own detection: a replacement can restore the very
+  // text the field last wrote, and matching it against the detection in force
+  // by then would hand `RichMode` a document parsed from different text.
+  let emitted: { markdown: string; detection: MarkdownDetection } | undefined
   // A task description is the app's own record, not a file the user owns, so
   // the first edit normalizing `* item` to `- item` is acceptable here and the
   // byte-exact gate Documents needs would only put this field in a textarea.
-  const admitted = createMemo<MarkdownDetection>((previous) =>
-    previous && props.value === emitted ? previous : detectMarkdown(props.value, "normalizing"),
+  const admitted = createMemo<MarkdownDetection>(() =>
+    emitted && props.value === emitted.markdown ? emitted.detection : detectMarkdown(props.value, "normalizing"),
   )
   // A serializer that cannot write the tree belongs to the text that produced
   // it; a replacement is a different text and is owed its own attempt.
   const [failed, setFailed] = createSignal<MarkdownDetection>()
   const emit = (markdown: string) => {
-    emitted = markdown
+    emitted = { markdown, detection: admitted() }
     props.onChange(markdown)
   }
   const rich = (): RichMarkdown | undefined => {

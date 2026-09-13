@@ -117,6 +117,31 @@ describe("a Tasks markdown field", () => {
     expect(screen.getByTestId("task-detail-description").getAttribute("data-prose-mode")).toBe("rich")
   })
 
+  /**
+   * A discard restores exactly what the field last wrote. Recognising it by
+   * the text alone reused whatever detection was in force by then — the rich
+   * one the replacement in between had earned — and `RichMode` would have
+   * dropped the comment on `setContent`.
+   */
+  test("a replacement that restores what the field wrote keeps that text's own surface", async () => {
+    const { setValue } = mount("keep <!-- edited --> this\n")
+
+    const textarea = screen.getByTestId<HTMLTextAreaElement>("task-detail-description")
+    expect(textarea.tagName).toBe("TEXTAREA")
+    fireEvent.input(textarea, { target: { value: "keep <!-- edited --> this again\n" } })
+
+    setValue(RICH)
+    await waitFor(() =>
+      expect(screen.getByTestId("task-detail-description").getAttribute("data-prose-mode")).toBe("rich"),
+    )
+
+    setValue("keep <!-- edited --> this again\n")
+
+    const restored = await waitFor(() => screen.getByTestId<HTMLTextAreaElement>("task-detail-description"))
+    expect(restored.tagName).toBe("TEXTAREA")
+    expect(restored.value).toBe("keep <!-- edited --> this again\n")
+  })
+
   test("an empty description offers the placeholder to write into", () => {
     mount("")
 
