@@ -19,6 +19,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { assertSelfHostedPosture } from "./posture"
 import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
 import { createSelfHostedTasksComposition } from "../../tasks/self-hosted-composition"
+import { createTasksSessionGrants, type TasksSessionGrants } from "../../tasks/session-grants"
 
 export type SelfHostedStartOptions = {
   port: number
@@ -80,13 +81,41 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
   const services = createDefaultLocalControlPlaneServices()
   const agentPlugins = await import("@claxedo/local-server/agent-plugins/local-composition")
     .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition(env))
-  const tasks = selfHostedTasksRouteContributions(services)
+  const tasks = selfHostedTasks(services)
   await agentPlugins.ready
   return startControlPlaneStack({
     services,
     port: options.port,
-    routeContributions: [...agentPlugins.routeContributions, ...tasks],
+    routeContributions: [...agentPlugins.routeContributions, ...tasks.routeContributions],
+    ...(tasks.grants ? { tasksGrants: tasks.grants } : {}),
   })
+}
+
+/**
+ * Tasks for this posture, and the grants its own sessions present.
+ *
+ * The two are returned together because they are two ends of one thing: the
+ * signed composition verifies exactly the grants this registry issues, and a
+ * box that built one without the other would either serve routes no session
+ * can reach or hand out handles nothing honours.
+ */
+export function selfHostedTasks(services: ControlPlaneServices): {
+  routeContributions: readonly ControlPlaneRouteContribution[]
+  grants?: TasksSessionGrants
+} {
+  if (!services.auth.config.enabled) return { routeContributions: createLocalTasksComposition().routeContributions }
+  const workspaceOwner = services.authority?.resolveWorkspaceOwner?.bind(services.authority)
+  // Without an owner to resolve, a grant could only be believed on what it
+  // says about itself, so this box issues none and its sessions get no Tasks
+  // tools rather than tools that act as nobody in particular.
+  const grants = workspaceOwner ? createTasksSessionGrants({ workspaceOwner }) : undefined
+  return {
+    routeContributions: createSelfHostedTasksComposition({
+      services,
+      ...(grants ? { grants } : {}),
+    }).routeContributions,
+    ...(grants ? { grants } : {}),
+  }
 }
 
 /**
@@ -103,6 +132,5 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
 export function selfHostedTasksRouteContributions(
   services: ControlPlaneServices,
 ): readonly ControlPlaneRouteContribution[] {
-  if (services.auth.config.enabled) return createSelfHostedTasksComposition({ services }).routeContributions
-  return createLocalTasksComposition().routeContributions
+  return selfHostedTasks(services).routeContributions
 }

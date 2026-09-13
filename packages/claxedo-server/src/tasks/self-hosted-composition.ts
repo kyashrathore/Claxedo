@@ -7,6 +7,7 @@ import { createLocalTasksSessionBridge } from "@claxedo/local-server/tasks/sessi
 import { createTasksSessionRelease, createTasksSessionReserve } from "./session-reservation"
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
+import type { TasksSessionGrants } from "./session-grants"
 
 export type SelfHostedTasksComposition = {
   routeContributions: readonly ControlPlaneRouteContribution[]
@@ -14,6 +15,12 @@ export type SelfHostedTasksComposition = {
 
 export type SelfHostedTasksCompositionInput = {
   services: ControlPlaneServices
+  /**
+   * The grants this box hands its own sessions. Absent leaves a signed
+   * self-host whose sessions carry no Tasks tools rather than one whose
+   * routes admit a bearer nothing issued.
+   */
+  grants?: TasksSessionGrants
 }
 
 /**
@@ -50,6 +57,11 @@ export function createSelfHostedTasksComposition(
         },
         input.services,
       ),
+    // A session on this box carries no signed bearer of the person who started
+    // it. Its grant is admitted by the same capability branch a cloud root's
+    // is, resolved to the same workspace owner; only the shape of the handle
+    // differs, because it never leaves this process.
+    ...(input.grants ? { capability: input.grants.capability } : {}),
   })
   const reservation = { services: input.services, principal: identity.runtimePrincipal }
   return {

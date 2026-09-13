@@ -39,7 +39,7 @@ export const serverSelfHosted: Policy = {
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
   /**
-   * Measured 117 modules / 39 packages, with no headroom.
+   * Measured 118 modules / 39 packages, with no headroom.
    *
    * The reviewed owners this entry is allowed to reach beyond the single
    * binary's own usage pipeline: `@claxedo/local-server`'s Agent Plugins and
@@ -48,7 +48,11 @@ export const serverSelfHosted: Policy = {
    * `@claxedo/local-server` because it binds THIS deployment's identity — the
    * embedded issuer's bearer verifier and the local SQLite workspace authority
    * — to the Tasks kit, where the loopback composition next to it authorizes
-   * every project unconditionally; `@claxedo/opencode-server-adapter`, for
+   * every project unconditionally; `src/tasks/session-grants.ts`, owned here
+   * for the same reason — it is how a box that is its own runtime host hands
+   * its sessions a Tasks grant, which a deployment with a real control-plane
+   * boundary does with a signed capability instead;
+   * `@claxedo/opencode-server-adapter`, for
    * operator-configured external OpenCode connections, no engine bundled; and
    * `src/mcp/`, which mounts the first-party MCP endpoint and answers for its
    * RFC 9728 document and its own OAuth provider's tokens.
@@ -58,7 +62,7 @@ export const serverSelfHosted: Policy = {
    * only through the Tasks composition, and `posthog-node` via platform
    * telemetry.
    */
-  ceilings: { modules: 117, packages: 39 },
+  ceilings: { modules: 118, packages: 39 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

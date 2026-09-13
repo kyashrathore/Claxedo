@@ -99,6 +99,7 @@ import { assertSelfHostedPosture, type SelfHostedPosture } from "./posture"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, embeddedAuthPublicOrigin, getEmbeddedAuth } from "./embedded-auth"
 import { embeddedBrowserAuthDescriptor, embeddedBrowserAuthSecurity, embeddedBrowserSessionBearer } from "./embedded-browser-auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { selfHostedTasksClientInput, type TasksSessionGrants } from "../../tasks/session-grants"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createControlPlaneApp } from "../../control-plane-app"
@@ -689,6 +690,13 @@ export function createSelfHostedApp(
      * the same trust every other route on this box extends it.
      */
     firstPartyMcp?: FirstPartyMcpOptions
+    /**
+     * The Tasks grants this box issues to its own sessions, for the signed
+     * posture whose routes cannot read a loopback caller as anyone. The same
+     * registry has to reach the Tasks routes, which are composed by the
+     * caller as a route contribution.
+     */
+    tasksGrants?: TasksSessionGrants
   } = {},
 ) {
   if (options.posture) assertSelfHostedPosture(options.posture)
@@ -1264,6 +1272,11 @@ export function createSelfHostedApp(
                 }),
             }
           : {}),
+        tasks: selfHostedTasksClientInput({
+          app,
+          signed: services.auth.config.enabled,
+          ...(options.tasksGrants ? { grants: options.tasksGrants } : {}),
+        }),
         // This box runs its own workspaces behind the runtime proxy, which
         // picks the workspace from `x-workspace-id`: stamped for a runtime
         // credential, named per call by the client for an account.
@@ -1351,6 +1364,8 @@ export type ControlPlaneStackOptions = {
   processObserver?: ProcessObserver
   /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
   routeContributions?: readonly ControlPlaneRouteContribution[]
+  /** Issued to this box's own sessions; the Tasks routes in `routeContributions` verify them. */
+  tasksGrants?: TasksSessionGrants
 }
 
 export function captureControlPlaneStartupTelemetry(
@@ -1613,6 +1628,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
     ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
+    ...(options.tasksGrants ? { tasksGrants: options.tasksGrants } : {}),
     // This box runs the workspaces it serves, so it serves their sessions'
     // first-party MCP itself; the credential a runtime minted is verified by
     // the runtime that minted it.
