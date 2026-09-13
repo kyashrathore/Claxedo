@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import type { TaskDraft } from "@claxedo/tasks"
+import { chooseOption, optionLabels } from "../shared/test-support/host-controls"
 import { TaskCreateForm } from "./task-create-form"
 import { TasksProseEditor } from "@/app/integrations/tasks/tasks-prose-editor"
 
@@ -32,12 +33,22 @@ function mount() {
 }
 
 describe("the New task dialog", () => {
-  test("states what a new task will be, and which project it lands in", () => {
+  test("states which project it lands in, and starts in To do", () => {
     mount()
 
     expect(screen.getByLabelText("Breadcrumb").textContent).toContain("Importer")
-    expect(screen.getByTestId("task-create-dialog").textContent).toContain("To do")
+    expect(screen.getByTestId("task-create-status").textContent).toContain("To do")
     expect(screen.getByTestId("task-create-project").textContent).toBe("Importer")
+  })
+
+  test("offers the two statuses a task can be created in, and carries the choice into the draft", () => {
+    const { draft } = mount()
+
+    expect(optionLabels("task-create-status")).toEqual(["Backlog", "To do"])
+
+    chooseOption("task-create-status", "Backlog")
+
+    expect(draft().status).toBe("backlog")
   })
 
   // The dialog writes the same records the task page edits, so what it stores

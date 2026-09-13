@@ -12,9 +12,16 @@ const STATUS_ICONS: Readonly<Record<TaskStatus, "circle-dashed" | "circle" | "ci
   done: "circle-check",
 }
 
-export function TaskStatusIcon(props: { status: TaskStatus }) {
+/** `label` where the mark stands alone; beside its own name it stays decorative. */
+export function TaskStatusIcon(props: { status: TaskStatus; label?: string }) {
   return (
-    <span class="tsk-status-icon" data-status={props.status}>
+    <span
+      class="tsk-status-icon"
+      data-status={props.status}
+      role={props.label ? "img" : undefined}
+      aria-label={props.label}
+      title={props.label}
+    >
       <Icon name={STATUS_ICONS[props.status]} size="small" />
     </span>
   )

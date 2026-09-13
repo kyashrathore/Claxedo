@@ -12,7 +12,15 @@ import {
 } from "@claxedo/tasks"
 import type { ProseEditor } from "../../app-ports"
 import { StatusControl } from "../shared/status-control"
-import { SLOT_LABELS, TASK_STATUS_LABELS, openableSlot, slotAttempt, type TaskDetailView, type TaskLinkGroup } from "../../view-model"
+import {
+  SLOT_LABELS,
+  TASK_STATUS_LABELS,
+  openableSlot,
+  slotAttempt,
+  taskKey,
+  type TaskDetailView,
+  type TaskLinkGroup,
+} from "../../view-model"
 
 export type TaskDetailEdit = {
   title: string
@@ -63,6 +71,7 @@ export function TaskDetail(props: TaskDetailProps) {
   // The preset the task is actually running under, named by the link the
   // service wrote at start rather than by whatever the catalog holds now.
   const presetName = () => openableSlot(props.view.groups)?.current.presetNameAtStart
+  const key = () => taskKey(props.projectLabel, task().number)
 
   // Cmd/Ctrl+S saves from wherever the caret is — the editor holds focus while
   // you type, so a handler on this subtree alone would miss the rail. Bound
@@ -120,7 +129,10 @@ export function TaskDetail(props: TaskDetailProps) {
             )}
           </Show>
           <span class="tsk-crumb-sep" aria-hidden="true">›</span>
-          <span class="tsk-crumb-current">{task().title}</span>
+          <span class="tsk-crumb-current">
+            <span class="tsk-key">{key()}</span>
+            {task().title}
+          </span>
 
           <Show when={props.dirty}>
             <span class="tsk-spacer" />
@@ -156,15 +168,20 @@ export function TaskDetail(props: TaskDetailProps) {
           )}
         </Show>
 
-        <input
-          class="tsk-bare-title"
-          data-testid="task-detail-title"
-          aria-label="Task title"
-          placeholder="Untitled task"
-          maxLength={TASKS_BOUNDS.taskTitleMax}
-          value={props.edit.title}
-          onInput={(event) => patch({ title: event.currentTarget.value })}
-        />
+        <div class="tsk-title-row">
+          <span class="tsk-key tsk-title-key" data-testid="task-detail-key">
+            {key()}
+          </span>
+          <input
+            class="tsk-bare-title"
+            data-testid="task-detail-title"
+            aria-label="Task title"
+            placeholder="Untitled task"
+            maxLength={TASKS_BOUNDS.taskTitleMax}
+            value={props.edit.title}
+            onInput={(event) => patch({ title: event.currentTarget.value })}
+          />
+        </div>
 
         <div class="tsk-prose">
           <Dynamic

@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js"
 import { Dialog } from "@opencode-ai/ui/dialog"
+import type { TaskCreateStatus } from "@claxedo/tasks"
 import { TaskCreateForm } from "./task-create-form"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../../app-ports"
@@ -9,6 +10,8 @@ import { useTasksClient, useTasksInvalidation, type TasksScope } from "../../dat
 export type DialogCreateTaskProps = {
   scope: () => TasksScope
   projectId: string
+  /** Which column the create was started from; To do when it was started from nowhere. */
+  status?: TaskCreateStatus
   parent?: { id: string; title: string; workspaceId: string | null }
   onClose: () => void
   onCreated?: (taskId: string) => void
@@ -25,6 +28,7 @@ export function DialogCreateTask(props: DialogCreateTaskProps) {
     description: "",
     workspaceId: props.parent?.workspaceId ?? null,
     parentTaskId: props.parent?.id ?? null,
+    status: props.status ?? ("todo" as TaskCreateStatus),
   })
   const [busy, setBusy] = createSignal(false)
   const [refusal, setRefusal] = createSignal<TasksRefusal | undefined>()

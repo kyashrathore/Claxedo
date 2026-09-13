@@ -2,12 +2,21 @@ import { Show } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { Button } from "@opencode-ai/ui/button"
 import { Select } from "@opencode-ai/ui/select"
-import { TASKS_BOUNDS, type TaskDraft } from "@claxedo/tasks"
+import { TASKS_BOUNDS, TASK_CREATE_STATUSES, type TaskCreateStatus, type TaskDraft } from "@claxedo/tasks"
 import type { ProseEditor } from "../../app-ports"
-import { TaskStatusChip } from "../shared/status-control"
-import type { FieldErrors } from "../../view-model"
+import { TaskStatusIcon } from "../shared/status-control"
+import { TASK_STATUS_LABELS, type FieldErrors } from "../../view-model"
 
 export type ProjectOption = { id: string; label: string }
+
+function StatusOption(props: { status: TaskCreateStatus }) {
+  return (
+    <span class="tsk-status">
+      <TaskStatusIcon status={props.status} />
+      {TASK_STATUS_LABELS[props.status]}
+    </span>
+  )
+}
 
 export type TaskCreateFormProps = {
   draft: TaskDraft
@@ -27,9 +36,8 @@ export type TaskCreateFormProps = {
  * The create form. The draft is the caller's, so a refused save re-renders the
  * same values the user typed instead of a fresh empty form.
  *
- * The properties row states what a new task will be rather than offering to
- * change it: `task.create` takes no status, so To do is a fact here, not a
- * control that would be refused.
+ * The status offers the two a task may be created in and no more: the rest are
+ * reached by working on it, and a create that named one would be refused.
  */
 export function TaskCreateForm(props: TaskCreateFormProps) {
   const patch = (input: Partial<TaskDraft>) => props.onDraftChange({ ...props.draft, ...input })
@@ -80,7 +88,20 @@ export function TaskCreateForm(props: TaskCreateFormProps) {
       <Show when={fieldError("description")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
 
       <div class="tsk-chiprow">
-        <TaskStatusChip status="todo" />
+        <Select
+          size="small"
+          options={[...TASK_CREATE_STATUSES]}
+          current={props.draft.status ?? "todo"}
+          value={(status: TaskCreateStatus) => status}
+          label={(status: TaskCreateStatus) => TASK_STATUS_LABELS[status]}
+          renderValue={(status: TaskCreateStatus) => <StatusOption status={status} />}
+          triggerProps={{ "data-testid": "task-create-status", "aria-label": "Status" }}
+          onSelect={(status) => {
+            if (status) patch({ status })
+          }}
+        >
+          {(status) => <Show when={status}>{(chosen) => <StatusOption status={chosen()} />}</Show>}
+        </Select>
         <Show when={!props.draft.parentTaskId}>
           <Select
             size="small"

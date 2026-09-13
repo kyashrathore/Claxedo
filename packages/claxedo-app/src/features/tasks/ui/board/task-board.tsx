@@ -1,15 +1,18 @@
 import { For, Show, createSignal } from "solid-js"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { TASK_STATUSES, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
+import { TASK_STATUSES, isTaskCreateStatus, type TaskCreateStatus, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
 import { LoadMore, type MorePages } from "../shared/load-more"
 import { TaskStatusIcon } from "../shared/status-control"
 import { TaskRowActions, TaskStartControl, type TaskStartOffer } from "../shared/task-row-controls"
-import { TASK_STATUS_LABELS, shortAge } from "../../view-model"
+import { TASK_STATUS_LABELS, shortAge, taskDate, taskKey, type TaskDateField } from "../../view-model"
 import type { SubtaskProgress } from "../list/task-list"
 
 export type TaskBoardProps = {
   tasks: readonly TaskSummary[]
+  /** The name every card's key is derived from; the board spans one project. */
+  projectName: string
+  dateField: TaskDateField
   selectedTaskId?: string
   busyTaskId?: string
   subtaskProgress?: (taskId: string) => SubtaskProgress | undefined
@@ -17,8 +20,8 @@ export type TaskBoardProps = {
   startOffer?: (task: TaskSummary) => TaskStartOffer
   more?: MorePages
   onSelect: (taskId: string) => void
-  /** Offered on To do alone: `task.create` takes no status, so a card starts there. */
-  onCreate?: () => void
+  /** Offered on the two columns a task may be created in, and lands in that one. */
+  onCreate?: (status: TaskCreateStatus) => void
   onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void
 }
 
@@ -68,17 +71,19 @@ export function TaskBoard(props: TaskBoardProps) {
                 <span>{TASK_STATUS_LABELS[status]}</span>
                 <span class="tsk-count">{column(status).length}</span>
                 <span class="tsk-spacer" />
-                {/* `task.create` takes no status, so a new card can only land in
-                    To do; a plus on Done would promise a task it cannot make. */}
-                <Show when={status === "todo" && props.onCreate}>
+                {/* A plus on In progress or Done would promise a task that has
+                    already been worked on, which nothing has. */}
+                <Show when={isTaskCreateStatus(status) && props.onCreate ? props.onCreate : undefined}>
                   {(create) => (
                     <IconButton
                       icon="plus-small"
                       size="small"
                       variant="ghost"
-                      data-testid="tasks-board-create"
-                      aria-label="New task"
-                      onClick={() => create()()}
+                      data-testid={`tasks-board-create-${status}`}
+                      aria-label={`New task in ${TASK_STATUS_LABELS[status]}`}
+                      onClick={() => {
+                        if (isTaskCreateStatus(status)) create()(status)
+                      }}
                     />
                   )}
                 </Show>
@@ -113,6 +118,7 @@ export function TaskBoard(props: TaskBoardProps) {
                         setOver(undefined)
                       }}
                     >
+                      <span class="tsk-key tsk-card-key">{taskKey(props.projectName, task.number)}</span>
                       <button
                         type="button"
                         class="tsk-card-title"
@@ -136,7 +142,9 @@ export function TaskBoard(props: TaskBoardProps) {
                         <Show when={task.parentTaskId}>
                           <span class="tsk-cell">Subtask</span>
                         </Show>
-                        <span class="tsk-cell">{shortAge(task.updatedAt, now)}</span>
+                        <span class="tsk-cell" title={new Date(taskDate(task, props.dateField)).toLocaleString()}>
+                          {shortAge(taskDate(task, props.dateField), now)}
+                        </span>
                       </div>
 
                       <span class="tsk-row-tools" onClick={(event) => event.stopPropagation()}>

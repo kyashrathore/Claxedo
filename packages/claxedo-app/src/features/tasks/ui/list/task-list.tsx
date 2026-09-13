@@ -5,7 +5,7 @@ import { TASK_STATUSES, type TaskChildSummary, type TaskStatus, type TaskSummary
 import { LoadMore, type MorePages } from "../shared/load-more"
 import { TaskStatusIcon } from "../shared/status-control"
 import { TaskRowActions, TaskStartControl, type TaskStartOffer } from "../shared/task-row-controls"
-import { TASK_STATUS_LABELS, shortAge } from "../../view-model"
+import { TASK_STATUS_LABELS, shortAge, taskDate, taskKey, type TaskDateField } from "../../view-model"
 
 /** The store's own child counts, which is what a row reports. */
 export type SubtaskProgress = TaskChildSummary
@@ -13,6 +13,9 @@ export type SubtaskProgress = TaskChildSummary
 export type TaskListProps = {
   /** Flat and already filtered: this renders the rows it is given, in status groups. */
   tasks: readonly TaskSummary[]
+  /** The name every row's key is derived from; the list spans one project. */
+  projectName: string
+  dateField: TaskDateField
   selectedTaskId?: string
   loading?: boolean
   emptyLabel?: string
@@ -83,11 +86,12 @@ export function TaskList(props: TaskListProps) {
                       task={task}
                       index={ordinal().get(task.id) ?? 0}
                       now={now}
+                      projectName={props.projectName}
+                      dateField={props.dateField}
                       parentTitle={props.parentTitleOf?.(task)}
                       progress={props.subtaskProgress?.(task.id)}
                       selected={props.selectedTaskId === task.id}
                       busy={props.busyTaskId === task.id}
-                      grouped={props.grouped !== false}
                       offer={props.startOffer?.(task)}
                       onSelect={props.onSelect}
                       onStatusChange={props.onStatusChange}
@@ -108,11 +112,12 @@ function TaskRow(props: {
   task: TaskSummary
   index: number
   now: number
+  projectName: string
+  dateField: TaskDateField
   parentTitle?: string
   progress?: SubtaskProgress
   selected: boolean
   busy: boolean
-  grouped: boolean
   offer?: TaskStartOffer
   onSelect: (taskId: string) => void
   onStatusChange?: (input: { taskId: string; revision: number; status: TaskStatus }) => void
@@ -131,6 +136,8 @@ function TaskRow(props: {
         aria-current={props.selected ? "true" : undefined}
         onClick={() => props.onSelect(props.task.id)}
       >
+        <TaskStatusIcon status={props.task.status} label={TASK_STATUS_LABELS[props.task.status]} />
+        <span class="tsk-key">{taskKey(props.projectName, props.task.number)}</span>
         <span class="tsk-open-name">{props.task.title}</span>
         <Show when={props.parentTitle}>{(title) => <span class="tsk-parent">{title()}</span>}</Show>
         <Show when={props.task.archivedAt !== null}>
@@ -139,14 +146,6 @@ function TaskRow(props: {
       </button>
 
       <span class="tsk-props">
-        {/* The group header already names the status, so the row repeats it only
-            when the caller turned grouping off. */}
-        <Show when={!props.grouped}>
-          <span class="tsk-cell">
-            <TaskStatusIcon status={props.task.status} />
-            {TASK_STATUS_LABELS[props.task.status]}
-          </span>
-        </Show>
         {/* A task with no subtasks says nothing rather than `0/0`. */}
         <Show when={props.progress && props.progress.total > 0 ? props.progress : undefined}>
           {(progress) => (
@@ -161,7 +160,9 @@ function TaskRow(props: {
             <Icon name="bubble-5" size="small" />
           </span>
         </Show>
-        <span class="tsk-cell tsk-cell-time">{shortAge(props.task.updatedAt, props.now)}</span>
+        <span class="tsk-cell tsk-cell-time" title={new Date(taskDate(props.task, props.dateField)).toLocaleString()}>
+          {shortAge(taskDate(props.task, props.dateField), props.now)}
+        </span>
       </span>
 
       <span class="tsk-row-tools" onClick={(event) => event.stopPropagation()}>

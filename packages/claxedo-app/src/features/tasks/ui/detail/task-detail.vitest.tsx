@@ -125,6 +125,15 @@ function mountSubtask(input: { onOpenParent?: () => void } = {}) {
   ))
 }
 
+describe("the key a task page names itself by", () => {
+  test("stands in the title row and closes the breadcrumb", () => {
+    mount([])
+
+    expect(screen.getByTestId("task-detail-key").textContent).toBe("IMP-1")
+    expect(screen.getByLabelText("Breadcrumb").textContent).toContain("IMP-1")
+  })
+})
+
 describe("a subtask's own page", () => {
   test("names the task it belongs to, and opens it", () => {
     const onOpenParent = vi.fn()

@@ -7,6 +7,8 @@ vi.mock("@opencode-ai/ui/dropdown-menu", async () => (await import("../shared/te
 
 afterEach(cleanup)
 
+let minted = 0
+
 function summary(id: string, status: TaskStatus): TaskSummary {
   return {
     id,
@@ -14,7 +16,7 @@ function summary(id: string, status: TaskStatus): TaskSummary {
     scopeId: "local",
     projectId: "prj_1",
     workspaceId: null,
-    number: 1,
+    number: (minted += 1),
     parentTaskId: null,
     title: `Task ${id}`,
     status,
@@ -51,8 +53,18 @@ function checkedStatus(id: string) {
 function mount(tasks: readonly TaskSummary[]) {
   const onStatusChange = vi.fn()
   const onSelect = vi.fn()
-  render(() => <TaskBoard tasks={tasks} onSelect={onSelect} onStatusChange={onStatusChange} />)
-  return { onStatusChange, onSelect }
+  const onCreate = vi.fn()
+  render(() => (
+    <TaskBoard
+      tasks={tasks}
+      projectName="Demo project"
+      dateField="updated"
+      onSelect={onSelect}
+      onCreate={onCreate}
+      onStatusChange={onStatusChange}
+    />
+  ))
+  return { onStatusChange, onSelect, onCreate }
 }
 
 describe("task board", () => {
@@ -65,10 +77,31 @@ describe("task board", () => {
   })
 
   test("every status has a column and cards land in theirs", () => {
-    mount([summary("a", "todo"), summary("b", "needs_you")])
+    mount([summary("a", "todo"), summary("b", "needs_you"), summary("c", "backlog")])
 
     expect(screen.getByTestId("tasks-board-column-todo").contains(screen.getByTestId("tasks-board-card-a"))).toBe(true)
     expect(screen.getByTestId("tasks-board-column-needs_you").contains(screen.getByTestId("tasks-board-card-b"))).toBe(true)
+    expect(screen.getByTestId("tasks-board-column-backlog").contains(screen.getByTestId("tasks-board-card-c"))).toBe(true)
+  })
+
+  test("Backlog is the first column and the only other one that can start a task", () => {
+    const { onCreate } = mount([summary("a", "todo")])
+
+    const columns = screen.getAllByTestId(/^tasks-board-column-/).map((column) => column.getAttribute("data-testid"))
+    expect(columns[0]).toBe("tasks-board-column-backlog")
+    expect(screen.queryByTestId("tasks-board-create-doing")).toBeNull()
+    expect(screen.queryByTestId("tasks-board-create-done")).toBeNull()
+
+    fireEvent.click(screen.getByTestId("tasks-board-create-backlog"))
+    expect(onCreate).toHaveBeenCalledWith("backlog")
+    fireEvent.click(screen.getByTestId("tasks-board-create-todo"))
+    expect(onCreate).toHaveBeenCalledWith("todo")
+  })
+
+  test("a card carries the key a person quotes", () => {
+    mount([summary("a", "todo")])
+
+    expect(within(screen.getByTestId("tasks-board-card-a")).getByText(/^DP-\d+$/)).toBeTruthy()
   })
 
   test("the per-card menu moves a task without any drag, carrying its expected revision", () => {

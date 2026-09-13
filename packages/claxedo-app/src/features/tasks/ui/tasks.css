@@ -161,9 +161,10 @@
 /* Status ------------------------------------------------------------------ */
 
 /*
- * The status mark is the host's own circle set — dashed for not started, half
- * filled while working, an alert once it needs you, a tick when done — in the
- * one icon colour, so the shape alone carries the state.
+ * The status mark is the host's own circle set — dashed while parked, a plain
+ * ring once it is to do, half filled while working, an alert when it needs
+ * you, a tick when done — in the one icon colour, so the shape alone carries
+ * the state.
  */
 .tsk-status-icon {
   flex: none;
@@ -546,6 +547,16 @@
   justify-content: flex-end;
 }
 
+/* The key a person quotes: monospace so the digits line up down the column. */
+.tsk-key {
+  flex: none;
+  color: var(--text-weak);
+  font-family: var(--font-family-mono);
+  font-size: var(--font-size-x-small);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* The actions sit in the column the properties reserved, so nothing shifts when
    they appear. */
 .tsk-tr .tsk-row-tools {
@@ -638,6 +649,11 @@
 
 .tsk-card[data-dragging="true"] {
   opacity: 0.4;
+}
+
+.tsk-card-key {
+  display: block;
+  padding-right: 92px;
 }
 
 .tsk-card-title {
@@ -737,6 +753,10 @@
   color: var(--icon-disabled);
 }
 
+.tsk-crumb-current .tsk-key {
+  margin-right: 6px;
+}
+
 .tsk-crumb-current {
   color: var(--text-base);
 }
@@ -775,6 +795,17 @@
 
 .tsk-parent-tag:disabled {
   cursor: default;
+}
+
+.tsk-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tsk-title-key {
+  font-size: var(--font-size-small);
 }
 
 .tsk-bare-title {

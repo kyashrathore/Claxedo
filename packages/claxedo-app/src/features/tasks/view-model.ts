@@ -50,6 +50,19 @@ export const CAPABILITY_GUARANTEE: Readonly<Record<PresetPlacement, string>> = {
     "Only the selected plugins and skills are installed in the isolated cloud workspace, and only their credentials are brokered. The repository, shell and network still follow the host's policy, so this limits registered capabilities, not everything the agent can reach.",
 }
 
+/**
+ * Which timestamp a row shows. A reader watching work move wants the last
+ * touch; one auditing what was asked for wants the first, and no row is wide
+ * enough for both.
+ */
+export const TASK_DATE_FIELDS = ["updated", "created"] as const
+export type TaskDateField = (typeof TASK_DATE_FIELDS)[number]
+
+export const TASK_DATE_FIELD_LABELS: Readonly<Record<TaskDateField, string>> = {
+  updated: "Updated",
+  created: "Created",
+}
+
 export const TASK_COLLECTIONS = ["active", "backlog", "all"] as const
 export type TaskCollection = (typeof TASK_COLLECTIONS)[number]
 
@@ -155,6 +168,38 @@ export function shortAge(timestamp: number, now: number = Date.now()): string {
   if (elapsed < WEEK) return `${Math.floor(elapsed / DAY)}d`
   if (elapsed < 52 * WEEK) return `${Math.floor(elapsed / WEEK)}w`
   return String(new Date(timestamp).getFullYear())
+}
+
+/**
+ * A project's letters in a task key: the initials of its words, or the first
+ * three letters when it has only one — `Demo project` reads `DP`, `Claxedo`
+ * reads `CLA`. Four initials at most, because the key sits in a table cell
+ * ahead of a title that has to stay readable.
+ */
+export function projectKey(projectName: string): string {
+  const words = projectName.trim().split(/\s+/).filter((word) => word.length > 0)
+  const single = words.length === 1 ? words[0] : undefined
+  if (single) return single.slice(0, 3).toUpperCase()
+  return words
+    .slice(0, 4)
+    .map((word) => word.slice(0, 1))
+    .join("")
+    .toUpperCase()
+}
+
+/**
+ * What a person quotes when they mean this task. A project whose name carries
+ * no letters leaves the number to stand alone rather than growing a key made
+ * of nothing.
+ */
+export function taskKey(projectName: string, taskNumber: number): string {
+  const key = projectKey(projectName)
+  return key.length === 0 ? `#${taskNumber}` : `${key}-${taskNumber}`
+}
+
+/** The timestamp the chosen Display option points at. */
+export function taskDate(task: { createdAt: number; updatedAt: number }, field: TaskDateField): number {
+  return field === "created" ? task.createdAt : task.updatedAt
 }
 
 /**

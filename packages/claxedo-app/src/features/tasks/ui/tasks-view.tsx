@@ -1,7 +1,7 @@
 import { Show, createMemo, createSignal } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import type { TaskStatus, TaskSummary } from "@claxedo/tasks"
+import type { TaskCreateStatus, TaskStatus, TaskSummary } from "@claxedo/tasks"
 import { TASK_COLLECTION_LABELS } from "../view-model"
 import { TaskBoard } from "./board/task-board"
 import { TaskList } from "./list/task-list"
@@ -116,15 +116,20 @@ export function TasksView(props: TasksViewProps) {
     }
   }
 
-  const openCreate = () =>
+  const openCreate = (status?: TaskCreateStatus) =>
     void dialog.show(() => (
       <DialogCreateTask
         scope={props.scope}
         projectId={props.projectId()}
+        status={status}
         onClose={() => dialog.close()}
         onCreated={(taskId) => props.onOpenTask(taskId)}
       />
     ))
+
+  // The list spans one project, so every key on the page is derived from this
+  // name; an any-project read does not exist, which is why no row names it.
+  const projectName = () => projects().find((entry) => entry.id === props.projectId())?.label ?? ""
 
   return (
     <div class="tsk tsk-root" data-testid="tasks-view">
@@ -132,7 +137,7 @@ export function TasksView(props: TasksViewProps) {
         title="Tasks"
         count={visible().length}
         action={
-          <Button variant="primary" size="small" data-testid="tasks-create" onClick={openCreate}>
+          <Button variant="primary" size="small" data-testid="tasks-create" onClick={() => openCreate()}>
             New task
           </Button>
         }
@@ -153,6 +158,8 @@ export function TasksView(props: TasksViewProps) {
         fallback={
           <TaskList
             tasks={visible()}
+            projectName={projectName()}
+            dateField={props.store.state.dateField}
             loading={tasks.pending()}
             grouped={props.store.state.grouped}
             emptyLabel={`Nothing in ${TASK_COLLECTION_LABELS[props.store.state.collection]}.`}
@@ -163,13 +170,15 @@ export function TasksView(props: TasksViewProps) {
             startOffer={startOffer}
             busyTaskId={busyTaskId()}
             onSelect={(taskId) => props.onOpenTask(taskId)}
-            onCreate={openCreate}
+            onCreate={() => openCreate()}
             onStatusChange={(input) => void setStatus(input)}
           />
         }
       >
         <TaskBoard
           tasks={visible()}
+          projectName={projectName()}
+          dateField={props.store.state.dateField}
           more={morePages(tasks)}
           selectedTaskId={props.store.state.selectedTaskId}
           subtaskProgress={subtaskProgress}

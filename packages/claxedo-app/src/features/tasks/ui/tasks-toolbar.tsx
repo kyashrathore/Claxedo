@@ -6,7 +6,14 @@ import { Select } from "@opencode-ai/ui/select"
 import { Switch } from "@opencode-ai/ui/switch"
 import { Tag } from "@opencode-ai/ui/tag"
 import { TASK_STATUSES, type TaskStatus } from "@claxedo/tasks"
-import { TASK_COLLECTIONS, TASK_COLLECTION_LABELS, TASK_STATUS_LABELS } from "../view-model"
+import {
+  TASK_COLLECTIONS,
+  TASK_COLLECTION_LABELS,
+  TASK_DATE_FIELDS,
+  TASK_DATE_FIELD_LABELS,
+  TASK_STATUS_LABELS,
+  type TaskDateField,
+} from "../view-model"
 import type { TasksProjectOption } from "../app-ports"
 import type { TasksStore } from "../store/tasks-store"
 
@@ -41,6 +48,7 @@ export function TasksToolbar(props: TasksToolbarProps) {
   const statusFilter = () => props.store.state.statusFilter
   const board = () => props.store.state.view === "board"
   const grouping = () => GROUPINGS.find((entry) => entry.value === props.store.state.grouped)
+  const dateField = () => props.store.state.dateField
   // Assigned through a call rather than as a literal: an inline object literal
   // is excess-property-checked against the button's own props, which do not
   // admit `data-*`.
@@ -188,6 +196,21 @@ export function TasksToolbar(props: TasksToolbarProps) {
               triggerProps={{ "data-testid": "tasks-group-by-status", "aria-label": "Grouping" }}
               onSelect={(entry) => {
                 if (entry) props.store.setGrouped(entry.value)
+              }}
+            />
+          </div>
+
+          <div class="tsk-option">
+            <span class="tsk-option-label">Date</span>
+            <Select
+              size="small"
+              options={[...TASK_DATE_FIELDS]}
+              current={dateField()}
+              value={(field: TaskDateField) => field}
+              label={(field: TaskDateField) => TASK_DATE_FIELD_LABELS[field]}
+              triggerProps={{ "data-testid": "tasks-date-field", "aria-label": "Date" }}
+              onSelect={(field) => {
+                if (field) props.store.setDateField(field)
               }}
             />
           </div>
