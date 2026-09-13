@@ -1,46 +1,52 @@
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { For, Show, createMemo } from "solid-js"
 import type { QuotaAccount, QuotaSnapshot } from "@claxedo/usage-contract"
-import { harnessIcon, harnessLabel, machineLoginUsageReadable } from "@/platform/identity/harness-catalog"
+import { harnessIcon, harnessLabel } from "@/platform/identity/harness-catalog"
+import { useLanguage } from "@/platform/i18n/provider"
 import { formatRelativeTime } from "@/lib/relative-time"
 
-type Bar = { label: string; percent: number; resetsAt: number | null }
+/**
+ * A word the card shows. `key` is a dictionary entry; `text` is a string only
+ * the snapshot can spell, which no dictionary could hold. Keeping the two apart
+ * is what lets `accountCards` and `quotaSummary` be read without a translator.
+ */
+type Words = { key: string } | { text: string }
+
+type Bar = { name: Words; percent: number; resetsAt: number | null }
 type Card = {
   key: string
   harness: string
   label: string
   plan?: string
   inUse: boolean
-  refused?: string
+  refusedKey?: string
+  usageError?: string
   windows: Bar[]
   usageAt?: number
-  /** Said where a harness reports a login it can name no plan figures for. */
-  unreadable: boolean
 }
-type Group = { harness: string; name: string; icon: string; cards: Card[] }
+type Group = { key: string; name: Words; icon?: string; cards: Card[] }
 
-/** The vendor slot names the verifier normalises to, in the reader's words. */
-const WINDOW_LABELS: Record<string, string> = {
-  session: "Session",
-  weekly: "Weekly",
-  weekly_opus: "Weekly · Opus",
+const WINDOW_KEY: Record<string, string> = {
+  session: "settings.providers.window.session",
+  weekly: "settings.providers.window.weekly",
+  weekly_opus: "settings.providers.window.weeklyOpus",
 }
 
 /** The verdicts only a different account, or a fresh login, can answer. */
-const REFUSALS: Record<string, string> = {
-  auth_failed: "Rejected by the provider",
-  no_billing: "No active billing",
-  expired: "Expired",
+const REFUSAL_KEY: Record<string, string> = {
+  auth_failed: "settings.providers.live.authFailed",
+  no_billing: "settings.providers.live.noBilling",
+  expired: "settings.providers.live.expired",
 }
 
-/**
- * The harnesses whose own CLI answers with a login and no plan figures. Claude
- * Code has no headless usage read at all, so its card would otherwise read as a
- * plan nobody had got around to checking rather than one that cannot be read.
- */
+/** The group every account no harness can run a turn on collects under. */
+const OTHER_AGENTS = "other-agents"
 
-function windowLabel(name: string) {
-  return WINDOW_LABELS[name] ?? name.replaceAll("_", " ")
+function windowName(name: string): Words {
+  const key = WINDOW_KEY[name]
+  // A slot the vendor added since this dictionary was written still carries a
+  // real figure, so it is drawn under the vendor's own name rather than dropped.
+  return key === undefined ? { text: name.replaceAll("_", " ") } : { key }
 }
 
 function formatReset(value: number | null | undefined) {
@@ -53,84 +59,122 @@ function formatReset(value: number | null | undefined) {
 }
 
 function card(account: QuotaAccount, index: number): Card {
-  const refused = account.health === undefined ? undefined : REFUSALS[account.health]
+  const refusedKey = account.health === undefined ? undefined : REFUSAL_KEY[account.health]
   return {
-    key: account.credentialId ?? `machine-${account.harness}-${index}`,
+    key: account.credentialId ?? `${account.harness}-${index}`,
     harness: account.harness,
     // A harness login its CLI reports without an address is the only account
     // that names nothing, and it is always this computer's own.
     label: account.label ?? "This computer's login",
     ...(account.plan === undefined ? {} : { plan: account.plan }),
     inUse: account.inUse,
-    ...(refused === undefined ? {} : { refused }),
+    ...(refusedKey === undefined ? {} : { refusedKey }),
+    ...(account.usageError === undefined ? {} : { usageError: account.usageError }),
     // A refusal outranks whatever the plan last read: the account cannot spend
     // it until it is reconnected, so the bars would be answering another
     // question than the card is.
-    windows: refused
+    windows: refusedKey
       ? []
       : account.windows.map((window) => ({
-        label: windowLabel(window.window),
+        name: windowName(window.window),
         percent: Math.max(0, Math.min(100, Math.round(window.usedPercent))),
         resetsAt: window.resetsAt,
       })),
     ...(account.usageAt === undefined ? {} : { usageAt: account.usageAt }),
-    unreadable: refused === undefined
-      && account.windows.length === 0
-      && account.machineLogin === true
-      && !machineLoginUsageReadable(account.harness),
   }
 }
 
-/** One card per account, under the harness that runs it, in the snapshot's order. */
+/**
+ * One card per account, under the harness that runs it, in the snapshot's
+ * order. Agents Claxedo cannot run a turn on share one trailing group, which
+ * lands last because the snapshot orders those accounts last — nothing here
+ * sorts.
+ */
 export function accountCards(snapshot: QuotaSnapshot | undefined): Group[] {
   const groups: Group[] = []
   for (const [index, account] of (snapshot?.accounts ?? []).entries()) {
     const entry = card(account, index)
-    const held = groups.find((group) => group.harness === entry.harness)
+    const key = account.otherAgent ? OTHER_AGENTS : entry.harness
+    const held = groups.find((group) => group.key === key)
     if (held) {
       held.cards.push(entry)
       continue
     }
-    groups.push({
-      harness: entry.harness,
-      name: harnessLabel(entry.harness) ?? entry.harness,
-      icon: harnessIcon(entry.harness),
-      cards: [entry],
-    })
+    groups.push(account.otherAgent
+      ? { key, name: { key: "usage.quota.otherAgents" }, cards: [entry] }
+      : {
+        key,
+        name: { text: harnessLabel(entry.harness) ?? entry.harness },
+        icon: harnessIcon(entry.harness),
+        cards: [entry],
+      })
   }
   return groups
 }
 
-/** The line above the cards: the tightest window across the accounts in use. */
+/**
+ * The line above the cards: the tightest window across the accounts in use.
+ *
+ * `account` names the card that window came off, and is set only where a second
+ * card also carries windows — with two populated cards on screen, a bare
+ * percentage does not say which one it is about.
+ */
 export function quotaSummary(snapshot: QuotaSnapshot | undefined) {
-  const cards = accountCards(snapshot).flatMap((group) => group.cards).filter((entry) => entry.inUse)
-  const windows = cards.flatMap((entry) => entry.windows)
-  const constrained = windows.toSorted((a, b) => b.percent - a.percent)[0]
+  const cards = accountCards(snapshot).flatMap((group) => group.cards)
+  const populated = cards.filter((entry) => entry.windows.length > 0)
+  const inUse = cards.filter((entry) => entry.inUse)
+  const windows = inUse.flatMap((entry) => entry.windows.map((window) => ({ window, owner: entry.label })))
+  const constrained = windows.toSorted((a, b) => b.window.percent - a.window.percent)[0]
   const nearestReset = windows
-    .map((window) => window.resetsAt)
+    .map((entry) => entry.window.resetsAt)
     .filter((value): value is number => value !== null && Number.isFinite(value))
     .toSorted((a, b) => a - b)[0]
   return {
-    accountCount: cards.length,
-    constrainedLabel: constrained?.label,
-    remainingPercent: constrained ? 100 - constrained.percent : undefined,
+    accountCount: inUse.length,
+    constrainedWindow: constrained?.window.name,
+    remainingPercent: constrained ? 100 - constrained.window.percent : undefined,
     nearestReset,
+    account: populated.length > 1 ? constrained?.owner : undefined,
   }
 }
 
-export function QuotaLimitsView(props: { status: string; snapshot?: QuotaSnapshot; error?: string }) {
+/** What a card says in place of bars, and whether the reader can ask for them. */
+type Note = { text: string; check?: true }
+
+export function QuotaLimitsView(props: {
+  snapshot?: QuotaSnapshot
+  error?: string
+  onCheck?: () => void
+  busy?: boolean
+}) {
+  const language = useLanguage()
+  const say = (words: Words) => ("key" in words ? language.t(words.key) : words.text)
   const groups = createMemo(() => accountCards(props.snapshot))
   const summaryWords = createMemo(() => {
-    const { constrainedLabel, remainingPercent, nearestReset } = quotaSummary(props.snapshot)
-    if (constrainedLabel === undefined || remainingPercent === undefined) return undefined
+    const { constrainedWindow, remainingPercent, nearestReset, account } = quotaSummary(props.snapshot)
+    if (constrainedWindow === undefined || remainingPercent === undefined) return undefined
+    const summary = account === undefined
+      ? language.t("usage.quota.summary", { percent: remainingPercent, window: say(constrainedWindow) })
+      : language.t("usage.quota.summaryForAccount", {
+        percent: remainingPercent,
+        window: say(constrainedWindow),
+        account,
+      })
     const reset = formatReset(nearestReset)
-    return `${remainingPercent}% left on ${constrainedLabel}${reset ? `, back in ${reset}` : ""}`
+    return reset === undefined ? summary : language.t("usage.quota.summaryReset", { summary, reset })
   })
+  const note = (entry: Card): Note | undefined => {
+    if (entry.refusedKey !== undefined) {
+      return { text: `${language.t(entry.refusedKey)} · ${language.t("usage.quota.reconnect")}` }
+    }
+    if (entry.windows.length > 0) return undefined
+    if (entry.usageError !== undefined) return { text: entry.usageError }
+    return { text: language.t("usage.quota.notChecked"), check: true }
+  }
   return (
     <section class="usage-quota" aria-labelledby="usage-quota-title">
       <div class="usage-section-heading">
         <div><span class="usage-kicker">From your connected accounts</span><h3 id="usage-quota-title">Quota windows</h3></div>
-        <span class="usage-source-state" data-state={props.status}>{props.status}</span>
       </div>
       <Show when={summaryWords()}>
         {(words) => <p class="usage-quota-summary">{words()}</p>}
@@ -140,31 +184,42 @@ export function QuotaLimitsView(props: { status: string; snapshot?: QuotaSnapsho
         fallback={<div class="usage-chart-empty">{props.error ?? "No connected account reports a plan here."}</div>}
       >
         <For each={groups()}>{(group) => (
-          <section class="usage-quota-harness" aria-label={group.name}>
+          <section class="usage-quota-harness" aria-label={say(group.name)}>
             <h4>
-              <ProviderIcon id={group.icon} class="size-4 shrink-0 icon-strong-base" />
-              {group.name}
+              <Show when={group.icon}>
+                {(icon) => <ProviderIcon id={icon()} class="size-4 shrink-0 icon-strong-base" />}
+              </Show>
+              {say(group.name)}
             </h4>
             <div class="usage-quota-grid">
               <For each={group.cards}>{(entry) => (
                 <article
                   class="usage-quota-account"
                   data-account={entry.key}
-                  data-refused={entry.refused === undefined ? undefined : "true"}
+                  data-refused={entry.refusedKey === undefined ? undefined : "true"}
                 >
                   <header>
                     <strong>{entry.label}</strong>
                     <Show when={entry.plan}><span>{entry.plan}</span></Show>
                     <Show when={entry.inUse}><span class="usage-quota-in-use">In use</span></Show>
                   </header>
-                  <Show when={entry.refused}>
-                    {(refused) => <p class="usage-quota-account-note">{refused()}</p>}
-                  </Show>
-                  <Show when={entry.unreadable}>
-                    <p class="usage-quota-account-note">Usage not readable for this login</p>
-                  </Show>
-                  <Show when={!entry.refused && !entry.unreadable && entry.windows.length === 0}>
-                    <p class="usage-quota-account-note">No plan usage has been read for this account</p>
+                  <Show when={note(entry)}>
+                    {(value) => (
+                      <p class="usage-quota-account-note">
+                        {value().text}
+                        <Show when={value().check}>
+                          {" · "}
+                          <button
+                            type="button"
+                            class="usage-quota-check"
+                            disabled={props.busy}
+                            onClick={() => props.onCheck?.()}
+                          >
+                            {language.t("usage.quota.check")}
+                          </button>
+                        </Show>
+                      </p>
+                    )}
                   </Show>
                   <For each={entry.windows}>{(window) => {
                     const reset = createMemo(() => formatReset(window.resetsAt))
@@ -173,7 +228,7 @@ export function QuotaLimitsView(props: { status: string; snapshot?: QuotaSnapsho
                     return (
                       <div class="usage-quota-window">
                         <div>
-                          <span class="usage-quota-window-name">{window.label}</span>
+                          <span class="usage-quota-window-name">{say(window.name)}</span>
                           <span>
                             <b>{100 - window.percent}% left</b>
                             <Show when={reset()}> · resets {reset()}</Show>
@@ -183,7 +238,7 @@ export function QuotaLimitsView(props: { status: string; snapshot?: QuotaSnapsho
                         <progress
                           max="100"
                           value={window.percent}
-                          aria-label={`${entry.label} ${window.label}: ${window.percent}% used`}
+                          aria-label={`${entry.label} ${say(window.name)}: ${window.percent}% used`}
                         />
                       </div>
                     )

@@ -693,7 +693,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     ].join(" · "))
   })
 
-  test("Claude has no headless usage read, so its machine row says the plan, the org and why", async () => {
+  test("a machine login carrying no windows says the plan and the organization instead", async () => {
     state.machineLogins = [{
       harness: "claude",
       providerIds: ["claude-acp", "claude-sdk"],
@@ -707,7 +707,6 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(accountDetail("anthropic", "machine")).toBe([
       "settings.providers.agents.machinePlan:max",
       "Acme",
-      "settings.providers.agents.machineUsageUnreadable",
     ].join(" · "))
   })
 

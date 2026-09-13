@@ -108,6 +108,10 @@ export function UsageDashboard() {
     setRefreshNonce(0)
     resetPage()
   }
+  const refresh = () => {
+    setUntil(Date.now())
+    setRefreshNonce(Date.now())
+  }
   return (
     <div class="workspace-page-dashboard usage-dashboard">
       <header class="workspace-page-header usage-dashboard-header">
@@ -138,10 +142,7 @@ export function UsageDashboard() {
             class="workspace-page-refresh-button usage-refresh-button"
             aria-label="Refresh usage"
             disabled={query.isFetching}
-            onClick={() => {
-              setUntil(Date.now())
-              setRefreshNonce(Date.now())
-            }}
+            onClick={refresh}
           >
             <Icon name="reload" size="small" classList={{ "animate-spin": query.isFetching }} />
           </button>
@@ -331,9 +332,10 @@ export function UsageDashboard() {
           }
         >
           <QuotaLimitsView
-            status={data()?.quota.status ?? "unavailable"}
             snapshot={data()?.quota.snapshot}
             error={data()?.quota.error}
+            onCheck={refresh}
+            busy={query.isFetching}
           />
         </Show>
       </Show>

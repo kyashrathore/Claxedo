@@ -472,17 +472,6 @@
 .usage-quota {
   padding: 20px 0;
 }
-.usage-source-state {
-  padding: 3px 8px;
-  border: 1px solid var(--usage-hairline);
-  border-radius: var(--radius-pill);
-  color: var(--text-weak);
-  font-size: var(--font-size-micro);
-  text-transform: uppercase;
-}
-.usage-source-state[data-state="available"] {
-  color: var(--text-base);
-}
 .usage-quota-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -545,6 +534,23 @@
 }
 .usage-quota-account[data-refused="true"] .usage-quota-account-note {
   color: var(--text-danger-base, var(--text-weak));
+}
+.usage-quota-check {
+  padding: 0 6px;
+  border: 1px solid var(--usage-hairline);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-base);
+  font-size: inherit;
+  cursor: pointer;
+}
+.usage-quota-check:hover:not(:disabled) {
+  border-color: var(--text-weak);
+  color: var(--text-strong);
+}
+.usage-quota-check:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 .usage-quota-window {
   display: grid;
