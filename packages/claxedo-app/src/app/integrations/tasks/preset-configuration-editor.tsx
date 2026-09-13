@@ -82,7 +82,7 @@ export function PresetConfigurationEditor(props: ConfigurationEditorProps) {
         <Show
           when={catalogDirectory()}
           fallback={
-            <p class="tsk-muted" data-testid={`preset-configuration-catalog-${props.slot}`}>
+            <p class="tsk-hint" data-testid={`preset-configuration-catalog-${props.slot}`}>
               {projects.isPending
                 ? "Loading projects…"
                 : "Add a project first: harness and model choices are read from a project's checkout."}

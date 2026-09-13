@@ -12,7 +12,6 @@ export type DialogCreateTaskProps = {
   projectId: string
   /** Which column the create was started from; To do when it was started from nowhere. */
   status?: TaskCreateStatus
-  parent?: { id: string; title: string; workspaceId: string | null }
   onClose: () => void
   onCreated?: (taskId: string) => void
 }
@@ -26,8 +25,8 @@ export function DialogCreateTask(props: DialogCreateTaskProps) {
     projectId: props.projectId,
     title: "",
     description: "",
-    workspaceId: props.parent?.workspaceId ?? null,
-    parentTaskId: props.parent?.id ?? null,
+    workspaceId: null,
+    parentTaskId: null,
     status: props.status ?? ("todo" as TaskCreateStatus),
   })
   const [busy, setBusy] = createSignal(false)
@@ -39,7 +38,6 @@ export function DialogCreateTask(props: DialogCreateTaskProps) {
     try {
       const response = await client().command({ clientRequestId: uuid(), command: { type: "task.create", input: draft() } })
       await invalidate.everything()
-      if (props.parent) invalidate.task(props.parent.id)
       if (response.result.type === "task.create") props.onCreated?.(response.result.task.id)
       props.onClose()
     } catch (error) {
@@ -50,12 +48,11 @@ export function DialogCreateTask(props: DialogCreateTaskProps) {
   }
 
   return (
-    <Dialog title={props.parent ? "New subtask" : "New task"} fit>
+    <Dialog title="New task" fit>
       <TaskCreateForm
         draft={draft()}
         projects={projects()}
         proseEditor={ports.ProseEditor}
-        parentTitle={props.parent?.title}
         busy={busy()}
         error={refusal()?.message}
         fieldErrors={refusal()?.fields}

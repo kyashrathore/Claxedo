@@ -3,25 +3,13 @@ import { Dynamic } from "solid-js/web"
 import { Button } from "@opencode-ai/ui/button"
 import { Select } from "@opencode-ai/ui/select"
 import { TASKS_BOUNDS, TASK_CREATE_STATUSES, type TaskCreateStatus, type TaskDraft } from "@claxedo/tasks"
-import type { ProseEditor } from "../../app-ports"
-import { TaskStatusIcon } from "../shared/status-control"
+import type { ProseEditor, TasksProjectOption } from "../../app-ports"
+import { TaskStatusChip } from "../shared/status-control"
 import { TASK_STATUS_LABELS, type FieldErrors } from "../../view-model"
-
-export type ProjectOption = { id: string; label: string }
-
-function StatusOption(props: { status: TaskCreateStatus }) {
-  return (
-    <span class="tsk-status">
-      <TaskStatusIcon status={props.status} />
-      {TASK_STATUS_LABELS[props.status]}
-    </span>
-  )
-}
 
 export type TaskCreateFormProps = {
   draft: TaskDraft
-  projects: readonly ProjectOption[]
-  parentTitle?: string
+  projects: readonly TasksProjectOption[]
   busy?: boolean
   error?: string
   fieldErrors?: FieldErrors
@@ -54,13 +42,11 @@ export function TaskCreateForm(props: TaskCreateFormProps) {
       }}
     >
       <nav class="tsk-crumbs" aria-label="Breadcrumb">
-        <Show when={props.parentTitle} fallback={<span>{project()?.label ?? "Project"}</span>}>
-          {(title) => <span>{title()}</span>}
-        </Show>
+        <span>{project()?.label ?? "Project"}</span>
         <span class="tsk-crumb-sep" aria-hidden="true">
           ›
         </span>
-        <span class="tsk-crumb-current">{props.parentTitle ? "New subtask" : "New task"}</span>
+        <span class="tsk-crumb-current">New task</span>
       </nav>
 
       <input
@@ -94,28 +80,26 @@ export function TaskCreateForm(props: TaskCreateFormProps) {
           current={props.draft.status ?? "todo"}
           value={(status: TaskCreateStatus) => status}
           label={(status: TaskCreateStatus) => TASK_STATUS_LABELS[status]}
-          renderValue={(status: TaskCreateStatus) => <StatusOption status={status} />}
+          renderValue={(status: TaskCreateStatus) => <TaskStatusChip status={status} />}
           triggerProps={{ "data-testid": "task-create-status", "aria-label": "Status" }}
           onSelect={(status) => {
             if (status) patch({ status })
           }}
         >
-          {(status) => <Show when={status}>{(chosen) => <StatusOption status={chosen()} />}</Show>}
+          {(status) => <Show when={status}>{(chosen) => <TaskStatusChip status={chosen()} />}</Show>}
         </Select>
-        <Show when={!props.draft.parentTaskId}>
-          <Select
-            size="small"
-            options={[...props.projects]}
-            current={project()}
-            value={(entry: ProjectOption) => entry.id}
-            label={(entry: ProjectOption) => entry.label}
-            placeholder="Project"
-            triggerProps={{ "data-testid": "task-create-project", "aria-label": "Project" }}
-            onSelect={(entry) => {
-              if (entry) patch({ projectId: entry.id })
-            }}
-          />
-        </Show>
+        <Select
+          size="small"
+          options={[...props.projects]}
+          current={project()}
+          value={(entry: TasksProjectOption) => entry.id}
+          label={(entry: TasksProjectOption) => entry.label}
+          placeholder="Project"
+          triggerProps={{ "data-testid": "task-create-project", "aria-label": "Project" }}
+          onSelect={(entry) => {
+            if (entry) patch({ projectId: entry.id })
+          }}
+        />
         <Show when={fieldError("projectId")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
       </div>
 

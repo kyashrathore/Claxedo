@@ -27,6 +27,7 @@ export function TaskStatusIcon(props: { status: TaskStatus; label?: string }) {
   )
 }
 
+/** The mark and the name together, where a status is shown rather than chosen. */
 export function TaskStatusChip(props: { status: TaskStatus }) {
   return (
     <span class="tsk-status">

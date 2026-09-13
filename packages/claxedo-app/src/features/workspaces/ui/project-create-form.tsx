@@ -114,7 +114,6 @@ export function ProjectCreateForm(props: {
       onSubmit={(event) => void submit(event)}
       class={comfortable() ? "flex w-full flex-col gap-4" : "flex w-[340px] max-w-full flex-col gap-3"}
       data-slot="project-create-form"
-      data-size={props.size ?? "compact"}
     >
       <Show when={offersFolder()}>
         <div class="-mb-2 flex justify-end">

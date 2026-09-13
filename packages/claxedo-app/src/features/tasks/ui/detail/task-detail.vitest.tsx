@@ -97,7 +97,7 @@ function mount(links: readonly TaskSessionLinkView[], overrides: Partial<Task> =
   })
   render(() => (
     <TaskDetail
-      view={{ task: task(overrides), children: [], groups: groupLinksBySlot(links), configuredSlots: ["primary"] }}
+      view={{ task: task(overrides), groups: groupLinksBySlot(links), configuredSlots: ["primary"] }}
       edit={{ title: task(overrides).title, description: "" }}
       dirty={false}
       proseEditor={StubProseEditor}
@@ -128,7 +128,6 @@ function mountSubtask(input: { onOpenParent?: () => void } = {}) {
       view={{
         task: task({ id: "tsk_child", title: "Write the importer test", parentTaskId: "tsk_1" }),
         parent: { id: "tsk_1", title: "Ship the importer" },
-        children: [],
         groups: [],
         configuredSlots: ["primary"],
       }}

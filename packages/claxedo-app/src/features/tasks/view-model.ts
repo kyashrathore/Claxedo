@@ -10,7 +10,6 @@ import type {
   TaskDraft,
   TaskSessionLinkView,
   TaskStatus,
-  TaskSummary,
 } from "@claxedo/tasks"
 
 export const TASK_STATUS_LABELS: Readonly<Record<TaskStatus, string>> = {
@@ -118,7 +117,6 @@ export type TaskDetailView = {
   task: Task
   /** The task this one is a subtask of, once its own read has answered. */
   parent?: { id: string; title: string }
-  children: readonly TaskSummary[]
   groups: readonly TaskLinkGroup[]
   /** Slots the chosen presets actually configure; unconfigured slots are not offered. */
   configuredSlots: readonly ConfigurationSlot[]

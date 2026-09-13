@@ -122,7 +122,6 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             view={{
               task: current(),
               ...(parent.data?.task ? { parent: { id: parent.data.task.id, title: parent.data.task.title } } : {}),
-              children: children.items(),
               groups: groups(),
               // Every slot the host has ever linked, plus Primary, which is
               // always offerable. Slots a preset does not configure are refused
