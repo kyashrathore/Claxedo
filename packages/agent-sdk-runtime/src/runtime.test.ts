@@ -88,8 +88,7 @@ function testHarness(options: {
           setModel(model: string) {
             options.runtimeConfigCalls?.push(`setModel:${model}`)
           },
-          setAuth() {},
-          async applyConfig() {},
+                async applyConfig() {},
         }
       : {}),
     async getSession() {

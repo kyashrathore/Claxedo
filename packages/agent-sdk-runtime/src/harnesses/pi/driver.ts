@@ -22,7 +22,6 @@ import {
   extractTextFromParts,
   record,
   text,
-  type SdkRuntimeAuth,
   type SdkRuntimeDriver,
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
@@ -198,12 +197,6 @@ class PiRpcDriver implements SdkRuntimeDriver {
     this.agentDir =
       options.agentDir ?? process.env.PI_CODING_AGENT_DIR ?? path.join(os.homedir(), ".claxedo", "pi", "agent")
     this.authProfile = retainPiAuth(this.agentDir)
-  }
-  setAuth(keys: SdkRuntimeAuth) {
-    this.auth = {
-      ...(keys.anthropic ? { anthropic: keys.anthropic } : {}),
-      ...(keys.openai ? { openai: keys.openai } : {}),
-    }
   }
   async applyConfig(config: Record<string, unknown>) {
     const auth = providerProjectionRecord(config.auth)

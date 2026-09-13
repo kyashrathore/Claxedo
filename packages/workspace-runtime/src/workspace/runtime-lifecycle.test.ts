@@ -77,7 +77,7 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
         return upstream.get(binding.upstreamSessionId) ?? null
       }
       return {
-        ...(options.configurable ? { adapterCapabilities: ["runtime-config"] as const, setAuth() {}, setModel() {}, async applyConfig(config: unknown) { if (dead) throw new Error("disposed adapter"); configurations.push(config) } } : {}),
+        ...(options.configurable ? { adapterCapabilities: ["runtime-config"] as const, setModel() {}, async applyConfig(config: unknown) { if (dead) throw new Error("disposed adapter"); configurations.push(config) } } : {}),
         sessionConfigOwner: options.runtimeConfig ? "runtime" : "adapter",
         async createSession(_directory, title, id) {
           if (options.holdCreate) { started(); await heldTurn }

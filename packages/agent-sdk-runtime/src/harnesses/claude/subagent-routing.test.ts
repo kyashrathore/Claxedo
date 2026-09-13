@@ -19,7 +19,6 @@ function claudeDriver(): SdkRuntimeDriver {
   return {
     type: "claude",
     interactions: { permissions: true, questions: false },
-    setAuth() {},
     applyConfig() {},
     createAgentSession: async () => ({ id: "claude-parent-thread" }),
     deleteAgentSession() {},

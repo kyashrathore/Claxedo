@@ -75,6 +75,7 @@ export type ActiveTurn = {
   steer?: (input: PromptInput) => Promise<void>
 }
 
+/** A driver's own view of the projections it consumes, resolved from `applyConfig`. */
 export type SdkRuntimeAuth = {
   anthropic?: ProviderProjection
   openai?: ProviderProjection
@@ -165,7 +166,6 @@ export type SdkRuntimeDriver = {
      */
     delete?(sessionId: string, directory: string): Promise<boolean>
   }
-  setAuth(keys: SdkRuntimeAuth): void
   applyConfig(config: Record<string, unknown>): void | Promise<void>
   /** `sessionId` is the Claxedo session the thread will serve; a harness scopes its per-session launch state by it. */
   createAgentSession(input: { directory: string; title?: string; model: string; system?: string; sessionId: string }): Promise<{ id: string; model?: { providerID: string; modelID: string } }>

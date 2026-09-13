@@ -307,15 +307,6 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     })
   }
 
-  setAuth(keys: SdkRuntimeAuth) {
-    const previous = providerProjectionKey(this.auth.anthropic)
-    this.auth = {
-      ...this.auth,
-      ...("anthropic" in keys ? { anthropic: keys.anthropic } : {}),
-    }
-    if (providerProjectionKey(this.auth.anthropic) !== previous) this.modelSource.invalidate()
-  }
-
   applyConfig(config: Record<string, unknown>) {
     const previous = providerProjectionKey(this.auth.anthropic)
     const auth = providerProjectionRecord(config.auth)

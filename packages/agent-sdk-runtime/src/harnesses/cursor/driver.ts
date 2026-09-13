@@ -31,7 +31,6 @@ import { asRecord } from "@claxedo/helpers/guards"
 import {
   errorMessage,
   text,
-  type SdkRuntimeAuth,
   type SdkRuntimeDriver,
   type SdkRuntimeDriverHost,
   type SdkRuntimeTranscriptRegistrar,
@@ -189,10 +188,6 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   private hasCursorAuth() {
     if (this.auth) return !isProviderUnavailable(this.auth)
     return !!ambientCursorApiKey()
-  }
-
-  setAuth(keys: SdkRuntimeAuth) {
-    this.replaceAuth(keys.cursor)
   }
 
   applyConfig(config: Record<string, unknown>) {

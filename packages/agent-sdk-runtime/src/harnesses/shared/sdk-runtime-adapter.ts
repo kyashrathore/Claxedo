@@ -186,10 +186,6 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     this.currentModel = model
   }
 
-  setAuth(keys: SdkRuntimeAuth) {
-    this.driver.setAuth(keys)
-  }
-
   readHarnessCapabilities(): HarnessCapabilities {
     return sdkHarnessCapabilities(this.driver)
   }

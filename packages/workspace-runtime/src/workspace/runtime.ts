@@ -2,7 +2,6 @@ import { Log } from "../log"
 import fs from "fs"
 import path from "path"
 import {
-  AGENT_HARNESS_DEFINITIONS,
   connectionIdForHarness,
   createAcpConnectionProvider,
   createAgentRuntime,
@@ -220,13 +219,6 @@ type ActiveTurn = {
   finish: () => void
 }
 
-type RuntimeAuth = {
-  anthropic?: ProviderProjection
-  openai?: ProviderProjection
-  cursor?: ProviderProjection
-}
-type AuthSlot = keyof RuntimeAuth
-
 type RuntimeRunner = SessionHarness
 const NATIVE_HARNESS_ADAPTERS = {
   claude: ClaudeHarnessAdapter,
@@ -289,21 +281,6 @@ function selectionForRunner(runner: RuntimeRunner): RuntimeHarnessSelection {
   if (harnessId) return { kind: "native", harnessId }
   if (runner.access === "connection") return { kind: "connection", connectionId: runner.id }
   throw new WorkspaceHarnessUnavailableError(runner)
-}
-
-function authSlotValue(auth: Record<string, ProviderProjection>, slot: AuthSlot) {
-  const candidates = AGENT_HARNESS_DEFINITIONS
-    .filter((item) => item.authSlot === slot)
-    .map((item) => auth[item.key])
-  return candidates.find(Boolean) ?? auth[slot]
-}
-
-function runtimeAuthForAdapter(nextAuth: RuntimeAuth) {
-  return {
-    anthropic: nextAuth.anthropic,
-    openai: nextAuth.openai,
-    cursor: nextAuth.cursor,
-  }
 }
 
 function errorMessage(input: unknown) {
@@ -610,14 +587,6 @@ function mcpStatus(config: Record<string, unknown>) {
   return Object.fromEntries(Object.keys(config).map((name) => [name, { status: "disabled" }]))
 }
 
-function runtimeAuth(auth: Record<string, ProviderProjection>): RuntimeAuth {
-  return {
-    anthropic: authSlotValue(auth, "anthropic"),
-    openai: authSlotValue(auth, "openai"),
-    cursor: authSlotValue(auth, "cursor"),
-  }
-}
-
 function sameRuntimeMcp(a: Record<string, unknown>, b: Record<string, unknown>) {
   return JSON.stringify(a) === JSON.stringify(b)
 }
@@ -687,7 +656,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   let appliedSignature: string | undefined
   let adapter: AgentHarnessAdapter | undefined
   let currentMcp: Record<string, unknown> = {}
-  let currentAuth: RuntimeAuth = {}
   let currentAuthRaw: Record<string, ProviderProjection> = {}
   let currentHarnessLaunch: Record<string, Record<string, unknown>> = {}
   let applyQueue = Promise.resolve()
@@ -745,7 +713,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     // per-harness launch payload without advertising the separate
     // runtime-config capability (auth mutation).
     if (!next.applyConfig) return
-    const runtimeConfigurable = hasAdapterCapability(next, "runtime-config")
     const launch = currentHarnessLaunch[nextRunner.id] ?? {}
     const adapterAuth = configuredConnection(nextRunner) ? {} : currentAuthRaw
     const stamp = adapterConfigStamp(nextRunner, adapterAuth, currentMcp, launch)
@@ -753,13 +720,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const turns = configuredConnection(nextRunner) ? activeTurns.get(next) : undefined
     if (turns?.size) await Promise.all([...turns].map((turn) => turn.done))
     if (adapterConfigStamps.get(next) === stamp) return
-    if (runtimeConfigurable) {
-      ;(next).setAuth(
-        configuredConnection(nextRunner)
-          ? {}
-          : runtimeAuthForAdapter(currentAuth),
-      )
-    }
     await next.applyConfig({
       mcp: currentMcp,
       auth: adapterAuth,
@@ -1254,7 +1214,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     appliedConnections = nextConnections
     const nextKey = nextRunner ? adapterKey(nextRunner) : undefined
     const replacing = nextKey !== currentKey
-    const nextAuth = runtimeAuth(next.auth)
     const nextHarnessLaunch = next.harnessLaunch ?? {}
     const configChangesActiveConnection = !sameRuntimeMcp(currentMcp, next.mcp)
       || JSON.stringify(currentHarnessLaunch) !== JSON.stringify(nextHarnessLaunch)
@@ -1306,21 +1265,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       }
 
       currentMcp = next.mcp
-      currentAuth = nextAuth
       currentAuthRaw = next.auth
       currentHarnessLaunch = nextHarnessLaunch
       const deferDefaultAdapterConfig = adapter
         && nextRunner
         && configuredConnection(nextRunner)
         && (activeTurns.get(adapter)?.size ?? 0) > 0
-
-      if (!deferDefaultAdapterConfig && adapter && hasAdapterCapability(adapter, "runtime-config")) {
-        ;(adapter).setAuth(
-          nextRunner && configuredConnection(nextRunner)
-            ? {}
-            : runtimeAuthForAdapter(nextAuth),
-        )
-      }
 
       if (!replacing) runner = nextRunner
       if (!adapter && nextRunner) adapter = await ensureSessionAdapter(nextRunner)

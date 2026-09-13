@@ -103,7 +103,6 @@ export type AdapterCapabilityProvider = {
 
 export type RuntimeConfigurableAdapter = AdapterCapabilityProvider & {
   setModel(model: string): void
-  setAuth(keys: Record<string, ProviderProjection | undefined>): void
 }
 
 export function hasAdapterCapability(

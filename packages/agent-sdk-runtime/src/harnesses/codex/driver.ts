@@ -26,7 +26,6 @@ import {
   errorMessage,
   text,
   type JsonRecord,
-  type SdkRuntimeAuth,
   type SdkRuntimeDriver,
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
@@ -133,10 +132,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
         this.projectThreadNotification(input, threadId, method, params, frame),
     })
     this.goals = this.goalController.resource
-  }
-
-  setAuth(keys: SdkRuntimeAuth) {
-    void this.replaceAuth(keys.openai)
   }
 
   async applyConfig(config: Record<string, unknown>) {

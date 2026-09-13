@@ -12,7 +12,6 @@ function cursorDriver(transcriptRegistrar?: Parameters<typeof ingestCursorSdkMes
   return {
     type: "cursor",
     interactions: { permissions: false, questions: false },
-    setAuth() {},
     applyConfig() {},
     createAgentSession: async () => ({ id: "cursor-parent-agent" }),
     deleteAgentSession() {},
