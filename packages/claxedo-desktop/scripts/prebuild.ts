@@ -34,6 +34,8 @@ const HELPERS_DIR = path.resolve(PACKAGE_DIR, "../claxedo-helpers")
 const EVENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-event-runtime")
 const AGENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-sdk-runtime")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
+const RUNTIME_CONTRACT_DIR = path.resolve(PACKAGE_DIR, "../agent-runtime-contract")
+const EGRESS_BROKER_DIR = path.resolve(PACKAGE_DIR, "../egress-broker")
 const RESOURCES_DIR = path.resolve(PACKAGE_DIR, "resources")
 
 const log = (msg: string) => console.log(`[prebuild] ${msg}`)
@@ -76,6 +78,12 @@ async function bundleServer() {
   await $`bun run build`.cwd(AGENT_RUNTIME_DIR)
   log("Building workspace-runtime...")
   await $`bun run build`.cwd(WS_RUNTIME_DIR)
+  // The local server reaches the egress broker through its published dist, and
+  // the broker compiles against the contract's published types.
+  log("Building agent-runtime-contract...")
+  await $`bun run build`.cwd(RUNTIME_CONTRACT_DIR)
+  log("Building egress-broker...")
+  await $`bun run build`.cwd(EGRESS_BROKER_DIR)
   log("Bundling claxedo-server...")
   const bundled = await bundleClaxedoServer(src, dest)
   log(`claxedo-server bundled to ${bundled.entry} (${Math.ceil(bundled.outputBytes / 1024 / 1024)} MB split)`)

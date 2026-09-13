@@ -42,6 +42,8 @@ const CLAXEDO_SERVER_DIR = localServerPackageDir(PACKAGE_DIR)
 const SERVER_CORE_DIR = path.resolve(PACKAGE_DIR, "../claxedo-server-core")
 const AGENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-sdk-runtime")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
+const RUNTIME_CONTRACT_DIR = path.resolve(PACKAGE_DIR, "../agent-runtime-contract")
+const EGRESS_BROKER_DIR = path.resolve(PACKAGE_DIR, "../egress-broker")
 const require = createRequire(import.meta.url)
 
 try {
@@ -174,6 +176,20 @@ if (outputIsStale(agentRuntimeOutput, [
   await $`bun run build`.cwd(AGENT_RUNTIME_DIR)
 } else {
   console.log(`[predev] agent-sdk-runtime is current`)
+}
+
+// The local server reaches the egress broker through its published dist, and
+// the broker compiles against the contract's published types.
+for (const [name, dir, output] of [
+  ["agent-runtime-contract", RUNTIME_CONTRACT_DIR, "dist/index.mjs"],
+  ["egress-broker", EGRESS_BROKER_DIR, "dist/index.js"],
+] as const) {
+  if (outputIsStale(path.resolve(dir, output), [path.resolve(dir, "package.json"), path.resolve(dir, "src")])) {
+    console.log(`[predev] Building ${name}...`)
+    await $`bun run build`.cwd(dir)
+  } else {
+    console.log(`[predev] ${name} is current`)
+  }
 }
 
 // Bundle claxedo-server so dev mode doesn't rely on a stale prebuild artifact

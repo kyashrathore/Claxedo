@@ -19,7 +19,7 @@
     "test": "echo 'do not run tests from root' && exit 1",
     "docs:check-links": "bun ./script/check-doc-links.ts",
     "diagnostics:verify": "bun run --cwd packages/claxedo-desktop test:diagnostics-release && bun run --cwd packages/claxedo-app test:diagnostics-release && bun run --cwd packages/claxedo-app/perf-harness verify",
-    "build:packages": "bun turbo build --filter=@claxedo/agent-event-runtime --filter=@claxedo/agent-sdk-runtime --filter=@claxedo/channels --filter=@claxedo/connections --filter=@claxedo/opencode-server-adapter --filter=@claxedo/sandbox-contract --filter=@claxedo/sandbox-manager --filter=@claxedo/wakes --filter=@claxedo/workspace-relay-protocol --filter=@claxedo/workspace-relay --filter=@claxedo/workspace-runtime"
+    "build:packages": "bun turbo build --filter=@claxedo/agent-event-runtime --filter=@claxedo/agent-sdk-runtime --filter=@claxedo/channels --filter=@claxedo/connections --filter=@claxedo/egress-broker --filter=@claxedo/opencode-server-adapter --filter=@claxedo/sandbox-contract --filter=@claxedo/sandbox-manager --filter=@claxedo/wakes --filter=@claxedo/workspace-relay-protocol --filter=@claxedo/workspace-relay --filter=@claxedo/workspace-runtime"
   },
   "workspaces": {
     "packages": [
