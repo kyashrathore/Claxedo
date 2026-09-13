@@ -246,9 +246,10 @@ Multiple rows, one winner, chosen by an invisible sort order.
    `{loggedIn, email, orgName, subscriptionType}`, the Codex app-server answers
    `account/read` and `account/rateLimits/read` (with `codex login status` as
    the presence fallback when the app-server cannot be started), and
-   `cursor-agent status --format json` answers for Cursor. Claude Code has no
-   headless usage read, so its row carries a plan and an address and never a
-   quota window. `GET /api/claxedo/credentials/machine-logins` serves the
+   `cursor-agent status --format json` answers for Cursor. Claude Code answers
+   with a login and never a quota window of its own; its figures come from the
+   machine-wide probe in section 10.
+   `GET /api/claxedo/credentials/machine-logins` serves the
    answers, optionally for one `?harness=`; the scan spends no vendor request
    and takes no lock on the user's quota. Choosing that login is the
    withdrawal of the stored mark —
@@ -266,18 +267,35 @@ Multiple rows, one winner, chosen by an invisible sort order.
    (`dropCopiedHarnessLogins`), secret included. Nothing is lost: the login is
    still in the harness. A discovered row the provider DID name is a second
    account the user chose to import and is left alone.
-10. **Plan usage is written by two acts and read by everything else.** A Check
-   on a stored account keeps what the vendor's usage read returned
+10. **Plan usage is written by two acts, read from three sources.** A Check on
+   a stored account keeps what the vendor's usage read returned
    (`usage_windows`/`usage_at` on the row); a harness's self-report keeps what
    the harness said about its own login (`claxedo_machine_login_usage`). No
-   third writer: a turn is not a usage source, so a Claude machine login carries
-   a plan and an address and the reason there are no windows, rather than a
-   figure derived from what a turn happened to mention. Both the Providers list
-   and the dashboard's Usage-limits view read those two stores —
-   `usage/quota.ts` composes them into one account per login, with the account
-   the harness runs next marked — and its refresh is the same Check per stored
-   account and the same self-report per harness, rate-limited to one a minute
-   per tenant because a Check spends a vendor request.
+   third writer: a turn is not a usage source, so no figure is ever derived from
+   what a turn happened to mention.
+
+   The third source writes nothing. tokentracker-cli's limits probe
+   (`token-tracker-usage-limits.ts`, one cached read shared by every surface)
+   answers for every agent installed on this machine, which is how a Claude or
+   Cursor machine login gets windows at all and how the Usage-limits view can
+   show the agents Claxedo cannot run a turn on — Gemini, Copilot, Kimi, Grok
+   and the rest — under their own heading. Ranked per login in
+   `machine-login-report.ts`: what the harness just said, then the probe, then
+   what the harness said last time. Only the harness's own answer is kept.
+
+   The probe reads each CLI's own credential store — Keychain, auth files — and
+   rewrites gemini's and kimi's non-atomically, and `~/.codex/auth.json`
+   atomically, when it refreshes a stale token. The owner accepted that on
+   2026-09-13: a reader doing it is not Claxedo subscribing to those stores. It
+   never writes a Claxedo credential; a stored account's figures come from its
+   own Check and nowhere else.
+
+   Both the Providers list and the dashboard's Usage-limits view read the same
+   three sources — `usage/quota.ts` composes them into one account per login,
+   with the account the harness runs next marked — and the view's refresh is the
+   same Check per stored account, the same self-report per harness, and a probe
+   asked past its own cache, rate-limited to one a minute per tenant because a
+   Check spends a vendor request.
 
 ### Claude accounts
 
@@ -340,9 +358,9 @@ miniature — it read as a second account — so there is none.
   account is a choice the user made, and this login is the standing fallback
   underneath all of them. It is named by the address the harness gave, falling
   back to "This computer's login". Its second line says which state it is in:
-  the quota windows the harness reports, else the plan and organization ("Max
-  plan · Yash"), else "Not signed in — run `codex login`", else why the harness
-  could not be asked, else "Not installed". The one state that is listed and not
+  the quota windows anything on this machine can read for it (rule 10), else the
+  plan and organization ("Max plan · Yash"), else "Not signed in — run `codex
+  login`", else why the harness could not be asked, else "Not installed". The one state that is listed and not
   selectable is a CLI that is not there, which no choice of ours makes runnable.
   Its Check re-runs that one harness's self-report, bypassing the short cache
   the automatic scan reads through.
