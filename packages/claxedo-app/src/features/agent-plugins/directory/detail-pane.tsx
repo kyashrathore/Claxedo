@@ -149,7 +149,7 @@ export function PluginDetailPane(props: {
                   </Show>
                 </div>
                 <Show when={status()}>
-                  {(value) => <div class="mt-1.5"><PluginStatusLine status={value()} /></div>}
+                  {(value) => <div class="mt-1.5"><PluginStatusLine status={value()} wrap={builtIn()} /></div>}
                 </Show>
               </div>
               <button
@@ -173,7 +173,7 @@ export function PluginDetailPane(props: {
             <Show when={props.plugin.manifest?.description}>
               {(description) => <p class="px-4 pt-3 text-13-regular text-text-base">{description()}</p>}
             </Show>
-            <Show when={!props.plugin.sourceAvailable}>
+            <Show when={!builtIn() && !props.plugin.sourceAvailable}>
               <p class="px-4 pt-2 text-12-regular text-text-weak">Source unavailable; retained bytes remain usable.</p>
             </Show>
             <Show when={props.plugin.artifactError}>

@@ -13,7 +13,7 @@ export function PluginStatusLine(props: { status: PluginStatus; wrap?: boolean }
     <span
       data-component="agent-plugin-status"
       data-tone={props.status.tone}
-      class="inline-flex gap-1.5"
+      class="inline-flex min-w-0 max-w-full gap-1.5"
       classList={{ "items-center": !props.wrap, "items-baseline": props.wrap }}
     >
       <span

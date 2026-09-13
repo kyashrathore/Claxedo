@@ -10,6 +10,9 @@ import { isBuiltIn, pluginLabel, type PluginStatus } from "./view"
 /** The trailing column: one fixed slot, aligned to the title line, never centred. */
 const TRAILING = "relative flex w-40 shrink-0 justify-end pt-0.5"
 
+/** The built-in's slot holds a short mark, and the row it leaves behind is the status. */
+const TRAILING_MARK = "relative flex shrink-0 justify-end pt-0.5"
+
 /**
  * One directory card: tile, name, one line of description, one trailing slot.
  *
@@ -62,7 +65,7 @@ export function DirectoryCard(props: {
           {(status) => <div class="mt-1.5"><PluginStatusLine status={status()} wrap /></div>}
         </Show>
       </div>
-      <div class={TRAILING}>
+      <div class={builtIn() ? TRAILING_MARK : TRAILING}>
         <Show
           when={builtIn()}
           fallback={

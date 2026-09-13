@@ -881,6 +881,10 @@ describe("Agent Plugin Directory built-in server", () => {
     const pane = await openPane("claxedo")
     expect(within(pane).queryByRole("button", { name: "Add" })).toBeNull()
     expect(within(pane).getByRole("button", { name: "Enable" })).not.toBeDisabled()
+    // `sourceAvailable: false` is how the built-in says it has no source at
+    // all, not that the source it has went missing.
+    expect(within(pane).queryByText(/Source unavailable/)).toBeNull()
+    expect(within(pane).getByText("Built in")).toBeTruthy()
   })
 
   test("the built-in's overflow menu offers only the item that follows the default", async () => {
