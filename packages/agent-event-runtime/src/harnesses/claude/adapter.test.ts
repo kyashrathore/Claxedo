@@ -1463,7 +1463,7 @@ describe("claudeSdkAdapter rate limits", () => {
       source: "claude.sdk",
       method: "claude/rate_limit_event",
       payload: { type: "rate_limit_event", uuid: "rate-1", session_id: "sdk-session-1", rate_limit_info: info },
-    }).events.map(({ harness, threadId, raw, ...event }) => event)
+    }).events.map(({ harness: _harness, threadId: _threadId, raw: _raw, ...event }) => event)
   }
 
   test("names the five-hour, weekly and opus windows the way the usage read does", () => {
@@ -1474,7 +1474,7 @@ describe("claudeSdkAdapter rate limits", () => {
       resetsAt: 1_757_700_000_000,
       limitId: "five_hour",
       limitName: "session",
-      metadata: { account: null },
+      metadata: { harness: "claude", account: null },
     }])
     expect(emitted({ status: "allowed_warning", rateLimitType: "seven_day", utilization: 90 })[0])
       .toMatchObject({ status: "ok", limitId: "seven_day", limitName: "weekly" })
@@ -1495,16 +1495,16 @@ describe("claudeSdkAdapter rate limits", () => {
       resetsAt: 1_757_700_000_000,
       limitId: "five_hour",
       limitName: "session",
-      metadata: { account: null },
+      metadata: { harness: "claude", account: null },
     }])
   })
 
   test("omits the percentage and the window name the vendor left out", () => {
     const [event] = emitted({ status: "allowed" })
-    expect(event).toEqual({ type: "rate-limit", status: "ok", resetsAt: null, metadata: { account: null } })
+    expect(event).toEqual({ type: "rate-limit", status: "ok", resetsAt: null, metadata: { harness: "claude", account: null } })
     // `toEqual` passes over a key whose value is `undefined`, which is exactly
     // what an unconditional spread of an absent window would produce.
-    expect(Object.keys(event!).sort()).toEqual(["metadata", "resetsAt", "status", "type"])
+    expect(Object.keys(event).sort()).toEqual(["metadata", "resetsAt", "status", "type"])
   })
 
   test("clamps a utilization outside 0..100", () => {
@@ -1520,6 +1520,6 @@ describe("claudeSdkAdapter rate limits", () => {
 
   test("carries the account the turn ran on", () => {
     expect(emitted({ status: "allowed" }, "https://broker.example/bindings/binding-1")[0])
-      .toMatchObject({ metadata: { account: "https://broker.example/bindings/binding-1" } })
+      .toMatchObject({ metadata: { harness: "claude", account: "https://broker.example/bindings/binding-1" } })
   })
 })

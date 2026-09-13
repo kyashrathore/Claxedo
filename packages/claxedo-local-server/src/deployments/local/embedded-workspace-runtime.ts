@@ -102,6 +102,7 @@ let configuredProcessObserver: ProcessObserver | undefined
 let configuredSessionAccessPolicy: WorkspaceRuntimeServerOptions["sessionAccessPolicy"] | undefined
 // Canonical WorkspaceRuntime events are the sole local execution-event source.
 let configuredOnSessionMetaEvent: ((event: CompatEnvelope) => void) | undefined
+let configuredOnRuntimeEvent: WorkspaceRuntimeServerOptions["onRuntimeEvent"]
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
@@ -140,6 +141,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   /** Signed hosts inject their managed-private authority; unsigned desktop leaves this local. */
   sessionAccessPolicy?: WorkspaceRuntimeServerOptions["sessionAccessPolicy"]
   onSessionMetaEvent?: (event: CompatEnvelope) => void
+  onRuntimeEvent?: WorkspaceRuntimeServerOptions["onRuntimeEvent"]
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
@@ -154,6 +156,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredProcessObserver = input.processObserver
   configuredSessionAccessPolicy = input.sessionAccessPolicy
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
+  configuredOnRuntimeEvent = input.onRuntimeEvent
   configuredOnSessionMetaCreated = input.onSessionMetaCreated
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
   configuredOnTurnOutcome = input.onTurnOutcome
@@ -208,6 +211,7 @@ function options(
     // delivery stays exclusively on WorkspaceRuntime's canonical runtime-event
     // stream and is never republished onto the control-plane bus.
     onCompatEvent: (event) => configuredOnSessionMetaEvent?.(event),
+    ...(configuredOnRuntimeEvent ? { onRuntimeEvent: configuredOnRuntimeEvent } : {}),
     exposure: createClaxedoRuntimeExposure({ kind: "embedded", guard: embeddedRuntimeGuard }),
     target: resolveClaxedoWorkspaceRuntimeTarget(ws),
     storeRoot: storeRoot(ws),

@@ -53,6 +53,8 @@ import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../s
 import { migrateCredentials } from "../credentials/operations/migrate"
 import { dropCopiedHarnessLogins } from "../credentials/operations/drop-copied-harness-logins"
 import { createLocalCredentialBroker } from "../credentials/broker"
+import { recordReportedWindow, reportedWindow } from "../credentials/turn-usage"
+import { isMachineLoginHarness } from "@claxedo/server-core/credentials/machine-login"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
 import { getLocalUsageLimits } from "../deployments/local/server-usage-limits"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
@@ -131,6 +133,8 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       void projectLocalSessionMetaFromEvent(services.projectionStore, event)
     }
   }
+  // Bound below, once the broker exists to name the account a binding stands for.
+  let recordTurnUsage = (_event: { payload: unknown }) => {}
   // The origin this process serves the first-party MCP on. `port` is the bound
   // port: `serve()` below is given it explicitly and every caller reads back
   // the same number as this server's address.
@@ -148,6 +152,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     // published only on the workspace's own event stream. Without it, titles
     // revert to "Untitled" after a restart.
     onSessionMetaEvent: (event) => consumeRuntimeEvent(event),
+    onRuntimeEvent: (event) => recordTurnUsage(event),
     onSessionMetaCreated: async (workspace, session) => {
       await services.projectionStore.sync_session_meta(workspace, session)
     },
@@ -160,6 +165,20 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     dataDir: dataDir(),
     brokerOrigin: firstPartyMcpBaseUrl,
   })
+  recordTurnUsage = (event) => {
+    const report = reportedWindow(event.payload)
+    if (!report) return
+    void recordReportedWindow({
+      credentials: services.credentials,
+      boundCredential: (baseUrl) => credentialBroker.boundCredential(baseUrl),
+      machineAccount: async (harness) => {
+        if (!isMachineLoginHarness(harness)) return ""
+        const [login] = (await services.credentials.machineLogins?.([harness])) ?? []
+        return login?.email ?? ""
+      },
+      machineUsage: services.credentials,
+    }, report)
+  }
   configureAgentConfig({
     connectionProviders,
     projectAuth: (input) => credentialBroker.projectAuth(input),

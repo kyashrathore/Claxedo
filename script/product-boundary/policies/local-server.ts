@@ -128,8 +128,15 @@ export const localServer: Policy = {
   // login, are operations with no referent on a host where no harness is
   // installed, so they are composed here and left off the shared default.
   // It reaches only the machine-login reader and the registry.
-  // Full closure measured at 60 modules / 25 packages.
-  ceilings: { modules: 60, packages: 25 },
+  // +1 module: `credentials/turn-usage.ts`, which files the quota windows a
+  // harness reports mid-turn against the account that spent them. It belongs
+  // beside the broker because only the broker can say which stored account a
+  // binding a harness was handed stands for, and Claude Code has no headless
+  // usage read, so a turn is the only moment anything learns how full that
+  // plan is. It reaches the credential contract and this server's own JSON
+  // readers. No new package edge.
+  // Full closure measured at 61 modules / 25 packages.
+  ceilings: { modules: 61, packages: 25 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

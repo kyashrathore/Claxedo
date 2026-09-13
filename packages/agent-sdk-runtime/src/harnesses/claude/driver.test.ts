@@ -828,12 +828,12 @@ describe("Claude rate limits reach the runtime carrying the account the turn ran
   })
 
   test("a turn on this machine's own login names no account", async () => {
-    expect((await rateLimits(undefined))[0]?.metadata).toEqual({ account: null })
-    expect((await rateLimits({}))[0]?.metadata).toEqual({ account: null })
+    expect((await rateLimits(undefined))[0]?.metadata).toEqual({ harness: "claude", account: null })
+    expect((await rateLimits({}))[0]?.metadata).toEqual({ harness: "claude", account: null })
   })
 
   test("a selected account that cannot be bound names no account instead of failing the turn", async () => {
     expect((await rateLimits({ "claude-sdk": { unavailable: true, reason: "account_withdrawn" } }))[0]?.metadata)
-      .toEqual({ account: null })
+      .toEqual({ harness: "claude", account: null })
   })
 })

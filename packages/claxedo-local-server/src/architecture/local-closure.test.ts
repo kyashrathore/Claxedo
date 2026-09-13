@@ -246,8 +246,14 @@ describe("@claxedo/local-server closure", () => {
     // one-time delete of the harness logins an older Claxedo copied off this
     // machine. It belongs to this product because this is the process that ran
     // that scan. Both reach only the registry and the machine-login reader,
-    // which this closure already holds. Measured: 87 modules, 25 packages.
-    expect(modules.size).toBeLessThanOrEqual(87)
+    // which this closure already holds.
+    // credentials/turn-usage.ts is the 88th: the windows a harness reports
+    // mid-turn, filed against the account that spent them. Only the broker can
+    // say which stored account a binding stands for, and Claude Code has no
+    // headless usage read at all, so a turn is the one moment anything learns
+    // how full that plan is. It reaches the credential contract and this
+    // server's own JSON readers. Measured: 88 modules, 25 packages.
+    expect(modules.size).toBeLessThanOrEqual(88)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(25)
   })

@@ -129,6 +129,13 @@ export type LocalCredentialBroker = {
   projectAuth: (input: ProjectAuthInput) => Promise<Record<string, ProviderProjectionSource>>
   /** The identity this server minted for a workspace, once it has projected one. */
   runtimeIdentity: (workspaceId: string, orgId?: string) => RuntimeIdentity
+  /**
+   * The stored account behind a binding a harness was handed, addressed by the
+   * `baseUrl` the projection carried. What a harness reports mid-turn names the
+   * binding it is spending, and only this map turns that back into the row the
+   * operator chose.
+   */
+  boundCredential: (baseUrl: string) => { credentialId: string; orgId: string } | undefined
 }
 
 /** What a binding was minted against, so a request resolves from its id alone. */
@@ -347,6 +354,11 @@ export function createLocalCredentialBroker(input: {
     handler,
     authority,
     runtimeIdentity,
+    boundCredential(baseUrl) {
+      const id = baseUrl.split("/bindings/")[1]
+      const entry = id === undefined ? undefined : minted.get(id)
+      return entry ? { credentialId: entry.credentialId, orgId: entry.orgId } : undefined
+    },
     async projectAuth({ scope = "local", orgId, workspaceId, secretBrokering }) {
       if (!workspaceId) return {}
       const org = orgId ?? defaultOrg
