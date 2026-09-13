@@ -64,8 +64,24 @@ function response(url: URL) {
     quota: {
       status: "available",
       snapshot: {
-        anthropic: { configured: true, five_hour: { utilization: 25, resets_at: "2026-08-09T15:00:00Z" } },
-        openai: { configured: true, weekly: { used_percent: 40, reset_at: "2026-08-16T00:00:00Z" } },
+        accounts: [
+          {
+            harness: "claude",
+            credentialId: "cred_claude",
+            label: "signed-in@example.com",
+            inUse: true,
+            windows: [{ window: "session", usedPercent: 25, resetsAt: Date.parse("2026-08-09T15:00:00Z") }],
+            usageAt: Date.parse("2026-08-09T12:00:00Z"),
+          },
+          {
+            harness: "codex",
+            machineLogin: true,
+            plan: "plus",
+            inUse: true,
+            windows: [{ window: "weekly", usedPercent: 40, resetsAt: Date.parse("2026-08-16T00:00:00Z") }],
+            usageAt: Date.parse("2026-08-09T12:00:00Z"),
+          },
+        ],
       },
     },
     claxedo: {
@@ -308,8 +324,8 @@ test.describe("unified usage dashboard @core @surface-web", () => {
 
     await dialog.getByRole("button", { name: "Usage limits" }).click()
     await expect.poll(() => requests.some((request) => request.searchParams.get("view") === "quota")).toBe(true)
-    await expect(dialog.getByRole("progressbar", { name: /anthropic Session/i })).toHaveAttribute("value", "25")
-    await expect(dialog.getByRole("progressbar", { name: /openai weekly/i })).toHaveAttribute("value", "40")
+    await expect(dialog.getByRole("progressbar", { name: /signed-in@example\.com Session/i })).toHaveAttribute("value", "25")
+    await expect(dialog.getByRole("progressbar", { name: /This computer's login Weekly/i })).toHaveAttribute("value", "40")
     await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toBeVisible()
     await dialog.getByRole("button", { name: "Usage through Claxedo" }).click()
     await expect(dialog.getByRole("button", { name: "Usage through Claxedo" })).toHaveAttribute("aria-pressed", "true")

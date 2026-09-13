@@ -266,6 +266,18 @@ Multiple rows, one winner, chosen by an invisible sort order.
    (`dropCopiedHarnessLogins`), secret included. Nothing is lost: the login is
    still in the harness. A discovered row the provider DID name is a second
    account the user chose to import and is left alone.
+10. **Plan usage is written by two acts and read by everything else.** A Check
+   on a stored account keeps what the vendor's usage read returned
+   (`usage_windows`/`usage_at` on the row); a harness's self-report keeps what
+   the harness said about its own login (`claxedo_machine_login_usage`). No
+   third writer: a turn is not a usage source, so a Claude machine login carries
+   a plan and an address and the reason there are no windows, rather than a
+   figure derived from what a turn happened to mention. Both the Providers list
+   and the dashboard's Usage-limits view read those two stores —
+   `usage/quota.ts` composes them into one account per login, with the account
+   the harness runs next marked — and its refresh is the same Check per stored
+   account and the same self-report per harness, rate-limited to one a minute
+   per tenant because a Check spends a vendor request.
 
 ### Claude accounts
 

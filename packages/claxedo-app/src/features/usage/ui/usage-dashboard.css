@@ -16,7 +16,6 @@
 }
 
 .usage-section-heading,
-.usage-quota-provider header,
 .usage-quota-window > div {
   display: flex;
   align-items: center;
@@ -490,27 +489,62 @@
   gap: 12px;
   margin-top: 18px;
 }
-.usage-quota-provider {
+.usage-quota-summary {
+  margin-top: 10px;
+  color: var(--text-base);
+  font-size: var(--font-size-small);
+}
+.usage-quota-harness {
+  margin-top: 18px;
+}
+.usage-quota-harness h4 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-strong);
+  font-size: var(--font-size-small);
+}
+.usage-quota-harness .usage-quota-grid {
+  margin-top: 10px;
+}
+.usage-quota-account {
   padding: 16px;
   border: 1px solid var(--usage-hairline);
   border-radius: var(--radius-5);
   background: color-mix(in srgb, var(--surface-base) 45%, transparent);
 }
-.usage-quota-provider header {
+.usage-quota-account[data-refused="true"] {
+  border-color: var(--border-danger-base, var(--usage-hairline));
+}
+.usage-quota-account header {
+  display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  justify-content: flex-start;
   gap: 4px 8px;
-  margin-bottom: 13px;
 }
-.usage-quota-provider header strong {
+.usage-quota-account header strong {
   color: var(--text-strong);
   font-size: var(--font-size-small);
-  text-transform: capitalize;
 }
-.usage-quota-provider header span {
+.usage-quota-account header span {
   color: var(--text-weak);
   font-size: var(--font-size-2x-small);
+}
+.usage-quota-account header .usage-quota-in-use {
+  padding: 1px 6px;
+  border: 1px solid var(--usage-hairline);
+  border-radius: var(--radius-pill);
+  color: var(--text-base);
+  font-size: var(--font-size-micro);
+  text-transform: uppercase;
+}
+.usage-quota-account-note {
+  margin-top: 8px;
+  color: var(--text-weak);
+  font-size: var(--font-size-2x-small);
+}
+.usage-quota-account[data-refused="true"] .usage-quota-account-note {
+  color: var(--text-danger-base, var(--text-weak));
 }
 .usage-quota-window {
   display: grid;
@@ -522,6 +556,8 @@
   color: var(--text-weak);
   font-size: var(--font-size-2x-small);
   font-weight: var(--font-weight-regular);
+}
+.usage-quota-window-name {
   text-transform: capitalize;
 }
 .usage-quota-window progress {

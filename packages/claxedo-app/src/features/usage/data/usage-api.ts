@@ -104,12 +104,30 @@ const UsageChartSeriesSchema = z.object({
   })),
 })
 
+const QuotaSnapshotSchema = z.object({
+  accounts: z.array(z.object({
+    harness: z.string(),
+    credentialId: z.string().optional(),
+    machineLogin: z.literal(true).optional(),
+    label: z.string().optional(),
+    plan: z.string().optional(),
+    inUse: z.boolean(),
+    health: z.enum(["ok", "auth_failed", "no_billing", "rate_capped", "expired"]).optional(),
+    windows: z.array(z.object({
+      window: z.string(),
+      usedPercent: z.number(),
+      resetsAt: z.number().nullable(),
+    })),
+    usageAt: z.number().optional(),
+  })),
+})
+
 const UnifiedUsageResponseSchema: z.ZodType<UnifiedUsageResponse> = z.object({
   version: z.literal(1),
   range: z.object({ since: z.number(), until: z.number(), timeZone: z.string() }),
   quota: z.object({
     status: z.enum(["available", "unavailable", "degraded"]),
-    snapshot: z.unknown().optional(),
+    snapshot: QuotaSnapshotSchema.optional(),
     error: z.string().optional(),
   }),
   claxedo: z.object({
