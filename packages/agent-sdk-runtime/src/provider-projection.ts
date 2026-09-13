@@ -111,7 +111,7 @@ export function providerProjection(
  *
  * `reject` is for a map that crossed a process boundary: a producer that sent a
  * row this runtime cannot read has said nothing trustworthy about the rest, so
- * the snapshot is refused whole and the previously applied one stays. Only a
+ * the snapshot is refused whole and the one already applied stays. Only a
  * process projecting its own authority passes `unavailable`, where refusing
  * everything would disable every working account over one malformed row; that
  * row alone becomes an unavailable projection, which disables its provider and

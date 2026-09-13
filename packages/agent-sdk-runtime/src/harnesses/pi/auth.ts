@@ -3,9 +3,6 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { isProviderUnavailable, providerBinding, type ProviderProjection } from "../../provider-projection"
 
-/** One Pi `auth.json` row per provider. A brokered account routes through `models.json` instead, so this stays empty. */
-export type PiAuthEntries = Record<string, { type: "api_key"; key: string }>
-
 /** One `models.json` overlay per provider, merged onto Pi's own built-in definition. */
 export type PiProviderOverrides = Record<string, { baseUrl: string; apiKey: string }>
 
@@ -13,7 +10,7 @@ export type PiProviderOverrides = Record<string, { baseUrl: string; apiKey: stri
  * The providers Pi itself defines that this harness can bind, and the two facts
  * about each that the binding cannot supply.
  *
- * `path` is the path of Pi 0.85.0's own base URL for the provider, which an
+ * `path` is the path of Pi 0.85.1's own base URL for the provider, which an
  * overlay replaces whole — so the overlay has to put it back under the binding
  * root or Pi sends the turn somewhere the binding does not allow. It is not the
  * binding's own `apiPath`: `openrouter` speaks the Anthropic wire protocol
@@ -107,11 +104,16 @@ async function writeManaged(agentDir: string, name: string, content: unknown) {
   }
 }
 
-export function writePiAuth(agentDir: string, entries: PiAuthEntries) {
-  return writeManaged(agentDir, "auth.json", entries)
+/**
+ * Empty Pi's own credential file. A login stored there resolves ahead of the
+ * `models.json` overlay, so leaving one in the profile would spend an account
+ * the operator did not select for this workspace.
+ */
+function clearPiAuth(agentDir: string) {
+  return writeManaged(agentDir, "auth.json", {})
 }
 
-export function writePiModels(agentDir: string, providers: PiProviderOverrides) {
+function writePiModels(agentDir: string, providers: PiProviderOverrides) {
   return writeManaged(agentDir, "models.json", { providers })
 }
 
@@ -136,10 +138,10 @@ export function retainPiAuth(agentDir: string) {
     return result
   }
   return {
-    write(entries: PiAuthEntries, providers: PiProviderOverrides = {}) {
+    write(providers: PiProviderOverrides) {
       if (released) return Promise.reject(new Error("Pi auth profile is disposed"))
       return enqueue(async () => {
-        await writePiAuth(directory, entries)
+        await clearPiAuth(directory)
         await writePiModels(directory, providers)
       })
     },

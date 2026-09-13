@@ -3,18 +3,15 @@ import {
   piProviderOverrides,
   piSpawnEnv,
   retainPiAuth,
-  type PiAuthEntries,
   type PiProviderOverrides,
 } from "./auth"
 import fs from "node:fs/promises"
 import { execFile } from "node:child_process"
-import { createHash, randomUUID } from "node:crypto"
-import { trimToUndefined } from "@claxedo/helpers/string"
+import { randomUUID } from "node:crypto"
 import { observeAgentProcess } from "../../process-observer"
 import { createEvaluatedGoalResource } from "../shared/evaluated-goal-resource"
 import { GOAL_PROMPT_TEXT, goalEvaluatorRequest, parseGoalEvaluation } from "../shared/goal-protocol"
 import path from "node:path"
-import os from "node:os"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { piRpcAdapter } from "@claxedo/agent-event-runtime/harnesses/pi"
 import type { AgentConfigOption, PromptInput } from "../../index"
@@ -34,9 +31,7 @@ import { requirePiExecutable, verifyPiExecutable, piCommand } from "./executable
 
 export type PiDriverOptions = {
   binary?: string
-  agentDir?: string
-  /** Scopes the default profile; two workspaces must not share one `models.json`. */
-  workspaceId?: string
+  agentDir: string
   idleMs?: number
 }
 type Entry = {
@@ -47,12 +42,7 @@ type Entry = {
   idle?: ReturnType<typeof setTimeout>
 }
 
-/** A workspace id as one path segment; the id itself may contain separators. */
-function piWorkspaceDirName(workspaceId: string | undefined) {
-  return workspaceId ? createHash("sha256").update(workspaceId).digest("hex").slice(0, 16) : "default"
-}
-
-export function createPiRpcDriver(host: SdkRuntimeDriverHost, options: PiDriverOptions = {}): SdkRuntimeDriver {
+export function createPiRpcDriver(host: SdkRuntimeDriverHost, options: PiDriverOptions): SdkRuntimeDriver {
   return new PiRpcDriver(host, options)
 }
 
@@ -62,7 +52,6 @@ class PiRpcDriver implements SdkRuntimeDriver {
   readonly goals
   private evaluators = 0
   private readonly goalController
-  private projectedAuth?: PiAuthEntries
   private projectedProviders?: PiProviderOverrides
   private auth: Record<string, ProviderProjection> | undefined
   private entries = new Map<string, Entry>()
@@ -206,12 +195,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
       },
     })
     this.goals = this.goalController.resource
-    // Per workspace, because the profile holds `models.json` — and that file
-    // carries the broker placeholder. One shared profile lets the workspace
-    // that applied last hand its binding to every other workspace's turns.
     this.agentDir = options.agentDir
-      ?? trimToUndefined(process.env.PI_CODING_AGENT_DIR)
-      ?? path.join(os.homedir(), ".claxedo", "pi", "agent", piWorkspaceDirName(options.workspaceId))
     this.authProfile = retainPiAuth(this.agentDir)
   }
   async applyConfig(config: Record<string, unknown>) {
@@ -221,17 +205,14 @@ class PiRpcDriver implements SdkRuntimeDriver {
     }
     this.auth = auth
     // A brokered account reaches Pi as a `models.json` overlay, never as a key
-    // in the environment or in `auth.json`; the managed profile writes both
-    // files so it also replaces whatever an earlier build left behind, and both
-    // are scrubbed when the last adapter sharing the profile is disposed.
-    const projected: PiAuthEntries = {}
+    // in the environment or in `auth.json`; both files are scrubbed when the
+    // last adapter sharing the profile is disposed.
     const providers = piProviderOverrides(this.auth)
-    if (JSON.stringify([projected, providers]) !== JSON.stringify([this.projectedAuth, this.projectedProviders])) {
+    if (JSON.stringify(providers) !== JSON.stringify(this.projectedProviders)) {
       if (this.evaluators || [...this.entries.values()].some((entry) => entry.busy))
         throw new Error("Cannot rotate Pi credentials during an active turn")
       this.closeProcesses()
-      await this.authProfile.write(projected, providers)
-      this.projectedAuth = projected
+      await this.authProfile.write(providers)
       this.projectedProviders = providers
       this.models = []
     }
