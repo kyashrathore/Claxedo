@@ -61,6 +61,20 @@ describe("a Tasks markdown field", () => {
     expect(field.value).toContain("with CRLF endings")
   })
 
+  /**
+   * Documents refuses `* item` because saving it back would rewrite the user's
+   * bytes as `- item`. A task description is the app's own record, so that
+   * rewrite is acceptable and the field opens rich instead of falling back to
+   * a textarea for a bullet.
+   */
+  test("markdown the serializer would normalize still opens rich here", async () => {
+    mount("* item")
+
+    const field = await waitFor(() => screen.getByTestId("task-detail-description"))
+    expect(field.getAttribute("data-prose-mode")).toBe("rich")
+    await waitFor(() => expect(field.querySelectorAll("li")).toHaveLength(1))
+  })
+
   test("the fallback still edits the record as markdown", () => {
     const { onChange } = mount("a line\r\nwith CRLF endings\r\n")
 

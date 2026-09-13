@@ -59,4 +59,47 @@ describe("markdown shortcuts in a Tasks description", () => {
   test("a backtick fence makes a code block", () => {
     expect(typed("```js ").html).toContain("<pre>")
   })
+
+  test("the emphasis marks convert and serialize back to their own syntax", () => {
+    expect(typed("**bold** ").html).toContain("<strong>bold</strong>")
+    expect(typed("*italic* ").html).toContain("<em>italic</em>")
+    expect(typed("~~struck~~ ").html).toContain("<s>struck</s>")
+    expect(typed("`code` ").html).toContain("<code>code</code>")
+    expect(typed("**bold** ").markdown.trim()).toBe("**bold**")
+  })
+
+  test("three dashes make a rule", () => {
+    expect(typed("--- ").html).toContain("<hr>")
+  })
+
+  test("a bracket pair makes a task item", () => {
+    const { html, markdown } = typed("[ ] feed the cat")
+
+    expect(html).toContain('data-type="taskList"')
+    expect(markdown).toContain("[ ] feed the cat")
+  })
+
+  // Upstream ships no input rule for a link; this one is ours, and the closing
+  // bracket is what completes it.
+  test("link syntax makes a link and serializes back as one", () => {
+    const { html, markdown } = typed("[text](https://example.com)")
+
+    expect(html).toContain('href="https://example.com"')
+    expect(html).toContain(">text<")
+    expect(markdown.trim()).toBe("[text](https://example.com)")
+  })
+
+  // The image rule used to replace the whole paragraph, because the node was a
+  // block while the parser placed images inline.
+  test("image syntax inserts an image without destroying the line", () => {
+    const { html, markdown } = typed("![alt](https://example.com/a.png)")
+
+    expect(html).toContain('src="https://example.com/a.png"')
+    expect(html).toContain("<p>")
+    expect(markdown.trim()).toBe("![alt](https://example.com/a.png)")
+  })
+
+  test("a closing parenthesis starts an ordered list, as the parser reads one", () => {
+    expect(typed("1) first").html).toContain("<ol>")
+  })
 })

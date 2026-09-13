@@ -19,7 +19,10 @@ import { splitMarkdownEnvelope } from "@/features/documents/markdown/frontmatter
  * something the subset does not cover.
  */
 export function TasksProseEditor(props: ProseEditorProps) {
-  const admitted = detectMarkdown(props.value)
+  // A task description is the app's own record, not a file the user owns, so
+  // the first edit normalizing `* item` to `- item` is acceptable here and the
+  // byte-exact gate Documents needs would only put this field in a textarea.
+  const admitted = detectMarkdown(props.value, "normalizing")
   const [failed, setFailed] = createSignal(false)
   const rich = (): RichMarkdown | undefined => {
     if (admitted.status !== "rich" || failed()) return undefined

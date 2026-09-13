@@ -431,7 +431,9 @@ export const desktopRendererUnsigned: Policy = {
   // accepted by the user on 2026-09-13. This renderer already carried the
   // nineteen Tiptap package edges through its hosted half, so its package count
   // does not move. Measured 1087 / 58.
-  ceilings: { modules: 1087, packages: 58 },
+  // +2 modules (2026-09-13): the same markdown input-rule and paste owners
+  // app-local reviews. No new package edge. Measured 1089 / 58.
+  ceilings: { modules: 1089, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

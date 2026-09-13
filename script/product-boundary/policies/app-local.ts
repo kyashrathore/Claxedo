@@ -376,7 +376,12 @@ export const appLocal: Policy = {
   // out: no store, route or content-surface module is reachable from here, and
   // `documents-content-surfaces` remains a forbidden chunk marker.
   // Measured 1044 / 58.
-  ceilings: { modules: 1044, packages: 58 },
+  // +2 modules (2026-09-13): the markdown input rules and the paste path that
+  // close the gaps between what the Documents editor parses and what it
+  // converts as you type — both under features/documents/editor, both reached
+  // through the extension list the editor already mounted. No new package edge.
+  // Measured 1046 / 58.
+  ceilings: { modules: 1046, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

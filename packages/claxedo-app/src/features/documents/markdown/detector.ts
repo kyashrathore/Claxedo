@@ -59,7 +59,22 @@ export type MarkdownSerialization =
     }
   | SourceMarkdown
 
-export function detectMarkdown(input: string | Uint8Array): MarkdownDetection {
+/**
+ * How exactly a caller needs the bytes preserved.
+ *
+ * `exact` is a file on disk: rich mode is offered only when opening and saving
+ * without an edit would write back the same bytes, so Documents never
+ * reformats someone's file behind their back. `normalizing` is a record the
+ * app itself owns, where the first edit rewriting `* item` as `- item` is an
+ * acceptable price for editing prose as prose. Everything else — the size and
+ * complexity limits, CRLF, and the syntax outside the contract — gates both.
+ */
+export type MarkdownFidelity = "exact" | "normalizing"
+
+export function detectMarkdown(
+  input: string | Uint8Array,
+  fidelity: MarkdownFidelity = "exact",
+): MarkdownDetection {
   const decoded = decodeMarkdown(input)
   if (decoded.status === "rejected") return decoded
   const markdown = decoded.markdown
@@ -129,7 +144,7 @@ export function detectMarkdown(input: string | Uint8Array): MarkdownDetection {
     const document = manager.parse(envelope.body)
     const serialized = serializeMarkdownDocument(document, envelope)
     if (serialized.status === "source") return serialized
-    if (serialized.markdown === markdown) {
+    if (fidelity === "normalizing" || serialized.markdown === markdown) {
       return { status: "rich", document, envelope }
     }
   } catch {
