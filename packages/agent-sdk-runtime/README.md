@@ -266,7 +266,7 @@ from multiple processes or machines.
 ### Native Pi
 
 Pi runs as a child process in the session's machine directory, using the pinned
-0.85.0 RPC protocol. The shared adapter owns product session lifecycle; Pi owns
+0.85.1 RPC protocol. The shared adapter owns product session lifecycle; Pi owns
 its native session file, tools, extensions, compaction and context. Each active
 session has a separate process. Idle processes resume from the same native file.
 A missing native file is an error, never a replacement conversation.
