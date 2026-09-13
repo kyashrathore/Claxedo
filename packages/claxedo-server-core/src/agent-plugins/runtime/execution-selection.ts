@@ -1,3 +1,4 @@
+import { sha256Hex } from "@claxedo/helpers/crypto"
 import type { ArtifactDigest } from "../activation/types"
 import type { RetainedAgentPluginArtifact } from "../artifacts/types"
 import { agentPluginTree, type AgentPluginTree } from "../artifacts/tree"
@@ -57,9 +58,7 @@ export async function agentPluginSelectionHash(
       contributionKey(selection.contribution),
     ])
     .toSorted((a, b) => JSON.stringify(a) < JSON.stringify(b) ? -1 : 1)
-  const bytes = new TextEncoder().encode(JSON.stringify(canonical))
-  const digest = await crypto.subtle.digest("SHA-256", bytes)
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+  return await sha256Hex(JSON.stringify(canonical))
 }
 
 function skillPrefix(skillName: string) {

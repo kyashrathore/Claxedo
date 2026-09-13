@@ -7,6 +7,10 @@ import {
 } from "@claxedo/agent-sdk-runtime"
 import { asRecord, isRecord } from "@claxedo/helpers/guards"
 import {
+  sessionCreateRequest,
+  sessionHarnessQuery,
+} from "@claxedo/server-core/workspace/http/session-create-request"
+import {
   TasksError,
   hashRequest,
   startDigest,
@@ -229,10 +233,6 @@ async function sessionStates(
   }))
 }
 
-export function tasksHarnessQuery(harness: { id: string; access: "native" | "connection" }): string {
-  return `${harness.access === "native" ? "nativeHarness" : "connectionId"}=${encodeURIComponent(harness.id)}`
-}
-
 function workspaceNameOrDirectory(workspace: Workspace): string {
   return workspace.workspace_name || workspace.directory
 }
@@ -248,7 +248,7 @@ async function configurationBlockers(
   configuration: ModelConfiguration,
 ): Promise<StartBlocker[]> {
   const response = await target
-    .request(`/session/capabilities?${tasksHarnessQuery(configuration.harness)}`)
+    .request(`/session/capabilities?${sessionHarnessQuery(configuration.harness)}`)
     .catch(() => undefined)
   if (!response?.ok) {
     return [{
@@ -603,17 +603,19 @@ async function startSession(
     if (!existing) return { ok: false, error: tasksErrorDetail("unsupported", "The workspace runtime is unreachable") }
     if (existing.status === 200) return recoverSession(host, target, sessionId, command, resolved)
 
-    const created = await target.request(`/session?${tasksHarnessQuery(resolved.configuration.harness)}`, {
+    const create = sessionCreateRequest({
+      id: sessionId,
+      title: command.task.title,
+      model: resolved.configuration.model,
+      harness: resolved.configuration.harness,
+      group: resolved.group,
+      instructions: resolved.instructions,
+      ...(resolved.configuration.effort ? { variant: resolved.configuration.effort } : {}),
+    })
+    const created = await target.request(create.path, {
       method: "POST",
       headers: { "content-type": "application/json", ...reserved?.headers },
-      body: JSON.stringify({
-        id: sessionId,
-        title: command.task.title,
-        model: resolved.configuration.model,
-        ...(resolved.configuration.effort ? { variant: resolved.configuration.effort } : {}),
-        instructions: resolved.instructions,
-        group: resolved.group,
-      }),
+      body: create.body,
     })
     if (!created.ok) {
       // A runtime that refuses because the id is taken has the session another

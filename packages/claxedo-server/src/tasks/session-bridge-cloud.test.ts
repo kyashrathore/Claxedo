@@ -332,6 +332,7 @@ describe("hosted tasks cloud roots", () => {
     const kit = bridge(composition)
 
     const first = await start(kit, "tsk_one")
+    composition.authority.createCloudWorkspace.mockClear()
     const again = await start(kit, "tsk_one")
     expect(first.started).toMatchObject({ ok: true })
     expect(again.started).toMatchObject({ ok: true })
@@ -340,7 +341,16 @@ describe("hosted tasks cloud roots", () => {
     const root = String(first.started.session.sessionRef.workspaceId)
     expect(again.started.session.sessionRef).toEqual(first.started.session.sessionRef)
     expect(new Set(ensured)).toEqual(new Set([root]))
-    expect(composition.authority.createCloudWorkspace).toHaveBeenCalledTimes(1)
+    // The retry re-admits the row it found rather than trusting it. A store row
+    // is not proof the authority still has one: a failed provision discards the
+    // authority record and only tries to delete the store row, so a row that
+    // survived that path would otherwise be a root the authority never heard of
+    // and every later reservation in it would be refused.
+    const admitted = composition.authority.createCloudWorkspace.mock.calls.map(
+      ([, args]: [unknown, { workspaceId: string }]) => args.workspaceId,
+    )
+    expect(admitted.length).toBeGreaterThan(0)
+    expect(new Set(admitted)).toEqual(new Set([root]))
     expect((await listWorkspaces()).filter((row) => row.id !== PROJECT)).toHaveLength(1)
     // One sandbox, not a replacement: a second allocation would have burned a
     // lease epoch and left the first root's files behind.

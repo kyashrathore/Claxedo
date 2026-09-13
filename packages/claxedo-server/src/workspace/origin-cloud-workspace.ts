@@ -1,5 +1,6 @@
 import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
 import { WORKSPACE_DIR } from "@claxedo/sandbox-manager/defaults"
+import { sha256Hex } from "@claxedo/helpers/crypto"
 import { ensureHostForRepo } from "@claxedo/server-core/sandbox/network/policy"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import {
@@ -75,9 +76,7 @@ export type OriginCloudWorkspaceInput = {
  * guessing this id means already knowing the task it belongs to.
  */
 export async function originCloudWorkspaceId(originKey: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(originKey))
-  const hex = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("")
-  return `ws_${hex.slice(0, 24)}`
+  return `ws_${(await sha256Hex(originKey)).slice(0, 24)}`
 }
 
 /**
@@ -101,9 +100,8 @@ export async function allocateOriginCloudWorkspace(
   }
 
   const workspaceId = await originCloudWorkspaceId(input.originKey)
-  // A row that exists was admitted: admission failure below deletes it, so
-  // finding one means the authority already knows this workspace.
-  const workspace = (await getWorkspace(workspaceId)) ?? (await allocate(workspaceId, input))
+  const stored = await getWorkspace(workspaceId)
+  const workspace = stored ? await admit(stored, input) : await allocate(workspaceId, input)
   if (!("id" in workspace)) return workspace
 
   const repoUrl = workspace.repo_url ?? workspace.git_remote
@@ -176,6 +174,23 @@ async function allocate(
   if (!workspace) {
     return { code: "source_unavailable", detail: "The cloud workspace for this attempt could not be stored" }
   }
+  return await admit(workspace, input)
+}
+
+/**
+ * Records the row with the authority, on every attempt rather than only on the
+ * one that stored it.
+ *
+ * The store row cannot stand in for the authority's: a provision that failed
+ * discards the authority row and then deletes the store row, and that delete
+ * is best-effort. Re-admitting a row this attempt found is what keeps a
+ * survivor of that path from being a workspace the authority has never heard
+ * of, whose every later reservation is refused with no way back.
+ */
+async function admit(
+  workspace: Workspace,
+  input: OriginCloudWorkspaceInput,
+): Promise<Workspace | OriginCloudWorkspaceRefusal> {
   try {
     await input.admit(workspace)
   } catch (error) {

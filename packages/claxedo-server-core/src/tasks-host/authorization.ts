@@ -7,7 +7,7 @@ import type { SessionReference, TasksActor, TasksAuthorizationPort } from "@clax
 import type { TasksAuthenticate, TasksAuthenticated } from "@claxedo/tasks/http"
 
 /** The scope an unsigned local daemon serves: the one machine. Its owner is `localControlPlaneAuth`'s subject. */
-export const TASKS_LOCAL_SCOPE = "local"
+const TASKS_LOCAL_SCOPE = "local"
 
 export type TasksPrincipals = {
   actorOf(auth: SignedControlPlaneAuth, scopeId: string): TasksActor
