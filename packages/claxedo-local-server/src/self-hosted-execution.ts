@@ -41,6 +41,7 @@ export { LocalWorkspaceRoutes } from "./workspace/routes/resolve-route"
 export { ShellRoutes } from "./shell/routes"
 export { LocalProjectRoutes, githubCloneAuthorization } from "./workspace/routes/projects-route"
 export { CredentialRoutes } from "./credentials/routes/credential"
+export { localControlPlaneCredentials } from "./credentials/machine-credentials"
 export { ProviderAuthRoutes } from "./credentials/routes/provider-auth"
 export { NetworkPolicyRoutes } from "./sandbox/network/network-policy-routes"
 export { BootstrapRoutes } from "./deployments/shared-routes/bootstrap"
@@ -81,6 +82,7 @@ export { sessionMetaProjectionTap } from "./session/session-meta-tap"
 
 /** Migrates legacy plaintext provider credentials into the managed backend. */
 export { migrateCredentials } from "./credentials/operations/migrate"
+export { dropCopiedHarnessLogins } from "./credentials/operations/drop-copied-harness-logins"
 export { projectLocalSessionMetaFromEvent } from "./session/session-meta-tap"
 
 /** Starts the desktop-local server: composition plus lifecycle. */

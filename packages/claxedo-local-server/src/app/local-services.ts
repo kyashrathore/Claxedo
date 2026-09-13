@@ -16,7 +16,7 @@
 
 import { createDurableSessionLog, type DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
+import { localControlPlaneCredentials } from "../credentials/machine-credentials"
 import type { SessionProjectionStore } from "@claxedo/server-core/authority/session-projection"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { getSessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
@@ -89,7 +89,7 @@ export function createLocalControlPlaneServices(
     // Unsigned by construction. There is no account here and nothing to verify
     // a bearer against, so the loopback guard is the boundary.
     auth: localOnlyAuthAdapter(),
-    credentials: defaultControlPlaneCredentials(),
+    credentials: localControlPlaneCredentials(),
     // No relay provider and no sandbox manager: this product provisions
     // nothing and reaches no Relay. Both are the empty shape rather than a
     // stub that pretends.

@@ -38,6 +38,7 @@ const userConfigFile = path.join(root, "user-agent-config.json")
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const { putCredential, resolveSecret, deleteCredentialsByProvider, getCredentialByProvider } = await import("@claxedo/server-core/credentials/registry")
 const { collectLocalCredentialItems, syncLocalCredentials } = await import("./sync")
+const { credentialDiscovery } = await import("./discovery")
 const { saveUserConfig } = await import("../../agent-config")
 const { ClaxedoDB } = await import("../../platform/db")
 ClaxedoDB.Drizzle()
@@ -277,6 +278,28 @@ describe("syncLocalCredentials", () => {
 
     expect(await collectLocalCredentialItems()).toEqual([])
     expect(execFileSyncCalls).toEqual([])
+  })
+
+  test("the discovery route offers nothing on a machine whose only logins are its CLIs'", async () => {
+    // The producer behind `POST /credentials/discover`, driven for real rather
+    // than through a fixture: this is what the cloud onboarding step is handed
+    // on a laptop that can run agents locally and has nothing to send anywhere.
+    const home = process.env.HOME!
+    mkdirSync(path.join(home, ".claude"), { recursive: true })
+    await fs.writeFile(path.join(home, ".claude", ".credentials.json"), JSON.stringify({
+      claudeAiOauth: { accessToken: "sk-ant-oauth-file", refreshToken: "refresh-file" },
+    }))
+    mkdirSync(path.join(home, ".codex"), { recursive: true })
+    await fs.writeFile(path.join(home, ".codex", "auth.json"), JSON.stringify({
+      auth_mode: "chatgpt",
+      tokens: { access_token: "codex-access", refresh_token: "codex-refresh", account_id: "acct-1" },
+      last_refresh: "2026-04-01T00:00:00.000Z",
+    }))
+
+    const discovery = await credentialDiscovery.discover()
+
+    expect(discovery.items).toEqual([])
+    expect(discovery.discovery_id).toEqual(expect.any(String))
   })
 })
 

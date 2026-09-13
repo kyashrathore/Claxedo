@@ -1,6 +1,5 @@
 import { login } from "./auth/device-code"
 import { whoami } from "./auth/identity"
-import { creds } from "./commands/creds"
 import { deploy } from "./commands/deploy"
 import { documents, documentsUsage } from "./commands/documents"
 import { down } from "./commands/down"
@@ -17,7 +16,6 @@ claxedo down [workspaceId]
 claxedo status
 claxedo whoami
 claxedo deploy [--generate-only] [--app <name>] [--region <code>] [--yes]
-claxedo creds sync --remote <url> [--token <credentials-token>] [--yes]
 ${documentsUsage}`)
 }
 
@@ -32,7 +30,6 @@ async function main(argv: string[]) {
   if (command === "up") return up(args)
   if (command === "host") return up(args, true)
   if (command === "deploy") return deploy(args)
-  if (command === "creds") return creds(args)
   if (command === "documents") return documents(args)
   if (command === "down") return down(args)
   if (command === "status") return status()

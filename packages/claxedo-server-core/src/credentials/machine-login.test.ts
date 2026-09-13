@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest"
-import { readMachineLogins, type MachineLoginProbes, type MachineLoginRun } from "./machine-login"
+import {
+  createMachineLoginCache,
+  readMachineLogins,
+  type MachineLogin,
+  type MachineLoginHarness,
+  type MachineLoginProbes,
+  type MachineLoginRun,
+} from "./machine-login"
 
 const absent: MachineLoginRun = { found: false, ok: false, stdout: "" }
 
@@ -98,7 +105,7 @@ describe("readMachineLogins", () => {
     expect(codex.email).toBeUndefined()
   })
 
-  test("a non-zero `codex login status` is a signed-out Codex, and the app-server is never started", async () => {
+  test("a Codex that says it is not logged in is signed out, and the app-server is never started", async () => {
     let started = false
     const [codex] = await readMachineLogins(["codex"], {
       run: runner({ codex: { found: true, ok: false, stdout: "Not logged in" } }),
@@ -110,6 +117,27 @@ describe("readMachineLogins", () => {
 
     expect(codex.state).toBe("signed_out")
     expect(started).toBe(false)
+  })
+
+  test("a Codex that fails for some other reason is unknown, never told to log in again", async () => {
+    const failures: MachineLoginRun[] = [
+      { found: true, ok: false, stdout: "", stderr: "error: unrecognized subcommand 'status'" },
+      { found: true, ok: false, stdout: "" },
+      { found: true, ok: false, stdout: "", stderr: "socket hang up" },
+    ]
+    for (const failure of failures) {
+      const [codex] = await readMachineLogins(["codex"], { run: runner({ codex: failure }) })
+      expect(codex.state, JSON.stringify(failure)).toBe("unknown")
+      expect(codex.detail).toContain("login status")
+    }
+  })
+
+  test("the signed-out verdict is read from whichever stream the CLI printed it on", async () => {
+    const [codex] = await readMachineLogins(["codex"], {
+      run: runner({ codex: { found: true, ok: false, stdout: "", stderr: "Not logged in. Run `codex login`." } }),
+    })
+
+    expect(codex.state).toBe("signed_out")
   })
 
   test("Cursor answers from its own status command", async () => {
@@ -131,5 +159,85 @@ describe("readMachineLogins", () => {
     const logins = await readMachineLogins(undefined, { run: runner({}) })
 
     expect(logins.map((login) => login.harness)).toEqual(["claude", "codex", "cursor"])
+  })
+})
+
+describe("the harnesses are not asked twice at once, nor again straight away", () => {
+  function counting() {
+    const reads: string[] = []
+    let release: (login: MachineLogin) => void = () => {}
+    const read = (harness: MachineLoginHarness) => {
+      reads.push(harness)
+      return new Promise<MachineLogin>((resolve) => { release = resolve })
+    }
+    return { reads, read, answer: (login: Partial<MachineLogin> = {}) => release({
+      harness: "codex", providerIds: ["codex-app-server"], state: "signed_in", ...login,
+    } as MachineLogin) }
+  }
+
+  test("callers that arrive together share one read", async () => {
+    const probe = counting()
+    const cache = createMachineLoginCache({ read: probe.read })
+
+    const both = Promise.all([cache.read("codex"), cache.read("codex")])
+    probe.answer({ email: "shared@example.com" })
+
+    expect((await both).map((login) => login.email)).toEqual(["shared@example.com", "shared@example.com"])
+    expect(probe.reads).toEqual(["codex"])
+  })
+
+  test("the answer stands for its window and is asked again after it", async () => {
+    const probe = counting()
+    let clock = 1_000
+    const cache = createMachineLoginCache({ read: probe.read, now: () => clock, freshForMs: 10_000 })
+
+    const first = cache.read("codex")
+    probe.answer({ email: "first@example.com" })
+    await first
+
+    clock += 9_999
+    expect((await cache.read("codex")).email).toBe("first@example.com")
+    expect(probe.reads).toEqual(["codex"])
+
+    clock += 2
+    const later = cache.read("codex")
+    probe.answer({ email: "second@example.com" })
+
+    expect((await later).email).toBe("second@example.com")
+    expect(probe.reads).toEqual(["codex", "codex"])
+  })
+
+  test("a Check asks again inside the window, and forgetting does the same", async () => {
+    const probe = counting()
+    const clock = 1_000
+    const cache = createMachineLoginCache({ read: probe.read, now: () => clock })
+
+    const first = cache.read("codex")
+    probe.answer({ email: "first@example.com" })
+    await first
+
+    const checked = cache.read("codex", { fresh: true })
+    probe.answer({ email: "checked@example.com" })
+    expect((await checked).email).toBe("checked@example.com")
+
+    cache.forget()
+    const after = cache.read("codex")
+    probe.answer({ email: "third@example.com" })
+    expect((await after).email).toBe("third@example.com")
+    expect(probe.reads).toEqual(["codex", "codex", "codex"])
+  })
+
+  test("each harness is remembered on its own", async () => {
+    const probe = counting()
+    const cache = createMachineLoginCache({ read: probe.read })
+
+    const claude = cache.read("claude")
+    probe.answer({ harness: "claude" })
+    await claude
+    const codex = cache.read("codex")
+    probe.answer({ harness: "codex" })
+    await codex
+
+    expect(probe.reads).toEqual(["claude", "codex"])
   })
 })

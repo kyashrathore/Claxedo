@@ -59,7 +59,7 @@ const PROVIDER_IDS: Record<MachineLoginHarness, readonly string[]> = {
  * non-zero exit, an unreadable answer — is the harness answering badly, which
  * is a different verdict from not being installed.
  */
-export type MachineLoginRun = { found: boolean; ok: boolean; stdout: string }
+export type MachineLoginRun = { found: boolean; ok: boolean; stdout: string; stderr?: string }
 
 export type MachineLoginProbes = {
   run?: (file: string, args: readonly string[]) => Promise<MachineLoginRun>
@@ -71,22 +71,85 @@ const TIMEOUT_MS = 10_000
 
 const runCommand = (file: string, args: readonly string[]): Promise<MachineLoginRun> =>
   new Promise((resolve) => {
-    execFile(file, [...args], { encoding: "utf8", timeout: TIMEOUT_MS }, (error, stdout) => {
+    execFile(file, [...args], { encoding: "utf8", timeout: TIMEOUT_MS }, (error, stdout, stderr) => {
       const code = error && "code" in error ? error.code : undefined
-      resolve({ found: code !== "ENOENT", ok: !error, stdout })
+      resolve({ found: code !== "ENOENT", ok: !error, stdout, stderr })
     })
   })
 
+/** How long a harness's answer stands before it is asked again. */
+const FRESH_FOR_MS = 10_000
+
+export type MachineLoginRead = MachineLoginProbes & {
+  /**
+   * Ask the harness again rather than reusing its last answer. What a row's
+   * Check means: a button that returned a remembered answer would report the
+   * state the user pressed it to find out had changed.
+   */
+  fresh?: boolean
+}
+
+/**
+ * One read per harness at a time, and its answer for a short while after.
+ *
+ * Reading a harness costs a process — the Codex app-server takes about a
+ * second — and the Settings section, the onboarding check and a row's Check can
+ * all ask at once. Callers that arrive together share one read; a caller that
+ * arrives just after one gets its answer rather than spawning the same binary
+ * again. Its own clock and reader so the behaviour can be exercised without
+ * spawning anything.
+ */
+export function createMachineLoginCache(input: {
+  read: (harness: MachineLoginHarness) => Promise<MachineLogin>
+  now?: () => number
+  freshForMs?: number
+}) {
+  const now = input.now ?? Date.now
+  const freshForMs = input.freshForMs ?? FRESH_FOR_MS
+  const answers = new Map<MachineLoginHarness, { at: number; login: MachineLogin }>()
+  const asking = new Map<MachineLoginHarness, Promise<MachineLogin>>()
+  return {
+    read(harness: MachineLoginHarness, options: { fresh?: boolean } = {}): Promise<MachineLogin> {
+      const held = answers.get(harness)
+      if (!options.fresh && held && now() - held.at < freshForMs) return Promise.resolve(held.login)
+      // A read already in flight is joined even by a `fresh` caller: it was
+      // started no earlier than this call, so its answer is as new as one
+      // started now, and a second spawn of the same binary buys nothing.
+      const inFlight = asking.get(harness)
+      if (inFlight) return inFlight
+      const started = input.read(harness)
+        .then((login) => {
+          answers.set(harness, { at: now(), login })
+          return login
+        })
+        .finally(() => asking.delete(harness))
+      asking.set(harness, started)
+      return started
+    },
+    forget() {
+      answers.clear()
+      asking.clear()
+    },
+  }
+}
+
+const machineLogins = createMachineLoginCache({ read: (harness) => askHarness(harness, {}) })
+
 export async function readMachineLogins(
   harnesses: readonly MachineLoginHarness[] = MACHINE_LOGIN_HARNESSES,
-  probes: MachineLoginProbes = {},
+  options: MachineLoginRead = {},
 ): Promise<MachineLogin[]> {
+  // A caller with probes of its own is asking a question about those probes,
+  // not about this machine, so it never reads or writes the remembered answers.
+  if (options.run || options.codexAccount) return Promise.all(harnesses.map((harness) => askHarness(harness, options)))
+  return Promise.all(harnesses.map((harness) => machineLogins.read(harness, { fresh: options.fresh === true })))
+}
+
+function askHarness(harness: MachineLoginHarness, probes: MachineLoginProbes): Promise<MachineLogin> {
   const run = probes.run ?? runCommand
-  return Promise.all(harnesses.map((harness) => {
-    if (harness === "claude") return claudeMachineLogin(run)
-    if (harness === "codex") return codexMachineLogin(run, probes.codexAccount ?? codexAccountRead)
-    return cursorMachineLogin(run)
-  }))
+  if (harness === "claude") return claudeMachineLogin(run)
+  if (harness === "codex") return codexMachineLogin(run, probes.codexAccount ?? codexAccountRead)
+  return cursorMachineLogin(run)
 }
 
 function report(harness: MachineLoginHarness, rest: Omit<MachineLogin, "harness" | "providerIds">): MachineLogin {
@@ -117,11 +180,19 @@ async function claudeMachineLogin(run: NonNullable<MachineLoginProbes["run"]>): 
   })
 }
 
+/** What `codex login status` prints when the CLI holds no login. */
+const CODEX_SIGNED_OUT = /not logged in|no (?:stored )?(?:credentials|auth)/i
+
 /**
  * The Codex app-server answers `account/read` and `account/rateLimits/read` for
  * the login the CLI holds. `codex login status` is the presence fallback: it
  * costs one cheap spawn and still separates "signed in" from "signed out" when
  * the app-server cannot be started at all.
+ *
+ * A non-zero exit is only a signed-out verdict when the CLI SAYS so. An old
+ * build with no `login status` subcommand, a timeout, a transient fault — each
+ * exits non-zero while the user is signed in, and telling them to run `codex
+ * login` sends them to repair something that is not broken.
  */
 async function codexMachineLogin(
   run: NonNullable<MachineLoginProbes["run"]>,
@@ -129,7 +200,12 @@ async function codexMachineLogin(
 ): Promise<MachineLogin> {
   const presence = await run("codex", ["login", "status"])
   if (!presence.found) return report("codex", { state: "absent" })
-  if (!presence.ok) return report("codex", { state: "signed_out" })
+  if (!presence.ok) {
+    const said = `${presence.stdout}\n${presence.stderr ?? ""}`
+    return CODEX_SIGNED_OUT.test(said)
+      ? report("codex", { state: "signed_out" })
+      : report("codex", { state: "unknown", detail: "Codex did not answer with a login status." })
+  }
 
   const answer = await account().catch((error: unknown) => {
     log.warn("Codex app-server could not be asked about its account", { error: String(error) })
@@ -254,6 +330,22 @@ async function codexAccountRead(): Promise<{ account: unknown; rateLimits: unkno
       return { account, rateLimits }
     })()])
   } finally {
-    child.kill("SIGTERM")
+    stopAppServer(child)
   }
+}
+
+const KILL_GRACE_MS = 1_000
+
+/**
+ * The app-server owns MCP servers and plugin children of its own, and a build
+ * that ignores SIGTERM would otherwise outlive every read the section makes.
+ */
+function stopAppServer(child: ReturnType<typeof spawn>) {
+  child.kill("SIGTERM")
+  if (child.exitCode !== null || child.signalCode !== null) return
+  const timer = setTimeout(() => {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL")
+  }, KILL_GRACE_MS)
+  timer.unref()
+  child.once("exit", () => clearTimeout(timer))
 }

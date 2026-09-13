@@ -766,6 +766,65 @@ describe("credential registry", () => {
       expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-clear")).toEqual([])
     })
 
+    test("clearActiveCredentials reaches only the org it was asked in", async () => {
+      const mine = await putCredential({
+        provider_id: "active-clear-org",
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_mine",
+        label: "mine",
+        secret: "mine-secret",
+      }, "org-a")
+      const theirs = await putCredential({
+        provider_id: "active-clear-org",
+        kind: "oauth_token",
+        source: "managed",
+        account_id: "acc_theirs",
+        label: "theirs",
+        secret: "theirs-secret",
+      }, "org-b")
+      expect(getCredential(mine.id, "org-a")?.is_active).toBe(true)
+      expect(getCredential(theirs.id, "org-b")?.is_active).toBe(true)
+
+      expect(clearActiveCredentials(["active-clear-org"], "org-a")).toEqual({ cleared: [mine.id] })
+
+      expect(getCredential(mine.id, "org-a")?.is_active).toBe(false)
+      expect(getCredential(theirs.id, "org-b")?.is_active).toBe(true)
+      // And the default partition, which holds neither of them, is untouched by
+      // a call naming the same provider.
+      expect(clearActiveCredentials(["active-clear-org"])).toEqual({ cleared: [] })
+      expect(getCredential(theirs.id, "org-b")?.is_active).toBe(true)
+    })
+
+    test("a sandbox driver key neither holds the mark nor inherits it", async () => {
+      const driver = await putCredential({
+        provider_id: "daytona",
+        kind: "sandbox_driver",
+        source: "managed",
+        label: "driver",
+        secret: "daytona-key",
+      })
+      // Nothing a harness runs on, so the mark never lands on it at save time…
+      expect(driver.is_active).toBe(false)
+
+      const mixed = await putCredential({
+        provider_id: "daytona",
+        kind: "api_key",
+        source: "managed",
+        label: "model key",
+        secret: "sk-daytona-model",
+      })
+      expect(mixed.is_active).toBe(true)
+      expect(setActiveCredentials([driver.id])).toEqual({ ok: false, reason: "not_eligible" })
+
+      // …nor when the account that did hold it is refused and looks for an heir.
+      updateCredentialHealth(mixed.id, "auth_failed", 1234)
+
+      expect(getCredential(driver.id)?.is_active).toBe(false)
+      expect(getCredential(mixed.id)?.is_active).toBe(true)
+      expect(clearActiveCredentials(["daytona"])).toEqual({ cleared: [mixed.id] })
+    })
+
     test("clearActiveCredentials clears every binding named and nothing else", async () => {
       const { first } = await twoAccounts("active-clear-a")
       const other = await twoAccounts("active-clear-b")

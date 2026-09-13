@@ -95,7 +95,10 @@ export type ControlPlaneCredentials = {
    * What each harness on THIS machine says about the login it would run on.
    * Absent wherever the host is not the machine the harnesses live on.
    */
-  machineLogins?: (harnesses?: readonly MachineLoginHarness[]) => Promise<MachineLogin[]>
+  machineLogins?: (
+    harnesses?: readonly MachineLoginHarness[],
+    options?: { fresh?: boolean },
+  ) => Promise<MachineLogin[]>
   getCredentialByProvider: (
     providerId: string,
     kind?: CredentialKind,

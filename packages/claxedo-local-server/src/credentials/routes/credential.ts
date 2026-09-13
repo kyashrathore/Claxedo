@@ -14,6 +14,7 @@ import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-c
 import { CredentialVerificationError, verifyCredential } from "@claxedo/server-core/credentials/operations/verify"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
 import { MACHINE_LOGIN_HARNESSES } from "@claxedo/server-core/credentials/machine-login"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
@@ -81,8 +82,10 @@ const reconnectBody = z.object({ secret: z.string().min(1) })
  * is naming a harness's bindings, of which there are a handful.
  */
 const activateBody = z.union([
-  z.object({ ids: z.array(z.string().min(1)).min(1).max(8) }),
-  z.object({ machine_login: z.object({ provider_ids: z.array(z.string().min(1)).min(1).max(8) }) }),
+  z.object({ ids: z.array(z.string().min(1)).min(1).max(8) }).strict(),
+  z.object({
+    machine_login: z.object({ provider_ids: z.array(z.string().min(1)).min(1).max(8) }).strict(),
+  }).strict(),
 ])
 
 const machineLoginQuery = z.enum(MACHINE_LOGIN_HARNESSES)
@@ -264,11 +267,22 @@ export function CredentialRoutes(
       if (!credentials.machineLogins) {
         return c.json(errorBody("credential_machine_login_unavailable", "This host does not run the harnesses"), 501)
       }
+      // Whoever is sitting at this machine, and nobody reached over a network:
+      // this answers with the operator's own address and plan, and on the local
+      // product the loopback socket is the only thing that identifies them.
+      if (!isLoopbackLocalRequest(c.req.raw)) {
+        return c.json(errorBody("loopback_required", "This computer's logins are readable from this computer only"), 403)
+      }
       const asked = c.req.query("harness")
       const harness = asked === undefined ? undefined : machineLoginQuery.safeParse(asked)
       if (harness && !harness.success) return c.json(invalidBody(harness.error), 400)
+      // A row's Check is the one caller that must not be answered from the last
+      // read: it is the button a user presses to find out what changed.
+      const fresh = c.req.query("fresh") === "1"
       try {
-        return c.json({ machine_logins: await credentials.machineLogins(harness ? [harness.data] : undefined) })
+        return c.json({
+          machine_logins: await credentials.machineLogins(harness ? [harness.data] : undefined, { fresh }),
+        })
       } catch (error) {
         const detail = failureDetail(error)
         log.warn("Machine login read failed", detail)
@@ -415,6 +429,9 @@ export function CredentialRoutes(
       if ("machine_login" in body.data) {
         if (!credentials.clearActiveCredentials) {
           return c.json(errorBody("credential_activate_unsupported", "This host does not choose between accounts"), 501)
+        }
+        if (!isLoopbackLocalRequest(c.req.raw)) {
+          return c.json(errorBody("loopback_required", "This computer's login is chosen from this computer only"), 403)
         }
         const cleared = await credentials.clearActiveCredentials(body.data.machine_login.provider_ids, org(c.req.raw))
         return c.json({ credentials: [], ...cleared })

@@ -66,13 +66,6 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       if (result.ok) await syncOpenCodeCredentials(org)
       return result
     },
-    clearActiveCredentials: async (providerIds, org) => {
-      const result = (await credentialRegistry()).clearActiveCredentials(providerIds, org)
-      if (result.cleared.length > 0) await syncOpenCodeCredentials(org)
-      return result
-    },
-    machineLogins: async (harnesses) =>
-      (await import("@claxedo/server-core/credentials/machine-login")).readMachineLogins(harnesses),
     getCredentialByProvider: async (providerId, kind, org) => (await credentialRegistry()).getCredentialByProvider(providerId, kind, org),
     getCredential: async (id, org) => (await credentialRegistry()).getCredential(id, org),
     resolveCredentialSecret: async (providerId, org) => (await credentialRegistry()).resolveSecret(providerId, undefined, org),

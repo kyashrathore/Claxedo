@@ -45,7 +45,23 @@ import {
   type SandboxSecretBrokering,
 } from "@claxedo/server-core/credentials/native-delivery"
 
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+
+const log = Log.create({ service: "credentials-broker" })
+
 export const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
+
+/**
+ * How long one vendor refusal counts towards the next.
+ *
+ * Two 401s a coffee break apart are two independent events, not a login going
+ * bad; only a run of them inside a window says the account has actually stopped
+ * working.
+ */
+const FAILURE_WINDOW_MS = 5 * 60 * 1000
+
+/** Refusals before the broker alone takes the account off the provider. */
+const FAILURES_BEFORE_YIELDING = 2
 
 /** The window a brokered request re-marks the row it spent, at most once within. */
 const USE_MARK_INTERVAL_MS = 60 * 1000
@@ -240,6 +256,9 @@ export function createLocalCredentialBroker(input: {
    * harness onto the new account. Withdrawal still stops the running turn — a
    * revoked, expired or deleted account is one the operator wants unspent now.
    */
+  /** Consecutive vendor refusals per credential, by the org its binding names. */
+  const refusals = new Map<string, { revision: number; count: number; at: number }>()
+
   const authority: BindingAuthority = {
     async resolve(id) {
       const entry = minted.get(id)
@@ -262,6 +281,16 @@ export function createLocalCredentialBroker(input: {
       return projected.has(`${identity.orgId}\n${identity.workspaceId}`)
         && sameRuntime(runtimeIdentity(identity.workspaceId, identity.orgId), identity)
     },
+    /**
+     * One vendor 401 does not take an account off its provider.
+     *
+     * Marking on the first refusal means a single mid-turn hiccup moves the
+     * mark to another account for good, and the operator never asked for that.
+     * A second refusal on the same stored value, inside the window and with no
+     * newer word from the provider in between, is the account having actually
+     * stopped working — and that is what the operator's own Check says on its
+     * first answer, because a Check is a question they chose to ask.
+     */
     async reportFailure({ bindingId, credentialId, revision, status }) {
       // A 403 from a model vendor is a permission or region refusal, not a
       // rejected credential; marking on it would withdraw a working account.
@@ -273,7 +302,30 @@ export function createLocalCredentialBroker(input: {
       // The revision the request used. A 401 for a value that has since been
       // rotated says nothing about the one stored now.
       if (!credential || credential.revision !== revision) return
-      updateCredentialHealth(credentialId, "auth_failed", now(), org)
+      const at = now()
+      const key = `${org}\n${credentialId}`
+      const seen = refusals.get(key)
+      // `>=`, not `>`: a Check and a refusal land in the same millisecond often
+      // enough, and the safe reading of a tie is the one that keeps the account.
+      const checkedSince = credential.last_validated_at !== null
+        && credential.last_validated_at !== undefined
+        && seen !== undefined
+        && credential.last_validated_at >= seen.at
+      const runs = seen !== undefined
+        && seen.revision === revision
+        && at - seen.at < FAILURE_WINDOW_MS
+        && !checkedSince
+      const count = runs ? seen.count + 1 : 1
+      if (count < FAILURES_BEFORE_YIELDING) {
+        refusals.set(key, { revision, count, at })
+        log.info("Vendor refused a brokered credential once; waiting for a second before acting", {
+          credential_id: credentialId,
+          provider_id: credential.provider_id,
+        })
+        return
+      }
+      refusals.delete(key)
+      updateCredentialHealth(credentialId, "auth_failed", at, org)
     },
   }
 

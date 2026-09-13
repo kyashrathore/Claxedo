@@ -6,6 +6,7 @@ import path from "path"
 import { randomUUID } from "crypto"
 import { CredentialRoutes } from "./credential"
 import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/default-credentials"
+import { localControlPlaneCredentials } from "../machine-credentials"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
@@ -969,10 +970,15 @@ describe("what this computer's own logins say", () => {
     await expect(all.json()).resolves.toMatchObject({
       machine_logins: [{ harness: "claude", email: "person@example.com", plan: "max" }],
     })
-    expect(machineLogins).toHaveBeenCalledWith(undefined)
+    expect(machineLogins).toHaveBeenCalledWith(undefined, { fresh: false })
 
     await app.request("http://localhost/machine-logins?harness=codex")
-    expect(machineLogins).toHaveBeenLastCalledWith(["codex"])
+    expect(machineLogins).toHaveBeenLastCalledWith(["codex"], { fresh: false })
+
+    // A row's Check says so, and that is the one read the last answer must not
+    // be reused for.
+    await app.request("http://localhost/machine-logins?harness=codex&fresh=1")
+    expect(machineLogins).toHaveBeenLastCalledWith(["codex"], { fresh: true })
   })
 
   test("a harness the catalog does not name is refused, and a host that runs none says so", async () => {
@@ -1003,7 +1009,7 @@ describe("choosing which account a provider runs on", () => {
     const backends = await import("@claxedo/server-core/credentials/backend-registry")
     backends.setBackendOverride(backends.createTestBackend())
     registry = await import("@claxedo/server-core/credentials/registry")
-    app = CredentialRoutes(defaultControlPlaneCredentials(), {})
+    app = CredentialRoutes(localControlPlaneCredentials(), {})
   })
 
   afterAll(async () => {
@@ -1111,6 +1117,48 @@ describe("choosing which account a provider runs on", () => {
       credentials: Array<{ provider_id: string }>
     }
     expect(effective.credentials.filter((row) => row.provider_id === "machine-choice")).toEqual([])
+  })
+
+  test("a body naming both an account and this computer's login is refused rather than half-obeyed", async () => {
+    const first = await account("machine-xor", "acc_first")
+
+    const response = await app.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [first.id], machine_login: { provider_ids: ["machine-xor"] } }),
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_invalid_body" } })
+    expect(registry.getCredential(first.id)?.is_active).toBe(true)
+  })
+
+  test("a host that is not the machine the harnesses live on says so rather than answering", async () => {
+    const hosted = CredentialRoutes(defaultControlPlaneCredentials(), {})
+    const seen = await account("machine-hosted", "acc_hosted")
+
+    const read = await hosted.request("http://localhost/machine-logins")
+    expect(read.status).toBe(501)
+    await expect(read.json()).resolves.toMatchObject({
+      error: { code: "credential_machine_login_unavailable" },
+    })
+
+    const chosen = await hosted.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ machine_login: { provider_ids: ["machine-hosted"] } }),
+    })
+    expect(chosen.status).toBe(501)
+    expect(registry.getCredential(seen.id)?.is_active).toBe(true)
+
+    // The same two calls against the machine's own composition are answered.
+    expect((await app.request("http://localhost/machine-logins")).status).toBe(200)
+    expect((await app.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ machine_login: { provider_ids: ["machine-hosted"] } }),
+    })).status).toBe(200)
+    expect(registry.getCredential(seen.id)?.is_active).toBe(false)
   })
 
   test("two ids competing for one provider are refused as a bad request", async () => {
