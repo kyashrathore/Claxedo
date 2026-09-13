@@ -205,6 +205,34 @@ function daytonaSecretName(workspaceId: string, secretName: string) {
   return `${workspaceSecretPrefix(workspaceId)}${encodeSecretSegment(secretName)}`
 }
 
+/**
+ * Every org secret this driver holds for the workspace, by name.
+ *
+ * This driver is their only writer and nothing on the SDK's `Sandbox` reports
+ * what is mounted, so the prefix listing is the only inventory there is — of
+ * what a reuse must reconcile against, and of what a destroy must withdraw.
+ */
+async function listWorkspaceSecrets(secrets: DaytonaSecretServiceLike, workspaceId: string) {
+  const prefix = workspaceSecretPrefix(workspaceId)
+  const held = new Map<string, DaytonaSecretLike>()
+  let cursor: string | undefined
+  do {
+    const page = await secrets.list({ name: prefix, limit: SECRET_LIST_PAGE_SIZE, ...(cursor ? { cursor } : {}) })
+    for (const secret of page.items ?? []) {
+      // `name` matches partially, so the page can carry another workspace's
+      // secrets; the prefix test is the real filter.
+      if (secret.name.startsWith(prefix)) held.set(secret.name, secret)
+    }
+    cursor = page.nextCursor ?? undefined
+  } while (cursor)
+  return held
+}
+
+async function withdrawSecret(secrets: DaytonaSecretServiceLike, secret: DaytonaSecretLike) {
+  await secrets.update(secret.id, { value: REVOKED_SECRET_VALUE })
+  await secrets.delete(secret.id)
+}
+
 /** Markers this driver's SDK has been seen to use for a retryable failure. */
 const TRANSIENT_MARKERS = ["timeout", "pending", "starting"] as const
 
@@ -359,14 +387,20 @@ export function createDaytonaSandboxDriver(
     mountedNamesChanged: boolean
   }
 
+  async function brokeredSecretService() {
+    const secrets = (await resolveClient()).secret
+    if (!secrets) {
+      throw new Error("daytona sandbox client does not support secret brokering")
+    }
+    return secrets
+  }
+
   /**
    * Bring the workspace's org secrets to exactly the requested set and return
    * the reference map to mount.
    *
-   * The org secrets carrying this workspace's prefix ARE the previously mounted
-   * set: this driver is their only writer and a withdrawal deletes them, and
-   * nothing on the SDK's `Sandbox` reports what is mounted. Enumerating them is
-   * therefore the only way to tell a rotation from a name change.
+   * The secrets the workspace holds ARE the previously mounted set, so the
+   * listing is what tells a rotation from a name change.
    *
    * `withdraw` is false only on a create whose caller named no secrets at all:
    * "say nothing" is not "remove everything", and org secrets outlive the
@@ -376,23 +410,8 @@ export function createDaytonaSandboxDriver(
     input: SandboxDriverEnsureInput,
     options: { withdraw: boolean },
   ): Promise<BrokeredSecretPlan> {
-    const client = await resolveClient()
-    const secrets = client.secret
-    if (!secrets) {
-      throw new Error("daytona sandbox client does not support secret brokering")
-    }
-    const prefix = workspaceSecretPrefix(input.workspaceId)
-    const existing = new Map<string, DaytonaSecretLike>()
-    let cursor: string | undefined
-    do {
-      const page = await secrets.list({ name: prefix, limit: SECRET_LIST_PAGE_SIZE, ...(cursor ? { cursor } : {}) })
-      for (const secret of page.items ?? []) {
-        // `name` matches partially, so the page can carry another workspace's
-        // secrets; the prefix test is the real filter.
-        if (secret.name.startsWith(prefix)) existing.set(secret.name, secret)
-      }
-      cursor = page.nextCursor ?? undefined
-    } while (cursor)
+    const secrets = await brokeredSecretService()
+    const existing = await listWorkspaceSecrets(secrets, input.workspaceId)
 
     const references: Record<string, string> = {}
     const desired = new Set<string>()
@@ -419,8 +438,7 @@ export function createDaytonaSandboxDriver(
     if (options.withdraw) {
       for (const [name, secret] of existing) {
         if (desired.has(name)) continue
-        await secrets.update(secret.id, { value: REVOKED_SECRET_VALUE })
-        await secrets.delete(secret.id)
+        await withdrawSecret(secrets, secret)
       }
     }
 
@@ -670,11 +688,27 @@ export function createDaytonaSandboxDriver(
     },
 
     async destroy(target) {
+      // Org secrets are org-scoped, not sandbox-scoped: deleting the sandbox
+      // leaves every credential brokered to it live in the organization, and
+      // `reconcileBrokeredSecrets` — the only other withdrawal — runs solely
+      // while ensuring or resuming the same workspace, which a destroyed one
+      // never reaches again. So destroy is the last place the withdrawal can
+      // happen, and a target that cannot name its workspace cannot name the
+      // secrets either: refuse rather than return with them still spendable.
+      if (!target.workspaceId) {
+        throw new Error(
+          `daytona cannot withdraw the brokered secrets of sandbox ${target.sandboxId}: the destroy target names no workspace`,
+        )
+      }
       await sandboxById(target.sandboxId)
         .then((sandbox) => sandbox.delete(operationTimeout))
         .catch((err) => {
           if (driverErrorSignals(err).status !== 404) throw err
         })
+      const secrets = await brokeredSecretService()
+      for (const secret of (await listWorkspaceSecrets(secrets, target.workspaceId)).values()) {
+        await withdrawSecret(secrets, secret)
+      }
     },
 
     async snapshot(target) {

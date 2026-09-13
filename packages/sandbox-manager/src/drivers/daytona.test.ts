@@ -252,6 +252,36 @@ describe("DaytonaSandboxDriver", () => {
     expect(existing.updateSecrets).toHaveBeenCalledWith({ [SENTINEL_ENV]: sentinelSecret })
   })
 
+  test("destroy withdraws every brokered org secret the workspace still holds", async () => {
+    const secret = secretService([
+      { id: "sec_slot", name: sentinelSecret },
+      { id: "sec_notion", name: notionSecret },
+      { id: "sec_other", name: "claxedo-ws_5F2-NOTION_5FTOKEN" },
+    ])
+    const destroyed = sandbox()
+    const daytona = client({ secret, get: vi.fn(async () => destroyed) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await driver.destroy!({ workspaceId: "ws_1", sandboxId: "sb_1", url: "sb_1", hostId: "claxedo-ws_1" })
+
+    expect(destroyed.delete).toHaveBeenCalled()
+    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked" })
+    expect(secret.delete).toHaveBeenCalledWith("sec_notion")
+    expect(secret.delete).toHaveBeenCalledWith("sec_slot")
+    expect(secret.delete).not.toHaveBeenCalledWith("sec_other")
+  })
+
+  test("destroy refuses a target that cannot name the workspace whose secrets it must withdraw", async () => {
+    const secret = secretService([{ id: "sec_notion", name: notionSecret }])
+    const daytona = client({ secret })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await expect(driver.destroy!({ sandboxId: "sb_1", url: "sb_1", hostId: "claxedo-ws_1" })).rejects.toThrow(
+      /names no workspace/,
+    )
+    expect(secret.delete).not.toHaveBeenCalled()
+  })
+
   test("secret names encode rather than collapse the characters Daytona forbids", async () => {
     const secret = secretService()
     const daytona = client({ secret })
@@ -562,7 +592,7 @@ describe("DaytonaSandboxDriver", () => {
     })
     const daytona = client({ get: vi.fn(async () => item) })
     const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
-    const target = { sandboxId: "sb_1", url: "https://r/", hostId: "claxedo-ws_1" }
+    const target = { workspaceId: "ws_1", sandboxId: "sb_1", url: "https://r/", hostId: "claxedo-ws_1" }
 
     await driver.destroy!(target)
     await driver.stop!(target)
