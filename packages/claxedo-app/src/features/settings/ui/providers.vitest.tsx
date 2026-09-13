@@ -532,8 +532,10 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
     expect(agentAction("cursor")).toBe("agent-connect")
     expect(accountIds("cursor")).toEqual([])
-    // The header is the name and the button, and says nothing else.
-    expect(agentRow("cursor").querySelector("div")?.textContent).toBe("Cursorcommon.connect")
+    // The header is the name and the one button, and says nothing else.
+    expect(agentRow("cursor").querySelector("div")?.textContent)
+      .toBe("Cursorsettings.providers.agents.addFirstAccount")
+    expect(agentRow("cursor").querySelector('[data-action="agent-add-account"]')).toBeNull()
   })
 
   test("a harness on a working stored account offers no action, and the row carries the check", async () => {
@@ -552,13 +554,13 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     ]
     mount()
     await waitFor(() => expect(accountRefused("anthropic", "cred_bad")).toBe(true))
-    expect(agentAction("anthropic")).toBe("agent-reconnect")
-    // The verdict is said once, to a screen reader; the row itself stays plain.
+    // The header says nothing about it; the failing row carries its own repair.
+    expect(agentAction("anthropic")).toBe("")
     expect(accountRow("anthropic", "cred_bad").querySelector('[data-component="agent-account-refusal"]')?.textContent)
       .toBe("settings.providers.live.authFailed")
-    expect(accountRow("anthropic", "cred_bad").querySelector('[data-action="agent-account-remove"]')).toBeNull()
+    expect(accountRow("anthropic", "cred_bad").querySelector('[data-action="agent-account-remove"]')).not.toBeNull()
 
-    agentRow("anthropic").querySelector<HTMLButtonElement>('[data-action="agent-reconnect"]')!.click()
+    accountRow("anthropic", "cred_bad").querySelector<HTMLButtonElement>('[data-action="agent-reconnect"]')!.click()
 
     expect(agentRow("anthropic").querySelector('[data-component="provider-connect-card"]')?.getAttribute("data-credential"))
       .toBe("cred_bad")
@@ -746,11 +748,11 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
     expect(agentRow("cursor").querySelector('[data-component="provider-connect-card"]')).toBeNull()
 
-    agentRow("cursor").querySelector<HTMLButtonElement>('[data-action="agent-add-account"]')!.click()
+    agentRow("cursor").querySelector<HTMLButtonElement>('[data-action="agent-connect"]')!.click()
 
     const card = agentRow("cursor").querySelector('[data-component="provider-connect-card"]')
     expect(card?.getAttribute("data-credential")).toBeNull()
-    expect(card?.textContent).toContain("settings.providers.connect.title:Cursor")
+    expect(card?.textContent).toContain("provider.connect.title.harness:Cursor")
     state.credentialCalls.length = 0
 
     within(agentRow("cursor")).getByTestId("provider-connect-save").click()

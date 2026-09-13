@@ -1,7 +1,8 @@
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
-import { type Component } from "solid-js"
+import { Suspense, type Component } from "solid-js"
 import { ProviderConnectForm } from "@/features/settings/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
+import type { ConnectContext } from "@/platform/identity/harness-catalog"
 
 /**
  * The connect form, inset in the row that opened it.
@@ -12,7 +13,8 @@ import { useLanguage } from "@/platform/i18n/provider"
  */
 export const ProviderConnectCard: Component<{
   provider: string
-  providerName: string
+  /** What is being connected, in the words the card shows. */
+  context: ConnectContext
   harness: string
   scope?: string
   credentialId?: string
@@ -20,12 +22,16 @@ export const ProviderConnectCard: Component<{
   onClose: () => void
 }> = (props) => {
   const language = useLanguage()
+  const subject = () => props.context.kind === "harness" ? props.context.harness : props.context.vendor
+  const vars = (): Record<string, string> => props.context.kind === "harness"
+    ? { harness: props.context.harness, vendor: props.context.vendor }
+    : { engine: props.context.engine, vendor: props.context.vendor }
   const title = () => props.credentialId
-    ? language.t("settings.providers.connect.reconnectTitle", { provider: props.providerName })
-    : language.t("settings.providers.connect.title", { provider: props.providerName })
+    ? language.t("settings.providers.connect.reconnectTitle", { provider: subject() })
+    : language.t(`provider.connect.title.${props.context.kind}`, vars())
   const subtitle = () => props.credentialId
     ? language.t("settings.providers.connect.reconnectSubtitle")
-    : language.t("settings.providers.connect.subtitle", { provider: props.providerName })
+    : language.t("settings.providers.connect.subtitle", { provider: subject() })
 
   return (
     <div
@@ -52,16 +58,25 @@ export const ProviderConnectCard: Component<{
         />
       </div>
       <div class="p-4">
-        <ProviderConnectForm
-          provider={props.provider}
-          harness={props.harness}
-          workspaceScope={props.scope}
-          credentialId={props.credentialId}
-          hideHeading
-          methodPicker="segmented"
-          onConnected={props.onConnected}
-          onDone={() => props.onClose()}
-        />
+        {/*
+          The form is loaded on demand, and `lazy` suspends the nearest boundary
+          while its chunk arrives. Without one here that is the app shell, so
+          opening this card swapped the whole window for the boot fallback and
+          read as a page reload.
+        */}
+        <Suspense fallback={<div class="h-24" data-component="provider-connect-loading" />}>
+          <ProviderConnectForm
+            provider={props.provider}
+            context={props.context}
+            harness={props.harness}
+            workspaceScope={props.scope}
+            credentialId={props.credentialId}
+            hideHeading
+            methodPicker="segmented"
+            onConnected={props.onConnected}
+            onDone={() => props.onClose()}
+          />
+        </Suspense>
       </div>
     </div>
   )
