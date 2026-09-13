@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { TASKS_BOUNDS } from "../contracts"
-import { presetDraft, primaryConfiguration } from "../test-support/harness"
+import { presetDraft, primaryConfiguration } from "../test-support/rows"
 import type { Parsed } from "../validation"
 import { parseCommandRequest, parsePresetListQuery, parseStartRequest, parseTaskListQuery } from "./parse"
 

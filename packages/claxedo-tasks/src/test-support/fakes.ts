@@ -1,14 +1,4 @@
-import type {
-  ConfigurationSlot,
-  SessionHandoffState,
-  ModelConfiguration,
-  PresetDraft,
-  SessionLiveness,
-  StartPreview,
-  TasksActor,
-  TasksErrorDetail,
-} from "../contracts"
-import { TasksError } from "../errors"
+import type { ConfigurationSlot, SessionHandoffState, SessionLiveness, StartPreview, TasksActor } from "../contracts"
 import type { HarnessDescriptor, TasksCapabilitiesPort, TasksHostCapabilities } from "../ports/capabilities"
 import type { TasksAuthorizationPort } from "../ports/authorization"
 import type { TasksClockPort } from "../ports/clock"
@@ -21,10 +11,11 @@ import type {
   StartPreviewCommand,
   TasksSessionBridgePort,
 } from "../ports/session-bridge"
+import { OWNER, SCOPES, primaryConfiguration } from "./rows"
 
-export const ACTOR: TasksActor = { scopeId: "scope-alpha", ownerId: "owner-alpha" }
-export const OTHER_ACTOR: TasksActor = { scopeId: "scope-alpha", ownerId: "owner-beta" }
-export const OTHER_SCOPE: TasksActor = { scopeId: "scope-beta", ownerId: "owner-alpha" }
+export const ACTOR: TasksActor = { scopeId: SCOPES.first, ownerId: OWNER }
+export const OTHER_ACTOR: TasksActor = { scopeId: SCOPES.first, ownerId: "owner-beta" }
+export const OTHER_SCOPE: TasksActor = { scopeId: SCOPES.second, ownerId: OWNER }
 
 export function fakeClock(start = 1_000): TasksClockPort & { set(value: number): void } {
   let now = start
@@ -233,41 +224,4 @@ export function fakeBridge(): FakeBridge {
       return transcriptReads
     },
   }
-}
-
-export function primaryConfiguration(overrides: Partial<ModelConfiguration> = {}): ModelConfiguration {
-  return {
-    harness: overrides.harness ?? { id: "claude", access: "native" },
-    model: overrides.model ?? { providerID: "anthropic", modelID: "claude-sonnet" },
-    effort: overrides.effort ?? null,
-  }
-}
-
-export function presetDraft(overrides: Partial<PresetDraft> = {}): PresetDraft {
-  return {
-    name: overrides.name ?? "Local preset",
-    instructions: overrides.instructions ?? "Work carefully.",
-    execution: overrides.execution ?? { placement: "local", capabilities: { mode: "inherit-local" } },
-    configurations: overrides.configurations ?? { primary: primaryConfiguration() },
-  }
-}
-
-export function slotted(slot: Exclude<ConfigurationSlot, "primary">, configuration = primaryConfiguration()): PresetDraft {
-  return presetDraft({ configurations: { primary: primaryConfiguration(), [slot]: configuration } })
-}
-
-
-/** The detail of the refusal `work` threw; an outcome that resolved is a test failure. */
-export async function refusalOf(work: () => Promise<unknown>): Promise<TasksErrorDetail> {
-  try {
-    await work()
-  } catch (cause) {
-    if (cause instanceof TasksError) return cause.detail
-    throw cause
-  }
-  throw new Error("Expected the call to be refused, but it resolved")
-}
-
-export function fieldReasons(detail: TasksErrorDetail): Record<string, string> {
-  return Object.fromEntries((detail.fields ?? []).map((field) => [field.path, field.reason]))
 }

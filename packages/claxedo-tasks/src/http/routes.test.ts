@@ -5,15 +5,15 @@ import { createTasksCommands } from "../commands"
 import { createMemoryTasksStore } from "../stores/memory"
 import {
   ACTOR,
+  type FakeAuthorization,
+  type FakeBridge,
   fakeAuthorization,
   fakeBridge,
   fakeCapabilities,
   fakeClock,
   fakeIds,
-  presetDraft,
-  type FakeAuthorization,
-  type FakeBridge,
-} from "../test-support/harness"
+} from "../test-support/fakes"
+import { presetDraft } from "../test-support/rows"
 import type { TasksStorePort } from "../ports/store"
 import { createTasksRoutes, type TasksAuthenticate } from "./routes"
 

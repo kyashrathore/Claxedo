@@ -68,12 +68,3 @@ export {
   type StartModelGroup,
   type StartModelGroupEntry,
 } from "./start"
-
-export { createMemoryTasksStore } from "./stores/memory"
-export {
-  TASKS_STORE_CONFORMANCE_SCOPE,
-  TASKS_STORE_CONFORMANCE_VERSION,
-  tasksStoreConformance,
-  type TasksStoreConformanceCase,
-  type TasksStoreConformanceFactory,
-} from "./conformance/store"

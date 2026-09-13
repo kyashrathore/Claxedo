@@ -13,8 +13,8 @@ import { createTasksCommands, type TasksCommands } from "../commands"
 import type { Task, TasksActor, TasksCommand, TasksCommandRequest, TasksCommandResponse } from "../contracts"
 import { TasksError } from "../errors"
 import type { TasksStoreOperations, TasksStorePort } from "../ports/store"
+import { OWNER, SCOPES } from "../test-support/rows"
 import {
-  CONFORMANCE_SCOPES,
   assert,
   assertEqual,
   gate,
@@ -23,7 +23,7 @@ import {
   type TasksStoreConformanceFactory,
 } from "./store"
 
-const ACTOR: TasksActor = { scopeId: CONFORMANCE_SCOPES.first, ownerId: "conformance-owner" }
+const ACTOR: TasksActor = { scopeId: SCOPES.first, ownerId: OWNER }
 const PROJECT = "project-alpha"
 
 const UNREACHED = "a task command reached a port only Start uses"

@@ -6,20 +6,17 @@ import { startConfigurationDigest } from "../start"
 import { createMemoryTasksStore } from "../stores/memory"
 import {
   ACTOR,
+  type FakeAuthorization,
+  type FakeBridge,
   OTHER_SCOPE,
   fakeAuthorization,
   fakeBridge,
   fakeCapabilities,
   fakeClock,
   fakeIds,
-  fieldReasons,
-  presetDraft,
-  primaryConfiguration,
-  refusalOf,
-  slotted,
-  type FakeAuthorization,
-  type FakeBridge,
-} from "../test-support/harness"
+} from "../test-support/fakes"
+import { fieldReasons, refusalOf } from "../test-support/refusals"
+import { presetDraft, primaryConfiguration, slotted } from "../test-support/rows"
 import type { TasksAuthorizationPort } from "../ports/authorization"
 import { TasksStoreConflict, type TasksStoreOperations, type TasksStorePort } from "../ports/store"
 import { createTasksService, type TasksService } from "./service"

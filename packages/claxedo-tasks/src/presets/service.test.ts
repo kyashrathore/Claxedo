@@ -1,17 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createMemoryTasksStore } from "../stores/memory"
-import {
-  ACTOR,
-  OTHER_ACTOR,
-  OTHER_SCOPE,
-  fakeCapabilities,
-  fakeClock,
-  fakeIds,
-  fieldReasons,
-  presetDraft,
-  primaryConfiguration,
-  refusalOf,
-} from "../test-support/harness"
+import { ACTOR, OTHER_ACTOR, OTHER_SCOPE, fakeCapabilities, fakeClock, fakeIds } from "../test-support/fakes"
+import { fieldReasons, refusalOf } from "../test-support/refusals"
+import { presetDraft, primaryConfiguration } from "../test-support/rows"
 import type { TasksCapabilitiesPort } from "../ports/capabilities"
 import type { TasksStorePort } from "../ports/store"
 import { createPresetsService, type PresetsService } from "./service"

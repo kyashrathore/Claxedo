@@ -5,14 +5,14 @@ import { createTasksRoutes } from "../http/routes"
 import { createMemoryTasksStore } from "../stores/memory"
 import {
   ACTOR,
+  type FakeAuthorization,
   fakeAuthorization,
   fakeBridge,
   fakeCapabilities,
   fakeClock,
   fakeIds,
-  presetDraft,
-  type FakeAuthorization,
-} from "../test-support/harness"
+} from "../test-support/fakes"
+import { presetDraft } from "../test-support/rows"
 import type { TasksStorePort } from "../ports/store"
 import { TasksApiError, TasksClientPayloadError, createTasksClient, type TasksClient } from "./client"
 

@@ -1,45 +1,24 @@
 import { describe, expect, test } from "bun:test"
 import { utf8ByteLength } from "@claxedo/helpers/string"
 import { TASKS_BOUNDS, type Preset, type Task } from "./contracts"
-import { primaryConfiguration, refusalOf } from "./test-support/harness"
+import { refusalOf } from "./test-support/refusals"
+import { presetRow, primaryConfiguration, taskRow } from "./test-support/rows"
 import { START_ORIGIN_PREFIX, startDigest, startFirstMessage, startInstructions, startModelGroup, startOriginId } from "./start"
 
 function preset(overrides: Partial<Preset> = {}): Preset {
-  return {
-    id: overrides.id ?? "preset-1",
-    revision: overrides.revision ?? 1,
-    scopeId: overrides.scopeId ?? "scope-alpha",
-    ownerId: overrides.ownerId ?? "owner-alpha",
-    name: overrides.name ?? "Careful",
-    instructions: overrides.instructions ?? "Read the tests before the code.",
-    execution: overrides.execution ?? { placement: "local", capabilities: { mode: "inherit-local" } },
-    configurations: overrides.configurations ?? {
+  return presetRow({
+    id: "preset-1",
+    instructions: "Read the tests before the code.",
+    configurations: {
       primary: primaryConfiguration(),
       review: primaryConfiguration({ harness: { id: "codex", access: "native" }, effort: "high" }),
     },
-    archivedAt: overrides.archivedAt ?? null,
-    createdAt: overrides.createdAt ?? 1,
-    updatedAt: overrides.updatedAt ?? 1,
-  }
+    ...overrides,
+  })
 }
 
 function task(overrides: Partial<Task> = {}): Task {
-  return {
-    id: overrides.id ?? "task-1",
-    revision: overrides.revision ?? 1,
-    scopeId: overrides.scopeId ?? "scope-alpha",
-    projectId: overrides.projectId ?? "project-alpha",
-    number: overrides.number ?? 1,
-    workspaceId: overrides.workspaceId ?? null,
-    parentTaskId: overrides.parentTaskId ?? null,
-    title: overrides.title ?? "Ship the thing",
-    description: overrides.description ?? "",
-    status: overrides.status ?? "todo",
-    childSetRevision: overrides.childSetRevision ?? 0,
-    archivedAt: overrides.archivedAt ?? null,
-    createdAt: overrides.createdAt ?? 1,
-    updatedAt: overrides.updatedAt ?? 1,
-  }
+  return taskRow({ id: "task-1", ...overrides })
 }
 
 const digestInput = {

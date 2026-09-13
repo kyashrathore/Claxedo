@@ -11,8 +11,8 @@
  * cannot be bumped twice from one revision. Each host adapter — memory here,
  * SQLite and D1 elsewhere — registers these with its own runner.
  */
-import type { ConfigurationSlot, Preset, Task, TaskSessionLink } from "../contracts"
-import { TasksStoreConflict, type TasksCommandReceipt, type TasksStorePort } from "../ports/store"
+import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
+import { OWNER, SCOPES, linkRow, presetRow, receiptRow, taskRow } from "../test-support/rows"
 
 export const TASKS_STORE_CONFORMANCE_VERSION = 6 as const
 
@@ -56,94 +56,7 @@ export type TasksStoreConformanceCase = Readonly<{
   run: () => Promise<void>
 }>
 
-export const CONFORMANCE_SCOPES = {
-  first: "conformance-scope-alpha",
-  second: "conformance-scope-beta",
-} as const
-
-const OWNER = "conformance-owner"
-
-function preset(input: Partial<Preset> & Pick<Preset, "id">): Preset {
-  return {
-    id: input.id,
-    revision: input.revision ?? 1,
-    scopeId: input.scopeId ?? CONFORMANCE_SCOPES.first,
-    ownerId: input.ownerId ?? OWNER,
-    name: input.name ?? "Conformance preset",
-    instructions: input.instructions ?? "",
-    execution: input.execution ?? { placement: "local", capabilities: { mode: "inherit-local" } },
-    configurations: input.configurations ?? {
-      primary: { harness: { id: "claude", access: "native" }, model: { providerID: "anthropic", modelID: "sonnet" }, effort: null },
-    },
-    archivedAt: input.archivedAt ?? null,
-    createdAt: input.createdAt ?? 1_000,
-    updatedAt: input.updatedAt ?? 1_000,
-  }
-}
-
-/**
- * A number of its own for every row the suite writes, because a durable
- * adapter keys `(scope, project, number)` uniquely. Keyed by task id, so a
- * case that inserts a row and then updates it under the same id carries one
- * number through both.
- */
-const taskNumbers = new Map<string, number>()
-
-function taskNumberFor(taskId: string): number {
-  const held = taskNumbers.get(taskId)
-  if (held !== undefined) return held
-  const minted = taskNumbers.size + 1
-  taskNumbers.set(taskId, minted)
-  return minted
-}
-
-function taskRow(input: Partial<Task> & Pick<Task, "id">): Task {
-  return {
-    id: input.id,
-    revision: input.revision ?? 1,
-    scopeId: input.scopeId ?? CONFORMANCE_SCOPES.first,
-    projectId: input.projectId ?? "project-alpha",
-    number: input.number ?? taskNumberFor(input.id),
-    workspaceId: input.workspaceId ?? null,
-    parentTaskId: input.parentTaskId ?? null,
-    title: input.title ?? "Conformance task",
-    description: input.description ?? "",
-    status: input.status ?? "todo",
-    childSetRevision: input.childSetRevision ?? 0,
-    archivedAt: input.archivedAt ?? null,
-    createdAt: input.createdAt ?? 1_000,
-    updatedAt: input.updatedAt ?? 1_000,
-  }
-}
-
-function linkRow(input: Partial<TaskSessionLink> & Pick<TaskSessionLink, "taskId" | "attempt">): TaskSessionLink {
-  const slot: ConfigurationSlot = input.slot ?? "primary"
-  return {
-    scopeId: input.scopeId ?? CONFORMANCE_SCOPES.first,
-    taskId: input.taskId,
-    slot,
-    attempt: input.attempt,
-    sessionRef: input.sessionRef ?? { sessionId: `session-${input.taskId}-${slot}-${input.attempt}`, workspaceId: null },
-    continuedFrom: input.continuedFrom ?? null,
-    presetId: input.presetId ?? "preset-conformance",
-    presetRevision: input.presetRevision ?? 1,
-    presetNameAtStart: input.presetNameAtStart ?? "Conformance preset",
-    configurationDigest: input.configurationDigest ?? "c".repeat(64),
-    handoffText: input.handoffText ?? null,
-    createdAt: input.createdAt ?? 2_000,
-  }
-}
-
-function receipt(input: Partial<TasksCommandReceipt> & Pick<TasksCommandReceipt, "clientRequestId" | "result">): TasksCommandReceipt {
-  return {
-    scopeId: input.scopeId ?? CONFORMANCE_SCOPES.first,
-    clientRequestId: input.clientRequestId,
-    commandName: input.commandName ?? "task.create",
-    requestHash: input.requestHash ?? "hash-a",
-    result: input.result,
-    createdAt: input.createdAt ?? 3_000,
-  }
-}
+export const CONFORMANCE_SCOPES = SCOPES
 
 const LIST = { cursor: null, limit: 50, includeArchived: false } as const
 const TASK_LIST = { ...LIST, projectId: "project-alpha", status: null, parent: "any" } as const
@@ -218,7 +131,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
       assertEqual(await store.tasks.get(CONFORMANCE_SCOPES.first, "task-written-first"), undefined, "the rolled-back unit kept its insert")
       const anchor = await store.tasks.get(CONFORMANCE_SCOPES.first, "task-anchor")
       assertEqual(anchor?.revision, 4, "the refused update moved the row it could not match")
-      assertEqual(anchor?.title, "Conformance task", "the refused update rewrote the row")
+      assertEqual(anchor?.title, "Ship the thing", "the refused update rewrote the row")
     }),
 
     conformanceCase("a zero-row update cannot leave a receipt behind", async () => {
@@ -227,7 +140,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
 
       await rollback(store, async (tx) => {
         const written = await tx.receipts.put(
-          receipt({ clientRequestId: "request-doomed", result: { type: "task.archive", task: taskRow({ id: "task-receipted" }), parent: null } }),
+          receiptRow({ clientRequestId: "request-doomed", result: { type: "task.archive", task: taskRow({ id: "task-receipted" }), parent: null } }),
         )
         assertEqual(written, true, "the receipt was refused before the update was even attempted")
         const stale = await tx.tasks.update(taskRow({ id: "task-receipted", revision: 3 }), 1)
@@ -322,14 +235,14 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
 
     conformanceCase("a receipt is written once and replays its result", async () => {
       const store = await start()
-      const committed = receipt({
+      const committed = receiptRow({
         clientRequestId: "request-once",
         requestHash: "hash-a",
         result: { type: "task.create", task: taskRow({ id: "task-committed" }), parent: null },
       })
       assertEqual(await store.receipts.put(committed), true, "the first receipt for a fresh request id was refused")
       assertEqual(
-        await store.receipts.put(receipt({ clientRequestId: "request-once", requestHash: "hash-b", result: { type: "task.archive", task: taskRow({ id: "task-other" }), parent: null } })),
+        await store.receipts.put(receiptRow({ clientRequestId: "request-once", requestHash: "hash-b", result: { type: "task.archive", task: taskRow({ id: "task-other" }), parent: null } })),
         false,
         "a second receipt claimed a request id that was already committed",
       )
@@ -373,7 +286,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
 
     conformanceCase("another scope can neither read nor mutate", async () => {
       const store = await start()
-      await store.presets.insert(preset({ id: "preset-alpha" }))
+      await store.presets.insert(presetRow({ id: "preset-alpha" }))
       await store.tasks.insert(taskRow({ id: "task-alpha", revision: 1 }))
       await store.links.insert(linkRow({ taskId: "task-alpha", attempt: 1 }))
 
@@ -405,7 +318,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
         false,
         "another scope updated a row it cannot read",
       )
-      assertEqual((await store.tasks.get(CONFORMANCE_SCOPES.first, "task-alpha"))?.title, "Conformance task", "the foreign update wrote through")
+      assertEqual((await store.tasks.get(CONFORMANCE_SCOPES.first, "task-alpha"))?.title, "Ship the thing", "the foreign update wrote through")
     }),
 
     conformanceCase("a rolled back unit leaves the unit that committed beside it intact", async () => {
@@ -470,7 +383,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
 
     conformanceCase("a preset revision assertion is a predicate of the unit that made it", async () => {
       const store = await start()
-      await store.presets.insert(preset({ id: "preset-pinned", revision: 1 }))
+      await store.presets.insert(presetRow({ id: "preset-pinned", revision: 1 }))
 
       assertEqual(
         await store.presets.assertRevision(CONFORMANCE_SCOPES.first, "preset-pinned", 1),

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { TASKS_BOUNDS, type PluginReference, type SkillReference } from "../contracts"
-import { HARNESSES, presetDraft, primaryConfiguration } from "../test-support/harness"
+import { HARNESSES } from "../test-support/fakes"
+import { presetDraft, primaryConfiguration } from "../test-support/rows"
 import { validatePresetDraft, type HarnessLookup } from "./model"
 
 const harness: HarnessLookup = (reference) =>

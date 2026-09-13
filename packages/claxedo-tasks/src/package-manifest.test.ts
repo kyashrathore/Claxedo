@@ -14,4 +14,14 @@ describe("@claxedo/tasks package manifest", () => {
     // is emitted.
     expect("sideEffects" in manifest).toBe(false)
   })
+
+  test("opens one door per responsibility, and the two test-only ones are not the production entry", () => {
+    expect(Object.keys(manifest.exports as Record<string, unknown>)).toEqual([
+      ".",
+      "./http",
+      "./client",
+      "./conformance",
+      "./test-support",
+    ])
+  })
 })

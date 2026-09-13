@@ -38,6 +38,13 @@
       "development": "./src/conformance/index.ts",
       "import": "./src/conformance/index.ts",
       "default": "./src/conformance/index.ts"
+    },
+    "./test-support": {
+      "types": "./src/test-support/index.ts",
+      "bun": "./src/test-support/index.ts",
+      "development": "./src/test-support/index.ts",
+      "import": "./src/test-support/index.ts",
+      "default": "./src/test-support/index.ts"
     }
   },
   "scripts": {

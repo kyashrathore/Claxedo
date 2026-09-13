@@ -4,16 +4,16 @@ import type { TasksCommand } from "./contracts"
 import { createMemoryTasksStore } from "./stores/memory"
 import {
   ACTOR,
+  type FakeAuthorization,
   OTHER_ACTOR,
   fakeAuthorization,
   fakeBridge,
   fakeCapabilities,
   fakeClock,
   fakeIds,
-  presetDraft,
-  refusalOf,
-  type FakeAuthorization,
-} from "./test-support/harness"
+} from "./test-support/fakes"
+import { refusalOf } from "./test-support/refusals"
+import { presetDraft } from "./test-support/rows"
 import type { TasksStorePort } from "./ports/store"
 
 const PROJECT = "project-alpha"

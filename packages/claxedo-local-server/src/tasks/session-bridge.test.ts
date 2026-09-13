@@ -10,9 +10,9 @@ import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxe
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { putSessionMeta, sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { createMemoryTasksStore } from "@claxedo/tasks/test-support"
 import {
   TasksError,
-  createMemoryTasksStore,
   createTasksService,
   startConfigurationDigest,
   type Preset,
