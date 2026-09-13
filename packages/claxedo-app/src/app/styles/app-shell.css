@@ -40,8 +40,9 @@
   z-index: 300 !important;
 }
 
-/* Settings selects are portaled to <body>, so they need to clear the elevated dialog layer. */
-.ui-select-content[data-trigger-style="settings"] {
+/* A select's list is portaled to <body>, so it has to clear the elevated dialog
+   layer above — a select inside a dialog otherwise opens behind the dialog. */
+.ui-select-content {
   z-index: 320;
 }
 
