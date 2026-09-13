@@ -21,7 +21,8 @@ import type {
   AgentMessagePage,
   AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { AgentMessagePageError, declaresAdapterCapability, hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
+import { AgentMessagePageError, hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
+import { admitSessionInstructions } from "@claxedo/agent-sdk-runtime"
 import {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
   isAgentRuntimeTurnConflictError,
@@ -63,8 +64,6 @@ import {
   normalizeSessionCreateConfig,
   normalizeSessionCreateBody,
   sessionCreateGroup,
-  sessionInstructionsByteLength,
-  SESSION_INSTRUCTIONS_MAX_BYTES,
 } from "../session-config"
 import { MAX_ACTIVE_CHILDREN_PER_PARENT, type ChildSessionHost } from "./session-children"
 import {
@@ -1312,12 +1311,6 @@ export function createSessionRoutes(opts: Opts) {
       const body = normalizeSessionCreateBody(wire)
       const guarded = await sessionOperationGuard(opts, c, "", "session_create")
       if (guarded) return guarded
-      if (body.instructions && sessionInstructionsByteLength(body.instructions) > SESSION_INSTRUCTIONS_MAX_BYTES) {
-        return c.json(errorBody(
-          "session_instructions_too_large",
-          `Session instructions must be at most ${SESSION_INSTRUCTIONS_MAX_BYTES} UTF-8 bytes`,
-        ), 400)
-      }
       const group = sessionCreateGroup(wire)
       if (group && "field" in group) {
         return c.json(errorBody("session_group_invalid", `${group.field}: ${group.message}`), 400)
@@ -1365,11 +1358,15 @@ export function createSessionRoutes(opts: Opts) {
         })
         try {
           const adapter = await opts.resolveAdapter(c)
-          if (body.instructions && !declaresAdapterCapability(adapter, "session-instructions")) {
-            return c.json(errorBody(
-              "session_instructions_unsupported",
-              "This harness has no instruction channel for session instructions",
-            ), 501)
+          const refusal = admitSessionInstructions({
+            ...(opts.requestedSessionHarness?.(c) ? { harness: opts.requestedSessionHarness(c)?.id } : {}),
+            channel: adapter.instructionChannel,
+            instructions: body.instructions,
+          })
+          if (refusal) {
+            return refusal.reason === "no_instruction_channel"
+              ? c.json(errorBody("session_instructions_unsupported", refusal.message), 501)
+              : c.json(errorBody("session_instructions_too_large", refusal.message), 400)
           }
           if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
             adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)

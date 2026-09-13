@@ -18,9 +18,8 @@ import { rec as record, str } from "./json-value"
  * create resolve to the same session; `permissionCeiling` caps the session's
  * permission mode at a level, and `permissionMode` names the mode to start in.
  *
- * `instructions` is retained on the session and reaches the harness through its
- * instruction channel on every turn, so it is never re-sent by a caller and
- * never arrives as user text.
+ * `instructions` is retained on the session so a caller never re-sends it; how
+ * it reaches the harness is the harness's own `instructionChannel`.
  *
  * `group` is retained too, but never reaches the harness: it is the
  * machine-readable form of the model group, read back by whoever later resolves
@@ -37,13 +36,6 @@ export type SessionCreateBody = {
   permissionMode?: string
   instructions?: string
   group?: SessionModelGroup
-}
-
-/** UTF-8 bytes. The block is stored whole and prepended to every turn. */
-export const SESSION_INSTRUCTIONS_MAX_BYTES = 64 * 1024
-
-export function sessionInstructionsByteLength(instructions: string): number {
-  return new TextEncoder().encode(instructions).length
 }
 
 export function normalizeSessionCreateBody(input: unknown): SessionCreateBody {

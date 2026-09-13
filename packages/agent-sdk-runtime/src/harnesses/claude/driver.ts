@@ -173,6 +173,7 @@ export function createClaudeSdkDriver(
 
 class ClaudeSdkDriver implements SdkRuntimeDriver {
   readonly type = "claude" as const
+  readonly instructionChannel = "turn-system-prompt" as const
   readonly interactions = { permissions: true, questions: true } as const
   private readonly goalStore = createNativeGoalStore()
   readonly nativeGoal: NonNullable<SdkRuntimeDriver["nativeGoal"]> = {

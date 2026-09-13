@@ -32,6 +32,7 @@ const capabilities: HarnessConnectionCapabilities = {
 
 function adapter(): AgentHarnessAdapter {
   return {
+    instructionChannel: "none",
     async *executeTurn() {},
     async createSession() { return { id: "session-1" } },
     async getSession(binding: AgentExecutionBinding) { return { id: binding.sessionId } },
@@ -42,7 +43,7 @@ function adapter(): AgentHarnessAdapter {
       return { harness: update.harness ?? { id: "fixture-primary", access: "connection" }, variant: null, agent: null }
     },
     async getMessages() { return [] },
-    readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, harness: "fixture-primary" } },
+    readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, instructionChannel: "none", harness: "fixture-primary" } },
     dispose() {},
   }
 }
@@ -209,6 +210,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
         const token = resolved.config.token
         return {
           sessionConfigOwner: "runtime" as const,
+          instructionChannel: "none" as const,
           async *executeTurn() {},
           async createSession(_directory, _title, id) {
             createdWith.push(token)
@@ -220,7 +222,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
           async getSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
           async updateSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
           async getMessages() { return [] },
-          readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, harness: "fixture-primary" } },
+          readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, instructionChannel: "none", harness: "fixture-primary" } },
           dispose() { disposed.push(token) },
         }
       },

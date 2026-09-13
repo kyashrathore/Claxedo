@@ -111,6 +111,8 @@ export function codexPluginLaunch(launch: unknown): CodexPluginLaunch | undefine
 
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
+  // `thread/start` keeps `developerInstructions` for the life of the thread.
+  readonly instructionChannel = "thread-start" as const
   readonly interactions = { permissions: true, questions: true } as const
   private readonly auth = new CodexProcessAuth((proc) => this.process === proc)
   private process: CodexAppServerProcess | null = null

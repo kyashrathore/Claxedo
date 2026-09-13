@@ -5,7 +5,12 @@ import type {
   PromptInput,
   SessionConfig,
 } from "../../index"
-import type { AgentQuestionAnswer, AgentTodo, HarnessEffortLevels } from "@claxedo/agent-runtime-contract"
+import type {
+  AgentQuestionAnswer,
+  AgentTodo,
+  HarnessEffortLevels,
+  HarnessInstructionChannel,
+} from "@claxedo/agent-runtime-contract"
 import type {
   AgentGoalResource,
   AgentHarnessAdapterHealth,
@@ -123,6 +128,13 @@ export type SdkRuntimeTurnInput = {
 
 export type SdkRuntimeDriver = {
   readonly type: SdkRuntimeRunnerType
+  /**
+   * Where this driver puts a session's standing instruction block. The adapter
+   * hands the block to `createAgentSession` only for `thread-start`, and the
+   * turn composer leaves it out of `SdkRuntimeTurnInput.input.system` for the
+   * same channel, so exactly one of the two deliveries carries it.
+   */
+  readonly instructionChannel: HarnessInstructionChannel
   /**
    * Which interactive requests this driver actually raises through the host's
    * `pendingPermissions` / `pendingQuestions` maps. The adapter advertises

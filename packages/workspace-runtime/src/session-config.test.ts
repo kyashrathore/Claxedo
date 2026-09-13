@@ -3,8 +3,6 @@ import {
   normalizeSessionConfigUpdate,
   normalizeSessionCreateBody,
   sessionCreateGroup,
-  sessionInstructionsByteLength,
-  SESSION_INSTRUCTIONS_MAX_BYTES,
 } from "./session-config"
 
 describe("normalizeSessionCreateBody", () => {
@@ -36,17 +34,6 @@ describe("normalizeSessionCreateBody", () => {
     expect(normalizeSessionCreateBody({ instructions: 12 })).toEqual({})
     expect(normalizeSessionCreateBody({ instructions: "" })).toEqual({})
     expect(normalizeSessionCreateBody(undefined)).toEqual({})
-  })
-})
-
-describe("sessionInstructionsByteLength", () => {
-  test("measures UTF-8 bytes, not code units, against the create cap", () => {
-    expect(sessionInstructionsByteLength("abc")).toBe(3)
-    expect(sessionInstructionsByteLength("é")).toBe(2)
-    expect(sessionInstructionsByteLength("🙂")).toBe(4)
-    expect(sessionInstructionsByteLength("🙂".repeat(SESSION_INSTRUCTIONS_MAX_BYTES / 4)))
-      .toBe(SESSION_INSTRUCTIONS_MAX_BYTES)
-    expect(SESSION_INSTRUCTIONS_MAX_BYTES).toBe(65_536)
   })
 })
 

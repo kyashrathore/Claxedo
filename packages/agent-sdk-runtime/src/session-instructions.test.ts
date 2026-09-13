@@ -2,10 +2,12 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { runtimeSnapshot } from "@claxedo/agent-event-runtime"
+import type { HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
 import { createAgentRuntime, type AgentHarnessFactory } from "./index"
-import type { AgentHarnessAdapter, AgentSessionCreateOptions } from "./adapters"
+import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "./harnesses/shared/sdk-runtime-adapter"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
-import { messagePartUpdated } from "./compat-events"
+import { admitSessionInstructions, SESSION_INSTRUCTIONS_MAX_BYTES } from "./session-instructions"
 
 const roots: string[] = []
 
@@ -19,96 +21,148 @@ function tempRoot() {
   return root
 }
 
-function harness(input: {
-  instructionChannel: boolean
-  creates?: AgentSessionCreateOptions[]
-  turnSystems?: Array<string | undefined>
-}): AgentHarnessFactory {
-  const adapter: AgentHarnessAdapter = {
-    ...(input.instructionChannel ? { adapterCapabilities: ["session-instructions"] as const } : {}),
-    sessionConfigOwner: "runtime",
-    async getSession(binding) { return { id: binding.sessionId } },
-    async createSession(_directory, _title, id = "ses_instructions", options = {}) {
-      input.creates?.push(options)
-      return { id }
-    },
-    async updateSession() { return null },
-    async getSessionConfig() { return { harness: { id: "pi" as const, access: "native" as const }, variant: null, agent: null } },
-    async updateSessionConfig() { return { harness: { id: "pi" as const, access: "native" as const }, variant: null, agent: null } },
-    async deleteSession() {},
-    readHarnessCapabilities() { return {} as never },
-    async *executeTurn(binding, prompt) {
-      input.turnSystems?.push(prompt.system)
-      yield messagePartUpdated({
-        id: `${binding.sessionId}-part`,
-        sessionID: binding.sessionId,
-        messageID: prompt.assistantMessageId,
-        type: "text",
-        text: "ok",
-      })
-      yield { type: "finish", sessionId: binding.sessionId }
-    },
-    async getMessages() { return [] },
-    dispose() {},
-  }
-  return { id: "pi", access: "native", create: () => adapter } as unknown as AgentHarnessFactory
+type Deliveries = {
+  /** The `system` each `createAgentSession` was given, in order. */
+  creates: Array<string | undefined>
+  /** The `system` each turn was given, in order. */
+  turns: Array<string | undefined>
 }
 
+/**
+ * A driver that records only where the block arrived. Exercising the real
+ * `SdkRuntimeAdapter` over it is the point: a faked adapter would answer for
+ * the create path and the turn path separately, which is the seam the channel
+ * declaration exists to hold together.
+ */
+function recordingDriver(channel: HarnessInstructionChannel, deliveries: Deliveries): SdkRuntimeDriver {
+  return {
+    type: "pi",
+    instructionChannel: channel,
+    interactions: { permissions: false, questions: false },
+    setAuth() {},
+    applyConfig() {},
+    createAgentSession: async (input) => {
+      deliveries.creates.push(input.system)
+      return { id: "thread-1" }
+    },
+    deleteAgentSession() {},
+    createRuntime() {
+      const snapshot = () => runtimeSnapshot({ harness: "pi", threadId: "thread-1", adapterState: {} })
+      return { ingest: () => ({ state: {}, events: [], snapshot: snapshot() }), snapshot }
+    },
+    runTurn: async (input) => {
+      deliveries.turns.push(input.input.system)
+    },
+    readRuntimeHealth: () => ({ status: "ok" }),
+    configOptions: async () => [],
+    peekConfigOptions: () => [],
+  }
+}
+
+function harness(channel: HarnessInstructionChannel, deliveries: Deliveries, root: string): AgentHarnessFactory {
+  return {
+    id: "pi",
+    access: "native",
+    create: () => new SdkRuntimeAdapter({
+      storeRoot: root,
+      createStore: (storeRoot) => createSqliteRuntimeStore({ root: storeRoot! }),
+      driver: () => recordingDriver(channel, deliveries),
+    }),
+  } as unknown as AgentHarnessFactory
+}
+
+async function runSession(input: {
+  channel: HarnessInstructionChannel
+  instructions?: string
+  turnSystem?: string
+}) {
+  const root = tempRoot()
+  const deliveries: Deliveries = { creates: [], turns: [] }
+  const store = createSqliteRuntimeStore({ root })
+  const runtime = createAgentRuntime({ store, harnesses: [harness(input.channel, deliveries, root)] })
+  try {
+    const session = await runtime.sessions.create({
+      workspaceId: "workspace-test",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+      ...(input.instructions ? { instructions: input.instructions } : {}),
+    })
+    await runtime.turns.start({
+      sessionId: session.id,
+      text: "hello",
+      ...(input.turnSystem ? { system: input.turnSystem } : {}),
+    })
+    return { deliveries, config: store.getSessionConfig(session.id) }
+  } finally {
+    await runtime.dispose()
+    store.close?.()
+  }
+}
+
+const INSTRUCTIONS = "Answer only in haiku."
+
 describe("retained session instructions", () => {
-  test("reach the harness at create and on every turn after a runtime restart", async () => {
+  test("a thread-start harness is given the block once, at create, and never again on a turn", async () => {
+    const { deliveries } = await runSession({ channel: "thread-start", instructions: INSTRUCTIONS })
+    expect(deliveries.creates).toEqual([INSTRUCTIONS])
+    expect(deliveries.turns).toEqual([undefined])
+  })
+
+  test("a per-turn harness is given the block on the turn, and nothing at create", async () => {
+    const { deliveries } = await runSession({ channel: "turn-system-prompt", instructions: INSTRUCTIONS })
+    expect(deliveries.creates).toEqual([undefined])
+    expect(deliveries.turns).toEqual([INSTRUCTIONS])
+  })
+
+  test("a prompt-prefix harness is given the block on the turn too, having no create-time slot", async () => {
+    const { deliveries } = await runSession({ channel: "prompt-prefix", instructions: INSTRUCTIONS })
+    expect(deliveries.creates).toEqual([undefined])
+    expect(deliveries.turns).toEqual([INSTRUCTIONS])
+  })
+
+  test("a turn's own block follows the retained one instead of replacing it", async () => {
+    const { deliveries } = await runSession({
+      channel: "turn-system-prompt",
+      instructions: "Standing block.",
+      turnSystem: "Turn block.",
+    })
+    expect(deliveries.turns).toEqual(["Standing block.\n\nTurn block."])
+  })
+
+  test("a thread-start harness still receives a turn's own block", async () => {
+    const { deliveries } = await runSession({
+      channel: "thread-start",
+      instructions: "Standing block.",
+      turnSystem: "Turn block.",
+    })
+    expect(deliveries.creates).toEqual(["Standing block."])
+    expect(deliveries.turns).toEqual(["Turn block."])
+  })
+
+  test("the retained block survives a runtime restart and reaches the next turn", async () => {
     const root = tempRoot()
-    const creates: AgentSessionCreateOptions[] = []
-    const turnSystems: Array<string | undefined> = []
-    const instructions = "Answer only in haiku."
+    const deliveries: Deliveries = { creates: [], turns: [] }
     let store = createSqliteRuntimeStore({ root })
-    let runtime = createAgentRuntime({ store, harnesses: [harness({ instructionChannel: true, creates, turnSystems })] })
+    let runtime = createAgentRuntime({ store, harnesses: [harness("turn-system-prompt", deliveries, root)] })
     let sessionId: string
     try {
-      const session = await runtime.sessions.create({
+      sessionId = (await runtime.sessions.create({
         workspaceId: "workspace-test",
         directory: "/repo",
         harness: { id: "pi", access: "native" },
-        instructions,
-      })
-      sessionId = session.id
-      expect(creates).toEqual([{ instructions }])
-      expect(store.getSessionConfig(sessionId)).toMatchObject({ instructions })
+        instructions: INSTRUCTIONS,
+      })).id
     } finally {
       await runtime.dispose()
       store.close?.()
     }
 
     store = createSqliteRuntimeStore({ root })
-    runtime = createAgentRuntime({ store, harnesses: [harness({ instructionChannel: true, creates, turnSystems })] })
+    runtime = createAgentRuntime({ store, harnesses: [harness("turn-system-prompt", deliveries, root)] })
     try {
-      expect(store.getSessionConfig(sessionId!)).toMatchObject({ instructions })
-      await runtime.turns.start({ sessionId: sessionId!, text: "hello" })
-      for (let waited = 0; waited < 50 && turnSystems.length === 0; waited += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-      expect(turnSystems).toEqual([instructions])
-    } finally {
-      await runtime.dispose()
-      store.close?.()
-    }
-  })
-
-  test("a turn's own instruction block follows the retained one instead of replacing it", async () => {
-    const turnSystems: Array<string | undefined> = []
-    const store = createSqliteRuntimeStore({ root: tempRoot() })
-    const runtime = createAgentRuntime({ store, harnesses: [harness({ instructionChannel: true, turnSystems })] })
-    try {
-      const session = await runtime.sessions.create({
-        workspaceId: "workspace-test",
-        directory: "/repo",
-        harness: { id: "pi", access: "native" },
-        instructions: "Standing block.",
-      })
-      await runtime.turns.start({ sessionId: session.id, text: "hello", system: "Turn block." })
-      for (let waited = 0; waited < 50 && turnSystems.length === 0; waited += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 10))
-      }
-      expect(turnSystems).toEqual(["Standing block.\n\nTurn block."])
+      expect(store.getSessionConfig(sessionId)).toMatchObject({ instructions: INSTRUCTIONS })
+      await runtime.turns.start({ sessionId, text: "hello" })
+      expect(deliveries.turns).toEqual([INSTRUCTIONS])
     } finally {
       await runtime.dispose()
       store.close?.()
@@ -116,20 +170,29 @@ describe("retained session instructions", () => {
   })
 
   test("a harness with no instruction channel refuses the create instead of dropping the block", async () => {
-    const creates: AgentSessionCreateOptions[] = []
-    const store = createSqliteRuntimeStore({ root: tempRoot() })
-    const runtime = createAgentRuntime({ store, harnesses: [harness({ instructionChannel: false, creates })] })
-    try {
-      await expect(runtime.sessions.create({
-        workspaceId: "workspace-test",
-        directory: "/repo",
-        harness: { id: "pi", access: "native" },
-        instructions: "Answer only in haiku.",
-      })).rejects.toMatchObject({ detail: { code: "unsupported_operation", operation: "session_instructions" } })
-      expect(creates).toEqual([])
-    } finally {
-      await runtime.dispose()
-      store.close?.()
+    await expect(runSession({ channel: "none", instructions: INSTRUCTIONS }))
+      .rejects.toMatchObject({ detail: { code: "unsupported_operation", operation: "session_instructions" } })
+  })
+})
+
+describe("admitSessionInstructions", () => {
+  test("admits an absent block on every channel, including one with no channel at all", () => {
+    for (const channel of ["turn-system-prompt", "thread-start", "prompt-prefix", "none"] as const) {
+      expect(admitSessionInstructions({ channel, instructions: undefined })).toBeUndefined()
     }
+  })
+
+  test("refuses by byte count, not character count", () => {
+    const atCap = "🙂".repeat(SESSION_INSTRUCTIONS_MAX_BYTES / 4)
+    expect(admitSessionInstructions({ channel: "thread-start", instructions: atCap })).toBeUndefined()
+    expect(admitSessionInstructions({ channel: "thread-start", instructions: `${atCap}a` }))
+      .toMatchObject({ reason: "too_large" })
+  })
+
+  test("names the harness it was asked for when the caller knows it", () => {
+    expect(admitSessionInstructions({ harness: "opencode", channel: "none", instructions: "x" })?.message)
+      .toBe("Harness opencode has no instruction channel for session instructions")
+    expect(admitSessionInstructions({ channel: "none", instructions: "x" })?.message)
+      .toBe("This harness has no instruction channel for session instructions")
   })
 })

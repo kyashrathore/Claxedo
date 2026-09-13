@@ -466,6 +466,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
       subagents: false,
       goals: false,
       effortLevels: NO_HARNESS_EFFORT,
+      instructionChannel: "none",
     })
     expect(adapter).not.toHaveProperty("listSessions")
     expect(adapter).not.toHaveProperty("discoverSessions")

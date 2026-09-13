@@ -104,6 +104,7 @@ function runtimeApp(state: Workspace) {
     sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: () => {},
     resolveAdapter: () => ({
+      instructionChannel: "none" as const,
       getSession: async (binding) => find(binding.sessionId),
       createSession: async (_directory, title, id) => {
         const created: FixtureSession = { id: id ?? `ses_${state.sessions.length + 1}`, title: title ?? "", harness: "claude" }
@@ -143,6 +144,7 @@ function runtimeApp(state: Workspace) {
         subagents: true,
         goals: false,
         effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "none",
       }),
       executeTurn: (binding, input) => {
         const text = input.parts.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("")

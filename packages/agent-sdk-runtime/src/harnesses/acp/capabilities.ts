@@ -33,5 +33,6 @@ export function acpHarnessCapabilities(input: {
     subagents: false,
     goals: input.goals,
     effortLevels: NO_HARNESS_EFFORT,
+    instructionChannel: "prompt-prefix",
   })
 }

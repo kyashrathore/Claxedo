@@ -29,6 +29,8 @@ type UpstreamMessage = Record<string, unknown> & {
 
 export class OpenCodeServerAdapter implements AgentHarnessAdapter {
   readonly sessionConfigOwner = "runtime" as const
+  /** An external OpenCode server takes no standing instruction block. */
+  readonly instructionChannel = "none" as const
   private readonly streams = new Map<string, AbortController>()
   private compatibility: Promise<void> | undefined
   private disposed = false
@@ -46,6 +48,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
       ...OPENCODE_SERVER_CONNECTION_CAPABILITIES,
       goals: false,
       effortLevels: NO_HARNESS_EFFORT,
+      instructionChannel: this.instructionChannel,
     })
   }
 

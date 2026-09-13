@@ -1,8 +1,13 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
-import type { AgentCapabilities, HarnessEffortLevels, SessionHarnessId } from "@claxedo/agent-runtime-contract"
+import type {
+  AgentCapabilities,
+  HarnessEffortLevels,
+  HarnessInstructionChannel,
+  SessionHarnessId,
+} from "@claxedo/agent-runtime-contract"
 
 export type HarnessCapabilityTarget = SessionHarnessId
-export type AdapterCapability = "runtime-config" | "session-instructions"
+export type AdapterCapability = "runtime-config"
 
 export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSelection"> &
   Partial<Pick<AgentCapabilities, "modelSelection">> & {
@@ -27,6 +32,12 @@ export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSele
    * so an adapter that forgot one would silently drop the effort it was given.
    */
   effortLevels: HarnessEffortLevels
+  /**
+   * How this harness takes a session's standing instruction block. A host that
+   * composes one decides from this whether it arrives as instruction or at the
+   * head of the user's own prompt text.
+   */
+  instructionChannel: HarnessInstructionChannel
   }
 
 export type HarnessCapabilityContext = {
@@ -110,16 +121,11 @@ export type RuntimeConfigurableAdapter = AdapterCapabilityProvider & {
   setAuth(keys: Record<string, string | undefined>): void
 }
 
-export function declaresAdapterCapability(adapter: unknown, capability: AdapterCapability): boolean {
+export function hasAdapterCapability(
+  adapter: unknown,
+  capability: AdapterCapability,
+): adapter is RuntimeConfigurableAdapter {
   if (!isRecord(adapter)) return false
   const list = adapter.adapterCapabilities
   return Array.isArray(list) && list.includes(capability)
-}
-
-/** Only `runtime-config` implies the setter pair, so only it narrows. */
-export function hasAdapterCapability(
-  adapter: unknown,
-  capability: "runtime-config",
-): adapter is RuntimeConfigurableAdapter {
-  return declaresAdapterCapability(adapter, capability)
 }

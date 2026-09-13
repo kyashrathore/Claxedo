@@ -45,7 +45,6 @@ export {
   GoalCapabilityError,
   goalActionAvailable,
   goalCapabilities,
-  declaresAdapterCapability,
   hasAdapterCapability,
   requireGoalAction,
 } from "./capabilities"

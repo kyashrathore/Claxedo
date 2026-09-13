@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { NO_HARNESS_EFFORT } from "@claxedo/agent-runtime-contract"
+import { NO_HARNESS_EFFORT, type HarnessInstructionChannel } from "@claxedo/agent-runtime-contract"
 import { createSessionRoutes, type RuntimeSessionBusEvent, type SessionLifecycleEvent } from "./session-core"
 import type {
   AgentHarnessFactory,
@@ -39,6 +39,7 @@ function adapter(input: {
   ) => Promise<AgentMessagePage>
 } = {}): AgentHarnessAdapter {
   return {
+    instructionChannel: "turn-system-prompt",
     getSession: async (binding) => {
       input.onDirectory?.(binding.directory)
       return { id: binding.sessionId, title: "Hybrid", time: { created: 1, updated: 1 } }
@@ -78,6 +79,7 @@ function adapter(input: {
         configOptions: false,
         subagents: true,
         effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "turn-system-prompt",
         goals: false,
       }
     },
@@ -1557,6 +1559,7 @@ describe("createSessionRoutes directory-less sessions", () => {
           configOptions: false,
           subagents: false,
           effortLevels: NO_HARNESS_EFFORT,
+          instructionChannel: "turn-system-prompt",
         }),
         shell: undefined,
       }) as unknown as AgentHarnessAdapter,
@@ -1659,6 +1662,7 @@ describe("createSessionRoutes directory-less sessions", () => {
           configOptions: false,
           subagents: false,
           effortLevels: NO_HARNESS_EFFORT,
+          instructionChannel: "turn-system-prompt",
         }),
         summarize: undefined,
       }) as unknown as AgentHarnessAdapter,
@@ -2013,14 +2017,14 @@ test("late approval is not found without resolving a retired harness", async () 
 })
 
 describe("createSessionRoutes session instructions", () => {
-  function instructionRoutes(input: { instructionChannel: boolean }) {
+  function instructionRoutes(input: { instructionChannel: HarnessInstructionChannel }) {
     const creates: Array<{ id?: string; options?: { instructions?: string } }> = []
     const turns: Array<string | undefined> = []
     let stored: string | undefined
     const configRead = { fails: false }
     const fixture: AgentHarnessAdapter = {
       ...adapter(),
-      ...(input.instructionChannel ? { adapterCapabilities: ["session-instructions"] as const } : {}),
+      instructionChannel: input.instructionChannel,
       getSession: async () => null,
       createSession: async (_directory, _title, id, options) => {
         creates.push({ id, options })
@@ -2135,7 +2139,7 @@ describe("createSessionRoutes session instructions", () => {
   }
 
   test("carries the block to session creation and reads it back on the config", async () => {
-    const { app, creates } = instructionRoutes({ instructionChannel: true })
+    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     const created = await create(app, { id: "ses_instructions", instructions: "Answer only in haiku." })
     expect(created.status).toBe(201)
     expect(creates).toEqual([{ id: "ses_instructions", options: { instructions: "Answer only in haiku." } }])
@@ -2145,13 +2149,13 @@ describe("createSessionRoutes session instructions", () => {
   })
 
   test("leaves the create options empty when no block was sent", async () => {
-    const { app, creates } = instructionRoutes({ instructionChannel: true })
+    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     expect((await create(app, { id: "ses_plain" })).status).toBe(201)
     expect(creates).toEqual([{ id: "ses_plain", options: {} }])
   })
 
   test("refuses a block over the cap before the harness is asked to create anything", async () => {
-    const { app, creates } = instructionRoutes({ instructionChannel: true })
+    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     const response = await create(app, { id: "ses_big", instructions: "x".repeat(65_537) })
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: "session_instructions_too_large" } })
@@ -2159,14 +2163,14 @@ describe("createSessionRoutes session instructions", () => {
   })
 
   test("measures the cap in UTF-8 bytes rather than code units", async () => {
-    const { app, creates } = instructionRoutes({ instructionChannel: true })
+    const { app, creates } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     const response = await create(app, { id: "ses_utf8", instructions: "🙂".repeat(16_385) })
     expect(response.status).toBe(400)
     expect(creates).toEqual([])
   })
 
   test("refuses a harness with no instruction channel instead of dropping the block", async () => {
-    const { app, creates } = instructionRoutes({ instructionChannel: false })
+    const { app, creates } = instructionRoutes({ instructionChannel: "none" })
     const response = await create(app, { id: "ses_unsupported", instructions: "Answer only in haiku." })
     expect(response.status).toBe(501)
     expect(await response.json()).toMatchObject({ error: { code: "session_instructions_unsupported" } })
@@ -2177,7 +2181,7 @@ describe("createSessionRoutes session instructions", () => {
   // the config read entirely, which is the door the retained block arrives
   // through.
   test("a later turn carries the retained block even when the caller named agent, model and variant", async () => {
-    const { app, turns } = instructionRoutes({ instructionChannel: true })
+    const { app, turns } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     expect((await create(app, { id: "ses_resume", instructions: "Answer only in haiku." })).status).toBe(201)
 
     expect((await promptTurn(app, "ses_resume")).status).toBe(200)
@@ -2185,7 +2189,7 @@ describe("createSessionRoutes session instructions", () => {
   })
 
   test("a session that retained nothing still prompts, with no instruction channel used", async () => {
-    const { app, turns } = instructionRoutes({ instructionChannel: true })
+    const { app, turns } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     expect((await create(app, { id: "ses_plain" })).status).toBe(201)
 
     expect((await promptTurn(app, "ses_plain")).status).toBe(200)
@@ -2193,7 +2197,7 @@ describe("createSessionRoutes session instructions", () => {
   })
 
   test("refuses the turn when the config read fails, without asking the harness to run it", async () => {
-    const { app, turns, configRead } = instructionRoutes({ instructionChannel: true })
+    const { app, turns, configRead } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     expect((await create(app, { id: "ses_unreadable", instructions: "Answer only in haiku." })).status).toBe(201)
 
     configRead.fails = true
@@ -2205,7 +2209,7 @@ describe("createSessionRoutes session instructions", () => {
   // as handed off on it — so a turn refused before anything ran has to be the
   // response, and the refused message id has to submit again.
   test("answers the config-read refusal, and the same id then runs once with the retained block", async () => {
-    const { app, turns, configRead, events, settled } = instructionRoutes({ instructionChannel: true })
+    const { app, turns, configRead, events, settled } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     expect((await create(app, { id: "ses_recover", instructions: "Answer only in haiku." })).status).toBe(201)
 
     configRead.fails = true
@@ -2226,7 +2230,7 @@ describe("createSessionRoutes session instructions", () => {
   })
 
   test("answers 204 while the model is still running the turn", async () => {
-    const { app, turns, entered, model, settled } = instructionRoutes({ instructionChannel: true })
+    const { app, turns, entered, model, settled } = instructionRoutes({ instructionChannel: "turn-system-prompt" })
     expect((await create(app, { id: "ses_slow" })).status).toBe(201)
 
     model.hold()
@@ -2251,7 +2255,7 @@ describe("createSessionRoutes session model group", () => {
     let stored: SessionConfig["group"]
     const fixture: AgentHarnessAdapter = {
       ...adapter(),
-      adapterCapabilities: ["session-instructions"] as const,
+      instructionChannel: "turn-system-prompt",
       getSession: async () => null,
       createSession: async (_directory, _title, id, options) => {
         creates.push({ id, options })
@@ -2355,6 +2359,7 @@ describe("GET /session/capabilities effort levels", () => {
         subagents: true,
         goals: false,
         effortLevels,
+        instructionChannel: "turn-system-prompt",
       }),
     }
     return createSessionRoutes({

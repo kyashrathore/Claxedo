@@ -32,7 +32,7 @@ function fixture(input: { parentMode?: string } = {}) {
   const config: SessionConfig = { harness: { id: "codex", access: "native" }, variant: null, agent: null }
   let counter = 0
   const adapter: AgentHarnessAdapter = {
-    adapterCapabilities: ["session-instructions"] as const,
+    instructionChannel: "turn-system-prompt",
     getSession: async (binding) => store.getSession(binding.sessionId) ?? null,
     createSession: async (_directory, _title, id) => {
       const sessionId = id ?? `ses_created_${++counter}`
@@ -64,6 +64,7 @@ function fixture(input: { parentMode?: string } = {}) {
       configOptions: false,
       subagents: true,
       effortLevels: NO_HARNESS_EFFORT,
+      instructionChannel: "turn-system-prompt",
       goals: false,
     }),
     executeTurn: (binding, prompt) => {

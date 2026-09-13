@@ -82,6 +82,7 @@ function testHarness(options: {
   onCreate?: (context: { eventHub: RuntimeEventHub }) => void
 } = {}): AgentHarnessFactory {
   const adapter: AgentHarnessAdapter = {
+    instructionChannel: "turn-system-prompt",
     ...(options.commitsStreamEvents ? { commitsStreamEvents: true as const } : {}),
     ...(options.runtimeConfigCalls
       ? {
@@ -168,6 +169,7 @@ function goalHarnessCapabilities(harness: SessionHarnessId = "pi"): HarnessCapab
     subagents: false,
     goals: true,
     effortLevels: NO_HARNESS_EFFORT,
+    instructionChannel: "turn-system-prompt",
   }
 }
 
@@ -188,6 +190,7 @@ function handoffHarness(input: {
 }): AgentHarnessFactory {
   let config: SessionConfig = { harness: { id: input.id, access: "native" }, variant: null, agent: null }
   const adapter: AgentHarnessAdapter = {
+    instructionChannel: "turn-system-prompt",
     sessionConfigOwner: input.sessionConfigOwner,
     async getSession(binding) { return { id: binding.sessionId } },
     async createSession(_directory, _title, id = "ses_handoff") { return { id } },

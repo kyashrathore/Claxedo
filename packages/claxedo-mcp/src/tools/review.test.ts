@@ -58,6 +58,7 @@ function runtimeApp() {
     sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: () => {},
     resolveAdapter: () => ({
+      instructionChannel: "none" as const,
       getSession: async (binding) => sessions.find((row) => row.id === binding.sessionId) ?? null,
       createSession: async () => ({ id: "ses_new" }),
       updateSession: async () => null,
@@ -80,6 +81,7 @@ function runtimeApp() {
         subagents: false,
         goals: false,
         effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "none",
       }),
       executeTurn: () => (async function* () {})(),
       getMessages: async () => [],

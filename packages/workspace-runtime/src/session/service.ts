@@ -235,7 +235,7 @@ export function compatScope(directory: RuntimeDirectory, sessionId: string) {
   return directory ?? sessionId
 }
 
-function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
+function prompt(adapter: AgentHarnessAdapter, body: SessionPromptBody, config?: SessionConfig): PromptInput {
   // Always assign a userMessageId so adapters publish a `message.updated`
   // event for the user prompt. Without this, reload-resume can lose user input.
   const userMessageId = body.messageID ?? mkUserMessageId()
@@ -245,7 +245,7 @@ function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
   const defaultModel = config
     ? defaultSessionModel(config.harness)
     : { providerID: "anthropic", modelID: "claude-sonnet-4-6" }
-  const system = resolveTurnSystem(config, body.system)
+  const system = resolveTurnSystem(config, adapter.instructionChannel, body.system)
   return {
     parts: body.parts ?? [],
     userMessageId,
@@ -333,7 +333,7 @@ async function promptForSession(
       }`,
     })
   }
-  return prompt(body, config)
+  return prompt(adapter, body, config)
 }
 
 export type AdmittedSessionPromptTurn = {

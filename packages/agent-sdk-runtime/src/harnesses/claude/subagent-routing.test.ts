@@ -18,6 +18,7 @@ function claudeDriverFor(messages: unknown[]) {
 function claudeDriver(): SdkRuntimeDriver {
   return {
     type: "claude",
+    instructionChannel: "turn-system-prompt",
     interactions: { permissions: true, questions: false },
     setAuth() {},
     applyConfig() {},

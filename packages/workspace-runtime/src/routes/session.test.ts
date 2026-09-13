@@ -78,6 +78,7 @@ function adapter(input: {
   ) => Promise<AgentMessagePage>
 }): AgentHarnessAdapter {
   return {
+    instructionChannel: "turn-system-prompt",
     getSession: async (binding) => buildSession({ id: binding.sessionId, directory: binding.directory, title: "Demo" }),
     createSession: async () => ({ id: "s1" }),
     updateSession: async (binding, updates) => buildSession({ id: binding.sessionId, directory: binding.directory, title: updates.title ?? "Demo" }),
@@ -109,6 +110,7 @@ function adapter(input: {
       configOptions: false,
       subagents: true,
       effortLevels: NO_HARNESS_EFFORT,
+      instructionChannel: "turn-system-prompt",
       goals: false,
     }),
     executeTurn(binding, prompt) {
@@ -1183,6 +1185,7 @@ describe("session prompt route", () => {
           configOptions: !!input?.sessionId,
           subagents: true,
           effortLevels: NO_HARNESS_EFFORT,
+          instructionChannel: "turn-system-prompt",
           goals: false,
         }),
       }),
@@ -1207,6 +1210,7 @@ describe("session prompt route", () => {
       configOptions: false,
       subagents: true,
       effortLevels: NO_HARNESS_EFFORT,
+      instructionChannel: "turn-system-prompt",
     })
     expect(session.status).toBe(200)
     expect(await session.json()).toMatchObject({
@@ -1216,6 +1220,7 @@ describe("session prompt route", () => {
       configOptions: true,
       subagents: true,
       effortLevels: NO_HARNESS_EFFORT,
+      instructionChannel: "turn-system-prompt",
     })
   })
 
@@ -1347,6 +1352,7 @@ describe("session prompt route", () => {
         configOptions: false,
         subagents: true,
         effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "turn-system-prompt",
         goals: false,
       }),
     }))
@@ -1672,6 +1678,7 @@ describe("session prompt route", () => {
         configOptions: true,
         subagents: true,
         effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "turn-system-prompt",
         goals: false,
       }),
       abort: async () => {

@@ -128,3 +128,23 @@ export type SessionHarness = {
   id: SessionHarnessId
   access: AgentHarnessAccess
 }
+
+/**
+ * How a harness takes a session's standing instruction block, and when.
+ *
+ * `turn-system-prompt` — a real system prompt, composed into every turn.
+ * `thread-start` — a real system prompt given once when the harness thread is
+ *   created; the thread holds it, so repeating it per turn would send it twice.
+ * `prompt-prefix` — no separate slot: the block rides at the head of the same
+ *   prompt the user's own text is in, on every turn.
+ * `none` — no channel; a session created with a block is refused rather than
+ *   running under instructions the harness never received.
+ */
+export const HARNESS_INSTRUCTION_CHANNELS = [
+  "turn-system-prompt",
+  "thread-start",
+  "prompt-prefix",
+  "none",
+] as const
+
+export type HarnessInstructionChannel = (typeof HARNESS_INSTRUCTION_CHANNELS)[number]

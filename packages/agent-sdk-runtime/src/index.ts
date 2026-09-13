@@ -159,6 +159,7 @@ export {
   AGENT_HARNESS_IDS,
   AGENT_HARNESS_KEYS,
   harnessDefinition,
+  HARNESS_INSTRUCTION_CHANNELS,
   harnessEffortVerdict,
   harnessKey,
   isAcpConnectionId,
@@ -181,6 +182,7 @@ export type {
   AgentHarnessTransport,
   HarnessEffortLevels,
   HarnessEffortVerdict,
+  HarnessInstructionChannel,
   HarnessModelEffort,
   NativeHarnessId,
   NativeSdkHarnessId,
@@ -191,6 +193,12 @@ export type {
   SessionModelGroup,
   SessionModelGroupParse,
 } from "@claxedo/agent-runtime-contract"
+export {
+  admitSessionInstructions,
+  SESSION_INSTRUCTIONS_MAX_BYTES,
+  sessionInstructionsByteLength,
+} from "./session-instructions"
+export type { SessionInstructionsRefusal } from "./session-instructions"
 export { modelConfigOption } from "./sdk-model-options"
 export type { SdkModelEntry } from "./sdk-model-options"
 export { harnessEffortLevels } from "./harness-effort"
@@ -223,10 +231,10 @@ export type SessionConfig = {
   variant?: string | null
   agent?: string | null
   /**
-   * Standing instructions this session was created with. They reach the harness
-   * through its instruction channel at the head of every turn, so a session
-   * reopened after a restart keeps them without the caller resending anything,
-   * and nothing meant as instruction arrives as user text.
+   * Standing instructions this session was created with. Retained so a session
+   * reopened after a restart keeps them without the caller resending anything;
+   * where they reach the harness is that harness's own `instructionChannel`,
+   * and one with none refuses the create rather than dropping them.
    */
   instructions?: string | null
   /**

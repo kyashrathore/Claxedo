@@ -1,6 +1,11 @@
 import { isRecord } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
-import type { AgentExecutionBinding, AgentQuestionAnswer, SessionModelGroup } from "@claxedo/agent-runtime-contract"
+import type {
+  AgentExecutionBinding,
+  AgentQuestionAnswer,
+  HarnessInstructionChannel,
+  SessionModelGroup,
+} from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { GoalCapabilityError } from "./capabilities"
 import type { AdapterCapability, GoalCapabilities, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
@@ -82,10 +87,9 @@ export type AgentHandoffSessionOptions = {
 
 export type AgentSessionCreateOptions = {
   /**
-   * Standing instructions for the new session. Only an adapter declaring
-   * `session-instructions` may be given them: the rest have no instruction
-   * channel, and dropping the block would leave the session running under
-   * something its creator never chose.
+   * Standing instructions for the new session. An adapter whose
+   * `instructionChannel` is `none` is never given them: dropping the block
+   * would leave the session running under something its creator never chose.
    */
   instructions?: string
   /**
@@ -109,6 +113,13 @@ export type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 
 export interface AgentHarnessAdapterCore {
   readonly adapterCapabilities?: readonly AdapterCapability[]
+  /**
+   * How this adapter takes a session's standing instruction block. It decides
+   * both admission — `none` refuses a create that carries one — and where the
+   * block is delivered, so nothing composes it into a turn a harness already
+   * holds it for.
+   */
+  readonly instructionChannel: HarnessInstructionChannel
   readonly commitsStreamEvents?: boolean
   /**
    * Where durable SessionConfig is authoritative. Most SDK harnesses own and

@@ -80,6 +80,7 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
       return {
         ...(options.configurable ? { adapterCapabilities: ["runtime-config"] as const, setAuth() {}, setModel() {}, async applyConfig(config: unknown) { if (dead) throw new Error("disposed adapter"); configurations.push(config) } } : {}),
         sessionConfigOwner: options.runtimeConfig ? "runtime" : "adapter",
+        instructionChannel: "none" as const,
         async createSession(_directory, title, id) {
           if (options.holdCreate) { started(); await heldTurn }
           creates++
@@ -130,7 +131,7 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
         async abort(binding) { controls.push({ instance, action: "abort" }); const key = `${instance}:${binding.sessionId}`; turnReleases.get(key)?.(); turnReleases.delete(key); return { ok: true as const, status: "cancelled" as const, sessionId: binding.sessionId } },
         async listPermissions() { return options.hold && instance === 1 ? [{ id: "pending", sessionID: "local", permission: "tool", patterns: [], metadata: {}, always: [] }] : [] },
         async respondPermission() { controls.push({ instance, action: "permission" }) },
-        readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, harness: descriptor.connectionId } },
+        readHarnessCapabilities() { return { ...capabilities, goals: false, effortLevels: NO_HARNESS_EFFORT, instructionChannel: "none", harness: descriptor.connectionId } },
         dispose() { dead = true; disposed.push(instance); if (options.releaseOnDispose) release() },
       } satisfies AgentHarnessAdapter
     },

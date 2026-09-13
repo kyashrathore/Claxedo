@@ -21,7 +21,8 @@ import type {
   AgentTurnOutcome,
 } from "./index"
 import type { AgentHarnessAdapter } from "./adapter-contract"
-import { declaresAdapterCapability, hasAdapterCapability } from "./capabilities"
+import { hasAdapterCapability } from "./capabilities"
+import { admitSessionInstructions } from "./session-instructions"
 import { buildSession, eventSessionId, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
@@ -567,9 +568,15 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
           adapter.setModel(create.model.modelID === DEFAULT_MODEL_ID ? "" : create.model.modelID)
         }
-        if (create.instructions && !declaresAdapterCapability(adapter, "session-instructions")) {
-          throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "session_instructions", message: `Harness ${create.harness.id} has no instruction channel` })
+        const refusal = admitSessionInstructions({
+          harness: create.harness.id,
+          channel: adapter.instructionChannel,
+          instructions: create.instructions,
+        })
+        if (refusal?.reason === "no_instruction_channel") {
+          throw new AgentRuntimeContractError({ code: "unsupported_operation", operation: "session_instructions", message: refusal.message })
         }
+        if (refusal) throw new Error(refusal.message)
         const retained = {
           ...(create.instructions ? { instructions: create.instructions } : {}),
           ...(create.group ? { group: create.group } : {}),
@@ -650,7 +657,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
-        const system = resolveTurnSystem(config, turn.system)
+        const system = resolveTurnSystem(config, adapter.instructionChannel, turn.system)
         const prompt: PromptInput = {
           parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
           userMessageId,

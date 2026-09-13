@@ -7,22 +7,17 @@ const root = path.resolve(import.meta.dirname)
 describe("agent-sdk-runtime architecture ratchets", () => {
   test("high-churn orchestration owners cannot grow", () => {
     const ceilings: Record<string, number> = {
-      // Reviewed line counts for the orchestration owners that attract every
-      // new feature. Each is the file's exact length at its last review, with
-      // no headroom, so the next feature must name an owner rather than append.
-      // `runtime.ts` delegates the Goal surface to `runtime/goal-controller.ts`
-      // and `harnesses/codex/driver.ts` delegates app-server login state to
-      // `harnesses/codex/process-auth.ts`. Reviewed 2026-09-12: retained session
-      // instructions compose in `session-model.ts` (`resolveTurnSystem`), and
-      // `runtime.ts` and `sdk-runtime-adapter.ts` only carry them to the create
-      // call and the turn. Reviewed 2026-09-12: the effort catalog is owned by
-      // `harness-effort.ts` and the retained model group by `session-group.ts`;
-      // these three files only forward them to the driver, the create options
-      // and the config.
-      "runtime.ts": 849,
-      "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 656,
-      "harnesses/shared/sdk-runtime-adapter.ts": 877,
+      // Each number is the file's exact length at its last review, with no
+      // headroom, so the next feature names an owner instead of appending to
+      // one of these. They orchestrate; the concepts they carry are owned
+      // elsewhere — the Goal surface in `runtime/goal-controller.ts`, Codex
+      // app-server login in `harnesses/codex/process-auth.ts`, a turn's system
+      // block in `session-model.ts`, and the instruction block's admission in
+      // `session-instructions.ts`.
+      "runtime.ts": 856,
+      "harnesses/acp/index.ts": 831,
+      "harnesses/codex/driver.ts": 658,
+      "harnesses/shared/sdk-runtime-adapter.ts": 882,
       "harnesses/pi/index.ts": 12,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {

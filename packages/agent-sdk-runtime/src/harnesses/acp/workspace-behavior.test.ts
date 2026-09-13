@@ -42,6 +42,7 @@ describe("AcpHarnessAdapter", () => {
     expect(item.readHarnessCapabilities()).toEqual({
       harness: "openclaw",
       modelSelection: { status: "optional" },
+      instructionChannel: "prompt-prefix",
       abort: true,
       reconnect: false,
       replay: true,

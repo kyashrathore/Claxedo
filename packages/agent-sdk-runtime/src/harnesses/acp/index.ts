@@ -118,7 +118,10 @@ export type {
 } from "./transport"
 
 export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdapter {
-  readonly adapterCapabilities = ["runtime-config", "session-instructions"] as const
+  readonly adapterCapabilities = ["runtime-config"] as const
+  // `blocks` leads the prompt with the system text under
+  // `annotations.audience: ["assistant"]`; ACP has no separate instruction slot.
+  readonly instructionChannel = "prompt-prefix" as const
   readonly commitsStreamEvents = true
   private goalPublisher?: GoalPublisher
   readonly goals: AgentGoalResource = this.goalResource()

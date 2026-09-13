@@ -82,6 +82,7 @@ function runtimeApp(state: Harness) {
     sessionBus: { publish: () => {}, subscribe: () => () => {} },
     publishGlobal: () => {},
     resolveAdapter: () => ({
+      instructionChannel: "none" as const,
       getSession: async (binding) => state.sessions.find((row) => row.id === binding.sessionId) ?? null,
       createSession: async () => ({ id: "ses_new" }),
       updateSession: async (binding) => state.sessions.find((row) => row.id === binding.sessionId) ?? null,
@@ -104,6 +105,7 @@ function runtimeApp(state: Harness) {
         subagents: true,
         goals: false,
         effortLevels: NO_HARNESS_EFFORT,
+        instructionChannel: "none",
       }),
       executeTurn: () => (async function* () {})(),
       getMessages: async () => [],

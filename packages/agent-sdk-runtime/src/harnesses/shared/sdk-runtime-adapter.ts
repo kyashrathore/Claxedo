@@ -2,6 +2,7 @@ import { randomUUID } from "crypto"
 import {
   assertAgentExecutionBinding,
   type AgentExecutionBinding,
+  type HarnessInstructionChannel,
 } from "@claxedo/agent-runtime-contract"
 import { type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { createAgentSessionIndex } from "./agent-session-index"
@@ -113,7 +114,8 @@ function missingStore(): SdkRuntimeStore {
 }
 
 export class SdkRuntimeAdapter implements AgentHarnessAdapter {
-  readonly adapterCapabilities = ["runtime-config", "session-instructions"] as const
+  readonly adapterCapabilities = ["runtime-config"] as const
+  readonly instructionChannel: HarnessInstructionChannel
   readonly commitsStreamEvents = true
   private store: SdkRuntimeStore
   private ownsStore = false
@@ -166,6 +168,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       publishGoal: (input) => this.publishGoal(input.sessionId, input.directory, input.goal),
       runProviderTurn: (input, execute) => this.runProviderTurn(input.sessionId, input.directory, execute, input.userMessage),
     })
+    this.instructionChannel = this.driver.instructionChannel
     this.goals = this.createGoalResource()
   }
 
@@ -304,7 +307,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         directory,
         title,
         model: this.currentModel,
-        ...(options.instructions ? { system: options.instructions } : {}),
+        ...(options.instructions && this.instructionChannel === "thread-start"
+          ? { system: options.instructions }
+          : {}),
         sessionId,
       })
       this.bindStoreSession({

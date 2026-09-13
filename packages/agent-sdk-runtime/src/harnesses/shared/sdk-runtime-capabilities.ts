@@ -28,5 +28,6 @@ export function sdkHarnessCapabilities(driver: SdkRuntimeDriver, directory?: str
     subagents: driver.type !== "pi",
     goals: !!driver.goals || !!driver.nativeGoal,
     effortLevels: driver.effortLevels?.(directory) ?? NO_HARNESS_EFFORT,
+    instructionChannel: driver.instructionChannel,
   })
 }
