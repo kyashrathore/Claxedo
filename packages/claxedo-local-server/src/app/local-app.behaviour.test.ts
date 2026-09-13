@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { claxedoBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
@@ -529,6 +529,33 @@ describe("local egress broker hosting", () => {
     })
     expect(response.status).toBe(403)
     expect(verifyToken).not.toHaveBeenCalled()
+  })
+
+  test("names its own refusal in a code the harness can read", async () => {
+    // Signed, so the composition's unsigned-local guard passes the request
+    // through and the broker mount is the one that answers. On an unsigned box
+    // that guard refuses first, under `unsigned_local_loopback_required`.
+    const instance = app({
+      egressBroker: async () => new Response(null, { status: 401 }),
+      services: services({
+        auth: customVerifierAuthAdapter({
+          issuer: "https://idp.example.test",
+          verifier: async (token, config) => ({
+            mode: "signed" as const,
+            user: { subject: token, tokenIdentifier: `${config.issuer}|${token}`, issuer: config.issuer },
+          }),
+        }),
+      }),
+    })
+
+    const response = await instance.request("https://remote.example/bindings/b1/v1/messages", {
+      headers: { Authorization: "Bearer runtime-token" },
+    })
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: { code: "loopback_required", message: "The credential broker answers loopback callers only" },
+    })
   })
 })
 

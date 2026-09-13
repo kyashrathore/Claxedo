@@ -41,6 +41,10 @@ describe("first-turn error taxonomy", () => {
     ['API Error: 503 {"error":"broker_authority_unavailable"}', "harness"],
     ['API Error: 502 {"error":"upstream_unavailable"}', "model"],
     ['API Error: 502 {"error":"upstream_redirect_refused"}', "model"],
+    // The mounts in front of the broker answer in the same vocabulary. A caller
+    // that is not on loopback reached the broker from somewhere it should not
+    // have; the operator's account is not what is wrong.
+    ['API Error: 403 {"error":{"code":"loopback_required","message":"The credential broker answers loopback callers only"}}', "harness"],
   ] as const)("reads the broker's own verdict out of %s", (message, expected) => {
     expect(classifyFirstTurnError(message)).toBe(expected)
   })

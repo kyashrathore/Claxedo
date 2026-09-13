@@ -3,8 +3,8 @@ export const FIRST_TURN_ERROR_CLASSES = ["credential", "harness", "model", "usag
 export type FirstTurnErrorClass = (typeof FIRST_TURN_ERROR_CLASSES)[number]
 
 /**
- * The credential broker's own vocabulary, which a brokered harness echoes in
- * the message it reports.
+ * The credential broker's own vocabulary, and that of the mounts in front of
+ * it, which a brokered harness echoes in the message it reports.
  *
  * The status beside it cannot stand in for these: the broker answers 403 both
  * for a credential it will not serve and for a route the binding does not
@@ -21,6 +21,7 @@ const BROKER_ERROR_CLASSES: Record<string, FirstTurnErrorClass> = {
   binding_injection_invalid: "harness",
   binding_route_required: "harness",
   broker_authority_unavailable: "harness",
+  loopback_required: "harness",
   request_outside_policy: "harness",
   upstream_redirect_refused: "model",
   upstream_unavailable: "model",
