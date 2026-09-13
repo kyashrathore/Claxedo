@@ -435,7 +435,9 @@ export const desktopRendererUnsigned: Policy = {
   // app-local reviews. No new package edge. Measured 1089 / 58.
   // +2 modules (2026-09-13): the same first-project canvas owners app-local
   // reviews. No new package edge. Measured 1091 / 58.
-  ceilings: { modules: 1091, packages: 58 },
+  // +3 modules (2026-09-13): the same contributed-settings-section and Presets
+  // owners app-local reviews. No new package edge. Measured 1094 / 58.
+  ceilings: { modules: 1094, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

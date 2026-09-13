@@ -387,7 +387,14 @@ export const appLocal: Policy = {
   // create form inline instead of mounting the draft composer with an empty
   // project, so both modules belong to the local product. No new package edge.
   // Measured 1048 / 58.
-  ceilings: { modules: 1048, packages: 58 },
+  // +3 modules (2026-09-13): the contributed-settings-section registry
+  // (`app/integrations/settings-sections.ts`) and the Presets section Tasks
+  // registers through it (`app/integrations/tasks/settings-section.tsx` and
+  // `features/tasks/ui/presets-settings.tsx`). Reviewed owners: the shell's
+  // contribution registry for the first, the gated Tasks module for the other
+  // two, which this entry already reached through the Tasks content surface.
+  // No new package edge. Measured 1051 / 58.
+  ceilings: { modules: 1051, packages: 58 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
