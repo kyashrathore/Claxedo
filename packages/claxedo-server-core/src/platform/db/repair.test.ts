@@ -37,6 +37,10 @@ function hasColumn(db: InstanceType<typeof Database>, table: string, name: strin
   return rows.some((row) => row.name === name)
 }
 
+function hasIndex(db: InstanceType<typeof Database>, name: string) {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(name)
+}
+
 function column(db: InstanceType<typeof Database>, table: string, name: string) {
   const rows = db.prepare(`PRAGMA table_info(\`${table}\`)`).all() as Array<{ name: string; notnull: number }>
   return rows.find((row) => row.name === name)
@@ -373,7 +377,7 @@ describe("claxedo schema", () => {
     expect(hasTable(sqlite, retiredPageTable)).toBe(false)
   })
 
-  test("repair gives a drifted credential table the usage columns the registry selects", () => {
+  test("repair gives a drifted credential table every column the registry selects", () => {
     const sqlite = new Database(":memory:")
     applyMigration(sqlite, "20260411000000_provider_credentials")
     sqlite.prepare(`
@@ -384,13 +388,71 @@ describe("claxedo schema", () => {
     const fixed = repair(sqlite)
 
     expect(fixed).toEqual(expect.arrayContaining([
+      "claxedo_provider_credential.org_id",
+      "claxedo_provider_credential.revision",
       "claxedo_provider_credential.usage_windows",
       "claxedo_provider_credential.usage_at",
+      "claxedo_provider_credential.owner",
+      "claxedo_provider_credential.is_active",
+      "claxedo_provider_credential.active_idx",
     ]))
     // A drizzle `select()` names every column, so one missing column fails
-    // every credential read rather than only a usage read.
-    expect(sqlite.prepare("SELECT id, usage_windows, usage_at FROM claxedo_provider_credential").get())
-      .toEqual({ id: "cred_1", usage_windows: null, usage_at: null })
+    // every credential read rather than only the feature that introduced it.
+    expect(
+      sqlite
+        .prepare(`
+          SELECT id, org_id, owner, is_active, revision, usage_windows, usage_at
+          FROM claxedo_provider_credential
+        `)
+        .get(),
+    ).toEqual({
+      id: "cred_1",
+      org_id: "__local__",
+      owner: null,
+      is_active: 0,
+      revision: 1,
+      usage_windows: null,
+      usage_at: null,
+    })
+    expect(hasIndex(sqlite, "claxedo_provider_credential_active_idx")).toBe(true)
+    expect(hasTable(sqlite, "claxedo_machine_login_usage")).toBe(true)
+    expect(sqlite.prepare("SELECT harness, account, usage_windows, usage_at FROM claxedo_machine_login_usage").all())
+      .toEqual([])
+  })
+
+  test("repair keeps one active mark per provider before it builds the unique index", () => {
+    const sqlite = new Database(":memory:")
+    applyMigration(sqlite, "20260411000000_provider_credentials")
+    sqlite.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `owner` text")
+    sqlite.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `is_active` integer NOT NULL DEFAULT 0")
+    const insert = sqlite.prepare(`
+      INSERT INTO claxedo_provider_credential (id, provider_id, kind, source, status, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `)
+    insert.run("cred_old", "claude-sdk", "oauth_token", "managed", "available", 1, 10)
+    insert.run("cred_new", "claude-sdk", "oauth_token", "managed", "available", 1, 20)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toContain("claxedo_provider_credential.active_idx")
+    expect(hasIndex(sqlite, "claxedo_provider_credential_active_idx")).toBe(true)
+    expect(sqlite.prepare("SELECT id FROM claxedo_provider_credential WHERE is_active = 1").all())
+      .toEqual([{ id: "cred_new" }])
+  })
+
+  test("repair leaves an already-built active index and its marks alone", () => {
+    const sqlite = new Database(":memory:")
+    apply(sqlite)
+    sqlite.prepare(`
+      INSERT INTO claxedo_provider_credential (id, org_id, provider_id, kind, source, status, is_active, revision, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 1, 1, ?, ?)
+    `).run("cred_1", "__local__", "claude-sdk", "oauth_token", "managed", "available", 1, 2)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).not.toContain("claxedo_provider_credential.active_idx")
+    expect(sqlite.prepare("SELECT id FROM claxedo_provider_credential WHERE is_active = 1").all())
+      .toEqual([{ id: "cred_1" }])
   })
 
   test("repair upgrades legacy session meta placement schema", () => {
