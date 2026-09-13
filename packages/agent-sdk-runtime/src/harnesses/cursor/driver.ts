@@ -44,11 +44,11 @@ import {
 } from "../../provider-projection"
 import {
   applyCursorBackendUrl,
-  cursorAuthValue,
   CursorBackendUrlFrozenError,
   freezeCursorBackendUrl,
   frozenCursorBackendUrl,
 } from "./auth"
+import { harnessProjection } from "../../harness-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,
@@ -201,7 +201,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     if (config.auth !== undefined && !auth) {
       throw new Error("cursor harness received an auth map that is not provider projections")
     }
-    this.replaceAuth(cursorAuthValue(auth))
+    this.replaceAuth(harnessProjection(auth, "cursor"))
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.firstPartyMcp = firstPartyMcpProvider(config)
     // Plugin roots are read by `Agent.create`, so a changed set only reaches

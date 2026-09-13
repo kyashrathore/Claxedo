@@ -30,7 +30,6 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { providerProjectionRecord } from "../../provider-projection"
 import {
   CODEX_PERMISSION_MODES,
   CODEX_SETTINGS,
@@ -40,7 +39,9 @@ import {
 } from "../shared/permission-modes"
 import { requireCodexExecutable } from "./executable"
 import { CodexAppServerProcess } from "./app-server-process"
-import { CODEX_BROKER_PROVIDER, CodexBrokerProvider, codexAuthFailure, codexAuthValue } from "./broker"
+import { CODEX_BROKER_PROVIDER, CodexBrokerProvider, codexAuthFailure } from "./broker"
+import { harnessProjection } from "../../harness-projection"
+import { providerProjectionRecord } from "../../provider-projection"
 import { CodexOperatorLogin } from "./operator-login"
 import { codexPluginLaunch, type CodexPluginLaunch } from "./plugin-launch"
 import { codexConfigOptions, fetchCodexModels } from "./model-options"
@@ -141,7 +142,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     if (config.auth !== undefined && !auth) {
       throw new Error("codex harness received an auth map that is not provider projections")
     }
-    if (this.replaceAuth(codexAuthValue(auth))) await this.restartProcess()
+    if (this.replaceAuth(harnessProjection(auth, "codex"))) await this.restartProcess()
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.firstPartyMcp = firstPartyMcpProvider(config)
   }

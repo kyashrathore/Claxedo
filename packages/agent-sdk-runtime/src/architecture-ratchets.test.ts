@@ -21,11 +21,14 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // the entrypoint.
       "runtime.ts": 819,
       "harnesses/acp/index.ts": 844,
-      "harnesses/codex/driver.ts": 625,
-      "harnesses/shared/sdk-runtime-adapter.ts": 876,
-      // Its one growth is the import of the trim that stops a blank
-      // `PI_CODING_AGENT_DIR` from putting the profile in the process cwd.
+      // 626 rather than 625: the driver imports `harness-projection.ts` in
+      // place of the provider-alias reader it kept beside itself, which is one
+      // more import line here and eight fewer in `broker.ts`.
+      "harnesses/codex/driver.ts": 626,
+      // A composition root: it resolves the profile directory through
+      // `harnesses/pi/agent-dir.ts` and constructs the driver, nothing else.
       "harnesses/pi/index.ts": 13,
+      "harnesses/shared/sdk-runtime-adapter.ts": 876,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {
       const lines = fs.readFileSync(path.join(root, file), "utf8").split("\n").length - 1

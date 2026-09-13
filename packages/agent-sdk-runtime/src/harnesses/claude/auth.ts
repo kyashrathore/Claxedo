@@ -26,7 +26,3 @@ export function claudeAuthEnv(binding: ProviderBinding | undefined): ClaudeAuthE
     CLAUDE_CODE_OAUTH_SCOPES: undefined,
   }
 }
-
-export function claudeAuthValue(auth: Record<string, ProviderProjection> | undefined) {
-  return auth?.["claude-sdk"] ?? auth?.anthropic ?? auth?.claude
-}

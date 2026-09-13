@@ -4,15 +4,6 @@ import { isProviderUnavailable, type ProviderProjection } from "../../provider-p
 export const CURSOR_BACKEND_URL_ENV = "CURSOR_BACKEND_URL"
 
 /**
- * The projections this harness consumes. Every other provider in the map
- * belongs to a different harness and is ignored, so an account bound for Claude
- * decides nothing about a Cursor turn.
- */
-export function cursorAuthValue(auth: Record<string, ProviderProjection> | undefined) {
-  return auth?.["cursor-sdk"] ?? auth?.cursor
-}
-
-/**
  * Point the Cursor SDK at a binding, or back at whatever the machine holds.
  *
  * The SDK has no option for its backend: it reads `CURSOR_BACKEND_URL` from the

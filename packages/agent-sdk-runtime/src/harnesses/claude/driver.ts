@@ -56,7 +56,8 @@ import {
   type PromptDelivery,
 } from "../shared/prompt-attachments"
 import { interruptGoalTurn } from "../shared/goal-stop-order"
-import { claudeAuthEnv, claudeAuthValue } from "./auth"
+import { claudeAuthEnv } from "./auth"
+import { harnessProjection } from "../../harness-projection"
 import { brokeredClaudeConfigDir } from "./config-dir"
 import { requireClaudeExecutable } from "./executable"
 import { createClaudeTurnInput, type ClaudeTurnInput } from "./turn-input"
@@ -307,7 +308,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       throw new Error("claude harness received an auth map that is not provider projections")
     }
     this.auth = {
-      anthropic: claudeAuthValue(auth),
+      anthropic: harnessProjection(auth, "claude"),
     }
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.firstPartyMcp = firstPartyMcpProvider(config)

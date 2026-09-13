@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { claudeAuthEnv, claudeAuthValue } from "./auth"
+import { claudeAuthEnv } from "./auth"
+import { harnessProjection } from "../../harness-projection"
 import type { ProviderProjection } from "../../provider-projection"
 
 const key: ProviderProjection = {
@@ -51,14 +52,24 @@ describe("claudeAuthEnv", () => {
   })
 })
 
-describe("claudeAuthValue", () => {
-  test("prefers the native SDK binding over a bare provider id", () => {
-    expect(claudeAuthValue({ "claude-sdk": key, anthropic: bearer })).toBe(key)
-    expect(claudeAuthValue({ anthropic: bearer })).toBe(bearer)
+describe("harnessProjection", () => {
+  test("prefers the native SDK binding over a bare vendor provider id", () => {
+    expect(harnessProjection({ "claude-sdk": key, anthropic: bearer }, "claude")).toBe(key)
   })
 
-  test("the native harness binding resolves independently", () => {
-    expect(claudeAuthValue({ "claude-sdk": key })).toBe(key)
-    expect(claudeAuthValue({})).toBeUndefined()
+  test("a stored vendor account binds the harness that answers to it", () => {
+    // `anthropic` and `cursor` are ordinary stored rows, and a reader that
+    // stopped at the harness's own aliases would leave the turn on the
+    // machine's login with an account selected.
+    expect(harnessProjection({ anthropic: bearer }, "claude")).toBe(bearer)
+    expect(harnessProjection({ cursor: bearer }, "cursor")).toBe(bearer)
+    expect(harnessProjection({ openai: bearer }, "codex")).toBe(bearer)
+  })
+
+  test("another harness's binding decides nothing", () => {
+    expect(harnessProjection({ "claude-sdk": key }, "cursor")).toBeUndefined()
+    expect(harnessProjection({ "cursor-sdk": key }, "claude")).toBeUndefined()
+    expect(harnessProjection({}, "claude")).toBeUndefined()
+    expect(harnessProjection(undefined, "claude")).toBeUndefined()
   })
 })
