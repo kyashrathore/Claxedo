@@ -13,14 +13,22 @@ process.env.CLAXEDO_DATA_DIR = root
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const {
   putCredential,
-  resolveAllSecrets,
+  readSecretById,
   resolveSecret,
-  resolveSecretsForScope,
+  selectCredentialsForScope,
   setActiveCredentials,
   updateCredentialHealth,
 } = await import("@claxedo/server-core/credentials/registry")
 const { ClaxedoDB } = await import("../platform/db")
 ClaxedoDB.Drizzle()
+
+/** What a scope's fanout would send: the rows it selects, read through the real backend. */
+async function fannedOut(scope: "local" | "shared") {
+  const rows = selectCredentialsForScope(scope)
+  const entries = await Promise.all(rows.map(async (row) =>
+    [row.provider_id, await readSecretById(row.id)] as const))
+  return Object.fromEntries(entries)
+}
 
 describe("credential fanout fence", () => {
   beforeEach(() => {
@@ -74,17 +82,14 @@ describe("credential fanout fence", () => {
 
     // The "shared" scope is what workspace-supervisor-config-sync pushes into
     // every remote/cloud sandbox's runtime config.
-    const shared = await resolveSecretsForScope("shared")
+    const shared = await fannedOut("shared")
     expect(shared).toEqual({ openai: "sk-harness", "claude-acp": "claude-oauth" })
     expect(Object.keys(shared)).not.toContain("daytona")
     expect(Object.keys(shared)).not.toContain("integration:notion")
     expect(Object.keys(shared)).not.toContain("channel:whatsapp:baileys:auth-state")
 
-    const local = await resolveSecretsForScope("local")
+    const local = await fannedOut("local")
     expect(local).toEqual({ openai: "sk-harness", "claude-acp": "claude-oauth", anthropic: "sk-ant-model" })
-
-    const all = await resolveAllSecrets()
-    expect(all).toEqual({ openai: "sk-harness", "claude-acp": "claude-oauth", anthropic: "sk-ant-model" })
   })
 
   test("multi-account fanout selects the same preferred provider row as single resolution", async () => {
@@ -106,7 +111,7 @@ describe("credential fanout fence", () => {
     updateCredentialHealth(expired.id, "expired", Date.now())
 
     await expect(resolveSecret("multi-account-fanout")).resolves.toBe("healthy-token")
-    expect((await resolveAllSecrets())["multi-account-fanout"]).toBe("healthy-token")
+    expect((await fannedOut("local"))["multi-account-fanout"]).toBe("healthy-token")
   })
 
   // A sandbox runs on the account the user chose or on nothing at all. Falling
@@ -135,19 +140,19 @@ describe("credential fanout fence", () => {
 
     // The first save holds the mark, and it is local-only: the consented shared
     // account beside it does not stand in for it.
-    expect((await resolveSecretsForScope("local"))["multi-account-scope"]).toBe("local-token")
-    expect(await resolveSecretsForScope("shared")).not.toHaveProperty("multi-account-scope")
+    expect((await fannedOut("local"))["multi-account-scope"]).toBe("local-token")
+    expect(await fannedOut("shared")).not.toHaveProperty("multi-account-scope")
 
     expect(setActiveCredentials([shared.id])).toMatchObject({ ok: true })
 
-    expect((await resolveSecretsForScope("shared"))["multi-account-scope"]).toBe("consented-shared-token")
-    expect((await resolveSecretsForScope("local"))["multi-account-scope"]).toBe("consented-shared-token")
+    expect((await fannedOut("shared"))["multi-account-scope"]).toBe("consented-shared-token")
+    expect((await fannedOut("local"))["multi-account-scope"]).toBe("consented-shared-token")
 
     // Consent is not enough on its own: an expired active account sends nothing
     // and the local-only one it replaced does not come back.
     updateCredentialHealth(shared.id, "expired", Date.now())
-    expect(await resolveSecretsForScope("shared")).not.toHaveProperty("multi-account-scope")
-    expect(await resolveSecretsForScope("local")).not.toHaveProperty("multi-account-scope")
+    expect(await fannedOut("shared")).not.toHaveProperty("multi-account-scope")
+    expect(await fannedOut("local")).not.toHaveProperty("multi-account-scope")
     expect(local.id).not.toBe(shared.id)
   })
 })

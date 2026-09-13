@@ -25,8 +25,6 @@ const {
   updateCredentialScope,
   deleteCredential,
   deleteCredentialsByProvider,
-  resolveAllSecrets,
-  resolveSecretsForScope,
   selectCredentialsForScope,
   setActiveCredentials,
 } = await import("./registry")
@@ -458,25 +456,6 @@ describe("credential registry", () => {
     expect(getCredentialByProvider("bulk-delete")).toBeUndefined()
   })
 
-  test("resolveAllSecrets returns map of provider→secret for available creds", async () => {
-    await putCredential({
-      provider_id: "all-1",
-      kind: "api_key",
-      source: "managed",
-      secret: "secret-1",
-    })
-    await putCredential({
-      provider_id: "all-2",
-      kind: "api_key",
-      source: "managed",
-      secret: "secret-2",
-    })
-
-    const all = await resolveAllSecrets()
-    expect(all["all-1"]).toBe("secret-1")
-    expect(all["all-2"]).toBe("secret-2")
-  })
-
   describe("network policy is not a credential side effect", () => {
     test("storing a credential writes no policy row", async () => {
       const { listPolicies } = await import("../sandbox/network/policy")
@@ -614,7 +593,6 @@ describe("credential registry", () => {
       expect(await resolveSecret("active-switch")).toBe("second-secret")
       expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-switch"))
         .toMatchObject([{ id: second.id }])
-      expect(await resolveAllSecrets()).toMatchObject({ "active-switch": "second-secret" })
     })
 
     test("setActiveCredentials refuses an id it cannot see and one that never reaches a harness", async () => {
@@ -653,10 +631,8 @@ describe("credential registry", () => {
       expect(result).toMatchObject({ ok: true })
       expect(replacing.every((row) => getCredential(row.id)?.is_active === true)).toBe(true)
       expect(bindings.some((row) => getCredential(row.id)?.is_active === true)).toBe(false)
-      expect(await resolveSecretsForScope("local")).toMatchObject({
-        "binding-acp": "binding-acp-new",
-        "binding-sdk": "binding-sdk-new",
-      })
+      expect(await resolveSecret("binding-acp")).toBe("binding-acp-new")
+      expect(await resolveSecret("binding-sdk")).toBe("binding-sdk-new")
     })
 
     test("one refused id leaves every partition in the call untouched", async () => {
@@ -706,7 +682,6 @@ describe("credential registry", () => {
 
       expect(getCredential(second.id)?.is_active).toBe(false)
       expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-delete")).toEqual([])
-      expect(await resolveAllSecrets()).not.toHaveProperty("active-delete")
     })
 
     test("a shared sandbox gets the active account or nothing, never another account of the same provider", async () => {

@@ -738,33 +738,6 @@ function activeCredentials(org: CredentialOrgScope): CredentialMetadata[] {
 }
 
 /**
- * Resolve all managed credentials as a provider→secret map, for ONE org.
- * Only call at trusted fanout points such as ACP spawn/config replay.
- */
-export async function resolveAllSecrets(
-  org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): Promise<Record<string, string>> {
-  const creds = activeCredentials(org)
-    .filter((c) => c.status === "available" && c.secure_ref && fanoutEligible(c))
-  const backend = getBackend()
-  const result: Record<string, string> = {}
-
-  for (const cred of creds) {
-    try {
-      const secret = await backend.get(cred.secure_ref!)
-      if (secret) result[cred.provider_id] = secret
-    } catch {
-      log.warn("Failed to resolve credential secret", {
-        id: cred.id,
-        provider_id: cred.provider_id,
-      })
-    }
-  }
-
-  return result
-}
-
-/**
  * The rows the fanout sends for a scope, one per provider, without their
  * secrets. This is the only place the "which credential runs" question is
  * answered, so a surface that shows it reads the same selection.
@@ -828,30 +801,6 @@ function scopedSelection(
       const unavailable = credentialUnavailableForScope(credential, scope)
       return unavailable ? { credential, unavailable } : { credential }
     })
-}
-
-export async function resolveSecretsForScope(
-  scope: CredentialSecretScope = "local",
-  org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): Promise<Record<string, string>> {
-  const creds = selectCredentialsForScope(scope, org)
-  const backend = getBackend()
-  const result: Record<string, string> = {}
-
-  for (const cred of creds) {
-    try {
-      const secret = await backend.get(cred.secure_ref!)
-      if (secret) result[cred.provider_id] = secret
-    } catch {
-      log.warn("Failed to resolve scoped credential secret", {
-        id: cred.id,
-        provider_id: cred.provider_id,
-        scope,
-      })
-    }
-  }
-
-  return result
 }
 
 function credentialAvailableForScope(credential: CredentialMetadata, scope: CredentialSecretScope) {

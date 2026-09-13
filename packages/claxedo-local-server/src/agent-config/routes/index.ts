@@ -27,7 +27,12 @@ export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
         label: "Local Agent Config",
       })
       if (localOnly) return localOnly
-      return c.json(await getRuntimeConfigSnapshot())
+      // The snapshot's `auth` map is bearer authority over the operator's
+      // stored credentials for the next hour, and it reaches the runtime over
+      // the runtime's own management channel. This is the config surface a
+      // page reads; nothing that can call it needs the placeholders.
+      const { auth: _auth, ...snapshot } = await getRuntimeConfigSnapshot()
+      return c.json(snapshot)
     })
 
     .get("/agents", async (c) => {

@@ -104,7 +104,6 @@ vi.mock("@claxedo/server-core/agent-config/index", () => ({
     runner: { type: "opencode" },
     auth: {},
   })),
-  getEffectiveConfig: vi.fn(async () => ({})),
 }))
 
 vi.mock("@claxedo/server-core/credentials/registry", () => ({

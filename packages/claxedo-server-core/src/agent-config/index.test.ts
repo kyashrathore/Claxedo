@@ -445,15 +445,13 @@ describe("agent config", () => {
     expect(snap.defaultHarness).toBeUndefined()
   })
 
-  // ── getEffectiveConfig ──────────────────────────────────────────────
-
-  test("effective config retains its canonical version when no user MCP servers exist", async () => {
+  test("the snapshot retains its canonical version when no user MCP servers exist", async () => {
     await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
-    const config = await mod.getEffectiveConfig()
+    const config = await mod.getRuntimeConfigSnapshot()
     expect(config).toEqual({ version: 4, mcp: {}, connections: [], auth: {} })
   })
 
-  test("effective config resolves stdio servers into the provider-neutral format", async () => {
+  test("the snapshot resolves stdio servers into the provider-neutral format", async () => {
     await mod.saveUserConfig({ version: 3, connections: {},
       mcp: {
         "my-tool": {
@@ -465,12 +463,12 @@ describe("agent config", () => {
       },
       auth: {},
     })
-    const config = await mod.getEffectiveConfig()
+    const config = await mod.getRuntimeConfigSnapshot()
     expect(config.mcp).toBeDefined()
     expect(config.mcp).toEqual({ "my-tool": { name: "my-tool", source: "user", transport: "stdio", command: "npx", args: ["-y", "tool-server"], env: { TOOL_MODE: "test" } } })
   })
 
-  test("effective config transforms remote servers", async () => {
+  test("the snapshot transforms remote servers", async () => {
     await mod.saveUserConfig({ version: 3, connections: {},
       mcp: {
         "remote-tool": {
@@ -481,11 +479,11 @@ describe("agent config", () => {
       },
       auth: {},
     })
-    const config = await mod.getEffectiveConfig()
+    const config = await mod.getRuntimeConfigSnapshot()
     expect(config.mcp).toEqual({ "remote-tool": { name: "remote-tool", source: "user", transport: "remote", url: "https://mcp.example.com", headers: { Authorization: "Bearer token" } } })
   })
 
-  test("effective config excludes disabled servers", async () => {
+  test("the snapshot excludes disabled servers", async () => {
     await mod.saveUserConfig({ version: 3, connections: {},
       mcp: {
         active: { type: "stdio", command: "node", args: [] },
@@ -493,7 +491,7 @@ describe("agent config", () => {
       },
       auth: {},
     })
-    const config = await mod.getEffectiveConfig()
+    const config = await mod.getRuntimeConfigSnapshot()
     const mcp = config.mcp as Record<string, unknown>
     expect(mcp["active"]).toBeDefined()
     expect(mcp["disabled"]).toBeUndefined()

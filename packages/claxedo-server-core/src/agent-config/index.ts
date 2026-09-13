@@ -104,7 +104,13 @@ export interface UserAgentConfig {
   defaultConnectionId?: string
   /** Explicit native default; mutually exclusive with defaultConnectionId. */
   defaultHarness?: Extract<RuntimeHarnessSelection, { kind: "native" }>
-  auth?: Record<string, string>  // native provider ID → credential material
+  /**
+   * Native provider id → credential material, in plaintext on disk. Retired as
+   * a delivery path — nothing reads it to run a harness — and kept only so
+   * `collectLocalCredentials` can still offer what an older install left here
+   * for import into the registry.
+   */
+  auth?: Record<string, string>
   sandbox_driver?: SandboxDriverConfig
 }
 
@@ -614,9 +620,3 @@ export async function deleteCommand(name: string): Promise<boolean> {
   }
 }
 
-// ── Full config for on-demand injection ───────────────────────────────────
-
-/** Returns the canonical provider-neutral runtime configuration snapshot. */
-export async function getEffectiveConfig(): Promise<Record<string, unknown>> {
-  return { ...await getRuntimeConfigSnapshot() }
-}
