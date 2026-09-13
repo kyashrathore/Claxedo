@@ -18,7 +18,7 @@ import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { managedWorkspaceSessionAccessPolicy } from "@claxedo/workspace-runtime"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
-import { createAcpConnectionProvider, type ConnectionProvider } from "@claxedo/agent-sdk-runtime"
+import { createAcpConnectionProvider, NO_HARNESS_EFFORT, type ConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 
 /**
@@ -122,7 +122,7 @@ describe("embedded workspace runtime", () => {
           async deleteSession() {},
           async getSessionConfig() { throw new Error("runtime-owned config") },
           async updateSessionConfig() { throw new Error("runtime-owned config") },
-          readHarnessCapabilities: () => ({ ...capabilities, goals: false, harness: "held" }),
+          readHarnessCapabilities: () => ({ ...capabilities, goals: false, harness: "held", effortLevels: NO_HARNESS_EFFORT }),
           async *executeTurn(binding) {
             ownsProducer = true
             started.resolve()

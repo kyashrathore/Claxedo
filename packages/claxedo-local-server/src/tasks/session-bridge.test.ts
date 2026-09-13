@@ -4,7 +4,7 @@ import os from "os"
 import path from "path"
 import { promisify } from "node:util"
 import { execFile } from "node:child_process"
-import type { ConnectionProvider, HarnessEffortLevels } from "@claxedo/agent-sdk-runtime"
+import { NO_HARNESS_EFFORT, type ConnectionProvider, type HarnessEffortLevels } from "@claxedo/agent-sdk-runtime"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { configureAgentConfig, disposeAgentConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
@@ -66,6 +66,7 @@ function fixtureProvider(input: { offeredModelId: string; effortLevels?: Harness
         ...capabilities,
         goals: false,
         harness: "tasks-fixture",
+        effortLevels: NO_HARNESS_EFFORT,
         modelSelection: {
           status: "optional" as const,
           models: [{ providerId: MODEL.providerID, modelId: input.offeredModelId, name: "Fixture" }],

@@ -1,9 +1,8 @@
+import { harnessEffortRefusal, parseHarnessEffortLevels } from "@claxedo/agent-runtime-contract"
 import {
-  harnessEffortVerdict,
   isAgentMessage,
   renderSessionHandoff,
   type AgentMessage,
-  type HarnessEffortLevels,
   type SessionHarness,
 } from "@claxedo/agent-sdk-runtime"
 import { asRecord, isRecord } from "@claxedo/helpers/guards"
@@ -280,41 +279,14 @@ async function configurationBlockers(
   ]
 }
 
-/**
- * Only a `resolved` catalog refuses an effort. `unresolved` is a harness whose
- * model catalog has not answered yet and `unsupported` one whose adapter
- * reports no effort control at all — including OpenCode and Pi, whose provider
- * catalog carries no per-model variants — so a preset refused on either would
- * be refused on silence rather than on what the harness said.
- */
 function effortBlockers(value: unknown, configuration: ModelConfiguration): StartBlocker[] {
-  const catalog = harnessEffortCatalog(value)
-  if (!configuration.effort || catalog?.status !== "resolved") return []
-  if (harnessEffortVerdict(catalog, configuration.model.modelID, configuration.effort) !== "refused") return []
-  const levels = catalog.models.find((model) => model.modelID === configuration.model.modelID)?.levels ?? []
-  return [{
-    code: "effort_unsupported",
-    detail: `The ${configuration.harness.id} harness does not run ${configuration.model.modelID} at effort ${configuration.effort}; ${
-      levels.length > 0 ? `it accepts ${levels.join(", ")}` : "it accepts no effort for that model"
-    }`,
-  }]
-}
-
-function harnessEffortCatalog(value: unknown): HarnessEffortLevels | undefined {
-  const row = asRecord(value)
-  const status = row?.status
-  if (status !== "resolved" && status !== "unresolved" && status !== "unsupported") return undefined
-  const models = Array.isArray(row?.models) ? row.models : []
-  return {
-    status,
-    models: models.flatMap((model) => {
-      const entry = asRecord(model)
-      const modelID = typeof entry?.modelID === "string" ? entry.modelID : undefined
-      if (!modelID) return []
-      const levels = Array.isArray(entry?.levels) ? entry.levels.filter((level) => typeof level === "string") : []
-      return [{ modelID, levels }]
-    }),
-  }
+  const detail = harnessEffortRefusal({
+    harness: configuration.harness.id,
+    catalog: parseHarnessEffortLevels(value),
+    modelID: configuration.model.modelID,
+    effort: configuration.effort ?? undefined,
+  })
+  return detail ? [{ code: "effort_unsupported", detail }] : []
 }
 
 async function readMessages(target: TasksRuntimeTarget, sessionId: string): Promise<AgentMessage[] | null> {
