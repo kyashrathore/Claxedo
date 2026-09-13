@@ -159,12 +159,14 @@ export {
   AGENT_HARNESS_IDS,
   AGENT_HARNESS_KEYS,
   harnessDefinition,
+  HARNESS_EFFORT_LEVELS,
   HARNESS_INSTRUCTION_CHANNELS,
   harnessEffortVerdict,
   harnessKey,
   isAcpConnectionId,
   isAgentHarnessAccess,
   isAgentHarnessId,
+  isHarnessEffortLevel,
   isSessionGroupSlot,
   NO_HARNESS_EFFORT,
   normalizeAgentHarnessTransport,
@@ -180,6 +182,7 @@ export type {
   AgentHarnessId,
   AgentHarnessKey,
   AgentHarnessTransport,
+  HarnessEffortLevel,
   HarnessEffortLevels,
   HarnessEffortVerdict,
   HarnessInstructionChannel,
@@ -269,12 +272,21 @@ export type SessionConfigUpdate = {
   handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
 
+/**
+ * Fixed at create, so a later edit cannot rewrite what an already-running
+ * session was told or delegated under. An update naming one is refused rather
+ * than dropped: a caller editing it has no other way to learn nothing happened.
+ */
+export const IMMUTABLE_SESSION_CONFIG_FIELDS = ["instructions", "group"] as const
+export type ImmutableSessionConfigField = (typeof IMMUTABLE_SESSION_CONFIG_FIELDS)[number]
+
 /** Config fields accepted from public session create/update requests.
  * Handoff and accepted permission state are runtime-owned; permission changes
- * must go through the adapter permission-mode or permission-reply operation.
- * Instructions and the model group are fixed at create so a later edit cannot
- * rewrite what an already-running session was told or delegated under. */
-export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff" | "permissionMode" | "permissionState" | "permissionCeiling" | "instructions" | "group">
+ * must go through the adapter permission-mode or permission-reply operation. */
+export type SessionConfigRequestUpdate = Omit<
+  SessionConfigUpdate,
+  "handoff" | "permissionMode" | "permissionState" | "permissionCeiling" | ImmutableSessionConfigField
+>
 
 export type AgentRuntimeStreamEvent = RuntimeStreamEvent | CompatEvent
 export type RuntimeDirectory = string | undefined

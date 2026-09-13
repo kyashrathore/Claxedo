@@ -1,5 +1,18 @@
 import { isRecord } from "./values"
 
+/**
+ * The closed set of effort words a harness may be asked for, mirroring the
+ * Claude Agent SDK's `EffortLevel` union. This is the VOCABULARY; which of
+ * these words a given model accepts is `HarnessEffortLevels` below.
+ */
+export const HARNESS_EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const
+export type HarnessEffortLevel = (typeof HARNESS_EFFORT_LEVELS)[number]
+
+/** Sound because `HARNESS_EFFORT_LEVELS` is the tuple `HarnessEffortLevel` is derived from. */
+export function isHarnessEffortLevel(value: string): value is HarnessEffortLevel {
+  return (HARNESS_EFFORT_LEVELS as readonly string[]).includes(value)
+}
+
 /** One model's accepted effort levels, exactly as the harness reported them. */
 export type HarnessModelEffort = {
   modelID: string
@@ -9,6 +22,8 @@ export type HarnessModelEffort = {
 }
 
 /**
+ * Which effort words a harness accepts, per model, and how sure it is.
+ *
  * `unsupported` — the harness has no effort control, so every level is refused.
  * `unresolved` — it has one, but no model catalog has answered yet, so neither
  * accepting nor refusing a level is grounded in what the harness said.

@@ -22,7 +22,11 @@ import type {
   AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { AgentMessagePageError, hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
-import { admitSessionInstructions } from "@claxedo/agent-sdk-runtime"
+import {
+  admitSessionInstructions,
+  IMMUTABLE_SESSION_CONFIG_FIELDS,
+  type ImmutableSessionConfigField,
+} from "@claxedo/agent-sdk-runtime"
 import {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
   isAgentRuntimeTurnConflictError,
@@ -791,6 +795,18 @@ function unsupportedOperation(
     },
   }, 409)
 }
+
+/** How each fixed-at-create field answers a PATCH that names it. */
+const IMMUTABLE_CONFIG_REFUSALS = {
+  instructions: {
+    code: "session_instructions_immutable",
+    message: "A session's instructions are fixed at create and cannot be changed",
+  },
+  group: {
+    code: "session_group_immutable",
+    message: "A session's model group is fixed at create and cannot be changed",
+  },
+} as const satisfies Record<ImmutableSessionConfigField, { code: string; message: string }>
 
 /**
  * The turn was refused before the harness was asked to run anything, so the
@@ -1652,11 +1668,10 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const wire = await requestBody(c)
-      if ("group" in wire) {
-        return c.json(errorBody(
-          "session_group_immutable",
-          "A session's model group is fixed at create and cannot be changed",
-        ), 409)
+      const immutable = IMMUTABLE_SESSION_CONFIG_FIELDS.find((field) => field in wire)
+      if (immutable) {
+        const refusal = IMMUTABLE_CONFIG_REFUSALS[immutable]
+        return c.json(errorBody(refusal.code, refusal.message), 409)
       }
       const body = normalizeSessionConfigUpdate(wire)
       const requestedHarness = opts.requestedSessionHarness?.(c)

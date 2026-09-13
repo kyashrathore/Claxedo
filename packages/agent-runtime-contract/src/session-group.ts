@@ -43,6 +43,15 @@ export function parseSessionModelGroup(input: unknown): SessionModelGroupParse {
   return { group }
 }
 
+/**
+ * A slot's effort as a session create body spells it. The runtime's field is
+ * `variant` because a harness may accept a thinking level that is not an
+ * effort, so every caller resolving a slot translates here instead of by hand.
+ */
+export function sessionVariantForEffort(effort: string | undefined): { variant?: string } {
+  return effort ? { variant: effort } : {}
+}
+
 export function sessionModelGroupJson(group: SessionModelGroup | null | undefined): string | null {
   return group && Object.keys(group).length > 0 ? JSON.stringify(group) : null
 }

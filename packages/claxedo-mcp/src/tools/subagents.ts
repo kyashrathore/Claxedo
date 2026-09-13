@@ -4,6 +4,7 @@ import {
   isSessionGroupSlot,
   parseHarnessEffortLevels,
   parseSessionModelGroup,
+  sessionVariantForEffort,
   type SessionHarness,
   type SessionModelGroup,
 } from "@claxedo/agent-runtime-contract"
@@ -178,7 +179,7 @@ async function createChildSession(
     parentID,
     ...(args.role ? { role: args.role, title: args.role } : {}),
     ...(choice.model ? { model: choice.model } : {}),
-    ...(choice.effort ? { variant: choice.effort } : {}),
+    ...sessionVariantForEffort(choice.effort),
     instructions,
     ...(args.permissionMode ? { permissionMode: args.permissionMode } : {}),
     ...(args.clientRequestId ? { clientRequestId: args.clientRequestId } : {}),

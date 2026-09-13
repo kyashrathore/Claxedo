@@ -1616,8 +1616,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
               agentSessionId: upstreamSessionId,
             })
             if (!store().getSessionConfig(session.id)) {
+              // An adapter that owns its config has already persisted the
+              // retained pair into this store; one whose config is
+              // runtime-owned wrote nothing, and a reopened session has no
+              // other place to read the instructions or the group back from.
               const accepted = adapter.sessionConfigOwner === "runtime"
-                ? { harness: selectedHarness, model: null, variant: null, agent: null }
+                ? {
+                    harness: selectedHarness,
+                    model: null,
+                    variant: null,
+                    agent: null,
+                    ...(create?.instructions ? { instructions: create.instructions } : {}),
+                    ...(create?.group ? { group: create.group } : {}),
+                  }
                 : await adapter.getSessionConfig(binding)
               store().updateSessionConfig(session.id, {
                 ...accepted,
@@ -1625,11 +1636,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
               }, { directory })
             }
             if (create?.permissionCeiling) store().updateSessionConfig(session.id, { permissionCeiling: create.permissionCeiling }, { directory })
-            // Written here rather than left to the adapter: an adapter that
-            // keeps its config in its own process leaves nothing for a reopened
-            // session to read the instructions or the group back from.
-            if (create?.instructions) store().updateSessionConfig(session.id, { instructions: create.instructions }, { directory })
-            if (create?.group) store().updateSessionConfig(session.id, { group: create.group }, { directory })
             const persisted = store().getSession(session.id)
             if (!persisted) throw new Error(`Session ${session.id} was not persisted`)
             return persisted

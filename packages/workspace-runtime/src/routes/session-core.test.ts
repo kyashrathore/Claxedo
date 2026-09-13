@@ -2337,6 +2337,19 @@ describe("createSessionRoutes session model group", () => {
     const config = await app.request("http://localhost/session/ses_group/config")
     expect(await config.json()).toMatchObject({ group: GROUP })
   })
+
+  test("refuses a PATCH that carries instructions the same way, instead of answering 200 and dropping it", async () => {
+    const { app } = groupRoutes()
+    expect((await create(app, { id: "ses_fixed", group: GROUP })).status).toBe(201)
+
+    const patched = await app.request("http://localhost/session/ses_fixed/config", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ instructions: "Answer only in haiku." }),
+    })
+    expect(patched.status).toBe(409)
+    expect(await patched.json()).toMatchObject({ error: { code: "session_instructions_immutable" } })
+  })
 })
 
 describe("GET /session/capabilities effort levels", () => {
