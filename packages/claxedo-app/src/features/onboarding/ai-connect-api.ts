@@ -209,6 +209,7 @@ function redactedMachineLogin(value: unknown): MachineLogin[] {
   const org = readString(value, "org")
   const detail = readString(value, "detail")
   const usage = redactedUsage(readField(value, "usage"))
+  const usageAt = usage ? readFiniteNumber(value, "usageAt") : undefined
   return [{
     harness,
     providerIds,
@@ -219,6 +220,7 @@ function redactedMachineLogin(value: unknown): MachineLogin[] {
     ...(org === undefined ? {} : { org }),
     ...(detail === undefined ? {} : { detail }),
     ...(usage ? { usage } : {}),
+    ...(usageAt === undefined ? {} : { usageAt }),
   }]
 }
 

@@ -97,6 +97,8 @@ export type MachineLogin = {
   org?: string
   /** Quota windows, for the harnesses that report them. Claude Code does not. */
   usage?: AIUsageWindow[]
+  /** When `usage` was read, on the rows the server answered from stored state. */
+  usageAt?: number
   /** Why the harness could not be asked, when `state` is `unknown`. */
   detail?: string
 }

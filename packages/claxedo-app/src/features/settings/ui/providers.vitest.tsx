@@ -595,6 +595,51 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(accountRow("anthropic", "sdk_work").textContent).toContain("work@acme.com")
   })
 
+  test("a stored account shows the usage the server holds, before anything here has asked", async () => {
+    state.storedCredentials = claudeLogin.map((row) => ({
+      ...row,
+      health: "ok",
+      last_validated_at: Date.now() - 2 * 60 * 60_000,
+      usage_windows: [
+        { window: "session", usedPercent: 23, resetsAt: null },
+        { window: "weekly", usedPercent: 67, resetsAt: null },
+      ],
+      usage_at: Date.now() - 5 * 60_000,
+    }))
+    mount()
+
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
+    // Two ages in the row; the line ends with the percentages, so it is the
+    // percentages that "Checked" dates.
+    expect(accountDetail("anthropic", "sdk_work")).toBe([
+      "acc_work",
+      "settings.providers.live.window:settings.providers.window.session|23",
+      "settings.providers.live.window:settings.providers.window.weekly|67",
+      "settings.providers.live.checkedAt:5 minutes ago",
+    ].join(" · "))
+    expect(state.credentialCalls).not.toContain("POST /api/claxedo/credentials/sdk_work/verify")
+  })
+
+  test("Check puts fresh windows over the ones the server had stored", async () => {
+    state.storedCredentials = claudeLogin.map((row) => ({
+      ...row,
+      usage_windows: [{ window: "session", usedPercent: 23, resetsAt: null }],
+      usage_at: Date.now() - 5 * 60_000,
+    }))
+    mount()
+    await waitFor(() => expect(accountDetail("anthropic", "sdk_work"))
+      .toContain("settings.providers.live.window:settings.providers.window.session|23"))
+
+    rowAction("anthropic", "sdk_work", "check").click()
+
+    await waitFor(() => expect(accountDetail("anthropic", "sdk_work")).toBe([
+      "acc_work",
+      "settings.providers.live.window:settings.providers.window.session|12",
+      "settings.providers.live.window:settings.providers.window.weekly|40",
+      "settings.providers.live.checkedNow",
+    ].join(" · ")))
+  })
+
   test("a rejected account rings its own radio and moves the action to Reconnect", async () => {
     state.storedCredentials = [
       { id: "cred_bad", provider_id: "claude-sdk", kind: "api_key", label: "Old key", is_active: true, health: "auth_failed", last_validated_at: 7 },
@@ -629,6 +674,23 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       .toBe("settings.providers.live.window:settings.providers.window.weekly|64")
     expect(selectedAccount("openai")).toBe("machine")
     expect(agentAction("openai")).toBe("agent-add-account")
+  })
+
+  test("windows the server answered from stored state say how old they are, as a stored account does", async () => {
+    state.machineLogins = [{
+      harness: "codex",
+      providerIds: ["codex-app-server", "openai"],
+      state: "signed_in",
+      email: "machine@acme.com",
+      usage: [{ window: "weekly", usedPercent: 64, resetsAt: null }],
+      usageAt: Date.now() - 5 * 60_000,
+    }]
+    mount()
+    await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
+    expect(accountDetail("openai", "machine")).toBe([
+      "settings.providers.live.window:settings.providers.window.weekly|64",
+      "settings.providers.live.checkedAt:5 minutes ago",
+    ].join(" · "))
   })
 
   test("Claude has no headless usage read, so its machine row says the plan and the org instead", async () => {

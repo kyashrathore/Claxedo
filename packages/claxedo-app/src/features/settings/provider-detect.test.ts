@@ -70,6 +70,69 @@ describe("listStoredCredentials", () => {
     stubNetwork({ "/api/claxedo/credentials": {} })
     expect(await listStoredCredentials()).toEqual([])
   })
+
+  test("the plan windows the server holds for a row come back with the time it read them", async () => {
+    stubNetwork({
+      "/api/claxedo/credentials": {
+        credentials: [{
+          id: "cred_1",
+          provider_id: "claude-sdk",
+          is_active: true,
+          health: "ok",
+          last_validated_at: 7,
+          usage_windows: [
+            { window: "session", usedPercent: 23, resetsAt: 1700 },
+            { window: "weekly", usedPercent: 67, resetsAt: null },
+          ],
+          usage_at: 4242,
+        }],
+      },
+    })
+
+    expect((await listStoredCredentials())[0]).toMatchObject({
+      usage: [
+        { window: "session", usedPercent: 23, resetsAt: 1700 },
+        { window: "weekly", usedPercent: 67, resetsAt: null },
+      ],
+      usageAt: 4242,
+    })
+  })
+
+  test("a malformed usage read is dropped, and nothing is timestamped as a read of it", async () => {
+    stubNetwork({
+      "/api/claxedo/credentials": {
+        credentials: [
+          { id: "not_a_list", provider_id: "claude-sdk", usage_windows: "session 23% used", usage_at: 4242 },
+          { id: "no_numbers", provider_id: "claude-acp", usage_windows: [{ window: "session" }, null, 7], usage_at: 4242 },
+          { id: "nothing_read", provider_id: "openai", usage_windows: [], usage_at: 4242 },
+        ],
+      },
+    })
+
+    const rows = await listStoredCredentials()
+
+    expect(rows.map((row) => row.id)).toEqual(["not_a_list", "no_numbers", "nothing_read"])
+    expect(rows.map((row) => row.usage)).toEqual([undefined, undefined, undefined])
+    expect(rows.map((row) => row.usageAt)).toEqual([undefined, undefined, undefined])
+  })
+
+  test("a window the server could not name is dropped without taking the rest with it", async () => {
+    stubNetwork({
+      "/api/claxedo/credentials": {
+        credentials: [{
+          id: "cred_1",
+          provider_id: "claude-sdk",
+          usage_windows: [{ usedPercent: 23 }, { window: "weekly", usedPercent: 67 }],
+          usage_at: 4242,
+        }],
+      },
+    })
+
+    expect((await listStoredCredentials())[0]).toMatchObject({
+      usage: [{ window: "weekly", usedPercent: 67, resetsAt: null }],
+      usageAt: 4242,
+    })
+  })
 })
 
 function account(partial: Partial<StoredCredential> & { id: string; providerId: string }): StoredCredential {
@@ -103,6 +166,25 @@ describe("harnessAccounts", () => {
     expect(accounts[0]).toMatchObject({ id: "sdk", ids: ["sdk", "acp"], isActive: true })
     // The check and the expiry are the account's, whichever binding recorded them.
     expect(accounts[0]).toMatchObject({ health: "ok", lastValidatedAt: 7, expiresAt: 99 })
+  })
+
+  test("the usage read is the account's, from whichever binding holds it, with that row's own time", () => {
+    const rows = [
+      account({
+        id: "acp",
+        providerId: "claude-acp",
+        accountId: "acc_1",
+        usage: [{ window: "session", usedPercent: 23, resetsAt: null }],
+        usageAt: 4242,
+      }),
+      account({ id: "sdk", providerId: "claude-sdk", accountId: "acc_1", health: "ok", lastValidatedAt: 7 }),
+    ]
+
+    expect(harnessAccounts(CLAUDE_BINDINGS, rows)[0]).toMatchObject({
+      id: "sdk",
+      usage: [{ window: "session", usedPercent: 23, resetsAt: null }],
+      usageAt: 4242,
+    })
   })
 
   test("an account marked on one binding and not the other is not active", () => {
@@ -268,6 +350,25 @@ describe("listEffectiveCredentials / agentInUse", () => {
     expect(agentInUse(codex(), effective)?.label).toBe("ChatGPT OAuth")
     // Nothing stored for Claude: it runs on the login its own CLI holds.
     expect(agentInUse(claude(), effective)).toBeUndefined()
+  })
+
+  test("the row a provider runs on carries the stored usage read the list route reports", async () => {
+    stubNetwork({
+      "/api/claxedo/credentials/effective": {
+        scope: "local",
+        credentials: [{
+          id: "cred_1",
+          provider_id: "codex-app-server",
+          usage_windows: [{ window: "weekly", usedPercent: 64, resetsAt: null }],
+          usage_at: 4242,
+        }],
+      },
+    })
+
+    expect((await listEffectiveCredentials())?.get("codex-app-server")).toMatchObject({
+      usage: [{ window: "weekly", usedPercent: 64, resetsAt: null }],
+      usageAt: 4242,
+    })
   })
 
   test("a host that cannot enumerate its store yields no answer", async () => {

@@ -1,5 +1,6 @@
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { loadMachineLogins, useMachineLogin, type MachineLogin } from "@/features/settings/app-ports"
+import type { AIUsageWindow } from "@/features/onboarding/ai-connect-state"
 import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
 
 /** What the server would hand a harness for a provider: the row, without its secret. */
@@ -12,6 +13,50 @@ export type EffectiveCredential = {
   /** The last provider verdict the server stored for the row, and when. */
   health?: string
   lastValidatedAt?: number
+  /** The plan windows the server stored for the row, and when it read them. */
+  usage?: AIUsageWindow[]
+  usageAt?: number
+}
+
+/** The windows of one stored usage read, dropping any entry that names none. */
+function readUsageWindows(row: unknown): AIUsageWindow[] | undefined {
+  const entries = readArray(row, "usage_windows")
+  if (entries === undefined) return undefined
+  const windows = entries.flatMap((entry): AIUsageWindow[] => {
+    const window = readString(entry, "window")
+    const usedPercent = readFiniteNumber(entry, "usedPercent")
+    if (window === undefined || usedPercent === undefined) return []
+    return [{ window, usedPercent, resetsAt: readFiniteNumber(entry, "resetsAt") ?? null }]
+  })
+  return windows.length > 0 ? windows : undefined
+}
+
+/**
+ * The fields the list route and the effective route spell identically, or
+ * nothing for a row that names neither a credential nor a provider.
+ */
+function credentialRow(row: unknown): EffectiveCredential | undefined {
+  const id = readString(row, "id")
+  const providerId = readString(row, "provider_id")
+  if (id === undefined || providerId === undefined) return undefined
+  const label = readString(row, "label")
+  const kind = readString(row, "kind")
+  const accountId = readString(row, "account_id")
+  const health = readString(row, "health")
+  const lastValidatedAt = readFiniteNumber(row, "last_validated_at")
+  const usage = readUsageWindows(row)
+  const usageAt = usage === undefined ? undefined : readFiniteNumber(row, "usage_at")
+  return {
+    id,
+    providerId,
+    ...(label === undefined ? {} : { label }),
+    ...(kind === undefined ? {} : { kind }),
+    ...(accountId === undefined ? {} : { accountId }),
+    ...(health === undefined ? {} : { health }),
+    ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
+    ...(usage === undefined ? {} : { usage }),
+    ...(usageAt === undefined ? {} : { usageAt }),
+  }
 }
 
 /**
@@ -25,23 +70,9 @@ export async function listEffectiveCredentials() {
   const rows = readArray(await res.json(), "credentials") ?? []
   const effective = new Map<string, EffectiveCredential>()
   for (const row of rows) {
-    const id = readString(row, "id")
-    const providerId = readString(row, "provider_id")
-    if (id === undefined || providerId === undefined) continue
-    const label = readString(row, "label")
-    const kind = readString(row, "kind")
-    const accountId = readString(row, "account_id")
-    const health = readString(row, "health")
-    const lastValidatedAt = readFiniteNumber(row, "last_validated_at")
-    effective.set(providerId, {
-      id,
-      providerId,
-      ...(label === undefined ? {} : { label }),
-      ...(kind === undefined ? {} : { kind }),
-      ...(accountId === undefined ? {} : { accountId }),
-      ...(health === undefined ? {} : { health }),
-      ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
-    })
+    const credential = credentialRow(row)
+    if (credential === undefined) continue
+    effective.set(credential.providerId, credential)
   }
   return effective
 }
@@ -71,25 +102,13 @@ export async function listStoredCredentials(): Promise<StoredCredential[]> {
   const res = await claxedoCredentialRequest(undefined)
   const rows = readArray(await res.json(), "credentials") ?? []
   return rows.flatMap((row) => {
-    const id = readString(row, "id")
-    const providerId = readString(row, "provider_id")
-    if (id === undefined || providerId === undefined) return []
-    const label = readString(row, "label")
-    const kind = readString(row, "kind")
-    const accountId = readString(row, "account_id")
-    const health = readString(row, "health")
-    const lastValidatedAt = readFiniteNumber(row, "last_validated_at")
+    const credential = credentialRow(row)
+    if (credential === undefined) return []
     const expiresAt = readFiniteNumber(row, "expires_at")
     const consentSurface = readString(readField(row, "consent"), "surface")
     return [{
-      id,
-      providerId,
+      ...credential,
       isActive: readBoolean(row, "is_active") === true,
-      ...(label === undefined ? {} : { label }),
-      ...(kind === undefined ? {} : { kind }),
-      ...(accountId === undefined ? {} : { accountId }),
-      ...(health === undefined ? {} : { health }),
-      ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
       ...(expiresAt === undefined ? {} : { expiresAt }),
       ...(consentSurface === undefined ? {} : { consentSurface }),
     }]
@@ -154,6 +173,7 @@ export function harnessAccounts(
     const health = ordered.find((row) => row.health !== undefined)?.health
     const lastValidatedAt = ordered.find((row) => row.lastValidatedAt !== undefined)?.lastValidatedAt
     const expiresAt = ordered.find((row) => row.expiresAt !== undefined)?.expiresAt
+    const usageRead = ordered.find((row) => row.usage !== undefined)
     return [{
       ...first,
       ids: ordered.map((row) => row.id),
@@ -161,6 +181,10 @@ export function harnessAccounts(
       ...(health === undefined ? {} : { health }),
       ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
       ...(expiresAt === undefined ? {} : { expiresAt }),
+      ...(usageRead?.usage === undefined ? {} : {
+        usage: usageRead.usage,
+        ...(usageRead.usageAt === undefined ? {} : { usageAt: usageRead.usageAt }),
+      }),
     }]
   })
   return [...accounts.filter((account) => account.isActive), ...accounts.filter((account) => !account.isActive)]

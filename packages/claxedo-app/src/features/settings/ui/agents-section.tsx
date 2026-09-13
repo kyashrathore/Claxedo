@@ -57,18 +57,21 @@ function partialMachineLogin(login: MachineLogin) {
   return login.serves !== undefined && login.serves.length < login.providerIds.length
 }
 
+type LiveVerdict = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired" | "unknown"
+
 /**
  * What the provider said about one stored account, and when. `unknown` carries
- * the failure's own sentence; the rest are the verifier's health values.
+ * the failure's own sentence; the rest are the verifier's health values. A
+ * stored row can hold a usage read and no verdict, so the verdict is optional.
  */
 type LiveCheck = {
   at: number
-  verdict: "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired" | "unknown"
+  verdict?: LiveVerdict
   usage?: AIUsageWindow[]
   reason?: string
 }
 
-const VERDICT_KEY: Record<LiveCheck["verdict"], string> = {
+const VERDICT_KEY: Record<LiveVerdict, string> = {
   ok: "settings.providers.live.ok",
   auth_failed: "settings.providers.live.authFailed",
   no_billing: "settings.providers.live.noBilling",
@@ -84,11 +87,11 @@ const WINDOW_KEY: Record<string, string> = {
 }
 
 /** The verdicts only a different credential, or a fresh login, can answer. */
-function unusable(verdict: LiveCheck["verdict"]) {
+function unusable(verdict: LiveVerdict) {
   return verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired"
 }
 
-function isHealth(value: string): value is Exclude<LiveCheck["verdict"], "unknown"> {
+function isHealth(value: string): value is Exclude<LiveVerdict, "unknown"> {
   return value === "ok" || value === "auth_failed" || value === "no_billing" || value === "rate_capped" || value === "expired"
 }
 
@@ -142,13 +145,26 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
 
   /**
    * The provider's last word on one stored account: a check made here first,
-   * then the verdict the server holds against that row.
+   * then what the server holds against that row — its verdict, and the plan
+   * windows it last read.
+   *
+   * The windows are the last words on the line, and they are the ones that move
+   * between reads, so "Checked" names the read that produced them; the verdict's
+   * own time stands in only for a row that has none.
    */
-  const accountCheck = (row: HarnessAccount): LiveCheck | undefined =>
-    accountChecks()[row.id]
-      ?? (row.health !== undefined && isHealth(row.health) && row.lastValidatedAt !== undefined
-        ? { at: row.lastValidatedAt, verdict: row.health }
-        : undefined)
+  const accountCheck = (row: HarnessAccount): LiveCheck | undefined => {
+    const live = accountChecks()[row.id]
+    if (live) return live
+    const verdict = row.health !== undefined && isHealth(row.health) ? row.health : undefined
+    if (verdict === undefined && row.usage === undefined) return undefined
+    const at = row.usage === undefined ? row.lastValidatedAt : row.usageAt ?? row.lastValidatedAt
+    if (at === undefined) return undefined
+    return {
+      at,
+      ...(verdict === undefined ? {} : { verdict }),
+      ...(row.usage === undefined ? {} : { usage: row.usage }),
+    }
+  }
 
   /**
    * The entry the harness runs on.
@@ -180,10 +196,8 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     return identity?.readable ? identity.text : row.kind ?? row.providerId
   }
 
-  const verdictWord = (live: LiveCheck) => language.t(VERDICT_KEY[live.verdict])
-
-  const usageWords = (live: LiveCheck | undefined) =>
-    (live?.usage ?? []).map((window) => {
+  const windowWords = (windows: readonly AIUsageWindow[] | undefined) =>
+    (windows ?? []).map((window) => {
       const name = WINDOW_KEY[window.window]
       return language.t("settings.providers.live.window", {
         name: name ? language.t(name) : window.window,
@@ -191,9 +205,9 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       })
     })
 
-  const checkedWords = (live: LiveCheck) => Date.now() - live.at < 60_000
+  const checkedWords = (at: number) => Date.now() - at < 60_000
     ? language.t("settings.providers.live.checkedNow")
-    : language.t("settings.providers.live.checkedAt", { when: formatRelativeTime(live.at, language.locale()) })
+    : language.t("settings.providers.live.checkedAt", { when: formatRelativeTime(at, language.locale()) })
 
   /**
    * The second line of one entry, or nothing when the label already said it
@@ -203,8 +217,8 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const detailWords = (live: LiveCheck | undefined, origin?: string) => {
     const words = [
       ...(origin === undefined ? [] : [origin]),
-      ...usageWords(live),
-      ...(live === undefined ? [] : [checkedWords(live)]),
+      ...windowWords(live?.usage),
+      ...(live === undefined ? [] : [checkedWords(live.at)]),
     ]
     return words.length > 0 ? words.join(" · ") : undefined
   }
@@ -213,6 +227,10 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
    * The machine login's second line: how far the login reaches, then what the
    * harness itself reported — its quota windows where it has them, and
    * otherwise the plan and organization it named.
+   *
+   * A harness answering now is its own timestamp; the server sends `usageAt`
+   * only for windows it had already stored, which are the ones whose age is
+   * worth a word.
    */
   const machineWords = (login: MachineLogin, check: LocalHarnessCheck) => {
     if (login.state === "absent") return language.t("settings.providers.agents.machineNotInstalled")
@@ -220,18 +238,16 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       return language.t("settings.providers.agents.machineSignedOut", { command: check.signIn })
     }
     if (login.state === "unknown") return login.detail ?? language.t("settings.providers.agents.machineUnknown")
-    const windows = (login.usage ?? []).map((window) => {
-      const name = WINDOW_KEY[window.window]
-      return language.t("settings.providers.live.window", {
-        name: name ? language.t(name) : window.window,
-        used: String(window.usedPercent),
-      })
-    })
+    const windows = windowWords(login.usage)
     const identity = windows.length > 0
       ? windows
       : [login.plan ? language.t("settings.providers.agents.machinePlan", { plan: login.plan }) : undefined, login.org]
         .filter((word): word is string => word !== undefined)
-    const words = [...reachWords(login), ...identity]
+    const words = [
+      ...reachWords(login),
+      ...identity,
+      ...(login.usageAt === undefined ? [] : [checkedWords(login.usageAt)]),
+    ]
     return words.length > 0 ? words.join(" · ") : undefined
   }
 
@@ -245,8 +261,10 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     partialMachineLogin(login) ? (MACHINE_REACH[login.harness] ?? []).map((key) => language.t(key)) : []
 
   /** The provider's refusal, which the row draws as a ring rather than as text. */
-  const refusedWord = (live: LiveCheck | undefined) =>
-    live && unusable(live.verdict) ? verdictWord(live) : undefined
+  const refusedWord = (live: LiveCheck | undefined) => {
+    const verdict = live?.verdict
+    return verdict !== undefined && unusable(verdict) ? language.t(VERDICT_KEY[verdict]) : undefined
+  }
 
   const listedAccounts = (check: LocalHarnessCheck): AgentAccount[] => {
     const selected = selectedKey(check)
