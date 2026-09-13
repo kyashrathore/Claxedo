@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test"
 import { HARNESS_IDS, HARNESS_TABLE, harnessForProviderId, isHarnessId } from "./harness-table"
 
 describe("harness table", () => {
+  test("the connect provider leads the list a resolver reads in order", () => {
+    for (const harness of HARNESS_IDS) {
+      expect(HARNESS_TABLE[harness].providerIds[0]).toBe(HARNESS_TABLE[harness].connectProvider)
+    }
+  })
+
   test("every harness names its connect provider and its served ids among its own providers", () => {
     for (const harness of HARNESS_IDS) {
       const record = HARNESS_TABLE[harness]
@@ -28,7 +34,7 @@ describe("harness table", () => {
 
   test("a CLI login serves only the bindings it actually drives", () => {
     expect(HARNESS_TABLE.cursor.machineLoginServes).toEqual(["cursor-acp"])
-    expect(HARNESS_TABLE.claude.machineLoginServes).toEqual(["claude-acp", "claude-sdk"])
+    expect(HARNESS_TABLE.claude.machineLoginServes).toEqual(["claude-sdk", "claude-acp"])
     expect(HARNESS_TABLE.codex.machineLoginServes).toEqual(HARNESS_TABLE.codex.providerIds)
   })
 

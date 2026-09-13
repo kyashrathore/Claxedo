@@ -19,11 +19,16 @@ export type HarnessRecord = {
   label: string
   vendor: string
   /**
-   * Every registry provider id whose stored row this harness can run on: the
-   * bindings it resolves auth through, then the vendor binding it falls back to
-   * when none of them holds an account. `claudeAuthValue` reads `claude-sdk`
-   * then `anthropic`, and `cursorAuthValue` reads `cursor-sdk` then `cursor`,
-   * so a reader that stopped at the aliases would drop a working account.
+   * Every registry provider id whose stored row this harness can run on:
+   * connect provider first, then the other harness binding, then the vendor
+   * fallback.
+   *
+   * The order is load-bearing at both ends. A connect card stores under
+   * `connectProvider`, and a resolver that asks which stored row a turn will
+   * spend takes the first of these that has one. `claudeAuthValue` reads
+   * `claude-sdk` then `anthropic` and `cursorAuthValue` reads `cursor-sdk` then
+   * `cursor`, so a list that stopped at the aliases would drop a working
+   * account.
    */
   providerIds: readonly string[]
   /** The provider id a sign-in for this harness is stored against. */
@@ -40,9 +45,9 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
   claude: {
     label: "Claude Code",
     vendor: "Anthropic",
-    providerIds: ["claude-acp", "claude-sdk", "anthropic"],
+    providerIds: ["claude-sdk", "claude-acp", "anthropic"],
     connectProvider: "claude-sdk",
-    machineLoginServes: ["claude-acp", "claude-sdk"],
+    machineLoginServes: ["claude-sdk", "claude-acp"],
   },
   codex: {
     label: "Codex",
@@ -54,7 +59,7 @@ export const HARNESS_TABLE: Readonly<Record<HarnessId, HarnessRecord>> = {
   cursor: {
     label: "Cursor",
     vendor: "Cursor",
-    providerIds: ["cursor-acp", "cursor-sdk", "cursor"],
+    providerIds: ["cursor-sdk", "cursor-acp", "cursor"],
     connectProvider: "cursor-sdk",
     machineLoginServes: ["cursor-acp"],
   },
