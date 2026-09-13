@@ -1,20 +1,24 @@
 /**
  * The half of a Tasks list read that is the same on every durable adapter: how
- * many rows the caller may have, where the cursor left off, and how a row set
- * read with one row to spare becomes a page and the cursor for the next one.
+ * many rows the caller may have, where the cursor left off, how a row set read
+ * with one row to spare becomes a page and the cursor for the next one, and
+ * how a page of task rows picks up its session and child counts.
  *
- * The seek itself is not here. SQLite expresses it as drizzle conditions and
- * D1 as a SQL fragment, and folding those into one shape would buy a shared
- * name for two genuinely different expressions.
+ * The seek itself is not here, nor are the count queries. SQLite expresses
+ * those as drizzle conditions and D1 as SQL fragments, and folding them into
+ * one shape would buy a shared name for two genuinely different expressions.
  */
 import {
   clampLimit,
   decodePageCursor,
   encodePageCursor,
+  taskSummaryOf,
   type ListQuery,
   type Page,
   type PageKey,
+  type TaskSummary,
 } from "@claxedo/tasks"
+import { taskOfColumns, type StoredTaskColumns } from "./stored-rows"
 
 export type TasksPageBounds = {
   limit: number
@@ -49,14 +53,6 @@ export function childCountLookup(rows: readonly { taskId: string; total: number;
   return (taskId: string) => counts.get(taskId) ?? { total: 0, done: 0 }
 }
 
-/**
- * The ids of the rows this page will show. The row past the limit only answers
- * "is there more", so counting its links would be a read nothing renders.
- */
-export function tasksPageRows<Row>(rows: readonly Row[], limit: number): readonly Row[] {
-  return rows.slice(0, limit)
-}
-
 /** `rows` must have been read with `limit + 1`: the extra row is what says another page exists. */
 export function tasksPage<Row, Item extends PageKey>(
   rows: readonly Row[],
@@ -66,4 +62,25 @@ export function tasksPage<Row, Item extends PageKey>(
   const items = rows.slice(0, limit).map(item)
   const last = items.at(-1)
   return { items, nextCursor: last && rows.length > limit ? encodePageCursor(last) : null }
+}
+
+export type TaskSummaryCounts = {
+  links: (taskId: string) => { count: number }
+  children: (taskId: string) => { total: number; done: number }
+}
+
+/**
+ * A page of stored task rows as the summaries a caller reads.
+ *
+ * `counts` is asked only for the ids this page will show: the row past the
+ * limit answers "is there more" and nothing renders it, so counting its
+ * sessions and children would be two reads for a row the caller never sees.
+ */
+export async function taskSummaryPage(
+  rows: readonly StoredTaskColumns[],
+  limit: number,
+  counts: (taskIds: readonly string[]) => Promise<TaskSummaryCounts>,
+): Promise<Page<TaskSummary>> {
+  const { links, children } = await counts(rows.slice(0, limit).map((row) => row.task_id))
+  return tasksPage(rows, limit, (row) => taskSummaryOf(taskOfColumns(row), links(row.task_id), children(row.task_id)))
 }

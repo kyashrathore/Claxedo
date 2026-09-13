@@ -7,7 +7,7 @@ import {
   signedTasksRuntimePrincipal,
 } from "@claxedo/server-core/tasks-host/authorization"
 import { createTasksCapabilities, randomTasksIds, systemTasksClock } from "@claxedo/server-core/tasks-host/host-ports"
-import { createSqliteTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
+import { sqliteTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
 import { createLocalTasksSessionBridge } from "@claxedo/local-server/tasks/session-bridge"
 import { createTasksSessionRelease, createTasksSessionReserve } from "./session-bridge"
 import { TASKS_ROUTE_PATH, createTasksRoutes } from "@claxedo/tasks/http"
@@ -51,7 +51,7 @@ export function createSelfHostedTasksComposition(
         id: "claxedo-tasks",
         path: TASKS_ROUTE_PATH,
         routes: createTasksRoutes({
-          store: createSqliteTasksStore(),
+          store: sqliteTasksStore,
           authorization: createTasksAuthorization({ authority, principals }),
           authenticate: signedTasksAuthenticate({
             authority,

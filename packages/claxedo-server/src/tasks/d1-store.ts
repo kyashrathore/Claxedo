@@ -23,16 +23,12 @@
  */
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import {
-  TASKS_STORE_CONFLICTS,
-  TasksStoreConflict,
-  taskSummaryOf,
   type ConfigurationSlot,
   type ListQuery,
   type Preset,
   type Task,
   type TaskSessionLink,
   type TasksCommandReceipt,
-  type TasksStoreConflictKind,
   type TasksStoreOperations,
   type TasksStorePort,
 } from "@claxedo/tasks"
@@ -53,10 +49,15 @@ import {
 import {
   childCountLookup,
   linkCountLookup,
+  taskSummaryPage,
   tasksPage,
   tasksPageBounds,
-  tasksPageRows,
 } from "@claxedo/server-core/tasks-host/paging"
+import {
+  taskNumberTakenRefusal,
+  tasksStoreConflict,
+  type TasksConflictProbe,
+} from "@claxedo/server-core/tasks-host/store-conflicts"
 
 export type D1TasksStoreInput = Readonly<{ database: D1Database }>
 
@@ -197,20 +198,9 @@ type Overlay = {
   receipts: Map<string, TasksCommandReceipt>
 }
 
-/**
- * How one statement in the batch can refuse, and how to tell afterwards
- * whether it did. A batch reports the failure but not which predicate broke,
- * and every predicate in it was true when the operation that queued it
- * answered its caller — so the answer is read back from committed rows.
- */
-type ConflictProbe = Readonly<{
-  kind: TasksStoreConflictKind
-  broken: () => Promise<string | undefined>
-}>
-
 type Unit = {
   statements: D1PreparedStatement[]
-  probes: ConflictProbe[]
+  probes: TasksConflictProbe[]
   overlay: Overlay
 }
 
@@ -292,26 +282,18 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
       probe: {
         kind: "stale-revision",
         broken: async () => ((await committedRevision(table, idColumn, scopeId, id)) === expectedRevision ? undefined : refusal),
-      } satisfies ConflictProbe,
+      } satisfies TasksConflictProbe,
     }
   }
 
-  const classify = async (probes: readonly ConflictProbe[], cause: unknown): Promise<TasksStoreConflict | undefined> => {
-    const ordered = [...probes].sort(
-      (left, right) => TASKS_STORE_CONFLICTS.indexOf(left.kind) - TASKS_STORE_CONFLICTS.indexOf(right.kind),
-    )
-    for (const probe of ordered) {
-      const broken = await probe.broken()
-      if (broken) return new TasksStoreConflict(probe.kind, broken, { cause })
-    }
-    return undefined
-  }
-
-  const runBatch = async (statements: readonly D1PreparedStatement[], probes: readonly ConflictProbe[]): Promise<void> => {
+  const runBatch = async (
+    statements: readonly D1PreparedStatement[],
+    probes: readonly TasksConflictProbe[],
+  ): Promise<void> => {
     try {
       await database.batch([...statements])
     } catch (cause) {
-      throw (await classify(probes, cause)) ?? cause
+      throw (await tasksStoreConflict(probes, cause)) ?? cause
     }
   }
 
@@ -320,7 +302,7 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
     unit: Unit | undefined,
     statements: readonly D1PreparedStatement[],
     record: (overlay: Overlay) => void,
-    probes: readonly ConflictProbe[] = [],
+    probes: readonly TasksConflictProbe[] = [],
   ): Promise<void> => {
     if (!unit) {
       await runBatch(statements, probes)
@@ -346,10 +328,17 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
     return row ? linkOfColumns(row) : undefined
   }
 
-  const numberHolder = async (scopeId: string, projectId: string, number: number): Promise<string | undefined> => {
+  const receiptHolder = async (receipt: TasksCommandReceipt): Promise<boolean> =>
+    (await database
+      .prepare(`select client_request_id from task_command_receipts where scope_id = ? and client_request_id = ?`)
+      .bind(receipt.scopeId, receipt.clientRequestId)
+      .first()) !== null
+
+  /** The task, other than this one, that holds this project's number — the whole of what the unique index refuses. */
+  const numberHolder = async (task: Task): Promise<string | undefined> => {
     const row = await database
-      .prepare(`select task_id from tasks where scope_id = ? and project_id = ? and number = ?`)
-      .bind(scopeId, projectId, number)
+      .prepare(`select task_id from tasks where scope_id = ? and project_id = ? and number = ? and task_id <> ?`)
+      .bind(task.scopeId, task.projectId, task.number, task.id)
       .first<{ task_id: string }>()
     return row?.task_id
   }
@@ -459,12 +448,10 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           )
           .bind(...bindings, ...page.bindings, page.limit + 1)
           .all<StoredTaskColumns>()
-        const ids = tasksPageRows(rows.results, page.limit).map((row) => row.task_id)
-        const links = await preparedLinkCounts(database, scopeId, ids)
-        const children = await preparedChildCounts(database, scopeId, ids)
-        return tasksPage(rows.results, page.limit, (row) =>
-          taskSummaryOf(taskOfColumns(row), links(row.task_id), children(row.task_id)),
-        )
+        return taskSummaryPage(rows.results, page.limit, async (taskIds) => ({
+          links: await preparedLinkCounts(database, scopeId, taskIds),
+          children: await preparedChildCounts(database, scopeId, taskIds),
+        }))
       },
 
       async listChildren(scopeId, parentTaskId, query) {
@@ -478,12 +465,10 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           )
           .bind(scopeId, parentTaskId, ...page.bindings, page.limit + 1)
           .all<StoredTaskColumns>()
-        const ids = tasksPageRows(rows.results, page.limit).map((row) => row.task_id)
-        const links = await preparedLinkCounts(database, scopeId, ids)
-        const children = await preparedChildCounts(database, scopeId, ids)
-        return tasksPage(rows.results, page.limit, (row) =>
-          taskSummaryOf(taskOfColumns(row), links(row.task_id), children(row.task_id)),
-        )
+        return taskSummaryPage(rows.results, page.limit, async (taskIds) => ({
+          links: await preparedLinkCounts(database, scopeId, taskIds),
+          children: await preparedChildCounts(database, scopeId, taskIds),
+        }))
       },
 
       async countChildren(scopeId, parentTaskId, filter) {
@@ -523,9 +508,7 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
             {
               kind: "number-taken",
               broken: async () =>
-                (await numberHolder(task.scopeId, task.projectId, task.number))
-                  ? `task number ${task.number} in project ${task.projectId} was taken by another task`
-                  : undefined,
+                (await numberHolder(task)) ? taskNumberTakenRefusal(task.projectId, task.number) : undefined,
             },
           ],
         )
@@ -630,28 +613,30 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
         // The primary key is the whole race, here and in the batch: a second
         // client holding the same request id fails this insert rather than
         // replacing the result the first one committed.
+        const duplicate: TasksConflictProbe = {
+          kind: "duplicate-receipt",
+          broken: async () =>
+            (await receiptHolder(receipt))
+              ? `client request ${receipt.clientRequestId} was committed by another request`
+              : undefined,
+        }
         if (!unit) {
-          return await statement
-            .run()
-            .then(() => true)
-            .catch(() => false)
+          try {
+            await statement.run()
+          } catch (cause) {
+            // `false` is the one answer that makes the command layer replay a
+            // committed result, so only a row that is actually there may
+            // produce it; a transport failure has to keep travelling.
+            if (!(await duplicate.broken())) throw cause
+            return false
+          }
+          return true
         }
         await commit(
           unit,
           [statement],
           (overlay) => overlay.receipts.set(overlayKey(receipt.scopeId, receipt.clientRequestId), receipt),
-          [
-            {
-              kind: "duplicate-receipt",
-              broken: async () =>
-                (await database
-                  .prepare(`select client_request_id from task_command_receipts where scope_id = ? and client_request_id = ?`)
-                  .bind(receipt.scopeId, receipt.clientRequestId)
-                  .first())
-                  ? `client request ${receipt.clientRequestId} was committed by another request`
-                  : undefined,
-            },
-          ],
+          [duplicate],
         )
         return true
       },

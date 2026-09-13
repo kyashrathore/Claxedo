@@ -5,7 +5,7 @@ import {
   loopbackTasksAuthenticate,
 } from "@claxedo/server-core/tasks-host/authorization"
 import { createTasksCapabilities, randomTasksIds, systemTasksClock } from "@claxedo/server-core/tasks-host/host-ports"
-import { createSqliteTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
+import { sqliteTasksStore } from "@claxedo/server-core/tasks-host/sqlite-store"
 import { TASKS_ROUTE_PATH, createTasksRoutes } from "@claxedo/tasks/http"
 import { createLocalTasksSessionBridge } from "./session-bridge"
 
@@ -27,7 +27,7 @@ export const routeContributions: readonly ControlPlaneRouteContribution[] = [
     id: "claxedo-tasks",
     path: TASKS_ROUTE_PATH,
     routes: createTasksRoutes({
-      store: createSqliteTasksStore(),
+      store: sqliteTasksStore,
       authorization: createLocalTasksAuthorization(),
       authenticate: loopbackTasksAuthenticate(principals),
       bridge: createLocalTasksSessionBridge(),

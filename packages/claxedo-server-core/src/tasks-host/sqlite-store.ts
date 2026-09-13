@@ -11,15 +11,14 @@ import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core"
 import {
   serializedTransactions,
-  taskSummaryOf,
   type ConfigurationSlot,
   type ListQuery,
-  type Page,
-  type TaskSummary,
+  type Task,
   type TasksStoreOperations,
   type TasksStorePort,
 } from "@claxedo/tasks"
-import { childCountLookup, linkCountLookup, tasksPage, tasksPageBounds, tasksPageRows } from "./paging"
+import { childCountLookup, linkCountLookup, taskSummaryPage, tasksPage, tasksPageBounds } from "./paging"
+import { taskNumberTakenRefusal, tasksStoreConflict } from "./store-conflicts"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import {
   linkColumns,
@@ -105,18 +104,11 @@ function groupedChildCounts(use: Reader, scopeId: string, taskIds: readonly stri
   )
 }
 
-function taskSummaries(
-  use: Reader,
-  scopeId: string,
-  rows: readonly StoredTaskColumns[],
-  limit: number,
-): Page<TaskSummary> {
-  const ids = tasksPageRows(rows, limit).map((row) => row.task_id)
-  const links = groupedLinkCounts(use, scopeId, ids)
-  const children = groupedChildCounts(use, scopeId, ids)
-  return tasksPage(rows, limit, (row) =>
-    taskSummaryOf(taskOfColumns(row), links(row.task_id), children(row.task_id)),
-  )
+function taskSummaries(use: Reader, scopeId: string, rows: readonly StoredTaskColumns[], limit: number) {
+  return taskSummaryPage(rows, limit, async (taskIds) => ({
+    links: groupedLinkCounts(use, scopeId, taskIds),
+    children: groupedChildCounts(use, scopeId, taskIds),
+  }))
 }
 
 type Reader = <T>(callback: (db: ClaxedoDB.Client) => T) => T
@@ -279,7 +271,24 @@ function tasksOperations(use: Reader): TasksStoreOperations {
       },
 
       async insert(task) {
-        use((db) => db.insert(ClaxedoTaskTable).values(taskColumns(task)).run())
+        try {
+          use((db) => db.insert(ClaxedoTaskTable).values(taskColumns(task)).run())
+        } catch (cause) {
+          throw (
+            (await tasksStoreConflict(
+              [
+                {
+                  kind: "number-taken",
+                  broken: async () =>
+                    numberHolder(use, task)
+                      ? taskNumberTakenRefusal(task.projectId, task.number)
+                      : undefined,
+                },
+              ],
+              cause,
+            )) ?? cause
+          )
+        }
       },
 
       async update(task, expectedRevision) {
@@ -380,6 +389,25 @@ function tasksOperations(use: Reader): TasksStoreOperations {
   }
 }
 
+/** The task, other than this one, that holds this project's number — the whole of what the unique index refuses. */
+function numberHolder(use: Reader, task: Task): string | undefined {
+  const row = use((db) =>
+    db
+      .select({ taskId: ClaxedoTaskTable.task_id })
+      .from(ClaxedoTaskTable)
+      .where(
+        and(
+          eq(ClaxedoTaskTable.scope_id, task.scopeId),
+          eq(ClaxedoTaskTable.project_id, task.projectId),
+          eq(ClaxedoTaskTable.number, task.number),
+          ne(ClaxedoTaskTable.task_id, task.id),
+        ),
+      )
+      .get(),
+  )
+  return row?.taskId
+}
+
 function slotScope(scopeId: string, taskId: string, slot: ConfigurationSlot) {
   return and(
     eq(ClaxedoTaskSessionLinkTable.scope_id, scopeId),
@@ -390,15 +418,16 @@ function slotScope(scopeId: string, taskId: string, slot: ConfigurationSlot) {
 
 /**
  * Tasks reads and writes the claxedo database over a connection of its own,
- * one per database file and shared by every adapter instance.
+ * one per database file.
  *
  * A unit of work holds `BEGIN` across awaits, and the shared `ClaxedoDB` handle
  * cannot carry that: a transaction open on it swallows every other module's
  * autocommitted write and rolls it back with the unit, and a `BEGIN` issued
  * while one is already open is an error rather than a nested unit. One
- * connection per file rather than one per adapter, for the same reason — two
- * adapters on two connections would each open a unit with nothing arbitrating
- * them.
+ * connection per file is also why this store is one object rather than a
+ * factory: two store objects on two connections would each open a unit with
+ * nothing arbitrating them, so there is exactly one, and `serializedTransactions`
+ * queues every unit on it.
  *
  * `BEGIN DEFERRED`, not `IMMEDIATE`: the unit takes a WAL read snapshot and
  * promotes it at its first write, so a write from elsewhere in the process
@@ -446,6 +475,4 @@ const transaction = serializedTransactions(async (work) => {
   }
 })
 
-export function createSqliteTasksStore(): TasksStorePort {
-  return { ...operations, transaction }
-}
+export const sqliteTasksStore: TasksStorePort = { ...operations, transaction }

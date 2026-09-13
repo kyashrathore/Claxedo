@@ -1,11 +1,7 @@
 /**
- * SQLite side of the shared Tasks store-port conformance suite.
- *
- * The same runner-neutral cases run against the kit's reference adapter
- * (`@claxedo/tasks` stores/memory) and against the hosted D1 store
- * (`@claxedo/server/tasks/d1-store.test.ts`). A divergence here is a divergence
- * in what a revision predicate, a claimed session origin or a scope means on
- * one of the two products.
+ * SQLite side of `tasksStoreConformance`, the kit-owned suite every durable
+ * Tasks adapter runs. A divergence here is a divergence in what a revision
+ * predicate, a claimed session origin or a scope means on one of the products.
  */
 import { mkdirSync, realpathSync } from "fs"
 import fs from "fs/promises"
@@ -18,7 +14,8 @@ const roots: string[] = []
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 
 const { ClaxedoDB } = await import("../platform/db/index")
-const { createSqliteTasksStore } = await import("./sqlite-store")
+const { sqliteTasksStore } = await import("./sqlite-store")
+const { TasksStoredRowError } = await import("./stored-rows")
 const { tasksStoreConformance, tasksCommandReplayConformance, CONFORMANCE_SCOPES } = await import("@claxedo/tasks/conformance")
 
 /**
@@ -46,7 +43,7 @@ afterAll(async () => {
 describe("SQLite TasksStorePort conformance", () => {
   for (const testCase of tasksStoreConformance(async () => {
     freshDatabase()
-    return { store: createSqliteTasksStore() }
+    return { store: sqliteTasksStore }
   })) {
     test(testCase.name, testCase.run)
   }
@@ -55,7 +52,7 @@ describe("SQLite TasksStorePort conformance", () => {
 describe("SQLite Tasks command replay conformance", () => {
   for (const testCase of tasksCommandReplayConformance(async () => {
     freshDatabase()
-    return { store: createSqliteTasksStore() }
+    return { store: sqliteTasksStore }
   })) {
     test(testCase.name, testCase.run)
   }
@@ -95,12 +92,11 @@ function deferred(): { reached: Promise<void>; reach: () => void } {
 describe("SQLite Tasks store units", () => {
   test("a write from another module survives a Tasks unit that rolls back", async () => {
     freshDatabase()
-    const store = createSqliteTasksStore()
-    await store.tasks.insert(taskRow("task-anchor"))
+    await sqliteTasksStore.tasks.insert(taskRow("task-anchor"))
 
     const opened = deferred()
     const release = deferred()
-    const refused = store.transaction(async (operations) => {
+    const refused = sqliteTasksStore.transaction(async (operations) => {
       await operations.tasks.get("local", "task-anchor")
       opened.reach()
       await release.reached
@@ -120,33 +116,41 @@ describe("SQLite Tasks store units", () => {
     })
   })
 
-  test("two adapter instances run overlapping units one after another", async () => {
+  test("a unit opened while another holds the connection queues behind it", async () => {
     freshDatabase()
-    const first = createSqliteTasksStore()
-    const second = createSqliteTasksStore()
 
     const held = deferred()
-    const holding = first.transaction(async (operations) => {
+    const holding = sqliteTasksStore.transaction(async (operations) => {
       await operations.tasks.insert(taskRow("task-holding"))
       await held.reached
     })
-    const queued = second.transaction(async (operations) => {
+    const queued = sqliteTasksStore.transaction(async (operations) => {
       await operations.tasks.insert(taskRow("task-queued"))
     })
     held.reach()
 
     await holding
     await queued
-    expect(await first.tasks.get("local", "task-holding")).toMatchObject({ id: "task-holding" })
-    expect(await second.tasks.get("local", "task-queued")).toMatchObject({ id: "task-queued" })
+    expect(await sqliteTasksStore.tasks.get("local", "task-holding")).toMatchObject({ id: "task-holding" })
+    expect(await sqliteTasksStore.tasks.get("local", "task-queued")).toMatchObject({ id: "task-queued" })
+  })
+
+  test("a create that loses the task-number race is the conflict the hosted store reports", async () => {
+    freshDatabase()
+    await sqliteTasksStore.tasks.insert(taskRow("task-holding"))
+
+    const raced = sqliteTasksStore.tasks.insert({
+      ...taskRow("task-queued"),
+      number: taskRow("task-holding").number,
+    })
+    await expect(raced).rejects.toMatchObject({ name: "TasksStoreConflict", kind: "number-taken" })
   })
 })
 
 describe("SQLite Tasks store persistence", () => {
-  test("rows survive a fresh adapter instance and a reopened database", async () => {
+  test("rows survive a reopened database", async () => {
     freshDatabase()
-    const first = createSqliteTasksStore()
-    await first.tasks.insert({
+    await sqliteTasksStore.tasks.insert({
       id: "task-persist",
       revision: 3,
       scopeId: "local",
@@ -166,8 +170,7 @@ describe("SQLite Tasks store persistence", () => {
     ClaxedoDB.close()
     ClaxedoDB.Drizzle()
 
-    const second = createSqliteTasksStore()
-    expect(await second.tasks.get("local", "task-persist")).toMatchObject({
+    expect(await sqliteTasksStore.tasks.get("local", "task-persist")).toMatchObject({
       revision: 3,
       status: "doing",
       childSetRevision: 2,
@@ -177,8 +180,7 @@ describe("SQLite Tasks store persistence", () => {
 
   test("a preset's execution and configurations come back as the records they were written from", async () => {
     freshDatabase()
-    const store = createSqliteTasksStore()
-    await store.presets.insert({
+    await sqliteTasksStore.presets.insert({
       id: "preset-cloud",
       revision: 1,
       scopeId: CONFORMANCE_SCOPES.first,
@@ -202,7 +204,7 @@ describe("SQLite Tasks store persistence", () => {
       updatedAt: 1,
     })
 
-    const stored = await store.presets.get(CONFORMANCE_SCOPES.first, "preset-cloud")
+    const stored = await sqliteTasksStore.presets.get(CONFORMANCE_SCOPES.first, "preset-cloud")
     expect(stored?.execution).toEqual({
       placement: "cloud",
       capabilities: {
@@ -220,13 +222,16 @@ describe("SQLite Tasks store persistence", () => {
 
   test("a stored row that no longer decodes is refused instead of read as a record", async () => {
     freshDatabase()
-    const store = createSqliteTasksStore()
     ClaxedoDB.use((db) =>
       db.run(
         `INSERT INTO claxedo_task (scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, title, description, status, child_set_revision, archived_at, created_at, updated_at)
          VALUES ('local', 'task-broken', 1, 'project-a', 1, NULL, NULL, 'Broken', '', 'sideways', 0, NULL, 1, 1)`,
       ),
     )
-    await expect(store.tasks.get("local", "task-broken")).rejects.toThrow(/status/)
+    const refused = await sqliteTasksStore.tasks
+      .get("local", "task-broken")
+      .then(() => undefined, (error: unknown) => error)
+    expect(refused).toBeInstanceOf(TasksStoredRowError)
+    expect((refused as Error).message).toMatch(/status/)
   })
 })
