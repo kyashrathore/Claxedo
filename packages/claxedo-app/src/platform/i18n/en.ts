@@ -122,7 +122,6 @@ export const dict = {
   "provider.connect.title.harness": "Connect {{harness}}",
   "provider.connect.title.engine": "Connect {{vendor}} for {{engine}}",
   "provider.connect.selectMethod": "Select login method for {{vendor}}.",
-  "provider.connect.method.apiKey": "API key",
   "provider.connect.status.inProgress": "Authorization in progress...",
   "provider.connect.status.waiting": "Waiting for authorization...",
   "provider.connect.apiKey.label": "{{vendor}} API key",

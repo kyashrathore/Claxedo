@@ -110,7 +110,6 @@ export const dict = {
   "provider.connect.title.harness": "{{harness}} 연결",
   "provider.connect.title.engine": "{{engine}}용 {{vendor}} 연결",
   "provider.connect.selectMethod": "{{vendor}} 로그인 방법 선택",
-  "provider.connect.method.apiKey": "API 키",
   "provider.connect.status.inProgress": "인증 진행 중...",
   "provider.connect.status.waiting": "인증 대기 중...",
   "provider.connect.apiKey.label": "{{vendor}} API 키",

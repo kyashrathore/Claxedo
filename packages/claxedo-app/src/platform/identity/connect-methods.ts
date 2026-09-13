@@ -128,6 +128,23 @@ export function connectMethodOptions(
   return [...named, ...rest]
 }
 
+/**
+ * The methods to offer when the server names none.
+ *
+ * `/providers/auth` serves the model-provider catalog and answers only for
+ * `pi` and `opencode`, so a native harness — Claude Code, Codex, Cursor — asks
+ * it and is refused. Everything a reader pastes needs no answer from it: the
+ * command that mints a subscription token and the vendor's key page are both
+ * in the table above. Only OAuth needs the server's index, so it is left out.
+ */
+export function fallbackConnectMethods(
+  providerId: string,
+): { type: ConnectMethodType; label: string; command?: string }[] {
+  const pasted = vendorMethods(providerId).filter((spec) => spec.type !== "oauth")
+  const specs = pasted.length > 0 ? pasted : [genericSpec("api")]
+  return specs.map((spec) => ({ type: spec.type, label: "", ...(spec.command ? { command: spec.command } : {}) }))
+}
+
 /** Every i18n base this table can ask for, so locale coverage is checked against the table itself. */
 export const CONNECT_METHOD_COPY_BASES: readonly string[] = [
   ...VENDORS.flatMap((vendor) => vendor.methods.map((method) => method.copy)),

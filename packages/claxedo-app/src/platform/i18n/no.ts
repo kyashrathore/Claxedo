@@ -125,7 +125,6 @@ export const dict = {
   "provider.connect.title.harness": "Koble til {{harness}}",
   "provider.connect.title.engine": "Koble til {{vendor}} for {{engine}}",
   "provider.connect.selectMethod": "Velg innloggingsmetode for {{vendor}}.",
-  "provider.connect.method.apiKey": "API-nøkkel",
   "provider.connect.status.inProgress": "Autorisering pågår...",
   "provider.connect.status.waiting": "Venter på autorisering...",
   "provider.connect.apiKey.label": "{{vendor}} API-nøkkel",

@@ -110,7 +110,6 @@ export const dict = {
   "provider.connect.title.harness": "{{harness}} を接続",
   "provider.connect.title.engine": "{{engine}} 用に {{vendor}} を接続",
   "provider.connect.selectMethod": "{{vendor}}のログイン方法を選択してください。",
-  "provider.connect.method.apiKey": "APIキー",
   "provider.connect.status.inProgress": "認証中...",
   "provider.connect.status.waiting": "認証を待機中...",
   "provider.connect.apiKey.label": "{{vendor}} APIキー",

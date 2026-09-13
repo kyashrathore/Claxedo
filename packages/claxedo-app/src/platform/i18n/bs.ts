@@ -122,7 +122,6 @@ export const dict = {
   "provider.connect.title.harness": "Poveži {{harness}}",
   "provider.connect.title.engine": "Poveži {{vendor}} za {{engine}}",
   "provider.connect.selectMethod": "Odaberi način prijave za {{vendor}}.",
-  "provider.connect.method.apiKey": "API ključ",
   "provider.connect.status.inProgress": "Autorizacija je u toku...",
   "provider.connect.status.waiting": "Čekanje na autorizaciju...",
   "provider.connect.apiKey.label": "{{vendor}} API ključ",

@@ -110,7 +110,6 @@ export const dict = {
   "provider.connect.title.harness": "توصيل {{harness}}",
   "provider.connect.title.engine": "توصيل {{vendor}} لـ {{engine}}",
   "provider.connect.selectMethod": "حدد طريقة تسجيل الدخول لـ {{vendor}}.",
-  "provider.connect.method.apiKey": "مفتاح API",
   "provider.connect.status.inProgress": "جارٍ التفويض...",
   "provider.connect.status.waiting": "في انتظار التفويض...",
   "provider.connect.apiKey.label": "مفتاح واجهة برمجة تطبيقات {{vendor}}",

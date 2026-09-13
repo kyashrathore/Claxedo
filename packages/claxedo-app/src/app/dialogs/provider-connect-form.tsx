@@ -23,7 +23,7 @@ import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
 import { errorMessage } from "@/lib/server-errors"
 import type { ConnectContext } from "@/platform/identity/harness-catalog"
-import { connectMethodOptions, type ConnectMethodOption } from "@/platform/identity/connect-methods"
+import { connectMethodOptions, fallbackConnectMethods, type ConnectMethodOption } from "@/platform/identity/connect-methods"
 
 export type ProviderConnectFormProps = {
   provider: string
@@ -89,10 +89,11 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   const authProviderID = () => codexBundleRequired() ? "codex-app-server" : props.provider
   const fallback = createMemo<ProviderAuthMethod[]>(() => codexBundleRequired()
     ? [{ type: "oauth", label: "ChatGPT Plus or Pro" }]
-    : [{ type: "api", label: language.t("provider.connect.method.apiKey") }])
-  const methods = createMemo(() => codexBundleRequired()
-    ? fallback()
-    : providerAuthQuery.data?.[props.provider] ?? fallback())
+    : fallbackConnectMethods(props.provider))
+  // An empty list is as unusable as no answer at all: the card would offer
+  // nothing to fill in, so both fall back to what the catalog knows is pasted.
+  const served = () => providerAuthQuery.data?.[props.provider]
+  const methods = createMemo(() => codexBundleRequired() || !served()?.length ? fallback() : served()!)
   const options = createMemo(() => connectMethodOptions(props.provider, methods()))
   const [store, setStore] = createStore({
     methodIndex: undefined as number | undefined,

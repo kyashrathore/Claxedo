@@ -126,7 +126,6 @@ export const dict = {
   "provider.connect.title.harness": "連接 {{harness}}",
   "provider.connect.title.engine": "為 {{engine}} 連接 {{vendor}}",
   "provider.connect.selectMethod": "選擇 {{vendor}} 的登入方式。",
-  "provider.connect.method.apiKey": "API 金鑰",
   "provider.connect.status.inProgress": "正在授權...",
   "provider.connect.status.waiting": "等待授權...",
   "provider.connect.apiKey.label": "{{vendor}} API 金鑰",

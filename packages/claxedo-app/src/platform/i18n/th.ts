@@ -122,7 +122,6 @@ export const dict = {
   "provider.connect.title.harness": "เชื่อมต่อ {{harness}}",
   "provider.connect.title.engine": "เชื่อมต่อ {{vendor}} สำหรับ {{engine}}",
   "provider.connect.selectMethod": "เลือกวิธีการเข้าสู่ระบบสำหรับ {{vendor}}",
-  "provider.connect.method.apiKey": "คีย์ API",
   "provider.connect.status.inProgress": "กำลังอนุญาต...",
   "provider.connect.status.waiting": "รอการอนุญาต...",
   "provider.connect.apiKey.label": "คีย์ API ของ {{vendor}}",

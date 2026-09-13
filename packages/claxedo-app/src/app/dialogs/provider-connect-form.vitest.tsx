@@ -161,6 +161,24 @@ describe("ProviderConnectForm method chooser", () => {
     expect(state.authorized[0]).toEqual({ providerID: "codex-app-server", method: 1 })
   })
 
+  test("a harness whose server serves no method list still offers what the reader can paste", async () => {
+    // `/providers/auth` answers for the model-provider catalog only, so a
+    // native harness asks it and is refused; the pasted methods need no answer.
+    state.methods = []
+    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
+
+    await waitFor(() => expect(optionTitles()).toHaveLength(2))
+    expect(optionTitles()).toEqual([
+      "provider.connect.method.anthropic.subscription.title:Claude Code|Anthropic",
+      "provider.connect.method.anthropic.apiKey.title:Claude Code|Anthropic",
+    ])
+
+    fireEvent.click(option("token"))
+
+    await waitFor(() => expect(document.querySelector('form[data-method="token"]')).not.toBeNull())
+    expect(screen.getByDisplayValue("claude setup-token")).toBeInTheDocument()
+  })
+
   test("a vendor the catalog has never heard of is explained in its own name", async () => {
     state.methods = [{ type: "api", label: "API Key" }]
     render(() => <ProviderConnectForm provider="moonshot" context={engineConnectContext("pi", "Moonshot")} harness="pi" hideHeading />)
