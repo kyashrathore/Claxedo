@@ -103,6 +103,9 @@ test("a process that slept re-pushes every runtime on the next check", async () 
     // and every placeholder is older than any tick the timer saw.
     vi.setSystemTime(Date.now() + 6 * RENEWAL_CHECK_INTERVAL_MS)
     await vi.advanceTimersByTimeAsync(RENEWAL_CHECK_INTERVAL_MS)
+    // The tick's own work is not awaited by the timer, and the renewal pass
+    // asks the OpenCode engine first, so the re-push lands a few microtasks in.
+    for (let flush = 0; flush < 50 && projections.length < 2; flush++) await Promise.resolve()
 
     expect(projections).toHaveLength(2)
   } finally {

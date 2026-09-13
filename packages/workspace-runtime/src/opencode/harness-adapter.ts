@@ -14,6 +14,7 @@ import type {
 } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
+import { ProviderCredentialUnavailableError } from "@claxedo/agent-sdk-runtime"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import { asRecordOrEmpty } from "@claxedo/helpers/guards"
 import type { Mcp } from "@opencode-ai/plugin"
@@ -410,6 +411,11 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
 
   private async *turn(id: string, input: PromptInput, directory: RuntimeDirectory): AsyncIterable<AgentRuntimeStreamEvent> {
     const runtime = await this.engine()
+    // Before the prompt, because the engine would otherwise run the turn on
+    // whatever login this machine holds — under an identity the operator did
+    // not choose — and bill it to that account.
+    const unavailable = runtime.providerUnavailableReason(input.model.providerID)
+    if (unavailable) throw new ProviderCredentialUnavailableError("opencode", unavailable)
     const scope = this.scope(directory)
     const queue = new EventQueue()
     const unsubscribe = runtime.events.subscribe((event) => {

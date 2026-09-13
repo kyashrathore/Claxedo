@@ -173,6 +173,7 @@ export {
   providerProjection,
   providerProjectionKey,
   providerProjectionRecord,
+  projectionRenewalDueAt,
   ProviderCredentialUnavailableError,
   ProviderProjectionExpiredError,
 } from "./provider-projection"

@@ -15,7 +15,11 @@ function binding(directory: string, sessionId: string): AgentExecutionBinding {
   return { workspaceId: "ws_1", directory, sessionId, connectionId: "native:opencode", upstreamSessionId: sessionId }
 }
 
-function runtime(options: { lifecycle?: "cold" | "ready"; execution?: "auto" | "manual" } = {}) {
+function runtime(options: {
+  lifecycle?: "cold" | "ready"
+  execution?: "auto" | "manual"
+  unavailableProvider?: Record<string, string>
+} = {}) {
   const listeners = new Set<(event: ProjectedEvent) => void>()
   const emit = (event: ProjectedEvent) => {
     for (const listener of Array.from(listeners)) listener(event)
@@ -105,6 +109,7 @@ function runtime(options: { lifecycle?: "cold" | "ready"; execution?: "auto" | "
       checkpoint: () => undefined,
     },
     host: { status: () => ({ lifecycle: options.lifecycle ?? "ready", events: "healthy" }) },
+    providerUnavailableReason: (providerID: string) => options.unavailableProvider?.[providerID],
     close: async () => {},
   } as unknown as OpenCodeRuntime
   return { value, sessions, launch, launchWrites, emit, finish: (sessionID: string) => {
@@ -141,6 +146,20 @@ function adapterFor(fake: ReturnType<typeof runtime>, directory: string) {
 }
 
 describe("OpenCodeSdkHarnessAdapter", () => {
+  test("a turn on an account the operator chose and the broker refuses never reaches the engine", async () => {
+    const fake = runtime({ unavailableProvider: { anthropic: "auth_failed" } })
+    const adapter = adapterFor(fake, "/work")
+
+    const turn = async () => {
+      for await (const _event of adapter.executeTurn(binding("/work", "ses_1"), promptInput("go", "1"))) { /* drain */ }
+    }
+
+    // Named, and before the prompt: the engine would otherwise run the turn on
+    // its own login and bill an account nobody selected.
+    await expect(turn()).rejects.toThrow(/credential selected for this workspace cannot be used: auth_failed/)
+    expect(fake.sessions.prompt).not.toHaveBeenCalled()
+  })
+
   test("only the typed SDK missing-session error becomes a missing session", async () => {
     const fake = runtime()
     const directory = workspace()

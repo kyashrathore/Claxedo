@@ -27,18 +27,17 @@ import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/wo
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
 import {
   createAcpConnectionProvider,
-  isProviderUnavailable,
+  projectionRenewalDueAt,
   type AgentTurnOutcome,
   type CompatEnvelope,
   type ConnectionProvider,
   type ConnectionSecretResolver,
-  type ProviderBinding,
-  type ProviderProjection,
 } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
 import { getCredential, resolveSecretById } from "@claxedo/server-core/credentials/registry"
+import { renewSdkCredentialsIfDue } from "@claxedo/server-core/opencode/sdk-credential-bridge"
 
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
@@ -247,25 +246,8 @@ async function apply(runtime: EmbeddedRuntime) {
     workspaceId: runtime.workspace.id,
   })
   await runtime.host.apply(snapshot)
-  runtime.renewAt = renewalDueAt(snapshot.auth, appliedAt)
+  runtime.renewAt = projectionRenewalDueAt(snapshot.auth, appliedAt)
   runtime.renewFailures = 0
-}
-
-/**
- * When this snapshot's earliest placeholder has to be replaced: half of its own
- * lifetime before it expires, so a turn that starts just before renewal still
- * finishes on a valid one.
- *
- * Read from `expiresAt` rather than from a fixed interval because the lifetime
- * belongs to the authority that minted the placeholder — a shorter one there
- * used to expire silently between two ticks of a timer sized for the old one.
- * A snapshot carrying no bound row never needs renewing.
- */
-function renewalDueAt(auth: Record<string, ProviderProjection>, appliedAt: number): number | undefined {
-  const due = Object.values(auth)
-    .filter((row): row is ProviderBinding => !isProviderUnavailable(row))
-    .map((row) => row.expiresAt - Math.max(row.expiresAt - appliedAt, 0) / 2)
-  return due.length ? Math.min(...due) : undefined
 }
 
 function configure(runtime: EmbeddedRuntime) {
@@ -451,6 +433,11 @@ const RENEWAL_RETRY_CEILING_MS = 5 * 60_000
  * fails authentication carries nothing naming the renewal that did not happen.
  */
 export async function renewEmbeddedWorkspaceRuntimeConfigs(input: { at: number; all?: boolean }) {
+  // The engine is one process serving every workspace, so its placeholder has
+  // no runtime in `hosts` to expire with.
+  await renewSdkCredentialsIfDue(input).catch((error: unknown) => {
+    console.warn("[claxedo] renewing the OpenCode engine's credentials failed", error)
+  })
   for (const runtime of hosts.values()) {
     if (!input.all && (runtime.renewAt === undefined || runtime.renewAt > input.at)) continue
     try {

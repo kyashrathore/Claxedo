@@ -176,7 +176,8 @@
       "safeAgentProcessDescriptor",
       "widestPermissionModeUnder",
       "ProviderProjectionExpiredError",
-      "freshProviderBinding"
+      "freshProviderBinding",
+      "projectionRenewalDueAt"
     ],
     "@claxedo/agent-sdk-runtime/harnesses": [
       "ProcessLifecycleDisposedError",
@@ -323,6 +324,11 @@
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
       "purpose": "The binding to launch on, asking the authority for a replacement first when the one held has expired."
+    },
+    "projectionRenewalDueAt": {
+      "import": "@claxedo/agent-sdk-runtime",
+      "kind": "function",
+      "purpose": "When a projection map's earliest placeholder must be replaced, read from its own lifetime rather than a fixed interval."
     }
   }
 }

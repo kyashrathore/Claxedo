@@ -2,7 +2,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import type { ProviderBindingOverlay } from "@claxedo/workspace-runtime/opencode"
-import { isProviderUnavailable } from "@claxedo/agent-sdk-runtime"
+import { isProviderUnavailable, projectionRenewalDueAt } from "@claxedo/agent-sdk-runtime"
 import { jsonRecord } from "../platform/runtime/lib/json"
 import { projectRuntimeAuth } from "../agent-config/index"
 import { SINGLE_TENANT_ORG, type CredentialOrgScope } from "../credentials/registry"
@@ -37,6 +37,24 @@ const PROVIDER_BY_REGISTRY_ID: Readonly<Record<string, string>> = {
   google: "google",
   groq: "groq",
   xai: "xai",
+}
+
+/**
+ * When the engine's placeholders have to be replaced. Held here rather than on
+ * a workspace runtime: the engine is one process serving every workspace, so
+ * nothing in that map expires alongside it.
+ */
+let renewAt: number | undefined
+
+/**
+ * Re-project the engine's credentials when its earliest placeholder is due, or
+ * whenever the caller says the process lost track of time. A cold engine holds
+ * no placeholder and needs no renewal.
+ */
+export async function renewSdkCredentialsIfDue(input: { at: number; all?: boolean }): Promise<void> {
+  if (!openCodeSdkRuntimeLoaded()) return
+  if (!input.all && (renewAt === undefined || renewAt > input.at)) return
+  await reconcileCredentialsIntoSdk()
 }
 
 const managedLabel = (provider: string) => `Claxedo managed: ${provider}`
@@ -83,14 +101,16 @@ export async function syncCredentialsToSdk(
  * Reconcile the credential authority into the (booting or running) SDK host.
  *
  * The engine receives broker endpoints and placeholders, never a stored secret.
- * An account that is selected but unusable is left unbound on purpose: the
- * engine then fails the turn at the vendor rather than quietly running on
- * whatever login this machine holds.
+ * An account that is selected but unusable is carried across as unavailable,
+ * which disables that provider in the engine's catalog and refuses a turn on
+ * it — the alternative, sending nothing, is what the engine reads as "no
+ * account chosen" and answers by running on its own login.
  */
 export async function reconcileCredentialsIntoSdk(
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<SdkCredentialSyncResult> {
   const runtime = openCodeSdkRuntime()
+  const projectedAt = Date.now()
   const auth = await projectRuntimeAuth({
     scope: "local",
     ...(org === SINGLE_TENANT_ORG ? {} : { orgId: org }),
@@ -99,14 +119,16 @@ export async function reconcileCredentialsIntoSdk(
   const overlays: Record<string, ProviderBindingOverlay> = {}
   for (const [registryID, providerID] of Object.entries(PROVIDER_BY_REGISTRY_ID)) {
     const projection = auth[registryID]
-    if (!projection || isProviderUnavailable(projection)) continue
-    overlays[providerID] = {
-      baseURL: `${projection.baseUrl}${projection.apiPath ?? ""}`,
-      apiKey: projection.placeholder,
-    }
+    if (!projection) continue
+    // Carried, not skipped: skipping is indistinguishable from "no account
+    // chosen", and the engine answers that by running on its own login.
+    overlays[providerID] = isProviderUnavailable(projection)
+      ? { unavailable: true, reason: projection.reason }
+      : { baseURL: `${projection.baseUrl}${projection.apiPath ?? ""}`, apiKey: projection.placeholder }
   }
   const removed = await removeStoredCredentials(runtime)
   await runtime.bindProviders(overlays)
+  renewAt = projectionRenewalDueAt(auth, projectedAt)
   const bound = Object.keys(overlays)
   log.info("OpenCode SDK providers bound to the credential broker", { bound: bound.length, removed: removed.length })
   return { bound, removed }

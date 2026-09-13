@@ -1,7 +1,23 @@
 import type { Plugin } from "@opencode-ai/plugin"
 
 /** Where one provider's requests go and what they authenticate with. */
-export type ProviderBindingOverlay = Readonly<{ baseURL: string; apiKey: string }>
+export type ProviderBindingBound = Readonly<{ baseURL: string; apiKey: string }>
+
+/**
+ * The operator selected an account for this provider and it cannot be bound.
+ *
+ * Distinct from absent: an absent provider keeps the engine's own auth, which
+ * is the right answer when nobody chose an account. Leaving a withdrawn one
+ * absent instead runs the turn on whatever login this machine holds, under an
+ * identity the operator did not choose.
+ */
+export type ProviderBindingUnavailable = Readonly<{ unavailable: true; reason: string }>
+
+export type ProviderBindingOverlay = ProviderBindingBound | ProviderBindingUnavailable
+
+function isUnavailable(overlay: ProviderBindingOverlay): overlay is ProviderBindingUnavailable {
+  return "unavailable" in overlay
+}
 
 /**
  * The engine's provider routing for the accounts Claxedo has bound.
@@ -26,6 +42,12 @@ export function createProviderBindingPolicy() {
       await context.catalog.transform((draft) => {
         for (const [providerID, overlay] of Object.entries(overlays)) {
           draft.provider.update(providerID, (provider) => {
+            if (isUnavailable(overlay)) {
+              // Activation is the SDK's authoritative availability switch, so
+              // the engine cannot fall back to its own auth for this provider.
+              provider.activation = "disabled"
+              return
+            }
             provider.settings = { ...provider.settings, baseURL: overlay.baseURL, apiKey: overlay.apiKey }
           })
         }
@@ -44,6 +66,11 @@ export function createProviderBindingPolicy() {
     },
     current(): Readonly<Record<string, ProviderBindingOverlay>> {
       return overlays
+    },
+    /** Why a turn on this provider must be refused, or nothing when it may run. */
+    unavailableReason(providerID: string): string | undefined {
+      const overlay = overlays[providerID]
+      return overlay && isUnavailable(overlay) ? overlay.reason : undefined
     },
   }
 }

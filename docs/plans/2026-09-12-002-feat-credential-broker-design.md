@@ -731,10 +731,18 @@ binds `anthropic` and `openai`, which are built-ins, so this does not affect the
 shipped path — but a future binding for a config-declared provider needs another
 mechanism.
 
-Providers the broker has no destination for (`openrouter`, `google`, `groq`,
-`xai`) previously reached the engine as stored plaintext keys and now reach it
-not at all. That is a deliberate narrowing, and the same rule every other harness
-follows.
+`openrouter`, `google`, `groq` and `xai` previously reached the engine as stored
+plaintext keys. They now have destination rows and engine provider bindings of
+their own, so they reach it as broker endpoints like every other provider;
+Gemini's key travels in `x-goog-api-key`, which the broker accepts as a
+placeholder carrier and strips before the vendor. A provider with no row still
+reaches no harness at all.
+
+The engine's placeholders expire like every other harness's. They are
+re-projected from `expiresAt` by `renewSdkCredentialsIfDue`, driven by the same
+renewal pass that re-pushes each workspace runtime's snapshot; the engine is one
+process serving every workspace, so its due time is held by the bridge rather
+than by any workspace.
 
 ### Bound but unavailable — 2026-09-13
 
@@ -748,6 +756,14 @@ to the implicit tier. Every driver reads its projection through
 `providerBinding`, which throws `ProviderCredentialUnavailableError` rather than
 answering; each driver refuses at launch, never at config apply, so an unusable
 account fails the turn instead of the workspace.
+
+The OpenCode engine refuses the same way. An unavailable account reaches it as
+`{ unavailable: true, reason }`, which disables that provider in the engine's own
+catalog (`provider.activation = "disabled"`, the SDK's authoritative availability
+switch) and makes a turn naming it throw `ProviderCredentialUnavailableError`
+before the prompt. Leaving it unbound instead — the first version of this
+bridge — was indistinguishable from "no account chosen", and the engine answered
+that by running the turn on its own login.
 
 `assertNoProviderProjection` is deleted. It failed a harness when ANY provider in
 the map carried a projection, and the runtime hands every adapter the whole map,

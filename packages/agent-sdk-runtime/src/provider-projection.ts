@@ -72,6 +72,26 @@ export function providerProjectionRecord(input: unknown): Record<string, Provide
   return rows
 }
 
+/**
+ * When the earliest placeholder in this map has to be replaced: half of its own
+ * lifetime before it expires, so a turn that starts just before renewal still
+ * finishes on a valid one.
+ *
+ * Read from `expiresAt` rather than from a fixed interval, because the lifetime
+ * belongs to the authority that minted the placeholder — a shorter one there
+ * used to expire silently between two ticks of a timer sized for the old one.
+ * A map carrying no bound row never needs renewing.
+ */
+export function projectionRenewalDueAt(
+  auth: Record<string, ProviderProjection>,
+  appliedAt: number,
+): number | undefined {
+  const due = Object.values(auth)
+    .filter((row): row is ProviderBinding => !isProviderUnavailable(row))
+    .map((row) => row.expiresAt - Math.max(row.expiresAt - appliedAt, 0) / 2)
+  return due.length ? Math.min(...due) : undefined
+}
+
 export class ProviderCredentialUnavailableError extends Error {
   /**
    * The word "credential" is in the message because the turn-outcome classifier

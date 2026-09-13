@@ -94,7 +94,7 @@ describe("OpenCode SDK credential bridge", () => {
       .toEqual(["anthropic", "google", "groq", "openai", "openrouter", "xai"])
   })
 
-  test("an unavailable account leaves the provider unbound rather than on the machine's login", async () => {
+  test("an unavailable account reaches the engine as unavailable, not as silence", async () => {
     const fake = fakeRuntime()
     construct.mockImplementation(() => fake.runtime as never)
     const auth: Record<string, ProviderProjection> = {
@@ -106,8 +106,39 @@ describe("OpenCode SDK credential bridge", () => {
     const { reconcileCredentialsIntoSdk } = await import("./sdk-credential-bridge")
     await reconcileCredentialsIntoSdk()
 
+    // Silence is what the engine reads as "no account chosen", and it answers
+    // that by running the turn on its own login.
     expect(fake.bound).toEqual([{
+      anthropic: { unavailable: true, reason: "auth_failed" },
       openai: { baseURL: "http://127.0.0.1:2595/bindings/aa11/v1", apiKey: "signed-placeholder" },
     }])
+  })
+
+  test("the engine's placeholders are re-projected when they are half spent, and not before", async () => {
+    const fake = fakeRuntime()
+    construct.mockImplementation(() => fake.runtime as never)
+    loaded.mockReturnValue(true)
+    const projectedAt = Date.now()
+    configureAgentConfig({
+      projectAuth: async (): Promise<Record<string, ProviderProjection>> => ({
+        "claude-sdk": { ...brokerProjection, expiresAt: Date.now() + 60 * 60 * 1000 },
+      }),
+    })
+
+    const bridge = await import("./sdk-credential-bridge")
+    await bridge.reconcileCredentialsIntoSdk()
+    expect(fake.bound).toHaveLength(1)
+
+    await bridge.renewSdkCredentialsIfDue({ at: projectedAt + 29 * 60 * 1000 })
+    expect(fake.bound).toHaveLength(1)
+
+    await bridge.renewSdkCredentialsIfDue({ at: projectedAt + 31 * 60 * 1000 })
+    expect(fake.bound).toHaveLength(2)
+  })
+
+  test("a cold engine holds no placeholder and is never renewed", async () => {
+    const bridge = await import("./sdk-credential-bridge")
+    await expect(bridge.renewSdkCredentialsIfDue({ at: Date.now(), all: true })).resolves.toBeUndefined()
+    expect(construct).not.toHaveBeenCalled()
   })
 })

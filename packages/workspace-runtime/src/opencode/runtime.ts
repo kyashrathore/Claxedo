@@ -18,6 +18,8 @@ export type OpenCodeRuntime = Readonly<{
   providerConfig(scope: WorkspaceScope): Promise<ProviderConfigStore>
   /** Route the engine's providers at Claxedo's credential broker; absent providers keep the engine's own auth. */
   bindProviders(overlays: Record<string, ProviderBindingOverlay>): Promise<void>
+  /** Why a turn on this provider must be refused, or nothing when it may run. */
+  providerUnavailableReason(providerID: string): string | undefined
   /** The workspace's launch document (skills + MCP servers) enforced in the engine. */
   launch(scope: WorkspaceScope): Promise<LaunchPolicyStore>
   interactions: OpenCodeInteractionPort
@@ -63,6 +65,7 @@ export function createOpenCodeRuntime(options: OpenCodeHostOptions): OpenCodeRun
     configuration: createConfigurationPort(host),
     providerConfig: (scope) => policy.store(host, scope),
     bindProviders: (overlays) => bindings.apply(overlays),
+    providerUnavailableReason: (providerID) => bindings.unavailableReason(providerID),
     launch: (scope) => launch.store(host, scope),
     interactions: createInteractionPort(host),
     tools: createToolPort(host),
