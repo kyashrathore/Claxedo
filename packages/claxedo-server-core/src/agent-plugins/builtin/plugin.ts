@@ -1,6 +1,6 @@
 import { selectActivationAuthority } from "../activation/effective"
 import type { EffectiveActivationInput } from "../activation/types"
-import type { AgentPluginHarnessId } from "../runtime/harness-registry"
+import { SUPPORTED_AGENT_PLUGIN_HARNESSES, type AgentPluginHarnessId } from "../runtime/harness-registry"
 
 /**
  * The first-party MCP server, as the Marketplace sees it.
@@ -116,29 +116,46 @@ export type BuiltinGroupView = Readonly<{
   tools: readonly string[]
 }>
 
-export type BuiltinHarnessActivationView = Readonly<{
-  projectOverride: boolean | null
-  userDefault: boolean | null
-  organizationDefault: boolean
-  claxedoDefault: boolean
-  effective: { status: "ready"; effective: boolean; winner: string }
-}>
-
 /**
  * The catalog row, in the shape every other candidate is read in.
  *
- * The directory renders it with the same decoder as a sourced plugin; the two
+ * The directory decodes it with the same reader as a sourced plugin; the two
  * fields it does not share — `builtIn` and `groups` — are what the pane needs
- * to show switches instead of an install button.
+ * to offer switches instead of an install button.
+ *
+ * The harness rows say only that the built-in is present and whether anything
+ * is on: the decisions live on the groups, each of which is its own activation
+ * subject, and a harness has never been a thing the first-party server is
+ * projected into.
  */
-export function builtinCandidateView(input: {
-  groups: readonly BuiltinGroupView[]
-  harnesses: Readonly<Record<AgentPluginHarnessId, BuiltinHarnessActivationView>>
+export function builtinCatalogEntry(input: {
+  groups: readonly BuiltinToolGroup[]
+  deployment: BuiltinDeployment
+  /** Whether one group is on for one harness, as this deployment's store resolves it. */
+  enabled: (groupId: string, harnessId: AgentPluginHarnessId) => boolean
 }) {
+  const groups: BuiltinGroupView[] = input.groups.map((group) => ({
+    id: group.id,
+    pluginInstanceId: builtinPluginInstanceId(group.id),
+    enabled: SUPPORTED_AGENT_PLUGIN_HARNESSES.every((harnessId) => input.enabled(group.id, harnessId)),
+    tools: group.tools,
+  }))
+  const harnesses = Object.fromEntries(SUPPORTED_AGENT_PLUGIN_HARNESSES.map((harnessId) => [harnessId, {
+    explicit: null,
+    projectOverride: null,
+    userDefault: null,
+    organizationDefault: false,
+    claxedoDefault: true,
+    effective: {
+      status: "ready" as const,
+      effective: input.groups.some((group) => input.enabled(group.id, harnessId)),
+      winner: "claxedo" as const,
+    },
+  }]))
   return {
     pluginInstanceId: BUILTIN_AGENT_PLUGIN_ID,
     builtIn: true,
-    groups: input.groups,
+    groups,
     sourceId: null,
     sourceKind: null,
     source: null,
@@ -154,12 +171,12 @@ export function builtinCandidateView(input: {
       name: BUILTIN_AGENT_PLUGIN_ID,
       description: "Claxedo's own tools, served by the process that runs your sessions.",
     },
-    mcpServers: input.groups.map((group) => ({
+    mcpServers: groups.map((group) => ({
       name: group.id,
       type: "streamable-http" as const,
       authentication: { state: "local" as const },
     })),
     componentDiagnostics: [],
-    harnesses: input.harnesses,
+    harnesses,
   }
 }
