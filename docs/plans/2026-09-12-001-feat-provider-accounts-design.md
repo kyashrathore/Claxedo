@@ -273,7 +273,8 @@ miniature — it read as a second account — so there is none.
 - **A refused account** (rejected, expired, no billing, not working) is drawn as
   a **ring on its own radio** in the danger token, with the verdict in the row's
   tooltip and in a screen-reader-only description. Nothing else: no red text, no
-  sentence. Its action is the header's Reconnect.
+  sentence. Where it is the account in use, its action is the header's
+  Reconnect; where it is not, it is an account to forget like any other.
 - **"This computer's login" is the last entry** whenever the scan found one, and
   its origin is its second line. It is last by construction: every stored
   account is a choice the user made, and this login is the standing fallback
@@ -289,7 +290,9 @@ miniature — it read as a second account — so there is none.
   own quota.
 - **Per-row actions arrive on hover or keyboard focus**, right-aligned icon
   buttons with accessible names: **Check** (reload) and **Remove** (trash). A
-  refused row shows Check but no Remove — Reconnect in the header is its action.
+  refused row that is the account in use shows Check but no Remove, because the
+  header's Reconnect is its action; a refused row the harness is not running on
+  keeps Remove, or nothing could ever forget it.
   Remove asks inline before it forgets, and the confirming row holds its actions
   on screen so the question cannot vanish under the pointer.
 - **"+ Add another account"** ("+ Add an account" when nothing is set up) is the

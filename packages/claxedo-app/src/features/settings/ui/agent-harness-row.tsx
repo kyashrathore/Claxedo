@@ -93,7 +93,8 @@ export const AgentHarnessRow: Component<{
                 disabled={props.checking !== undefined}
                 onClick={() => void props.onCheck(self.account.ids)}
               />
-              <Show when={self.account.refused === undefined}>
+              {/* Only the account in use has a Reconnect to be sent to. */}
+              <Show when={self.account.refused === undefined || !self.account.selected}>
                 <ClaxedoIconButton
                   icon="trash"
                   size="small"

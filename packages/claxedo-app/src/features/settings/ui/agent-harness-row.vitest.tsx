@@ -176,11 +176,26 @@ describe("AgentHarnessRow accounts", () => {
     expect(entry("cred_1").getAttribute("title")).toBe("settings.providers.live.authFailed")
   })
 
-  test("a refused account keeps Check but loses Remove: Reconnect in the header is its action", () => {
-    row({ accounts: [account({ refused: "settings.providers.live.expired" })] })
+  test("the refused account in use keeps Check but loses Remove: the header's Reconnect is its action", () => {
+    row({
+      action: { kind: "reconnect", credentialId: "cred_1" },
+      accounts: [account({ refused: "settings.providers.live.expired", selected: true })],
+    })
 
     expect(entry("cred_1").querySelector('[data-action="agent-account-check"]')).not.toBeNull()
     expect(entry("cred_1").querySelector('[data-action="agent-account-remove"]')).toBeNull()
+  })
+
+  test("a refused account the harness is not running on keeps Remove, or it could never be forgotten", () => {
+    row({
+      accounts: [
+        account(),
+        account({ key: "cred_2", ids: ["cred_2"], label: "old@acme.com", selected: false, refused: "settings.providers.live.expired" }),
+      ],
+    })
+
+    expect(document.querySelector('[data-component="provider-actions"] button')).toBeNull()
+    expect(entry("cred_2").querySelector('[data-action="agent-account-remove"]')).not.toBeNull()
   })
 
   test("the two actions are hidden at rest and arrive with the pointer or the keyboard", () => {
