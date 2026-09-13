@@ -181,6 +181,7 @@ describe("host primitives package surface", () => {
             status: "available" as const,
             created_at: 1,
             updated_at: 1,
+            revision: 1,
           })),
           deleteCredential: vi.fn(async () => true),
           deleteCredentialsByProvider: vi.fn(async () => 0),

@@ -43,6 +43,7 @@ function credentials(): ControlPlaneCredentials {
       last_error: null,
       created_at: 1,
       updated_at: 1,
+      revision: 1,
     }]),
     getCredentialByProvider: vi.fn(async () => undefined),
     putCredential: vi.fn(async (input: Parameters<ControlPlaneCredentials["putCredential"]>[0]) => ({
@@ -59,6 +60,7 @@ function credentials(): ControlPlaneCredentials {
       last_error: null,
       created_at: 2,
       updated_at: 2,
+      revision: 1,
     })),
     deleteCredential: vi.fn(async () => true),
     deleteCredentialsByProvider: vi.fn(async () => 3),
@@ -92,7 +94,7 @@ describe("credential routes", () => {
         ? [{
             id: "cred_1", provider_id: "codex-app-server", kind: "oauth_token" as const, source: "managed" as const,
             label: "ChatGPT OAuth", account_id: "acc_1", secure_ref: "local:1", status: "available" as const,
-            health: null, expires_at: null, last_validated_at: null, last_error: null, created_at: 1, updated_at: 1,
+            health: null, expires_at: null, last_validated_at: null, last_error: null, created_at: 1, updated_at: 1, revision: 1,
           }]
         : []),
     })

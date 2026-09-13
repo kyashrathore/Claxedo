@@ -38,6 +38,7 @@ function credentials() {
         last_error: null,
         created_at: 1,
         updated_at: 1,
+        revision: 1,
       }
     },
     deleteCredential: async () => false,

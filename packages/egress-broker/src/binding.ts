@@ -42,3 +42,20 @@ export function sameRuntime(a: RuntimeIdentity, b: RuntimeIdentity) {
   return a.userId === b.userId && a.orgId === b.orgId && a.workspaceId === b.workspaceId
     && a.leaseId === b.leaseId && a.leaseGeneration === b.leaseGeneration && a.runtimeId === b.runtimeId
 }
+
+/**
+ * The path a projection points a harness at, refusing an origin the broker
+ * could not be reached on safely: the placeholder is bearer authority over a
+ * credential, so a plaintext origin off the loopback interface hands it to the
+ * network, and a path, query or userinfo on the origin would silently move
+ * where the harness sends it.
+ */
+export function bindingBaseUrl(brokerOrigin: string, bindingId: string): string {
+  const origin = new URL(brokerOrigin)
+  if (origin.protocol !== "https:" && !(origin.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(origin.hostname))) {
+    throw new Error("Broker must use HTTPS or loopback HTTP")
+  }
+  if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error("Invalid broker origin")
+  if (!/^[A-Za-z0-9_-]+$/.test(bindingId)) throw new Error("Invalid binding id")
+  return `${origin.origin}/bindings/${bindingId}`
+}

@@ -83,6 +83,7 @@ function services(input: {
     last_error: null,
     created_at: 1,
     updated_at: 1,
+    revision: 1,
   }))
   const metadata = new Map<string, any>()
   return {

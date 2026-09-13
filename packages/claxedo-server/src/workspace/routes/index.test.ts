@@ -197,6 +197,7 @@ function services(): ControlPlaneServices {
         status: "available" as const,
         created_at: 1,
         updated_at: 1,
+        revision: 1,
       })),
       putCredential: vi.fn(async (input) => ({
         id: `cred_${input.driver_id}`,
@@ -207,6 +208,7 @@ function services(): ControlPlaneServices {
         status: "available" as const,
         created_at: 1,
         updated_at: 1,
+        revision: 1,
       })),
       deleteCredential: vi.fn(async () => true),
       deleteCredentialsByProvider: vi.fn(async () => 1),
@@ -1089,6 +1091,7 @@ describe("workspace routes signed control plane authority", () => {
       status: "available",
       created_at: 1,
       updated_at: 1,
+      revision: 1,
     })
     const missingSource = await app.request("http://localhost/create", {
       method: "POST",
@@ -1111,6 +1114,7 @@ describe("workspace routes signed control plane authority", () => {
       status: "available",
       created_at: 1,
       updated_at: 1,
+      revision: 1,
     })
     const missingManager = await app.request("http://localhost/create", {
       method: "POST",

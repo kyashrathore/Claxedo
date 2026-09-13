@@ -35,10 +35,13 @@ type ProviderRow = (material: {
 
 const anthropicDestination: ProviderRow = (material) => ({
   origin: "https://api.anthropic.com",
-  // Claude Code reaches several routes under the API version — messages, models,
-  // token counting — so the prefix is the version rather than one path.
+  // The routes a turn needs and no others. `/v1/messages` also covers
+  // `/v1/messages/count_tokens`, which the CLI calls before a long prompt;
+  // `/v1/models` is the catalog it reads to resolve a model alias. The whole
+  // `/v1/` version would additionally open the Files, Batches and
+  // organization-admin APIs to anything sharing the sandbox.
   methods: ["POST", "GET"],
-  pathPrefixes: ["/v1/"],
+  pathPrefixes: ["/v1/messages", "/v1/models"],
   apiPath: "/v1",
   injection: material.form === "subscription"
     ? { header: "Authorization", scheme: "Bearer" }
@@ -55,7 +58,10 @@ const openaiDestination: ProviderRow = (material) => material.form === "subscrip
   ? {
     origin: "https://chatgpt.com",
     methods: ["POST", "GET"],
-    pathPrefixes: ["/backend-api/codex/"],
+    // The turn itself, and the catalog the app-server reads to check a model is
+    // eligible on this plan (`?client_version=`). Nothing else under
+    // `/backend-api/codex/` belongs to a turn.
+    pathPrefixes: ["/backend-api/codex/responses", "/backend-api/codex/models"],
     apiPath: "/backend-api/codex",
     injection: {
       header: "Authorization",
@@ -66,7 +72,11 @@ const openaiDestination: ProviderRow = (material) => material.form === "subscrip
   : {
     origin: "https://api.openai.com",
     methods: ["POST", "GET"],
-    pathPrefixes: ["/v1/"],
+    // `responses` is Codex's wire API; `chat/completions` is what the
+    // OpenAI-compatible clients the OpenCode engine and Pi build on send; both
+    // resolve a model alias against the catalog. The whole `/v1/` would also
+    // open Files, Assistants, fine-tuning and Batches.
+    pathPrefixes: ["/v1/responses", "/v1/chat/completions", "/v1/models"],
     apiPath: "/v1",
     injection: { header: "Authorization", scheme: "Bearer" },
   }

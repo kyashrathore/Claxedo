@@ -14,6 +14,7 @@ function credential(input: Partial<CredentialMetadata> = {}): CredentialMetadata
     status: "available",
     created_at: NOW,
     updated_at: NOW,
+    revision: 1,
     ...input,
   }
 }

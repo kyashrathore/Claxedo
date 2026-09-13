@@ -136,6 +136,7 @@ function credentialFake(): CredentialFake {
       last_error: null,
       created_at: NOW,
       updated_at: NOW,
+      revision: 1,
     }
   }
   return {

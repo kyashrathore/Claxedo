@@ -161,7 +161,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   })
   configureAgentConfig({
     connectionProviders,
-    projectAuth: ({ workspaceId }) => credentialBroker.projectAuth(workspaceId ? { workspaceId } : {}),
+    projectAuth: (input) => credentialBroker.projectAuth(input),
     ...(options.harnessLaunch ? { harnessLaunch: options.harnessLaunch } : {}),
   })
   // A placeholder expires; re-projecting on this interval and re-applying the

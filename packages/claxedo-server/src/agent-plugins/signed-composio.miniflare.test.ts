@@ -586,6 +586,7 @@ function credentialFake(): ControlPlaneCredentials & { secretOf(providerId: stri
         status: "available" as const,
         created_at: 1,
         updated_at: 1,
+        revision: 1,
       }
     : undefined
   return {

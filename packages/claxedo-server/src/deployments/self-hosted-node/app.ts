@@ -1615,7 +1615,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   configureAgentConfig({
     connectionProviders,
     ...(credentialBroker
-      ? { projectAuth: ({ workspaceId }) => credentialBroker.projectAuth(workspaceId ? { workspaceId } : {}) }
+      ? { projectAuth: (input) => credentialBroker.projectAuth(input) }
       : {}),
   })
   // A placeholder expires; re-projecting on this interval and re-applying the

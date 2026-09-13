@@ -59,6 +59,13 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
     last_error: text(),
     created_at: integer().notNull(),
     updated_at: integer().notNull(),
+    /**
+     * Which stored secret a request used. `updated_at` cannot answer that: two
+     * writes inside one millisecond share it, so a 401 for the superseded value
+     * withdraws the new one. This counts secret writes and nothing else, so a
+     * status or scope edit leaves live bindings alone.
+     */
+    revision: integer().notNull().default(1),
   },
   (table) => [
     index("claxedo_provider_credential_provider_idx").on(table.provider_id),

@@ -241,6 +241,7 @@ export function hostedOrgCredentials(
         last_error: null,
         created_at: existing?.meta.created_at ?? timestamp,
         updated_at: timestamp,
+        revision: (existing?.meta.revision ?? 0) + 1,
       }
       await write({ meta, secret: input.secret })
       return meta
@@ -343,6 +344,9 @@ function parseStoredCredential(
   if (meta.health !== undefined && meta.health !== null && !enumValue(meta.health, CREDENTIAL_HEALTH)) {
     invalidStoredCredential(expected.providerId, "meta.health is unsupported")
   }
+  if (meta.revision !== undefined && !isFiniteNumber(meta.revision)) {
+    invalidStoredCredential(expected.providerId, "meta.revision must be a finite number")
+  }
   if (
     !isFiniteNumber(meta.created_at) ||
     !isFiniteNumber(meta.updated_at) ||
@@ -377,6 +381,10 @@ function parseStoredCredential(
       status: meta.status,
       created_at: meta.created_at,
       updated_at: meta.updated_at,
+      // A record written before secret writes were counted holds the same
+      // revision the local registry's migration gives its existing rows: no
+      // placeholder that predates the field names a revision at all.
+      revision: isFiniteNumber(meta.revision) ? meta.revision : 1,
       ...(meta.org_id === undefined ? {} : { org_id: meta.org_id }),
       ...(meta.secure_ref === undefined ? {} : { secure_ref: meta.secure_ref }),
       ...(meta.scope === undefined ? {} : { scope: meta.scope }),

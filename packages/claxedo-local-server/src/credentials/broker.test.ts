@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, test } from "vitest"
-import { mkdirSync, readFileSync, realpathSync, statSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -18,6 +18,7 @@ const {
   setActiveCredentials,
   updateCredentialHealth,
   updateCredentialSecret,
+  updateCredentialStatus,
 } = await import("@claxedo/server-core/credentials/registry")
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
 const { createLocalCredentialBroker } = await import("./broker")
@@ -56,6 +57,16 @@ function bindingIdOf(baseUrl: string) {
   return baseUrl.slice(`${brokerOrigin}/bindings/`.length)
 }
 
+/** A registry whose table is gone for the length of one call: a real read failure. */
+async function withRegistryOutage<T>(run: () => Promise<T>): Promise<T> {
+  ClaxedoDB.raw().exec("ALTER TABLE `claxedo_provider_credential` RENAME TO `claxedo_provider_credential_hidden`")
+  try {
+    return await run()
+  } finally {
+    ClaxedoDB.raw().exec("ALTER TABLE `claxedo_provider_credential_hidden` RENAME TO `claxedo_provider_credential`")
+  }
+}
+
 beforeEach(() => {
   setBackendOverride(createTestBackend())
 })
@@ -71,16 +82,21 @@ afterAll(async () => {
 describe("local binding authority", () => {
   test("mints a signing key and a newer lease generation on each boot", () => {
     const dataDir = path.join(root, `boot-${randomUUID().slice(0, 8)}`)
+    const keyFile = path.join(dataDir, "credentials", "broker.key")
     const first = broker(dataDir)
+    // Constructing the authority reads and writes nothing, so a data directory
+    // it cannot open is not a boot failure.
+    expect(existsSync(keyFile)).toBe(false)
+
+    const generation = first.runtimeIdentity(workspaceId).leaseGeneration
     const second = broker(dataDir)
 
-    const keyFile = path.join(dataDir, "credentials", "broker.key")
     expect(readFileSync(keyFile).byteLength).toBe(32)
     expect(statSync(keyFile).mode & 0o777).toBe(0o600)
-    expect(second.runtimeIdentity(workspaceId).leaseGeneration)
-      .toBe(first.runtimeIdentity(workspaceId).leaseGeneration + 1)
+    expect(second.runtimeIdentity(workspaceId).leaseGeneration).toBe(generation + 1)
     expect(second.runtimeIdentity(workspaceId)).toMatchObject({
       userId: "operator",
+      orgId: "__local__",
       leaseId: `local:${workspaceId}`,
       runtimeId: `embedded:${workspaceId}`,
     })
@@ -98,8 +114,12 @@ describe("local binding authority", () => {
     expect(resolved?.binding).toMatchObject({
       credentialId: credential.id,
       status: "active",
-      revision: getCredential(credential.id)!.updated_at,
-      destination: { origin: "https://api.anthropic.com", methods: ["POST", "GET"], pathPrefixes: ["/v1/"] },
+      revision: getCredential(credential.id)!.revision,
+      destination: {
+        origin: "https://api.anthropic.com",
+        methods: ["POST", "GET"],
+        pathPrefixes: ["/v1/messages", "/v1/models"],
+      },
       injection: { header: "x-api-key" },
     })
     expect(await local.authority.currentRuntime(local.runtimeIdentity(workspaceId))).toBe(true)
@@ -165,7 +185,11 @@ describe("local binding authority", () => {
 
     expect(key).toMatchObject({ authMode: "bearer", apiPath: "/v1" })
     expect((await local.authority.resolve(bindingIdOf(key.baseUrl)))?.binding).toMatchObject({
-      destination: { origin: "https://api.openai.com", methods: ["POST", "GET"], pathPrefixes: ["/v1/"] },
+      destination: {
+        origin: "https://api.openai.com",
+        methods: ["POST", "GET"],
+        pathPrefixes: ["/v1/responses", "/v1/chat/completions", "/v1/models"],
+      },
       injection: { header: "Authorization", scheme: "Bearer" },
     })
 
@@ -183,7 +207,7 @@ describe("local binding authority", () => {
       destination: {
         origin: "https://chatgpt.com",
         methods: ["POST", "GET"],
-        pathPrefixes: ["/backend-api/codex/"],
+        pathPrefixes: ["/backend-api/codex/responses", "/backend-api/codex/models"],
       },
       injection: { header: "Authorization", scheme: "Bearer", headers: { "ChatGPT-Account-Id": "acct-7" } },
     })
@@ -231,10 +255,10 @@ describe("local binding authority", () => {
     const local = broker()
     const failure = { bindingId: "unused", credentialId: credential.id, status: 401 }
 
-    await local.authority.reportFailure({ ...failure, revision: getCredential(credential.id)!.updated_at - 1 })
+    await local.authority.reportFailure({ ...failure, revision: getCredential(credential.id)!.revision - 1 })
     expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
 
-    await local.authority.reportFailure({ ...failure, revision: getCredential(credential.id)!.updated_at })
+    await local.authority.reportFailure({ ...failure, revision: getCredential(credential.id)!.revision })
     expect(getCredential(credential.id)?.health).toBe("auth_failed")
     expect(getCredential(credential.id)?.status).toBe("error")
   })
@@ -246,10 +270,208 @@ describe("local binding authority", () => {
     await local.authority.reportFailure({
       bindingId: "unused",
       credentialId: credential.id,
-      revision: getCredential(credential.id)!.updated_at,
+      revision: getCredential(credential.id)!.revision,
       status: 403,
     })
 
     expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
+  })
+
+  test("a registry outage is an outage, never an empty selection", async () => {
+    await activeRow("sk-ant-api03-outage")
+    const local = broker()
+    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+
+    await withRegistryOutage(async () => {
+      // Answering `{}` would tell the harness no account is selected, and the
+      // next turn would run on the machine's own login.
+      await expect(local.projectAuth({ workspaceId })).rejects.toThrow()
+      await expect(local.authority.resolve(id)).rejects.toThrow()
+    })
+
+    expect(await local.authority.resolve(id)).toBeDefined()
+  })
+
+  test("the handler answers a registry outage 503, never 403", async () => {
+    await activeRow("sk-ant-api03-outage-handler")
+    const local = broker()
+    const projection = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+
+    const response = await withRegistryOutage(() => local.handler(
+      new Request(`${projection.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": projection.placeholder },
+      }),
+    ))
+
+    expect(response.status).toBe(503)
+    await expect(response.json()).resolves.toEqual({ error: "broker_authority_unavailable" })
+  })
+
+  test("the identity carries the org the caller named, and a binding is that org's alone", async () => {
+    const credential = await activeRow("sk-ant-api03-org")
+    const local = broker()
+    const projection = bound((await local.projectAuth({ workspaceId, orgId: "__local__", scope: "local" }))["claude-sdk"])
+
+    expect(local.runtimeIdentity(workspaceId, "__local__")).toMatchObject({ userId: "operator", orgId: "__local__" })
+    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.binding)
+      .toMatchObject({ orgId: "__local__", credentialId: credential.id })
+    // Another tenant's projection of the same workspace derives different
+    // binding ids, so a placeholder minted here names nothing over there.
+    expect(await local.projectAuth({ workspaceId, orgId: "org-other" })).toEqual({})
+  })
+
+  test("the revision a binding reports counts secret writes, not the clock", async () => {
+    const credential = await activeRow("sk-ant-api03-rev-one")
+    const local = broker()
+    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+    const first = (await local.authority.resolve(id))!.binding.revision
+
+    // Two writes inside one millisecond share `updated_at`; only a counter
+    // tells the superseded value from the one stored now.
+    await updateCredentialSecret(credential.id, "sk-ant-api03-rev-two")
+    const second = (await local.authority.resolve(id))!.binding.revision
+    expect(second).toBe(first + 1)
+
+    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401 })
+    expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
+
+    await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401 })
+    expect(getCredential(credential.id)?.health).toBe("auth_failed")
+  })
+
+  test("moving the active mark leaves a running turn's binding resolvable", async () => {
+    const first = await activeRow("sk-ant-api03-mark-first")
+    const local = broker()
+    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+
+    const second = await activeRow("sk-ant-api03-mark-second")
+    expect(getCredential(second.id)?.is_active).toBe(true)
+    expect(getCredential(first.id)?.is_active).toBe(false)
+
+    // The turn already running keeps spending the account it started on.
+    expect((await local.authority.resolve(id))?.value).toBe("sk-ant-api03-mark-first")
+    // The next projection is what moves the harness onto the new account.
+    const next = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    expect((await local.authority.resolve(bindingIdOf(next.baseUrl)))?.value).toBe("sk-ant-api03-mark-second")
+
+    updateCredentialStatus(first.id, "revoked")
+    expect(await local.authority.resolve(id)).toBeUndefined()
+  })
+
+  test("the anthropic destination reaches the turn's routes and nothing else", async () => {
+    await activeRow("sk-ant-api03-narrow")
+    const local = broker()
+    const projection = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    const destination = (await local.authority.resolve(bindingIdOf(projection.baseUrl)))!.binding.destination
+    expect(destination.pathPrefixes).toEqual(["/v1/messages", "/v1/models"])
+
+    const realFetch = globalThis.fetch
+    const reached: string[] = []
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      reached.push(new URL(url instanceof Request ? url.url : url).pathname)
+      return new Response("{}", { headers: { "content-type": "application/json" } })
+    }) as typeof fetch
+    try {
+      const reach = (route: string) => local.handler(new Request(`${projection.baseUrl}${route}`, {
+        method: "POST",
+        headers: { "x-api-key": projection.placeholder },
+      }))
+      for (const allowed of ["/v1/messages", "/v1/messages/count_tokens", "/v1/models"]) {
+        expect((await reach(allowed)).status, allowed).toBe(200)
+      }
+      for (const refused of ["/v1/files", "/v1/organizations/api_keys", "/v1/complete"]) {
+        expect((await reach(refused)).status, refused).toBe(403)
+      }
+      expect(reached).toEqual(["/v1/messages", "/v1/messages/count_tokens", "/v1/models"])
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("a broker origin the harness could not safely reach is refused at projection", async () => {
+    await activeRow("sk-ant-api03-origin")
+    const remote = createLocalCredentialBroker({ dataDir: root, brokerOrigin: "http://10.0.0.4:2595" })
+
+    await expect(remote.projectAuth({ workspaceId })).rejects.toThrow(/HTTPS or loopback/)
+  })
+
+  test("a brokered request marks the row used at most once a minute", async () => {
+    const credential = await activeRow("sk-ant-api03-used")
+    let clock = Date.parse("2026-09-13T00:00:00.000Z")
+    const local = createLocalCredentialBroker({ dataDir: root, brokerOrigin, now: () => clock })
+    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+
+    await local.authority.resolve(id)
+    const marked = getCredential(credential.id)!.last_used_at
+    expect(marked).toBe(clock)
+
+    // A streaming turn resolves once per request; a write each time turns it
+    // into a stream of registry writes.
+    clock += 30_000
+    await local.authority.resolve(id)
+    await local.authority.resolve(id)
+    expect(getCredential(credential.id)?.last_used_at).toBe(marked)
+
+    clock += 31_000
+    await local.authority.resolve(id)
+    expect(getCredential(credential.id)?.last_used_at).toBe(clock)
+  })
+
+  test("a key file shorter than the signing key is repaired by hand, never overwritten", async () => {
+    const dataDir = path.join(root, `short-key-${randomUUID().slice(0, 8)}`)
+    const keyFile = path.join(dataDir, "credentials", "broker.key")
+    mkdirSync(path.dirname(keyFile), { recursive: true })
+    await fs.writeFile(keyFile, Buffer.alloc(8, 7))
+
+    await activeRow("sk-ant-api03-short")
+    const rows = await broker(dataDir).projectAuth({ workspaceId })
+
+    expect(rows["claude-sdk"]).toMatchObject({ unavailable: true })
+    expect((rows["claude-sdk"] as { reason: string }).reason).toContain("shorter than 32 bytes")
+    expect(readFileSync(keyFile).byteLength).toBe(8)
+  })
+
+  test("a key file and directory left readable by others are narrowed on open", async () => {
+    const dataDir = path.join(root, `wide-${randomUUID().slice(0, 8)}`)
+    const dir = path.join(dataDir, "credentials")
+    mkdirSync(dir, { recursive: true, mode: 0o755 })
+    await fs.writeFile(path.join(dir, "broker.key"), Buffer.alloc(32, 3), { mode: 0o644 })
+
+    broker(dataDir).runtimeIdentity(workspaceId)
+
+    expect(statSync(dir).mode & 0o777).toBe(0o700)
+    expect(statSync(path.join(dir, "broker.key")).mode & 0o777).toBe(0o600)
+  })
+
+  test("a data directory this process cannot write reports unavailable rather than failing to boot", async () => {
+    const parent = path.join(root, `locked-${randomUUID().slice(0, 8)}`)
+    mkdirSync(parent, { recursive: true })
+    await fs.chmod(parent, 0o500)
+    await activeRow("sk-ant-api03-locked")
+    try {
+      const local = broker(path.join(parent, "data"))
+      const rows = await local.projectAuth({ workspaceId })
+
+      expect(rows["claude-sdk"]).toMatchObject({ unavailable: true })
+      expect((rows["claude-sdk"] as { reason: string }).reason).toContain("broker_unavailable")
+    } finally {
+      await fs.chmod(parent, 0o700)
+    }
+  })
+
+  test("a lost generation counter starts past every generation this machine minted", async () => {
+    const dataDir = path.join(root, `generation-${randomUUID().slice(0, 8)}`)
+    const before = Date.now()
+    const counter = path.join(dataDir, "credentials", "broker-generation")
+    const first = broker(dataDir).runtimeIdentity(workspaceId).leaseGeneration
+    expect(first).toBeGreaterThanOrEqual(before)
+
+    await fs.rm(counter)
+    const relaunched = broker(dataDir).runtimeIdentity(workspaceId).leaseGeneration
+
+    // Counting from 1 again would re-issue a generation an old placeholder
+    // already names, and that placeholder would validate a second time.
+    expect(relaunched).toBeGreaterThanOrEqual(first)
   })
 })

@@ -38,6 +38,7 @@ export async function probeDiscoveredCredential(
     expires_at: item.fresh_until ?? null,
     created_at: at,
     updated_at: at,
+    revision: 1,
   }
 
   try {

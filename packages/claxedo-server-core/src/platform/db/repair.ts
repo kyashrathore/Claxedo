@@ -374,6 +374,10 @@ function ensureProviderCredentialOrgColumn(db: SqliteInstance, out: string[]) {
     db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `org_id` text NOT NULL DEFAULT '__local__'")
     out.push("claxedo_provider_credential.org_id")
   }
+  if (!hasColumn(db, "claxedo_provider_credential", "revision")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `revision` integer NOT NULL DEFAULT 1")
+    out.push("claxedo_provider_credential.revision")
+  }
   db.exec("UPDATE `claxedo_provider_credential` SET `org_id` = '__local__' WHERE `org_id` IS NULL OR trim(`org_id`) = ''")
   db.exec("CREATE INDEX IF NOT EXISTS `claxedo_provider_credential_org_idx` ON `claxedo_provider_credential` (`org_id`)")
   db.exec(

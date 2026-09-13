@@ -1,4 +1,4 @@
-import { sameRuntime, type Binding, type BindingAuthority, type BindingFailure, type RuntimeIdentity } from "./binding.js"
+import { bindingBaseUrl, sameRuntime, type Binding, type BindingAuthority, type BindingFailure, type RuntimeIdentity } from "./binding.js"
 import { mintRuntimeToken } from "./token.js"
 
 export function createGenericDeliveryAdapter(input: {
@@ -89,18 +89,14 @@ export function createGenericDeliveryAdapter(input: {
   async function project(bindingId: string, brokerOrigin: string, expiresAt: number) {
     const entry = bindings.get(bindingId)
     if (!entry || !await authority.currentRuntime(entry.binding)) throw new Error("Binding is not active")
-    const origin = new URL(brokerOrigin)
-    if (origin.protocol !== "https:" && !(origin.protocol === "http:" && ["127.0.0.1", "[::1]", "localhost"].includes(origin.hostname))) {
-      throw new Error("Broker must use HTTPS or loopback HTTP")
-    }
-    if (origin.username || origin.password || origin.pathname !== "/" || origin.search || origin.hash) throw new Error("Invalid broker origin")
+    const baseUrl = bindingBaseUrl(brokerOrigin, bindingId)
     const b = entry.binding
     const placeholder = await mintRuntimeToken({
       userId: b.userId, orgId: b.orgId, workspaceId: b.workspaceId, leaseId: b.leaseId,
       leaseGeneration: b.leaseGeneration, runtimeId: b.runtimeId,
       bindingIds: [bindingId], expiresAt,
     }, input.signingKey)
-    return { baseUrl: `${origin.origin}/bindings/${bindingId}`, placeholder, expiresAt, authMode: b.injection.header.toLowerCase() === "x-api-key" ? "api-key" as const : "bearer" as const }
+    return { baseUrl, placeholder, expiresAt, authMode: b.injection.header.toLowerCase() === "x-api-key" ? "api-key" as const : "bearer" as const }
   }
 
   return {

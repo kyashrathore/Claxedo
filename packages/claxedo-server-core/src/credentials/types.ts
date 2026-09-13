@@ -72,6 +72,13 @@ export interface CredentialMetadata {
   last_error?: string | null
   created_at: number
   updated_at: number
+  /**
+   * Which stored secret this row currently holds, counted up on every secret
+   * write. A binding reports it so a vendor's 401 is attributed to the value
+   * the request actually carried; `updated_at` collides within a millisecond
+   * and cannot.
+   */
+  revision: number
 }
 
 /**

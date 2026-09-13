@@ -191,6 +191,7 @@ export async function putCredential(
     last_error: null,
     created_at: existing?.created_at ?? ts,
     updated_at: ts,
+    revision: (existing?.revision ?? 0) + 1,
   }
 
   /**
@@ -413,6 +414,25 @@ export function requireCredentialRegistryLookup(
   return row ? toMetadata(row) : undefined
 }
 
+/**
+ * Credential metadata by id for a caller that must not read an outage as an
+ * absent row. `getCredential` answers `undefined` for both, which a credential
+ * authority would serve as "this binding was withdrawn".
+ */
+export function requireCredential(
+  id: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): CredentialMetadata | undefined {
+  const row = ClaxedoDB.use((db) =>
+    db
+      .select()
+      .from(ClaxedoProviderCredentialTable)
+      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
+      .get(),
+  )
+  return row ? toMetadata(row) : undefined
+}
+
 /** Get credential metadata by ID, within one org. */
 export function getCredential(
   id: string,
@@ -457,12 +477,33 @@ export async function resolveSecretById(
   return secret
 }
 
-function touchCredential(id: string, org?: CredentialOrgScope) {
+/**
+ * The stored secret without recording a use.
+ *
+ * The broker reads one per proxied request, and a write per request turns a
+ * streaming turn into a stream of registry writes. Its caller marks the use on
+ * its own schedule instead.
+ */
+export async function readSecretById(
+  id: string,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): Promise<string | null> {
+  const cred = requireCredential(id, org)
+  if (!cred?.secure_ref) return null
+  return await getBackend().get(cred.secure_ref)
+}
+
+/** Record that a credential was spent at `at`, for a caller that owns the schedule. */
+export function markCredentialUsed(id: string, at: number, org?: CredentialOrgScope) {
   ClaxedoDB.use((db) => db
     .update(ClaxedoProviderCredentialTable)
-    .set({ last_used_at: now() })
+    .set({ last_used_at: at })
     .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
     .run())
+}
+
+function touchCredential(id: string, org?: CredentialOrgScope) {
+  markCredentialUsed(id, now(), org)
 }
 
 /**
@@ -492,6 +533,7 @@ export async function updateCredentialSecret(
       secure_ref: ref,
       expires_at: expiresAt ?? credential.expires_at ?? null,
       updated_at: now(),
+      revision: credential.revision + 1,
     })
     .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
     .run())
@@ -680,17 +722,19 @@ function fanoutEligible(cred: CredentialMetadata): boolean {
  * provider without ranking anything: a provider whose accounts are all unmarked
  * sends nothing, and the harness runs on the login it holds on the machine.
  */
-function activeCredentials(org: CredentialOrgScope): CredentialMetadata[] {
-  return safeRead("active credential list", [], () =>
-    ClaxedoDB.use((db) =>
-      db
-        .select()
-        .from(ClaxedoProviderCredentialTable)
-        .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.is_active, true)))
-        .all()
-        .map(toMetadata),
-    ),
+function readActiveCredentials(org: CredentialOrgScope): CredentialMetadata[] {
+  return ClaxedoDB.use((db) =>
+    db
+      .select()
+      .from(ClaxedoProviderCredentialTable)
+      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.is_active, true)))
+      .all()
+      .map(toMetadata),
   )
+}
+
+function activeCredentials(org: CredentialOrgScope): CredentialMetadata[] {
+  return safeRead("active credential list", [], () => readActiveCredentials(org))
 }
 
 /**
@@ -758,7 +802,27 @@ export function selectActiveCredentialsForScope(
   scope: CredentialSecretScope = "local",
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): ScopedCredentialSelection[] {
-  return activeCredentials(org)
+  return scopedSelection(activeCredentials(org), scope)
+}
+
+/**
+ * The same selection for a caller that must not read an outage as "no account
+ * marked". An empty answer tells a credential authority to project nothing,
+ * and the harness then runs on whatever login its machine holds — so the
+ * authority needs the failure, not the fallback.
+ */
+export function requireActiveCredentialsForScope(
+  scope: CredentialSecretScope = "local",
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): ScopedCredentialSelection[] {
+  return scopedSelection(readActiveCredentials(org), scope)
+}
+
+function scopedSelection(
+  rows: CredentialMetadata[],
+  scope: CredentialSecretScope,
+): ScopedCredentialSelection[] {
+  return rows
     .filter((credential) => fanoutEligible(credential) && credentialSecretInScope(credential, scope))
     .map((credential) => {
       const unavailable = credentialUnavailableForScope(credential, scope)
@@ -800,7 +864,7 @@ function credentialAvailableForScope(credential: CredentialMetadata, scope: Cred
  * provider said (`auth_failed`, `no_billing`) where the status only records
  * that something went wrong.
  */
-function credentialUnavailableForScope(
+export function credentialUnavailableForScope(
   credential: CredentialMetadata,
   scope: CredentialSecretScope,
 ): string | undefined {
