@@ -82,6 +82,7 @@ async function subject(input: {
           ...(input.multipleIssuers ? { issuer: "https://login-two.example" } : {}),
         },
       })
+  const oauthFetchSpy = oauthFetch(input.publicServer, input.multipleIssuers)
   const preparerInput = {
     activations: { runtimeSnapshot: async () => snapshot() },
     artifacts: {
@@ -99,13 +100,12 @@ async function subject(input: {
     },
     resolveConnection,
     oauth: {
-      fetch: oauthFetch(input.publicServer, input.multipleIssuers),
-      preRegistered: {
-        "https://login.example": { clientId: "claxedo" },
-        ...(input.multipleIssuers
-          ? { "https://login-two.example": { clientId: "claxedo-two" } }
-          : {}),
-      },
+      fetch: oauthFetchSpy,
+      // Only the issuer the Connection froze. Registering both let the
+      // preparer pick either one and still resolve, so a wrong pick passed.
+      preRegistered: input.multipleIssuers
+        ? { "https://login-two.example": { clientId: "claxedo-two" } }
+        : { "https://login.example": { clientId: "claxedo" } },
     },
     gatewayUrl: "https://mcp-gateway.example/",
     signingEnv: env,
@@ -113,7 +113,7 @@ async function subject(input: {
   } satisfies Parameters<typeof createHostedMcpRuntimePreparation>[0]
   const prepare = createHostedMcpRuntimePreparation(preparerInput)
   const preparer = createHostedMcpRuntimePreparer(preparerInput)
-  return { env, resolveConnection, preparation: await prepare("workspace-1"), preparer, snapshot }
+  return { env, resolveConnection, oauthFetch: oauthFetchSpy, preparation: await prepare("workspace-1"), preparer, snapshot }
 }
 
 describe("hosted MCP runtime preparation", () => {
@@ -266,5 +266,10 @@ describe("hosted MCP runtime preparation", () => {
     expect(agentPluginMcpRuntimePlan(value.preparation).mcpServers).toEqual(expect.arrayContaining([
       expect.objectContaining({ state: "gateway", serverName: "docs" }),
     ]))
+    // Both are discovered, because compatibility is what the resource
+    // advertises; only the frozen one is registered, so a preparation that
+    // picked the other has no client to present.
+    const reached = value.oauthFetch.mock.calls.map(([url]) => url)
+    expect(reached).toContain("https://login-two.example/.well-known/oauth-authorization-server")
   })
 })

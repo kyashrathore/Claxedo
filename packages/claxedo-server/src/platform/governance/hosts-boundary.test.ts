@@ -40,6 +40,13 @@ function hostFiles(includeTests = false) {
   )
 }
 
+function deploymentImports(file: string, text: string) {
+  return [...text.matchAll(RELATIVE_IMPORT)]
+    .map((match) => path.relative(SRC, path.resolve(path.dirname(file), match[1])))
+    .filter((target) => target.split(path.sep)[0] === "deployments")
+    .map((target) => `${path.relative(SRC, file)} -> ${target}`)
+}
+
 describe("hosts boundary", () => {
   test("the check is not vacuous — hosts/ exists and holds production files", () => {
     // `hosts/workspace-runtime/` is the only host directory. The floor is here
@@ -48,19 +55,32 @@ describe("hosts boundary", () => {
     expect(hostFiles().length).toBeGreaterThanOrEqual(5)
   })
 
+  test("the deployment-import detector names the edge it is looking for", () => {
+    // Planted, because every assertion below is an empty list: a detector that
+    // matched nothing at all would pass them all and report a clean boundary
+    // while an edge walked in.
+    expect(deploymentImports(
+      path.join(HOSTS, "workspace-runtime/session-env.ts"),
+      'import { embedded } from "../../deployments/local/embedded-workspace-runtime"',
+    )).toEqual(["hosts/workspace-runtime/session-env.ts -> deployments/local/embedded-workspace-runtime"])
+    expect(deploymentImports(
+      path.join(HOSTS, "workspace-runtime/session-env.ts"),
+      'import { peer } from "../../platform/http/peer-address"',
+    )).toEqual([])
+  })
+
   test("no production file under hosts/ imports a deployment", () => {
-    const offenders = hostFiles().flatMap((file) => {
-      const text = fs.readFileSync(file, "utf8")
-      return [...text.matchAll(RELATIVE_IMPORT)]
-        .map((match) => path.relative(SRC, path.resolve(path.dirname(file), match[1])))
-        .filter((target) => target.split(path.sep)[0] === "deployments")
-        .map((target) => `${path.relative(SRC, file)} -> ${target}`)
-    })
+    const offenders = hostFiles().flatMap((file) => deploymentImports(file, fs.readFileSync(file, "utf8")))
 
     // A host reaching into a deployment makes the reusable half depend on one
     // runtime. If a host genuinely needs something a deployment owns, either
     // lift the shared part into platform/ or inject it at the composition root.
     expect(offenders.toSorted()).toEqual([])
+  })
+
+  test("the external-composition detector separates a host from domain code", () => {
+    expect(EXTERNAL_CLAXEDO.test('import { startServer } from "@claxedo/workspace-runtime"')).toBe(true)
+    expect(EXTERNAL_CLAXEDO.test('import { thing } from "../../platform/runtime/lib/log"')).toBe(false)
   })
 
   test("every hosts/ subdirectory composes at least one external @claxedo package", () => {

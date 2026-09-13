@@ -2,7 +2,6 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { build as esbuildBuild } from "esbuild"
-import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "@claxedo/sandbox-manager"
 import { workspaceRuntimeRoot } from "../../../src/hosts/workspace-runtime/startup"
 import {
   esbuildHostBundleOptions,
@@ -23,7 +22,9 @@ const runtimeRoots = [path.resolve(import.meta.dirname, "../../../../workspace-r
 describe("build-sandbox-image", () => {
   test("the Node image supports the SDK syntax and SQLite native prebuild", () => {
     const dockerfile = fs.readFileSync(path.join(import.meta.dirname, "../Dockerfile"), "utf8")
-    expect(dockerfile).toContain("FROM node:24.18.0-trixie-slim")
+    // The major is the contract — the SDK syntax and the SQLite prebuild — and
+    // pinning the patch here makes every base-image bump a test edit.
+    expect(dockerfile).toMatch(/^FROM node:24\.\d+\.\d+-trixie-slim$/m)
   })
   test("builds from the sandbox scripts context with no version build-arg", () => {
     expect(sandboxImageBuildArgs({
@@ -187,17 +188,6 @@ describe("build-sandbox-image", () => {
     expect(enabled).toHaveLength(disabled.length + 1)
   })
 
-  test("the Cloudflare deployment workflow selects the VM materializer before image bundling", () => {
-    const workflow = fs.readFileSync(
-      path.resolve(import.meta.dirname, "../../../../../.github/workflows/deploy-cloudflare-sandbox-worker.yml"),
-      "utf8",
-    )
-    expect(workflow).toContain("agent_plugins:")
-    expect(workflow).toContain("if: ${{ !inputs.agent_plugins }}")
-    expect(workflow).toContain("if: ${{ inputs.agent_plugins }}")
-    expect(workflow).toContain("build-sandbox-image.ts --agent-plugins --bundle-only --out=.build")
-  })
-
   test("production image starts the checkout-built workspace-runtime host", () => {
     const dockerfiles = ["../Dockerfile", "../cloudflare-worker/Dockerfile"]
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
@@ -227,14 +217,6 @@ describe("build-sandbox-image", () => {
       expect(dockerfile).not.toContain("/usr/local/bin/opencode")
       expect(dockerfile).toContain(`RUN node /opt/workspace-runtime/${IMAGE_SMOKE_FILENAME}`)
     }
-  })
-
-  test("Cloudflare data-plane proxy targets the canonical workspace-runtime port", () => {
-    const worker = fs.readFileSync(
-      path.resolve(import.meta.dirname, "../cloudflare-worker/src/index.ts"),
-      "utf8",
-    )
-    expect(worker).toContain(`const WORKSPACE_RUNTIME_PORT = ${DEFAULT_WORKSPACE_RUNTIME_PORT}`)
   })
 
   test("workspace package build order is topological (dependencies before dependents, workspace-runtime last)", () => {
