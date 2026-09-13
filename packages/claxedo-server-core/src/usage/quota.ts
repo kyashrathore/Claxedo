@@ -15,6 +15,7 @@
 
 import { HARNESS_IDS, HARNESS_TABLE, harnessForProviderId, isHarnessId } from "@claxedo/agent-runtime-contract"
 import { agentUsageOrNone } from "../credentials/machine-agent-usage"
+import { credentialReach } from "../credentials/native-delivery"
 import { machineLoginsWithUsage } from "../credentials/machine-login-report"
 import { checkCredential } from "../credentials/operations/check"
 import { isSubscriptionKind } from "../credentials/secret-material"
@@ -82,8 +83,15 @@ async function composeSnapshot(
   now: () => number,
   agentUsage?: MachineAgentUsageReader,
 ): Promise<QuotaSnapshot> {
-  const stored = storedAccounts(await credentials.listCredentials(org))
-  const inUse = await accountsInUse(credentials, org, stored)
+  const rows = await credentials.listCredentials(org)
+  // Ownership is resolved over every stored row, and only then narrowed to the
+  // rows that can carry a plan. A harness running on a stored API key has no
+  // card here — a key has no window to draw — but it is still the account that
+  // harness spends, and reading ownership off the cards alone reported the
+  // machine login as the one in use.
+  const inUse = await accountsInUse(credentials, org, rows)
+  const harnessesInUse = new Set(rows.filter((row) => inUse.has(row.id)).map(harnessOf))
+  const stored = storedAccounts(rows)
   const accounts: QuotaAccount[] = stored.map((account) => {
     const read = account.rows.find((row) => row.usage_windows?.length)
     const named = account.rows
@@ -95,6 +103,9 @@ async function composeSnapshot(
       credentialId: account.first.id,
       label: named ?? account.identity,
       inUse: account.ids.some((id) => inUse.has(id)),
+      // Every row of one account is the same login stored per binding, so the
+      // account reaches a cloud sandbox exactly where any of them does.
+      deliverable: account.rows.map(credentialReach).find((reach) => reach.cloud) ?? credentialReach(account.first),
       ...(health == null ? {} : { health }),
       windows: read?.usage_windows ?? [],
       ...(read?.usage_at == null ? {} : { usageAt: read.usage_at }),
@@ -110,11 +121,12 @@ async function composeSnapshot(
     accounts.push({
       harness: login.harness,
       machineLogin: true,
+      deliverable: login.deliverable,
       ...(login.email ? { label: login.email } : {}),
       ...(login.plan ? { plan: login.plan } : {}),
       // The machine login is what a harness falls back to, so it runs the next
       // turn exactly when no stored account of that harness does.
-      inUse: !accounts.some((account) => account.harness === login.harness && account.inUse),
+      inUse: !harnessesInUse.has(login.harness),
       windows: login.usage ?? [],
       ...(login.usageAt === undefined ? {} : { usageAt: login.usageAt }),
       ...(login.usageError === undefined ? {} : { usageError: login.usageError }),
@@ -129,6 +141,9 @@ async function composeSnapshot(
       harness: agent.agent,
       otherAgent: true,
       label: agent.label,
+      // Claxedo never runs a turn on this agent's plan, so it is no more
+      // deliverable than a login it does not hold.
+      deliverable: { local: false, cloud: false, reason: "other_agent" },
       ...(agent.plan === undefined ? {} : { plan: agent.plan }),
       inUse: false,
       windows: agent.windows,
@@ -169,7 +184,7 @@ function storedAccounts(rows: readonly CredentialMetadata[]): StoredAccount[] {
   const groups = new Map<string, StoredAccount>()
   for (const row of rows) {
     if (!isSubscriptionKind(row.kind)) continue
-    const harness = harnessForProviderId(row.provider_id) ?? row.provider_id
+    const harness = harnessOf(row)
     const identity = row.account_id ?? row.id
     const held = groups.get(`${harness} ${identity}`)
     if (held) {
@@ -182,24 +197,31 @@ function storedAccounts(rows: readonly CredentialMetadata[]): StoredAccount[] {
   return [...groups.values()]
 }
 
+/** The harness a stored row belongs to, or the provider itself where it belongs to none. */
+function harnessOf(row: Pick<CredentialMetadata, "provider_id">): string {
+  return harnessForProviderId(row.provider_id) ?? row.provider_id
+}
+
 /**
  * The stored rows a harness would actually send, which is what "in use" means
- * on the Providers list. `effectiveCredentials` answers it directly; a store
- * that reports none leaves the active mark as the only evidence.
+ * on the Providers list.
+ *
+ * `effectiveCredentials` answers it directly, and an empty answer from it is an
+ * answer: no stored account is in use, and every harness runs on the login its
+ * own CLI holds. A store that does not implement it cannot answer at all, and
+ * only there is the active mark the best evidence available — a mark says which
+ * account was chosen, not which one is usable.
  */
 async function accountsInUse(
   credentials: ControlPlaneCredentials,
   org: string,
-  stored: readonly StoredAccount[],
+  rows: readonly CredentialMetadata[],
 ): Promise<Set<string>> {
-  const effective = (await credentials.effectiveCredentials?.("local", org)) ?? []
-  if (effective.length === 0) {
-    return new Set(stored.flatMap((account) => account.rows.filter((row) => row.is_active).map((row) => row.id)))
-  }
+  const effective = await credentials.effectiveCredentials?.("local", org)
+  if (effective === undefined) return new Set(rows.filter((row) => row.is_active).map((row) => row.id))
   const byProvider = new Map(effective.map((row) => [row.provider_id, row.id]))
-  const harnesses = new Set(stored.map((account) => account.harness))
   return new Set(
-    [...harnesses].flatMap((harness) => {
+    [...new Set(rows.map(harnessOf))].flatMap((harness) => {
       const providerIds = isHarnessId(harness) ? HARNESS_TABLE[harness].providerIds : [harness]
       const id = providerIds.map((provider) => byProvider.get(provider)).find((value) => value !== undefined)
       return id === undefined ? [] : [id]

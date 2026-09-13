@@ -29,7 +29,10 @@ function store(input: {
   const machineUsage = new Map<string, { harness: string; account: string; windows: never[]; at: number }>()
   const credentials = {
     listCredentials: vi.fn(async () => rows),
-    effectiveCredentials: vi.fn(async () => input.effective ?? []),
+    // Omitted entirely where a fixture states none: a store that cannot answer
+    // which account a harness would send is a different world from one that
+    // answers "none of them", and the two read the same through `?.()`.
+    ...(input.effective === undefined ? {} : { effectiveCredentials: vi.fn(async () => input.effective) }),
     machineLogins: vi.fn(async () => input.logins ?? []),
     readMachineLoginUsage: vi.fn(async () => [...machineUsage.values()]),
     recordMachineLoginUsage: vi.fn(async (harness: string, account: string, windows, at: number) => {
@@ -96,6 +99,7 @@ describe("usage quota reader", () => {
           {
             harness: "claude",
             credentialId: "cred_acp",
+            deliverable: { local: true, cloud: true },
             label: "signed-in@example.com",
             inUse: true,
             health: "ok",
@@ -105,6 +109,9 @@ describe("usage quota reader", () => {
           {
             harness: "codex",
             machineLogin: true,
+            // Claxedo never holds the CLI's token, so there is nothing to hand
+            // a sandbox provider's edge.
+            deliverable: { local: true, cloud: false, reason: "machine_login" },
             label: "codex@example.com",
             plan: "plus",
             inUse: true,
@@ -249,6 +256,8 @@ describe("usage quota reader", () => {
   })
 
   test("one account's failed check leaves every other plan on screen", async () => {
+    // Two accounts, and the first one is the one that fails: a refresh that
+    // gave up there would take the second account's plan down with it.
     const credentials = store({
       rows: [
         credential({
@@ -256,6 +265,13 @@ describe("usage quota reader", () => {
           provider_id: "anthropic",
           account_id: "acct_a",
           usage_windows: [{ window: "session", usedPercent: 12, resetsAt: null }],
+          usage_at: 7,
+        }),
+        credential({
+          id: "b",
+          provider_id: "codex-app-server",
+          account_id: "acct_b",
+          usage_windows: [{ window: "weekly", usedPercent: 40, resetsAt: null }],
           usage_at: 7,
         }),
       ],
@@ -266,7 +282,117 @@ describe("usage quota reader", () => {
       now: () => 1_000,
       fetch: (async () => { throw new Error("offline") }) as unknown as typeof fetch,
     })
-    expect((await read({ org: ORG, refresh: true })).status).toBe("available")
+
+    const { status, snapshot } = await read({ org: ORG, refresh: true })
+
+    expect(status).toBe("available")
+    expect(snapshot?.accounts.map((account) => [account.label, account.windows.length])).toEqual([
+      ["acct_a", 1],
+      ["acct_b", 1],
+    ])
+    expect(credentials.resolveCredentialSecretById).toHaveBeenCalledTimes(2)
+  })
+
+  test("a secret the backend refuses on one account still leaves the next one checked", async () => {
+    // A locked keychain answers for one row and throws for another. The throw
+    // used to escape the per-account boundary and abort the whole pass.
+    const credentials = store({
+      rows: [
+        credential({ id: "a", provider_id: "anthropic", account_id: "acct_a" }),
+        credential({ id: "b", provider_id: "codex-app-server", account_id: "acct_b" }),
+      ],
+    })
+    const resolve = credentials.resolveCredentialSecretById
+    resolve.mockImplementation(async (id: string) => {
+      if (id === "a") throw new Error("keychain is locked")
+      return "sk-codex-token"
+    })
+    const read = createUsageQuotaReader({
+      credentials,
+      now: () => 1_000,
+      fetch: (async () => Response.json({ rate_limit: {} })) as unknown as typeof fetch,
+    })
+
+    await read({ org: ORG, refresh: true })
+
+    expect(resolve).toHaveBeenCalledTimes(2)
+    expect(credentials.updateCredentialHealth).toHaveBeenCalledWith("b", "ok", 1_000, ORG)
+  })
+
+  test("a card claims no cloud reach the authority has not granted", async () => {
+    // A ChatGPT subscription answers on a backend that reads a companion
+    // account header, and a provider edge attaches one header per secret. It
+    // is saved, and it still cannot go to a cloud sandbox.
+    const credentials = store({
+      rows: [
+        credential({
+          id: "sub",
+          provider_id: "openai",
+          kind: "oauth_token",
+          account_id: "acct_chatgpt",
+          usage_windows: [{ window: "weekly", usedPercent: 5, resetsAt: null }],
+          usage_at: 9,
+        }),
+        credential({
+          id: "claude",
+          provider_id: "claude-sdk",
+          kind: "oauth_token",
+          account_id: "acct_claude",
+          usage_windows: [{ window: "session", usedPercent: 5, resetsAt: null }],
+          usage_at: 9,
+        }),
+      ],
+    })
+    const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
+
+    const { snapshot } = await read({ org: ORG, refresh: false })
+
+    expect(snapshot?.accounts.map((account) => [account.harness, account.deliverable])).toEqual([
+      ["claude", { local: true, cloud: true }],
+      ["codex", { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }],
+    ])
+  })
+
+  test("a harness running on a stored key is not reported as running on its CLI login", async () => {
+    // A key has no plan window, so it draws no card. It is still the account
+    // the harness spends, and reading ownership off the cards alone said the
+    // machine login was in use.
+    const key = credential({ id: "key_1", provider_id: "codex-app-server", kind: "api_key" })
+    const credentials = store({
+      rows: [key],
+      effective: [key],
+      logins: [{
+        harness: "codex",
+        providerIds: ["codex-app-server", "openai"],
+        state: "signed_in",
+        email: "codex@example.com",
+      }],
+    })
+    const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
+
+    const { snapshot } = await read({ org: ORG, refresh: false })
+
+    expect(snapshot?.accounts.map((account) => [account.harness, account.machineLogin === true, account.inUse]))
+      .toEqual([["codex", true, false]])
+  })
+
+  test("a store that reports no effective account leaves every harness on its CLI login", async () => {
+    // An empty answer from the authority is an answer. Substituting the active
+    // mark for it erased the difference between the account that was chosen and
+    // the account that can actually be used.
+    const credentials = store({
+      rows: [credential({ id: "a", provider_id: "claude-acp", account_id: "acct_a", is_active: true })],
+      effective: [],
+      logins: [{ harness: "claude", providerIds: ["claude-sdk", "claude-acp"], state: "signed_in", email: "me@example.com" }],
+    })
+    const read = createUsageQuotaReader({ credentials, now: () => 1_000 })
+
+    const { snapshot } = await read({ org: ORG, refresh: false })
+
+    expect(snapshot?.accounts.map((account) => [account.label, account.inUse])).toEqual([
+      ["me@example.com", true],
+      ["acct_a", false],
+    ])
   })
 
   test("an agent this machine runs outside Claxedo is a card of its own, after every account", async () => {
@@ -300,6 +426,9 @@ describe("usage quota reader", () => {
     expect(snapshot?.accounts[2]).toEqual({
       harness: "copilot",
       otherAgent: true,
+      // Claxedo cannot run a turn on this agent at all, so its plan is worth
+      // showing and reaches nowhere.
+      deliverable: { local: false, cloud: false, reason: "other_agent" },
       label: "Copilot",
       inUse: false,
       windows: [],

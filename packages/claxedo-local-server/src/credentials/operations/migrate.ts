@@ -8,6 +8,7 @@
 import fs from "fs"
 import path from "path"
 import {
+  legacyPlaintextAuth,
   loadUserConfig,
   sandboxDriverConfig,
   saveUserConfig,
@@ -75,37 +76,36 @@ export async function migrateCredentials(): Promise<{ migrated: string[]; errors
   }
 
   const config = await loadUserConfig()
+  // The loader drops the plaintext map, and `saveUserConfig` writes the file
+  // without it, so draining it takes a read of the file's own text. An entry
+  // this pass could not store stays on disk: the rewrite below is what removes
+  // it, and it only happens once every entry is somewhere else.
+  const plaintext = await legacyPlaintextAuth()
   let dirty = false
-
-  // Migrate provider auth (config.auth)
-  if (config.auth) {
-    const remainingAuth = { ...config.auth }
-    for (const [providerId, secret] of Object.entries(config.auth)) {
-      if (!secret?.trim()) continue
-      try {
-        await putCredential({
-          provider_id: providerId,
-          kind: credentialKind(providerId),
-          source: "managed",
-          label: `Migrated from config`,
-          secret: secret.trim(),
-        })
-        migrated.push(providerId)
-        delete remainingAuth[providerId]
-        log.info("Migrated provider credential", { providerId })
-      } catch (err) {
-        errors.push(providerId)
-        log.error("Failed to migrate provider credential", {
-          providerId,
-          error: String(err),
-        })
-      }
-    }
-    if (Object.keys(remainingAuth).length !== Object.keys(config.auth).length) {
-      config.auth = remainingAuth
+  let strandedPlaintext = false
+  for (const [providerId, secret] of Object.entries(plaintext)) {
+    if (!secret.trim()) continue
+    try {
+      await putCredential({
+        provider_id: providerId,
+        kind: credentialKind(providerId),
+        source: "managed",
+        label: `Migrated from config`,
+        secret: secret.trim(),
+      })
+      migrated.push(providerId)
       dirty = true
+      log.info("Migrated provider credential", { providerId })
+    } catch (err) {
+      errors.push(providerId)
+      strandedPlaintext = true
+      log.error("Failed to migrate provider credential", {
+        providerId,
+        error: String(err),
+      })
     }
   }
+
 
   const sandboxDriverConfigValue = sandboxDriverConfig(config)
 
@@ -214,8 +214,10 @@ export async function migrateCredentials(): Promise<{ migrated: string[]; errors
     }
   }
 
-  // Save config without raw secrets
-  if (dirty) {
+  // The rewrite is what takes the plaintext off disk, and it takes ALL of it:
+  // one entry the backend refused would be deleted along with the ones it
+  // stored. Nothing is written until the next pass can store that entry too.
+  if (dirty && !strandedPlaintext) {
     await saveUserConfig(config)
     log.info("Removed plaintext secrets from config", { count: migrated.length })
   }

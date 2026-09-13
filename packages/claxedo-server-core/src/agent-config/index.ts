@@ -227,6 +227,23 @@ export function harnessConnectionRows(
 
 // ── User config (MCP servers) ──────────────────────────────────────────────
 
+/**
+ * The plaintext `auth` map an older config file still holds.
+ *
+ * Not part of `UserAgentConfig`: nothing runs a harness on it, and the loader
+ * drops the key. It is readable here for the one boot pass that drains it into
+ * the secret backend, after which `saveUserConfig` writes the file without it.
+ */
+export async function legacyPlaintextAuth(): Promise<Record<string, string>> {
+  const raw = await fs.promises.readFile(userConfigFile(), "utf-8").catch(() => undefined)
+  if (raw === undefined) return {}
+  try {
+    return stringRecord(asRecord(JSON.parse(raw))?.auth) ?? {}
+  } catch {
+    return {}
+  }
+}
+
 export async function loadUserConfig(): Promise<UserAgentConfig> {
   const raw = await fs.promises.readFile(userConfigFile(), "utf-8").catch((error: unknown) => {
     if (isNodeError(error, "ENOENT")) return undefined

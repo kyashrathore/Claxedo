@@ -138,6 +138,14 @@ export type QuotaAccount = {
   /** When those windows were read; absent on an account nothing has read yet. */
   usageAt?: number
   /**
+   * Where this account can be spent. `cloud` is the narrower question and the
+   * only one worth asking: a destination that also needs a fixed companion
+   * header cannot go through a sandbox provider's edge, which attaches one
+   * header per secret, and a machine login has no value to hand one at all.
+   * Absent where the reader could not resolve it.
+   */
+  deliverable?: { local: boolean; cloud: boolean; reason?: string }
+  /**
    * Why this account carries no windows, where the reader was told. Distinct
    * from `health`, which is the provider's verdict on the credential itself: a
    * usable login can still have a plan read that was throttled or expired.

@@ -142,8 +142,7 @@ describe("generic agent connection config API", () => {
       mcp: { docs: { type: "stdio", command: "docs-mcp" } },
       connections: { "conn-primary": descriptor("conn-primary") },
       defaultConnectionId: "conn-primary",
-      auth: { anthropic: "trusted-auth" },
-      sandbox_driver: {},
+      sandbox_driver: { default_driver: "daytona" },
     })
 
     expect((await app().request("/connections/absent", { method: "DELETE" })).status).toBe(404)
@@ -153,7 +152,7 @@ describe("generic agent connection config API", () => {
     expect(config.connections).toEqual({})
     expect(config.defaultConnectionId).toBeUndefined()
     expect(config.mcp.docs).toEqual({ type: "stdio", command: "docs-mcp" })
-    expect(config.auth).toEqual({ anthropic: "trusted-auth" })
+    expect(config.sandbox_driver).toEqual({ default_driver: "daytona" })
   })
 
   test("does not retain the removed ACP route alias", async () => {
