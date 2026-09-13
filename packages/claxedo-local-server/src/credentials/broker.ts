@@ -23,7 +23,7 @@ import {
   type BindingAuthority,
   type RuntimeIdentity,
 } from "@claxedo/egress-broker"
-import type { ProviderProjection } from "@claxedo/workspace-runtime/config"
+import type { ProviderProjectionSource } from "@claxedo/workspace-runtime/config"
 import {
   credentialUnavailableForScope,
   markCredentialUsed,
@@ -34,7 +34,15 @@ import {
   SINGLE_TENANT_ORG,
 } from "@claxedo/server-core/credentials/registry"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
-import { hasProviderDestination, providerDestination, type ProviderDestination } from "./destinations"
+import {
+  hasProviderDestination,
+  providerDestination,
+  type ProviderDestination,
+} from "@claxedo/server-core/credentials/destinations"
+import {
+  nativeProviderAuth,
+  nativeProviderDeliveries,
+} from "@claxedo/server-core/credentials/native-delivery"
 
 export const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
 
@@ -99,7 +107,7 @@ export type LocalCredentialBroker = {
   handler: (request: Request) => Promise<Response>
   /** What the handler asks on every request; the registry answers it. */
   authority: BindingAuthority
-  projectAuth: (input: ProjectAuthInput) => Promise<Record<string, ProviderProjection>>
+  projectAuth: (input: ProjectAuthInput) => Promise<Record<string, ProviderProjectionSource>>
   /** The identity this server minted for a workspace, once it has projected one. */
   runtimeIdentity: (workspaceId: string, orgId?: string) => RuntimeIdentity
 }
@@ -287,8 +295,14 @@ export function createLocalCredentialBroker(input: {
     async projectAuth({ scope = "local", orgId, workspaceId }) {
       if (!workspaceId) return {}
       const org = orgId ?? defaultOrg
+      // A shared-scope runtime is a sandbox this process cannot serve: its
+      // requests never traverse this machine's loopback, so the credential
+      // travels through its own provider's edge and the projection names the
+      // variable that edge fills. Same authority, same selection, other
+      // delivery.
+      if (scope === "shared") return nativeProviderAuth(await nativeProviderDeliveries(org))
       const selection = selectedCredentials(scope, org)
-      const rows: Record<string, ProviderProjection> = {}
+      const rows: Record<string, ProviderProjectionSource> = {}
       let state: { signingKey: Uint8Array; leaseGeneration: number }
       try {
         state = brokerState()

@@ -2,7 +2,12 @@
 import fs from "node:fs"
 import path from "node:path"
 import type { ProviderBindingOverlay } from "@claxedo/workspace-runtime/opencode"
-import { isProviderUnavailable, projectionRenewalDueAt } from "@claxedo/agent-sdk-runtime"
+import {
+  isProviderUnavailable,
+  projectionRenewalDueAt,
+  providerProjection,
+  type ProviderProjection,
+} from "@claxedo/agent-sdk-runtime"
 import { jsonRecord } from "../platform/runtime/lib/json"
 import { projectRuntimeAuth } from "../agent-config/index"
 import { SINGLE_TENANT_ORG, type CredentialOrgScope } from "../credentials/registry"
@@ -170,11 +175,19 @@ export async function reconcileCredentialsIntoSdk(
 ): Promise<SdkCredentialSyncResult> {
   const runtime = openCodeSdkRuntime()
   const projectedAt = Date.now()
-  const auth = await projectRuntimeAuth({
+  // Resolved row by row rather than through `providerProjectionRecord`, whose
+  // all-or-nothing answer would drop every working account because one row of
+  // this process's own authority came out malformed.
+  const auth: Record<string, ProviderProjection> = {}
+  const projected = await projectRuntimeAuth({
     scope: "local",
     ...(org === SINGLE_TENANT_ORG ? {} : { orgId: org }),
     workspaceId: ENGINE_RUNTIME,
   })
+  for (const [registryID, row] of Object.entries(projected)) {
+    auth[registryID] = providerProjection(row, process.env)
+      ?? { unavailable: true, reason: "unresolved_projection" }
+  }
   const overlays: Record<string, ProviderBindingOverlay> = {}
   for (const [registryID, providerID] of Object.entries(PROVIDER_BY_REGISTRY_ID)) {
     const projection = auth[registryID]

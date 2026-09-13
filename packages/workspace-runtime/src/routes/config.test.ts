@@ -103,6 +103,34 @@ describe("runtime config v4", () => {
     expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: undefined })).toBeUndefined()
   })
 
+  test("a sandbox-issued placeholder is resolved from this runtime's own environment", () => {
+    const projection = {
+      baseUrl: "https://api.anthropic.com",
+      placeholderEnv: "CLAXEDO_PROVIDER_CLAUDE_SDK",
+      authMode: "api-key",
+      apiPath: "/v1",
+    }
+    expect(normalizeRuntimeSnapshot(
+      { ...snapshot(), auth: { "claude-sdk": projection } },
+      { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn_secret_abc" },
+    )).toMatchObject({
+      auth: {
+        "claude-sdk": {
+          baseUrl: "https://api.anthropic.com",
+          placeholder: "dtn_secret_abc",
+          authMode: "api-key",
+          apiPath: "/v1",
+        },
+      },
+    })
+    // The sandbox provider never filled the variable: the account the operator
+    // chose is unusable here, which is not the same as choosing none.
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: { "claude-sdk": projection } }, {}))
+      .toMatchObject({
+        auth: { "claude-sdk": { unavailable: true, reason: "placeholder_env_missing: CLAXEDO_PROVIDER_CLAUDE_SDK" } },
+      })
+  })
+
   test("rejects duplicate identities and unknown descriptor fields", () => {
     const value = snapshot()
     expect(normalizeRuntimeSnapshot({ ...value, connections: [...value.connections, value.connections[0]] })).toBeUndefined()

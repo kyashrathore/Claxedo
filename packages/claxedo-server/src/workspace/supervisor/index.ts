@@ -8,6 +8,7 @@ import {
 } from "./config-sync"
 import {
   captureSupervisorSandboxCheckpoint,
+  resolveSandboxBindings,
   restoreSupervisorSandboxCheckpoint,
   sandboxBindingsRequested,
   startSandbox,
@@ -442,10 +443,11 @@ function recordSupervisorRuntimeSnapshot(workspaceId: string, input: SandboxRegi
   return { ok: true as const, status: "ready" as const }
 }
 
-async function startRuntime(state: WorkspaceRuntimeState, bindings?: SandboxBindings) {
-  // A warm runtime is served from memory only when the caller stated no
-  // authority to reconcile; otherwise the withdrawal or the narrowed policy
-  // would never reach the driver.
+async function startRuntime(state: WorkspaceRuntimeState, stated?: SandboxBindings) {
+  const bindings = state.ws.kind === "cloud" ? await resolveSandboxBindings(state, stated) : stated
+  // A warm runtime is served from memory only when there is no authority to
+  // reconcile; otherwise the withdrawal or the narrowed policy would never
+  // reach the driver.
   if (state.status === "ready" && state.url && !sandboxBindingsRequested(bindings)) {
     state.used_at = now()
     scheduleStop(state)

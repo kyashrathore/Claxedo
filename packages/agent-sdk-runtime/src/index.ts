@@ -178,7 +178,14 @@ export {
   ProviderCredentialUnavailableError,
   ProviderProjectionExpiredError,
 } from "./provider-projection"
-export type { ProviderBinding, ProviderProjection, ProviderUnavailable } from "./provider-projection"
+export type {
+  PlaceholderEnvironment,
+  ProviderBinding,
+  ProviderBindingSource,
+  ProviderProjection,
+  ProviderProjectionSource,
+  ProviderUnavailable,
+} from "./provider-projection"
 export { createLiveModelSource } from "./live-model-source"
 export type { LiveModelSource } from "./live-model-source"
 export type {

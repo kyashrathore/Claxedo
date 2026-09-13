@@ -36,6 +36,7 @@ import {
   supervisorBackplaneHeaders,
 } from "./control-token"
 import { pushRuntimeConfig } from "./config-sync"
+import { sandboxBrokeredSecrets } from "../../credentials/sandbox-delivery"
 import {
   createSupervisorSandboxLeaseStore,
   getSupervisorSandboxLease,
@@ -78,6 +79,27 @@ export type SandboxBindings = {
 /** Whether the caller stated an authority that has to reach the driver. */
 export function sandboxBindingsRequested(bindings: SandboxBindings | undefined) {
   return bindings?.secrets !== undefined || bindings?.net !== undefined
+}
+
+/**
+ * The authority this generation of the sandbox must be brought to: what the
+ * caller stated for its own request, plus the operator's active provider
+ * accounts, which belong to the deployment rather than to any request.
+ *
+ * Resolved before the supervisor decides whether a warm runtime can answer,
+ * because that decision is made on whether there is authority to reconcile —
+ * and an account revoked since the runtime went ready is exactly that.
+ */
+export async function resolveSandboxBindings(
+  state: WorkspaceRuntimeState,
+  bindings?: SandboxBindings,
+): Promise<SandboxBindings | undefined> {
+  const secrets = await sandboxBrokeredSecrets({
+    ...(bindings?.secrets ? { stated: bindings.secrets } : {}),
+    ...(state.ws.org_id ? { org: state.ws.org_id } : {}),
+  })
+  if (!secrets) return bindings
+  return { ...bindings, secrets }
 }
 
 export async function startSandbox(

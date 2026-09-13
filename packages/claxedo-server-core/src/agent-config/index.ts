@@ -34,7 +34,7 @@ import type {
   HarnessConnectionRef,
 } from "@claxedo/agent-sdk-runtime"
 import { createAcpConnectionProvider, createConnectionProviderRegistry } from "@claxedo/agent-sdk-runtime"
-import type { ProviderProjection, RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
+import type { ProviderProjectionSource, RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 
 export type {
   ConnectionReadiness,
@@ -131,7 +131,7 @@ export interface RuntimeConfigSnapshot {
   connections: HarnessConnectionDescriptor[]
   defaultHarness?: RuntimeHarnessSelection
   /** Broker endpoints and placeholders; the credential values stay with the authority. */
-  auth: Record<string, ProviderProjection>
+  auth: Record<string, ProviderProjectionSource>
   /** Opaque per-harness launch options contributed by the product composition. */
   harnessLaunch?: Record<string, Record<string, unknown>>
 }
@@ -161,7 +161,7 @@ export type AgentConfigOptions = {
     scope: RuntimeConfigSecretScope
     orgId?: string
     workspaceId?: string
-  }) => Promise<Record<string, ProviderProjection>>
+  }) => Promise<Record<string, ProviderProjectionSource>>
 }
 
 let agentConfigOptions: AgentConfigOptions = {}
@@ -181,7 +181,7 @@ export function projectRuntimeAuth(input: {
   scope: RuntimeConfigSecretScope
   orgId?: string
   workspaceId?: string
-}): Promise<Record<string, ProviderProjection>> {
+}): Promise<Record<string, ProviderProjectionSource>> {
   return agentConfigOptions.projectAuth?.(input) ?? Promise.resolve({})
 }
 
@@ -552,15 +552,11 @@ export async function getRuntimeConfigSnapshot(
   }
   const scope = options.secretScope ?? "local"
   const mcp = await runtimeMcp(config, selected, scope)
-  // A shared-scope sandbox reaches its credentials through its own provider's
-  // edge, which no authority here can mint; that adapter is the next slice.
-  const auth = scope === "shared"
-    ? {}
-    : await agentConfigOptions.projectAuth?.({
-      scope,
-      ...(options.orgId ? { orgId: options.orgId } : {}),
-      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
-    }) ?? {}
+  const auth = await agentConfigOptions.projectAuth?.({
+    scope,
+    ...(options.orgId ? { orgId: options.orgId } : {}),
+    ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+  }) ?? {}
   const harnessLaunch = await agentConfigOptions.harnessLaunch?.()
   return {
     version: 4,

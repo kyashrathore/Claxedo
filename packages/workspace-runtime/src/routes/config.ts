@@ -5,7 +5,9 @@ import {
   isAgentHarnessId,
   providerProjectionRecord,
   type HarnessConnectionDescriptor,
+  type PlaceholderEnvironment,
   type ProviderProjection,
+  type ProviderProjectionSource,
   type SessionHarness,
 } from "@claxedo/agent-sdk-runtime"
 import { isRecord } from "@claxedo/helpers/guards"
@@ -52,7 +54,7 @@ export type RuntimeCommandItem = {
   content: string
 }
 
-export type { ProviderProjection }
+export type { ProviderProjection, ProviderProjectionSource }
 
 export type RuntimeSnapshot = {
   version: 4
@@ -64,7 +66,7 @@ export type RuntimeSnapshot = {
    * with the authority that minted the binding; this carries only the broker
    * endpoint and a placeholder scoped to it.
    */
-  auth: Record<string, ProviderProjection>
+  auth: Record<string, ProviderProjectionSource>
   /**
    * Opaque per-harness launch options a containing product projects (Claxedo's
    * Agent Plugins module contributes plugin roots this way). Keyed by agent
@@ -75,7 +77,14 @@ export type RuntimeSnapshot = {
   workspaceHarnessEnabled?: boolean
   commands?: RuntimeCommandItem[]
 }
-export type AppliedRuntimeSnapshot = RuntimeSnapshot
+/**
+ * The snapshot after this runtime resolved it: every projection carries the
+ * placeholder the harness sends, including the ones the producer could only
+ * name as an environment variable its sandbox provider fills.
+ */
+export type AppliedRuntimeSnapshot = Omit<RuntimeSnapshot, "auth"> & {
+  auth: Record<string, ProviderProjection>
+}
 
 export class RuntimeConfigApplyError extends Error {
   constructor(
@@ -177,14 +186,22 @@ const RUNTIME_SNAPSHOT_KEYS = new Set([
   "commands",
 ])
 
-export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot | undefined {
+/**
+ * `env` is this process's own environment because a `placeholderEnv` row names
+ * a variable the sandbox provider filled inside this sandbox, and nothing
+ * outside it can read that value.
+ */
+export function normalizeRuntimeSnapshot(
+  input: unknown,
+  env: PlaceholderEnvironment = process.env,
+): AppliedRuntimeSnapshot | undefined {
   if (
     !isRecord(input)
     || input.version !== 4
     || !isRecord(input.mcp)
     || !Array.isArray(input.connections)
   ) return undefined
-  const auth = providerProjectionRecord(input.auth)
+  const auth = providerProjectionRecord(input.auth, env)
   if (!auth) return undefined
   // Unknown fields are rejected rather than silently dropped: a producer that
   // sends a field this runtime does not model would otherwise believe it took.
