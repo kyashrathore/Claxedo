@@ -128,6 +128,7 @@ function mount(input: { handoff: SessionHandoffState; refuseStart?: string }) {
     useCapabilityCatalog: () => () => ({ plugins: [], skills: [], loading: false }),
     ConfigurationEditor: () => null,
     useOpenSession: () => openSession,
+    useOpenPage: () => () => {},
   })
 
   render(() => (

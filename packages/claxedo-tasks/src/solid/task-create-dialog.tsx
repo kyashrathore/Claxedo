@@ -33,13 +33,22 @@ export function TaskCreateDialog(props: TaskCreateDialogProps) {
         props.onSubmit()
       }}
     >
-      <h2 class="tsk-title">{props.parentTitle ? `New subtask of ${props.parentTitle}` : "New task"}</h2>
+      <Show when={props.parentTitle}>
+        {(title) => (
+          <div class="tsk-crumbs">
+            <span>{title()}</span>
+            <span aria-hidden="true">›</span>
+            <span>New subtask</span>
+          </div>
+        )}
+      </Show>
 
       <label class="tsk-field">
         <span class="tsk-label">Title</span>
         <input
           class="tsk-input"
           data-testid="task-create-title"
+          placeholder="What needs doing"
           maxLength={TASKS_BOUNDS.taskTitleMax}
           aria-invalid={fieldError("title") ? "true" : undefined}
           value={props.draft.title}
@@ -77,7 +86,7 @@ export function TaskCreateDialog(props: TaskCreateDialogProps) {
 
       <Show when={props.error}>{(message) => <p class="tsk-error" role="alert">{message()}</p>}</Show>
 
-      <div class="tsk-row tsk-spread">
+      <div class="tsk-dialog-actions">
         <button type="button" class="tsk-button" onClick={() => props.onCancel()}>
           Cancel
         </button>

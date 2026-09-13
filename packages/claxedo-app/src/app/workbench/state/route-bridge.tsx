@@ -680,6 +680,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           sessionInventoryQuery.dataUpdatedAt,
         ] as const,
       ([ready, wsId, workspaceRouteId, workspaceBacking, id, pid, tid, routeKind, _pathname, title, hasBadge, additions, deletions]) => {
+        const parsed = shellRoute()
         route.receive({
           ready,
           workspaceId: wsId,
@@ -690,6 +691,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           // A build without Tasks registers no surface for the tab this opens,
           // so `/tasks` must reach nothing rather than an empty pane.
           tasks: __CLAXEDO_TASKS_ENABLED__ && routeKind === "tasks",
+          tasksPage: parsed.kind === "tasks" ? parsed.page : undefined,
           pageId: pid,
           terminalId: tid,
           workspaceBrowse: routeKind === "workspace",

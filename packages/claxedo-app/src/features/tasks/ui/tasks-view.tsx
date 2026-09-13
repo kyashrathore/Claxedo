@@ -1,26 +1,23 @@
-import { For, Show, createMemo, createSignal } from "solid-js"
+import { Show, createMemo, createSignal } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { TASK_STATUSES, isTaskStatus, type ConfigurationSlot, type Task, type TaskStatus } from "@claxedo/tasks"
-import {
-  TASK_COLLECTIONS,
-  TASK_COLLECTION_LABELS,
-  TASK_STATUS_LABELS,
-  TaskBoard,
-  TaskList,
-} from "@claxedo/tasks/solid"
+import type { TaskStatus, TaskSummary } from "@claxedo/tasks"
+import { TASK_COLLECTION_LABELS, TaskBoard, TaskList, type SubtaskProgress } from "@claxedo/tasks/solid"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf, type TaskListFilter } from "../data/tasks-api"
 import { morePages, useTaskList, useTasksClient, useTasksInvalidation, type TasksScope } from "../data/queries"
 import type { TasksStore } from "../store/tasks-store"
 import { DialogCreateTask } from "./dialogs/create-task-dialog"
-import { DialogStartTask } from "./dialogs/start-task-dialog"
-import { TaskDetailPanel } from "./task-detail-panel"
+import { TasksHeader } from "./tasks-header"
+import { TasksToolbar } from "./tasks-toolbar"
 
 export type TasksViewProps = {
   store: TasksStore
   scope: () => TasksScope
   projectId: () => string
+  /** Opening a task is a navigation, which the surface owns. */
+  onOpenTask: (taskId: string) => void
+  onOpenPresets: () => void
 }
 
 export function TasksView(props: TasksViewProps) {
@@ -42,8 +39,30 @@ export function TasksView(props: TasksViewProps) {
   })
   const tasks = useTaskList(props.scope, filter)
   const visible = createMemo(() => props.store.visibleTasks(tasks.items()))
-  const roots = createMemo(() => visible().filter((task) => task.parentTaskId === null))
-  const childrenOf = (taskId: string) => visible().filter((task) => task.parentTaskId === taskId)
+
+  const titleById = createMemo(() => new Map(visible().map((task) => [task.id, task.title])))
+  const parentTitleOf = (task: TaskSummary) =>
+    task.parentTaskId === null ? undefined : titleById().get(task.parentTaskId)
+
+  /**
+   * Children the same read already returned, folded per parent. Undefined
+   * where none were read — a task with subtasks the list did not ask for and
+   * a task with none are different answers, and "0/0" would merge them.
+   */
+  const progressById = createMemo(() => {
+    const progress = new Map<string, SubtaskProgress>()
+    if (!props.store.state.showChildren) return progress
+    for (const task of visible()) {
+      if (task.parentTaskId === null) continue
+      const current = progress.get(task.parentTaskId) ?? { done: 0, total: 0 }
+      progress.set(task.parentTaskId, {
+        done: current.done + (task.status === "done" ? 1 : 0),
+        total: current.total + 1,
+      })
+    }
+    return progress
+  })
+  const subtaskProgress = (taskId: string) => progressById().get(taskId)
 
   const setStatus = async (input: { taskId: string; revision: number; status: TaskStatus }) => {
     setBusyTaskId(input.taskId)
@@ -65,103 +84,49 @@ export function TasksView(props: TasksViewProps) {
         scope={props.scope}
         projectId={props.projectId()}
         onClose={() => dialog.close()}
-        onCreated={(taskId) => props.store.selectTask(taskId)}
-      />
-    ))
-
-  const openStart = (input: { task: Task; slot: ConfigurationSlot; attempt: number }) =>
-    void dialog.show(() => (
-      <DialogStartTask
-        store={props.store}
-        scope={props.scope}
-        task={input.task}
-        slot={input.slot}
-        attempt={input.attempt}
-        onClose={() => dialog.close()}
+        onCreated={(taskId) => props.onOpenTask(taskId)}
       />
     ))
 
   return (
-    <div class="tsk tsk-stack" data-testid="tasks-view">
-      <div class="tsk-toolbar">
-        <For each={TASK_COLLECTIONS}>
-          {(collection) => (
-            <button
-              type="button"
-              class="tsk-button"
-              data-testid={`tasks-collection-${collection}`}
-              data-variant={props.store.state.collection === collection ? "primary" : undefined}
-              aria-pressed={props.store.state.collection === collection}
-              onClick={() => props.store.setCollection(collection)}
-            >
-              {TASK_COLLECTION_LABELS[collection]}
-            </button>
-          )}
-        </For>
+    <div class="tsk tsk-root" data-testid="tasks-view">
+      <TasksHeader
+        active="tasks"
+        count={visible().length}
+        onOpenTasks={() => {}}
+        onOpenPresets={() => props.onOpenPresets()}
+        action={
+          <button type="button" class="tsk-button" data-variant="primary" data-testid="tasks-create" onClick={openCreate}>
+            New task
+          </button>
+        }
+      />
 
-        <select
-          class="tsk-select"
-          data-testid="tasks-project"
-          aria-label="Project"
-          value={props.projectId()}
-          onChange={(event) => props.store.setProjectId(event.currentTarget.value)}
-        >
-          <For each={projects()}>{(project) => <option value={project.id}>{project.label}</option>}</For>
-        </select>
+      <TasksToolbar store={props.store} projects={projects()} projectId={props.projectId()} />
 
-        <select
-          class="tsk-select"
-          data-testid="tasks-status-filter"
-          aria-label="Status filter"
-          value={props.store.state.statusFilter ?? ""}
-          onChange={(event) => {
-            const next = event.currentTarget.value
-            props.store.setStatusFilter(isTaskStatus(next) ? next : null)
-          }}
-        >
-          <option value="">Any status</option>
-          <For each={TASK_STATUSES}>{(status) => <option value={status}>{TASK_STATUS_LABELS[status]}</option>}</For>
-        </select>
-
-        <label class="tsk-checkbox">
-          <input
-            type="checkbox"
-            data-testid="tasks-show-children"
-            checked={props.store.state.showChildren}
-            onChange={(event) => props.store.setShowChildren(event.currentTarget.checked)}
-          />
-          <span>Show subtasks</span>
-        </label>
-
-        <button
-          type="button"
-          class="tsk-button"
-          data-testid="tasks-view-toggle"
-          aria-pressed={props.store.state.view === "board"}
-          onClick={() => props.store.setView(props.store.state.view === "list" ? "board" : "list")}
-        >
-          {props.store.state.view === "list" ? "Board" : "List"}
-        </button>
-
-        <button type="button" class="tsk-button" data-variant="primary" data-testid="tasks-create" onClick={openCreate}>
-          New task
-        </button>
-      </div>
-
-      <Show when={tasks.error()}>{(error) => <p class="tsk-error" role="alert">{refusalOf(error()).message}</p>}</Show>
+      <Show when={tasks.error()}>
+        {(error) => (
+          <p class="tsk-error tsk-inset" role="alert">
+            {refusalOf(error()).message}
+          </p>
+        )}
+      </Show>
 
       <Show
         when={props.store.state.view === "board"}
         fallback={
           <TaskList
-            tasks={roots()}
+            tasks={visible()}
             loading={tasks.pending()}
+            grouped={props.store.state.grouped}
+            emptyLabel={`Nothing in ${TASK_COLLECTION_LABELS[props.store.state.collection]}.`}
             more={morePages(tasks)}
             selectedTaskId={props.store.state.selectedTaskId}
-            showChildren={props.store.state.showChildren}
-            childrenOf={childrenOf}
+            parentTitleOf={parentTitleOf}
+            subtaskProgress={subtaskProgress}
             busyTaskId={busyTaskId()}
-            onSelect={(taskId) => props.store.selectTask(taskId)}
+            onSelect={(taskId) => props.onOpenTask(taskId)}
+            onCreate={openCreate}
             onStatusChange={(input) => void setStatus(input)}
           />
         }
@@ -170,22 +135,12 @@ export function TasksView(props: TasksViewProps) {
           tasks={visible()}
           more={morePages(tasks)}
           selectedTaskId={props.store.state.selectedTaskId}
+          subtaskProgress={subtaskProgress}
           busyTaskId={busyTaskId()}
-          onSelect={(taskId) => props.store.selectTask(taskId)}
+          onSelect={(taskId) => props.onOpenTask(taskId)}
+          onCreate={openCreate}
           onStatusChange={(input) => void setStatus(input)}
         />
-      </Show>
-
-      <Show when={props.store.state.selectedTaskId}>
-        {(taskId) => (
-          <TaskDetailPanel
-            store={props.store}
-            scope={props.scope}
-            taskId={taskId()}
-            onStart={openStart}
-            onOpenTask={(next) => props.store.selectTask(next)}
-          />
-        )}
       </Show>
     </div>
   )

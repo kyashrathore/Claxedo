@@ -44,11 +44,14 @@ export function StartTaskDialog(props: StartTaskDialogProps) {
 
   return (
     <section class="tsk tsk-stack" data-testid="start-task-dialog" aria-label={`Start ${props.taskTitle}`}>
-      <h2 class="tsk-title">Start “{props.taskTitle}”</h2>
+      <div class="tsk-stack">
+        <span class="tsk-eyebrow">Start attempt {props.attempt}</span>
+        <h2 class="tsk-title tsk-truncate">{props.taskTitle}</h2>
+      </div>
 
       <Show when={props.inlinePresetEditor} fallback={null}>
         {(editor) => (
-          <div class="tsk-surface tsk-stack tsk-panel" data-testid="start-task-inline-preset">
+          <div class="tsk-panel" data-testid="start-task-inline-preset">
             <h3 class="tsk-section-title">New preset</h3>
             {editor()}
           </div>
@@ -62,37 +65,42 @@ export function StartTaskDialog(props: StartTaskDialogProps) {
           fallback={
             <Show when={props.presetsFailure === undefined}>
               <div class="tsk-stack" data-testid="start-task-no-presets">
-                <p class="tsk-muted">A preset is required to start, and you have none yet. There is no default.</p>
-                <button type="button" class="tsk-button" data-variant="primary" data-testid="start-task-create-preset" onClick={() => props.onCreatePreset()}>
-                  Create a preset
-                </button>
+                <p class="tsk-hint">A preset is required to start, and you have none yet. There is no default.</p>
+                <div>
+                  <button
+                    type="button"
+                    class="tsk-button"
+                    data-variant="primary"
+                    data-testid="start-task-create-preset"
+                    onClick={() => props.onCreatePreset()}
+                  >
+                    Create a preset
+                  </button>
+                </div>
               </div>
             </Show>
           }
         >
-          <label class="tsk-field">
-            <span class="tsk-label">Preset</span>
-            <select
-              class="tsk-select"
-              data-testid="start-task-preset"
-              value={props.draft.presetId ?? ""}
-              onChange={(event) => patch({ presetId: event.currentTarget.value || null })}
-            >
-              <option value="">Choose a preset…</option>
-              <For each={props.presets}>{(preset) => <option value={preset.id}>{preset.name}</option>}</For>
-            </select>
-          </label>
-          <LoadMore more={props.morePresets} testId="start-task-presets-load-more" />
-          <button type="button" class="tsk-button" data-testid="start-task-create-preset" onClick={() => props.onCreatePreset()}>
-            Create a preset
-          </button>
+          <div class="tsk-choosers">
+            <label class="tsk-field">
+              <span class="tsk-label">Preset</span>
+              <select
+                class="tsk-select"
+                data-testid="start-task-preset"
+                value={props.draft.presetId ?? ""}
+                onChange={(event) => patch({ presetId: event.currentTarget.value || null })}
+              >
+                <option value="">Choose a preset…</option>
+                <For each={props.presets}>{(preset) => <option value={preset.id}>{preset.name}</option>}</For>
+              </select>
+            </label>
 
-          <Show when={selected()}>
             <label class="tsk-field">
               <span class="tsk-label">Configuration</span>
               <select
                 class="tsk-select"
                 data-testid="start-task-slot"
+                disabled={!selected()}
                 value={props.draft.slot}
                 onChange={(event) => {
                   const next = event.currentTarget.value
@@ -102,13 +110,26 @@ export function StartTaskDialog(props: StartTaskDialogProps) {
                 <For each={slots()}>{(slot) => <option value={slot}>{SLOT_LABELS[slot]}</option>}</For>
               </select>
             </label>
-          </Show>
+          </div>
+
+          <div class="tsk-row">
+            <LoadMore more={props.morePresets} testId="start-task-presets-load-more" />
+            <button
+              type="button"
+              class="tsk-button"
+              data-variant="quiet"
+              data-testid="start-task-create-preset"
+              onClick={() => props.onCreatePreset()}
+            >
+              Create a preset
+            </button>
+          </div>
         </Show>
 
         <StartPreviewPanel preview={props.preview} attempt={props.attempt} />
 
         <label class="tsk-field">
-          <span class="tsk-label">Handoff text (optional)</span>
+          <span class="tsk-label">Handoff text</span>
           <textarea
             class="tsk-textarea"
             data-testid="start-task-handoff"
@@ -128,15 +149,20 @@ export function StartTaskDialog(props: StartTaskDialogProps) {
               onChange={(event) => patch({ continueFromPrevious: event.currentTarget.checked })}
             />
             <span class="tsk-stack">
-              <span>Continue from previous session</span>
-              <span class="tsk-muted">Renders the previous session's turns and tool output into this one's instructions.</span>
+              <span>
+                Continue from{" "}
+                {preview()?.currentSession ? `the previous session (${preview()?.currentSession?.liveness})` : "the previous session"}
+              </span>
+              <span class="tsk-hint">
+                Renders the previous session's turns and tool output into this one's instructions.
+              </span>
             </span>
           </label>
         </Show>
 
         <Show when={props.error}>{(message) => <p class="tsk-error" role="alert">{message()}</p>}</Show>
 
-        <div class="tsk-row tsk-spread">
+        <div class="tsk-dialog-actions">
           <button type="button" class="tsk-button" data-testid="start-task-cancel" onClick={() => props.onCancel()}>
             Cancel
           </button>
@@ -157,13 +183,21 @@ export function StartTaskDialog(props: StartTaskDialogProps) {
 }
 
 function StartPreviewPanel(props: { preview: StartPreviewState; attempt: number }) {
+  const resolved = () => (props.preview.status === "ready" ? props.preview.preview : undefined)
+
   return (
-    <div class="tsk-preview" data-testid="start-task-preview">
+    <div class="tsk-panel" data-testid="start-task-preview">
+      <div class="tsk-row tsk-spread">
+        <h3 class="tsk-section-title">Where this will run</h3>
+        <Show when={props.preview.status === "loading" || (props.preview.status === "ready" && props.preview.refreshing === true)}>
+          <span class="tsk-hint" data-testid="start-task-preview-resolving">
+            Resolving settings…
+          </span>
+        </Show>
+      </div>
+
       <Show when={props.preview.status === "idle"}>
-        <span class="tsk-muted">Choose a preset to see where this will run.</span>
-      </Show>
-      <Show when={props.preview.status === "loading" || (props.preview.status === "ready" && props.preview.refreshing === true)}>
-        <span class="tsk-muted" data-testid="start-task-preview-resolving">Resolving settings…</span>
+        <p class="tsk-hint">Choose a preset to see where this will run.</p>
       </Show>
       <Show when={props.preview.status === "error" ? props.preview : undefined}>
         {(failed) => (
@@ -172,27 +206,42 @@ function StartPreviewPanel(props: { preview: StartPreviewState; attempt: number 
           </span>
         )}
       </Show>
-      <Show when={props.preview.status === "ready" ? props.preview.preview : undefined}>
-        {(resolved) => (
+
+      <Show when={resolved()}>
+        {(preview) => (
           <>
-            <span>
-              {PLACEMENT_LABELS[resolved().placement]} · {SLOT_LABELS[resolved().slot]} · attempt {props.attempt}
-            </span>
-            <span class="tsk-muted">{resolved().destinationDescription}</span>
-            <span class="tsk-muted">
-              {resolved().configuration.harness.id} · {resolved().configuration.model.providerID}/
-              {resolved().configuration.model.modelID}
-              {resolved().configuration.effort ? ` · ${resolved().configuration.effort}` : ""}
-            </span>
-            <span class="tsk-muted" data-testid="start-task-preview-capabilities">
-              {resolved().capabilities.mode === "inherit-local"
-                ? "Uses this machine's current skills and plugins."
-                : "Cloud runs only the plugins and skills this preset selects, plus the platform tools every session needs."}
-            </span>
-            <Show when={resolved().currentSession}>
-              {(current) => <span class="tsk-muted">Current session for this slot: {current().liveness}</span>}
-            </Show>
-            <For each={resolved().blockers}>
+            <dl class="tsk-kv">
+              <dt>Placement</dt>
+              <dd>{PLACEMENT_LABELS[preview().placement]}</dd>
+              <dt>Workspace</dt>
+              <dd>{preview().destinationDescription}</dd>
+              <dt>Model</dt>
+              <dd class="tsk-mono">
+                {preview().configuration.harness.id} · {preview().configuration.model.providerID}/
+                {preview().configuration.model.modelID}
+              </dd>
+              <dt>Effort</dt>
+              <dd class="tsk-mono">{preview().configuration.effort ?? "Harness default"}</dd>
+              <dt>Capabilities</dt>
+              <dd data-testid="start-task-preview-capabilities">
+                {preview().capabilities.mode === "inherit-local"
+                  ? "Uses this machine's current skills and plugins."
+                  : "Cloud runs only the plugins and skills this preset selects, plus the platform tools every session needs."}
+              </dd>
+              <dt>Attempt</dt>
+              <dd class="tsk-num">
+                #{props.attempt} · {SLOT_LABELS[preview().slot]}
+              </dd>
+              <Show when={preview().currentSession}>
+                {(current) => (
+                  <>
+                    <dt>Current</dt>
+                    <dd>Session for this slot is {current().liveness}</dd>
+                  </>
+                )}
+              </Show>
+            </dl>
+            <For each={preview().blockers}>
               {(blocker) => (
                 <span class="tsk-blocker" data-testid={`start-task-blocker-${blocker.code}`}>
                   {blocker.detail}

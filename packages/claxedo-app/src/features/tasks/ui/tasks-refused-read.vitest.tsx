@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import type { JSX } from "solid-js"
 import { TASKS_BOUNDS, TASKS_ROUTE_PATH, type Preset, type SessionReference, type Task } from "@claxedo/tasks"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import type { TasksPage } from "@/platform/identity/route"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import type { TasksScope } from "@/features/tasks/data/queries"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
@@ -85,6 +86,7 @@ function refusedPresetHost() {
     useCapabilityCatalog: () => () => ({ plugins: [], skills: [], loading: false }),
     ConfigurationEditor: () => null,
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
+    useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
   })
   return {
     requested,
@@ -134,7 +136,15 @@ describe("a refused preset read", () => {
 
   test("the Presets view reports the refusal instead of an empty catalog", async () => {
     const host = refusedPresetHost()
-    provide(() => <PresetsView store={createTasksStore()} scope={() => SCOPE} />)
+    provide(() => (
+      <PresetsView
+        store={createTasksStore()}
+        scope={() => SCOPE}
+        presetId={() => undefined}
+        onOpenPreset={() => {}}
+        onOpenTasks={() => {}}
+      />
+    ))
 
     await waitFor(() => expect(screen.getByTestId("preset-list-retry")).toBeTruthy())
     expect(screen.getByRole("alert").textContent).toBe("Presets are not readable here.")

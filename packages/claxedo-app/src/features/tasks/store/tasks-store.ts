@@ -17,6 +17,8 @@ type TasksState = {
   view: TasksViewMode
   statusFilter: TaskStatus | null
   showChildren: boolean
+  /** Presentational only: the list read carries no order, so this groups what was read. */
+  grouped: boolean
   /** Undefined until the user picks one; the surface falls back to the active project. */
   projectId: string | undefined
   selectedTaskId: string | undefined
@@ -38,6 +40,7 @@ export function createTasksStore() {
     view: "list",
     statusFilter: null,
     showChildren: true,
+    grouped: true,
     projectId: undefined,
     selectedTaskId: undefined,
     selectedPresetId: undefined,
@@ -59,6 +62,7 @@ export function createTasksStore() {
     setView: (view: TasksViewMode) => setState("view", view),
     setStatusFilter: (status: TaskStatus | null) => setState("statusFilter", status),
     setShowChildren: (value: boolean) => setState("showChildren", value),
+    setGrouped: (value: boolean) => setState("grouped", value),
     setProjectId: (projectId: string) =>
       setState(produce((draft) => {
         draft.projectId = projectId

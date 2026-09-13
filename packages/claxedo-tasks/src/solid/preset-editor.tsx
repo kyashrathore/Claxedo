@@ -74,121 +74,162 @@ export function PresetEditor(props: PresetEditorProps) {
         submit()
       }}
     >
-      <label class="tsk-field">
-        <span class="tsk-label">Name</span>
-        <input
-          class="tsk-input"
-          data-testid="preset-editor-name"
-          maxLength={TASKS_BOUNDS.presetNameMax}
-          aria-invalid={fieldError("name") ? "true" : undefined}
-          value={props.draft.name}
-          onInput={(event) => patch({ name: event.currentTarget.value })}
-        />
-        <Show when={fieldError("name")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
-      </label>
+      <div class="tsk-form-split">
+        <div class="tsk-stack">
+          <label class="tsk-field">
+            <span class="tsk-label">Name</span>
+            <input
+              class="tsk-input"
+              data-testid="preset-editor-name"
+              placeholder="Careful reviewer"
+              maxLength={TASKS_BOUNDS.presetNameMax}
+              aria-invalid={fieldError("name") ? "true" : undefined}
+              value={props.draft.name}
+              onInput={(event) => patch({ name: event.currentTarget.value })}
+            />
+            <Show when={fieldError("name")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
+          </label>
 
-      <fieldset class="tsk-field" data-testid="preset-editor-placement">
-        <legend class="tsk-label">Execution</legend>
-        <div class="tsk-toolbar">
-          <For each={PRESET_PLACEMENTS}>
-            {(placement) => (
-              <label class="tsk-checkbox">
-                <input
-                  type="radio"
-                  name="preset-placement"
-                  data-testid={`preset-editor-placement-${placement}`}
-                  checked={props.draft.placement === placement}
-                  disabled={!props.placements.includes(placement)}
-                  onChange={() => patch({ placement })}
-                />
-                <span>{PLACEMENT_LABELS[placement]}</span>
-              </label>
-            )}
-          </For>
-        </div>
-        <Show when={!props.placements.includes(props.draft.placement)}>
-          <p class="tsk-error" data-testid="preset-editor-placement-unsupported">
-            This server cannot run {PLACEMENT_LABELS[props.draft.placement]} presets. Saving keeps the choice; starting will
-            be refused rather than moved elsewhere.
-          </p>
-        </Show>
-      </fieldset>
-
-      <section class="tsk-stack" aria-label="Configurations">
-        <h3 class="tsk-section-title">Primary configuration</h3>
-        <SlotEditor
-          editorKey={props.editorKey}
-          slot="primary"
-          draft={props.draft}
-          editor={props.configurationEditor}
-          busy={props.busy}
-          fieldError={fieldError}
-          onChange={(value) => setConfiguration("primary", value)}
-        />
-
-        <h3 class="tsk-section-title">Additional configurations</h3>
-        <p class="tsk-muted">
-          Labels describe intended use. They are settings you pick when starting a session, not stages that run on their own.
-        </p>
-        <For each={OPTIONAL_SLOTS}>
-          {(slot) => (
-            <div class="tsk-stack">
-              <label class="tsk-checkbox">
-                <input
-                  type="checkbox"
-                  data-testid={`preset-editor-slot-${slot}`}
-                  checked={props.draft.configurations[slot] !== null}
-                  onChange={(event) => setConfiguration(slot, event.currentTarget.checked ? EMPTY_CONFIGURATION : null)}
-                />
-                <span>{SLOT_LABELS[slot]}</span>
-              </label>
-              <Show when={props.draft.configurations[slot] !== null}>
-                <SlotEditor
-                  editorKey={props.editorKey}
-                  slot={slot}
-                  draft={props.draft}
-                  editor={props.configurationEditor}
-                  busy={props.busy}
-                  fieldError={fieldError}
-                  onChange={(value) => setConfiguration(slot, value)}
-                />
-              </Show>
+          <fieldset class="tsk-field" data-testid="preset-editor-placement">
+            <legend class="tsk-label">Execution</legend>
+            <div class="tsk-capability-list">
+              <For each={PRESET_PLACEMENTS}>
+                {(placement) => (
+                  <label class="tsk-pick">
+                    <input
+                      type="radio"
+                      name="preset-placement"
+                      data-testid={`preset-editor-placement-${placement}`}
+                      checked={props.draft.placement === placement}
+                      disabled={!props.placements.includes(placement)}
+                      onChange={() => patch({ placement })}
+                    />
+                    <span>{PLACEMENT_LABELS[placement]}</span>
+                  </label>
+                )}
+              </For>
             </div>
-          )}
-        </For>
-      </section>
+            <Show when={!props.placements.includes(props.draft.placement)}>
+              <p class="tsk-error" data-testid="preset-editor-placement-unsupported">
+                This server cannot run {PLACEMENT_LABELS[props.draft.placement]} presets. Saving keeps the choice; starting
+                will be refused rather than moved elsewhere.
+              </p>
+            </Show>
+          </fieldset>
 
-      <label class="tsk-field">
-        <span class="tsk-label">Instructions</span>
-        <textarea
-          class="tsk-textarea"
-          data-testid="preset-editor-instructions"
-          aria-invalid={fieldError("instructions") ? "true" : undefined}
-          value={props.draft.instructions}
-          onInput={(event) => patch({ instructions: event.currentTarget.value })}
-        />
-        <Show when={fieldError("instructions")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
-      </label>
+          <div class="tsk-divider" />
 
-      <section class="tsk-stack" aria-label="Capabilities">
-        <h3 class="tsk-section-title">Capabilities</h3>
-        <Show
-          when={isCloud()}
-          fallback={
-            <p class="tsk-muted" data-testid="preset-editor-local-capabilities">
-              {LOCAL_CAPABILITY_TEXT}
+          <section class="tsk-stack" aria-label="Configurations">
+            <h3 class="tsk-section-title">Primary configuration</h3>
+            <SlotEditor
+              editorKey={props.editorKey}
+              slot="primary"
+              draft={props.draft}
+              editor={props.configurationEditor}
+              busy={props.busy}
+              fieldError={fieldError}
+              onChange={(value) => setConfiguration("primary", value)}
+            />
+
+            <h3 class="tsk-section-title">Additional configurations</h3>
+            <p class="tsk-hint">
+              Labels describe intended use. They are settings you pick when starting a session, not stages that run on
+              their own.
             </p>
-          }
-        >
-          <CapabilityPicker draft={props.draft} catalog={props.catalog} onDraftChange={props.onDraftChange} />
-        </Show>
-      </section>
+            <div class="tsk-capability-list">
+              <For each={OPTIONAL_SLOTS}>
+                {(slot) => (
+                  <label class="tsk-pick">
+                    <input
+                      type="checkbox"
+                      data-testid={`preset-editor-slot-${slot}`}
+                      checked={props.draft.configurations[slot] !== null}
+                      onChange={(event) => setConfiguration(slot, event.currentTarget.checked ? EMPTY_CONFIGURATION : null)}
+                    />
+                    <span>{SLOT_LABELS[slot]}</span>
+                  </label>
+                )}
+              </For>
+            </div>
+            <For each={OPTIONAL_SLOTS}>
+              {(slot) => (
+                <Show when={props.draft.configurations[slot] !== null}>
+                  <div class="tsk-stack">
+                    <h4 class="tsk-label">{SLOT_LABELS[slot]}</h4>
+                    <SlotEditor
+                      editorKey={props.editorKey}
+                      slot={slot}
+                      draft={props.draft}
+                      editor={props.configurationEditor}
+                      busy={props.busy}
+                      fieldError={fieldError}
+                      onChange={(value) => setConfiguration(slot, value)}
+                    />
+                  </div>
+                </Show>
+              )}
+            </For>
+          </section>
 
-      <p class="tsk-muted">Saving stores settings. It installs nothing, connects nothing and starts nothing.</p>
+          <div class="tsk-divider" />
+
+          <label class="tsk-field">
+            <span class="tsk-label">Instructions</span>
+            <textarea
+              class="tsk-textarea"
+              data-testid="preset-editor-instructions"
+              placeholder="What this agent should always do, whatever the task says"
+              aria-invalid={fieldError("instructions") ? "true" : undefined}
+              value={props.draft.instructions}
+              onInput={(event) => patch({ instructions: event.currentTarget.value })}
+            />
+            <Show when={fieldError("instructions")}>{(message) => <span class="tsk-error">{message()}</span>}</Show>
+          </label>
+
+          <section class="tsk-stack" aria-label="Capabilities">
+            <h3 class="tsk-section-title">Capabilities</h3>
+            <Show
+              when={isCloud()}
+              fallback={
+                <p class="tsk-hint" data-testid="preset-editor-local-capabilities">
+                  {LOCAL_CAPABILITY_TEXT}
+                </p>
+              }
+            >
+              <CapabilityPicker draft={props.draft} catalog={props.catalog} onDraftChange={props.onDraftChange} />
+            </Show>
+          </section>
+        </div>
+
+        <aside class="tsk-panel">
+          <h3 class="tsk-section-title">Resolved configuration</h3>
+          <dl class="tsk-kv">
+            <dt>Name</dt>
+            <dd>{props.draft.name.trim() || "Untitled preset"}</dd>
+            <dt>Placement</dt>
+            <dd>{PLACEMENT_LABELS[props.draft.placement]}</dd>
+            <dt>Primary</dt>
+            <dd class="tsk-mono">{configurationSummary(props.draft.configurations.primary)}</dd>
+            <dt>Slots</dt>
+            <dd>
+              {CONFIGURATION_SLOTS.filter((slot) => props.draft.configurations[slot])
+                .map((slot) => SLOT_LABELS[slot])
+                .join(" · ")}
+            </dd>
+            <dt>Capabilities</dt>
+            <dd>
+              {isCloud()
+                ? `${props.draft.plugins.length} plugins · ${props.draft.skills.length} skills`
+                : LOCAL_CAPABILITY_TEXT}
+            </dd>
+          </dl>
+          <p class="tsk-hint">Saving stores settings. It installs nothing, connects nothing and starts nothing.</p>
+        </aside>
+      </div>
 
       <Show when={props.error}>{(message) => <p class="tsk-error" role="alert">{message()}</p>}</Show>
 
-      <div class="tsk-row tsk-spread">
+      <div class="tsk-dialog-actions">
         <button type="button" class="tsk-button" data-testid="preset-editor-cancel" onClick={() => props.onCancel()}>
           Cancel
         </button>
@@ -198,6 +239,13 @@ export function PresetEditor(props: PresetEditorProps) {
       </div>
     </form>
   )
+}
+
+/** The half-chosen state is representable, so the summary names what is still missing. */
+function configurationSummary(configuration: ConfigurationDraft | null) {
+  if (!configuration) return "Not configured"
+  const parts = [configuration.harness?.id, configuration.model?.modelID, configuration.effort].filter(Boolean)
+  return parts.length > 0 ? parts.join(" · ") : "Nothing chosen yet"
 }
 
 function SlotEditor(props: {
@@ -259,20 +307,25 @@ function CapabilityPicker(props: {
 
   return (
     <div class="tsk-stack" data-testid="preset-editor-cloud-capabilities">
-      <p class="tsk-muted">
-        Cloud runs only what you select here, plus the platform tools every session needs. An empty selection means none of
-        these optional capabilities.
+      <p class="tsk-hint">
+        Cloud runs only what you select here, plus the platform tools every session needs. An empty selection means none
+        of these optional capabilities.
       </p>
       <Show when={catalog().error}>{(message) => <p class="tsk-error">{message()}</p>}</Show>
       <Show when={catalog().loading}>
-        <p class="tsk-muted">Loading installed capabilities…</p>
+        <p class="tsk-hint">Loading installed capabilities…</p>
       </Show>
 
       <span class="tsk-label">Plugins</span>
       <div class="tsk-capability-list" data-testid="preset-editor-plugins">
-        <For each={catalog().plugins} fallback={<span class="tsk-muted">No installed plugins.</span>}>
+        <For each={catalog().plugins} fallback={<span class="tsk-hint">No installed plugins.</span>}>
           {(option) => (
-            <label class="tsk-checkbox">
+            <label
+              class="tsk-pick"
+              title={[option.description, option.bundledSkills?.length ? `Bundled skills: ${option.bundledSkills.join(", ")}` : undefined]
+                .filter(Boolean)
+                .join(" — ")}
+            >
               <input
                 type="checkbox"
                 data-testid={`preset-editor-plugin-${option.key}`}
@@ -285,15 +338,10 @@ function CapabilityPicker(props: {
                   })
                 }
               />
-              <span class="tsk-stack">
-                <span>{option.label}</span>
-                <Show when={option.bundledSkills?.length}>
-                  <span class="tsk-muted">Bundled skills: {option.bundledSkills?.join(", ")}</span>
-                </Show>
-                <Show when={!option.available}>
-                  <span class="tsk-blocker">{option.unavailableReason ?? "Unavailable"}</span>
-                </Show>
-              </span>
+              <span class="tsk-truncate">{option.label}</span>
+              <Show when={!option.available}>
+                <span class="tsk-error">{option.unavailableReason ?? "Unavailable"}</span>
+              </Show>
             </label>
           )}
         </For>
@@ -301,9 +349,9 @@ function CapabilityPicker(props: {
 
       <span class="tsk-label">Skills</span>
       <div class="tsk-capability-list" data-testid="preset-editor-skills">
-        <For each={catalog().skills} fallback={<span class="tsk-muted">No installed skills.</span>}>
+        <For each={catalog().skills} fallback={<span class="tsk-hint">No installed skills.</span>}>
           {(option) => (
-            <label class="tsk-checkbox">
+            <label class="tsk-pick" title={option.description}>
               <input
                 type="checkbox"
                 data-testid={`preset-editor-skill-${option.key}`}
@@ -316,17 +364,15 @@ function CapabilityPicker(props: {
                   })
                 }
               />
-              <span class="tsk-stack">
-                <span>{option.label}</span>
-                <Show when={!option.available}>
-                  <span class="tsk-blocker">{option.unavailableReason ?? "Unavailable"}</span>
-                </Show>
-              </span>
+              <span class="tsk-truncate">{option.label}</span>
+              <Show when={!option.available}>
+                <span class="tsk-error">{option.unavailableReason ?? "Unavailable"}</span>
+              </Show>
             </label>
           )}
         </For>
       </div>
-      <p class="tsk-muted">A selected skill adds guidance only. It does not enable the plugin that supplies it.</p>
+      <p class="tsk-hint">A selected skill adds guidance only. It does not enable the plugin that supplies it.</p>
     </div>
   )
 }

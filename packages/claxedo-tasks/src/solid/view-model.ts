@@ -117,6 +117,30 @@ export type StartPreviewState =
 
 export type { ModelConfiguration, PluginReference, PresetDraft, SkillReference, TaskDraft }
 
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
+const DAY = 24 * HOUR
+const WEEK = 7 * DAY
+
+/**
+ * A timestamp as the width of one table cell: the largest whole unit, no
+ * suffix. Past a year it reads as the year, because "83w" carries no more
+ * meaning than "2024" and is harder to place.
+ *
+ * Deliberately not the sidebar's `relativeTime`, which counts in seconds and
+ * months for a row that updates live; this one is coarse on purpose, and the
+ * kit ships without the app to import it from.
+ */
+export function shortAge(timestamp: number, now: number = Date.now()): string {
+  const elapsed = Math.max(0, now - timestamp)
+  if (elapsed < MINUTE) return "now"
+  if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)}m`
+  if (elapsed < DAY) return `${Math.floor(elapsed / HOUR)}h`
+  if (elapsed < WEEK) return `${Math.floor(elapsed / DAY)}d`
+  if (elapsed < 52 * WEEK) return `${Math.floor(elapsed / WEEK)}w`
+  return String(new Date(timestamp).getFullYear())
+}
+
 /**
  * Links folded into one group per slot, highest attempt first.
  *

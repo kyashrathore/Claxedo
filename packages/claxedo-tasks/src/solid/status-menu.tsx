@@ -5,7 +5,8 @@ import { TASK_STATUS_LABELS } from "./view-model"
 /**
  * The status control, and the board's accessible alternative to dragging a
  * card between columns. A native select is the menu: it is reachable by
- * keyboard, announces the current value, and needs no drag to change it.
+ * keyboard, announces the current value, and needs no drag to change it. The
+ * chip is that select restyled, not a second control standing in front of it.
  *
  * The select shows the record, never the request: a native select keeps the
  * value the user picked, so a refused change (a parent with open children)
@@ -20,7 +21,8 @@ export function StatusMenu(props: {
 }) {
   return (
     <select
-      class="tsk-select"
+      class="tsk-status-select"
+      data-status={props.status}
       data-testid={props.testId}
       aria-label={props.label}
       disabled={props.disabled}
@@ -36,9 +38,14 @@ export function StatusMenu(props: {
   )
 }
 
+export function TaskStatusDot(props: { status: TaskStatus }) {
+  return <span class="tsk-dot" data-status={props.status} aria-hidden="true" />
+}
+
 export function TaskStatusChip(props: { status: TaskStatus }) {
   return (
     <span class="tsk-status" data-status={props.status}>
+      <TaskStatusDot status={props.status} />
       {TASK_STATUS_LABELS[props.status]}
     </span>
   )

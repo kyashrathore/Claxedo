@@ -1,9 +1,9 @@
 import "./tasks.css"
 
-export { TaskStatusChip, StatusMenu } from "./status-menu"
+export { TaskStatusChip, TaskStatusDot, StatusMenu } from "./status-menu"
 export { LoadMore, type MorePages } from "./load-more"
 export { ListFailureNotice, type ListFailure } from "./list-failure"
-export { TaskList, type TaskListProps } from "./task-list"
+export { TaskList, type SubtaskProgress, type TaskListProps } from "./task-list"
 export { TaskBoard, type TaskBoardProps } from "./task-board"
 export { TaskDetail, type TaskDetailEdit, type TaskDetailProps } from "./task-detail"
 export { TaskSubtasks, type TaskSubtasksProps } from "./task-subtasks"
@@ -34,6 +34,7 @@ export {
   TASK_COLLECTION_LABELS,
   TASK_STATUS_LABELS,
   groupLinksBySlot,
+  shortAge,
   type CapabilityCatalog,
   type CapabilityCatalogReader,
   type CapabilityOption,

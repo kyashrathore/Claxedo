@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import type { JSX } from "solid-js"
 import {
   TASKS_BOUNDS,
   TASKS_ROUTE_PATH,
@@ -12,7 +13,7 @@ import { presetEditorDraftOf } from "@claxedo/tasks/solid"
 import { configureTasksAppPorts, type TasksAppPorts } from "@/features/tasks/app-ports"
 import type { TasksScope } from "@/features/tasks/data/queries"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
-import { PresetsView } from "@/features/tasks/ui/presets-view"
+import { PresetDraftEditor } from "@/features/tasks/ui/preset-draft-editor"
 import { TaskDetailPanel } from "@/features/tasks/ui/task-detail-panel"
 
 afterEach(cleanup)
@@ -80,10 +81,11 @@ function ports(request: TasksAppPorts["request"]): TasksAppPorts {
     useCapabilityCatalog: () => () => ({ plugins: [], skills: [], loading: false }),
     ConfigurationEditor: () => null,
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
+    useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
   }
 }
 
-function renderWithClient(node: () => ReturnType<typeof PresetsView>) {
+function renderWithClient(node: () => JSX.Element) {
   render(() => (
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>{node()}</QueryClientProvider>
   ))
@@ -125,7 +127,7 @@ describe("a refused edit rebases onto the record the host returned", () => {
 
     const store = createTasksStore()
     renderWithClient(() => (
-      <TaskDetailPanel store={store} scope={() => SCOPE} taskId={task.id} onStart={() => {}} onOpenTask={() => {}} />
+      <TaskDetailPanel store={store} scope={() => SCOPE} taskId={task.id} onStart={() => {}} onOpenTask={() => {}} onBack={() => {}} />
     ))
 
     const titleField = await waitFor(() => screen.getByTestId("task-detail-title"))
@@ -181,7 +183,7 @@ describe("a refused edit rebases onto the record the host returned", () => {
     const store = createTasksStore()
     store.openPresetDraft(presetEditorDraftOf(preset), preset)
     const onSaved = vi.fn<(saved: Preset) => void>()
-    renderWithClient(() => <PresetsView store={store} scope={() => SCOPE} onSaved={onSaved} />)
+    renderWithClient(() => <PresetDraftEditor store={store} scope={() => SCOPE} onSaved={onSaved} onClose={() => {}} />)
 
     const nameField = await waitFor(() => screen.getByTestId("preset-editor-name"))
     expect(nameField.value).toBe("Careful reviewer")

@@ -24,6 +24,9 @@ describe("shell route identity", () => {
     expect(sessionRoute("session/with slash")).toBe("/s/session%2Fwith%20slash")
     expect(marketplaceRoute()).toBe("/marketplace")
     expect(tasksRoute()).toBe("/tasks")
+    expect(tasksRoute({ kind: "task", taskId: "tsk/with slash" })).toBe("/tasks/tsk%2Fwith%20slash")
+    expect(tasksRoute({ kind: "presets" })).toBe("/tasks/presets")
+    expect(tasksRoute({ kind: "preset", presetId: "pre 1" })).toBe("/tasks/presets/pre%201")
     expect(workspaceRoute("ws_1")).toBe("/w/ws_1")
     expect(workspaceSessionRoute("ws_1")).toBe("/w/ws_1/session")
     expect(workspaceSessionRoute("ws_1", "ses/with slash")).toBe("/w/ws_1/session/ses%2Fwith%20slash")
@@ -61,6 +64,18 @@ describe("shell route identity", () => {
     })
     expect(parseShellRoute("/tasks")).toEqual({
       kind: "tasks",
+    })
+    expect(parseShellRoute("/tasks/tsk%2Fwith%20slash")).toEqual({
+      kind: "tasks",
+      page: { kind: "task", taskId: "tsk/with slash" },
+    })
+    expect(parseShellRoute("/tasks/presets")).toEqual({
+      kind: "tasks",
+      page: { kind: "presets" },
+    })
+    expect(parseShellRoute("/tasks/presets/pre%201?tab=2")).toEqual({
+      kind: "tasks",
+      page: { kind: "preset", presetId: "pre 1" },
     })
     expect(parseShellRoute("/w/ws_cloud_1")).toEqual({
       kind: "workspace",
@@ -233,6 +248,9 @@ describe("shell route identity", () => {
   test("leaves reserved app routes outside shell identity", () => {
     expect(parseShellRoute("/login")).toEqual({ kind: "unknown" })
     expect(parseShellRoute("/marketplace/extra")).toEqual({ kind: "unknown" })
-    expect(parseShellRoute("/tasks/extra")).toEqual({ kind: "unknown" })
+    // `/tasks/<taskId>` is a real page, so only a path deeper than the nested
+    // Tasks grammar names nothing.
+    expect(parseShellRoute("/tasks/tsk_1/extra")).toEqual({ kind: "unknown" })
+    expect(parseShellRoute("/tasks/presets/pre_1/extra")).toEqual({ kind: "unknown" })
   })
 })

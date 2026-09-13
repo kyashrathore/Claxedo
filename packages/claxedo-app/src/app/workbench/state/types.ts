@@ -11,6 +11,7 @@ import type { WorkbenchState } from "../workbench/index"
 import type {
   WorkspacePanelState,
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
+import type { TasksPage } from "@/platform/identity/route"
 import type { SessionRef } from "@/platform/identity/session-ref"
 
 // ── Content type vocabulary ───────────────────────────────────────────────
@@ -82,6 +83,8 @@ export type MarketplaceContentPayload = BaseContentPayload & {
 export type TasksContentPayload = BaseContentPayload & {
   type: "tasks"
   directory?: string
+  /** The nested Tasks page this tab is on. Absent is the task list. */
+  page?: TasksPage
 }
 
 export type DraftSessionContentPayload = BaseContentPayload & {

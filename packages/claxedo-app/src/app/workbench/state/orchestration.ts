@@ -11,6 +11,7 @@ import { closeDeletedSessionSurfaces } from "./session-deletion"
 // and lives in `state.meta`.
 
 import { measureRendererPhase } from "@/platform/performance/renderer-trace"
+import type { TasksPage } from "@/platform/identity/route"
 import type { ContentMeta, ContentPayload, ContentType } from "./types"
 import { PINNED_CONTENT_TYPES } from "./types"
 import { selectEvictableSurfaces } from "./surface-budget"
@@ -47,7 +48,7 @@ export type LayoutOrchestrationApi = {
   openPage: (pageId: string, title?: string, directory?: string, filePath?: string, opts?: { workspaceRouteId?: string }) => string
   openPagesIndex: (directory?: string, opts?: { workspaceRouteId?: string }) => string
   openMarketplace: () => string
-  openTasks: () => string
+  openTasks: (page?: TasksPage) => string
   /**
    * Close a content fully — drop the meta entry, remove from workbench, run
    * cleanup hooks (e.g. terminal owner/lifecycle teardown).
@@ -523,10 +524,15 @@ export function createLayoutOrchestration(input: {
       })
     },
 
-    openTasks() {
+    openTasks(page) {
       // Tasks is a single global tab: the catalog spans every project the
-      // account can reach, so it is not scoped to a workspace.
+      // account can reach, so it is not scoped to a workspace. A nested page
+      // moves that one tab rather than opening a second, so the reuse path
+      // has to carry the page the caller asked for.
       const existing = meta.find((m) => m.type === "tasks")
+      if (existing) {
+        meta.patch(existing.id, { content: { ...existing.content, type: "tasks", page } })
+      }
       return showOrCreate(existing, () => {
         const id = newId("tasks")
         return {
@@ -538,6 +544,7 @@ export function createLayoutOrchestration(input: {
           payload: {
             type: "tasks",
             title: "Tasks",
+            ...(page ? { page } : {}),
           },
         }
       })

@@ -19,6 +19,7 @@ export type TaskDetailPanelProps = {
   taskId: string
   onStart: (input: { task: Task; slot: ConfigurationSlot; attempt: number }) => void
   onOpenTask: (taskId: string) => void
+  onBack?: () => void
 }
 
 export function TaskDetailPanel(props: TaskDetailPanelProps) {
@@ -142,6 +143,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             onOpenSession={(session) => openSession(session)}
             onStart={(input) => props.onStart({ task: current(), slot: input.slot, attempt: input.attempt })}
             onSendTask={(link) => void sendTask(current(), link)}
+            onBack={props.onBack}
             onArchive={() =>
               void mutate(
                 () =>

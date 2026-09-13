@@ -423,7 +423,9 @@ export const desktopRendererUnsigned: Policy = {
   // wiring. The new package edge is @claxedo/tasks. Measured 1079 / 58.
   // +1 module (2026-09-12): the same tasks-contributions gate owner app-local
   // reviews. No new package edge. Measured 1080 / 58.
-  ceilings: { modules: 1080, packages: 58 },
+  // +5 modules (2026-09-13): the same nested-Tasks-route owners app-local
+  // reviews. No new package edge. Measured 1085 / 58.
+  ceilings: { modules: 1085, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

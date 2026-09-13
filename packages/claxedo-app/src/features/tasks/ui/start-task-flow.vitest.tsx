@@ -163,6 +163,7 @@ function mount(input: {
     useCapabilityCatalog: () => () => ({ plugins: [], skills: [], loading: false }),
     ConfigurationEditor: () => null,
     useOpenSession: () => openSession,
+    useOpenPage: () => () => {},
   })
 
   const onClose = vi.fn()

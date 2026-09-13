@@ -4,9 +4,11 @@ import type { JSX } from "solid-js"
 import { DialogProvider } from "@opencode-ai/ui/context/dialog"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { TASKS_BOUNDS, TASKS_ROUTE_PATH, type Preset, type SessionReference, type Task, type TaskSummary } from "@claxedo/tasks"
+import type { TasksPage } from "@/platform/identity/route"
 import { configureTasksAppPorts } from "@/features/tasks/app-ports"
 import { createTasksStore } from "@/features/tasks/store/tasks-store"
 import { PresetsView } from "@/features/tasks/ui/presets-view"
+import { TaskDetailPage } from "@/features/tasks/ui/task-detail-page"
 import { TasksView } from "@/features/tasks/ui/tasks-view"
 
 afterEach(cleanup)
@@ -56,7 +58,7 @@ function json(body: unknown) {
  * Two pages per list, each reachable only through the cursor the previous page
  * returned, so a discarded cursor leaves the second page unreachable.
  */
-function mount() {
+function configureHost() {
   const requested: string[] = []
   configureTasksAppPorts({
     useScope: () => () => ({ serverUrl: SERVER, scopeId: "local" }),
@@ -82,18 +84,42 @@ function mount() {
     useCapabilityCatalog: () => () => ({ plugins: [], skills: [], loading: false }),
     ConfigurationEditor: () => null,
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
+    useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
   })
 
+  return requested
+}
+
+function provideWithHost(view: (store: ReturnType<typeof createTasksStore>) => JSX.Element) {
+  const requested = configureHost()
   const store = createTasksStore()
-  store.selectTask("tsk_1")
-  render(() => (
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <DialogProvider>
-        <TasksView store={store} scope={() => ({ serverUrl: SERVER, scopeId: "local" })} projectId={() => "prj_1"} />
-      </DialogProvider>
-    </QueryClientProvider>
-  ))
+  provide(() => view(store))
   return { store, requested }
+}
+
+function mount() {
+  return provideWithHost((store) => (
+    <TasksView
+      store={store}
+      scope={() => ({ serverUrl: SERVER, scopeId: "local" })}
+      projectId={() => "prj_1"}
+      onOpenTask={() => {}}
+      onOpenPresets={() => {}}
+    />
+  ))
+}
+
+/** `/tasks/tsk_1`: subtasks live on the task's own page, not under the list. */
+function mountTaskPage() {
+  return provideWithHost((store) => (
+    <TaskDetailPage
+      store={store}
+      scope={() => ({ serverUrl: SERVER, scopeId: "local" })}
+      taskId="tsk_1"
+      onOpenTask={() => {}}
+      onBack={() => {}}
+    />
+  ))
 }
 
 describe("tasks pagination", () => {
@@ -116,7 +142,7 @@ describe("tasks pagination", () => {
   })
 
   test("the children region shows every page, so the parent's Done guard counts what it shows", async () => {
-    mount()
+    mountTaskPage()
 
     await waitFor(() => expect(screen.getByTestId("task-subtask-tsk_c1")).toBeTruthy())
     await waitFor(() => expect(screen.getByTestId("task-subtask-tsk_c2")).toBeTruthy())
@@ -198,6 +224,7 @@ function failingSecondPageHost() {
     useCapabilityCatalog: () => () => ({ plugins: [], skills: [], loading: false }),
     ConfigurationEditor: () => null,
     useOpenSession: () => vi.fn<(session: SessionReference) => void>(),
+    useOpenPage: () => vi.fn<(page?: TasksPage) => void>(),
   })
   return {
     requested,
@@ -230,10 +257,14 @@ function settle() {
 describe("a followed list whose next page fails", () => {
   test("children stop following, and one Retry finishes what the failure interrupted", async () => {
     const host = failingSecondPageHost()
-    const store = createTasksStore()
-    store.selectTask("tsk_1")
     provide(() => (
-      <TasksView store={store} scope={() => ({ serverUrl: SERVER, scopeId: "local" })} projectId={() => "prj_1"} />
+      <TaskDetailPage
+        store={createTasksStore()}
+        scope={() => ({ serverUrl: SERVER, scopeId: "local" })}
+        taskId="tsk_1"
+        onOpenTask={() => {}}
+        onBack={() => {}}
+      />
     ))
 
     await waitFor(() => expect(screen.getByTestId("task-subtask-tsk_c1")).toBeTruthy())
@@ -252,7 +283,15 @@ describe("a followed list whose next page fails", () => {
 
   test("presets stop following, and the refusal is readable where the list is", async () => {
     const host = failingSecondPageHost()
-    provide(() => <PresetsView store={createTasksStore()} scope={() => ({ serverUrl: SERVER, scopeId: "local" })} />)
+    provide(() => (
+      <PresetsView
+        store={createTasksStore()}
+        scope={() => ({ serverUrl: SERVER, scopeId: "local" })}
+        presetId={() => undefined}
+        onOpenPreset={() => {}}
+        onOpenTasks={() => {}}
+      />
+    ))
 
     await waitFor(() => expect(screen.getByTestId("preset-list-row-pre_1")).toBeTruthy())
     await waitFor(() => expect(screen.getByTestId("preset-list-load-more").textContent).toBe("Retry"))

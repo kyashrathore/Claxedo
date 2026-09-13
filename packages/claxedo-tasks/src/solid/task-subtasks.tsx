@@ -1,7 +1,7 @@
-import { For, Show, createSignal } from "solid-js"
+import { For, Show, createMemo, createSignal } from "solid-js"
 import { TASKS_BOUNDS, type TaskStatus, type TaskSummary } from "../contracts"
 import { LoadMore, type MorePages } from "./load-more"
-import { TaskStatusChip, StatusMenu } from "./status-menu"
+import { StatusMenu } from "./status-menu"
 
 export type TaskSubtasksProps = {
   /** Not named `children`: Solid gives that prop name its own resolution semantics. */
@@ -19,6 +19,7 @@ export type TaskSubtasksProps = {
 
 export function TaskSubtasks(props: TaskSubtasksProps) {
   const [title, setTitle] = createSignal("")
+  const done = createMemo(() => props.items.filter((child) => child.status === "done").length)
   const submit = () => {
     const value = title().trim()
     if (!value) return
@@ -28,23 +29,35 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
 
   return (
     <section class="tsk tsk-stack" data-testid="task-subtasks" aria-label="Subtasks">
-      <h3 class="tsk-section-title">Subtasks</h3>
-      <div class="tsk-surface">
-        <For each={props.items} fallback={<p class="tsk-empty">No subtasks.</p>}>
+      <div class="tsk-row tsk-spread">
+        <h3 class="tsk-section-title">Subtasks</h3>
+        <Show when={props.items.length > 0}>
+          <span class="tsk-cell tsk-num">
+            {done()}/{props.items.length}
+          </span>
+        </Show>
+      </div>
+
+      <Show when={props.items.length > 0}>
+        <div class="tsk-progress">
+          <i style={{ width: `${Math.round((done() / props.items.length) * 100)}%` }} />
+        </div>
+      </Show>
+
+      <div>
+        <For each={props.items} fallback={<p class="tsk-hint">No subtasks yet.</p>}>
           {(child) => (
-            <div class="tsk-row">
+            <div class="tsk-checklist-row">
               <button
                 type="button"
-                class="tsk-item"
+                class="tsk-check"
+                data-done={child.status === "done" ? "true" : undefined}
                 data-testid={`task-subtask-${child.id}`}
                 onClick={() => props.onOpen(child.id)}
               >
-                <span class="tsk-item-title">{child.title}</span>
-                <Show when={child.archivedAt !== null} fallback={<TaskStatusChip status={child.status} />}>
-                  <span class="tsk-muted">Archived</span>
-                </Show>
+                <span class="tsk-open-name">{child.title}</span>
               </button>
-              <Show when={child.archivedAt === null}>
+              <Show when={child.archivedAt === null} fallback={<span class="tsk-cell">Archived</span>}>
                 <StatusMenu
                   status={child.status}
                   disabled={props.busy}
@@ -57,10 +70,15 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
           )}
         </For>
       </div>
+
       <LoadMore more={props.more} testId="task-subtasks-load-more" />
-      <Show when={props.canAdd} fallback={<p class="tsk-muted">{props.addDisabledReason ?? "Reopen this task to add a subtask."}</p>}>
+
+      <Show
+        when={props.canAdd}
+        fallback={<p class="tsk-hint">{props.addDisabledReason ?? "Reopen this task to add a subtask."}</p>}
+      >
         <form
-          class="tsk-row"
+          class="tsk-add"
           data-testid="task-subtask-add"
           onSubmit={(event) => {
             event.preventDefault()
@@ -81,6 +99,7 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
           </button>
         </form>
       </Show>
+
       <Show when={props.error}>{(message) => <p class="tsk-error">{message()}</p>}</Show>
     </section>
   )

@@ -350,7 +350,13 @@ export const appLocal: Policy = {
   // the two registration calls and nothing else; the sixteen owners above are
   // reached through it instead of statically. No new package edge.
   // Measured 1029 / 39.
-  ceilings: { modules: 1029, packages: 39 },
+  // +5 modules (2026-09-13): the nested Tasks routes and the redesigned
+  // surface. Reviewed owners: app/integrations/tasks/open-tasks-page (the
+  // navigation port that moves the one Tasks tab between its pages), and in
+  // features/tasks/ui the page for /tasks/<taskId>, the header both pages
+  // wear, the list toolbar, and the preset draft editor the Presets page and
+  // the Start dialog now share. No new package edge. Measured 1034 / 39.
+  ceilings: { modules: 1034, packages: 39 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

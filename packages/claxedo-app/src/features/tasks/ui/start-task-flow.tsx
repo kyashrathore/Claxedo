@@ -6,7 +6,7 @@ import { useTasksAppPorts } from "../app-ports"
 import { refusalOf } from "../data/tasks-api"
 import { followRetry, listFailure, useTasksClient, useTasksInvalidation, usePresetList, type TasksScope } from "../data/queries"
 import type { TasksStore } from "../store/tasks-store"
-import { PresetsView } from "./presets-view"
+import { PresetDraftEditor } from "./preset-draft-editor"
 
 export type StartTaskFlowProps = {
   store: TasksStore
@@ -165,10 +165,11 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
       presetsFailure={listFailure(presets)}
       inlinePresetEditor={
         props.store.state.presetDraft ? (
-          <PresetsView
+          <PresetDraftEditor
             store={props.store}
             scope={props.scope}
             onSaved={(preset) => setDraft({ ...draft(), presetId: preset.id })}
+            onClose={() => props.store.closePresetDraft()}
           />
         ) : undefined
       }

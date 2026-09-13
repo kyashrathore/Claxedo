@@ -1,5 +1,6 @@
 import type { Accessor } from "solid-js"
 import type { SessionReference } from "@claxedo/tasks"
+import type { TasksPage } from "@/platform/identity/route"
 import type { CapabilityCatalogReader, ConfigurationEditor } from "@claxedo/tasks/solid"
 
 export type TasksProjectOption = { id: string; label: string }
@@ -24,6 +25,8 @@ export type TasksAppPorts = {
   useCapabilityCatalog: () => CapabilityCatalogReader
   ConfigurationEditor: ConfigurationEditor
   useOpenSession: () => (session: SessionReference) => void
+  /** Navigates the Tasks tab between its list, a task, and the preset pages. */
+  useOpenPage: () => (page?: TasksPage) => void
 }
 
 let ports: TasksAppPorts | undefined

@@ -16,11 +16,18 @@ export function LoadMore(props: { more?: MorePages; testId: string }) {
   return (
     <Show when={props.more}>
       {(more) => (
-        <div class="tsk-row">
-          <Show when={more().error}>{(message) => <p class="tsk-error" role="alert">{message()}</p>}</Show>
+        <div class="tsk-row tsk-inset">
+          <Show when={more().error}>
+            {(message) => (
+              <p class="tsk-error" role="alert">
+                {message()}
+              </p>
+            )}
+          </Show>
           <button
             type="button"
             class="tsk-button"
+            data-variant="quiet"
             data-testid={props.testId}
             disabled={more().loading === true}
             onClick={() => more().onLoadMore()}

@@ -17,11 +17,14 @@ export function ListFailureNotice(props: { failure?: ListFailure; testId: string
   return (
     <Show when={props.failure}>
       {(failure) => (
-        <div class="tsk-row">
-          <p class="tsk-error" role="alert">{failure().message}</p>
+        <div class="tsk-row tsk-inset">
+          <p class="tsk-error" role="alert">
+            {failure().message}
+          </p>
           <button
             type="button"
             class="tsk-button"
+            data-variant="outline"
             data-testid={props.testId}
             disabled={failure().retrying === true}
             onClick={() => failure().onRetry()}

@@ -372,6 +372,52 @@ describe("surface route mirroring", () => {
     ).toBeUndefined()
   })
 
+  test("mirrors a nested Tasks page to its own URL and back", () => {
+    const surface: ContentMeta = {
+      id: "surface_1",
+      type: "tasks",
+      scope: "global",
+      content: { type: "tasks", page: { kind: "task", taskId: "tsk_1" } },
+    }
+
+    expect(surfaceRoute("", surface)).toBe(tasksRoute({ kind: "task", taskId: "tsk_1" }))
+    expect(routeMatchesSurface({ tasks: true, tasksPage: { kind: "task", taskId: "tsk_1" } }, "", surface)).toBe(true)
+    // The list URL and a task URL are different places, so one does not satisfy the other.
+    expect(routeMatchesSurface({ tasks: true }, "", surface)).toBe(false)
+    expect(routeMatchesSurface({ tasks: true, tasksPage: { kind: "task", taskId: "tsk_2" } }, "", surface)).toBe(false)
+
+    expect(
+      focusedSurfaceRouteTarget({
+        route: { tasks: true },
+        activeRouteId: "ws_main",
+        surface,
+      }),
+    ).toBe(tasksRoute({ kind: "task", taskId: "tsk_1" }))
+  })
+
+  test("mirrors the preset pages, which the task list does not satisfy", () => {
+    const presets: ContentMeta = {
+      id: "surface_1",
+      type: "tasks",
+      scope: "global",
+      content: { type: "tasks", page: { kind: "presets" } },
+    }
+    const preset: ContentMeta = {
+      id: "surface_2",
+      type: "tasks",
+      scope: "global",
+      content: { type: "tasks", page: { kind: "preset", presetId: "pre_1" } },
+    }
+
+    expect(surfaceRoute("", presets)).toBe(tasksRoute({ kind: "presets" }))
+    expect(surfaceRoute("", preset)).toBe(tasksRoute({ kind: "preset", presetId: "pre_1" }))
+    expect(routeMatchesSurface({ tasks: true, tasksPage: { kind: "presets" } }, "", presets)).toBe(true)
+    expect(routeMatchesSurface({ tasks: true, tasksPage: { kind: "presets" } }, "", preset)).toBe(false)
+    expect(
+      routeMatchesSurface({ tasks: true, tasksPage: { kind: "preset", presetId: "pre_1" } }, "", preset),
+    ).toBe(true)
+  })
+
   test("mirrors marketplace surfaces to the global marketplace route", () => {
     expect(
       focusedSurfaceRouteTarget({

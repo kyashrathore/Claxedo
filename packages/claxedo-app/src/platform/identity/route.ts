@@ -2,10 +2,21 @@ import { base64Decode, base64Encode } from "@opencode-ai/ui/utils/encode"
 import { asDirectoryRef, type DirectoryRef } from "./brand"
 import { opaqueWorkspaceRouteId } from "./workspace-route"
 
+/**
+ * The nested page a `/tasks` URL names. Absent is the task list itself, which
+ * is why this is one optional field on the `tasks` arm rather than a kind of
+ * its own: every Tasks URL opens the same global surface, and a second kind
+ * would have to be threaded through every consumer that already handles it.
+ */
+export type TasksPage =
+  | { kind: "task"; taskId: string }
+  | { kind: "presets" }
+  | { kind: "preset"; presetId: string }
+
 export type ShellRoute =
   | { kind: "home" }
   | { kind: "marketplace" }
-  | { kind: "tasks" }
+  | { kind: "tasks"; page?: TasksPage }
   | { kind: "session"; sessionId: string }
   | { kind: "workspace"; workspaceId: string }
   | { kind: "workspace-session"; workspaceId: string; sessionId?: string }
@@ -55,8 +66,11 @@ export function marketplaceRoute() {
   return "/marketplace"
 }
 
-export function tasksRoute() {
-  return "/tasks"
+export function tasksRoute(page?: TasksPage) {
+  if (!page) return "/tasks"
+  if (page.kind === "task") return `/tasks/${encodeURIComponent(page.taskId)}`
+  if (page.kind === "preset") return `/tasks/presets/${encodeURIComponent(page.presetId)}`
+  return "/tasks/presets"
 }
 
 export function workspaceSessionRoute(workspaceId: string, sessionId?: string) {
@@ -103,11 +117,25 @@ export function legacyDirectoryFromRouteKey(value: string): DirectoryRef | undef
   }
 }
 
+/** `undefined` is the bare list; `"none"` is a path under /tasks that names no page. */
+function parseTasksPage(parts: string[]): TasksPage | undefined | "none" {
+  if (parts.length === 1) return undefined
+  if (parts[1] === "presets") {
+    if (parts.length === 2) return { kind: "presets" }
+    return parts.length === 3 ? { kind: "preset", presetId: segment(parts[2]) } : "none"
+  }
+  return parts.length === 2 ? { kind: "task", taskId: segment(parts[1]) } : "none"
+}
+
 export function parseShellRoute(pathname: string): ShellRoute {
   const parts = pathSegments(pathname)
   if (parts.length === 0) return { kind: "home" }
   if (parts.length === 1 && parts[0] === "marketplace") return { kind: "marketplace" }
-  if (parts.length === 1 && parts[0] === "tasks") return { kind: "tasks" }
+  if (parts[0] === "tasks") {
+    const page = parseTasksPage(parts)
+    if (page === "none") return { kind: "unknown" }
+    return page ? { kind: "tasks", page } : { kind: "tasks" }
+  }
   if (parts[0] === "s" && parts[1]) return { kind: "session", sessionId: segment(parts[1]) }
   if (parts[0] === "w" && parts[1]) {
     if (parts.length === 2) return { kind: "workspace", workspaceId: segment(parts[1]) }

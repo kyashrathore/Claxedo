@@ -2,7 +2,7 @@ import { For, Show } from "solid-js"
 import { CONFIGURATION_SLOTS, type Preset } from "../contracts"
 import { ListFailureNotice, type ListFailure } from "./list-failure"
 import { LoadMore, type MorePages } from "./load-more"
-import { PLACEMENT_LABELS, SLOT_LABELS } from "./view-model"
+import { PLACEMENT_LABELS, SLOT_LABELS, shortAge } from "./view-model"
 
 export type PresetListProps = {
   presets: readonly Preset[]
@@ -22,57 +22,91 @@ export type PresetListProps = {
 }
 
 export function PresetList(props: PresetListProps) {
+  const now = Date.now()
+
   return (
-    <div class="tsk tsk-stack" data-testid="preset-list">
-      <div class="tsk-row tsk-spread">
-        <h2 class="tsk-title">Presets</h2>
-        <button type="button" class="tsk-button" data-variant="primary" data-testid="preset-list-create" onClick={() => props.onCreate()}>
-          New preset
-        </button>
+    <div class="tsk tsk-root" data-testid="preset-list">
+      <div class="tsk-toolbar">
+        <p class="tsk-hint tsk-spacer">
+          Presets are yours. They describe how and where an agent works, and are reusable across your projects.
+        </p>
+        <label class="tsk-checkbox">
+          <input
+            type="checkbox"
+            data-testid="preset-list-include-archived"
+            checked={props.includeArchived}
+            onChange={(event) => props.onIncludeArchivedChange(event.currentTarget.checked)}
+          />
+          <span>Show archived</span>
+        </label>
       </div>
-      <p class="tsk-muted">Presets are yours. They describe how and where an agent works, and are reusable across your projects.</p>
-      <label class="tsk-checkbox">
-        <input
-          type="checkbox"
-          data-testid="preset-list-include-archived"
-          checked={props.includeArchived}
-          onChange={(event) => props.onIncludeArchivedChange(event.currentTarget.checked)}
-        />
-        <span>Show archived presets</span>
-      </label>
-      <Show when={props.error}>{(message) => <p class="tsk-error" role="alert">{message()}</p>}</Show>
+
+      <Show when={props.error}>
+        {(message) => (
+          <p class="tsk-error tsk-inset" role="alert">
+            {message()}
+          </p>
+        )}
+      </Show>
       <ListFailureNotice failure={props.failure} testId="preset-list-retry" />
-      <div class="tsk-surface tsk-scroll" aria-busy={props.loading ? "true" : "false"}>
+
+      <div class="tsk-listing" aria-busy={props.loading ? "true" : "false"}>
+        <div class="tsk-thead tsk-tr-preset">
+          <span>Name</span>
+          <span class="tsk-cell">Placement</span>
+          <span class="tsk-cell">Primary configuration</span>
+          <span class="tsk-cell">Slots</span>
+          <span class="tsk-cell">Updated</span>
+          <span />
+        </div>
+
         <For
           each={props.presets}
           fallback={
             <Show when={props.failure === undefined}>
-              <p class="tsk-empty">No presets yet.</p>
+              <div class="tsk-empty">
+                <p>No presets yet.</p>
+                <button type="button" class="tsk-button" data-variant="outline" onClick={() => props.onCreate()}>
+                  New preset
+                </button>
+              </div>
             </Show>
           }
         >
-          {(preset) => (
-            <div class="tsk-row">
+          {(preset, index) => (
+            <div
+              class="tsk-tr tsk-tr-preset tsk-rise"
+              style={{ "--tsk-i": String(index()) }}
+              data-selected={props.selectedPresetId === preset.id ? "true" : undefined}
+              data-archived={preset.archivedAt === null ? undefined : "true"}
+            >
               <button
                 type="button"
-                class="tsk-item"
+                class="tsk-open"
                 data-testid={`preset-list-row-${preset.id}`}
                 aria-current={props.selectedPresetId === preset.id ? "true" : undefined}
                 onClick={() => props.onSelect(preset.id)}
               >
-                <span class="tsk-item-title">{preset.name}</span>
-                <span class="tsk-status">{PLACEMENT_LABELS[preset.execution.placement]}</span>
-                <span class="tsk-muted">{slotSummary(preset)}</span>
+                <span class="tsk-open-name">{preset.name}</span>
                 <Show when={preset.archivedAt !== null}>
-                  <span class="tsk-muted">Archived</span>
+                  <span class="tsk-parent">Archived</span>
                 </Show>
               </button>
+
+              <span class="tsk-cell">
+                <span class="tsk-status">{PLACEMENT_LABELS[preset.execution.placement]}</span>
+              </span>
+              <span class="tsk-cell tsk-mono tsk-truncate">{primarySummary(preset)}</span>
+              <span class="tsk-cell tsk-truncate">{slotSummary(preset)}</span>
+              <span class="tsk-cell tsk-cell-time">{shortAge(preset.updatedAt, now)}</span>
+
               <Show
                 when={preset.archivedAt === null}
                 fallback={
                   <button
                     type="button"
                     class="tsk-button"
+                    data-variant="quiet"
                     data-testid={`preset-list-restore-${preset.id}`}
                     disabled={props.busyPresetId === preset.id}
                     onClick={() => props.onRestore({ presetId: preset.id, revision: preset.revision })}
@@ -84,6 +118,7 @@ export function PresetList(props: PresetListProps) {
                 <button
                   type="button"
                   class="tsk-button"
+                  data-variant="quiet"
                   data-testid={`preset-list-archive-${preset.id}`}
                   disabled={props.busyPresetId === preset.id}
                   onClick={() => props.onArchive({ presetId: preset.id, revision: preset.revision })}
@@ -95,6 +130,7 @@ export function PresetList(props: PresetListProps) {
           )}
         </For>
       </div>
+
       <LoadMore more={props.more} testId="preset-list-load-more" />
     </div>
   )
@@ -104,4 +140,10 @@ function slotSummary(preset: Preset) {
   return CONFIGURATION_SLOTS.filter((slot) => preset.configurations[slot])
     .map((slot) => SLOT_LABELS[slot])
     .join(" · ")
+}
+
+/** The primary slot as one line: harness, model, effort — the fields a preset is chosen by. */
+function primarySummary(preset: Preset) {
+  const primary = preset.configurations.primary
+  return [primary.harness.id, primary.model.modelID, primary.effort].filter(Boolean).join(" · ")
 }

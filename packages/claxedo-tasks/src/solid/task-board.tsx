@@ -1,15 +1,19 @@
 import { For, Show, createSignal } from "solid-js"
 import { TASK_STATUSES, type TaskStatus, type TaskSummary } from "../contracts"
 import { LoadMore, type MorePages } from "./load-more"
-import { StatusMenu } from "./status-menu"
-import { TASK_STATUS_LABELS } from "./view-model"
+import { TaskStatusDot, StatusMenu } from "./status-menu"
+import { TASK_STATUS_LABELS, shortAge } from "./view-model"
+import type { SubtaskProgress } from "./task-list"
 
 export type TaskBoardProps = {
   tasks: readonly TaskSummary[]
   selectedTaskId?: string
   busyTaskId?: string
+  subtaskProgress?: (taskId: string) => SubtaskProgress | undefined
   more?: MorePages
   onSelect: (taskId: string) => void
+  /** Offered on To do alone: `task.create` takes no status, so a card starts there. */
+  onCreate?: () => void
   onStatusChange: (input: { taskId: string; revision: number; status: TaskStatus }) => void
 }
 
@@ -20,65 +24,102 @@ export type TaskBoardProps = {
  */
 export function TaskBoard(props: TaskBoardProps) {
   const [dragging, setDragging] = createSignal<string | undefined>()
+  const [over, setOver] = createSignal<TaskStatus | undefined>()
   const column = (status: TaskStatus) => props.tasks.filter((task) => task.status === status)
   const drop = (status: TaskStatus) => {
     const id = dragging()
     setDragging(undefined)
+    setOver(undefined)
     if (!id) return
     const task = props.tasks.find((candidate) => candidate.id === id)
     if (!task || task.status === status) return
     props.onStatusChange({ taskId: task.id, revision: task.revision, status })
   }
+  const now = Date.now()
 
   return (
     <>
       <div class="tsk tsk-board" data-testid="tasks-board">
         <For each={TASK_STATUSES}>
-          {(status) => (
+          {(status, columnIndex) => (
             <section
               class="tsk-column"
               data-testid={`tasks-board-column-${status}`}
+              data-over={over() === status ? "true" : undefined}
               aria-label={TASK_STATUS_LABELS[status]}
               onDragOver={(event) => {
-                if (dragging()) event.preventDefault()
+                if (!dragging()) return
+                event.preventDefault()
+                setOver(status)
               }}
+              onDragLeave={() => setOver((current) => (current === status ? undefined : current))}
               onDrop={(event) => {
                 event.preventDefault()
                 drop(status)
               }}
             >
-              <header class="tsk-row tsk-spread">
-                <h3 class="tsk-section-title">{TASK_STATUS_LABELS[status]}</h3>
-                <span class="tsk-muted">{column(status).length}</span>
+              <header class="tsk-column-head">
+                <TaskStatusDot status={status} />
+                <span>{TASK_STATUS_LABELS[status]}</span>
+                <span class="tsk-count">{column(status).length}</span>
+                <span class="tsk-spacer" />
+                <Show when={status === "todo" && props.onCreate}>
+                  {(create) => (
+                    <button
+                      type="button"
+                      class="tsk-icon-button"
+                      data-testid="tasks-board-create"
+                      aria-label="New task"
+                      onClick={() => create()()}
+                    >
+                      +
+                    </button>
+                  )}
+                </Show>
               </header>
-              <For each={column(status)} fallback={<p class="tsk-muted">Empty</p>}>
-                {(task) => (
+
+              <For each={column(status)} fallback={<div class="tsk-card-drop" />}>
+                {(task, index) => (
                   <div
-                    class="tsk-card"
+                    class="tsk-card tsk-rise"
+                    style={{ "--tsk-i": String(columnIndex() + index() * 2) }}
                     data-testid={`tasks-board-card-${task.id}`}
+                    data-selected={props.selectedTaskId === task.id ? "true" : undefined}
+                    data-dragging={dragging() === task.id ? "true" : undefined}
                     draggable={task.archivedAt === null}
                     onDragStart={() => setDragging(task.id)}
-                    onDragEnd={() => setDragging(undefined)}
+                    onDragEnd={() => {
+                      setDragging(undefined)
+                      setOver(undefined)
+                    }}
                   >
                     <button
                       type="button"
-                      class="tsk-item-title"
+                      class="tsk-card-title"
                       data-testid={`tasks-board-open-${task.id}`}
                       aria-current={props.selectedTaskId === task.id ? "true" : undefined}
                       onClick={() => props.onSelect(task.id)}
                     >
                       {task.title}
                     </button>
-                    <Show when={task.parentTaskId}>
-                      <span class="tsk-muted">Subtask</span>
-                    </Show>
-                    <StatusMenu
-                      status={task.status}
-                      disabled={props.busyTaskId === task.id || task.archivedAt !== null}
-                      label={`Status of ${task.title}`}
-                      testId={`tasks-board-status-${task.id}`}
-                      onChange={(next) => props.onStatusChange({ taskId: task.id, revision: task.revision, status: next })}
-                    />
+
+                    <div class="tsk-card-meta">
+                      <StatusMenu
+                        status={task.status}
+                        disabled={props.busyTaskId === task.id || task.archivedAt !== null}
+                        label={`Status of ${task.title}`}
+                        testId={`tasks-board-status-${task.id}`}
+                        onChange={(next) => props.onStatusChange({ taskId: task.id, revision: task.revision, status: next })}
+                      />
+                      <span class="tsk-spacer" />
+                      <Show when={props.subtaskProgress?.(task.id)}>
+                        {(progress) => <span>{`${progress().done}/${progress().total}`}</span>}
+                      </Show>
+                      <Show when={task.parentTaskId}>
+                        <span>Subtask</span>
+                      </Show>
+                      <span>{shortAge(task.updatedAt, now)}</span>
+                    </div>
                   </div>
                 )}
               </For>

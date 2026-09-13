@@ -8,6 +8,7 @@ import { principalDataScope, usePrincipal } from "@/platform/auth/identity-provi
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { useCapabilityCatalog } from "./capability-catalog"
 import { useOpenTaskSession } from "./open-task-session"
+import { useOpenTasksPage } from "./open-tasks-page"
 import type { ConfigurationEditorProps } from "@claxedo/tasks/solid"
 
 /**
@@ -58,5 +59,6 @@ export function tasksAppPorts(): TasksAppPorts {
     useCapabilityCatalog,
     ConfigurationEditor: (props: ConfigurationEditorProps) => PresetConfigurationEditor(props),
     useOpenSession: useOpenTaskSession,
+    useOpenPage: useOpenTasksPage,
   }
 }
