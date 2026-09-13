@@ -120,6 +120,7 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/credentials",
       "/api/claxedo/credentials/*",
       "/api/claxedo/credentials/:id",
+      "/api/claxedo/credentials/:id/reconnect",
       "/api/claxedo/credentials/:id/scope",
       "/api/claxedo/credentials/:id/status",
       "/api/claxedo/credentials/:id/verify",

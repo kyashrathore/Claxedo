@@ -71,6 +71,8 @@ const saveDiscoveredBody = z.object({
 
 const scopeBody = z.object({ scope: z.enum(["local", "shared"]) })
 
+const reconnectBody = z.object({ secret: z.string().min(1) })
+
 /**
  * The rows that store one account. Bounded because the caller is naming a
  * harness's bindings, of which there are a handful, not submitting a batch.
@@ -103,6 +105,26 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
 
 function invalidBody(error: z.ZodError) {
   return errorBody("credential_invalid_body", "Invalid credential request body", error.flatten())
+}
+
+/**
+ * Names one row by the address the provider gave for it, unless the user has
+ * already named it. A row whose only name is its provider id names the harness
+ * binding, not the account, and reads identically for every login stored under
+ * it.
+ */
+async function nameAccount(
+  credentials: ControlPlaneCredentials,
+  credential: { id: string; provider_id: string; label?: string | null },
+  email: string | undefined,
+  org: string,
+) {
+  if (!email || !credentials.updateCredentialLabel) return
+  const named = credential.label?.trim()
+  if (named && named !== credential.provider_id) return
+  await credentials.updateCredentialLabel(credential.id, email, org).catch((error: unknown) => {
+    log.warn("Failed to name credential", { credential_id: credential.id, ...failureDetail(error) })
+  })
 }
 
 export type CredentialRoutesOptions = {
@@ -304,7 +326,7 @@ export function CredentialRoutes(
         return c.json(errorBody("credential_secret_unavailable", "Credential secret is unavailable"), 409)
       }
       try {
-        const { health, refreshed, usage } = await verifyCredential(credential, secret, options)
+        const { health, refreshed, usage, accountEmail } = await verifyCredential(credential, secret, options)
         const verifiedAt = (options.now ?? Date.now)()
         // Persist first: a renewed access token that is verified but not stored
         // would make every later read fall back to the stale one.
@@ -312,10 +334,51 @@ export function CredentialRoutes(
           await credentials.updateCredentialSecret?.(id, refreshed.secret, refreshed.expiresAt, scope)
         }
         await credentials.updateCredentialHealth(id, health, verifiedAt, scope)
+        await nameAccount(credentials, credential, accountEmail, scope)
         return c.json({ result: health, health, verified_at: verifiedAt, ...(usage ? { usage } : {}) })
       } catch (error) {
         const detail = failureDetail(error, secret)
         log.warn("Credential verification failed", { credential_id: id, ...detail })
+        const status = error instanceof CredentialVerificationError ? 502 : 500
+        return c.json(errorBody("credential_verification_failed", "Credential verification failed", { detail }), status)
+      }
+    })
+    .post("/:id/reconnect", async (c) => {
+      const body = reconnectBody.safeParse(await c.req.json().catch(() => null))
+      if (!body.success) return c.json(invalidBody(body.error), 400)
+      const id = c.req.param("id")
+      const scope = org(c.req.raw)
+      const credential = credentials.getCredential
+        ? await credentials.getCredential(id, scope)
+        : (await credentials.listCredentials(scope)).find((item) => item.id === id)
+      if (!credential) {
+        return c.json(errorBody("credential_not_found", "Credential not found"), 404)
+      }
+      if (!credentials.updateCredentialSecret || !credentials.updateCredentialHealth) {
+        return c.json(errorBody("credential_reconnect_unavailable", "This host cannot replace stored credential material"), 501)
+      }
+      if (!await credentials.updateCredentialSecret(id, body.data.secret, undefined, scope)) {
+        return c.json(errorBody("credential_not_found", "Credential not found"), 404)
+      }
+      try {
+        // The stored expiry described the material that was just replaced. Left
+        // in place it makes the verifier read a freshly pasted secret as stale,
+        // which for an API key — nothing to refresh with — answers "expired".
+        const { health, refreshed, usage, accountEmail } = await verifyCredential(
+          { ...credential, expires_at: null },
+          body.data.secret,
+          options,
+        )
+        const verifiedAt = (options.now ?? Date.now)()
+        if (refreshed) {
+          await credentials.updateCredentialSecret(id, refreshed.secret, refreshed.expiresAt, scope)
+        }
+        await credentials.updateCredentialHealth(id, health, verifiedAt, scope)
+        await nameAccount(credentials, credential, accountEmail, scope)
+        return c.json({ result: health, health, verified_at: verifiedAt, ...(usage ? { usage } : {}) })
+      } catch (error) {
+        const detail = failureDetail(error, body.data.secret)
+        log.warn("Credential reconnect verification failed", { credential_id: id, ...detail })
         const status = error instanceof CredentialVerificationError ? 502 : 500
         return c.json(errorBody("credential_verification_failed", "Credential verification failed", { detail }), status)
       }

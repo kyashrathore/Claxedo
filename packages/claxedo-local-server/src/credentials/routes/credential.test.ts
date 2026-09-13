@@ -805,6 +805,137 @@ describe("credential routes", () => {
   })
 })
 
+describe("replacing the token on a stored account", () => {
+  test("writes the new secret onto the same row, then verifies it", async () => {
+    const row: CredentialMetadata = {
+      ...(await credentials().listCredentials())[0],
+      health: "auth_failed",
+      last_validated_at: 7,
+    }
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
+      updateCredentialSecret: vi.fn(async () => true),
+      updateCredentialHealth: vi.fn(async (id: string, health: CredentialHealth, validatedAt: number) => {
+        row.health = health
+        row.last_validated_at = validatedAt
+      }),
+    })
+    const request = providerFetch(() => Response.json({ id: "response_1" }))
+    const app = CredentialRoutes(registry, { fetch: request as unknown as typeof fetch, now: () => 42 })
+
+    const response = await app.request("http://localhost/cred_1/reconnect", {
+      method: "POST",
+      body: JSON.stringify({ secret: "sk-fresh" }),
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ result: "ok", health: "ok", verified_at: 42 })
+    expect(registry.updateCredentialSecret).toHaveBeenCalledWith("cred_1", "sk-fresh", undefined, SINGLE_TENANT_ORG)
+    expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 42, SINGLE_TENANT_ORG)
+    // The new material is what the provider was asked about, not the one the
+    // row was rejected for.
+    expect(request.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer sk-fresh" })
+  })
+
+  test("judges the pasted secret rather than the expiry the replaced one carried", async () => {
+    const row: CredentialMetadata = {
+      ...(await credentials().listCredentials())[0],
+      expires_at: 1,
+      health: "expired",
+    }
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async () => row),
+      updateCredentialSecret: vi.fn(async () => true),
+      updateCredentialHealth: vi.fn(async () => {}),
+    })
+    const request = providerFetch(() => Response.json({ id: "response_1" }))
+    const app = CredentialRoutes(registry, { fetch: request as unknown as typeof fetch, now: () => 42 })
+
+    const response = await app.request("http://localhost/cred_1/reconnect", {
+      method: "POST",
+      body: JSON.stringify({ secret: "sk-fresh" }),
+    })
+
+    await expect(response.json()).resolves.toMatchObject({ health: "ok" })
+    expect(request).toHaveBeenCalledOnce()
+  })
+
+  test("names the row by the address the provider gave, unless the user already named it", async () => {
+    const claims = Buffer.from(JSON.stringify({ email: "work@acme.com" })).toString("base64url")
+    const secret = JSON.stringify({ tokens: { access_token: `a.${claims}.c`, account_id: "acct_1" } })
+    const unnamed: CredentialMetadata = {
+      ...(await credentials().listCredentials())[0],
+      provider_id: "codex-app-server",
+      kind: "oauth_token",
+      label: "codex-app-server",
+    }
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async () => unnamed),
+      updateCredentialSecret: vi.fn(async () => true),
+      updateCredentialHealth: vi.fn(async () => {}),
+      updateCredentialLabel: vi.fn(async () => true),
+    })
+    const app = CredentialRoutes(registry, {
+      fetch: providerFetch(() => Response.json({ rate_limit: {} })) as unknown as typeof fetch,
+      now: () => 42,
+    })
+
+    await app.request("http://localhost/cred_1/reconnect", { method: "POST", body: JSON.stringify({ secret }) })
+
+    expect(registry.updateCredentialLabel).toHaveBeenCalledWith("cred_1", "work@acme.com", SINGLE_TENANT_ORG)
+
+    const named = { ...unnamed, label: "My work ChatGPT" }
+    const second = Object.assign(credentials(), {
+      getCredential: vi.fn(async () => named),
+      updateCredentialSecret: vi.fn(async () => true),
+      updateCredentialHealth: vi.fn(async () => {}),
+      updateCredentialLabel: vi.fn(async () => true),
+    })
+    const secondApp = CredentialRoutes(second, {
+      fetch: providerFetch(() => Response.json({ rate_limit: {} })) as unknown as typeof fetch,
+      now: () => 42,
+    })
+
+    await secondApp.request("http://localhost/cred_1/reconnect", { method: "POST", body: JSON.stringify({ secret }) })
+
+    expect(second.updateCredentialLabel).not.toHaveBeenCalled()
+  })
+
+  test("refuses a row outside the caller's org before any secret is written", async () => {
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async () => undefined),
+      updateCredentialSecret: vi.fn(async () => true),
+      updateCredentialHealth: vi.fn(async () => {}),
+    })
+    const app = CredentialRoutes(registry, { now: () => 42 })
+
+    const response = await app.request("http://localhost/cred_other/reconnect", {
+      method: "POST",
+      body: JSON.stringify({ secret: "sk-fresh" }),
+    })
+
+    expect(response.status).toBe(404)
+    expect(registry.updateCredentialSecret).not.toHaveBeenCalled()
+  })
+
+  test("rejects a request that carries no secret", async () => {
+    const row = (await credentials().listCredentials())[0]
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async () => row),
+      updateCredentialSecret: vi.fn(async () => true),
+    })
+    const app = CredentialRoutes(registry, { now: () => 42 })
+
+    const response = await app.request("http://localhost/cred_1/reconnect", {
+      method: "POST",
+      body: JSON.stringify({ secret: "" }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(registry.updateCredentialSecret).not.toHaveBeenCalled()
+  })
+})
+
 describe("choosing which account a provider runs on", () => {
   const root = path.join(realpathSync(os.tmpdir()), `credential-activate-${randomUUID().slice(0, 8)}`)
   let registry: typeof import("@claxedo/server-core/credentials/registry")
