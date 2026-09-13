@@ -89,6 +89,7 @@ export type ScriptedModelServer = {
    * not already carry the tool's result gets `tool_use` instead of text.
    */
   scriptTool(call: ScriptedToolCall): void
+  scriptText(input: { marker: string; text: string }): void
   /** Reject matching requests, including native retries, until released. */
   scriptError(input: { marker: string; status: number; message: string; model?: string }): () => void
   /** Hold matching text replies until released; tool replies still execute. */
@@ -161,6 +162,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   const requests: ScriptedModelRequest[] = []
   let counts: Record<ScriptedDialect, number> = { chat: 0, messages: 0, responses: 0 }
   let pendingTool: ScriptedToolCall | undefined
+  let pendingText: { marker: string; text: string } | undefined
   let pendingError: { marker: string; status: number; message: string; model?: string } | undefined
   let autoModeCommand: string | undefined
   let textGate: { marker: string; promise: Promise<void>; release: () => void } | undefined
@@ -220,6 +222,9 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
         ...(pendingTool.namespace ? { namespace: pendingTool.namespace } : {}),
       }
       pendingTool = undefined
+    } else if (pendingText && prompt.includes(pendingText.marker)) {
+      reply = { kind: "text", text: pendingText.text }
+      pendingText = undefined
     } else {
       const marker = [...prompt.matchAll(MARKER_PROMPT)].at(-1)?.[1]
       reply = { kind: "text", text: marker ?? "ok" }
@@ -286,6 +291,10 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
       const input = asRecord(call.input)
       autoModeCommand = call.name === "Bash" && call.autoModeSeverity === 0 && typeof input?.command === "string"
         ? input.command : undefined
+    },
+    scriptText: (input) => {
+      if (pendingText) throw new Error("A scripted text response is already pending")
+      pendingText = input
     },
     holdTextReplies: (marker) => {
       if (textGate) throw new Error("A scripted text reply gate is already active")
