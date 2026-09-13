@@ -267,6 +267,17 @@ function tasksOperations(use: Reader): TasksStoreOperations {
         return row?.children ?? 0
       },
 
+      async nextNumber(scopeId, projectId) {
+        const row = use((db) =>
+          db
+            .select({ highest: sql<number | null>`max(${ClaxedoTaskTable.number})` })
+            .from(ClaxedoTaskTable)
+            .where(and(eq(ClaxedoTaskTable.scope_id, scopeId), eq(ClaxedoTaskTable.project_id, projectId)))
+            .get(),
+        )
+        return (row?.highest ?? 0) + 1
+      },
+
       async insert(task) {
         use((db) => db.insert(ClaxedoTaskTable).values(taskColumns(task)).run())
       },

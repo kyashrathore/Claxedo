@@ -61,12 +61,17 @@ describe("SQLite Tasks command replay conformance", () => {
   }
 })
 
-function taskRow(id: string) {
+// One number per id, because the project's `(scope, project, number)` index is
+// unique and these rows are written straight past the service that mints them.
+const rowNumbers = ["task-anchor", "task-holding", "task-queued"] as const
+
+function taskRow(id: (typeof rowNumbers)[number]) {
   return {
     id,
     revision: 1,
     scopeId: "local",
     projectId: "project-a",
+    number: rowNumbers.indexOf(id) + 1,
     workspaceId: null,
     parentTaskId: null,
     title: id,
@@ -146,6 +151,7 @@ describe("SQLite Tasks store persistence", () => {
       revision: 3,
       scopeId: "local",
       projectId: "project-a",
+      number: 1,
       workspaceId: null,
       parentTaskId: null,
       title: "Survives a restart",
@@ -217,8 +223,8 @@ describe("SQLite Tasks store persistence", () => {
     const store = createSqliteTasksStore()
     ClaxedoDB.use((db) =>
       db.run(
-        `INSERT INTO claxedo_task (scope_id, task_id, revision, project_id, workspace_id, parent_task_id, title, description, status, child_set_revision, archived_at, created_at, updated_at)
-         VALUES ('local', 'task-broken', 1, 'project-a', NULL, NULL, 'Broken', '', 'sideways', 0, NULL, 1, 1)`,
+        `INSERT INTO claxedo_task (scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, title, description, status, child_set_revision, archived_at, created_at, updated_at)
+         VALUES ('local', 'task-broken', 1, 'project-a', 1, NULL, NULL, 'Broken', '', 'sideways', 0, NULL, 1, 1)`,
       ),
     )
     await expect(store.tasks.get("local", "task-broken")).rejects.toThrow(/status/)

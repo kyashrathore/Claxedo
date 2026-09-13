@@ -105,6 +105,7 @@ function task(input: { workspaceId: string | null; projectId?: string }): Task {
     revision: 4,
     scopeId: "local",
     projectId: input.projectId ?? "prj_1",
+    number: 1,
     workspaceId: input.workspaceId,
     parentTaskId: null,
     title: "Fix the importer",

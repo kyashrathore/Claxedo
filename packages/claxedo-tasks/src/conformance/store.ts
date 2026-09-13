@@ -14,7 +14,7 @@
 import type { ConfigurationSlot, Preset, Task, TaskSessionLink } from "../contracts"
 import { TasksStoreConflict, type TasksCommandReceipt, type TasksStorePort } from "../ports/store"
 
-export const TASKS_STORE_CONFORMANCE_VERSION = 5 as const
+export const TASKS_STORE_CONFORMANCE_VERSION = 6 as const
 
 export const TASKS_STORE_CONFORMANCE_SCOPE = {
   cases: [
@@ -32,6 +32,8 @@ export const TASKS_STORE_CONFORMANCE_SCOPE = {
     "a_preset_revision_assertion_is_a_predicate_of_the_unit_that_made_it",
     "a_list_row_counts_its_own_links_and_only_this_scope_s",
     "a_list_row_counts_every_live_child_not_the_ones_a_page_returned",
+    "task_numbers_are_minted_per_project_and_carried_on_reads",
+    "an_archived_task_keeps_its_number_and_the_next_one_does_not_reuse_it",
   ],
   // NOT pinned:
   //
@@ -79,12 +81,29 @@ function preset(input: Partial<Preset> & Pick<Preset, "id">): Preset {
   }
 }
 
+/**
+ * A number of its own for every row the suite writes, because a durable
+ * adapter keys `(scope, project, number)` uniquely. Keyed by task id, so a
+ * case that inserts a row and then updates it under the same id carries one
+ * number through both.
+ */
+const taskNumbers = new Map<string, number>()
+
+function taskNumberFor(taskId: string): number {
+  const held = taskNumbers.get(taskId)
+  if (held !== undefined) return held
+  const minted = taskNumbers.size + 1
+  taskNumbers.set(taskId, minted)
+  return minted
+}
+
 function taskRow(input: Partial<Task> & Pick<Task, "id">): Task {
   return {
     id: input.id,
     revision: input.revision ?? 1,
     scopeId: input.scopeId ?? CONFORMANCE_SCOPES.first,
     projectId: input.projectId ?? "project-alpha",
+    number: input.number ?? taskNumberFor(input.id),
     workspaceId: input.workspaceId ?? null,
     parentTaskId: input.parentTaskId ?? null,
     title: input.title ?? "Conformance task",
@@ -572,6 +591,49 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
         all.items.find((row) => row.id === "task-childless")?.children.done,
         0,
         "a task with no children reported finished work",
+      )
+    }),
+
+    conformanceCase("task numbers are minted per project and carried on reads", async () => {
+      const store = await start()
+      assertEqual(await store.tasks.nextNumber(CONFORMANCE_SCOPES.first, "project-alpha"), 1, "an empty project did not start at one")
+
+      await store.tasks.insert(taskRow({ id: "task-one", number: 1, createdAt: 3_000 }))
+      assertEqual(await store.tasks.nextNumber(CONFORMANCE_SCOPES.first, "project-alpha"), 2, "the second number does not follow the first")
+      await store.tasks.insert(taskRow({ id: "task-two", number: 2, createdAt: 2_000 }))
+      assertEqual(await store.tasks.nextNumber(CONFORMANCE_SCOPES.first, "project-alpha"), 3, "the numbers are not contiguous")
+
+      assertEqual(
+        await store.tasks.nextNumber(CONFORMANCE_SCOPES.first, "project-beta"),
+        1,
+        "a second project continued the first one's sequence",
+      )
+      await store.tasks.insert(taskRow({ id: "task-beta", projectId: "project-beta", number: 1 }))
+      assertEqual(
+        await store.tasks.nextNumber(CONFORMANCE_SCOPES.first, "project-alpha"),
+        3,
+        "another project's rows moved this project's sequence",
+      )
+
+      assertEqual((await store.tasks.get(CONFORMANCE_SCOPES.first, "task-two"))?.number, 2, "a read dropped the task's number")
+      const page = await store.tasks.list(CONFORMANCE_SCOPES.first, TASK_LIST)
+      assertEqual(page.items.find((row) => row.id === "task-one")?.number, 1, "a list row dropped the task's number")
+    }),
+
+    conformanceCase("an archived task keeps its number and the next one does not reuse it", async () => {
+      const store = await start()
+      await store.tasks.insert(taskRow({ id: "task-open", number: 1 }))
+      await store.tasks.insert(taskRow({ id: "task-gone", number: 2, archivedAt: 9 }))
+
+      assertEqual(
+        await store.tasks.nextNumber(CONFORMANCE_SCOPES.first, "project-alpha"),
+        3,
+        "the archived task's number was handed out again",
+      )
+      assertEqual(
+        (await store.tasks.get(CONFORMANCE_SCOPES.first, "task-gone"))?.number,
+        2,
+        "the archived task lost the number it was created with",
       )
     }),
   ]

@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `claxedo_task` (
 	`task_id` text NOT NULL,
 	`revision` integer NOT NULL,
 	`project_id` text NOT NULL,
+	`number` integer NOT NULL,
 	`workspace_id` text,
 	`parent_task_id` text,
 	`title` text NOT NULL,
@@ -35,6 +36,8 @@ CREATE TABLE IF NOT EXISTS `claxedo_task` (
 CREATE INDEX IF NOT EXISTS `claxedo_task_project_page_idx` ON `claxedo_task` (`scope_id`,`project_id`,`created_at`,`task_id`);
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS `claxedo_task_child_page_idx` ON `claxedo_task` (`scope_id`,`parent_task_id`,`created_at`,`task_id`);
+--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS `claxedo_task_number_idx` ON `claxedo_task` (`scope_id`,`project_id`,`number`);
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS `claxedo_task_session_link` (
 	`scope_id` text NOT NULL,

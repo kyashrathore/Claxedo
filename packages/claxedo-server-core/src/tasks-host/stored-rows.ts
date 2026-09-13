@@ -43,6 +43,7 @@ export type StoredTaskColumns = {
   task_id: string
   revision: number
   project_id: string
+  number: number
   workspace_id: string | null
   parent_task_id: string | null
   title: string
@@ -120,6 +121,7 @@ export function taskColumns(task: Task): StoredTaskColumns {
     task_id: task.id,
     revision: task.revision,
     project_id: task.projectId,
+    number: task.number,
     workspace_id: task.workspaceId,
     parent_task_id: task.parentTaskId,
     title: task.title,
@@ -138,6 +140,7 @@ export function taskOfColumns(row: StoredTaskColumns): Task {
     revision: row.revision,
     scopeId: row.scope_id,
     projectId: row.project_id,
+    number: row.number,
     workspaceId: row.workspace_id,
     parentTaskId: row.parent_task_id,
     title: row.title,

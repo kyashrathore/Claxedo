@@ -23,6 +23,7 @@ describe("memory tasks store", () => {
       revision: 1,
       scopeId: CONFORMANCE_SCOPES.first,
       projectId: "project-alpha",
+      number: 1,
       workspaceId: null,
       parentTaskId: null,
       title: "Original",

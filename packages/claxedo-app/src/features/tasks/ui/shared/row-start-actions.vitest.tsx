@@ -48,6 +48,7 @@ const task: Task = {
   scopeId: "local",
   projectId: "prj_1",
   workspaceId: null,
+  number: 1,
   parentTaskId: null,
   title: "Ship the importer",
   description: "",

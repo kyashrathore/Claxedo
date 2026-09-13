@@ -156,6 +156,13 @@ function operations(state: State): TasksStoreOperations {
             (filter.excludeStatus === null || task.status !== filter.excludeStatus),
         ).length
       },
+      async nextNumber(scopeId, projectId) {
+        return (
+          tasksOf(scopeId)
+            .filter((task) => task.projectId === projectId)
+            .reduce((highest, task) => Math.max(highest, task.number), 0) + 1
+        )
+      },
       async insert(task) {
         const id = rowKey(task.scopeId, task.id)
         if (state.tasks.has(id)) throw new Error(`Task ${task.id} already exists`)

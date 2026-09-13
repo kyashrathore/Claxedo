@@ -31,10 +31,10 @@ export type TasksCommandReceipt = {
 /**
  * Which predicate a commit found broken, ordered by the answer a caller owes
  * its client: a duplicate receipt means the command already happened and its
- * committed result is the reply, so it outranks the revision and origin
- * conflicts the same commit may also have hit.
+ * committed result is the reply, so it outranks the revision, origin and task
+ * number conflicts the same commit may also have hit.
  */
-export const TASKS_STORE_CONFLICTS = ["duplicate-receipt", "stale-revision", "link-conflict"] as const
+export const TASKS_STORE_CONFLICTS = ["duplicate-receipt", "stale-revision", "link-conflict", "number-taken"] as const
 export type TasksStoreConflictKind = (typeof TASKS_STORE_CONFLICTS)[number]
 
 /** A predicate an operation reported as holding and the commit found broken. */
@@ -83,6 +83,13 @@ export type TaskStoreOperations = {
   list(scopeId: string, query: TaskListQuery): Promise<Page<TaskSummary>>
   listChildren(scopeId: string, parentTaskId: string, query: ChildListQuery): Promise<Page<TaskSummary>>
   countChildren(scopeId: string, parentTaskId: string, filter: ChildCountFilter): Promise<number>
+  /**
+   * The number the next task created in this project takes: one past the
+   * highest any task there has held, archived rows counted, so a number is
+   * never handed out twice. Called inside the unit that goes on to insert, so
+   * two creates racing one project cannot both read the same highest.
+   */
+  nextNumber(scopeId: string, projectId: string): Promise<number>
   insert(task: Task): Promise<void>
   update(task: Task, expectedRevision: number): Promise<boolean>
 }

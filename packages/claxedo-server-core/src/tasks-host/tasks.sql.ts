@@ -1,4 +1,4 @@
-import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core"
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
 
 /**
  * Every table is keyed by `scope_id` first. On this host that value is the
@@ -35,6 +35,7 @@ export const ClaxedoTaskTable = sqliteTable(
     task_id: text().notNull(),
     revision: integer().notNull(),
     project_id: text().notNull(),
+    number: integer().notNull(),
     workspace_id: text(),
     parent_task_id: text(),
     title: text().notNull(),
@@ -49,6 +50,7 @@ export const ClaxedoTaskTable = sqliteTable(
     primaryKey({ columns: [table.scope_id, table.task_id] }),
     index("claxedo_task_project_page_idx").on(table.scope_id, table.project_id, table.created_at, table.task_id),
     index("claxedo_task_child_page_idx").on(table.scope_id, table.parent_task_id, table.created_at, table.task_id),
+    uniqueIndex("claxedo_task_number_idx").on(table.scope_id, table.project_id, table.number),
   ],
 )
 

@@ -29,6 +29,7 @@ function task(overrides: Partial<Task> = {}): Task {
     revision: overrides.revision ?? 1,
     scopeId: overrides.scopeId ?? "scope-alpha",
     projectId: overrides.projectId ?? "project-alpha",
+    number: overrides.number ?? 1,
     workspaceId: overrides.workspaceId ?? null,
     parentTaskId: overrides.parentTaskId ?? null,
     title: overrides.title ?? "Ship the thing",

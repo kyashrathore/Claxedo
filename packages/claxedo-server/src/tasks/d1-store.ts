@@ -63,7 +63,7 @@ export type D1TasksStoreInput = Readonly<{ database: D1Database }>
 const PRESET_COLUMNS =
   "scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations, archived_at, created_at, updated_at"
 const TASK_COLUMNS =
-  "scope_id, task_id, revision, project_id, workspace_id, parent_task_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
+  "scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
 const LINK_COLUMNS =
   "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, handoff_text, created_at"
 const RECEIPT_COLUMNS = "scope_id, client_request_id, command_name, request_hash, result, created_at"
@@ -92,6 +92,7 @@ function taskValues(task: Task): unknown[] {
     row.task_id,
     row.revision,
     row.project_id,
+    row.number,
     row.workspace_id,
     row.parent_task_id,
     row.title,
@@ -345,6 +346,14 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
     return row ? linkOfColumns(row) : undefined
   }
 
+  const numberHolder = async (scopeId: string, projectId: string, number: number): Promise<string | undefined> => {
+    const row = await database
+      .prepare(`select task_id from tasks where scope_id = ? and project_id = ? and number = ?`)
+      .bind(scopeId, projectId, number)
+      .first<{ task_id: string }>()
+    return row?.task_id
+  }
+
   const operations = (unit?: Unit): TasksStoreOperations => ({
     presets: {
       async get(scopeId, presetId) {
@@ -492,12 +501,33 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
         return row?.children ?? 0
       },
 
+      async nextNumber(scopeId, projectId) {
+        refuseListAfterWrite(unit, "task numbers")
+        const row = await database
+          .prepare(`select max(number) as highest from tasks where scope_id = ? and project_id = ?`)
+          .bind(scopeId, projectId)
+          .first<{ highest: number | null }>()
+        return (row?.highest ?? 0) + 1
+      },
+
       async insert(task) {
         const values = taskValues(task)
+        // The number was read from committed rows, so a create that raced this
+        // one takes it in the unique index rather than here; the probe is what
+        // turns that batch refusal back into the collision it was.
         await commit(
           unit,
           [database.prepare(insertStatement("tasks", TASK_COLUMNS, values)).bind(...values)],
           (overlay) => overlay.tasks.set(overlayKey(task.scopeId, task.id), task),
+          [
+            {
+              kind: "number-taken",
+              broken: async () =>
+                (await numberHolder(task.scopeId, task.projectId, task.number))
+                  ? `task number ${task.number} in project ${task.projectId} was taken by another task`
+                  : undefined,
+            },
+          ],
         )
       },
 

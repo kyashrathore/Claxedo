@@ -321,6 +321,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         revision: 1,
         scopeId: actor.scopeId,
         projectId: draft.projectId,
+        number: await deps.store.tasks.nextNumber(actor.scopeId, draft.projectId),
         workspaceId: parent ? parent.workspaceId : draft.workspaceId,
         parentTaskId: draft.parentTaskId,
         title: draft.title,

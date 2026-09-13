@@ -111,6 +111,12 @@ export type Task = {
   revision: number
   scopeId: string
   projectId: string
+  /**
+   * The task's place in its project's own sequence, minted by the store at
+   * create. Archived tasks keep theirs, so one number names one task for as
+   * long as the project exists and a person can quote it.
+   */
+  number: number
   workspaceId: string | null
   parentTaskId: string | null
   title: string

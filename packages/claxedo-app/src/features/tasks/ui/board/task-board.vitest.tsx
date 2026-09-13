@@ -14,6 +14,7 @@ function summary(id: string, status: TaskStatus): TaskSummary {
     scopeId: "local",
     projectId: "prj_1",
     workspaceId: null,
+    number: 1,
     parentTaskId: null,
     title: `Task ${id}`,
     status,

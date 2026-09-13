@@ -168,6 +168,7 @@ function task(): Task {
     revision: 5,
     scopeId: "org",
     projectId: "prj_1",
+    number: 1,
     workspaceId: "ws_cloud",
     parentTaskId: null,
     title: "Fix the importer",

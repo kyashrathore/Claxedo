@@ -221,6 +221,7 @@ function task(id: string): Task {
     revision: 1,
     scopeId: "org",
     projectId: PROJECT,
+    number: 1,
     workspaceId: null,
     parentTaskId: null,
     title: `Fix ${id}`,

@@ -33,6 +33,7 @@ create table tasks (
   task_id text not null,
   revision integer not null,
   project_id text not null,
+  number integer not null,
   workspace_id text,
   parent_task_id text,
   title text not null,
@@ -48,6 +49,12 @@ create table tasks (
 create index tasks_project_page_idx on tasks (scope_id, project_id, created_at, task_id);
 
 create index tasks_child_page_idx on tasks (scope_id, parent_task_id, created_at, task_id);
+
+-- A number names one task for as long as its project exists: minted one past
+-- the project's highest, archived rows included, so this index is what refuses
+-- a second create that read the same highest before either of them committed.
+
+create unique index tasks_number_idx on tasks (scope_id, project_id, number);
 
 -- One row per started attempt. The key is the origin the kit reserves, so two
 -- clients racing the same (task, slot, attempt) collide here instead of each

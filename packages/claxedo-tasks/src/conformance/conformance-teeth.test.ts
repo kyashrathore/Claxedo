@@ -79,6 +79,7 @@ function snapshotRollback(): TasksStorePort {
       list: (scopeId, query) => live.tasks.list(scopeId, query),
       listChildren: (scopeId, parentTaskId, query) => live.tasks.listChildren(scopeId, parentTaskId, query),
       countChildren: (scopeId, parentTaskId, filter) => live.tasks.countChildren(scopeId, parentTaskId, filter),
+      nextNumber: (scopeId, projectId) => live.tasks.nextNumber(scopeId, projectId),
       insert: (task) => record((into) => into.tasks.insert(task), live.tasks.insert(task)),
       update: (task, revision) => record((into) => into.tasks.update(task, revision), live.tasks.update(task, revision)),
     },
@@ -151,6 +152,38 @@ const COUNTS_CHILDREN_FROM_THE_PAGE = everywhere((operations) => ({
         return { ...row, children: { total: seen.length, done: seen.filter((entry) => entry.status === "done").length } }
       })
       return { ...page, items }
+    },
+  },
+}))
+
+/** One sequence for the scope: the shape a `max(number)` query has when it forgets the project. */
+const MINTS_NUMBERS_ACROSS_PROJECTS = everywhere((operations) => ({
+  ...operations,
+  tasks: {
+    ...operations.tasks,
+    nextNumber: async (scopeId, projectId) =>
+      Math.max(
+        await operations.tasks.nextNumber(scopeId, projectId),
+        await operations.tasks.nextNumber(scopeId, projectId === "project-alpha" ? "project-beta" : "project-alpha"),
+      ),
+  },
+}))
+
+/** The highest number among the rows still showing, which hands an archived task's back out. */
+const REUSES_AN_ARCHIVED_NUMBER = everywhere((operations) => ({
+  ...operations,
+  tasks: {
+    ...operations.tasks,
+    nextNumber: async (scopeId, projectId) => {
+      const showing = await operations.tasks.list(scopeId, {
+        projectId,
+        status: null,
+        parent: "any",
+        includeArchived: false,
+        cursor: null,
+        limit: 100,
+      })
+      return showing.items.reduce((highest, row) => Math.max(highest, row.number), 0) + 1
     },
   },
 }))
@@ -275,13 +308,21 @@ const MUTANTS: readonly Mutant[] = [
     breaks: "counts only the children the page returned",
     apply: COUNTS_CHILDREN_FROM_THE_PAGE,
   },
+  {
+    breaks: "mints one number sequence for the whole scope",
+    apply: MINTS_NUMBERS_ACROSS_PROJECTS,
+  },
+  {
+    breaks: "hands an archived task's number to the next one",
+    apply: REUSES_AN_ARCHIVED_NUMBER,
+  },
 ]
 
 describe("tasks store conformance", () => {
   const cases = tasksStoreConformance(async () => ({ store: createMemoryTasksStore() }))
 
   test("the pinned manifest lists exactly the cases the suite runs", () => {
-    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(5)
+    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(6)
     expect(cases.map((entry) => entry.name.replaceAll(/[^a-z]+/g, "_"))).toEqual([...TASKS_STORE_CONFORMANCE_SCOPE.cases])
   })
 

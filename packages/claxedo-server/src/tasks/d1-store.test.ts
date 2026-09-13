@@ -65,6 +65,7 @@ function taskRow(input: Partial<Task> & Pick<Task, "id">): Task {
     revision: input.revision ?? 1,
     scopeId: input.scopeId ?? CONFORMANCE_SCOPES.first,
     projectId: input.projectId ?? "project-alpha",
+    number: input.number ?? 1,
     workspaceId: input.workspaceId ?? null,
     parentTaskId: input.parentTaskId ?? null,
     title: input.title ?? "Guarded task",

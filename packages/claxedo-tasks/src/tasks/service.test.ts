@@ -75,6 +75,23 @@ describe("tasks service", () => {
       expect(parent).toBeNull()
     })
 
+    test("numbers each task after the last one in its own project", async () => {
+      const first = (await tasks.create(ACTOR, draft())).task
+      const second = (await tasks.create(ACTOR, draft())).task
+      const child = (await tasks.create(ACTOR, draft({ parentTaskId: first.id }))).task
+      const elsewhere = (await tasks.create(ACTOR, draft({ projectId: "project-beta" }))).task
+
+      expect([first.number, second.number, child.number]).toEqual([1, 2, 3])
+      expect(elsewhere.number).toBe(1)
+    })
+
+    test("a number an archived task holds is not handed to the next one", async () => {
+      const first = (await tasks.create(ACTOR, draft())).task
+      await tasks.archive(ACTOR, { taskId: first.id, revision: first.revision })
+
+      expect((await tasks.create(ACTOR, draft())).task.number).toBe(2)
+    })
+
     test("refuses a project the actor cannot write", async () => {
       authorization.denyProject(PROJECT)
       expect((await refusalOf(() => tasks.create(ACTOR, draft()))).code).toBe("forbidden")

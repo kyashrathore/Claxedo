@@ -188,6 +188,7 @@ function taskOf(ctx: DecodeContext, value: unknown, path: string): Task {
     revision: ctx.read.integer(row?.revision, `${path}.revision`) ?? 0,
     scopeId: ctx.read.nonEmptyString(row?.scopeId, `${path}.scopeId`) ?? "",
     projectId: ctx.read.nonEmptyString(row?.projectId, `${path}.projectId`) ?? "",
+    number: ctx.read.integer(row?.number, `${path}.number`) ?? 0,
     workspaceId: ctx.read.nullableString(row?.workspaceId, `${path}.workspaceId`) ?? null,
     parentTaskId: ctx.read.nullableString(row?.parentTaskId, `${path}.parentTaskId`) ?? null,
     title: ctx.read.string(row?.title, `${path}.title`) ?? "",

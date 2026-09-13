@@ -14,6 +14,7 @@ function summary(overrides: Partial<TaskSummary> = {}): TaskSummary {
     scopeId: "local",
     projectId: "prj_1",
     workspaceId: null,
+    number: 1,
     parentTaskId: null,
     title: "Ship the importer",
     status: "todo",
