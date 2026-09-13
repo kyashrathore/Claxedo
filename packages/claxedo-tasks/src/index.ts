@@ -1,7 +1,7 @@
 export * from "./contracts"
-export { TasksError, tasksErrorDetail, refuse, refuseInvalid, type FailureExtra } from "./errors"
+export { TasksError, tasksErrorDetail, refuse, refuseInvalid } from "./errors"
 export { hashRequest } from "./hash"
-export { clampLimit, comparePageKeys, decodePageCursor, encodePageCursor, isAfterCursor, paginate, type PageKey } from "./paging"
+export { clampLimit, decodePageCursor, encodePageCursor, paginate, type PageKey } from "./paging"
 export { type Parsed } from "./validation"
 export {
   decodeCapabilitiesResponse,

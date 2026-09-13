@@ -42,7 +42,6 @@ export type TasksClientOptions = {
   headers?: HeadersInit
 }
 
-/** A refusalError the server named, carrying the server's own code. */
 export class TasksApiError extends Error {
   constructor(
     readonly status: number,
@@ -153,11 +152,11 @@ export function createTasksClient(options: TasksClientOptions): TasksClient {
       throw new TasksClientPayloadError(response.status, "Response body is not JSON")
     }
     if (!response.ok) throw refusalError(response.status, payload)
-    const finishDecode = decode(payload)
-    if (!finishDecode.ok) {
-      throw new TasksClientPayloadError(response.status, "Response did not match the tasks contract", finishDecode.fields)
+    const decoded = decode(payload)
+    if (!decoded.ok) {
+      throw new TasksClientPayloadError(response.status, "Response did not match the tasks contract", decoded.fields)
     }
-    return finishDecode.value
+    return decoded.value
   }
 
   const post = <T>(path: string, body: unknown, decode: (payload: unknown) => Parsed<T>) =>

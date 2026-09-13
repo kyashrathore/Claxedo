@@ -135,7 +135,6 @@ export type Task = {
   updatedAt: number
 }
 
-/** A list row. The description is omitted so a page cannot carry 50 × 64 KiB. */
 /**
  * What a list row may say about the task's sessions.
  *
@@ -156,6 +155,7 @@ export type TaskLinkSummary = { count: number }
  */
 export type TaskChildSummary = { total: number; done: number }
 
+/** A list row. The description is omitted so a page cannot carry 50 × 64 KiB. */
 export type TaskSummary = Omit<Task, "description"> & {
   hasDescription: boolean
   links: TaskLinkSummary
@@ -456,9 +456,6 @@ export type StartResponse = {
   created: boolean
 }
 
-export type PresetListResponse = Page<Preset>
-export type PresetResponse = { preset: Preset }
-export type TaskListResponse = Page<TaskSummary>
 export type TaskDetailResponse = { task: Task; links: readonly TaskSessionLinkView[] }
 export type TaskChildrenResponse = Page<TaskSummary>
 

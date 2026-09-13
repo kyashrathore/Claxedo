@@ -84,7 +84,7 @@ export function decodeExecution(ctx: DecodeContext, value: unknown, path: string
   }
 }
 
-export function decodeModelConfiguration(ctx: DecodeContext, value: unknown, path: string): ModelConfiguration {
+function decodeModelConfiguration(ctx: DecodeContext, value: unknown, path: string): ModelConfiguration {
   const row = ctx.read.record(value, path)
   const harness = ctx.read.record(row?.harness, `${path}.harness`)
   const access = ctx.read.string(harness?.access, `${path}.harness.access`)
@@ -257,6 +257,8 @@ function startPreviewOf(ctx: DecodeContext, value: unknown, path: string): Start
     path,
   ).capabilities
   const current = row?.currentSession
+  const hasCurrent = current !== null && current !== undefined
+  const currentRow = hasCurrent ? ctx.read.record(current, `${path}.currentSession`) : undefined
   const blockers = ctx.read.array(row?.blockers, `${path}.blockers`) ?? []
   return {
     digest: ctx.read.nonEmptyString(row?.digest, `${path}.digest`) ?? "",
@@ -268,13 +270,12 @@ function startPreviewOf(ctx: DecodeContext, value: unknown, path: string): Start
     capabilities,
     available: ctx.read.boolean(row?.available, `${path}.available`) ?? false,
     blockers: blockers.map((entry, index) => blockerOf(ctx, entry, `${path}.blockers[${index}]`)),
-    currentSession:
-      current === null || current === undefined
-        ? null
-        : {
-            sessionRef: sessionReference(ctx, ctx.read.record(current, `${path}.currentSession`)?.sessionRef, `${path}.currentSession.sessionRef`),
-            liveness: liveness(ctx, ctx.read.record(current, `${path}.currentSession`)?.liveness, `${path}.currentSession.liveness`),
-          },
+    currentSession: hasCurrent
+      ? {
+          sessionRef: sessionReference(ctx, currentRow?.sessionRef, `${path}.currentSession.sessionRef`),
+          liveness: liveness(ctx, currentRow?.liveness, `${path}.currentSession.liveness`),
+        }
+      : null,
     previousTranscriptReadable: ctx.read.boolean(row?.previousTranscriptReadable, `${path}.previousTranscriptReadable`) ?? false,
     destinationDescription: ctx.read.string(row?.destinationDescription, `${path}.destinationDescription`) ?? "",
   }

@@ -31,7 +31,7 @@ import {
   parseTaskListQuery,
 } from "./parse"
 
-export type TasksAuthenticated = { actor: TasksActor } | { error: string; status: number }
+export type TasksAuthenticated = { actor: TasksActor } | { error: string; status: 401 | 403 }
 
 /** Hosts close over their own principal resolution; the package never sees a credential. */
 export type TasksAuthenticate = (request: Request) => Promise<TasksAuthenticated> | TasksAuthenticated
@@ -118,12 +118,7 @@ export function createTasksRoutes(options: TasksRoutesOptions): Hono {
   const actorOf = async (c: Context): Promise<{ actor: TasksActor } | { response: Response }> => {
     const authenticated = await options.authenticate(c.req.raw)
     if ("actor" in authenticated) return { actor: authenticated.actor }
-    return {
-      response: c.json(
-        { error: tasksErrorDetail("forbidden", authenticated.error) },
-        authenticated.status === 403 ? 403 : 401,
-      ),
-    }
+    return { response: c.json({ error: tasksErrorDetail("forbidden", authenticated.error) }, authenticated.status) }
   }
 
   app.get("/capabilities", async (c) => {

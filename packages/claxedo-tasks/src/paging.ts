@@ -25,13 +25,13 @@ export function decodePageCursor(value: string): PageKey | undefined {
 }
 
 /** Negative when `left` sorts earlier in a page than `right`. */
-export function comparePageKeys(left: PageKey, right: PageKey): number {
+function comparePageKeys(left: PageKey, right: PageKey): number {
   if (left.createdAt !== right.createdAt) return right.createdAt - left.createdAt
   if (left.id === right.id) return 0
   return left.id < right.id ? 1 : -1
 }
 
-export function isAfterCursor(key: PageKey, cursor: PageKey): boolean {
+function isAfterCursor(key: PageKey, cursor: PageKey): boolean {
   return comparePageKeys(key, cursor) > 0
 }
 
