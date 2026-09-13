@@ -40,7 +40,9 @@ describe("discovered sandbox provider keys get live verdicts", () => {
 
     const probe = await probeDiscoveredCredential(item(), { fetch: transport.stub })
 
-    expect(probe).toEqual({ state: "working" })
+    // The verdict travels with the probe so the row that is saved from it reads
+    // as checked without a second request against the user's quota.
+    expect(probe).toEqual({ state: "working", health: "ok" })
     expect(transport.calls[0]).toBe("https://app.daytona.io/api/api-keys/current")
   })
 
@@ -49,7 +51,7 @@ describe("discovered sandbox provider keys get live verdicts", () => {
 
     const probe = await probeDiscoveredCredential(item(), { fetch: transport.stub })
 
-    expect(probe).toEqual({ state: "broken", reason: "The provider rejected this credential." })
+    expect(probe).toEqual({ state: "broken", health: "auth_failed", reason: "The provider rejected this credential." })
   })
 
   test("an unreachable provider is unknown, never broken", async () => {
@@ -88,7 +90,7 @@ describe("discovered sandbox provider keys get live verdicts", () => {
       { fetch: transport.stub },
     )
 
-    expect(probe).toEqual({ state: "working" })
+    expect(probe).toEqual({ state: "working", health: "ok" })
     expect(transport.calls[0]).toBe("https://api.vercel.com/v9/projects/prj_1?teamId=team_1")
   })
 })
