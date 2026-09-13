@@ -200,6 +200,18 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     })
 
   /**
+   * The provider's answer, where the row does not already carry it. A refusal
+   * is the ring on the radio and the Reconnect beside it; every other answer —
+   * a check that never reached the provider included — has nowhere else to be
+   * read, and a fresh read time beside nothing else reads as a check that
+   * succeeded.
+   */
+  const verdictWords = (live: LiveCheck | undefined) => {
+    if (live?.verdict === undefined || unusable(live.verdict)) return []
+    return [language.t(VERDICT_KEY[live.verdict]), ...(live.reason === undefined ? [] : [live.reason])]
+  }
+
+  /**
    * The second line of one entry, or nothing when the label already said it
    * all. An unchecked account says nothing here: "Not checked" is the absence
    * of news, and every row would carry it. When the read happened is not part
@@ -208,6 +220,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const detailWords = (live: LiveCheck | undefined, origin?: string) => {
     const words = [
       ...(origin === undefined ? [] : [origin]),
+      ...verdictWords(live),
       ...windowWords(live?.usage),
     ]
     return words.length > 0 ? words.join(" · ") : undefined

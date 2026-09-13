@@ -59,6 +59,8 @@ const state = vi.hoisted(() => ({
   machineLogins: [] as Array<Record<string, unknown>>,
   /** When set, the machine-login route answers 500 with this cause instead. */
   machineLoginFailure: undefined as string | undefined,
+  /** When set, the verify route answers 500 with this cause instead. */
+  verifyFailure: undefined as string | undefined,
   /** When set, the machine-login route waits on it, so the first read can be held open. */
   machineLoginGate: undefined as Promise<void> | undefined,
   credentialCalls: [] as string[],
@@ -234,6 +236,15 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
     return new Response(JSON.stringify({ result: "ok", health: "ok", verified_at: 9 }))
   }
   if (url.pathname.endsWith("/verify")) {
+    if (state.verifyFailure) {
+      return new Response(JSON.stringify({
+        error: {
+          code: "credential_verify_failed",
+          message: "Failed to verify the credential",
+          details: { detail: { name: "Error", message: state.verifyFailure } },
+        },
+      }), { status: 500 })
+    }
     return new Response(JSON.stringify({
       result: "ok",
       health: "ok",
@@ -378,6 +389,7 @@ beforeEach(() => {
   state.machineLogins = []
   state.machineLoginFailure = undefined
   state.machineLoginGate = undefined
+  state.verifyFailure = undefined
   state.projects = [LOCAL_PROJECT, CLOUD_PROJECT]
   state.catalogs = {
     "workspace:ws_local|pi": ["anthropic", "openai"],
@@ -631,6 +643,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     // the figures: the line carries what the reader acts on, at whole percent.
     expect(accountDetail("anthropic", "sdk_work")).toBe([
       "acc_work",
+      "settings.providers.live.ok",
       "settings.providers.live.window:settings.providers.window.session|23",
       "settings.providers.live.window:settings.providers.window.weekly|67",
     ].join(" · "))
@@ -653,10 +666,30 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
     await waitFor(() => expect(accountDetail("anthropic", "sdk_work")).toBe([
       "acc_work",
+      "settings.providers.live.ok",
       "settings.providers.live.window:settings.providers.window.session|12",
       "settings.providers.live.window:settings.providers.window.weekly|40",
     ].join(" · ")))
     expect(accountChecked("anthropic", "sdk_work")).toBe("common.justNow")
+  })
+
+  test("a check the provider never answered says so, and is not a refusal", async () => {
+    state.verifyFailure = "fetch failed"
+    state.storedCredentials = [...claudeLogin]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
+
+    rowAction("anthropic", "sdk_work", "check").click()
+
+    await waitFor(() => expect(accountDetail("anthropic", "sdk_work"))
+      .toBe(["acc_work", "settings.providers.live.unknown", "fetch failed"].join(" · ")))
+    // The row was read, so it carries the age — which is the whole of what it
+    // said before, and reads as a check that landed.
+    expect(accountChecked("anthropic", "sdk_work")).toBe("common.justNow")
+    // Nothing about the stored token changed, so nothing rings and no Reconnect
+    // is offered for it.
+    expect(accountRefused("anthropic", "sdk_work")).toBe(false)
+    expect(accountRow("anthropic", "sdk_work").querySelector('[data-action="agent-reconnect"]')).toBeNull()
   })
 
   test("a rejected account rings its own radio and moves the action to Reconnect", async () => {
