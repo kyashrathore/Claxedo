@@ -14,7 +14,7 @@ const dir = new URL(".", import.meta.url).pathname
 
 const spriteIds = (() => {
   const sprite = readFileSync(`${dir}/sprite.svg`, "utf8")
-  return [...sprite.matchAll(/<symbol\b[^>]*\bid="([^"]+)"/g)].map((match) => match[1]!)
+  return [...sprite.matchAll(/<symbol\b[^>]*\bid="([^"]+)"/g)].flatMap((match) => match[1] ?? [])
 })()
 
 const sourceIds = readdirSync(`${dir}/../../assets/icons/provider`)
