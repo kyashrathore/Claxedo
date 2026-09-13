@@ -202,3 +202,19 @@ The "typing `#` does nothing" report reproduced only on the New task dialog, whi
 | task page, populated description | `## Plan` at the caret | `<h2>Plan</h2>`; the `- ` rule correctly declines inside a block that already holds text | same |
 
 Gates at this tip: app tasks vitest 77 pass (14 files); kit 186 pass; `tsgo -b` and kit typecheck clean; architecture guards 259 pass; `test:architecture-ratchets` holds with app-local 1044 modules / 58 packages and desktop renderer 1087 / 58 (Tiptap's chunk was measured and the ceilings raised in the editor commit); `lint:theme-tokens` at its two pre-existing failures; root lint at the three pre-existing perf-harness errors.
+
+## Full markdown in the editor (2026-09-13)
+
+The user clarified that `#` and `##` were examples and the description must support markdown in full, with every fix in the existing components rather than a parallel path. Measured before the change against `documentRichEditorExtensions()` (typing through `handleTextInput`, loading, a real paste in Playwright, and `detectMarkdown`): emphasis, strike, code, rules, task items, headings, bullets, `1.`, fences and highlight already converted on typing; loading rendered every GFM construct. The gaps and where they were closed, all in the Documents editor and its detector (`fix(documents): close the markdown gaps between what the editor parses and what it converts`, then `fix(documents): leave text pasted inside a code block to the default paste`):
+
+| Gap | Cause | Fix |
+|---|---|---|
+| typed `[text](url)` stayed literal | `@tiptap/extension-link` ships no input rule | `Link.extend({ addInputRules })` in `editor/markdown-input-rules.ts`; written out because `markInputRule` keeps the last capture as the visible text |
+| typed `![alt](url)` wiped the line, `getMarkdown()` empty | `Image` block while the parser places images inline | `Image.configure({ inline: true })` |
+| typed `1) ` started no list though the parser reads `1)` | bundled rule accepts `.` only | `OrderedListParenInput` beside the bundled rule |
+| pasted markdown became literal paragraphs | `@tiptap/markdown` 3.23.4 has no paste option (`indentation`, `marked`, `markedOptions` only) | `MarkdownPaste` parses text/plain through the editor's own manager when no text/html is present and the caret is not in a code block (the first cut converted a `#` comment pasted into a fence into a heading; caught by a probe before it shipped) |
+| `* item`, `__bold__`, `1) x`, loose lists, unpadded tables and any document with a table opened in the textarea | the detector's byte-identity gate; the serializer normalizes them | `detectMarkdown(input, fidelity)`: `exact` (Documents, default) unchanged; `normalizing` for the app-owned Tasks record |
+
+Left as upstream: `@tiptap/markdown` emits `\n\n\n` around a serialized table; `serializeMarkdownDocument` only trims trailing newlines.
+
+Live proof on the running stack (Playwright `keyboard.type` and a real `ClipboardEvent` in the New task dialog): one line with bold, italic, strike, code and a link; `1)` list; task item; inline image; rule; then a pasted GFM document rendered as h1, marks, link, table, task list, quote, `js` fence, rule and ordered list, nothing literal. Gates: app vitest for tasks, tasks integrations and documents 17 files / 111 pass (the Documents fidelity proof included); `tsgo -b` clean; architecture guards 259; ratchets hold at app-local 1046 / 58 and desktop renderer 1089 / 58 (two new Documents modules, no new package edge); theme-token lint at its two pre-existing failures; root lint at the three pre-existing perf-harness errors.
