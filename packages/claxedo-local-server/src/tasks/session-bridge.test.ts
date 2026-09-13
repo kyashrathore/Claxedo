@@ -262,8 +262,10 @@ async function bridgeFixture(input: { offeredModelId?: string }): Promise<TasksS
     archive: async (sessionId) => {
       await putSessionMeta(sessionId, { archived: Date.now() })
     },
+    // The embedded runtime reads its own store while it shuts down, and that
+    // store lives under the root; removal waits for `afterEach`, after shutdown.
     dispose: async () => {
-      await fs.rm(host.root, { recursive: true, force: true })
+      roots.push(host.root)
     },
   }
 }
