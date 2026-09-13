@@ -228,9 +228,9 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
    * harness itself reported — its quota windows where it has them, and
    * otherwise the plan and organization it named.
    *
-   * A harness answering now is its own timestamp; the server sends `usageAt`
-   * only for windows it had already stored, which are the ones whose age is
-   * worth a word.
+   * Windows always arrive with the time they were read, whether the harness
+   * answered now or the server served what it had stored, so the age is part
+   * of the line for both and a stale plan cannot read as a fresh one.
    */
   const machineWords = (login: MachineLogin, check: LocalHarnessCheck) => {
     if (login.state === "absent") return language.t("settings.providers.agents.machineNotInstalled")

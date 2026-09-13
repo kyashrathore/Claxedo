@@ -373,6 +373,26 @@ describe("claxedo schema", () => {
     expect(hasTable(sqlite, retiredPageTable)).toBe(false)
   })
 
+  test("repair gives a drifted credential table the usage columns the registry selects", () => {
+    const sqlite = new Database(":memory:")
+    applyMigration(sqlite, "20260411000000_provider_credentials")
+    sqlite.prepare(`
+      INSERT INTO claxedo_provider_credential (id, provider_id, kind, source, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run("cred_1", "openai", "api_key", "managed", "available", 1, 2)
+
+    const fixed = repair(sqlite)
+
+    expect(fixed).toEqual(expect.arrayContaining([
+      "claxedo_provider_credential.usage_windows",
+      "claxedo_provider_credential.usage_at",
+    ]))
+    // A drizzle `select()` names every column, so one missing column fails
+    // every credential read rather than only a usage read.
+    expect(sqlite.prepare("SELECT id, usage_windows, usage_at FROM claxedo_provider_credential").get())
+      .toEqual({ id: "cred_1", usage_windows: null, usage_at: null })
+  })
+
   test("repair upgrades legacy session meta placement schema", () => {
     const sqlite = new Database(":memory:")
 

@@ -6,7 +6,7 @@ import { columnInfo, hasColumn, hasTable, type SqliteSchemaReader } from "./sche
  * stored fingerprint and forces one full repair pass per database even when
  * the schema itself has not changed.
  */
-export const REPAIR_VERSION = 1
+export const REPAIR_VERSION = 2
 
 type SqliteInstance = SqliteSchemaReader & {
   exec(sql: string): unknown
@@ -360,15 +360,17 @@ function ensureNetworkPolicyHarnessColumn(db: SqliteInstance, out: string[]) {
 }
 
 /**
- * Heal a provider-credential table that predates org scoping.
+ * Give a provider-credential table the columns the registry selects.
  *
- * The migration adds `org_id`, but `repair` is the belt-and-braces path for a
- * database whose migration ledger drifted. Backfilling to the named
- * single-tenant partition keeps an existing self-host user's credentials
- * reachable; it never widens one tenant's rows into another's, because
- * `__local__` is only ever resolved for an unsigned/loopback request.
+ * Migrations add them; this is the belt-and-braces path for a database whose
+ * migration ledger drifted, and a drizzle `select()` names every column, so one
+ * missing column fails every credential read rather than the feature that
+ * introduced it. Backfilling `org_id` to the named single-tenant partition
+ * keeps an existing self-host user's credentials reachable; it never widens one
+ * tenant's rows into another's, because `__local__` is only ever resolved for
+ * an unsigned/loopback request.
  */
-function ensureProviderCredentialOrgColumn(db: SqliteInstance, out: string[]) {
+function ensureProviderCredentialColumns(db: SqliteInstance, out: string[]) {
   if (!hasTable(db, "claxedo_provider_credential")) return
   if (!hasColumn(db, "claxedo_provider_credential", "org_id")) {
     db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `org_id` text NOT NULL DEFAULT '__local__'")
@@ -377,6 +379,14 @@ function ensureProviderCredentialOrgColumn(db: SqliteInstance, out: string[]) {
   if (!hasColumn(db, "claxedo_provider_credential", "revision")) {
     db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `revision` integer NOT NULL DEFAULT 1")
     out.push("claxedo_provider_credential.revision")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "usage_windows")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `usage_windows` text")
+    out.push("claxedo_provider_credential.usage_windows")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "usage_at")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `usage_at` integer")
+    out.push("claxedo_provider_credential.usage_at")
   }
   db.exec("UPDATE `claxedo_provider_credential` SET `org_id` = '__local__' WHERE `org_id` IS NULL OR trim(`org_id`) = ''")
   db.exec("CREATE INDEX IF NOT EXISTS `claxedo_provider_credential_org_idx` ON `claxedo_provider_credential` (`org_id`)")
@@ -440,7 +450,7 @@ export function repair(db: SqliteInstance) {
   ensureSessionMetaIndexes(db)
   ensureSessionAssociationIndexes(db)
   ensureNetworkPolicyHarnessColumn(db, out)
-  ensureProviderCredentialOrgColumn(db, out)
+  ensureProviderCredentialColumns(db, out)
   ensureWorkspaceLeaseDriverColumns(db, out)
   ensureUsageNativeSessionColumns(db, out)
   return out

@@ -17,6 +17,11 @@ async function credentialRegistry() {
   return await import("../credentials/registry")
 }
 
+/** Lazy for the same reason as the registry: a Worker host must not load SQLite. */
+async function machineLoginUsage() {
+  return await import("../credentials/machine-login-usage")
+}
+
 /**
  * A renewed OAuth login imported from this machine exists in two places: the
  * Claxedo store and the CLI's own auth file. The provider may rotate the
@@ -92,6 +97,14 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
     updateCredentialHealth: async (id, health, validatedAt, org) => {
       const registry = await credentialRegistry()
       registry.updateCredentialHealth(id, health, validatedAt, org)
+    },
+    updateCredentialUsage: async (id, windows, at, org) => {
+      const registry = await credentialRegistry()
+      registry.updateCredentialUsage(id, windows, at, org)
+    },
+    readMachineLoginUsage: async () => (await machineLoginUsage()).readMachineLoginUsage(),
+    recordMachineLoginUsage: async (harness, account, windows, at) => {
+      (await machineLoginUsage()).recordMachineLoginUsage(harness, account, windows, at)
     },
     discoverLocalCredentials: async (org) => (await import("@claxedo/server-core/credentials/operations/discovery")).credentialDiscovery.discover(org),
     updateCredentialScope: async (id, scope, consentAt, org) => (await credentialRegistry()).updateCredentialScope(id, scope, consentAt, org),

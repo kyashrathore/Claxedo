@@ -9,21 +9,13 @@ import {
 } from "./refresh"
 import { verifySandboxDriverCredential } from "./sandbox-verify"
 import { credentialSecretMaterial, type CredentialSecretMaterial } from "@claxedo/server-core/credentials/secret-material"
-import type { CredentialHealth, CredentialMetadata } from "@claxedo/server-core/credentials/types"
+import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow } from "@claxedo/server-core/credentials/types"
 
 const log = Log.create({ service: "credentials-verify" })
 
-export type { CredentialHealth } from "@claxedo/server-core/credentials/types"
+export type { CredentialHealth, CredentialUsageWindow } from "@claxedo/server-core/credentials/types"
 
 export { CredentialVerificationError } from "../verification-error"
-
-/** One quota window the provider reports for a subscription. */
-export type CredentialUsageWindow = {
-  /** `session` (5 h), `weekly`, `weekly_opus`, or the vendor's slot name when it matches none. */
-  window: string
-  usedPercent: number
-  resetsAt: number | null
-}
 
 export type CredentialVerificationOutcome = {
   health: CredentialHealth

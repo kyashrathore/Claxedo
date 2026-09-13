@@ -519,6 +519,8 @@ describe("credential routes", () => {
               "source": "managed",
               "status": "available",
               "updated_at": 1,
+              "usage_at": null,
+              "usage_windows": null,
             },
           ],
         },
@@ -663,6 +665,8 @@ describe("credential routes", () => {
         last_error: null,
         created_at: 1,
         updated_at: 1,
+        usage_windows: null,
+        usage_at: null,
       }],
     })
   })
@@ -1228,5 +1232,133 @@ describe("a host that holds one record per provider", () => {
 
     expect(response.status).toBe(501)
     await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_activate_unsupported" } })
+  })
+})
+
+describe("how much of a plan is left, kept between reads", () => {
+  const root = path.join(realpathSync(os.tmpdir()), `credential-usage-${randomUUID().slice(0, 8)}`)
+  let registry: typeof import("@claxedo/server-core/credentials/registry")
+  let previousDataDir: string | undefined
+
+  beforeAll(async () => {
+    mkdirSync(root, { recursive: true })
+    previousDataDir = process.env.CLAXEDO_DATA_DIR
+    process.env.CLAXEDO_DATA_DIR = root
+    const backends = await import("@claxedo/server-core/credentials/backend-registry")
+    backends.setBackendOverride(backends.createTestBackend())
+    registry = await import("@claxedo/server-core/credentials/registry")
+  })
+
+  afterAll(async () => {
+    const backends = await import("@claxedo/server-core/credentials/backend-registry")
+    backends.setBackendOverride(undefined)
+    const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
+    ClaxedoDB.close()
+    await fs.rm(root, { recursive: true, force: true })
+    if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  })
+
+  test("a Check stores the windows it reported, and both list reads carry them afterwards", async () => {
+    const stored = await registry.putCredential({
+      provider_id: "codex-app-server",
+      kind: "oauth_token",
+      source: "managed",
+      account_id: "acct_usage",
+      secret: JSON.stringify({ tokens: { access_token: "access_usage", account_id: "acct_usage" } }),
+    })
+    const request = providerFetch(() => Response.json({
+      rate_limit: {
+        primary_window: { used_percent: 20, limit_window_seconds: 18_000, reset_at: 1_757_600_000 },
+        secondary_window: { used_percent: 4, limit_window_seconds: 604_800, reset_at: 1_758_000_000 },
+      },
+    }))
+    const app = CredentialRoutes(localControlPlaneCredentials(), {
+      fetch: request as unknown as typeof fetch,
+      now: () => 4242,
+    })
+    const windows = [
+      { window: "session", usedPercent: 20, resetsAt: 1_757_600_000_000 },
+      { window: "weekly", usedPercent: 4, resetsAt: 1_758_000_000_000 },
+    ]
+
+    const verified = await app.request(`http://localhost/${stored.id}/verify`, { method: "POST" })
+    expect(verified.status).toBe(200)
+    await expect(verified.json()).resolves.toMatchObject({ health: "ok", usage: windows })
+
+    // A fresh request object, so nothing survives in memory from the Check.
+    const list = await CredentialRoutes(localControlPlaneCredentials(), {}).request("http://localhost/")
+    const listed = (await list.json() as { credentials: Array<Record<string, unknown>> })
+      .credentials.find((row) => row.id === stored.id)
+    expect(listed).toMatchObject({ usage_windows: windows, usage_at: 4242 })
+
+    const effective = await CredentialRoutes(localControlPlaneCredentials(), {}).request("http://localhost/effective")
+    const chosen = (await effective.json() as { credentials: Array<Record<string, unknown>> })
+      .credentials.find((row) => row.provider_id === "codex-app-server")
+    expect(chosen).toMatchObject({ id: stored.id, usage_windows: windows, usage_at: 4242 })
+  })
+
+  test("a row no Check has reached reports no windows rather than an empty plan", async () => {
+    const unread = await registry.putCredential({
+      provider_id: "usage-unread",
+      kind: "api_key",
+      source: "managed",
+      secret: "sk-usage-unread",
+    })
+
+    const list = await CredentialRoutes(localControlPlaneCredentials(), {}).request("http://localhost/")
+    const listed = (await list.json() as { credentials: Array<Record<string, unknown>> })
+      .credentials.find((row) => row.id === unread.id)
+
+    expect(listed).toMatchObject({ usage_windows: null, usage_at: null })
+  })
+
+  test("a harness that reports its plan once is answered with it on every later read", async () => {
+    const reported = [{ window: "session", usedPercent: 61, resetsAt: 1_757_700_000_000 }]
+    const login = {
+      harness: "codex" as const,
+      providerIds: ["codex-app-server", "openai"],
+      state: "signed_in" as const,
+      email: "person@example.com",
+    }
+    const app = (usage?: typeof reported, now = 5000) => CredentialRoutes(
+      Object.assign(localControlPlaneCredentials(), {
+        machineLogins: vi.fn(async () => [usage ? { ...login, usage } : login]),
+      }),
+      { now: () => now },
+    )
+
+    const first = await app(reported, 5000).request("http://localhost/machine-logins")
+    expect(first.status).toBe(200)
+    await expect(first.json()).resolves.toMatchObject({
+      machine_logins: [{ harness: "codex", usage: reported, usageAt: 5000 }],
+    })
+
+    // The same harness on a read that carries no windows: the answer is the
+    // stored one, and the time it was read rather than the time it was served.
+    const later = await app(undefined, 9000).request("http://localhost/machine-logins")
+    await expect(later.json()).resolves.toMatchObject({
+      machine_logins: [{ harness: "codex", usage: reported, usageAt: 5000 }],
+    })
+  })
+
+  test("a harness with no stored plan and none to report is left as it answered", async () => {
+    const app = CredentialRoutes(
+      Object.assign(localControlPlaneCredentials(), {
+        machineLogins: vi.fn(async () => [{
+          harness: "cursor" as const,
+          providerIds: ["cursor-acp", "cursor-sdk"],
+          state: "signed_in" as const,
+          email: "nobody@example.com",
+        }]),
+      }),
+      {},
+    )
+
+    const response = await app.request("http://localhost/machine-logins")
+    const body = await response.json() as { machine_logins: Array<Record<string, unknown>> }
+
+    expect(body.machine_logins[0]).not.toHaveProperty("usage")
+    expect(body.machine_logins[0]).not.toHaveProperty("usageAt")
   })
 })

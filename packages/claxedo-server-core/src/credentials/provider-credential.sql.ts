@@ -66,6 +66,15 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
      * status or scope edit leaves live bindings alone.
      */
     revision: integer().notNull().default(1),
+    /**
+     * The quota windows of the last usage read, as the JSON array the verifier
+     * hands back. A vendor names its own windows and adds new ones, so the
+     * shape is the vendor's to widen and columns here would have to be migrated
+     * each time one is.
+     */
+    usage_windows: text(),
+    /** When `usage_windows` was read. Neither column is meaningful alone. */
+    usage_at: integer(),
   },
   (table) => [
     index("claxedo_provider_credential_provider_idx").on(table.provider_id),

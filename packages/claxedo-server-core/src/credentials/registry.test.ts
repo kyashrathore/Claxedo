@@ -22,6 +22,7 @@ const {
   resolveSecretById,
   updateCredentialStatus,
   updateCredentialHealth,
+  updateCredentialUsage,
   updateCredentialScope,
   updateCredentialSecret,
   updateCredentialLabel,
@@ -486,6 +487,61 @@ describe("credential registry", () => {
 
     updateCredentialStatus(cred.id, "expired")
     expect(getCredential(cred.id)).toMatchObject({ status: "expired", health: "expired" })
+  })
+
+  test("keeps the quota windows a verification read, and leaves an unread row with none", async () => {
+    const read = await putCredential({
+      provider_id: "usage-test",
+      kind: "oauth_token",
+      source: "managed",
+      account_id: "acct_usage",
+      secret: "usage-secret",
+    })
+    const unread = await putCredential({
+      provider_id: "usage-test-none",
+      kind: "oauth_token",
+      source: "managed",
+      account_id: "acct_none",
+      secret: "usage-none-secret",
+    })
+    expect(read.usage_windows ?? null).toBeNull()
+    expect(read.usage_at ?? null).toBeNull()
+
+    const windows = [
+      { window: "session", usedPercent: 20.5, resetsAt: 1_757_600_000_000 },
+      { window: "weekly", usedPercent: 4, resetsAt: null },
+    ]
+    updateCredentialUsage(read.id, windows, 1234)
+
+    expect(getCredential(read.id)).toMatchObject({ usage_windows: windows, usage_at: 1234 })
+    expect(listCredentials().find((row) => row.id === read.id))
+      .toMatchObject({ usage_windows: windows, usage_at: 1234 })
+    expect(getCredential(unread.id)?.usage_windows ?? null).toBeNull()
+    expect(getCredential(unread.id)?.usage_at ?? null).toBeNull()
+  })
+
+  test("a quota read leaves the write clock that orders two accounts alone", async () => {
+    const cred = await putCredential({
+      provider_id: "usage-order",
+      kind: "oauth_token",
+      source: "managed",
+      account_id: "acct_order",
+      secret: "usage-order-secret",
+    })
+    const before = getCredential(cred.id)?.updated_at
+    // `updated_at` is the wall clock. Without a gap either side, a write that
+    // DID move it is indistinguishable from one that did not.
+    const gap = () => new Promise((resolve) => setTimeout(resolve, 5))
+
+    await gap()
+    updateCredentialUsage(cred.id, [{ window: "session", usedPercent: 90, resetsAt: null }], 9999)
+    expect(getCredential(cred.id)).toMatchObject({ updated_at: before, usage_at: 9999 })
+
+    // The contrast: a verdict about the account itself is a write, and does
+    // move the clock the fanout breaks ties on.
+    await gap()
+    updateCredentialHealth(cred.id, "ok", 9999)
+    expect(getCredential(cred.id)?.updated_at).not.toBe(before)
   })
 
   test("deleteCredential removes metadata and backend secret", async () => {

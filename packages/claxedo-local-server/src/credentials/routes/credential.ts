@@ -13,7 +13,7 @@ import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { CredentialVerificationError, verifyCredential } from "@claxedo/server-core/credentials/operations/verify"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
-import { MACHINE_LOGIN_HARNESSES } from "@claxedo/server-core/credentials/machine-login"
+import { MACHINE_LOGIN_HARNESSES, type MachineLogin } from "@claxedo/server-core/credentials/machine-login"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
   ControlPlaneAuthError,
@@ -114,7 +114,47 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
     last_error: cred.last_error,
     created_at: cred.created_at,
     updated_at: cred.updated_at,
+    usage_windows: cred.usage_windows ?? null,
+    usage_at: cred.usage_at ?? null,
   }
+}
+
+/** One harness's login is one address's login, and `""` is "the harness named none". */
+function machineLoginUsageKey(harness: string, account: string) {
+  return `${harness} ${account}`
+}
+
+/**
+ * What each harness said about its plan, joined to what it last said.
+ *
+ * A harness reports quota windows only on the reads that happen to carry them,
+ * so a row that showed usage lost it on the next read. The join is here rather
+ * than in `machine-login.ts` because that module spawns the CLIs and stays free
+ * of the database.
+ */
+async function machineLoginsWithUsage(
+  credentials: ControlPlaneCredentials,
+  logins: readonly MachineLogin[],
+  now: () => number,
+): Promise<Array<MachineLogin & { usageAt?: number }>> {
+  const { readMachineLoginUsage, recordMachineLoginUsage } = credentials
+  if (!readMachineLoginUsage || !recordMachineLoginUsage) return [...logins]
+  const stored = new Map(
+    (await readMachineLoginUsage()).map((row) => [machineLoginUsageKey(row.harness, row.account), row]),
+  )
+  const at = now()
+  const out: Array<MachineLogin & { usageAt?: number }> = []
+  for (const login of logins) {
+    const account = login.email ?? ""
+    if (login.usage?.length) {
+      await recordMachineLoginUsage(login.harness, account, login.usage, at)
+      out.push({ ...login, usageAt: at })
+      continue
+    }
+    const row = stored.get(machineLoginUsageKey(login.harness, account))
+    out.push(row ? { ...login, usage: row.windows, usageAt: row.at } : login)
+  }
+  return out
 }
 
 function invalidBody(error: z.ZodError) {
@@ -280,8 +320,9 @@ export function CredentialRoutes(
       // read: it is the button a user presses to find out what changed.
       const fresh = c.req.query("fresh") === "1"
       try {
+        const logins = await credentials.machineLogins(harness ? [harness.data] : undefined, { fresh })
         return c.json({
-          machine_logins: await credentials.machineLogins(harness ? [harness.data] : undefined, { fresh }),
+          machine_logins: await machineLoginsWithUsage(credentials, logins, options.now ?? Date.now),
         })
       } catch (error) {
         const detail = failureDetail(error)
@@ -374,6 +415,7 @@ export function CredentialRoutes(
           await credentials.updateCredentialSecret?.(id, refreshed.secret, refreshed.expiresAt, scope)
         }
         await credentials.updateCredentialHealth(id, health, verifiedAt, scope)
+        if (usage?.length) await credentials.updateCredentialUsage?.(id, usage, verifiedAt, scope)
         await nameAccount(credentials, credential, accountEmail, scope)
         return c.json({ result: health, health, verified_at: verifiedAt, ...(usage ? { usage } : {}) })
       } catch (error) {
@@ -414,6 +456,7 @@ export function CredentialRoutes(
           await credentials.updateCredentialSecret(id, refreshed.secret, refreshed.expiresAt, scope)
         }
         await credentials.updateCredentialHealth(id, health, verifiedAt, scope)
+        if (usage?.length) await credentials.updateCredentialUsage?.(id, usage, verifiedAt, scope)
         await nameAccount(credentials, credential, accountEmail, scope)
         return c.json({ result: health, health, verified_at: verifiedAt, ...(usage ? { usage } : {}) })
       } catch (error) {

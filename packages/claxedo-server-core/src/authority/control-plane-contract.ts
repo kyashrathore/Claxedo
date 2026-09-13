@@ -28,11 +28,13 @@ import type {
   CredentialMetadata,
   CredentialScope,
   CredentialStatus,
+  CredentialUsageWindow,
   CredentialWrite,
   SetActiveCredentialsResult,
 } from "../credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "../credentials/operations/discovery"
 import type { MachineLogin, MachineLoginHarness } from "../credentials/machine-login"
+import type { MachineLoginUsage } from "../credentials/machine-login-usage"
 
 export class ControlPlaneCompositionError extends Error {
   constructor(
@@ -112,6 +114,29 @@ export type ControlPlaneCredentials = {
   deleteCredentialsByProvider: (providerId: string, kind?: CredentialKind, org?: string) => Promise<number>
   updateCredentialStatus: (id: string, status: CredentialStatus, error?: string, org?: string) => Promise<void>
   updateCredentialHealth?: (id: string, health: CredentialHealth, validatedAt: number, org?: string) => Promise<void>
+  /**
+   * Keep the quota windows a verification read, so a surface can show them
+   * again without spending another read. Optional: a store that cannot hold
+   * them simply never records, and every read path reports no usage.
+   */
+  updateCredentialUsage?: (
+    id: string,
+    windows: readonly CredentialUsageWindow[],
+    at: number,
+    org?: string,
+  ) => Promise<void>
+  /**
+   * The same for a login a harness on THIS machine holds, keyed by harness and
+   * the address the harness named. Machine-wide and loopback-only, like
+   * `machineLogins` itself, so neither takes an org.
+   */
+  readMachineLoginUsage?: () => Promise<MachineLoginUsage[]>
+  recordMachineLoginUsage?: (
+    harness: string,
+    account: string,
+    windows: readonly CredentialUsageWindow[],
+    at: number,
+  ) => Promise<void>
   discoverLocalCredentials?: (org?: string) => Promise<{ discovery_id: string; items: CredentialDiscoveryPreview[] }>
   saveDiscoveredCredentials?: (
     input: { discovery_id: string; items: CredentialDiscoverySelection[] },

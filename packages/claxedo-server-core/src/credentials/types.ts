@@ -18,6 +18,14 @@ export type CredentialStatus = (typeof CREDENTIAL_STATUSES)[number]
 export const CREDENTIAL_HEALTHS = ["ok", "auth_failed", "no_billing", "rate_capped", "expired"] as const
 export type CredentialHealth = (typeof CREDENTIAL_HEALTHS)[number]
 
+/** One quota window the provider reports for a subscription. */
+export type CredentialUsageWindow = {
+  /** `session` (5 h), `weekly`, `weekly_opus`, or the vendor's slot name when it matches none. */
+  window: string
+  usedPercent: number
+  resetsAt: number | null
+}
+
 export const CREDENTIAL_SCOPES = ["local", "shared"] as const
 export type CredentialScope = (typeof CREDENTIAL_SCOPES)[number]
 
@@ -79,6 +87,14 @@ export interface CredentialMetadata {
    * and cannot.
    */
   revision: number
+  /**
+   * How much of the plan the last usage read had spent. Parsed out of the
+   * stored JSON, so a row written before the column existed, or holding text
+   * that no longer parses, reads as absent rather than as an empty plan.
+   */
+  usage_windows?: CredentialUsageWindow[] | null
+  /** When those windows were read; a window without one is unattributable. */
+  usage_at?: number | null
 }
 
 /**

@@ -32,12 +32,14 @@ import {
   type CredentialKind,
   type CredentialMetadata,
   type CredentialScope,
+  type CredentialUsageWindow,
   type CredentialWrite,
   type CredentialStatus,
   type SetActiveCredentialsResult,
 } from "./types"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { credentialSecretInScope, type CredentialSecretScope } from "./secret-scope"
+import { parseUsageWindows, serializeUsageWindows } from "./usage-windows"
 
 export { SINGLE_TENANT_ORG } from "./provider-credential.sql"
 
@@ -192,6 +194,11 @@ export async function putCredential(
     created_at: existing?.created_at ?? ts,
     updated_at: ts,
     revision: (existing?.revision ?? 0) + 1,
+    // Cleared for the same reason as `health`: a re-saved credential has not
+    // been put to its provider yet, and the last read's percentages describe a
+    // check that no longer stands.
+    usage_windows: null,
+    usage_at: null,
   }
 
   /**
@@ -258,7 +265,7 @@ export async function putCredential(
 
   log.info("Credential stored", { id, org_id: orgId, provider_id: input.provider_id, kind: input.kind })
 
-  return toMetadata(stored as CredentialRow)
+  return toMetadata(stored)
 }
 
 type CredentialRow = typeof ClaxedoProviderCredentialTable.$inferSelect
@@ -272,7 +279,7 @@ function readConsent(raw: string | null): CredentialConsent | null {
 }
 
 function toMetadata(row: CredentialRow): CredentialMetadata {
-  return { ...row, consent: readConsent(row.consent_json) }
+  return { ...row, consent: readConsent(row.consent_json), usage_windows: parseUsageWindows(row.usage_windows) }
 }
 
 /** List credential metadata (no secrets) for one org. */
@@ -720,6 +727,28 @@ export function updateCredentialHealth(
       marked_active: heir.id,
     })
   })
+}
+
+/**
+ * Persist how much of the plan the last usage read found spent.
+ *
+ * Deliberately leaves `updated_at` alone. That column breaks ties between two
+ * accounts of one provider, and a quota read says nothing about which account
+ * the user wants run — touching it would let a Check reorder the fanout.
+ */
+export function updateCredentialUsage(
+  id: string,
+  windows: readonly CredentialUsageWindow[],
+  at: number,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): void {
+  ClaxedoDB.use((db) =>
+    db
+      .update(ClaxedoProviderCredentialTable)
+      .set({ usage_windows: serializeUsageWindows(windows), usage_at: at })
+      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
+      .run(),
+  )
 }
 
 /**
