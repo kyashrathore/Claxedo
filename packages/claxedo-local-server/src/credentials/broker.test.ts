@@ -416,7 +416,7 @@ describe("local binding authority", () => {
     ))
 
     expect(response.status).toBe(503)
-    await expect(response.json()).resolves.toEqual({ error: "broker_authority_unavailable" })
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "broker_authority_unavailable" } })
   })
 
   test("the identity carries the org the caller named, and a binding is that org's alone", async () => {

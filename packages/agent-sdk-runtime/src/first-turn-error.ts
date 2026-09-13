@@ -1,3 +1,5 @@
+import { asRecord } from "@claxedo/helpers/guards"
+
 export const FIRST_TURN_ERROR_CLASSES = ["credential", "harness", "model", "usage_limit", "workspace", "session", "unknown"] as const
 
 export type FirstTurnErrorClass = (typeof FIRST_TURN_ERROR_CLASSES)[number]
@@ -29,6 +31,27 @@ const BROKER_ERROR_CLASSES: Record<string, FirstTurnErrorClass> = {
 
 const brokerError = new RegExp(`\\b(${Object.keys(BROKER_ERROR_CLASSES).join("|")})\\b`)
 
+/**
+ * The broker's code out of the JSON body a harness echoed.
+ *
+ * Preferred over a bare-token match because a harness that retried names the
+ * first failure in its own prose, and the verdict belongs to the response it
+ * gave up on. The match stays as the fallback: a harness that summarises the
+ * body rather than quoting it leaves no JSON to read.
+ */
+function brokerBodyCode(message: string): string | undefined {
+  const start = message.indexOf("{")
+  const end = message.lastIndexOf("}")
+  if (start === -1 || end <= start) return undefined
+  try {
+    const error = asRecord(JSON.parse(message.slice(start, end + 1)))?.error
+    const code = typeof error === "string" ? error : asRecord(error)?.code
+    return typeof code === "string" ? code : undefined
+  } catch {
+    return undefined
+  }
+}
+
 const credential = /\b(401|403|unauthori[sz]ed|api[ _-]?key|oauth|token|credential|authentication|billing|payment|quota)\b/i
 const usageLimit = /(?:reached|hit)\s+(?:your|the)\s+.+?\s+limit|usage\s+(?:limit|cap)\s+(?:reached|exceeded)|limit.*(?:reset|usage credits)|usage_limit_reached|rate_limit_reached|credits_depleted|\brate[ _-]?limit\b/i
 const session = /(thread not found|session not found|conversation not found|no such (thread|session))/i
@@ -40,8 +63,8 @@ export function classifyFirstTurnError(error: unknown): FirstTurnErrorClass {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error)
   // First, because everything below it reads the status and the prose the
   // harness wrapped around this code.
-  const broker = brokerError.exec(message)?.[1]
-  if (broker) return BROKER_ERROR_CLASSES[broker]
+  const broker = brokerBodyCode(message) ?? brokerError.exec(message)?.[1]
+  if (broker && BROKER_ERROR_CLASSES[broker]) return BROKER_ERROR_CLASSES[broker]
   if (usageLimit.test(message)) return "usage_limit"
   if (credential.test(message)) return "credential"
   // Lost native conversations use session recovery, even when the message also names a harness.

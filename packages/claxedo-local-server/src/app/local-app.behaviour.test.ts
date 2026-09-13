@@ -588,7 +588,7 @@ describe("local egress broker — the mounted authority", () => {
     const response = await instance.request(`http://127.0.0.1/bindings/${bindingId}/v1/messages`, { method: "POST" })
 
     expect(response.status).toBe(401)
-    await expect(response.json()).resolves.toEqual({ error: "runtime_token_required" })
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "runtime_token_required" } })
   })
 
   test("refuses a valid token presented at a binding it does not name", async () => {
@@ -599,7 +599,7 @@ describe("local egress broker — the mounted authority", () => {
     })
 
     expect(response.status).toBe(403)
-    await expect(response.json()).resolves.toEqual({ error: "binding_not_permitted" })
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "binding_not_permitted" } })
   })
 
   test("attaches the stored value at the vendor and streams the answer back", async () => {

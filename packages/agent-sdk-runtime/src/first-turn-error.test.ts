@@ -49,6 +49,15 @@ describe("first-turn error taxonomy", () => {
     expect(classifyFirstTurnError(message)).toBe(expected)
   })
 
+  test("the code in the body outranks an earlier one in the prose around it", () => {
+    // A harness that retried names the first failure in its own text; the
+    // verdict belongs to the body of the response it actually gave up on.
+    expect(classifyFirstTurnError(
+      'upstream_unavailable while retrying; API Error: 403 '
+      + '{"error":{"code":"binding_unavailable","message":"The binding names no account this runtime can spend"}}',
+    )).toBe("credential")
+  })
+
   test("the broker's verdict outranks the status the harness echoed beside it", () => {
     // Without the code this reads as `credential` on the bare "403" and marks
     // a working account broken for a route the harness should not have called.

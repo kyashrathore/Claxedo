@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import { createEgressBroker, mintRuntimeToken, verifyRuntimeToken, type Binding, type BindingFailure } from "./index.js"
+import { BROKER_ERRORS, createEgressBroker, mintRuntimeToken, verifyRuntimeToken, type Binding, type BindingFailure } from "./index.js"
 
 const key = new Uint8Array(32).fill(7)
 const identity = { userId: "user", orgId: "org", workspaceId: "workspace", leaseId: "lease", leaseGeneration: 1, runtimeId: "runtime" }
@@ -102,7 +102,9 @@ describe("binding broker HTTP entrypoint", () => {
     f.failReporting()
     const response = await f.request()
     expect(response.status).toBe(503)
-    expect(await response.json()).toEqual({ error: "broker_authority_unavailable" })
+    expect(await response.json()).toEqual({
+      error: { code: "broker_authority_unavailable", message: BROKER_ERRORS.broker_authority_unavailable },
+    })
     expect(cancelled).toBe(true)
     expect(f.upstream).toHaveLength(1)
   })

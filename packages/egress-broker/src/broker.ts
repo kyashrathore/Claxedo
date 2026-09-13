@@ -1,4 +1,5 @@
 import { sameRuntime, type BindingAuthority } from "./binding.js"
+import { brokerErrorBody, type BrokerErrorCode } from "./errors.js"
 import type { RuntimeTokenClaims } from "./token.js"
 
 export type BrokerOptions = {
@@ -15,8 +16,8 @@ export type BrokerOptions = {
  */
 const API_KEY_HEADERS = ["x-api-key", "x-goog-api-key"] as const
 
-function brokerErrorResponse(status: number, error: string) {
-  return Response.json({ error }, { status })
+function brokerErrorResponse(status: number, code: BrokerErrorCode) {
+  return Response.json(brokerErrorBody(code), { status })
 }
 
 function stripTransportHeaders(headers: Headers) {
