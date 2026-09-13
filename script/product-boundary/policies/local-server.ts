@@ -117,8 +117,13 @@ export const localServer: Policy = {
   // `@hono/node-server`, both already in this closure. It belongs to this
   // product because the desktop-local server is the process that holds the
   // credential value and the harness never does.
-  // Full closure measured at 58 modules / 25 packages.
-  ceilings: { modules: 58, packages: 25 },
+  // +1 module: `credentials/destinations.ts`, the one table naming each
+  // provider's vendor host, allowed methods and paths, and the header shape it
+  // accepts. It belongs beside the broker for the same reason the broker
+  // belongs to this product, and reaches only the credential registry and the
+  // secret-shape reader this closure already holds. No new package edge.
+  // Full closure measured at 59 modules / 25 packages.
+  ceilings: { modules: 59, packages: 25 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

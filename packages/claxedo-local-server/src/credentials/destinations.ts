@@ -33,7 +33,7 @@ type ProviderRow = (material: {
   form: "api-key" | "subscription"
 }) => Omit<ProviderDestination, "value">
 
-const anthropic: ProviderRow = (material) => ({
+const anthropicDestination: ProviderRow = (material) => ({
   origin: "https://api.anthropic.com",
   // Claude Code reaches several routes under the API version — messages, models,
   // token counting — so the prefix is the version rather than one path.
@@ -51,7 +51,7 @@ const anthropic: ProviderRow = (material) => ({
  * what tells that backend which plan the token spends — the same pair the
  * credential verification probe sends.
  */
-const openai: ProviderRow = (material) => material.form === "subscription"
+const openaiDestination: ProviderRow = (material) => material.form === "subscription"
   ? {
     origin: "https://chatgpt.com",
     methods: ["POST", "GET"],
@@ -78,7 +78,7 @@ const openai: ProviderRow = (material) => material.form === "subscription"
  * a different origin the same variable also redirects, so a brokered Cursor
  * turn cannot read that catalog and falls back to its default model.
  */
-const cursor: ProviderRow = () => ({
+const cursorDestination: ProviderRow = () => ({
   origin: "https://api2.cursor.sh",
   methods: ["POST", "GET"],
   pathPrefixes: [
@@ -92,12 +92,12 @@ const cursor: ProviderRow = () => ({
 })
 
 const PROVIDER_ROWS: Record<string, ProviderRow> = {
-  anthropic,
-  "claude-sdk": anthropic,
-  openai,
-  "codex-app-server": openai,
-  cursor,
-  "cursor-sdk": cursor,
+  anthropic: anthropicDestination,
+  "claude-sdk": anthropicDestination,
+  openai: openaiDestination,
+  "codex-app-server": openaiDestination,
+  cursor: cursorDestination,
+  "cursor-sdk": cursorDestination,
 }
 
 /** Whether this provider can be bound at all, asked without reading its secret. */

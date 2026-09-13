@@ -232,9 +232,13 @@ describe("@claxedo/local-server closure", () => {
     // loopback broker its handler. Its one new package edge is
     // @claxedo/egress-broker, the request policy, header injection and
     // runtime-token verification behind that handler; it reaches only `jose`
-    // and `@hono/node-server`, both already here. Measured: 85 modules,
-    // 25 packages.
-    expect(modules.size).toBeLessThanOrEqual(85)
+    // and `@hono/node-server`, both already here. credentials/destinations.ts
+    // is the 86th: the one table naming each provider's vendor host, allowed
+    // methods and paths, and the header shape it accepts, which belongs beside
+    // the broker for the same reason the broker belongs here. It reaches only
+    // the credential registry and the secret-shape reader already present, and
+    // adds no package edge. Measured: 86 modules, 25 packages.
+    expect(modules.size).toBeLessThanOrEqual(86)
     // smol-toml is the hosted MCP installer's configuration validator.
     expect(packages.size).toBeLessThanOrEqual(25)
   })
