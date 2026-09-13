@@ -11,4 +11,52 @@ export const dict = {
   "settings.providers.search.placeholder": "Buscar proveedores…",
   "settings.providers.status.notConnected": "No conectado",
   "settings.providers.tag.apiKey": "Clave de API",
+
+  "provider.connect.context.harness": "{{harness}} se ejecutará con esta cuenta.",
+  "provider.connect.context.engine": "{{engine}} la usará para los modelos de {{vendor}}.",
+  "provider.connect.method.openKeyPage": "Abrir la página de claves",
+  "provider.connect.method.anthropic.subscription.title": "Suscripción de Claude (Pro o Max)",
+  "provider.connect.method.anthropic.subscription.for": "Usa tu plan de Claude.ai y sus límites.",
+  "provider.connect.method.anthropic.subscription.how":
+    "Ejecuta el comando de abajo en una terminal, inicia sesión si te lo pide y pega el token que imprime. Dura alrededor de un año.",
+  "provider.connect.method.anthropic.apiKey.title": "Clave de API de Anthropic",
+  "provider.connect.method.anthropic.apiKey.for": "Pago por uso a través de la consola de Anthropic.",
+  "provider.connect.method.anthropic.apiKey.how":
+    "Crea una clave en «API keys» de la consola de Anthropic y pégala.",
+  "provider.connect.method.openai.plan.title": "Plan de ChatGPT (Plus, Pro o Team)",
+  "provider.connect.method.openai.plan.for": "Usa tu plan de ChatGPT y sus límites semanales.",
+  "provider.connect.method.openai.plan.how":
+    "Inicia sesión con ChatGPT en tu navegador. Claxedo recibe el inicio de sesión y lo conserva.",
+  "provider.connect.method.openai.apiKey.title": "Clave de API de OpenAI",
+  "provider.connect.method.openai.apiKey.for": "Pago por uso a través de la plataforma de OpenAI.",
+  "provider.connect.method.openai.apiKey.how":
+    "Crea una clave en «API keys» de platform.openai.com y pégala.",
+  "provider.connect.method.cursor.apiKey.title": "Clave de API de Cursor",
+  "provider.connect.method.cursor.apiKey.for": "Usa tu plan de Cursor y el uso que incluye.",
+  "provider.connect.method.cursor.apiKey.how":
+    "Crea una clave en «API Keys» del panel de Cursor y pégala.",
+  "provider.connect.method.openrouter.apiKey.title": "Clave de API de OpenRouter",
+  "provider.connect.method.openrouter.apiKey.for": "Una clave, facturada por OpenRouter, para modelos de muchos proveedores.",
+  "provider.connect.method.openrouter.apiKey.how": "Crea una clave en «Keys» de openrouter.ai y pégala.",
+  "provider.connect.method.google.apiKey.title": "Clave de API de Google AI Studio",
+  "provider.connect.method.google.apiKey.for": "Pago por uso de los modelos Gemini a través de Google AI Studio.",
+  "provider.connect.method.google.apiKey.how":
+    "Crea una clave en «API keys» de aistudio.google.com y pégala.",
+  "provider.connect.method.groq.apiKey.title": "Clave de API de Groq",
+  "provider.connect.method.groq.apiKey.for": "Pago por uso a través de la consola de Groq.",
+  "provider.connect.method.groq.apiKey.how": "Crea una clave en «API Keys» de console.groq.com y pégala.",
+  "provider.connect.method.xai.apiKey.title": "Clave de API de xAI",
+  "provider.connect.method.xai.apiKey.for": "Pago por uso a través de la consola de xAI.",
+  "provider.connect.method.xai.apiKey.how": "Crea una clave en «API Keys» de console.x.ai y pégala.",
+  "provider.connect.method.generic.oauth.title": "Iniciar sesión con {{vendor}}",
+  "provider.connect.method.generic.oauth.for": "Usa el plan de tu cuenta de {{vendor}}.",
+  "provider.connect.method.generic.oauth.how":
+    "Inicia sesión con {{vendor}} en tu navegador. Claxedo recibe el inicio de sesión y lo conserva.",
+  "provider.connect.method.generic.token.title": "Token de suscripción de {{vendor}}",
+  "provider.connect.method.generic.token.for": "Usa el plan de tu cuenta de {{vendor}}.",
+  "provider.connect.method.generic.token.how":
+    "Ejecuta el comando de abajo en una terminal y pega el token que imprime.",
+  "provider.connect.method.generic.apiKey.title": "Clave de API de {{vendor}}",
+  "provider.connect.method.generic.apiKey.for": "Pago por uso a través de tu cuenta de {{vendor}}.",
+  "provider.connect.method.generic.apiKey.how": "Crea una clave de API en tu cuenta de {{vendor}} y pégala.",
 }

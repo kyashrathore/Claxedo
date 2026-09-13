@@ -530,19 +530,18 @@ describe("Settings → Providers reports the agent logins on this machine", () =
   test("a harness with no account and no machine login lists nothing and offers Connect", async () => {
     mount()
     await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
-    expect(agentAction("cursor")).toBe("agent-connect")
+    expect(agentAction("cursor")).toBe("agent-add-account")
     expect(accountIds("cursor")).toEqual([])
     // The header is the name and the one button, and says nothing else.
     expect(agentRow("cursor").querySelector("div")?.textContent)
-      .toBe("Cursorsettings.providers.agents.addFirstAccount")
-    expect(agentRow("cursor").querySelector('[data-action="agent-add-account"]')).toBeNull()
+      .toBe("Cursorsettings.providers.agents.addAccount")
   })
 
-  test("a harness on a working stored account offers no action, and the row carries the check", async () => {
+  test("a harness on a working stored account offers only Add an account, and the row carries the check", async () => {
     state.storedCredentials = claudeLogin.map((row) => ({ ...row, health: "ok", last_validated_at: Date.now() }))
     mount()
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
-    expect(agentAction("anthropic")).toBe("")
+    expect(agentAction("anthropic")).toBe("agent-add-account")
     expect(accountRefused("anthropic", "sdk_work")).toBe(false)
     expect(accountDetail("anthropic", "sdk_work")).toContain("settings.providers.live.checkedNow")
     expect(accountRow("anthropic", "sdk_work").textContent).toContain("work@acme.com")
@@ -555,7 +554,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     mount()
     await waitFor(() => expect(accountRefused("anthropic", "cred_bad")).toBe(true))
     // The header says nothing about it; the failing row carries its own repair.
-    expect(agentAction("anthropic")).toBe("")
+    expect(agentAction("anthropic")).toBe("agent-add-account")
     expect(accountRow("anthropic", "cred_bad").querySelector('[data-component="agent-account-refusal"]')?.textContent)
       .toBe("settings.providers.live.authFailed")
     expect(accountRow("anthropic", "cred_bad").querySelector('[data-action="agent-account-remove"]')).not.toBeNull()
@@ -578,7 +577,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       .toContain("settings.providers.agents.machineSource:~/.codex/auth.json")
     expect(accountDetail("openai", "machine"))
       .toContain("settings.providers.live.window:settings.providers.window.weekly|64")
-    expect(agentAction("openai")).toBe("")
+    expect(agentAction("openai")).toBe("agent-add-account")
   })
 
   test("the accounts a harness holds are one radio list, the login in use checked", async () => {
@@ -734,13 +733,13 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     ]
     mount()
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_token"]))
-    expect(agentAction("anthropic")).toBe("")
+    expect(agentAction("anthropic")).toBe("agent-add-account")
 
     rowAction("anthropic", "cred_token", "remove").click()
     rowAction("anthropic", "cred_token", "remove-confirm").click()
 
     await waitFor(() => expect(accountIds("anthropic")).toEqual([]))
-    expect(agentAction("anthropic")).toBe("agent-connect")
+    expect(agentAction("anthropic")).toBe("agent-add-account")
   })
 
   test("Add an account opens the connect card with no row named, and saving rescans", async () => {
@@ -748,7 +747,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
     expect(agentRow("cursor").querySelector('[data-component="provider-connect-card"]')).toBeNull()
 
-    agentRow("cursor").querySelector<HTMLButtonElement>('[data-action="agent-connect"]')!.click()
+    agentRow("cursor").querySelector<HTMLButtonElement>('[data-action="agent-add-account"]')!.click()
 
     const card = agentRow("cursor").querySelector('[data-component="provider-connect-card"]')
     expect(card?.getAttribute("data-credential")).toBeNull()

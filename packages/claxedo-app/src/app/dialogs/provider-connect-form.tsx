@@ -9,12 +9,11 @@
 import type { ClaxedoProviderAuthorization as ProviderAuthAuthorization } from "@/platform/api/claxedo-api-types"
 import type { ClaxedoProviderAuthMethod as ProviderAuthMethod } from "@/platform/api/claxedo-api-types"
 import { Button } from "@opencode-ai/ui/button"
-import { List } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
-import { createMemo, For, Match, Show, Switch } from "solid-js"
+import { createMemo, For, Match, Show, Switch, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Link } from "@/app/controls/link"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
@@ -24,6 +23,7 @@ import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
 import { errorMessage } from "@/lib/server-errors"
 import type { ConnectContext } from "@/platform/identity/harness-catalog"
+import { connectMethodOptions, type ConnectMethodOption } from "@/platform/identity/connect-methods"
 
 export type ProviderConnectFormProps = {
   provider: string
@@ -55,9 +55,9 @@ export type ProviderConnectFormProps = {
   /** Hides the provider name row when the surface already shows a title. */
   hideHeading?: boolean
   /**
-   * How several methods are offered: a list the user picks from once, or a
-   * segmented control that stays on screen so the choice can be changed. The
-   * segmented form starts on the first method; OAuth waits for a click.
+   * Whether one of several methods is preselected. `segmented` opens on the
+   * first so the card is never a dead end; the default waits for a pick, which
+   * is what a dialog opened on "connect something" wants.
    */
   methodPicker?: "list" | "segmented"
 }
@@ -93,7 +93,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   const methods = createMemo(() => codexBundleRequired()
     ? fallback()
     : providerAuthQuery.data?.[props.provider] ?? fallback())
-  const apiMethodIndex = createMemo(() => methods().findIndex((item) => item.type === "api"))
+  const options = createMemo(() => connectMethodOptions(props.provider, methods()))
   const [store, setStore] = createStore({
     methodIndex: undefined as number | undefined,
     authorization: undefined as ProviderAuthAuthorization | undefined,
@@ -104,19 +104,18 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     error: undefined as string | undefined,
     saving: false,
   })
-  // A single method needs no choice; a segmented picker starts on the first.
+  // A single method is not a choice, and a segmented picker opens on the first.
   const selected = createMemo(() => {
-    const list = methods()
-    if (store.methodIndex !== undefined) return list.at(store.methodIndex)
-    if (list.length === 1 || props.methodPicker === "segmented") return list[0]
+    const list = options()
+    if (store.methodIndex !== undefined) return list.find((option) => option.index === store.methodIndex)
+    if (list.length === 1 || props.methodPicker === "segmented") return list.at(0)
     return undefined
   })
-  const selectedIndex = () => store.methodIndex ?? (selected() ? methods().indexOf(selected()!) : undefined)
   const pickMethod = (index: number) => {
     setStore({ methodIndex: index, authorization: undefined, state: undefined, error: undefined, value: "", code: "" })
   }
-  const methodLabel = (value?: { type?: string; label?: string }) =>
-    value?.type === "api" ? language.t("provider.connect.method.apiKey") : value?.label ?? ""
+  const methodCopy = (option: ConnectMethodOption, part: "title" | "for" | "how") =>
+    language.t(`${option.spec.copy}.${part}`, contextVars())
   /** Both a key and a subscription token are pasted; the stored secret's shape tells them apart. */
   const pastes = () => selected()?.type === "api" || selected()?.type === "token"
 
@@ -242,16 +241,13 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     contextKey,
     contextVars,
     language,
-    methods,
-    apiMethodIndex,
+    options,
     selected,
-    methodLabel,
+    methodCopy,
     pastes,
-    selectedIndex,
     pickMethod,
     store,
     setStore,
-    codexBundleRequired,
     startOAuth,
     finishOAuth,
     saveApiKey,
@@ -261,6 +257,16 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
 export function ProviderConnectForm(props: ProviderConnectFormProps) {
   const form = useProviderConnectForm(props)
   const { store, setStore, language } = form
+  const choosing = () => form.options().length > 1
+
+  /** Title, who the method is for, and how to obtain it — the same three lines whether or not it is a choice. */
+  const MethodBody: Component<{ option: ConnectMethodOption }> = (self) => (
+    <>
+      <span class="text-13-medium text-text-strong">{form.methodCopy(self.option, "title")}</span>
+      <span class="text-12-regular text-text-base">{form.methodCopy(self.option, "for")}</span>
+      <span class="text-12-regular text-text-weak">{form.methodCopy(self.option, "how")}</span>
+    </>
+  )
 
   return (
     <div class="flex flex-col gap-6">
@@ -270,38 +276,64 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
           <span class="text-14-medium text-text-strong">{form.subject()}</span>
         </div>
       </Show>
-      <Show when={props.methodPicker === "segmented" && form.methods().length > 1}>
-        <div style={{ display: "inline-flex", padding: "2px", "border-radius": "8px", gap: "2px" }} class="bg-surface-raised-base" role="tablist" data-component="provider-connect-methods">
-          <For each={form.methods()}>
-            {(item, index) => (
-              <button
-                type="button"
-                role="tab"
-                aria-selected={form.selectedIndex() === index()}
-                data-action="provider-connect-method"
-                class="text-13-medium h-7 px-3 rounded-md border"
-                classList={{
-                  "bg-surface-raised-stronger-non-alpha border-border-strong-base text-text-strong": form.selectedIndex() === index(),
-                  "border-transparent text-text-base hover:text-text-strong": form.selectedIndex() !== index(),
-                }}
-                onClick={() => form.pickMethod(index())}
+
+      <div class="flex flex-col gap-3">
+        <div class="text-13-regular text-text-weak">
+          {language.t(form.contextKey("provider.connect.context"), form.contextVars())}
+        </div>
+        <Show when={choosing()}>
+          <div class="text-14-regular text-text-base">
+            {language.t("provider.connect.selectMethod", { vendor: form.contextVars().vendor })}
+          </div>
+        </Show>
+        <div
+          class="flex flex-col gap-2"
+          data-component="provider-connect-methods"
+          role={choosing() ? "radiogroup" : undefined}
+        >
+          <For each={form.options()}>
+            {(option) => (
+              <Show
+                when={choosing()}
+                fallback={(
+                  <div
+                    class="flex flex-col gap-1 rounded-md border border-border-weak-base p-3 text-left"
+                    data-component="provider-connect-method"
+                    data-method-type={option.type}
+                  >
+                    <MethodBody option={option} />
+                  </div>
+                )}
               >
-                {form.methodLabel(item)}
-              </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={form.selected()?.index === option.index}
+                  data-action="provider-connect-method"
+                  data-method-type={option.type}
+                  class="flex flex-col gap-1 rounded-md border p-3 text-left"
+                  classList={{
+                    "bg-surface-raised-base border-border-strong-base": form.selected()?.index === option.index,
+                    "border-border-weak-base hover:border-border-strong-base": form.selected()?.index !== option.index,
+                  }}
+                  onClick={() => form.pickMethod(option.index)}
+                >
+                  <MethodBody option={option} />
+                </button>
+              </Show>
             )}
           </For>
         </div>
-      </Show>
+      </div>
+
       <Switch>
-        <Match when={form.pastes() || form.apiMethodIndex() === 0}>
+        <Match when={form.pastes()}>
           <form onSubmit={form.saveApiKey} class="flex flex-col items-start gap-4" data-method={form.selected()?.type ?? "api"}>
-            <div class="text-14-regular text-text-base">
-              {form.selected()?.type === "token"
-                ? language.t("provider.connect.token.description")
-                : language.t(form.contextKey("provider.connect.apiKey.description"), form.contextVars())}
-            </div>
-            <Show when={form.selected()?.type === "token" ? form.selected()?.command : undefined}>
+            <Show when={form.selected()?.command}>
               {(command) => <TextField label={language.t("provider.connect.token.command")} value={command()} readOnly copyable />}
+            </Show>
+            <Show when={form.selected()?.spec.url}>
+              {(url) => <Link href={url()}>{language.t("provider.connect.method.openKeyPage")}</Link>}
             </Show>
             <TextField
               autofocus
@@ -394,65 +426,21 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
         <Match when={store.state === "error"}>
           <div class="text-14-regular text-icon-critical-base">{store.error}</div>
         </Match>
-        <Match when={props.methodPicker === "segmented" && form.selected()?.type === "oauth"}>
-          <div class="flex flex-col items-start gap-4">
-            <p class="text-14-regular text-text-base max-w-md text-pretty">
-              {language.t(form.contextKey("provider.connect.oauth.description"), { method: form.selected()?.label ?? "", ...form.contextVars() })}
-            </p>
-            <div class="flex items-center gap-3">
-              <Button class="w-auto" type="button" size="large" variant="primary" disabled={store.saving} data-action="provider-connect-oauth-start" onClick={() => void form.startOAuth(form.selectedIndex() ?? 0)}>
-                {language.t("provider.connect.oauth.start")}
-              </Button>
-              <span class="text-12-regular text-text-weak">{language.t("provider.connect.oauth.hint")}</span>
-            </div>
-          </div>
-        </Match>
-        <Match when={form.codexBundleRequired()}>
-          <div class="flex flex-col items-start gap-4">
-            <div class="flex flex-col gap-1.5">
-              <div class="text-14-medium text-text-strong text-balance">
-                Use your ChatGPT account
-              </div>
-              <div class="max-w-md text-14-regular text-text-base text-pretty">
-                Sign in to use your ChatGPT Plus or Pro Codex access with Pi. Claxedo stores the resulting token in its credential vault.
-              </div>
-            </div>
+        <Match when={form.selected()?.type === "oauth"}>
+          <div class="flex items-center gap-3">
             <Button
-              class="w-auto transition-transform duration-150 ease-out active:scale-[0.96]"
+              class="w-auto"
               type="button"
               size="large"
               variant="primary"
               disabled={store.saving}
-              onClick={() => void form.startOAuth(0)}
+              data-action="provider-connect-oauth-start"
+              onClick={() => void form.startOAuth(form.selected()!.index)}
             >
-              Sign in with ChatGPT
+              {language.t("provider.connect.oauth.start")}
             </Button>
+            <span class="text-12-regular text-text-weak">{language.t("provider.connect.oauth.hint")}</span>
           </div>
-        </Match>
-        <Match when={true}>
-          <div class="text-14-regular text-text-base">
-            {language.t("provider.connect.selectMethod", { vendor: form.contextVars().vendor })}
-          </div>
-          <List
-            items={form.methods}
-            // A method the catalog did not name still needs a key, and the two
-            // kinds are never listed twice.
-            key={(item) => item?.label ?? item?.type ?? ""}
-            onSelect={(item, index) => {
-              if (!item) return
-              if (item.type === "oauth") {
-                void form.startOAuth(index)
-                return
-              }
-              setStore("methodIndex", index)
-            }}
-          >
-            {(item) => (
-              <div class="w-full flex items-center gap-x-2">
-                <span>{form.methodLabel(item)}</span>
-              </div>
-            )}
-          </List>
         </Match>
       </Switch>
     </div>

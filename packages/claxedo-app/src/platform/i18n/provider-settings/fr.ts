@@ -11,4 +11,52 @@ export const dict = {
   "settings.providers.search.placeholder": "Rechercher des fournisseurs…",
   "settings.providers.status.notConnected": "Non connecté",
   "settings.providers.tag.apiKey": "Clé API",
+
+  "provider.connect.context.harness": "{{harness}} s'exécutera sur ce compte.",
+  "provider.connect.context.engine": "{{engine}} l'utilisera pour les modèles {{vendor}}.",
+  "provider.connect.method.openKeyPage": "Ouvrir la page des clés",
+  "provider.connect.method.anthropic.subscription.title": "Abonnement Claude (Pro ou Max)",
+  "provider.connect.method.anthropic.subscription.for": "Utilise votre forfait Claude.ai et ses limites.",
+  "provider.connect.method.anthropic.subscription.how":
+    "Exécutez la commande ci-dessous dans un terminal, connectez-vous si nécessaire et collez le jeton affiché. Il dure environ un an.",
+  "provider.connect.method.anthropic.apiKey.title": "Clé API Anthropic",
+  "provider.connect.method.anthropic.apiKey.for": "Paiement à l'usage via la console Anthropic.",
+  "provider.connect.method.anthropic.apiKey.how":
+    "Créez une clé dans « API keys » de la console Anthropic, puis collez-la.",
+  "provider.connect.method.openai.plan.title": "Forfait ChatGPT (Plus, Pro ou Team)",
+  "provider.connect.method.openai.plan.for": "Utilise votre forfait ChatGPT et ses limites hebdomadaires.",
+  "provider.connect.method.openai.plan.how":
+    "Connectez-vous avec ChatGPT dans votre navigateur. Claxedo reçoit la connexion et la conserve.",
+  "provider.connect.method.openai.apiKey.title": "Clé API OpenAI",
+  "provider.connect.method.openai.apiKey.for": "Paiement à l'usage via la plateforme OpenAI.",
+  "provider.connect.method.openai.apiKey.how":
+    "Créez une clé dans « API keys » sur platform.openai.com, puis collez-la.",
+  "provider.connect.method.cursor.apiKey.title": "Clé API Cursor",
+  "provider.connect.method.cursor.apiKey.for": "Utilise votre forfait Cursor et l'usage qu'il inclut.",
+  "provider.connect.method.cursor.apiKey.how":
+    "Créez une clé dans « API Keys » du tableau de bord Cursor, puis collez-la.",
+  "provider.connect.method.openrouter.apiKey.title": "Clé API OpenRouter",
+  "provider.connect.method.openrouter.apiKey.for": "Une seule clé, facturée par OpenRouter, pour les modèles de nombreux fournisseurs.",
+  "provider.connect.method.openrouter.apiKey.how": "Créez une clé dans « Keys » sur openrouter.ai, puis collez-la.",
+  "provider.connect.method.google.apiKey.title": "Clé API Google AI Studio",
+  "provider.connect.method.google.apiKey.for": "Paiement à l'usage des modèles Gemini via Google AI Studio.",
+  "provider.connect.method.google.apiKey.how":
+    "Créez une clé dans « API keys » sur aistudio.google.com, puis collez-la.",
+  "provider.connect.method.groq.apiKey.title": "Clé API Groq",
+  "provider.connect.method.groq.apiKey.for": "Paiement à l'usage via la console Groq.",
+  "provider.connect.method.groq.apiKey.how": "Créez une clé dans « API Keys » sur console.groq.com, puis collez-la.",
+  "provider.connect.method.xai.apiKey.title": "Clé API xAI",
+  "provider.connect.method.xai.apiKey.for": "Paiement à l'usage via la console xAI.",
+  "provider.connect.method.xai.apiKey.how": "Créez une clé dans « API Keys » sur console.x.ai, puis collez-la.",
+  "provider.connect.method.generic.oauth.title": "Se connecter avec {{vendor}}",
+  "provider.connect.method.generic.oauth.for": "Utilise le forfait de votre compte {{vendor}}.",
+  "provider.connect.method.generic.oauth.how":
+    "Connectez-vous avec {{vendor}} dans votre navigateur. Claxedo reçoit la connexion et la conserve.",
+  "provider.connect.method.generic.token.title": "Jeton d'abonnement {{vendor}}",
+  "provider.connect.method.generic.token.for": "Utilise le forfait de votre compte {{vendor}}.",
+  "provider.connect.method.generic.token.how":
+    "Exécutez la commande ci-dessous dans un terminal et collez le jeton affiché.",
+  "provider.connect.method.generic.apiKey.title": "Clé API {{vendor}}",
+  "provider.connect.method.generic.apiKey.for": "Paiement à l'usage via votre compte {{vendor}}.",
+  "provider.connect.method.generic.apiKey.how": "Créez une clé API dans votre compte {{vendor}}, puis collez-la.",
 }

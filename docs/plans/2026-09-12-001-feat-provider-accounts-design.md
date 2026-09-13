@@ -273,8 +273,8 @@ miniature — it read as a second account — so there is none.
 - **A refused account** (rejected, expired, no billing, not working) is drawn as
   a **ring on its own radio** in the danger token, with the verdict in the row's
   tooltip and in a screen-reader-only description. Nothing else: no red text, no
-  sentence. Where it is the account in use, its action is the header's
-  Reconnect; where it is not, it is an account to forget like any other.
+  sentence. Its repair is a Reconnect on its own row, whether or not it is the
+  account in use; the header says nothing about it.
 - **"This computer's login" is the last entry** whenever the scan found one, and
   its origin is its second line. It is last by construction: every stored
   account is a choice the user made, and this login is the standing fallback
@@ -289,16 +289,24 @@ miniature — it read as a second account — so there is none.
   account reads as checked without spending another request against the user's
   own quota.
 - **Per-row actions arrive on hover or keyboard focus**, right-aligned icon
-  buttons with accessible names: **Check** (reload) and **Remove** (trash). A
-  refused row that is the account in use shows Check but no Remove, because the
-  header's Reconnect is its action; a refused row the harness is not running on
-  keeps Remove, or nothing could ever forget it.
+  buttons with accessible names: **Check** (reload) and **Remove** (trash).
+  A refused row carries its Reconnect beside them, so a rejected account can be
+  repaired or forgotten from the row it is on.
   Remove asks inline before it forgets, and the confirming row holds its actions
   on screen so the question cannot vanish under the pointer.
-- **"+ Add another account"** ("+ Add an account" when nothing is set up) is the
-  last thing under the harness, indented to the label column rather than the
-  radio column, styled as a link, and opens the same inline connect card.
-  Reconnect opens that card in reconnect mode against one row (rule 8).
+- **"Add an account"** is a text button in the harness header, right-aligned,
+  shown whether or not the harness already has accounts, and it opens the inline
+  connect card. It is the header's only action; nothing is nested under the
+  rows. Reconnect opens that card in reconnect mode against one row (rule 8).
+- **The connect card explains the methods before it asks for anything.** Each of
+  the vendor's sign-in methods is an option with three lines — what it is, who
+  it is for, and how to obtain it — and picking one reveals its field with the
+  explanation still on screen. A method minted in a terminal shows the command
+  in a copyable field; a method that needs a key from the vendor links its key
+  page, opened outside the app. `platform/identity/connect-methods.ts` is the
+  single owner of that table: per vendor, the methods in display order, their
+  i18n keys, the command, and the URL. A vendor it does not carry is explained
+  in generic words naming the vendor, never a registry id.
 - **The scan is automatic**: it runs when the section mounts and after every
   write, so the rows are derived from one read. The section header reads
   "Scanned just now · Rescan".

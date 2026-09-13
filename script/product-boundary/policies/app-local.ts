@@ -352,7 +352,13 @@ export const appLocal: Policy = {
   // heard of it; both the card and the agent rows now resolve through here, and
   // it reaches nothing but the harness-id union already in this closure.
   // No new package edge. Measured 1016 / 38.
-  ceilings: { modules: 1016, packages: 38 },
+  // +1 module (2026-09-13): platform/identity/connect-methods.ts, the single
+  // owner of a vendor's sign-in methods — their display order, the words that
+  // explain each one, the command that mints a token and the vendor's key page.
+  // The connect card reads it beside harness-catalog.ts, already in this
+  // closure, and it imports nothing.
+  // No new package edge. Measured 1017 / 38.
+  ceilings: { modules: 1017, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

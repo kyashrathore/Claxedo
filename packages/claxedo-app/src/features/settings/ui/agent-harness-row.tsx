@@ -29,10 +29,10 @@ export type AgentAccount = {
  * One agent harness: what it can run on, and the way to add another.
  *
  * The rows carry everything — which login runs next, which one the provider
- * refused, and what to do about it — so the header is the name alone, plus the
- * one button there is nothing else to say with: a harness with no account at
- * all. A refused account is a ring on its own radio and a Reconnect on its own
- * row; nothing else about it is coloured or worded.
+ * refused, and what to do about it — so the header is the name and the one
+ * action no row can offer: adding an account. A refused account is a ring on
+ * its own radio and a Reconnect on its own row; nothing else about it is
+ * coloured or worded.
  */
 export const AgentHarnessRow: Component<{
   id: string
@@ -138,14 +138,14 @@ export const AgentHarnessRow: Component<{
           <span class="text-14-medium text-text-strong">{props.name}</span>
         </div>
         <div class="flex shrink-0 items-center gap-2" data-component="provider-actions">
-          <Show when={connecting() === undefined && props.accounts.length === 0}>
+          <Show when={connecting() === undefined}>
             <Button
               size="large"
               variant="ghost"
-              data-action="agent-connect"
+              data-action="agent-add-account"
               onClick={() => setConnecting({})}
             >
-              {language.t("settings.providers.agents.addFirstAccount")}
+              {language.t("settings.providers.agents.addAccount")}
             </Button>
           </Show>
           <Show when={connecting()}>
@@ -206,19 +206,6 @@ export const AgentHarnessRow: Component<{
               )}
             </For>
           </RadioList>
-        </Show>
-        {/* Indented past the radio column so the link starts where the labels do. */}
-        <Show when={props.accounts.length > 0}>
-          <div class="py-1 pl-[22px]">
-            <button
-              type="button"
-              class="border-none bg-transparent p-0 text-13-regular text-text-interactive-base"
-              data-action="agent-add-account"
-              onClick={() => setConnecting({})}
-            >
-              {language.t("settings.providers.agents.addAnotherAccount")}
-            </button>
-          </div>
         </Show>
       </div>
       <Show when={connecting()}>

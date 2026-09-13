@@ -72,33 +72,32 @@ function click(key: string, action: string) {
 }
 
 describe("AgentHarnessRow header", () => {
-  test("is the name and nothing else: no sentence, no dot, no button", () => {
+  test("is the name and the one action no row can offer: no sentence, no dot", () => {
     row()
 
     const header = document.querySelector('[data-provider] > div')!
-    expect(header.textContent).toBe("Claude Code")
-    expect(header.querySelector("button")).toBeNull()
+    expect(header.textContent).toBe("Claude Codesettings.providers.agents.addAccount")
+    expect([...header.querySelectorAll("button")].map((button) => button.dataset.action))
+      .toEqual(["agent-add-account"])
   })
 
-  test("a harness with no account at all offers Add an account, and nests no link under the empty list", () => {
+  test("a harness with no account at all offers the same header button, and nests nothing under the empty list", () => {
     row({ accounts: [] })
 
     const actions = document.querySelectorAll('[data-component="provider-actions"] button')
     expect(actions).toHaveLength(1)
-    expect(actions[0].textContent).toBe("settings.providers.agents.addFirstAccount")
-    expect(document.querySelector('[data-action="agent-add-account"]')).toBeNull()
+    expect(actions[0].textContent).toBe("settings.providers.agents.addAccount")
+    expect(document.querySelector('[data-component="agent-accounts"] button')).toBeNull()
 
     fireEvent.click(actions[0])
 
     expect(screen.getByTestId("connect-form").dataset.credential).toBe("")
   })
 
-  test("a harness with an account offers no header button, and nests the add link under the rows", () => {
+  test("a harness with accounts nests no add link under the rows", () => {
     row()
 
-    expect(document.querySelector('[data-component="provider-actions"] button')).toBeNull()
-    expect(document.querySelector('[data-action="agent-add-account"]')?.textContent)
-      .toBe("settings.providers.agents.addAnotherAccount")
+    expect(document.querySelector('[data-component="agent-accounts"] [data-action="agent-add-account"]')).toBeNull()
   })
 })
 
@@ -162,7 +161,8 @@ describe("AgentHarnessRow accounts", () => {
   test("Reconnect belongs to the row the provider refused, never to the header", () => {
     row({ accounts: [account({ refused: "settings.providers.live.authFailed" })] })
 
-    expect(document.querySelector('[data-component="provider-actions"] button')).toBeNull()
+    expect([...document.querySelectorAll<HTMLElement>('[data-component="provider-actions"] button')]
+      .map((button) => button.dataset.action)).toEqual(["agent-add-account"])
     const reconnect = entry("cred_1").querySelector<HTMLElement>('[data-action="agent-reconnect"]')!
     expect(reconnect.textContent).toBe("settings.providers.agents.reconnectAccount")
 
@@ -230,12 +230,9 @@ describe("AgentHarnessRow accounts", () => {
     expect(removed).toEqual([["cred_1", "acp_1"]])
   })
 
-  test("the add link is last, indented to the labels rather than to the radios", () => {
+  test("adding an account names no row, whichever accounts are already listed", () => {
     row({ accounts: [account(), machineLogin()] })
-    const add = screen.getByRole("button", { name: "settings.providers.agents.addAnotherAccount" })
-    const list = document.querySelector('[data-component="agent-accounts"]')!
-    expect(list.lastElementChild?.contains(add)).toBe(true)
-    expect(list.lastElementChild?.className).toContain("pl-[22px]")
+    const add = screen.getByRole("button", { name: "settings.providers.agents.addAccount" })
 
     fireEvent.click(add)
 

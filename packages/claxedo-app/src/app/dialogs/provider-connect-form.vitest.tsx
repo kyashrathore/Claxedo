@@ -1,21 +1,45 @@
-/** The connect form offers every method the server names and pastes a token the same way as a key. */
+/** The connect form explains each of a vendor's sign-in methods before it asks for anything. */
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 
 const state = vi.hoisted(() => ({
   methods: [] as Array<{ type: "oauth" | "api" | "token"; label: string; command?: string }>,
   puts: [] as Array<{ input: unknown; body: Record<string, unknown> }>,
+  authorized: [] as Array<{ providerID: string; method: number }>,
+  opened: [] as string[],
 }))
 
 vi.mock("@/app/providers/global-sdk/provider", () => ({
-  useGlobalSDK: () => ({ url: "http://127.0.0.1:2593", client: { provider: { oauth: { authorize: async () => ({ data: undefined }), callback: async () => undefined } } } }),
+  useGlobalSDK: () => ({
+    url: "http://127.0.0.1:2593",
+    client: {
+      provider: {
+        oauth: {
+          authorize: async (input: { providerID: string; method: number }) => {
+            state.authorized.push(input)
+            return { data: undefined }
+          },
+          callback: async () => undefined,
+        },
+      },
+    },
+  }),
 }))
 vi.mock("@/app/providers/use-providers", () => ({
   useProviders: () => ({
     all: () => new Map([["claude-sdk", { id: "claude-sdk", name: "Claude", source: "api", env: [], options: {}, models: {} }]]),
     load: async () => undefined,
   }),
-  useProviderAuth: () => ({ get data() { return { "claude-sdk": state.methods } } }),
+  useProviderAuth: () => ({
+    get data() {
+      return {
+        "claude-sdk": state.methods,
+        "codex-app-server": state.methods,
+        "anthropic": state.methods,
+        "moonshot": state.methods,
+      }
+    },
+  }),
 }))
 vi.mock("@/platform/api/credential-request", () => ({
   claxedoCredentialRequest: async (input: unknown, init?: RequestInit) => {
@@ -26,6 +50,9 @@ vi.mock("@/platform/api/credential-request", () => ({
 vi.mock("@/platform/query/query-client", () => ({ queryClient: { invalidateQueries: async () => undefined } }))
 vi.mock("@opencode-ai/ui/toast", () => ({ showToast: () => undefined }))
 vi.mock("@opencode-ai/ui/provider-icon", () => ({ ProviderIcon: () => null }))
+vi.mock("@/platform/runtime/platform-provider", () => ({
+  usePlatform: () => ({ openLink: (href: string) => state.opened.push(href) }),
+}))
 vi.mock("@/platform/i18n/provider", () => ({
   useLanguage: () => ({
     t: (key: string, vars?: Record<string, string>) => (vars ? `${key}:${Object.values(vars).join("|")}` : key),
@@ -39,27 +66,163 @@ const { engineConnectContext, harnessConnectContext } = await import("@/platform
 afterEach(() => {
   cleanup()
   state.puts.length = 0
+  state.authorized.length = 0
+  state.opened.length = 0
 })
 
-describe("ProviderConnectForm", () => {
-  test("a subscription token is offered beside the API key, with the command that mints it", async () => {
+/** The card's option titles, in the order a reader sees them. */
+function optionTitles() {
+  return [...document.querySelectorAll('[data-component="provider-connect-methods"] > *')]
+    .map((node) => node.firstElementChild?.textContent ?? "")
+}
+
+function option(type: string) {
+  return document.querySelector<HTMLElement>(`[data-action="provider-connect-method"][data-method-type="${type}"]`)!
+}
+
+describe("ProviderConnectForm method chooser", () => {
+  test("Anthropic offers the subscription token first and the console key second, each explained", async () => {
     state.methods = [
       { type: "token", label: "Claude subscription token", command: "claude setup-token" },
       { type: "api", label: "API Key" },
     ]
     render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
-    await waitFor(() => expect(screen.getByText("Claude subscription token")).toBeInTheDocument())
-    expect(screen.getByText("provider.connect.method.apiKey")).toBeInTheDocument()
 
-    fireEvent.click(screen.getByText("Claude subscription token"))
+    await waitFor(() => expect(optionTitles()).toHaveLength(2))
+    expect(optionTitles()).toEqual([
+      "provider.connect.method.anthropic.subscription.title:Claude Code|Anthropic",
+      "provider.connect.method.anthropic.apiKey.title:Claude Code|Anthropic",
+    ])
+    const body = document.body.textContent ?? ""
+    expect(body).toContain("provider.connect.method.anthropic.subscription.for:Claude Code|Anthropic")
+    expect(body).toContain("provider.connect.method.anthropic.subscription.how:Claude Code|Anthropic")
+    expect(body).toContain("provider.connect.method.anthropic.apiKey.for:Claude Code|Anthropic")
+    expect(body).toContain("provider.connect.method.anthropic.apiKey.how:Claude Code|Anthropic")
+    // Nothing is picked yet, so there is no field to fill in.
+    expect(document.querySelector("form")).toBeNull()
+  })
+
+  test("picking the subscription token shows the command that mints it and keeps the explanation on screen", async () => {
+    state.methods = [
+      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
+      { type: "api", label: "API Key" },
+    ]
+    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
+    await waitFor(() => expect(optionTitles()).toHaveLength(2))
+
+    fireEvent.click(option("token"))
+
     await waitFor(() => expect(document.querySelector('form[data-method="token"]')).not.toBeNull())
-    expect(screen.getByText("provider.connect.token.description")).toBeInTheDocument()
     expect(screen.getByDisplayValue("claude setup-token")).toBeInTheDocument()
+    expect(option("token").getAttribute("aria-checked")).toBe("true")
+    expect(option("api").getAttribute("aria-checked")).toBe("false")
+    expect(document.body.textContent)
+      .toContain("provider.connect.method.anthropic.subscription.how:Claude Code|Anthropic")
+    // The key page belongs to the other method, which is not the one selected.
+    expect(screen.queryByText("provider.connect.method.openKeyPage")).toBeNull()
+  })
+
+  test("picking the API key shows the vendor's key page, opened outside the app", async () => {
+    state.methods = [
+      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
+      { type: "api", label: "API Key" },
+    ]
+    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
+    await waitFor(() => expect(optionTitles()).toHaveLength(2))
+
+    fireEvent.click(option("api"))
+
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+    expect(screen.queryByDisplayValue("claude setup-token")).toBeNull()
+    fireEvent.click(screen.getByText("provider.connect.method.openKeyPage"))
+    expect(state.opened).toEqual(["https://platform.claude.com/settings/keys"])
+  })
+
+  test("OpenAI offers the ChatGPT plan first, and signing in authorizes the method the server indexed", async () => {
+    // The server lists the key first; the card leads with the plan, so the
+    // index the plan card signs in with is not the index it is drawn at.
+    state.methods = [
+      { type: "api", label: "API Key" },
+      { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
+    ]
+    render(() => <ProviderConnectForm provider="codex-app-server" context={harnessConnectContext("codex")} harness="codex" hideHeading />)
+    await waitFor(() => expect(optionTitles()).toHaveLength(2))
+
+    expect(optionTitles()).toEqual([
+      "provider.connect.method.openai.plan.title:Codex|OpenAI",
+      "provider.connect.method.openai.apiKey.title:Codex|OpenAI",
+    ])
+
+    fireEvent.click(option("oauth"))
+    await waitFor(() => expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).not.toBeNull())
+    fireEvent.click(document.querySelector<HTMLElement>('[data-action="provider-connect-oauth-start"]')!)
+
+    await waitFor(() => expect(state.authorized).toHaveLength(1))
+    expect(state.authorized[0]).toEqual({ providerID: "codex-app-server", method: 1 })
+  })
+
+  test("a vendor the catalog has never heard of is explained in its own name", async () => {
+    state.methods = [{ type: "api", label: "API Key" }]
+    render(() => <ProviderConnectForm provider="moonshot" context={engineConnectContext("pi", "Moonshot")} harness="pi" hideHeading />)
+
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+    expect(optionTitles()).toEqual(["provider.connect.method.generic.apiKey.title:Pi|Moonshot"])
+    expect(document.body.textContent).toContain("provider.connect.method.generic.apiKey.how:Pi|Moonshot")
+    // One method is not a choice, so it is stated rather than offered.
+    expect(document.querySelector('[data-action="provider-connect-method"]')).toBeNull()
+    expect(document.querySelector('[data-component="provider-connect-methods"]')?.getAttribute("role")).toBeNull()
+  })
+
+  test("the card says what connecting will do, in the words of the surface that opened it", async () => {
+    state.methods = [{ type: "api", label: "API Key" }]
+    const view = render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+    expect(document.body.textContent).toContain("provider.connect.context.harness:Claude Code|Anthropic")
+    expect(document.body.textContent).not.toContain("claude-sdk")
+    view.unmount()
+
+    render(() => <ProviderConnectForm provider="anthropic" context={engineConnectContext("pi", "Anthropic")} harness="pi" hideHeading />)
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+    expect(document.body.textContent).toContain("provider.connect.context.engine:Pi|Anthropic")
+  })
+
+  test("a segmented picker opens on the first method rather than asking twice", async () => {
+    state.methods = [
+      { type: "api", label: "API Key" },
+      { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
+    ]
+    render(() => (
+      <ProviderConnectForm provider="codex-app-server" context={harnessConnectContext("codex")} harness="codex" hideHeading methodPicker="segmented" />
+    ))
+
+    await waitFor(() => expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).not.toBeNull())
+    expect(option("oauth").getAttribute("aria-checked")).toBe("true")
+    expect(document.querySelector("form")).toBeNull()
+    expect(state.authorized).toEqual([])
+
+    fireEvent.click(option("api"))
+
+    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
+    expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).toBeNull()
+  })
+})
+
+describe("ProviderConnectForm storage", () => {
+  test("a pasted subscription token is stored under the name the user gave it", async () => {
+    state.methods = [
+      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
+      { type: "api", label: "API Key" },
+    ]
+    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
+    await waitFor(() => expect(optionTitles()).toHaveLength(2))
+    fireEvent.click(option("token"))
+    await waitFor(() => expect(document.querySelector('form[data-method="token"]')).not.toBeNull())
 
     const input = document.querySelector<HTMLInputElement>('input[name="apiKey"]')!
     fireEvent.input(input, { target: { value: "sk-ant-oat01-example" } })
     fireEvent.input(document.querySelector<HTMLInputElement>('input[name="accountLabel"]')!, { target: { value: "work@acme.com" } })
     fireEvent.submit(input.closest("form")!)
+
     await waitFor(() => expect(state.puts).toHaveLength(1))
     expect(state.puts[0].body).toMatchObject({ provider_id: "claude-sdk", kind: "api_key", secret: "sk-ant-oat01-example", label: "work@acme.com" })
   })
@@ -91,53 +254,5 @@ describe("ProviderConnectForm", () => {
     await waitFor(() => expect(state.puts).toHaveLength(1))
     expect(state.puts[0].input).toEqual({ credentialId: "cred_bad", action: "reconnect" })
     expect(state.puts[0].body).toEqual({ secret: "sk-ant-fresh" })
-  })
-
-  test("the card names the harness and the vendor behind its login, never the id it is stored under", async () => {
-    state.methods = [{ type: "api", label: "API Key" }]
-    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
-    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
-
-    expect(screen.getByText("provider.connect.apiKey.description.harness:Claude Code|Anthropic")).toBeInTheDocument()
-    expect(document.body.textContent).toContain("provider.connect.apiKey.label:Anthropic")
-    expect(document.body.textContent).not.toContain("claude-sdk")
-  })
-
-  test("a vendor being made available inside an engine is a different sentence", async () => {
-    state.methods = [{ type: "api", label: "API Key" }]
-    render(() => <ProviderConnectForm provider="anthropic" context={engineConnectContext("pi", "Anthropic")} harness="pi" hideHeading />)
-    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
-
-    expect(screen.getByText("provider.connect.apiKey.description.engine:Pi|Anthropic")).toBeInTheDocument()
-  })
-
-  test("a harness with several methods lists them all instead of assuming a key", async () => {
-    state.methods = [
-      { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
-      { type: "api", label: "API Key" },
-    ]
-    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("codex")} harness="codex" hideHeading />)
-    await waitFor(() => expect(screen.getByText("ChatGPT Pro/Plus (headless)")).toBeInTheDocument())
-    expect(document.querySelector("form")).toBeNull()
-  })
-})
-
-describe("ProviderConnectForm with a segmented picker", () => {
-  test("keeps every method on screen, starts on the first, and waits for a click before signing in", async () => {
-    state.methods = [
-      { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
-      { type: "api", label: "API Key" },
-    ]
-    render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("codex")} harness="codex" hideHeading methodPicker="segmented" />)
-    await waitFor(() => expect(document.querySelectorAll('[data-action="provider-connect-method"]')).toHaveLength(2))
-    expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).not.toBeNull()
-    expect(document.querySelector("form")).toBeNull()
-
-    const segments = document.querySelectorAll<HTMLButtonElement>('[data-action="provider-connect-method"]')
-    expect(segments[0].getAttribute("aria-selected")).toBe("true")
-    fireEvent.click(segments[1])
-    await waitFor(() => expect(document.querySelector('form[data-method="api"]')).not.toBeNull())
-    expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).toBeNull()
-    expect(segments[1].getAttribute("aria-selected")).toBe("true")
   })
 })
