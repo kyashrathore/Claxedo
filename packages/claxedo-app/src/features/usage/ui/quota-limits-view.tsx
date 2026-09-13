@@ -17,7 +17,7 @@ import {
   type AccountReach,
 } from "@/ui/controls/account-status"
 import { formatCompactAge } from "@/lib/relative-time"
-import { percentText, readPercent } from "@/lib/percent"
+import { readPercent } from "@/lib/percent"
 
 /**
  * A word the card shows. `key` is a dictionary entry; `text` is a string only
@@ -30,7 +30,7 @@ type Bar = { name: Words; percent: number; resetsAt: number | null }
 type Card = {
   key: string
   harness: string
-  label: string
+  label: Words
   plan?: string
   inUse: boolean
   /** Where the credential authority says a turn on this account can run. */
@@ -54,15 +54,6 @@ function windowName(name: string): Words {
   return key === undefined ? { text: name.replaceAll("_", " ") } : { key }
 }
 
-function formatReset(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return undefined
-  const minutes = Math.max(0, Math.round((value - Date.now()) / 60_000))
-  if (minutes === 0) return "now"
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.round(minutes / 60)
-  return hours < 24 ? `${hours}h` : `${Math.round(hours / 24)}d`
-}
-
 function card(account: QuotaAccount, index: number): Card {
   const refusedKey = account.health !== undefined && isRefusal(account.health)
     ? VERDICT_KEY[account.health]
@@ -72,7 +63,9 @@ function card(account: QuotaAccount, index: number): Card {
     harness: account.harness,
     // A harness login its CLI reports without an address is the only account
     // that names nothing, and it is always this computer's own.
-    label: account.label ?? "This computer's login",
+    label: account.label === undefined
+      ? { key: "settings.providers.agents.machineLogin" }
+      : { text: account.label },
     ...(account.plan === undefined ? {} : { plan: account.plan }),
     inUse: account.inUse,
     reach: accountReach(readAccountDelivery(account)),
@@ -158,6 +151,15 @@ export function QuotaLimitsView(props: {
 }) {
   const language = useLanguage()
   const say = (words: Words) => ("key" in words ? language.t(words.key) : words.text)
+  /**
+   * How long until a window comes back, in the one unit the line has room for.
+   * Shorter than the smallest bucket, and already past it, are the same news.
+   */
+  const untilReset = (value: number | null | undefined) => {
+    if (value === null || value === undefined || !Number.isFinite(value)) return undefined
+    if (value <= Date.now()) return language.t("usage.quota.resetNow")
+    return formatCompactAge(value) ?? language.t("usage.quota.resetNow")
+  }
   const groups = createMemo(() => accountCards(props.snapshot))
   const summaryWords = createMemo(() => {
     const { constrainedWindow, remainingPercent, nearestReset, account } = quotaSummary(props.snapshot)
@@ -167,9 +169,9 @@ export function QuotaLimitsView(props: {
       : language.t("usage.quota.summaryForAccount", {
         percent: readPercent(remainingPercent),
         window: say(constrainedWindow),
-        account,
+        account: say(account),
       })
-    const reset = formatReset(nearestReset)
+    const reset = untilReset(nearestReset)
     return reset === undefined ? summary : language.t("usage.quota.summaryReset", { summary, reset })
   })
   /** Whether a workspace in a cloud sandbox can run on this account at all. */
@@ -189,14 +191,17 @@ export function QuotaLimitsView(props: {
   return (
     <section class="usage-quota" aria-labelledby="usage-quota-title">
       <div class="usage-section-heading">
-        <div><span class="usage-kicker">From your connected accounts</span><h3 id="usage-quota-title">Quota windows</h3></div>
+        <div>
+          <span class="usage-kicker">{language.t("usage.quota.kicker")}</span>
+          <h3 id="usage-quota-title">{language.t("usage.quota.title")}</h3>
+        </div>
       </div>
       <Show when={summaryWords()}>
         {(words) => <p class="usage-quota-summary">{words()}</p>}
       </Show>
       <Show
         when={groups().length}
-        fallback={<div class="usage-chart-empty">{props.error ?? "No connected account reports a plan here."}</div>}
+        fallback={<div class="usage-chart-empty">{props.error ?? language.t("usage.quota.empty")}</div>}
       >
         <For each={groups()}>{(group) => (
           <section class="usage-quota-harness" aria-label={say(group.name)}>
@@ -214,9 +219,11 @@ export function QuotaLimitsView(props: {
                   data-refused={entry.refusedKey === undefined ? undefined : "true"}
                 >
                   <header>
-                    <strong>{entry.label}</strong>
+                    <strong>{say(entry.label)}</strong>
                     <Show when={entry.plan}><span>{entry.plan}</span></Show>
-                    <Show when={entry.inUse}><span class="usage-quota-in-use">In use</span></Show>
+                    <Show when={entry.inUse}>
+                      <span class="usage-quota-in-use">{language.t("usage.quota.inUse")}</span>
+                    </Show>
                     {/*
                       An agent Claxedo cannot send a turn to is on this machine
                       and nowhere else by definition, so where it runs is news
@@ -261,20 +268,26 @@ export function QuotaLimitsView(props: {
                     )}
                   </Show>
                   <For each={entry.windows}>{(window) => {
-                    const reset = createMemo(() => formatReset(window.resetsAt))
+                    const reset = createMemo(() => untilReset(window.resetsAt))
                     return (
                       <div class="usage-quota-window">
                         <div>
                           <span class="usage-quota-window-name">{say(window.name)}</span>
                           <span>
-                            <b>{percentText(100 - window.percent)} left</b>
-                            <Show when={reset()}> · resets {reset()}</Show>
+                            <b>{language.t("usage.quota.windowLeft", { percent: readPercent(100 - window.percent) })}</b>
+                            <Show when={reset()}>
+                              {(value) => <>{" · "}{language.t("usage.quota.windowResets", { reset: value() })}</>}
+                            </Show>
                           </span>
                         </div>
                         <progress
                           max="100"
                           value={window.percent}
-                          aria-label={`${entry.label} ${say(window.name)}: ${percentText(window.percent)} used`}
+                          aria-label={language.t("usage.quota.windowUsed", {
+                            account: say(entry.label),
+                            window: say(window.name),
+                            percent: readPercent(window.percent),
+                          })}
                         />
                       </div>
                     )

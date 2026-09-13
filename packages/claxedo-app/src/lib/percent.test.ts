@@ -1,21 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { percentText, readPercent } from "./percent"
+import { readPercent } from "./percent"
 
 describe("percent", () => {
-  test("a vendor's measured fraction reads as whole percent", () => {
-    expect(percentText(72.68615984405457)).toBe("73%")
-    expect(percentText(70.77833333333334)).toBe("71%")
-    expect(percentText(100)).toBe("100%")
-    expect(percentText(0.4)).toBe("0%")
-  })
-
-  test("a spent window never rounds down to nothing spent, nor a full one past full", () => {
-    expect(percentText(0.5)).toBe("1%")
-    expect(percentText(99.6)).toBe("100%")
-  })
-
-  test("the number is what a translated sentence interpolates, without a sign", () => {
+  test("a vendor's measured fraction reads as a whole percent", () => {
     expect(readPercent(72.68615984405457)).toBe(73)
+    expect(readPercent(70.77833333333334)).toBe(71)
+    expect(readPercent(100)).toBe(100)
+  })
+
+  test("rounds to the nearest whole percent, in both directions", () => {
     expect(readPercent(0.4)).toBe(0)
+    expect(readPercent(0.5)).toBe(1)
+    expect(readPercent(99.6)).toBe(100)
   })
 })
