@@ -112,10 +112,7 @@ export type ScriptedModelServer = {
    *
    * This is what makes "the text grew on screen while the model was still
    * talking" an assertable sequence rather than a single instant: a consumer
-   * can observe the partial reply between chunks. It applies to the CHAT
-   * dialect, the one emitter that writes its events incrementally; the
-   * Anthropic-Messages and OpenAI-Responses emitters build a whole event array
-   * and end in one write, and nothing needs paced deltas from them.
+   * can observe the partial reply between chunks in every supported dialect.
    *
    * Pass `undefined` to restore the single-delta default.
    */
@@ -247,8 +244,8 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     if (replyDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, replyDelayMs))
 
     if (request.dialect === "chat") return await respondChat(outgoing, requestSequence, reply, textStreamPacing)
-    if (request.dialect === "responses") return respondResponses(outgoing, requestSequence, request.body, reply)
-    return respondMessages(outgoing, requestSequence, request.body, reply)
+    if (request.dialect === "responses") return respondResponses(outgoing, requestSequence, request.body, reply, textStreamPacing)
+    return respondMessages(outgoing, requestSequence, request.body, reply, textStreamPacing)
   })
 
   await new Promise<void>((resolve, reject) => {
@@ -490,11 +487,12 @@ async function respondChat(
   outgoing.end("data: [DONE]\n\n")
 }
 
-function respondMessages(
+async function respondMessages(
   outgoing: ServerResponse,
   sequence: number,
   body: MessageCreateParams,
   reply: Exclude<ScriptedModelRequest["reply"], { kind: "error" }>,
+  pacing?: { chunks: number; delayMs: number },
 ) {
   const content: ScriptedMessageBlock[] =
     reply.kind === "text"
@@ -550,7 +548,9 @@ function respondMessages(
         index,
         content_block: { type: "text", text: "", citations: null },
       })
-      events.push({ type: "content_block_delta", index, delta: { type: "text_delta", text: block.text } })
+      for (const text of pacing ? textDeltaChunks(block.text, pacing.chunks) : [block.text]) {
+        events.push({ type: "content_block_delta", index, delta: { type: "text_delta", text } })
+      }
     } else {
       events.push({
         type: "content_block_start",
@@ -579,14 +579,15 @@ function respondMessages(
   })
   events.push({ type: "message_stop" })
   outgoing.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
-  outgoing.end(events.map((event) => frame(event.type, event)).join(""))
+  await writeTextStream(outgoing, events, event => event.type === "content_block_delta" && event.delta.type === "text_delta", pacing)
 }
 
-function respondResponses(
+async function respondResponses(
   outgoing: ServerResponse,
   sequence: number,
   body: ResponseCreateParams,
   reply: Exclude<ScriptedModelRequest["reply"], { kind: "error" }>,
+  pacing?: { chunks: number; delayMs: number },
 ) {
   const toolItem = reply.kind === "tool"
     ? {
@@ -665,15 +666,15 @@ function respondResponses(
             content_index: 0,
             part: { type: "output_text", text: "", annotations: [], logprobs: [] },
           },
-          {
-            type: "response.output_text.delta",
+          ...(pacing ? textDeltaChunks(reply.text, pacing.chunks) : [reply.text]).map(delta => ({
+            type: "response.output_text.delta" as const,
             sequence_number: 3,
             item_id: `msg_${sequence}`,
             output_index: 0,
             content_index: 0,
-            delta: reply.text,
+            delta,
             logprobs: [],
-          },
+          })),
           {
             type: "response.output_text.done",
             sequence_number: 4,
@@ -721,8 +722,27 @@ function respondResponses(
     { type: "response.output_item.done", sequence_number: 6, output_index: 0, item },
     { type: "response.completed", sequence_number: 7, response: response("completed", [item]) },
   ]
+  events.forEach((event, index) => { event.sequence_number = index })
   outgoing.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" })
-  outgoing.end(events.map((event) => frame(event.type, event)).join(""))
+  await writeTextStream(outgoing, events, event => event.type === "response.output_text.delta", pacing)
+}
+
+async function writeTextStream<T extends { type: string }>(
+  outgoing: ServerResponse,
+  events: T[],
+  isTextDelta: (event: T) => boolean,
+  pacing?: { delayMs: number },
+) {
+  let emittedText = false
+  for (const event of events) {
+    if (isTextDelta(event)) {
+      if (emittedText && pacing) await new Promise(resolve => setTimeout(resolve, pacing.delayMs))
+      emittedText = true
+    }
+    if (outgoing.destroyed) return
+    outgoing.write(frame(event.type, event))
+  }
+  outgoing.end()
 }
 
 function frame(event: string, data: unknown) {

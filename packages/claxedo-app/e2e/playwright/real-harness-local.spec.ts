@@ -25,7 +25,7 @@ import {
 import { startRealLocalServer, type RealLocalServer } from "../helpers/real-local-server"
 import { composeText as composePrompt, selectScriptedModel } from "../helpers/web-signed-relay-harness"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
-import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount } from "../helpers/turn-oracle-extras"
+import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount, observeStreamingReply, expectStreamingSegmentsOnce, observeRuntimeTextTraffic } from "../helpers/turn-oracle-extras"
 import { expectRailRowVisible, expectRailStatusAbsent, expectRailTitleSettled, readRailSessionOrder } from "../helpers/rail-oracle"
 import { readPaintGeometry } from "../helpers/geometry-oracle"
 import { startNetworkProxy } from "../helpers/network-proxy"
@@ -1780,6 +1780,65 @@ test.describe("real harness journeys @core @tier-real", () => {
     }
   })
 
+
+  for (const established of [false, true]) {
+    const harness = "claude"
+    test(`Claude renders each text segment once while a ${established ? "follow-up" : "first"} native reply streams`, async ({ page }, testInfo) => {
+      const binary = await resolveBinary(harness, `CLAXEDO_E2E_${harness.toUpperCase()}_BIN`)
+      requireBinary(binary, harness, "install the native harness to exercise live text deltas.")
+      const dir = await makeWorkspace(`${harness}-streamed-segments`, harness)
+      const traffic = await observeRuntimeTextTraffic(page)
+      await seedOneProject(page, dir)
+      await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, harness)
+      await waitForHarnessReady(page)
+      const marker = `STREAM_SEGMENTS_${Date.now()}`
+      const segments = Array.from({ length: 16 }, (_, index) => `SEGMENT_${String(index + 1).padStart(2, "0")}`)
+      const reply = segments.map(segment => `**${segment}** appears once in this streamed paragraph.`).join("\n\n")
+      const frames: Array<{ at: number; payload: string }> = []
+      page.on("websocket", socket => {
+        socket.on("framereceived", ({ payload }) => frames.push({ at: Date.now(), payload: payload.toString() }))
+      })
+      // Observe the existing connection too: registration must precede navigation.
+      await page.reload({ waitUntil: "domcontentloaded" })
+      await waitForHarnessReady(page)
+      if (established) {
+        const warmup = `ESTABLISHED_${Date.now()}`
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Reply with exactly this one token: ${warmup}`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expectAssistantReplyVisible(page, warmup)
+      }
+      scripted!.scriptText({ marker, text: reply })
+      scripted!.setTextStreamPacing({ chunks: 32, delayMs: 150 })
+      const stop = await observeStreamingReply(page)
+      let samples: Awaited<ReturnType<typeof stop>> = []
+      try {
+        await composePrompt(page, page.getByRole("textbox", { name: /Ask anything/i }).last(), `Return the requested streamed paragraphs for ${marker}`)
+        await page.locator(SELECTORS.submitControl).last().click()
+        await expect.poll(async () => (await traffic()).some(chunk => chunk.data.includes('"type":"text-delta"')), {
+          message: "native runtime text reaches the browser before completion", timeout: 30_000,
+        }).toBe(true)
+        const during = await traffic()
+        await fs.writeFile(testInfo.outputPath("during-stream.json"), JSON.stringify(during, null, 2))
+        expect(during.some(chunk => chunk.data.includes("SEGMENT_16")), "the screenshot observes an unfinished reply").toBe(false)
+        await page.screenshot({ path: testInfo.outputPath("partial-reply.png") })
+        await expectAssistantReplyVisible(page, segments.at(-1)!)
+      } finally {
+        scripted!.setTextStreamPacing(undefined)
+        samples = await stop()
+        await fs.writeFile(testInfo.outputPath("streamed-text-frames.json"), JSON.stringify(samples, null, 2))
+        await fs.writeFile(testInfo.outputPath("streamed-wire-frames.json"), JSON.stringify(frames, null, 2))
+        await fs.writeFile(testInfo.outputPath("runtime-text-traffic.json"), JSON.stringify(await traffic(), null, 2))
+      }
+      const received = (await traffic()).map(chunk => chunk.data).join("").split("\n")
+        .filter(line => line.startsWith("data: "))
+        .map(line => JSON.parse(line.slice(6)) as { payload?: { type: string; delta?: string } })
+        .filter(frame => frame.payload?.type === "text-delta")
+        .map(frame => frame.payload!.delta).join("")
+      expect(received, "the native runtime delivers the full scripted reply as actual text deltas").toContain(reply)
+      expectStreamingSegmentsOnce(samples, segments)
+    })
+  }
 
   const outageTest = test.extend<{ network: Awaited<ReturnType<typeof startNetworkProxy>> }>({
     network: async ({ baseURL }, use) => {
