@@ -11,6 +11,7 @@ export type TaskDetailPageProps = {
   taskId: string
   onOpenTask: (taskId: string) => void
   onBack: () => void
+  onOpenProject: (projectId: string) => void
 }
 
 /** `/tasks/<taskId>`: the task as its own page, with the Start dialog it owns. */
@@ -38,6 +39,7 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
         onStart={openStart}
         onOpenTask={props.onOpenTask}
         onBack={props.onBack}
+        onOpenProject={props.onOpenProject}
       />
     </div>
   )

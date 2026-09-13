@@ -205,7 +205,12 @@ function taskSummaryOfValue(ctx: DecodeContext, value: unknown, path: string): T
   // A summary row carries no description by contract, so the decoder supplies
   // the one field the shared task decoder requires and drops it again.
   const { description: _description, ...task } = taskOf(ctx, { ...row, description: "" }, path)
-  return { ...task, hasDescription: ctx.read.boolean(row?.hasDescription, `${path}.hasDescription`) ?? false }
+  const links = ctx.read.record(row?.links, `${path}.links`)
+  return {
+    ...task,
+    hasDescription: ctx.read.boolean(row?.hasDescription, `${path}.hasDescription`) ?? false,
+    links: { count: ctx.read.integer(links?.count, `${path}.links.count`) ?? 0 },
+  }
 }
 
 function linkViewOf(ctx: DecodeContext, value: unknown, path: string): TaskSessionLinkView {

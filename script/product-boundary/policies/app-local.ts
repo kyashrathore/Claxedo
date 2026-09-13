@@ -356,7 +356,10 @@ export const appLocal: Policy = {
   // features/tasks/ui the page for /tasks/<taskId>, the header both pages
   // wear, the list toolbar, and the preset draft editor the Presets page and
   // the Start dialog now share. No new package edge. Measured 1034 / 39.
-  ceilings: { modules: 1034, packages: 39 },
+  // +1 module (2026-09-13): features/tasks/data/start-task.ts, the one owner of
+  // the preview-and-start pair now that a list row starts a task as well as the
+  // dialog. No new package edge. Measured 1035 / 39.
+  ceilings: { modules: 1035, packages: 39 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

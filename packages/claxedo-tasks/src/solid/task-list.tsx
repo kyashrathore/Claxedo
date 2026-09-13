@@ -2,7 +2,8 @@ import { For, Show, createMemo } from "solid-js"
 import { TASK_STATUSES, type TaskStatus, type TaskSummary } from "../contracts"
 import { LoadMore, type MorePages } from "./load-more"
 import { TaskGlyph } from "./glyphs"
-import { TaskStatusDot, StatusMenu } from "./status-menu"
+import { TaskStatusDot } from "./status-menu"
+import { TaskRowActions, TaskStartControl, type TaskStartOffer } from "./task-row-controls"
 import { TASK_STATUS_LABELS, shortAge } from "./view-model"
 
 /** How many of a task's children are done, out of the children the caller holds. */
@@ -19,6 +20,8 @@ export type TaskListProps = {
   /** The parent's title for a subtask row, from the rows the caller already holds. */
   parentTitleOf?: (task: TaskSummary) => string | undefined
   subtaskProgress?: (taskId: string) => SubtaskProgress | undefined
+  /** The row's own Start control; absent where the caller cannot start anything. */
+  startOffer?: (task: TaskSummary) => TaskStartOffer
   more?: MorePages
   onSelect: (taskId: string) => void
   onCreate?: () => void
@@ -83,6 +86,8 @@ export function TaskList(props: TaskListProps) {
                       progress={props.subtaskProgress?.(task.id)}
                       selected={props.selectedTaskId === task.id}
                       busy={props.busyTaskId === task.id}
+                      grouped={props.grouped !== false}
+                      offer={props.startOffer?.(task)}
                       onSelect={props.onSelect}
                       onStatusChange={props.onStatusChange}
                     />
@@ -106,6 +111,8 @@ function TaskRow(props: {
   progress?: SubtaskProgress
   selected: boolean
   busy: boolean
+  grouped: boolean
+  offer?: TaskStartOffer
   onSelect: (taskId: string) => void
   onStatusChange?: (input: { taskId: string; revision: number; status: TaskStatus }) => void
 }) {
@@ -131,30 +138,36 @@ function TaskRow(props: {
         </Show>
       </button>
 
-      <Show
-        when={props.onStatusChange}
-        fallback={
-          <span class="tsk-cell">
-            <TaskStatusDot status={props.task.status} />
-            {TASK_STATUS_LABELS[props.task.status]}
-          </span>
-        }
-      >
-        {(change) => (
-          <StatusMenu
-            status={props.task.status}
-            disabled={props.busy || props.task.archivedAt !== null}
-            label={`Status of ${props.task.title}`}
-            testId={`tasks-list-status-${props.task.id}`}
-            onChange={(status) => change()({ taskId: props.task.id, revision: props.task.revision, status })}
-          />
-        )}
+      {/* The group header already names the status, so the row repeats it only
+          when the caller turned grouping off. */}
+      <Show when={!props.grouped}>
+        <span class="tsk-cell">
+          <TaskStatusDot status={props.task.status} />
+          {TASK_STATUS_LABELS[props.task.status]}
+        </span>
       </Show>
 
       <span class="tsk-cell tsk-cell-sub">
         <Show when={props.progress}>{(progress) => `${progress().done}/${progress().total}`}</Show>
       </span>
       <span class="tsk-cell tsk-cell-time">{shortAge(props.task.updatedAt, props.now)}</span>
+
+      <span class="tsk-row-tools">
+        <Show when={props.offer}>
+          {(offer) => <TaskStartControl task={props.task} offer={offer()} testIdPrefix="tasks-list" />}
+        </Show>
+        <Show when={props.onStatusChange}>
+          {(change) => (
+            <TaskRowActions
+              task={props.task}
+              busy={props.busy}
+              testIdPrefix="tasks-list"
+              statusTestId={`tasks-list-status-${props.task.id}`}
+              onStatusChange={(input) => change()(input)}
+            />
+          )}
+        </Show>
+      </span>
     </div>
   )
 }

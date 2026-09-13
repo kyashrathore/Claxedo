@@ -1,7 +1,8 @@
 import { For, Show, createSignal } from "solid-js"
 import { TASK_STATUSES, type TaskStatus, type TaskSummary } from "../contracts"
 import { LoadMore, type MorePages } from "./load-more"
-import { TaskStatusDot, StatusMenu } from "./status-menu"
+import { TaskStatusDot } from "./status-menu"
+import { TaskRowActions, TaskStartControl, type TaskStartOffer } from "./task-row-controls"
 import { TASK_STATUS_LABELS, shortAge } from "./view-model"
 import type { SubtaskProgress } from "./task-list"
 
@@ -10,6 +11,8 @@ export type TaskBoardProps = {
   selectedTaskId?: string
   busyTaskId?: string
   subtaskProgress?: (taskId: string) => SubtaskProgress | undefined
+  /** The card's own Start control; absent where the caller cannot start anything. */
+  startOffer?: (task: TaskSummary) => TaskStartOffer
   more?: MorePages
   onSelect: (taskId: string) => void
   /** Offered on To do alone: `task.create` takes no status, so a card starts there. */
@@ -103,15 +106,9 @@ export function TaskBoard(props: TaskBoardProps) {
                       {task.title}
                     </button>
 
+                    {/* The column already names the status, so the card carries
+                        the menu that changes it rather than a second label. */}
                     <div class="tsk-card-meta">
-                      <StatusMenu
-                        status={task.status}
-                        disabled={props.busyTaskId === task.id || task.archivedAt !== null}
-                        label={`Status of ${task.title}`}
-                        testId={`tasks-board-status-${task.id}`}
-                        onChange={(next) => props.onStatusChange({ taskId: task.id, revision: task.revision, status: next })}
-                      />
-                      <span class="tsk-spacer" />
                       <Show when={props.subtaskProgress?.(task.id)}>
                         {(progress) => <span>{`${progress().done}/${progress().total}`}</span>}
                       </Show>
@@ -119,6 +116,19 @@ export function TaskBoard(props: TaskBoardProps) {
                         <span>Subtask</span>
                       </Show>
                       <span>{shortAge(task.updatedAt, now)}</span>
+                      <span class="tsk-spacer" />
+                      <span class="tsk-row-tools">
+                        <Show when={props.startOffer}>
+                          {(offer) => <TaskStartControl task={task} offer={offer()(task)} testIdPrefix="tasks-board" />}
+                        </Show>
+                        <TaskRowActions
+                          task={task}
+                          busy={props.busyTaskId === task.id}
+                          testIdPrefix="tasks-board"
+                          statusTestId={`tasks-board-status-${task.id}`}
+                          onStatusChange={(input) => props.onStatusChange(input)}
+                        />
+                      </span>
                     </div>
                   </div>
                 )}

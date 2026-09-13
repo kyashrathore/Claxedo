@@ -19,7 +19,12 @@ export type TaskSubtasksProps = {
 
 export function TaskSubtasks(props: TaskSubtasksProps) {
   const [title, setTitle] = createSignal("")
+  const [adding, setAdding] = createSignal(false)
   const done = createMemo(() => props.items.filter((child) => child.status === "done").length)
+  const cancel = () => {
+    setTitle("")
+    setAdding(false)
+  }
   const submit = () => {
     const value = title().trim()
     if (!value) return
@@ -77,27 +82,49 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
         when={props.canAdd}
         fallback={<p class="tsk-hint">{props.addDisabledReason ?? "Reopen this task to add a subtask."}</p>}
       >
-        <form
-          class="tsk-add"
-          data-testid="task-subtask-add"
-          onSubmit={(event) => {
-            event.preventDefault()
-            submit()
-          }}
+        {/* A placeholder in an always-present field reads as a hint, not as a
+            control. The row is a button until it is pressed. */}
+        <Show
+          when={adding()}
+          fallback={
+            <button
+              type="button"
+              class="tsk-add-trigger"
+              data-testid="task-subtask-add-trigger"
+              onClick={() => setAdding(true)}
+            >
+              <span aria-hidden="true">+</span> Add subtask
+            </button>
+          }
         >
-          <input
-            class="tsk-input"
-            data-testid="task-subtask-title"
-            aria-label="Subtask title"
-            maxLength={TASKS_BOUNDS.taskTitleMax}
-            placeholder="Add a subtask"
-            value={title()}
-            onInput={(event) => setTitle(event.currentTarget.value)}
-          />
-          <button type="submit" class="tsk-button" disabled={props.busy || title().trim().length === 0}>
-            Add
-          </button>
-        </form>
+          <form
+            class="tsk-add"
+            data-testid="task-subtask-add"
+            onSubmit={(event) => {
+              event.preventDefault()
+              submit()
+            }}
+          >
+            <input
+              ref={(element) => queueMicrotask(() => element.focus())}
+              class="tsk-input"
+              data-testid="task-subtask-title"
+              aria-label="Subtask title"
+              maxLength={TASKS_BOUNDS.taskTitleMax}
+              placeholder="What needs doing"
+              value={title()}
+              onInput={(event) => setTitle(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape") return
+                event.stopPropagation()
+                cancel()
+              }}
+            />
+            <button type="submit" class="tsk-button" disabled={props.busy || title().trim().length === 0}>
+              Add
+            </button>
+          </form>
+        </Show>
       </Show>
 
       <Show when={props.error}>{(message) => <p class="tsk-error">{message()}</p>}</Show>

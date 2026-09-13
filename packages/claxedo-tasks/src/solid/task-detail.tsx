@@ -39,6 +39,8 @@ export type TaskDetailProps = {
   onRestore: () => void
   /** Absent where the detail is not a page of its own. */
   onBack?: () => void
+  /** Opens the task list filtered to this task's project. */
+  onOpenProject?: () => void
   /** The subtasks section, rendered by the caller so the detail owns no data fetch. */
   subtasks: JSX.Element
 }
@@ -46,10 +48,6 @@ export type TaskDetailProps = {
 export function TaskDetail(props: TaskDetailProps) {
   const task = () => props.view.task
   const patch = (input: Partial<TaskDetailEdit>) => props.onEditChange({ ...props.edit, ...input })
-  /** The preset the slot ran under, read from the link rather than from a preset the task might point at now. */
-  const presetUsed = () =>
-    props.view.groups.find((group) => group.slot === "primary")?.current?.presetNameAtStart ??
-    props.view.groups.find((group) => group.current)?.current?.presetNameAtStart
 
   return (
     <article class="tsk tsk-detail" data-testid="task-detail" aria-label={task().title}>
@@ -62,10 +60,21 @@ export function TaskDetail(props: TaskDetailProps) {
               </button>
             )}
           </Show>
-          <span aria-hidden="true">›</span>
-          <span>{props.projectLabel}</span>
-          <span aria-hidden="true">›</span>
-          <span>{task().title}</span>
+          <span class="tsk-crumb-sep" aria-hidden="true">›</span>
+          <Show when={props.onOpenProject} fallback={<span>{props.projectLabel}</span>}>
+            {(open) => (
+              <button
+                type="button"
+                class="tsk-crumb-link"
+                data-testid="task-detail-project-crumb"
+                onClick={() => open()()}
+              >
+                {props.projectLabel}
+              </button>
+            )}
+          </Show>
+          <span class="tsk-crumb-sep" aria-hidden="true">›</span>
+          <span class="tsk-crumb-current">{task().title}</span>
         </nav>
 
         <input
@@ -143,8 +152,6 @@ export function TaskDetail(props: TaskDetailProps) {
                 </>
               )}
             </Show>
-            <dt>Preset</dt>
-            <dd>{presetUsed() ?? "None yet"}</dd>
           </dl>
           <p class="tsk-hint">Status is manual: {TASK_STATUS_LABELS[task().status]} until you change it.</p>
         </section>

@@ -1,11 +1,21 @@
 import { Show, createMemo, createSignal } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { TaskStatus, TaskSummary } from "@claxedo/tasks"
-import { TASK_COLLECTION_LABELS, TaskBoard, TaskList, type SubtaskProgress } from "@claxedo/tasks/solid"
+import {
+  TASK_COLLECTION_LABELS,
+  TaskBoard,
+  TaskList,
+  emptyPresetEditorDraft,
+  type StartChoice,
+  type SubtaskProgress,
+  type TaskStartOffer,
+} from "@claxedo/tasks/solid"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf, type TaskListFilter } from "../data/tasks-api"
-import { morePages, useTaskList, useTasksClient, useTasksInvalidation, type TasksScope } from "../data/queries"
+import { morePages, usePresetList, useTaskList, useTasksClient, useTasksInvalidation, type TasksScope } from "../data/queries"
+import { useStartTaskCommands } from "../data/start-task"
 import type { TasksStore } from "../store/tasks-store"
 import { DialogCreateTask } from "./dialogs/create-task-dialog"
 import { TasksHeader } from "./tasks-header"
@@ -25,6 +35,8 @@ export function TasksView(props: TasksViewProps) {
   const dialog = useDialog()
   const client = useTasksClient()
   const invalidate = useTasksInvalidation(props.scope)
+  const startTask = useStartTaskCommands(props.scope)
+  const presets = usePresetList(props.scope, () => false)
   const [busyTaskId, setBusyTaskId] = createSignal<string | undefined>()
 
   const filter = createMemo<TaskListFilter | undefined>(() => {
@@ -64,6 +76,51 @@ export function TasksView(props: TasksViewProps) {
   })
   const subtaskProgress = (taskId: string) => progressById().get(taskId)
 
+  /**
+   * What a row may offer. The default preset is the last one started in this
+   * scope, and otherwise the only one saved — never a guess between several,
+   * which the caret is for.
+   */
+  const defaultPresetId = () => {
+    const saved = presets.items()
+    const last = props.store.state.lastPresetId
+    if (last && saved.some((preset) => preset.id === last)) return last
+    return saved[0]?.id
+  }
+
+  const runStart = async (task: TaskSummary, choice: StartChoice) => {
+    const preset = presets.items().find((entry) => entry.id === choice.presetId)
+    if (!preset) return
+    setBusyTaskId(task.id)
+    const outcome = await startTask.startNow(task, {
+      presetId: preset.id,
+      presetRevision: preset.revision,
+      slot: choice.slot,
+    })
+    setBusyTaskId(undefined)
+    if (outcome.ok) props.store.startedWith(task.id, preset.id)
+    else props.store.refuseStart(task.id, outcome.message)
+  }
+
+  const openSession = async (task: TaskSummary) => {
+    setBusyTaskId(task.id)
+    const outcome = await startTask.openLatestSession(task.id)
+    setBusyTaskId(undefined)
+    if (!outcome.ok) props.store.refuseStart(task.id, outcome.message)
+  }
+
+  const startOffer = (task: TaskSummary): TaskStartOffer => ({
+    presets: presets.items(),
+    defaultPresetId: defaultPresetId(),
+    blocker: props.store.state.startRefusals[task.id],
+    busy: busyTaskId() === task.id,
+    onStart: (choice) => void runStart(task, choice),
+    // A row knows a session exists from its link count; which one is current
+    // is read when Open is pressed, because liveness is not in a list read.
+    ...(task.links.count > 0 ? { onOpen: () => void openSession(task) } : {}),
+    onCreatePreset: () => props.store.openPresetDraft(emptyPresetEditorDraft()),
+  })
+
   const setStatus = async (input: { taskId: string; revision: number; status: TaskStatus }) => {
     setBusyTaskId(input.taskId)
     try {
@@ -96,9 +153,9 @@ export function TasksView(props: TasksViewProps) {
         onOpenTasks={() => {}}
         onOpenPresets={() => props.onOpenPresets()}
         action={
-          <button type="button" class="tsk-button" data-variant="primary" data-testid="tasks-create" onClick={openCreate}>
+          <Button variant="primary" size="small" data-testid="tasks-create" onClick={openCreate}>
             New task
-          </button>
+          </Button>
         }
       />
 
@@ -124,6 +181,7 @@ export function TasksView(props: TasksViewProps) {
             selectedTaskId={props.store.state.selectedTaskId}
             parentTitleOf={parentTitleOf}
             subtaskProgress={subtaskProgress}
+            startOffer={startOffer}
             busyTaskId={busyTaskId()}
             onSelect={(taskId) => props.onOpenTask(taskId)}
             onCreate={openCreate}
@@ -136,6 +194,7 @@ export function TasksView(props: TasksViewProps) {
           more={morePages(tasks)}
           selectedTaskId={props.store.state.selectedTaskId}
           subtaskProgress={subtaskProgress}
+          startOffer={startOffer}
           busyTaskId={busyTaskId()}
           onSelect={(taskId) => props.onOpenTask(taskId)}
           onCreate={openCreate}

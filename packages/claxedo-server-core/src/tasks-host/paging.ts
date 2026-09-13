@@ -29,6 +29,24 @@ export function tasksPageBounds(query: ListQuery): TasksPageBounds {
   }
 }
 
+/**
+ * A grouped count, as the lookup a row reads. The query differs per adapter —
+ * drizzle on SQLite, a prepared statement on D1 — but folding its rows does
+ * not, and a task with no sessions has to read as zero rather than as absent.
+ */
+export function linkCountLookup(rows: readonly { taskId: string; links: number }[]) {
+  const counts = new Map(rows.map((row) => [row.taskId, row.links]))
+  return (taskId: string) => ({ count: counts.get(taskId) ?? 0 })
+}
+
+/**
+ * The ids of the rows this page will show. The row past the limit only answers
+ * "is there more", so counting its links would be a read nothing renders.
+ */
+export function tasksPageRows<Row>(rows: readonly Row[], limit: number): readonly Row[] {
+  return rows.slice(0, limit)
+}
+
 /** `rows` must have been read with `limit + 1`: the extra row is what says another page exists. */
 export function tasksPage<Row, Item extends PageKey>(
   rows: readonly Row[],

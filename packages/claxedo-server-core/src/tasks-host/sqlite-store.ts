@@ -7,7 +7,7 @@
  * row outside the caller's scope is unreachable rather than filtered out
  * afterwards.
  */
-import { and, count, desc, eq, isNull, lt, ne, or } from "drizzle-orm"
+import { and, count, desc, eq, inArray, isNull, lt, ne, or } from "drizzle-orm"
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core"
 import {
   serializedTransactions,
@@ -19,7 +19,7 @@ import {
   type TasksStoreOperations,
   type TasksStorePort,
 } from "@claxedo/tasks"
-import { tasksPage, tasksPageBounds } from "./paging"
+import { linkCountLookup, tasksPage, tasksPageBounds, tasksPageRows } from "./paging"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import {
   linkColumns,
@@ -52,8 +52,38 @@ function windowConditions(query: ListQuery, createdAt: SQLiteColumn, id: SQLiteC
   return { limit: bounds.limit, seek, order: [desc(createdAt), desc(id)] as const }
 }
 
-function taskSummaries(rows: readonly StoredTaskColumns[], limit: number): Page<TaskSummary> {
-  return tasksPage(rows, limit, (row) => taskSummaryOf(taskOfColumns(row)))
+/**
+ * One grouped select for the whole page rather than one read per row, scoped by
+ * `scope_id` as well as task: the primary key spans both, so a count that
+ * dropped the scope would add another tenant's sessions to this row.
+ */
+function groupedLinkCounts(use: Reader, scopeId: string, taskIds: readonly string[]) {
+  if (taskIds.length === 0) return linkCountLookup([])
+  return linkCountLookup(
+    use((db) =>
+      db
+        .select({ taskId: ClaxedoTaskSessionLinkTable.task_id, links: count() })
+        .from(ClaxedoTaskSessionLinkTable)
+        .where(
+          and(
+            eq(ClaxedoTaskSessionLinkTable.scope_id, scopeId),
+            inArray(ClaxedoTaskSessionLinkTable.task_id, [...taskIds]),
+          ),
+        )
+        .groupBy(ClaxedoTaskSessionLinkTable.task_id)
+        .all(),
+    ),
+  )
+}
+
+function taskSummaries(
+  use: Reader,
+  scopeId: string,
+  rows: readonly StoredTaskColumns[],
+  limit: number,
+): Page<TaskSummary> {
+  const links = groupedLinkCounts(use, scopeId, tasksPageRows(rows, limit).map((row) => row.task_id))
+  return tasksPage(rows, limit, (row) => taskSummaryOf(taskOfColumns(row), links(row.task_id)))
 }
 
 type Reader = <T>(callback: (db: ClaxedoDB.Client) => T) => T
@@ -162,7 +192,7 @@ function tasksOperations(use: Reader): TasksStoreOperations {
             .limit(page.limit + 1)
             .all(),
         )
-        return taskSummaries(rows, page.limit)
+        return taskSummaries(use, scopeId, rows, page.limit)
       },
 
       async listChildren(scopeId, parentTaskId, query) {
@@ -183,7 +213,7 @@ function tasksOperations(use: Reader): TasksStoreOperations {
             .limit(page.limit + 1)
             .all(),
         )
-        return taskSummaries(rows, page.limit)
+        return taskSummaries(use, scopeId, rows, page.limit)
       },
 
       async countChildren(scopeId, parentTaskId, filter) {

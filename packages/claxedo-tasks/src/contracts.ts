@@ -123,7 +123,16 @@ export type Task = {
 }
 
 /** A list row. The description is omitted so a page cannot carry 50 × 64 KiB. */
-export type TaskSummary = Omit<Task, "description"> & { hasDescription: boolean }
+/**
+ * What a list row may say about the task's sessions.
+ *
+ * A count and nothing more: liveness is read per session from the host that
+ * runs it, which a list read does not do, and a row that guessed at it would
+ * offer Open for a session that is gone.
+ */
+export type TaskLinkSummary = { count: number }
+
+export type TaskSummary = Omit<Task, "description"> & { hasDescription: boolean; links: TaskLinkSummary }
 
 export type TaskSessionLink = {
   scopeId: string
@@ -435,9 +444,10 @@ export function isTasksCommandName(value: unknown): value is TasksCommandName {
   return typeof value === "string" && TASKS_COMMAND_NAMES.some((name) => name === value)
 }
 
-export function taskSummaryOf(task: Task): TaskSummary {
+/** `links` is required so a store cannot answer a list read without having counted. */
+export function taskSummaryOf(task: Task, links: TaskLinkSummary): TaskSummary {
   const { description, ...rest } = task
-  return { ...rest, hasDescription: description.length > 0 }
+  return { ...rest, hasDescription: description.length > 0, links }
 }
 
 export function linkView(

@@ -14,7 +14,7 @@
 import type { ConfigurationSlot, Preset, Task, TaskSessionLink } from "../contracts"
 import { TasksStoreConflict, type TasksCommandReceipt, type TasksStorePort } from "../ports/store"
 
-export const TASKS_STORE_CONFORMANCE_VERSION = 3 as const
+export const TASKS_STORE_CONFORMANCE_VERSION = 4 as const
 
 export const TASKS_STORE_CONFORMANCE_SCOPE = {
   cases: [
@@ -30,6 +30,7 @@ export const TASKS_STORE_CONFORMANCE_SCOPE = {
     "a_rolled_back_unit_leaves_the_unit_that_committed_beside_it_intact",
     "overlapping_units_cannot_both_bump_one_row_from_the_same_revision",
     "a_preset_revision_assertion_is_a_predicate_of_the_unit_that_made_it",
+    "a_list_row_counts_its_own_links_and_only_this_scope_s",
   ],
   // NOT pinned:
   //
@@ -503,6 +504,30 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
         (await store.presets.get(CONFORMANCE_SCOPES.first, "preset-pinned"))?.revision,
         1,
         "the assertion wrote to the row it only read",
+      )
+    }),
+    conformanceCase("a list row counts its own links and only this scope's", async () => {
+      const { store } = await factory()
+      await store.tasks.insert(taskRow({ id: "task-linked", createdAt: 3_000 }))
+      await store.tasks.insert(taskRow({ id: "task-bare", createdAt: 2_000 }))
+      await store.tasks.insert(taskRow({ id: "task-linked", scopeId: CONFORMANCE_SCOPES.second, createdAt: 3_000 }))
+      await store.links.insert(linkRow({ taskId: "task-linked", attempt: 1 }))
+      await store.links.insert(linkRow({ taskId: "task-linked", attempt: 2 }))
+      await store.links.insert(linkRow({ taskId: "task-linked", slot: "review", attempt: 1 }))
+      // The same task id in the other scope: a count that dropped the scope
+      // would fold these two into the row above.
+      await store.links.insert(linkRow({ taskId: "task-linked", scopeId: CONFORMANCE_SCOPES.second, attempt: 1 }))
+      await store.links.insert(linkRow({ taskId: "task-linked", scopeId: CONFORMANCE_SCOPES.second, attempt: 2 }))
+
+      const rows = await store.tasks.list(CONFORMANCE_SCOPES.first, TASK_LIST)
+      const counts = new Map(rows.items.map((row) => [row.id, row.links.count]))
+      assertEqual(counts.get("task-linked"), 3, "the row did not count its own links")
+      assertEqual(counts.get("task-bare"), 0, "a task with no session was not counted as zero")
+      assertEqual(
+        (await store.tasks.list(CONFORMANCE_SCOPES.second, TASK_LIST)).items.find((row) => row.id === "task-linked")
+          ?.links.count,
+        2,
+        "the other scope's row counted this scope's links",
       )
     }),
   ]

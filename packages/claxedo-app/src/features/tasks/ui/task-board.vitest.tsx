@@ -20,7 +20,17 @@ function summary(id: string, status: TaskStatus): TaskSummary {
     createdAt: 1,
     updatedAt: 1,
     hasDescription: false,
+    links: { count: 0 },
   }
+}
+
+/**
+ * The status select lives in the card's actions menu now that the column
+ * already names the status, so every case that changes status opens it first.
+ */
+function openActions(id: string) {
+  fireEvent.click(screen.getByTestId(`tasks-board-actions-${id}`))
+  return screen.getByTestId<HTMLSelectElement>(`tasks-board-status-${id}`)
 }
 
 function mount(tasks: readonly TaskSummary[]) {
@@ -33,7 +43,7 @@ function mount(tasks: readonly TaskSummary[]) {
 describe("task board", () => {
   test("a status change the record does not take leaves the menu showing the record", () => {
     mount([summary("a", "doing")])
-    const menu = screen.getByTestId<HTMLSelectElement>("tasks-board-status-a")
+    const menu = openActions("a")
 
     fireEvent.change(menu, { target: { value: "done" } })
 
@@ -50,13 +60,14 @@ describe("task board", () => {
   test("the per-card menu moves a task without any drag, carrying its expected revision", () => {
     const { onStatusChange } = mount([summary("a", "todo")])
 
-    fireEvent.change(screen.getByTestId("tasks-board-status-a"), { target: { value: "doing" } })
+    fireEvent.change(openActions("a"), { target: { value: "doing" } })
 
     expect(onStatusChange).toHaveBeenCalledWith({ taskId: "a", revision: 4, status: "doing" })
   })
 
   test("the menu is a labelled control, so the board is reachable without a pointer", () => {
     mount([summary("a", "todo")])
+    openActions("a")
 
     expect(screen.getByLabelText("Status of Task a").tagName).toBe("SELECT")
   })
@@ -74,6 +85,6 @@ describe("task board", () => {
     mount([{ ...summary("a", "todo"), archivedAt: 12 }])
 
     expect(screen.getByTestId("tasks-board-card-a").getAttribute("draggable")).toBe("false")
-    expect(screen.getByTestId("tasks-board-status-a")).toBeDisabled()
+    expect(openActions("a")).toBeDisabled()
   })
 })

@@ -4,7 +4,7 @@
   --tsk-gutter: 14px;
   --tsk-gap: 8px;
   --tsk-hairline: var(--border-weak-base);
-  --tsk-accent: var(--border-selected);
+  --tsk-accent: var(--text-strong);
   color: var(--text-base);
   font-size: var(--font-size-compact);
   letter-spacing: var(--letter-spacing-ui);
@@ -135,10 +135,16 @@
   outline-offset: 1px;
 }
 
-/* `--icon-invert-base` is the host's own foreground for this background: it is
-   the only token that inverts with the theme the way the fill does. */
+/*
+ * `.ui-button[data-variant="primary"]` restated. The kit ships without the
+ * host's components (no @opencode-ai/ui dependency), so the app half uses the
+ * real `Button` and this matches it token for token rather than inventing a
+ * second primary.
+ */
 .tsk-button[data-variant="primary"] {
   background: var(--button-primary-base);
+  border-color: var(--border-weak-base);
+  border-radius: var(--radius-md);
   color: var(--icon-invert-base);
 }
 
@@ -159,6 +165,7 @@
 
 .tsk-button[data-variant="quiet"] {
   background: transparent;
+  border-color: transparent;
   color: var(--text-weak);
 }
 
@@ -171,6 +178,7 @@
   height: auto;
   padding: 0;
   background: transparent;
+  border-color: transparent;
   color: var(--text-diff-delete-base);
   text-underline-offset: 3px;
 }
@@ -284,7 +292,7 @@
 .tsk-textarea:focus-visible,
 .tsk-select:focus-visible {
   outline: none;
-  border-color: var(--border-interactive-focus);
+  border-color: var(--border-focus);
 }
 
 .tsk-textarea {
@@ -324,7 +332,7 @@
 
 .tsk-checkbox input {
   margin: 2px 0 0;
-  accent-color: var(--border-interactive-active);
+  accent-color: var(--text-strong);
 }
 
 .tsk-hint {
@@ -334,39 +342,40 @@
 }
 
 
+/*
+ * The rail's status vocabulary, which this surface borrows rather than invents:
+ * a 6px filled circle, grey while working and once done, red only where the
+ * task needs you, and nothing at all for one not started.
+ * `app/workbench/navigation/navigation-row.tsx` is the original.
+ */
 .tsk-dot {
   flex: none;
   display: inline-block;
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid var(--icon-base);
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  background: transparent;
+  background: var(--text-weak);
+}
+
+.tsk-dot[data-status="todo"] {
+  display: none;
 }
 
 .tsk-dot[data-status="doing"] {
-  border-color: var(--icon-interactive-base);
+  animation: tsk-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 .tsk-dot[data-status="needs_you"] {
-  border-color: var(--icon-critical-base);
   background: var(--icon-critical-base);
 }
 
-.tsk-dot[data-status="done"] {
-  border-color: var(--icon-success-hover);
-  background: var(--icon-success-hover);
-}
-
 .tsk-dot[data-liveness] {
-  width: 6px;
-  height: 6px;
-  border-width: 1px;
+  background: var(--icon-disabled);
 }
 
 .tsk-dot[data-liveness="live"] {
-  border-color: var(--icon-success-hover);
-  background: var(--icon-success-hover);
+  background: var(--text-weak);
+  animation: tsk-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 /*
@@ -375,7 +384,7 @@
  * the control's own padding box and the native arrow is dropped.
  */
 .tsk-status-select {
-  --tsk-chip-dot: var(--icon-base);
+  --tsk-chip-dot: var(--text-weak);
   appearance: none;
   display: inline-flex;
   align-items: center;
@@ -415,16 +424,12 @@
   opacity: 0.5;
 }
 
-.tsk-status-select[data-status="doing"] {
-  --tsk-chip-dot: var(--icon-interactive-base);
+.tsk-status-select[data-status="todo"] {
+  --tsk-chip-dot: transparent;
 }
 
 .tsk-status-select[data-status="needs_you"] {
   --tsk-chip-dot: var(--icon-critical-base);
-}
-
-.tsk-status-select[data-status="done"] {
-  --tsk-chip-dot: var(--icon-success-hover);
 }
 
 .tsk-status {
@@ -722,7 +727,7 @@
 }
 
 .tsk-card[data-selected="true"] {
-  border-color: var(--tsk-accent);
+  border-color: var(--border-active);
 }
 
 .tsk-card[data-dragging="true"] {
@@ -800,13 +805,34 @@
   color: var(--text-weak);
   font: inherit;
   font-size: var(--font-size-x-small);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
   cursor: pointer;
+  transition:
+    color 90ms linear,
+    text-decoration-color 90ms linear;
 }
 
-.tsk-crumb-link:hover {
+.tsk-crumb-link:hover,
+.tsk-crumb-link:focus-visible {
   color: var(--text-strong);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  text-decoration-color: currentcolor;
+}
+
+.tsk-crumb-link:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 2px;
+  border-radius: var(--radius-3);
+}
+
+.tsk-crumb-sep {
+  color: var(--text-weaker);
+}
+
+.tsk-crumb-current {
+  color: var(--text-strong);
+  font-weight: var(--font-weight-medium);
 }
 
 .tsk-page {
@@ -969,7 +995,7 @@
   display: block;
   height: 100%;
   border-radius: var(--radius-pill);
-  background: var(--icon-success-hover);
+  background: var(--text-weak);
   transition: width 220ms cubic-bezier(0.2, 0, 0, 1);
 }
 
@@ -1124,9 +1150,9 @@
 }
 
 .tsk-pick:has(input:checked) {
-  background: var(--surface-interactive-base);
-  border-color: var(--border-interactive-base);
-  color: var(--text-interactive-base);
+  background: var(--surface-base-active);
+  border-color: var(--border-active);
+  color: var(--text-strong);
 }
 
 .tsk-pick:has(input:focus-visible) {
@@ -1168,4 +1194,190 @@
   .tsk-progress > i {
     transition: none;
   }
+}
+
+.tsk-row-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Pointer-only reveal: a touch screen has no hover to reveal it with, and a
+   keyboard reaches it through :focus-within. */
+@media (hover: hover) and (pointer: fine) {
+  .tsk-tr .tsk-row-tools,
+  .tsk-card .tsk-row-tools {
+    opacity: 0;
+    transition: opacity 90ms linear;
+  }
+
+  .tsk-tr:hover .tsk-row-tools,
+  .tsk-tr:focus-within .tsk-row-tools,
+  .tsk-card:hover .tsk-row-tools,
+  .tsk-card:focus-within .tsk-row-tools,
+  /* An open menu outlives the pointer that opened it: without this the panel
+     fades out from under the cursor as soon as it leaves the row. */
+  .tsk-row-tools:has([aria-expanded="true"]) {
+    opacity: 1;
+  }
+}
+
+.tsk-menu {
+  position: relative;
+  display: inline-flex;
+}
+
+.tsk-menu-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 184px;
+  max-width: 280px;
+  padding: 6px;
+  background: var(--surface-raised-strong);
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+.tsk-menu-panel[data-align="end"] {
+  right: 0;
+}
+
+.tsk-menu-panel[data-align="start"] {
+  left: 0;
+}
+
+.tsk-menu-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tsk-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-5);
+  color: var(--text-base);
+  font: inherit;
+  font-size: var(--font-size-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.tsk-menu-item:hover:not(:disabled) {
+  background: var(--surface-base-hover);
+  color: var(--text-strong);
+}
+
+.tsk-menu-item:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+.tsk-menu-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.tsk-menu-note {
+  margin-left: auto;
+  color: var(--text-weak);
+  font-size: var(--font-size-x-small);
+}
+
+/* No `overflow: hidden` to round the ends: the caret's own panel is a
+   descendant, and hiding the overflow clipped the menu out of existence. The
+   halves carry the radius instead. */
+.tsk-split {
+  display: inline-flex;
+  align-items: stretch;
+  height: 22px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-5);
+}
+
+.tsk-split-main,
+.tsk-split-caret {
+  padding: 0 8px;
+  background: var(--surface-raised-strong);
+  border: 0;
+  color: var(--text-base);
+  font: inherit;
+  font-size: var(--font-size-x-small);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-none);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tsk-split-main {
+  border-radius: var(--radius-5) 0 0 var(--radius-5);
+}
+
+.tsk-split-caret {
+  padding: 0 5px;
+  border-left: 1px solid var(--border-weak-base);
+  border-radius: 0 var(--radius-5) var(--radius-5) 0;
+}
+
+.tsk-split-main:hover:not(:disabled),
+.tsk-split-caret:hover:not(:disabled) {
+  background: var(--surface-base-hover);
+  color: var(--text-strong);
+}
+
+.tsk-split-main:focus-visible,
+.tsk-split-caret:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+.tsk-split-main:disabled,
+.tsk-split-caret:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+@keyframes tsk-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tsk-dot {
+    animation: none;
+  }
+}
+
+.tsk-add-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 8px 0 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-weak);
+  font: inherit;
+  font-size: var(--font-size-compact);
+  cursor: pointer;
+}
+
+.tsk-add-trigger:hover {
+  color: var(--text-strong);
+}
+
+.tsk-add-trigger:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+  border-radius: var(--radius-5);
 }

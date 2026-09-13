@@ -57,6 +57,10 @@ export function TasksSurface(props: TasksSurfaceProps) {
             taskId={task().taskId}
             onOpenTask={(taskId) => openPage({ kind: "task", taskId })}
             onBack={() => openPage()}
+            onOpenProject={(projectId) => {
+              store.setProjectId(projectId)
+              openPage()
+            }}
           />
         )}
       </Match>

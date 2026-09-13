@@ -30,6 +30,10 @@ type TasksState = {
   presetDraftId: string | undefined
   presetRevision: number | undefined
   presetRefusal: TasksRefusal | undefined
+  /** The preset the last start in this scope used; what a row's bare Start repeats. */
+  lastPresetId: string | undefined
+  /** A refused row start, keyed by task, shown in that row's own menu. */
+  startRefusals: Record<string, string>
 }
 
 export type TasksStore = ReturnType<typeof createTasksStore>
@@ -51,6 +55,8 @@ export function createTasksStore() {
     presetDraftId: undefined,
     presetRevision: undefined,
     presetRefusal: undefined,
+    lastPresetId: undefined,
+    startRefusals: {},
   })
 
   const editDraft = (task: Task): TaskEditDraft =>
@@ -138,6 +144,13 @@ export function createTasksStore() {
         const current = refusal.stale?.preset
         if (current) next.presetRevision = current.revision
       })),
+
+    startedWith: (taskId: string, presetId: string) =>
+      setState(produce((draft) => {
+        draft.lastPresetId = presetId
+        delete draft.startRefusals[taskId]
+      })),
+    refuseStart: (taskId: string, message: string) => setState("startRefusals", taskId, message),
 
     visibleTasks: (tasks: readonly TaskSummary[]) => tasks.filter((task) => matchesCollection(task, state.collection)),
   }

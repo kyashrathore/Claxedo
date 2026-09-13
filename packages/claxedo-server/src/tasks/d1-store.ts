@@ -50,7 +50,12 @@ import {
   type StoredReceiptColumns,
   type StoredTaskColumns,
 } from "@claxedo/server-core/tasks-host/stored-rows"
-import { tasksPage, tasksPageBounds } from "@claxedo/server-core/tasks-host/paging"
+import {
+  linkCountLookup,
+  tasksPage,
+  tasksPageBounds,
+  tasksPageRows,
+} from "@claxedo/server-core/tasks-host/paging"
 
 export type D1TasksStoreInput = Readonly<{ database: D1Database }>
 
@@ -96,6 +101,24 @@ function taskValues(task: Task): unknown[] {
     row.created_at,
     row.updated_at,
   ]
+}
+
+/**
+ * One prepared statement for a whole page of tasks. The primary key spans scope
+ * and task, so the scope is bound too: without it a task id reused in another
+ * tenant would add its sessions to this row.
+ */
+async function preparedLinkCounts(database: D1Database, scopeId: string, taskIds: readonly string[]) {
+  if (taskIds.length === 0) return linkCountLookup([])
+  const placeholders = taskIds.map(() => "?").join(", ")
+  const rows = await database
+    .prepare(
+      `select task_id, count(*) as links from task_session_links where scope_id = ? and task_id in (${placeholders})` +
+        ` group by task_id`,
+    )
+    .bind(scopeId, ...taskIds)
+    .all<{ task_id: string; links: number }>()
+  return linkCountLookup(rows.results.map((row) => ({ taskId: row.task_id, links: row.links })))
 }
 
 function linkValues(link: TaskSessionLink): unknown[] {
@@ -405,7 +428,8 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           )
           .bind(...bindings, ...page.bindings, page.limit + 1)
           .all<StoredTaskColumns>()
-        return tasksPage(rows.results, page.limit, (row) => taskSummaryOf(taskOfColumns(row)))
+        const links = await preparedLinkCounts(database, scopeId, tasksPageRows(rows.results, page.limit).map((row) => row.task_id))
+        return tasksPage(rows.results, page.limit, (row) => taskSummaryOf(taskOfColumns(row), links(row.task_id)))
       },
 
       async listChildren(scopeId, parentTaskId, query) {
@@ -419,7 +443,8 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           )
           .bind(scopeId, parentTaskId, ...page.bindings, page.limit + 1)
           .all<StoredTaskColumns>()
-        return tasksPage(rows.results, page.limit, (row) => taskSummaryOf(taskOfColumns(row)))
+        const links = await preparedLinkCounts(database, scopeId, tasksPageRows(rows.results, page.limit).map((row) => row.task_id))
+        return tasksPage(rows.results, page.limit, (row) => taskSummaryOf(taskOfColumns(row), links(row.task_id)))
       },
 
       async countChildren(scopeId, parentTaskId, filter) {

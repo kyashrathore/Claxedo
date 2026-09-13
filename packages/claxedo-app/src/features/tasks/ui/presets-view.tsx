@@ -1,4 +1,5 @@
 import { Show, createEffect, createSignal, on } from "solid-js"
+import { Button } from "@opencode-ai/ui/button"
 import { PresetList, presetEditorDraftOf, emptyPresetEditorDraft } from "@claxedo/tasks/solid"
 import { uuid } from "@/lib/uuid"
 import { refusalOf } from "../data/tasks-api"
@@ -62,15 +63,14 @@ export function PresetsView(props: PresetsViewProps) {
         onOpenPresets={() => props.onOpenPreset(undefined)}
         action={
           <Show when={!editing()}>
-            <button
-              type="button"
-              class="tsk-button"
-              data-variant="primary"
+            <Button
+              variant="primary"
+              size="small"
               data-testid="preset-list-create"
               onClick={() => props.store.openPresetDraft(emptyPresetEditorDraft())}
             >
               New preset
-            </button>
+            </Button>
           </Show>
         }
       />

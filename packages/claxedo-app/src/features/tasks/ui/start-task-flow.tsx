@@ -1,10 +1,9 @@
 import { createEffect, createMemo, createResource, createSignal } from "solid-js"
 import type { ConfigurationSlot, StartPreview, Task } from "@claxedo/tasks"
 import { StartTaskDialog, emptyPresetEditorDraft, type StartDraft, type StartPreviewState } from "@claxedo/tasks/solid"
-import { uuid } from "@/lib/uuid"
-import { useTasksAppPorts } from "../app-ports"
 import { refusalOf } from "../data/tasks-api"
-import { followRetry, listFailure, useTasksClient, useTasksInvalidation, usePresetList, type TasksScope } from "../data/queries"
+import { followRetry, listFailure, useTasksClient, usePresetList, type TasksScope } from "../data/queries"
+import { useStartTaskCommands } from "../data/start-task"
 import type { TasksStore } from "../store/tasks-store"
 import { PresetDraftEditor } from "./preset-draft-editor"
 
@@ -24,9 +23,8 @@ export type StartTaskFlowProps = {
  * dialog.
  */
 export function StartTaskFlow(props: StartTaskFlowProps) {
-  const openSession = useTasksAppPorts().useOpenSession()
   const client = useTasksClient()
-  const invalidate = useTasksInvalidation(props.scope)
+  const startTask = useStartTaskCommands(props.scope)
   const presets = usePresetList(props.scope, () => false)
   const [draft, setDraft] = createSignal<StartDraft>({
     presetId: null,
@@ -99,20 +97,20 @@ export function StartTaskFlow(props: StartTaskFlowProps) {
   type StartChoice = { presetId: string; presetRevision: number; slot: ConfigurationSlot; attempt: number }
 
   const send = async (current: Task, choice: StartChoice, previewDigest: string) => {
-    const response = await client().start(current.id, {
-      clientRequestId: uuid(),
-      taskRevision: current.revision,
-      presetId: choice.presetId,
-      presetRevision: choice.presetRevision,
-      slot: choice.slot,
-      attempt: choice.attempt,
+    await startTask.send(
+      {
+        taskId: current.id,
+        taskRevision: current.revision,
+        presetId: choice.presetId,
+        presetRevision: choice.presetRevision,
+        slot: choice.slot,
+        attempt: choice.attempt,
+        continueFromPrevious: draft().continueFromPrevious,
+      },
       previewDigest,
-      handoffText: draft().handoffText.trim().length > 0 ? draft().handoffText : null,
-      continueFromPrevious: draft().continueFromPrevious,
-    })
-    invalidate.task(current.id)
-    await invalidate.everything()
-    openSession(response.link.sessionRef)
+      draft().handoffText.trim().length > 0 ? draft().handoffText : null,
+    )
+    props.store.startedWith(current.id, choice.presetId)
     props.onClose()
   }
 

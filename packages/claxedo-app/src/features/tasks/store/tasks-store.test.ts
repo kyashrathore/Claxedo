@@ -76,10 +76,10 @@ describe("tasks store drafts", () => {
   test("collections split the catalog by status without dropping archived rows from All", () => {
     const store = createTasksStore()
     const rows = [
-      { ...task({ id: "a", status: "todo" }), hasDescription: false },
-      { ...task({ id: "b", status: "doing" }), hasDescription: false },
-      { ...task({ id: "c", status: "done" }), hasDescription: false },
-      { ...task({ id: "d", status: "todo", archivedAt: 10 }), hasDescription: false },
+      { ...task({ id: "a", status: "todo" }), hasDescription: false, links: { count: 0 } },
+      { ...task({ id: "b", status: "doing" }), hasDescription: false, links: { count: 0 } },
+      { ...task({ id: "c", status: "done" }), hasDescription: false, links: { count: 0 } },
+      { ...task({ id: "d", status: "todo", archivedAt: 10 }), hasDescription: false, links: { count: 0 } },
     ].map(({ description: _description, ...rest }) => rest)
 
     expect(store.visibleTasks(rows).map((row) => row.id)).toEqual(["a", "b"])

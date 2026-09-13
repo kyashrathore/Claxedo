@@ -109,6 +109,32 @@ function snapshotRollback(): TasksStorePort {
   }
 }
 
+/**
+ * Link counts taken without the scope: the same answer a `task_id in (…)`
+ * group returns when the query forgets that a link's key spans the scope too.
+ */
+const COUNTS_LINKS_ACROSS_SCOPES = everywhere((operations) => ({
+  ...operations,
+  tasks: {
+    ...operations.tasks,
+    list: async (scopeId, query) => {
+      const page = await operations.tasks.list(scopeId, query)
+      const other = scopeId === CONFORMANCE_SCOPES.first ? CONFORMANCE_SCOPES.second : CONFORMANCE_SCOPES.first
+      const items = await Promise.all(
+        page.items.map(async (row) => ({
+          ...row,
+          links: {
+            count:
+              (await operations.links.listByTask(scopeId, row.id)).length +
+              (await operations.links.listByTask(other, row.id)).length,
+          },
+        })),
+      )
+      return { ...page, items }
+    },
+  },
+}))
+
 const MUTANTS: readonly Mutant[] = [
   {
     breaks: "commits the work of a transaction that threw",
@@ -221,13 +247,17 @@ const MUTANTS: readonly Mutant[] = [
       presets: { ...operations.presets, assertRevision: async () => true },
     })),
   },
+  {
+    breaks: "counts another scope's sessions into this scope's list row",
+    apply: COUNTS_LINKS_ACROSS_SCOPES,
+  },
 ]
 
 describe("tasks store conformance", () => {
   const cases = tasksStoreConformance(async () => ({ store: createMemoryTasksStore() }))
 
   test("the pinned manifest lists exactly the cases the suite runs", () => {
-    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(3)
+    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(4)
     expect(cases.map((entry) => entry.name.replaceAll(/[^a-z]+/g, "_"))).toEqual([...TASKS_STORE_CONFORMANCE_SCOPE.cases])
   })
 

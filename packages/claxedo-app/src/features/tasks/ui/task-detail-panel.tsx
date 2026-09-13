@@ -20,6 +20,7 @@ export type TaskDetailPanelProps = {
   onStart: (input: { task: Task; slot: ConfigurationSlot; attempt: number }) => void
   onOpenTask: (taskId: string) => void
   onBack?: () => void
+  onOpenProject?: (projectId: string) => void
 }
 
 export function TaskDetailPanel(props: TaskDetailPanelProps) {
@@ -144,6 +145,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
             onStart={(input) => props.onStart({ task: current(), slot: input.slot, attempt: input.attempt })}
             onSendTask={(link) => void sendTask(current(), link)}
             onBack={props.onBack}
+            onOpenProject={props.onOpenProject ? () => props.onOpenProject?.(current().projectId) : undefined}
             onArchive={() =>
               void mutate(
                 () =>
