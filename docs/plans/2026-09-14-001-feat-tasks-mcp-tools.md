@@ -112,3 +112,40 @@ and it appears in the Tasks list with the provenance line; `task_start` from
 that session starts a session linked to the task. Hosted capability minting
 and verification are proven by tests against the real signing path; a real
 cloud root is gated on sandbox credentials as before.
+
+## S4 — the first-party server as a Marketplace plugin (2026-09-14)
+
+Decision (user): the Claxedo MCP server is no longer injected into every
+session by the runtime. It is a built-in plugin in the Marketplace that the
+user enables per tool group, activated per project like every other plugin,
+and its Tasks capability is minted only when the Tasks group is enabled, so
+consent and credential are one act.
+
+Assumed defaults, to be confirmed: one switch per tool group (sessions,
+subagents, attention, processes, documents, tasks); a new project starts with
+the runtime-local groups on (sessions, subagents, attention, processes), Tasks
+off, and Documents on where the documents service runs in the same process
+(local) and off where it is an account service (hosted).
+
+- Catalog: a first-party entry `claxedo` that is always present, not sourced,
+  not removable, whose servers are the tool groups with their tool names.
+  Whether one plugin carries six selectable servers or the family is six
+  first-party plugins depends on what the activation model can select today;
+  the lane reads it and picks the shape that needs no parallel activation path.
+- Activation defaults per deployment as above; the activation read exposes,
+  for the built-in, each group's enabled state and tool names.
+- Runtime: `firstPartyMcpAdapterConfig` includes the server entry only when
+  the plugin is active with at least one group; the MCP mount takes the
+  enabled group set, registers only those groups, and refuses a tool outside
+  them even when asked by name; `tools/list` shows exactly the enabled groups.
+- Tasks: the capability minter for a cloud root mints only when the Tasks
+  group is enabled for the root; the self-hosted node supplies the grant only
+  when it is enabled.
+- Marketplace: the directory renders the built-in like any other row, with
+  per-group switches and the tool list under each group; nothing to install.
+- Tests: activation defaults per deployment; a session launched with the
+  plugin off carries no first-party MCP entry; a mount with a subset of groups
+  lists and admits exactly those tools; the Tasks capability is absent when
+  the group is off; the directory row's switches write activation.
+- Live: on the local stack, turn Tasks off in the Marketplace and a fresh
+  session's tool list has no `task_*`; turn it on and it does.
