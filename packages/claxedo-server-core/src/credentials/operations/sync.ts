@@ -1,14 +1,8 @@
-import { jsonRecord, jsonText } from "@claxedo/server-core/platform/runtime/lib/json"
-import { emailFromClaims } from "@claxedo/server-core/credentials/secret-material"
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
 import { isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { getCredentialByProvider, putCredential } from "@claxedo/server-core/credentials/registry"
 import type { CredentialKind, CredentialSource } from "@claxedo/server-core/credentials/types"
-import { execFileSync } from "child_process"
-import fs from "fs"
-import os from "os"
-import path from "path"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
 const log = Log.create({ service: "credentials-sync" })
@@ -26,257 +20,12 @@ export type LocalCredentialItem = {
 
 type Item = Omit<LocalCredentialItem, "origin"> & { origin?: string }
 
-/**
- * The ONE way this module is allowed to reach a command line.
- *
- * Deliberately narrow: a caller can choose whether the Keychain is read at all,
- * but not how — the spawn options (no stdin, stderr discarded, bounded timeout)
- * are fixed at the call site, and there is no seam through which a write
- * subcommand could be smuggled in.
- */
-export type CredentialExec = (file: string, args: string[]) => string
-
-export type CollectLocalCredentialsOptions = {
-  /**
-   * Whether reading the macOS Keychain is permitted on this call.
-   *
-   * `security find-generic-password` asks the SecurityAgent for authorization
-   * when the item's ACL does not already list the calling binary, and there is
-   * no flag that suppresses that dialog — so the only way a background or
-   * status path can promise not to interrupt the user is to skip the Keychain
-   * entirely and fall through to `~/.claude/.credentials.json`. Off by default:
-   * a path that has not thought about it is a path that must not prompt.
-   */
-  allowKeychainPrompt?: boolean
-  exec?: CredentialExec
-}
-
-const defaultExec: CredentialExec = (file, args) =>
-  execFileSync(file, args, {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
-    timeout: 2_000,
-  })
-
+/** The harness bindings whose auth an operator can hand us through the environment. */
 const nativeHarnessEnv = {
   "claude-sdk": "ANTHROPIC_API_KEY",
   "codex-app-server": "OPENAI_API_KEY",
   "cursor-sdk": "CURSOR_API_KEY",
 } as const
-
-function codexAuthPath() {
-  return path.join(homeDir(), ".codex", "auth.json")
-}
-
-function codexAccountsPath() {
-  return path.join(homeDir(), ".codex", "accounts")
-}
-
-function homeDir() {
-  return process.env.HOME ?? os.homedir()
-}
-
-function claudeCredentialsPath() {
-  return path.join(homeDir(), ".claude", ".credentials.json")
-}
-
-function claudeCredentialsFileToken(): string | undefined {
-  try {
-    const file = claudeCredentialsPath()
-    if (!fs.existsSync(file)) return undefined
-    return claudeCodeOAuthAccessToken(fs.readFileSync(file, "utf8"))
-  } catch (err) {
-    log.warn("Failed to read Claude Code credentials file", { error: String(err) })
-    return undefined
-  }
-}
-
-function claudeCodeOAuthToken(options: CollectLocalCredentialsOptions) {
-  const env = trimToUndefined(process.env.CLAUDE_CODE_OAUTH_TOKEN) ?? trimToUndefined(process.env.ANTHROPIC_AUTH_TOKEN)
-  if (env) return claudeCodeOAuthAccessToken(env)
-  if (options.allowKeychainPrompt && process.platform === "darwin") {
-    try {
-      const token = claudeCodeOAuthAccessToken((options.exec ?? defaultExec)("security", [
-        "find-generic-password",
-        "-s",
-        "Claude Code-credentials",
-        "-a",
-        os.userInfo().username,
-        "-w",
-      ]))
-      if (token) return token
-    } catch {}
-  }
-  return claudeCredentialsFileToken()
-}
-
-/**
- * The access token, or nothing.
- *
- * A parsed object is NEVER returned raw. The Claude Code credentials blob also
- * carries an `mcpOAuth` map of unrelated third-party tokens, so falling back to
- * the whole document when `claudeAiOauth.accessToken` is missing would store,
- * and later transmit, credentials belonging to servers Claxedo has no business
- * holding. A plain string that is not JSON is a legitimate env-var token
- * (`CLAUDE_CODE_OAUTH_TOKEN`, `ANTHROPIC_AUTH_TOKEN`) and passes through.
- */
-function claudeCodeOAuthAccessToken(input: string): string | undefined {
-  const raw = trimToUndefined(input)
-  if (!raw) return undefined
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch {
-    return raw
-  }
-  const row = jsonRecord(parsed)
-  if (!row) return raw
-  const oauth = jsonRecord(row.claudeAiOauth)
-  return oauth && jsonText(oauth, "accessToken")
-}
-
-function codexAuth(): Record<string, unknown> | undefined {
-  try {
-    const file = codexAuthPath()
-    if (!fs.existsSync(file)) return undefined
-    return jsonRecord(JSON.parse(fs.readFileSync(file, "utf8")))
-  } catch (err) {
-    log.warn("Failed to read Codex auth", { error: String(err) })
-    return undefined
-  }
-}
-
-function codexAccountAuths() {
-  try {
-    const dir = codexAccountsPath()
-    if (!fs.existsSync(dir)) return []
-    return fs.readdirSync(dir)
-      .filter((entry) => entry.endsWith(".auth.json"))
-      .flatMap((entry) => {
-        const file = path.join(dir, entry)
-        const data = jsonRecord(JSON.parse(fs.readFileSync(file, "utf8")))
-        const bundle = data && codexBundle(data)
-        if (!data || !bundle) return []
-        return [{
-          data,
-          origin: "~/.codex/accounts/*.auth.json",
-          refreshed: Date.parse(bundle.last_refresh) || 0,
-        }]
-      })
-      .sort((a, b) => b.refreshed - a.refreshed)
-  } catch (err) {
-    log.warn("Failed to read Codex account auth", { error: String(err) })
-    return []
-  }
-}
-
-/**
- * Every Codex login on this machine, newest copy per account.
- *
- * `~/.codex/auth.json` and `~/.codex/accounts/<email>.auth.json` can hold the
- * *same* account with different tokens — the CLI refreshes whichever it is
- * using — so preferring the accounts directory wholesale meant importing a
- * months-old copy while a token refreshed yesterday sat in `auth.json`, and the
- * stale one is usually dead at the provider. Compare `last_refresh` across both
- * sources and keep the freshest per account.
- */
-function codexAuthCandidates() {
-  const primary = codexAuth()
-  const primaryBundle = primary ? codexBundle(primary) : undefined
-  const candidates = [
-    ...codexAccountAuths(),
-    ...(primary
-      ? [{
-        data: primary,
-        origin: "~/.codex/auth.json",
-        refreshed: primaryBundle ? Date.parse(primaryBundle.last_refresh) || 0 : 0,
-      }]
-      : []),
-  ]
-
-  const freshest = new Map<string, (typeof candidates)[number]>()
-  for (const candidate of candidates) {
-    const account = codexBundle(candidate.data)?.tokens.account_id ?? ""
-    const current = freshest.get(account)
-    if (!current || candidate.refreshed > current.refreshed) freshest.set(account, candidate)
-  }
-  return [...freshest.values()].sort((a, b) => b.refreshed - a.refreshed)
-}
-
-function jwtExp(input: string | undefined): number | undefined {
-  if (!input) return undefined
-  try {
-    const part = input.split(".")[1]
-    if (!part) return undefined
-    const base = part
-      .replace(/-/g, "+")
-      .replace(/_/g, "/")
-      .padEnd(Math.ceil(part.length / 4) * 4, "=")
-    const claims = jsonRecord(JSON.parse(Buffer.from(base, "base64").toString("utf8")))
-    return typeof claims?.exp === "number" ? claims.exp * 1000 : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function codexBundle(input: unknown) {
-  const row = jsonRecord(input)
-  if (!row) return undefined
-  const tokens = jsonRecord(row.tokens)
-  const access = tokens && jsonText(tokens, "access_token")
-  const refresh = tokens && jsonText(tokens, "refresh_token")
-  const account_id = tokens && jsonText(tokens, "account_id")
-  const id_token = tokens && jsonText(tokens, "id_token")
-  if (!access || !refresh || !account_id) return undefined
-  return {
-    auth_mode: jsonText(row, "auth_mode") ?? "chatgpt",
-    OPENAI_API_KEY: jsonText(row, "OPENAI_API_KEY") ?? null,
-    tokens: {
-      ...(id_token ? { id_token } : {}),
-      access_token: access,
-      refresh_token: refresh,
-      account_id,
-    },
-    last_refresh: jsonText(row, "last_refresh") ?? new Date().toISOString(),
-  }
-}
-
-function codexCredential(local: unknown) {
-  const bundle = codexBundle(local)
-  const refresh = bundle?.tokens.refresh_token
-  const access = bundle?.tokens.access_token
-  const account_id = bundle?.tokens.account_id
-  const expires = jwtExp(access) ?? Date.now() + 55 * 60 * 1000
-  if (!refresh || !access) return undefined
-  // The user picks between several Codex logins by who they are, and only the
-  // token's own claims know that; `itemOrigin` reads the label, so every codex
-  // caller passes an explicit origin rather than letting an address decide one.
-  const email = emailFromClaims(bundle)
-  return {
-    provider_id: "codex-app-server",
-    kind: "oauth_token" as const,
-    source: "local_only" as const,
-    label: email ?? "Synced from local Codex auth",
-    ...(account_id ? { account_id } : {}),
-    ...(expires ? { fresh_until: expires } : {}),
-    secret: JSON.stringify({
-      source: "codex",
-      type: "codex_auth",
-      ...(bundle ? bundle : {}),
-      refresh,
-      access,
-      expires,
-      account_id,
-      oauth: {
-        refresh,
-        access,
-        expires,
-        ...(account_id ? { account_id } : {}),
-      },
-    }),
-  }
-}
-
 
 function kind(providerId: string): CredentialKind {
   return isSandboxDriverID(providerId) ? "sandbox_driver" : "api_key"
@@ -284,8 +33,6 @@ function kind(providerId: string): CredentialKind {
 
 function itemOrigin(item: Item) {
   if (item.origin) return item.origin
-  if (item.label.includes("Codex")) return "~/.codex/auth.json"
-  if (item.label.includes("Claude Code")) return process.platform === "darwin" ? "macOS Keychain or ~/.claude/.credentials.json" : "~/.claude/.credentials.json"
   if (item.label.includes("local config")) return "Claxedo local config"
   const env = /^Synced from (.+)$/.exec(item.label)?.[1]
   return env ?? item.source
@@ -297,22 +44,27 @@ function put(map: Map<string, LocalCredentialItem>, item: Item | undefined) {
   map.set(`${item.provider_id}\u0000${item.kind}\u0000${item.account_id ?? ""}`, normalized)
 }
 
-function claudeOAuthItem(token: string | undefined) {
-  const accessToken = trimToUndefined(token)
-  if (!accessToken) return undefined
-  const envVar = process.env.CLAUDE_CODE_OAUTH_TOKEN
+/**
+ * A Claude subscription token the operator put in the environment.
+ *
+ * This is material handed to us on purpose, not the login Claude Code holds on
+ * this machine — that one is never copied, and `machine-login.ts` asks the CLI
+ * about it instead.
+ */
+function claudeEnvOAuthItem() {
+  const envVar = trimToUndefined(process.env.CLAUDE_CODE_OAUTH_TOKEN)
     ? "CLAUDE_CODE_OAUTH_TOKEN"
-    : process.env.ANTHROPIC_AUTH_TOKEN
+    : trimToUndefined(process.env.ANTHROPIC_AUTH_TOKEN)
       ? "ANTHROPIC_AUTH_TOKEN"
       : undefined
+  const accessToken = envVar ? trimToUndefined(process.env[envVar]) : undefined
+  if (!envVar || !accessToken) return undefined
   return {
     provider_id: "claude-sdk",
     kind: "oauth_token" as const,
-    source: "managed" as const,
-    label: envVar
-      ? `Claude token from ${envVar} · agent SDK`
-      : `Claude Code login · agent SDK`,
-    ...(envVar ? { origin: `Environment variable ${envVar}` } : {}),
+    source: "env" as const,
+    label: `Synced from ${envVar}`,
+    origin: `Environment variable ${envVar}`,
     secret: JSON.stringify({
       type: "claude_code_oauth",
       claudeAiOauth: { accessToken },
@@ -364,8 +116,7 @@ function vercelSandboxDriverCredentialItem(
  *
  * `loadUserConfig` throws on an unreadable file, invalid JSON or a schema it
  * does not recognise. Letting that escape makes one bad file blank the whole
- * scan — the Codex and Claude logins on the same machine are collected from
- * their own files and have nothing to do with it.
+ * scan — the environment-supplied keys beside it have nothing to do with it.
  */
 async function userConfigOrNone() {
   try {
@@ -376,23 +127,20 @@ async function userConfigOrNone() {
   }
 }
 
-export async function collectLocalCredentials(options: CollectLocalCredentialsOptions = {}) {
+/**
+ * Every credential this machine has handed Claxedo on purpose: keys in the
+ * user's agent config, sandbox driver settings, and provider secrets in the
+ * environment.
+ *
+ * Not the CLI logins. A harness's own login is asked about, never copied
+ * (`credentials/machine-login.ts`), so nothing here opens the Keychain,
+ * `~/.claude/.credentials.json` or `~/.codex/auth.json`.
+ */
+export async function collectLocalCredentials() {
   const cfg = await userConfigOrNone()
   const sandboxDriverConfigValue = sandboxDriverConfig(cfg)
   const map = new Map<string, LocalCredentialItem>()
-  const codexAccounts = codexAuthCandidates()
-  const codex = codexAccounts[0]?.data
-
-  const primaryCodex = codexCredential(codex)
-  put(map, primaryCodex && codexAccounts[0]
-    ? { ...primaryCodex, origin: codexAccounts[0].origin }
-    : primaryCodex)
-  for (const account of codexAccounts.slice(1)) {
-    const item = codexCredential(account.data)
-    put(map, item ? { ...item, origin: account.origin } : undefined)
-  }
-  const claudeOAuth = claudeCodeOAuthToken(options)
-  put(map, claudeOAuthItem(claudeOAuth))
+  put(map, claudeEnvOAuthItem())
 
   for (const [providerId, secret] of Object.entries(cfg?.auth ?? {})) {
     const txt = trimToUndefined(secret)
@@ -520,8 +268,8 @@ export async function collectLocalCredentials(options: CollectLocalCredentialsOp
   return map
 }
 
-export async function collectLocalCredentialItems(options: CollectLocalCredentialsOptions = {}) {
-  return [...(await collectLocalCredentials(options)).values()]
+export async function collectLocalCredentialItems() {
+  return [...(await collectLocalCredentials()).values()]
 }
 
 /**
@@ -532,13 +280,9 @@ export async function collectLocalCredentialItems(options: CollectLocalCredentia
  * writes `__local__` only, so it can neither observe nor clobber another
  * tenant's provider credentials.
  */
-export async function syncLocalCredentials(
-  ids?: string[],
-  org?: string,
-  options: CollectLocalCredentialsOptions = {},
-) {
+export async function syncLocalCredentials(ids?: string[], org?: string) {
   log.warn("Deprecated sync-local credential path called; migrate to explicit discovery (automatic discovery, explicit upload)")
-  const all = await collectLocalCredentials(options)
+  const all = await collectLocalCredentials()
   const list = ids?.length ? [...new Set(ids)] : [...new Set([...all.values()].map((item) => item.provider_id))]
   const synced: string[] = []
   const existing: string[] = []

@@ -29,6 +29,7 @@ const {
   deleteCredentialsByProvider,
   selectCredentialsForScope,
   setActiveCredentials,
+  clearActiveCredentials,
 } = await import("./registry")
 const { ClaxedoProviderCredentialTable } = await import("./provider-credential.sql")
 
@@ -705,6 +706,75 @@ describe("credential registry", () => {
       await deleteCredential(second.id)
 
       expect(getCredential(first.id)?.is_active).toBe(true)
+    })
+
+    test("a refused active account hands the mark to the oldest account left", async () => {
+      const { first, second } = await twoAccounts("active-refused")
+      const third = await thirdAccount("active-refused")
+      expect(first.is_active).toBe(true)
+
+      updateCredentialHealth(first.id, "auth_failed", 1234)
+
+      expect(getCredential(first.id)).toMatchObject({ is_active: false, health: "auth_failed" })
+      expect(getCredential(second.id)?.is_active).toBe(true)
+      expect(getCredential(third.id)?.is_active).toBe(false)
+      expect(await resolveSecret("active-refused")).toBe("second-secret")
+    })
+
+    test("expiry and a missing subscription move the mark; a rate cap does not", async () => {
+      for (const health of ["expired", "no_billing"] as const) {
+        const { first, second } = await twoAccounts(`active-refused-${health}`)
+        updateCredentialHealth(first.id, health, 1234)
+        expect(getCredential(first.id)?.is_active, health).toBe(false)
+        expect(getCredential(second.id)?.is_active, health).toBe(true)
+      }
+
+      const { first, second } = await twoAccounts("active-rate-capped")
+      updateCredentialHealth(first.id, "rate_capped", 1234)
+
+      expect(getCredential(first.id)).toMatchObject({ is_active: true, health: "rate_capped" })
+      expect(getCredential(second.id)?.is_active).toBe(false)
+    })
+
+    test("a refused account with nowhere to hand the mark keeps it", async () => {
+      const { first, second } = await twoAccounts("active-refused-alone")
+      updateCredentialHealth(second.id, "auth_failed", 1234)
+
+      updateCredentialHealth(first.id, "auth_failed", 1234)
+
+      expect(getCredential(first.id)).toMatchObject({ is_active: true, health: "auth_failed" })
+      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-refused-alone"))
+        .toEqual([])
+    })
+
+    test("a refused account that never held the mark leaves the marked one alone", async () => {
+      const { first, second } = await twoAccounts("active-refused-inactive")
+
+      updateCredentialHealth(second.id, "auth_failed", 1234)
+
+      expect(getCredential(first.id)?.is_active).toBe(true)
+      expect(getCredential(second.id)?.is_active).toBe(false)
+    })
+
+    test("clearActiveCredentials leaves the provider unmarked, so its harness runs on the machine login", async () => {
+      const { first, second } = await twoAccounts("active-clear")
+
+      expect(clearActiveCredentials(["active-clear"])).toEqual({ cleared: [first.id] })
+
+      expect(getCredential(first.id)?.is_active).toBe(false)
+      expect(getCredential(second.id)?.is_active).toBe(false)
+      expect(selectCredentialsForScope("local").filter((row) => row.provider_id === "active-clear")).toEqual([])
+    })
+
+    test("clearActiveCredentials clears every binding named and nothing else", async () => {
+      const { first } = await twoAccounts("active-clear-a")
+      const other = await twoAccounts("active-clear-b")
+      const untouched = await twoAccounts("active-clear-c")
+
+      expect(clearActiveCredentials(["active-clear-a", "active-clear-b", "active-clear-missing"]).cleared.toSorted())
+        .toEqual([first.id, other.first.id].toSorted())
+
+      expect(getCredential(untouched.first.id)?.is_active).toBe(true)
     })
 
     test("setActiveCredentials moves the mark, and the fanout sends the account it moved to", async () => {

@@ -191,12 +191,7 @@ export function createCredentialDiscovery(input: {
 }
 
 export const credentialDiscovery = createCredentialDiscovery({
-  // The one path a Keychain dialog may interrupt: `POST /discover` is reached
-  // only from the setup step's "Find credentials on this computer" button, so
-  // the user is already looking at the screen that asked. Every other consumer
-  // of `collectLocalCredentials` leaves the flag off and reads
-  // `~/.claude/.credentials.json` instead.
-  collect: () => collectLocalCredentialItems({ allowKeychainPrompt: true }),
+  collect: collectLocalCredentialItems,
   save: putCredential,
   connected: listCredentials,
   probe: probeDiscoveredCredential,

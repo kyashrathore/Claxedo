@@ -76,8 +76,11 @@ async function withRegistryOutage<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-beforeEach(() => {
+beforeEach(async () => {
   setBackendOverride(createTestBackend())
+  // One store per test: a row left behind by an earlier test is an account this
+  // one never chose, and the mark now moves between accounts on its own.
+  for (const row of listCredentials()) await deleteCredential(row.id)
 })
 
 afterAll(async () => {
@@ -370,6 +373,30 @@ describe("local binding authority", () => {
     }
 
     expect(await local.projectAuth({ workspaceId })).not.toHaveProperty("claude-sdk")
+  })
+
+  test("a rejected account hands the mark on, and the next projection binds the account it moved to", async () => {
+    const rejected = await activeRow("sk-ant-api03-rejected-first")
+    const heir = await putCredential({
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "managed",
+      account_id: "acc-heir",
+      secret: "sk-ant-api03-heir",
+    })
+    const local = broker()
+
+    await local.authority.reportFailure({
+      bindingId: "unused",
+      credentialId: rejected.id,
+      revision: getCredential(rejected.id)!.revision,
+      status: 401,
+    })
+
+    expect(getCredential(rejected.id)).toMatchObject({ is_active: false, health: "auth_failed" })
+    expect(getCredential(heir.id)?.is_active).toBe(true)
+    const projection = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.value).toBe("sk-ant-api03-heir")
   })
 
   test("reportFailure marks the row only for the revision the request used", async () => {

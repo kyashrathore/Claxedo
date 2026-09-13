@@ -953,6 +953,43 @@ describe("replacing the token on a stored account", () => {
   })
 })
 
+describe("what this computer's own logins say", () => {
+  test("reports every harness's self-report, and asks only the harness named", async () => {
+    const machineLogins = vi.fn(async () => [{
+      harness: "claude" as const,
+      providerIds: ["claude-acp", "claude-sdk"],
+      state: "signed_in" as const,
+      email: "person@example.com",
+      plan: "max",
+    }])
+    const app = CredentialRoutes(Object.assign(credentials(), { machineLogins }), {})
+
+    const all = await app.request("http://localhost/machine-logins")
+    expect(all.status).toBe(200)
+    await expect(all.json()).resolves.toMatchObject({
+      machine_logins: [{ harness: "claude", email: "person@example.com", plan: "max" }],
+    })
+    expect(machineLogins).toHaveBeenCalledWith(undefined)
+
+    await app.request("http://localhost/machine-logins?harness=codex")
+    expect(machineLogins).toHaveBeenLastCalledWith(["codex"])
+  })
+
+  test("a harness the catalog does not name is refused, and a host that runs none says so", async () => {
+    const machineLogins = vi.fn(async () => [])
+    const refused = await CredentialRoutes(Object.assign(credentials(), { machineLogins }), {})
+      .request("http://localhost/machine-logins?harness=not-a-harness")
+    expect(refused.status).toBe(400)
+    expect(machineLogins).not.toHaveBeenCalled()
+
+    const unsupported = await CredentialRoutes(credentials(), {}).request("http://localhost/machine-logins")
+    expect(unsupported.status).toBe(501)
+    await expect(unsupported.json()).resolves.toMatchObject({
+      error: { code: "credential_machine_login_unavailable" },
+    })
+  })
+})
+
 describe("choosing which account a provider runs on", () => {
   const root = path.join(realpathSync(os.tmpdir()), `credential-activate-${randomUUID().slice(0, 8)}`)
   let registry: typeof import("@claxedo/server-core/credentials/registry")
@@ -1053,6 +1090,27 @@ describe("choosing which account a provider runs on", () => {
     expect(ineligible.status).toBe(409)
     await expect(ineligible.json()).resolves.toMatchObject({ error: { code: "credential_not_activatable" } })
     expect(registry.getCredential(driver.id)?.is_active).toBe(false)
+  })
+
+  test("choosing this computer's login leaves the provider with no marked account", async () => {
+    const first = await account("machine-choice", "acc_first")
+    const second = await account("machine-choice", "acc_second")
+    expect(registry.getCredential(first.id)?.is_active).toBe(true)
+
+    const response = await app.request("http://localhost/activate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ machine_login: { provider_ids: ["machine-choice"] } }),
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ credentials: [], cleared: [first.id] })
+    expect(registry.getCredential(first.id)?.is_active).toBe(false)
+    expect(registry.getCredential(second.id)?.is_active).toBe(false)
+    const effective = await (await app.request("http://localhost/effective")).json() as {
+      credentials: Array<{ provider_id: string }>
+    }
+    expect(effective.credentials.filter((row) => row.provider_id === "machine-choice")).toEqual([])
   })
 
   test("two ids competing for one provider are refused as a bad request", async () => {
