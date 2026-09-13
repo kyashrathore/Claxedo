@@ -11,7 +11,7 @@ import {
   renderBetterAuthD1WranglerConfig,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
-import { stageWorkerControlPlaneMigrations } from "./worker-build-selection"
+import { stageWorkerControlPlaneMigrations } from "./staged-control-plane-migrations"
 import { asRecord, numberField, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 import { d1Rows } from "./d1-json"
 

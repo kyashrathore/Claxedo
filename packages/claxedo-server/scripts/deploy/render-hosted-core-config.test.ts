@@ -8,7 +8,7 @@ import {
   requireNonLegacyWorkerName,
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { renderHostedCoreWranglerConfig, requireUniqueRateLimitNamespaces } from "./render-hosted-core-config"
-import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR } from "./worker-build-selection"
+import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR } from "./staged-control-plane-migrations"
 
 const packageRoot = path.resolve(import.meta.dirname, "../..")
 

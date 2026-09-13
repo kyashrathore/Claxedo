@@ -2,7 +2,6 @@ import {
   certifiedHostedWorkerArtifact,
   type CertifiedHostedWorkerArtifactId,
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
-import { renderWorkerBuildSelectionDefine } from "./worker-build-selection"
 
 export type RateLimitNamespaceAllocation = Readonly<{
   owner: string
@@ -19,8 +18,8 @@ export type HostedCoreConfigInput = Readonly<{
   /**
    * `migrations_dir` for CONTROL_PLANE_DB, relative to where this config is
    * written. It names a directory staged by
-   * `stageWorkerControlPlaneMigrations`, not the source directory: the staged
-   * copy is what carries this build's feature selection.
+   * `stageWorkerControlPlaneMigrations` rather than the source tree every
+   * other reader shares.
    */
   controlPlaneMigrationsDir: string
   userDeployedOrganization?: Readonly<{ id: string; name: string }>
@@ -127,7 +126,6 @@ database_name = ${quote(input.controlPlaneDatabase.name)}
 database_id = ${quote(input.controlPlaneDatabase.id)}
 migrations_dir = ${quote(input.controlPlaneMigrationsDir)}
 
-${renderWorkerBuildSelectionDefine()}
 [[ratelimits]]
 name = "CLAXEDO_REQUEST_LIMITER"
 namespace_id = ${quote(positiveNamespaceId(input.limiter.namespaceId))}

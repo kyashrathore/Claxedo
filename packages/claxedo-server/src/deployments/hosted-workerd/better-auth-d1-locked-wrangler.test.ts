@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 
 import { renderBetterAuthD1WranglerConfig } from "../../../scripts/deploy/release-better-auth-d1"
-import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR } from "../../../scripts/deploy/worker-build-selection"
+import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR } from "../../../scripts/deploy/staged-control-plane-migrations"
 
 const source = renderBetterAuthD1WranglerConfig({
   staging: false,

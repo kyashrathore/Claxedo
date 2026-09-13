@@ -9,7 +9,7 @@ import {
   renderBetterAuthD1WranglerConfig,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
-import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR } from "./worker-build-selection"
+import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR } from "./staged-control-plane-migrations"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 

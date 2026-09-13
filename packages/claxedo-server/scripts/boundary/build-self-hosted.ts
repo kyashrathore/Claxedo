@@ -8,7 +8,6 @@ import {
   normalizeEsbuildBuildManifest,
   serializeBuildManifest,
 } from "../../../../script/product-boundary/normalize-build-manifest"
-import { stageMigrationJournal } from "../../../../script/migration-journal"
 
 const ROOT = path.resolve(import.meta.dirname, "../..")
 const REPO_ROOT = path.resolve(ROOT, "../..")
@@ -29,13 +28,6 @@ const result = await build({
   target: "node22",
   sourcemap: "external",
   metafile: true,
-  // Baked, so the artifact's Tasks selection cannot be changed by the
-  // environment the server is later started in. esbuild folds the
-  // comparison in the entry, which is what removes the composition's
-  // dynamic import instead of leaving it behind a false branch.
-  define: {
-    "process.env.CLAXEDO_BUILD_TASKS": JSON.stringify(process.env.CLAXEDO_BUILD_TASKS === "0" ? "0" : "1"),
-  },
   mainFields: ["module", "main"],
   conditions: ["node", "development", "import", "default"],
   loader: { ".sh": "text", ".txt": "text" },
@@ -61,7 +53,7 @@ const result = await build({
 const journalModule = require.resolve("@claxedo/server-core/platform/db/journal")
 const migrations = path.join(path.dirname(journalModule), "claxedo-migration")
 if (!fs.existsSync(migrations)) throw new Error(`self-hosted migration journal is missing: ${migrations}`)
-const staged = stageMigrationJournal(migrations, path.join(DIST, "claxedo-migration"))
+fs.cpSync(migrations, path.join(DIST, "claxedo-migration"), { recursive: true })
 
 const manifest = normalizeEsbuildBuildManifest({
   entry: ENTRY,
@@ -73,7 +65,4 @@ const manifestFile = path.join(ROOT, ".artifacts/u8-package-split/manifests/serv
 fs.mkdirSync(path.dirname(manifestFile), { recursive: true })
 fs.writeFileSync(manifestFile, serializeBuildManifest(manifest))
 
-console.log(
-  `[server-self-hosted] built ${manifest.modules.length} modules in ${manifest.chunks.length} chunk` +
-    (staged.excluded.length > 0 ? `, migrations excluded: ${staged.excluded.join(", ")}` : ""),
-)
+console.log(`[server-self-hosted] built ${manifest.modules.length} modules in ${manifest.chunks.length} chunk`)

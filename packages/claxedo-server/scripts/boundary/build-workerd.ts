@@ -9,7 +9,7 @@ import {
 } from "../../../../script/product-boundary/normalize-build-manifest"
 import { certifiedHostedWorkerArtifact } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
 import { renderHostedCoreWranglerConfig } from "../deploy/render-hosted-core-config"
-import { stageWorkerControlPlaneMigrations } from "../deploy/worker-build-selection"
+import { stageWorkerControlPlaneMigrations } from "../deploy/staged-control-plane-migrations"
 import {
   REPO_ROOT,
   SERVER_ROOT,
@@ -101,8 +101,8 @@ function buildManifest(target: WorkerdBoundaryTarget) {
 }
 
 function buildEveryCertifiedArtifact() {
-  // The gate bundles the selection the environment asks for, and the staged
-  // directory the config names is what a `d1 migrations apply` would read.
+  // The staged directory the config names is what a `d1 migrations apply`
+  // would read.
   fs.rmSync(STAGED_MIGRATIONS, { recursive: true, force: true })
   const staged = stageWorkerControlPlaneMigrations({ configDirectory: SERVER_ROOT, stageInto: STAGED_MIGRATIONS })
   for (const target of WORKERD_BOUNDARY_TARGETS) {
@@ -138,8 +138,7 @@ function buildEveryCertifiedArtifact() {
       fs.writeFileSync(manifestFile, serializeBuildManifest(manifest))
     }
     console.log(
-      `[server-workerd] ${target.artifactId}: built ${manifest.modules.length} modules in ${manifest.chunks.length} chunk` +
-        (staged.excluded.length > 0 ? `, migrations excluded: ${staged.excluded.join(", ")}` : ""),
+      `[server-workerd] ${target.artifactId}: built ${manifest.modules.length} modules in ${manifest.chunks.length} chunk`,
     )
   }
   return 0

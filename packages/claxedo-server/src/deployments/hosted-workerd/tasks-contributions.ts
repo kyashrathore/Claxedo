@@ -10,13 +10,13 @@ import {
 } from "../../tasks/session-bridge"
 
 /**
- * The only edge from a Worker entry into Tasks.
+ * The hosted Tasks routes a Worker entry mounts, with the session bridge each
+ * request's principal is handed to.
  *
- * The entry's gate is a `process.env.CLAXEDO_BUILD_TASKS` comparison that
- * Wrangler's esbuild folds to a literal, and esbuild can only drop what
- * nothing else references: a second import of the composition or the bridge
- * from any module the Worker reaches puts the kit back into the deployed
- * artifact with the gate still present and reading correctly.
+ * The composition and the bridge are paired here rather than in the entry
+ * because the bridge is per-principal and the composition is per-Worker: an
+ * entry that built one without the other would serve Tasks routes that cannot
+ * start a session.
  */
 export function hostedTasksRouteContributions(
   input: Omit<HostedTasksCompositionInput, "bridge" | "cloudSelectedCapabilities"> & {

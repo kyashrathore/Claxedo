@@ -23,9 +23,8 @@ import {
 import { isTransientWranglerFailure } from "./prepare-better-auth-d1"
 import {
   STAGED_CONTROL_PLANE_MIGRATIONS_DIR,
-  renderWorkerBuildSelectionDefine,
   stageWorkerControlPlaneMigrations,
-} from "./worker-build-selection"
+} from "./staged-control-plane-migrations"
 import { fetchUrl } from "../../src/test-support/fetch-calls"
 import { asRecord, isRecordArray, numberField, parseJson, parseJsonRecords, readJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
@@ -472,8 +471,8 @@ type BetterAuthD1WranglerConfigInput = {
   /**
    * `migrations_dir` for CONTROL_PLANE_DB, relative to where this config is
    * written. `prepare-better-auth-d1.ts --migrate` applies everything it
-   * names, so it must be a directory staged for this build's feature
-   * selection rather than the source directory.
+   * names, so it must be a directory staged for this release rather than the
+   * source tree every other reader shares.
    */
   controlPlaneMigrationsDir: string
 }
@@ -552,7 +551,6 @@ database_name = ${quote(input.controlPlaneDatabaseName)}
 database_id = ${quote(input.controlPlaneDatabaseId)}
 migrations_dir = ${quote(input.controlPlaneMigrationsDir)}
 
-${renderWorkerBuildSelectionDefine()}
 [[ratelimits]]
 name = "CLAXEDO_REQUEST_LIMITER"
 namespace_id = ${quote(input.namespaceId)}
@@ -1229,7 +1227,6 @@ async function main() {
   try {
     const config = path.join(temporary, "wrangler.toml")
     const staged = stageWorkerControlPlaneMigrations({ configDirectory: temporary })
-    if (staged.excluded.length > 0) console.log(`control-plane migrations excluded: ${staged.excluded.join(", ")}`)
     const bundleDirectory = path.join(temporary, "bundle")
     const bundle = path.join(
       bundleDirectory,

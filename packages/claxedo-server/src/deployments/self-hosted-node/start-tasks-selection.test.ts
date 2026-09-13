@@ -1,6 +1,5 @@
 /**
- * Which Tasks composition a self-hosted box mounts, and whether it mounts one
- * at all.
+ * Which Tasks composition a self-hosted box mounts.
  *
  * Asserted through the mounted ROUTES rather than by identity of the returned
  * object: the two compositions differ in who they admit, and "the signed one
@@ -28,12 +27,11 @@ const saved: Record<string, string | undefined> = {}
 
 beforeEach(() => {
   dataDir = mkdtempSync(path.join(tmpdir(), "claxedo-self-hosted-tasks-selection-"))
-  for (const key of ["CLAXEDO_DATA_DIR", "CLAXEDO_DEPLOYMENT_MODE", "CLAXEDO_BUILD_TASKS"]) {
+  for (const key of ["CLAXEDO_DATA_DIR", "CLAXEDO_DEPLOYMENT_MODE"]) {
     saved[key] = process.env[key]
   }
   process.env.CLAXEDO_DATA_DIR = dataDir
   process.env.CLAXEDO_DEPLOYMENT_MODE = "local"
-  delete process.env.CLAXEDO_BUILD_TASKS
 })
 
 afterEach(() => {
@@ -102,14 +100,5 @@ describe("self-hosted Tasks selection", () => {
 
     expect(app.contributions.map((contribution) => contribution.id)).toEqual(["claxedo-tasks"])
     expect((await app.request()).status).toBe(200)
-  })
-
-  test("CLAXEDO_BUILD_TASKS=0 mounts neither, in either posture", async () => {
-    process.env.CLAXEDO_BUILD_TASKS = "0"
-
-    expect(await selfHostedTasksRouteContributions(signedServices())).toEqual([])
-    expect(await selfHostedTasksRouteContributions(unsignedServices())).toEqual([])
-    expect((await mounted(unsignedServices())).contributions).toEqual([])
-    expect((await (await mounted(unsignedServices())).request()).status).toBe(404)
   })
 })

@@ -90,9 +90,7 @@ const ENTRIES = [
   // +1 package (2026-09-12): `@claxedo/tasks`, reached only through
   // `src/tasks/self-hosted-composition.ts` — the SIGNED posture's Tasks
   // composition, which `self-hosted-node/start.ts` selects from the composed
-  // `services.auth.config.enabled`. `CLAXEDO_BUILD_TASKS=0` folds that branch
-  // away and the emitted bundle carries neither the composition nor the kit;
-  // this walk is source-only and sees both. 139/39.
+  // `services.auth.config.enabled`. 139/39.
   { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 139, packages: 39 },
 ] as const
 

@@ -88,12 +88,7 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
 }
 
 /**
- * Tasks for the posture this box composed, or nothing at all.
- *
- * The build gate is first, and `scripts/boundary/build-self-hosted.ts` folds it
- * to a literal, so `CLAXEDO_BUILD_TASKS=0` removes both compositions, the kit
- * and the routes from the bundle rather than leaving them behind a false
- * branch. Unbundled (`tsx`) the same line reads the real variable.
+ * Tasks for the posture this box composed.
  *
  * The posture is read from the COMPOSED services, not from the environment: a
  * box whose embedded issuer did not configure has `auth.config.enabled` false
@@ -106,18 +101,13 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
 export async function selfHostedTasksRouteContributions(
   services: ControlPlaneServices,
 ): Promise<readonly ControlPlaneRouteContribution[]> {
-  // Both imports sit INSIDE the folded branch, not after an early return.
-  // Measured: esbuild drops a dynamic import only when the import expression
-  // itself is in a statically dead branch — with an `if (...) return []` guard
-  // ahead of them instead, the off bundle still carried all 19 `@claxedo/tasks`
-  // modules and the `claxedo_task_session_link` DDL.
-  if (process.env.CLAXEDO_BUILD_TASKS !== "0") {
-    if (services.auth.config.enabled) {
-      const { createSelfHostedTasksComposition } = await import("../../tasks/self-hosted-composition")
-      return createSelfHostedTasksComposition({ services }).routeContributions
-    }
-    const { routeContributions } = await import("@claxedo/local-server/tasks/local-composition")
-    return routeContributions
+  // `@claxedo/local-server/tasks/local-composition` builds its routes as the
+  // module evaluates, so a static import would compose the loopback posture
+  // inside every signed box too.
+  if (services.auth.config.enabled) {
+    const { createSelfHostedTasksComposition } = await import("../../tasks/self-hosted-composition")
+    return createSelfHostedTasksComposition({ services }).routeContributions
   }
-  return []
+  const { routeContributions } = await import("@claxedo/local-server/tasks/local-composition")
+  return routeContributions
 }

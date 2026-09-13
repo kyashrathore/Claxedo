@@ -34,7 +34,7 @@ import {
   verifyBootstrapGate,
   workerVersionHasLiveSyncRoom,
 } from "./release-better-auth-d1"
-import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR as STAGED } from "./worker-build-selection"
+import { STAGED_CONTROL_PLANE_MIGRATIONS_DIR as STAGED } from "./staged-control-plane-migrations"
 
 const env = {
   CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
