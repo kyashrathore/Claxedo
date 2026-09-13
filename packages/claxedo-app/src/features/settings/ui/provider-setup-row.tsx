@@ -45,7 +45,7 @@ export type ProviderAccount = {
  * timestamp stays quiet behind it.
  */
 const HealthLine: Component<{ health: ProviderHealth; component: string }> = (props) => (
-  <span class="flex min-w-0 items-center gap-1.5" data-component={props.component}>
+  <span class="flex min-w-0 flex-wrap items-baseline gap-x-1.5" data-component={props.component}>
     <Show
       when={props.health.rejected}
       fallback={<span class="text-12-regular text-text-weak">{props.health.label}</span>}
