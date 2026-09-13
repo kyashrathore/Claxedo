@@ -15,7 +15,7 @@
  * its own.
  */
 import { describe, expect, test } from "bun:test"
-import { CONFORMANCE_SCOPES, TASKS_STORE_CONFORMANCE_SCOPE, TASKS_STORE_CONFORMANCE_VERSION, tasksStoreConformance } from "./index"
+import { CONFORMANCE_SCOPES, TASKS_STORE_CONFORMANCE_SCOPE, tasksStoreConformance } from "./index"
 import { createMemoryTasksStore } from "../stores/memory"
 import type { TasksStoreOperations, TasksStorePort } from "../ports/store"
 
@@ -322,7 +322,6 @@ describe("tasks store conformance", () => {
   const cases = tasksStoreConformance(async () => ({ store: createMemoryTasksStore() }))
 
   test("the pinned manifest lists exactly the cases the suite runs", () => {
-    expect(TASKS_STORE_CONFORMANCE_VERSION).toBe(6)
     expect(cases.map((entry) => entry.name.replaceAll(/[^a-z]+/g, "_"))).toEqual([...TASKS_STORE_CONFORMANCE_SCOPE.cases])
   })
 

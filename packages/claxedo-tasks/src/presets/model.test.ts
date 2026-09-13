@@ -1,16 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import { TASKS_BOUNDS, type PluginReference, type SkillReference } from "../contracts"
 import { HARNESSES } from "../test-support/fakes"
+import { parsedReasons } from "../test-support/refusals"
 import { presetDraft, primaryConfiguration } from "../test-support/rows"
 import { validatePresetDraft, type HarnessLookup } from "./model"
 
 const harness: HarnessLookup = (reference) =>
   HARNESSES.find((entry) => entry.id === reference.id && entry.access === reference.access)
-
-function reasons(result: ReturnType<typeof validatePresetDraft>): Record<string, string> {
-  if (result.ok) return {}
-  return Object.fromEntries(result.fields.map((field) => [field.path, field.reason]))
-}
 
 function plugins(count: number): PluginReference[] {
   return Array.from({ length: count }, (_, index) => ({ sourceId: "claxedo", pluginName: `plugin-${index}` }))
@@ -26,16 +22,16 @@ describe("validatePresetDraft", () => {
   })
 
   test("names an empty and an over-long name", () => {
-    expect(reasons(validatePresetDraft(presetDraft({ name: "   " }), harness))).toEqual({ name: "required" })
+    expect(parsedReasons(validatePresetDraft(presetDraft({ name: "   " }), harness))).toEqual({ name: "required" })
     const long = "n".repeat(TASKS_BOUNDS.presetNameMax + 1)
-    expect(reasons(validatePresetDraft(presetDraft({ name: long }), harness))).toEqual({ name: "too_long" })
+    expect(parsedReasons(validatePresetDraft(presetDraft({ name: long }), harness))).toEqual({ name: "too_long" })
   })
 
   test("measures instructions in bytes, not characters", () => {
     const justUnder = "é".repeat(TASKS_BOUNDS.instructionsMaxBytes / 2)
     expect(validatePresetDraft(presetDraft({ instructions: justUnder }), harness).ok).toBe(true)
     const over = "é".repeat(TASKS_BOUNDS.instructionsMaxBytes / 2 + 1)
-    expect(reasons(validatePresetDraft(presetDraft({ instructions: over }), harness))).toEqual({ instructions: "too_long" })
+    expect(parsedReasons(validatePresetDraft(presetDraft({ instructions: over }), harness))).toEqual({ instructions: "too_long" })
   })
 
   test("bounds cloud selections and refuses duplicate identities", () => {
@@ -45,7 +41,7 @@ describe("validatePresetDraft", () => {
         capabilities: { mode: "selected", plugins: plugins(TASKS_BOUNDS.pluginReferencesMax + 1), skills: [] },
       },
     })
-    expect(reasons(validatePresetDraft(tooManyPlugins, harness))["execution.capabilities.plugins"]).toBe("too_many")
+    expect(parsedReasons(validatePresetDraft(tooManyPlugins, harness))["execution.capabilities.plugins"]).toBe("too_many")
 
     const tooManySkills = presetDraft({
       execution: {
@@ -53,7 +49,7 @@ describe("validatePresetDraft", () => {
         capabilities: { mode: "selected", plugins: [], skills: skills(TASKS_BOUNDS.skillReferencesMax + 1) },
       },
     })
-    expect(reasons(validatePresetDraft(tooManySkills, harness))["execution.capabilities.skills"]).toBe("too_many")
+    expect(parsedReasons(validatePresetDraft(tooManySkills, harness))["execution.capabilities.skills"]).toBe("too_many")
 
     const duplicated = presetDraft({
       execution: {
@@ -71,7 +67,7 @@ describe("validatePresetDraft", () => {
         },
       },
     })
-    expect(reasons(validatePresetDraft(duplicated, harness))).toEqual({
+    expect(parsedReasons(validatePresetDraft(duplicated, harness))).toEqual({
       "execution.capabilities.plugins[1]": "duplicate",
       "execution.capabilities.skills[1]": "duplicate",
     })
@@ -107,25 +103,25 @@ describe("validatePresetDraft", () => {
     const unknown = presetDraft({
       configurations: { primary: primaryConfiguration({ harness: { id: "nonesuch", access: "native" } }) },
     })
-    expect(reasons(validatePresetDraft(unknown, harness))).toEqual({ "configurations.primary.harness": "unknown_value" })
+    expect(parsedReasons(validatePresetDraft(unknown, harness))).toEqual({ "configurations.primary.harness": "unknown_value" })
 
     const wrongAccess = presetDraft({
       configurations: { primary: primaryConfiguration({ harness: { id: "claude", access: "connection" } }) },
     })
-    expect(reasons(validatePresetDraft(wrongAccess, harness))).toEqual({ "configurations.primary.harness": "unknown_value" })
+    expect(parsedReasons(validatePresetDraft(wrongAccess, harness))).toEqual({ "configurations.primary.harness": "unknown_value" })
   })
 
   test("an effort the harness never advertised is refused rather than dropped", () => {
     const draft = presetDraft({ configurations: { primary: primaryConfiguration({ effort: "extreme" }) } })
     const result = validatePresetDraft(draft, harness)
-    expect(reasons(result)).toEqual({ "configurations.primary.effort": "unknown_value" })
+    expect(parsedReasons(result)).toEqual({ "configurations.primary.effort": "unknown_value" })
 
     const noEfforts = presetDraft({
       configurations: {
         primary: primaryConfiguration({ harness: { id: "codex", access: "native" }, effort: "high" }),
       },
     })
-    expect(reasons(validatePresetDraft(noEfforts, harness))).toEqual({ "configurations.primary.effort": "unknown_value" })
+    expect(parsedReasons(validatePresetDraft(noEfforts, harness))).toEqual({ "configurations.primary.effort": "unknown_value" })
   })
 
   test("null effort is accepted for every harness", () => {
@@ -145,6 +141,6 @@ describe("validatePresetDraft", () => {
         review: primaryConfiguration({ harness: { id: "nonesuch", access: "native" } }),
       },
     })
-    expect(reasons(validatePresetDraft(draft, harness))).toEqual({ "configurations.review.harness": "unknown_value" })
+    expect(parsedReasons(validatePresetDraft(draft, harness))).toEqual({ "configurations.review.harness": "unknown_value" })
   })
 })

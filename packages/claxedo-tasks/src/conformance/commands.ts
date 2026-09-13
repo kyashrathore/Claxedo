@@ -13,15 +13,9 @@ import { createTasksCommands, type TasksCommands } from "../commands"
 import type { Task, TasksActor, TasksCommand, TasksCommandRequest, TasksCommandResponse } from "../contracts"
 import { TasksError } from "../errors"
 import type { TasksStoreOperations, TasksStorePort } from "../ports/store"
+import { gate, settle } from "../test-support/concurrency"
 import { OWNER, SCOPES } from "../test-support/rows"
-import {
-  assert,
-  assertEqual,
-  gate,
-  settle,
-  type TasksStoreConformanceCase,
-  type TasksStoreConformanceFactory,
-} from "./store"
+import { assert, assertEqual, type TasksStoreConformanceCase, type TasksStoreConformanceFactory } from "./store"
 
 const ACTOR: TasksActor = { scopeId: SCOPES.first, ownerId: OWNER }
 const PROJECT = "project-alpha"

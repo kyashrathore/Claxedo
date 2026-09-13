@@ -1,12 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import { TASKS_BOUNDS } from "../contracts"
+import { parsedReasons } from "../test-support/refusals"
 import { presetDraft, primaryConfiguration } from "../test-support/rows"
-import type { Parsed } from "../validation"
 import { parseCommandRequest, parsePresetListQuery, parseStartRequest, parseTaskListQuery } from "./parse"
-
-function reasons<T>(result: Parsed<T>): Record<string, string> {
-  return result.ok ? {} : Object.fromEntries(result.fields.map((field) => [field.path, field.reason]))
-}
 
 const startBody = {
   clientRequestId: "request-1",
@@ -31,7 +27,7 @@ describe("parseCommandRequest", () => {
   })
 
   test("a command name outside the closed set is refused before its input is read", () => {
-    expect(reasons(parseCommandRequest({ clientRequestId: "r", command: { type: "task.delete", input: {} } }))).toEqual({
+    expect(parsedReasons(parseCommandRequest({ clientRequestId: "r", command: { type: "task.delete", input: {} } }))).toEqual({
       "command.type": "unknown_value",
     })
   })
@@ -50,7 +46,7 @@ describe("parseCommandRequest", () => {
         },
       },
     })
-    expect(reasons(result)).toEqual({ "command.input.execution.capabilities.plugins": "not_allowed" })
+    expect(parsedReasons(result)).toEqual({ "command.input.execution.capabilities.plugins": "not_allowed" })
   })
 
   test("a configuration slot the package does not define is refused, not ignored", () => {
@@ -61,7 +57,7 @@ describe("parseCommandRequest", () => {
         input: { ...presetDraft(), configurations: { primary: primaryConfiguration(), deployment: primaryConfiguration() } },
       },
     })
-    expect(reasons(result)).toEqual({ "command.input.configurations.deployment": "unknown_value" })
+    expect(parsedReasons(result)).toEqual({ "command.input.configurations.deployment": "unknown_value" })
   })
 
   test("an empty effort is a missing value, and null is an explicit absence", () => {
@@ -72,7 +68,7 @@ describe("parseCommandRequest", () => {
         input: { ...presetDraft(), configurations: { primary: { ...primaryConfiguration(), effort: "" } } },
       },
     })
-    expect(reasons(withEmpty)).toEqual({ "command.input.configurations.primary.effort": "required" })
+    expect(parsedReasons(withEmpty)).toEqual({ "command.input.configurations.primary.effort": "required" })
 
     const withNull = parseCommandRequest({
       clientRequestId: "r",
@@ -89,7 +85,7 @@ describe("parseCommandRequest", () => {
         input: { projectId: 7, title: "Ship", description: "", workspaceId: null, parentTaskId: null },
       },
     })
-    expect(reasons(result)).toEqual({ "command.input.projectId": "type" })
+    expect(parsedReasons(result)).toEqual({ "command.input.projectId": "type" })
   })
 
   test("a create carries Backlog, defaults to To do and refuses anything else", () => {
@@ -118,7 +114,7 @@ describe("parseCommandRequest", () => {
         input: { projectId: "p", title: "Ship", description: "", workspaceId: null, parentTaskId: null, status: "doing" },
       },
     })
-    expect(reasons(working)).toEqual({ "command.input.status": "unknown_value" })
+    expect(parsedReasons(working)).toEqual({ "command.input.status": "unknown_value" })
   })
 
   test("a status outside the closed set is refused", () => {
@@ -126,7 +122,7 @@ describe("parseCommandRequest", () => {
       clientRequestId: "r",
       command: { type: "task.set_status", input: { taskId: "task-1", revision: 1, status: "blocked" } },
     })
-    expect(reasons(result)).toEqual({ "command.input.status": "unknown_value" })
+    expect(parsedReasons(result)).toEqual({ "command.input.status": "unknown_value" })
   })
 
   test("a fractional revision is out of range", () => {
@@ -134,7 +130,7 @@ describe("parseCommandRequest", () => {
       clientRequestId: "r",
       command: { type: "task.archive", input: { taskId: "task-1", revision: 1.5 } },
     })
-    expect(reasons(result)).toEqual({ "command.input.revision": "out_of_range" })
+    expect(parsedReasons(result)).toEqual({ "command.input.revision": "out_of_range" })
   })
 })
 
@@ -145,11 +141,11 @@ describe("parseStartRequest", () => {
 
   test("bounds the handoff text", () => {
     const long = { ...startBody, handoffText: "x".repeat(TASKS_BOUNDS.handoffTextMaxBytes + 1) }
-    expect(reasons(parseStartRequest(long))).toEqual({ handoffText: "too_long" })
+    expect(parsedReasons(parseStartRequest(long))).toEqual({ handoffText: "too_long" })
   })
 
   test("a slot outside the closed set is refused", () => {
-    expect(reasons(parseStartRequest({ ...startBody, slot: "deployment" }))).toEqual({ slot: "unknown_value" })
+    expect(parsedReasons(parseStartRequest({ ...startBody, slot: "deployment" }))).toEqual({ slot: "unknown_value" })
   })
 })
 
@@ -157,15 +153,15 @@ describe("query parsing", () => {
   test("defaults are explicit and out-of-range limits are refused", () => {
     const bare = parsePresetListQuery(new URLSearchParams())
     expect(bare.ok && bare.value).toEqual({ cursor: null, limit: TASKS_BOUNDS.listLimitDefault, includeArchived: false })
-    expect(reasons(parsePresetListQuery(new URLSearchParams("limit=0")))).toEqual({ limit: "out_of_range" })
-    expect(reasons(parsePresetListQuery(new URLSearchParams("limit=101")))).toEqual({ limit: "out_of_range" })
+    expect(parsedReasons(parsePresetListQuery(new URLSearchParams("limit=0")))).toEqual({ limit: "out_of_range" })
+    expect(parsedReasons(parsePresetListQuery(new URLSearchParams("limit=101")))).toEqual({ limit: "out_of_range" })
   })
 
   test("a task list names the project it is scoped to", () => {
-    expect(reasons(parseTaskListQuery(new URLSearchParams()))).toEqual({ projectId: "required" })
+    expect(parsedReasons(parseTaskListQuery(new URLSearchParams()))).toEqual({ projectId: "required" })
     const parsed = parseTaskListQuery(new URLSearchParams("projectId=project-alpha&status=doing&parent=root"))
     expect(parsed.ok && parsed.value).toMatchObject({ projectId: "project-alpha", status: "doing", parent: "root" })
-    expect(reasons(parseTaskListQuery(new URLSearchParams("projectId=p&status=blocked")))).toEqual({
+    expect(parsedReasons(parseTaskListQuery(new URLSearchParams("projectId=p&status=blocked")))).toEqual({
       status: "unknown_value",
     })
   })

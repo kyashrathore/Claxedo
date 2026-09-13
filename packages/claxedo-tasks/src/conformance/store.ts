@@ -12,6 +12,7 @@
  * SQLite and D1 elsewhere — registers these with its own runner.
  */
 import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
+import { gate, settle } from "../test-support/concurrency"
 import { OWNER, SCOPES, linkRow, presetRow, receiptRow, taskRow } from "../test-support/rows"
 
 export const TASKS_STORE_CONFORMANCE_VERSION = 6 as const
@@ -62,27 +63,6 @@ const LIST = { cursor: null, limit: 50, includeArchived: false } as const
 const TASK_LIST = { ...LIST, projectId: "project-alpha", status: null, parent: "any" } as const
 
 class ConformanceRollback extends Error {}
-
-/** A promise the case resolves itself, to hold one unit open while it opens a second. */
-export function gate(): { opened: Promise<void>; open: () => void } {
-  let open = () => {}
-  const opened = new Promise<void>((resolve) => {
-    open = resolve
-  })
-  return { opened, open }
-}
-
-/**
- * A unit's outcome as a value. Awaiting two overlapping units in order would
- * report the second one's rejection as unhandled while the first is still in
- * flight, so each is turned into a value the moment it is started.
- */
-export function settle<T>(unit: Promise<T>): Promise<{ value: T } | { failure: unknown }> {
-  return unit.then(
-    (value) => ({ value }),
-    (failure: unknown) => ({ failure }),
-  )
-}
 
 /**
  * Whether a unit's compare-and-set won. A store that decides the predicate
@@ -440,7 +420,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
       )
     }),
     conformanceCase("a list row counts its own links and only this scope's", async () => {
-      const { store } = await factory()
+      const store = await start()
       await store.tasks.insert(taskRow({ id: "task-linked", createdAt: 3_000 }))
       await store.tasks.insert(taskRow({ id: "task-bare", createdAt: 2_000 }))
       await store.tasks.insert(taskRow({ id: "task-linked", scopeId: CONFORMANCE_SCOPES.second, createdAt: 3_000 }))
@@ -465,7 +445,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
     }),
 
     conformanceCase("a list row counts every live child, not the ones a page returned", async () => {
-      const { store } = await factory()
+      const store = await start()
       await store.tasks.insert(taskRow({ id: "task-parent", createdAt: 5_000 }))
       await store.tasks.insert(taskRow({ id: "task-childless", createdAt: 4_000 }))
       await store.tasks.insert(

@@ -12,6 +12,7 @@ import {
   fakeClock,
   fakeIds,
 } from "./test-support/fakes"
+import { gate } from "./test-support/concurrency"
 import { refusalOf } from "./test-support/refusals"
 import { presetDraft } from "./test-support/rows"
 import type { TasksStorePort } from "./ports/store"
@@ -21,14 +22,6 @@ const PROJECT = "project-alpha"
 const createTask: TasksCommand = {
   type: "task.create",
   input: { projectId: PROJECT, title: "Ship the thing", description: "", workspaceId: null, parentTaskId: null },
-}
-
-function deferred(): { reached: Promise<void>; reach: () => void } {
-  let reach = () => {}
-  const reached = new Promise<void>((resolve) => {
-    reach = resolve
-  })
-  return { reached, reach }
 }
 
 describe("tasks commands", () => {
@@ -195,15 +188,15 @@ describe("tasks commands", () => {
     // Both requests are queued behind a unit this test holds open, so the
     // duplicate is the one the store admits second rather than whichever
     // request happened to reach the queue first.
-    const blocking = deferred()
-    const held = store.transaction(() => blocking.reached)
+    const blocking = gate()
+    const held = store.transaction(() => blocking.opened)
 
-    const winner = deferred()
-    const first = over(asking(winner.reach, store)).execute(ACTOR, { clientRequestId: "request-edit", command: edit })
-    await winner.reached
+    const winner = gate()
+    const first = over(asking(winner.open, store)).execute(ACTOR, { clientRequestId: "request-edit", command: edit })
+    await winner.opened
 
     let reads = 0
-    const duplicate = deferred()
+    const duplicate = gate()
     const counted: TasksStorePort = {
       ...store,
       transaction: (work) =>
@@ -220,9 +213,9 @@ describe("tasks commands", () => {
           }),
         ),
     }
-    const second = over(asking(duplicate.reach, counted)).execute(ACTOR, { clientRequestId: "request-edit", command: edit })
-    await duplicate.reached
-    blocking.reach()
+    const second = over(asking(duplicate.open, counted)).execute(ACTOR, { clientRequestId: "request-edit", command: edit })
+    await duplicate.opened
+    blocking.open()
     await held
 
     const answers = await Promise.all([first, second])

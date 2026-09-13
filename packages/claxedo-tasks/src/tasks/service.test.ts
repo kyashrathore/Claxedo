@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createTasksCommands } from "../commands"
-import type { Preset, StartRequest, Task, TaskSessionLink } from "../contracts"
+import type { Preset, StartRequest, Task, TaskDraft, TaskSessionLink } from "../contracts"
 import { createPresetsService } from "../presets/service"
 import { startConfigurationDigest } from "../start"
 import { createMemoryTasksStore } from "../stores/memory"
@@ -23,13 +23,14 @@ import { createTasksService, type TasksService } from "./service"
 
 const PROJECT = "project-alpha"
 
-function draft(overrides: Partial<Task> = {}) {
+function draft(overrides: Partial<TaskDraft> = {}): TaskDraft {
   return {
     projectId: overrides.projectId ?? PROJECT,
     title: overrides.title ?? "Ship the thing",
     description: overrides.description ?? "",
     workspaceId: overrides.workspaceId ?? null,
     parentTaskId: overrides.parentTaskId ?? null,
+    ...(overrides.status === undefined ? {} : { status: overrides.status }),
   }
 }
 
@@ -73,7 +74,7 @@ describe("tasks service", () => {
     })
 
     test("creates into Backlog when the draft asks for it, and moves in and out of it freely", async () => {
-      const parked = (await tasks.create(ACTOR, { ...draft(), status: "backlog" })).task
+      const parked = (await tasks.create(ACTOR, draft({ status: "backlog" }))).task
       expect(parked.status).toBe("backlog")
 
       const picked = (await tasks.setStatus(ACTOR, { taskId: parked.id, revision: parked.revision, status: "doing" })).task
