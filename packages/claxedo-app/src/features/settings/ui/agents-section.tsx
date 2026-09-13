@@ -91,15 +91,20 @@ const VERDICT_KEY: Record<LiveCheck["verdict"], string> = {
  * them — the same login works again once the window resets — and neither is a
  * check we could not make.
  */
-const REJECTED: ReadonlySet<LiveCheck["verdict"]> = new Set(["auth_failed", "no_billing", "expired", "broken"])
-
-/** The verdicts the vendor itself pronounced, which the sentence can name it for. */
-const REJECTED_BY_VENDOR: ReadonlySet<LiveCheck["verdict"]> = new Set(["auth_failed", "broken"])
 
 const WINDOW_KEY: Record<string, string> = {
   session: "settings.providers.window.session",
   weekly: "settings.providers.window.weekly",
   weekly_opus: "settings.providers.window.weeklyOpus",
+}
+
+/** The verdicts the vendor itself pronounced, which the sentence can name it for. */
+function unusable(verdict: LiveCheck["verdict"]) {
+  return verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired" || verdict === "broken"
+}
+
+function rejectedByVendor(verdict: LiveCheck["verdict"]) {
+  return verdict === "auth_failed" || verdict === "broken"
 }
 
 function isHealth(value: string): value is Extract<LiveCheck["verdict"], "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired"> {
@@ -108,7 +113,7 @@ function isHealth(value: string): value is Extract<LiveCheck["verdict"], "ok" | 
 
 function tone(verdict: LiveCheck["verdict"] | undefined): AgentTone {
   if (verdict === "ok") return "success"
-  if (verdict !== undefined && REJECTED.has(verdict)) return "danger"
+  if (verdict !== undefined && unusable(verdict)) return "danger"
   return "neutral"
 }
 
@@ -280,10 +285,10 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     if (!row) return notSetUp()
     const live = accountCheck(row)
     const label = accountLabel(row)
-    if (live && REJECTED.has(live.verdict)) {
+    if (live && unusable(live.verdict)) {
       return {
         tone: "danger",
-        sentence: REJECTED_BY_VENDOR.has(live.verdict)
+        sentence: rejectedByVendor(live.verdict)
           ? language.t("settings.providers.agents.headerRejected", { label, vendor: AGENT_VENDOR[check.id] ?? check.label })
           : language.t("settings.providers.agents.headerUnusable", { label, verdict: verdictWord(live) }),
         action: { kind: "reconnect", credentialId: row.id },
