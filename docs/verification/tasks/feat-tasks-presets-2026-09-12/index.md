@@ -253,3 +253,30 @@ Gates at this tip: app vitest tasks + integrations + documents 18 files / 129 pa
 ## First-project canvas (2026-09-13)
 
 The user hit the host's no-project screen (a "Select project" chip over an empty list, stacked on a "New Project" button to the same form, under an upscaled logo) and chose to inline the create form. `feat(workbench): open on the first project's form instead of a select with nothing in it`: `FirstProjectCanvas` renders `ProjectCreateForm` as its third host (a `size` prop; folder button renamed "Choose folder" everywhere) with a headline, a lede, and Diagnostics as a quiet link; background drawn from host tokens only (grid, glow, drifting hatch off under reduced motion, vignette); one staggered reveal. `LegacyEmptyState`, `NoProjectComposer` and the onboarding fallback copy are deleted, and the composer's dead no-project branch with its test. Proof: six mounted cases (form present, repository-only without a filesystem, created project reaches `onProjectCreated`, invalid checkout refused, Diagnostics only when supplied, create intent focuses the name); screenshots in both themes from a second stack with an empty data dir. Gates at `1040ae39c0`: `tsgo -b` clean; app vitest tasks + integrations + documents + workbench 60 files / 455 pass; ratchets at 1048 / 58 and 1091 / 58 (the two new modules, no new package edge). Not done: focus on the name field at mount, because the shell swaps its boot subtree a few ms after the canvas mounts and takes focus with it; the create-intent focus is covered instead.
+
+## Presets into Settings, and the pane grip (2026-09-13)
+
+Three asks from the user: move adding a preset to Settings, take the
+Tasks/Presets switch out of the Tasks UI, and stop the Marketplace and Tasks
+panes from being draggable.
+
+| Commit | What changed | Proof |
+|---|---|---|
+| `feat(settings): keep presets in Settings, contributed by the Tasks build` | `SettingsContribution` gains `label`, `icon` and `renderer`; `app/integrations/settings-sections.ts` holds their registry and `DialogSettings` renders them under the group each `section` names. Tasks registers `Presets` from `tasks-contributions.ts` alone. `PresetsView` owns its own selection (no route props, no `TasksHeader` switch), `PresetDraftEditor` loses `onSaved`/`onClose` because closing the draft is what returns the list, and every path that created a preset inline — the row menu, the Start dialog — opens Settings through one opener, `features/settings/open-settings.tsx`, which replaces the providers-only one | mounted tests for the contributed tab (its value is the contribution id, and a gate hides it), registry tests for the gate and the id upsert, the build-selection guard extended to the settings registration; live: a row's menu and the Start dialog both land on Settings › Presets, both themes |
+| `refactor(tasks): drop the presets pages from the Tasks route` | `TasksPage` is the task page alone: `/tasks/presets` is no longer minted, parsed, restored or mirrored, and the surface has one nested page | route, surface-route and persistence tests; the preset-mirroring test deleted — the task-page test already covers list-vs-page and page-vs-other-page |
+| `feat(workbench): let a whole-page surface decline its pane's drag grip` | `ContentSurfaceContribution.draggablePane`, default true, false on the Tasks and Marketplace contributions; the workbench renders no grip for such a pane rather than an inert one, and the close control is untouched | `contentSurfacePaneDraggable` over the real contributions; a workbench test that a declining pane has no grip while a session pane still starts a drag; live: Tasks and Marketplace panes have no grip, a session pane does, and a Tasks pane split beside a session keeps its close |
+
+The store bug found on the way: `<PresetsView store={createTasksStore()} …>`
+minted a fresh store on every read, because Solid wraps a call expression in a
+prop getter — the editor never opened. Bound to a const in `PresetsSettings`
+and in the two tests that passed one inline.
+
+Gates at `346cd8a60b`: `tsgo -b` clean; app vitest for tasks, integrations,
+workbench, dialogs and identity 457 pass, 1 pre-existing fail
+(`provider-connect-form.vitest.tsx`, last touched at the branch base
+`85f1d007c8` and fully mocked away from this change); app bun tests 944 pass;
+kit typecheck clean and 194 pass; `lint:theme-tokens` at its two pre-existing
+failures; root lint at its three pre-existing perf-harness errors; ratchets
+hold with both renderer ceilings raised by the three measured modules — the
+settings-section registry and the two Presets owners — to app-local 1051 / 58
+and desktop renderer 1094 / 58.
