@@ -179,3 +179,26 @@ Escalations added in this wave: OpenCode/Pi effort vocabulary needs an owner in 
 | `packages/agent-sdk-runtime` `typecheck` | clean |
 | `packages/claxedo-desktop` `typecheck` | clean |
 | `packages/claxedo-app` `verify:closure` (real build, marker control, emitted identity) | passes; `tasks-surface-*.css` emitted |
+
+## UI rounds from the user's screenshots (2026-09-13)
+
+The user measured the surface against Circle (lndev-ui's Linear clone) and sent six rounds of screenshot feedback on the running stack. Commits by subject, oldest first.
+
+| Commit subject | What the user asked | Outcome |
+|---|---|---|
+| `feat(tasks): redesign the Tasks and Presets surface` | "current UI is very ugly" | header with count and tab switch, Filter/Display controls, grouped table with sticky group headers, board columns, two-pane task page, presets table, "Where this will run" start card; host tokens only |
+| `feat(tasks): start a task from its row, and follow the host's own status palette` | no status control inside a status group; start from the row with a preset caret; drop the blue borders; preset chosen at start, not a setting | split Start control on rows and cards; status chip is the native select restyled; `RowMenu`; host status colours |
+| `feat(tasks): make a subtask's page say whose it is, and scope the capability promise` | subtask tag on the page, no empty Subtasks section on a subtask, subtask rows clickable; banner that a saved local+cloud preset guarantees no tool set | `Subtask of …` tag; `CapabilityNotice` on Cloud placement |
+| `fix(tasks): let the task page and the preset editor fill the width they are given` | "not full width looking ugly" | page and editor stretch to the pane |
+| `feat(tasks): edit descriptions and preset instructions in the Documents editor` | Notion-like editor rather than a transcript renderer; user accepted Tiptap | `ProseEditor` host port → Documents `RichMode` behind `detectMarkdown`; markdown remains the record; `source`/`rejected` falls back to the textarea |
+| `feat(tasks): put the draft's actions in the page header and give the create dialog the editor` | Save at the top right; `#`/`##` must work; markdown when creating | Save/Discard on the breadcrumb row while dirty, Cmd/Ctrl+S; New task dialog laid out like Linear's new-issue modal with the same editor |
+
+The "typing `#` does nothing" report reproduced only on the New task dialog, which was the one description still on a plain textarea; the task page and preset instructions already converted. Live proof after the last commit, Playwright `keyboard.type` per key against the running stack (the Browser pane's own `type` inserts a whole string at once and its `key` action carries no text, so neither can fire an input rule that completes on the space keystroke):
+
+| Surface | Typed | Editor DOM | Stored |
+|---|---|---|---|
+| New task dialog | `## Plan` ⏎ `- read the file` ⏎ `write the test` | `<h2>Plan</h2><ul><li>…read the file…</li><li>…write the test…</li></ul>` | markdown (mounted test `create-task-dialog.vitest.tsx`) |
+| task page, empty description | ⏎ `## Plan` ⏎ `- read the file` | `<h2>Plan</h2><ul><li>…</li></ul>`; breadcrumb row shows `Unsaved changes · Discard · Save` | `tasks-markdown-shortcuts.vitest.tsx` drives the production extension set through `handleTextInput` for `#`, `##`, `-`, `1.`, `>` and a fence and asserts the markdown round-trips |
+| task page, populated description | `## Plan` at the caret | `<h2>Plan</h2>`; the `- ` rule correctly declines inside a block that already holds text | same |
+
+Gates at this tip: app tasks vitest 77 pass (14 files); kit 186 pass; `tsgo -b` and kit typecheck clean; architecture guards 259 pass; `test:architecture-ratchets` holds with app-local 1044 modules / 58 packages and desktop renderer 1087 / 58 (Tiptap's chunk was measured and the ceilings raised in the editor commit); `lint:theme-tokens` at its two pre-existing failures; root lint at the three pre-existing perf-harness errors.
