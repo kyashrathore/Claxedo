@@ -1,7 +1,7 @@
 import { Button } from "@opencode-ai/ui/button"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { createSignal, For, Show, type Component } from "solid-js"
+import { RadioList, RadioListItem } from "@opencode-ai/ui/radio-group"
+import { createSignal, For, Show, type Component, type JSX } from "solid-js"
 import { ProviderConnectCard } from "@/features/settings/ui/provider-connect-card"
 import { useLanguage } from "@/platform/i18n/provider"
 
@@ -39,7 +39,7 @@ const HealthDot: Component<{ tone: AgentTone }> = (props) => (
     aria-hidden="true"
     data-component="agent-status-dot"
     data-tone={props.tone}
-    class="mt-1.5 size-1.5 shrink-0 rounded-full"
+    class="size-1.5 shrink-0 rounded-full"
     classList={{
       "bg-icon-success-base": props.tone === "success",
       "bg-icon-critical-base": props.tone === "danger",
@@ -48,13 +48,27 @@ const HealthDot: Component<{ tone: AgentTone }> = (props) => (
   />
 )
 
+const TextAction: Component<{ action: string; disabled?: boolean; onClick: () => void; children: JSX.Element }> = (props) => (
+  <button
+    type="button"
+    class="shrink-0 border-none bg-transparent p-0 text-13-regular text-text-weak hover:text-text-strong disabled:opacity-60"
+    data-action={props.action}
+    disabled={props.disabled}
+    onClick={() => props.onClick()}
+  >
+    {props.children}
+  </button>
+)
+
 /**
  * One agent harness: what it runs on, the accounts it can run on, and the way
  * to add another.
  *
- * The checked radio is the account in use, so the list is the only place that
- * answers "which login" — the header sentence restates it in prose and the two
- * are derived from the same `selected` flag rather than from separate reads.
+ * A lone entry is not listed — the header sentence already names the only login
+ * there is to name, and a list under it reads as a second account — so its
+ * Check and Remove sit on the header line instead. The list appears once there
+ * is a choice to make, and its checked radio is the same `selected` flag the
+ * header sentence is derived from.
  */
 export const AgentHarnessRow: Component<{
   id: string
@@ -79,6 +93,9 @@ export const AgentHarnessRow: Component<{
   const [connecting, setConnecting] = createSignal<{ credentialId?: string }>()
   const [confirmingRemove, setConfirmingRemove] = createSignal<string>()
   const group = () => `agent-account-${props.harness}`
+  const listed = () => (props.accounts.length > 1 ? props.accounts : [])
+  const sole = () => (props.accounts.length === 1 ? props.accounts[0] : undefined)
+  const selectedKey = () => props.accounts.find((account) => account.selected)?.key
 
   const remove = async (account: AgentAccount) => {
     try {
@@ -88,6 +105,52 @@ export const AgentHarnessRow: Component<{
     }
   }
 
+  const AccountActions: Component<{ account: AgentAccount }> = (self) => (
+    <Show when={self.account.ids.length > 0}>
+      <Show
+        when={confirmingRemove() === self.account.key}
+        fallback={(
+          <span class="flex shrink-0 items-center gap-3">
+            <TextAction
+              action="agent-account-check"
+              disabled={props.checking !== undefined}
+              onClick={() => void props.onCheck(self.account.ids)}
+            >
+              {props.checking === self.account.key
+                ? language.t("settings.providers.agents.checking")
+                : language.t("settings.providers.agents.checkAccount")}
+            </TextAction>
+            <TextAction action="agent-account-remove" onClick={() => setConfirmingRemove(self.account.key)}>
+              {language.t("settings.providers.agents.removeAccount")}
+            </TextAction>
+          </span>
+        )}
+      >
+        <span class="flex shrink-0 items-center gap-3">
+          <span class="text-13-regular text-text-weak">
+            {language.t("settings.providers.agents.removeAccountConfirm")}
+          </span>
+          <TextAction
+            action="agent-account-remove-confirm"
+            disabled={props.removing !== undefined}
+            onClick={() => void remove(self.account)}
+          >
+            {props.removing === self.account.key
+              ? language.t("settings.providers.agents.removingAccount")
+              : language.t("settings.providers.agents.removeAccount")}
+          </TextAction>
+          <TextAction
+            action="agent-account-remove-cancel"
+            disabled={props.removing !== undefined}
+            onClick={() => setConfirmingRemove(undefined)}
+          >
+            {language.t("common.cancel")}
+          </TextAction>
+        </span>
+      </Show>
+    </Show>
+  )
+
   return (
     <div class="border-b border-border-weak-base last:border-none" data-provider={props.id}>
       <div class="flex w-full flex-wrap items-start justify-between gap-4 py-3">
@@ -95,9 +158,12 @@ export const AgentHarnessRow: Component<{
           <ProviderIcon id={props.id} class="size-5 shrink-0 icon-strong-base" />
           <div class="flex min-w-0 flex-col gap-0.5">
             <span class="text-14-medium text-text-strong">{props.name}</span>
-            <span class="flex min-w-0 items-start gap-1.5" data-component="agent-header-status">
-              <HealthDot tone={props.header.tone} />
-              <span class="text-13-regular text-text-base">{props.header.sentence}</span>
+            <span class="flex min-w-0 flex-wrap items-center gap-3">
+              <span class="flex min-w-0 items-center gap-1.5" data-component="agent-header-status">
+                <HealthDot tone={props.header.tone} />
+                <span class="text-13-regular text-text-base">{props.header.sentence}</span>
+              </span>
+              <Show when={sole()}>{(account) => <AccountActions account={account()} />}</Show>
             </span>
           </div>
         </div>
@@ -124,102 +190,47 @@ export const AgentHarnessRow: Component<{
           </Show>
         </div>
       </div>
-      <div class="mb-3 ml-8 flex flex-col" role="radiogroup" aria-label={props.name} data-component="agent-accounts">
-        <For each={props.accounts}>
-          {(account) => (
-            <div
-              class="flex flex-wrap items-center justify-between gap-3 py-1"
-              data-component="agent-account"
-              data-account={account.key}
-              data-selected={account.selected ? "true" : "false"}
-            >
-              <label class="flex min-w-0 flex-1 items-center gap-2">
-                <input
-                  type="radio"
-                  name={group()}
-                  class="shrink-0 accent-icon-interactive-base"
-                  checked={account.selected}
-                  disabled={props.selecting !== undefined}
-                  data-action="agent-account-select"
-                  onChange={() => void props.onSelect(account)}
-                />
-                <span class="text-13-regular text-text-strong">{account.label}</span>
-                <Show when={account.source}>
-                  {(source) => <span class="text-13-regular text-text-weak">{source()}</span>}
-                </Show>
-                <span class="flex min-w-0 items-start gap-1.5" data-component="agent-account-status">
-                  <HealthDot tone={account.tone} />
-                  <span class="text-13-regular text-text-weak">
-                    {account.when ? `${account.status} · ${account.when}` : account.status}
-                  </span>
-                </span>
-              </label>
-              <Show when={account.ids.length > 0}>
-                <Show
-                  when={confirmingRemove() === account.key}
-                  fallback={(
-                    <DropdownMenu>
-                      <DropdownMenu.Trigger
-                        as={Button}
-                        size="small"
-                        variant="ghost"
-                        data-action="agent-account-menu"
-                        aria-label={language.t("settings.providers.agents.accountMenu", { account: account.label })}
-                      >
-                        …
-                      </DropdownMenu.Trigger>
-                      <DropdownMenu.Portal>
-                        <DropdownMenu.Content class="z-[200]">
-                          <DropdownMenu.Item
-                            data-action="agent-account-check"
-                            disabled={props.checking !== undefined}
-                            onSelect={() => void props.onCheck(account.ids)}
-                          >
-                            {props.checking === account.key
-                              ? language.t("settings.providers.agents.checking")
-                              : language.t("settings.providers.agents.checkNow")}
-                          </DropdownMenu.Item>
-                          <DropdownMenu.Item
-                            data-action="agent-account-remove"
-                            onSelect={() => setConfirmingRemove(account.key)}
-                          >
-                            {language.t("settings.providers.agents.removeAccount")}
-                          </DropdownMenu.Item>
-                        </DropdownMenu.Content>
-                      </DropdownMenu.Portal>
-                    </DropdownMenu>
+      <div class="mb-3 ml-8 flex flex-col" data-component="agent-accounts">
+        <Show when={listed().length > 0}>
+          <RadioList
+            name={group()}
+            aria-label={props.name}
+            value={selectedKey()}
+            disabled={props.selecting !== undefined}
+            onChange={(key) => {
+              const chosen = props.accounts.find((account) => account.key === key)
+              if (chosen) void props.onSelect(chosen)
+            }}
+          >
+            <For each={listed()}>
+              {(account) => (
+                <RadioListItem
+                  class="py-1"
+                  value={account.key}
+                  data-component="agent-account"
+                  data-account={account.key}
+                  data-selected={account.selected ? "true" : "false"}
+                  label={(
+                    <span class="flex min-w-0 flex-wrap items-center gap-2">
+                      <span class="text-13-regular text-text-strong">{account.label}</span>
+                      <Show when={account.source}>
+                        {(source) => <span class="text-13-regular text-text-weak">{source()}</span>}
+                      </Show>
+                      <span class="flex min-w-0 items-center gap-1.5" data-component="agent-account-status">
+                        <HealthDot tone={account.tone} />
+                        <span class="text-13-regular text-text-weak">
+                          {account.when ? `${account.status} · ${account.when}` : account.status}
+                        </span>
+                      </span>
+                    </span>
                   )}
                 >
-                  <div class="flex shrink-0 items-center gap-2">
-                    <span class="text-12-regular text-text-weak">
-                      {language.t("settings.providers.agents.removeAccountConfirm")}
-                    </span>
-                    <Button
-                      size="small"
-                      variant="primary"
-                      disabled={props.removing !== undefined}
-                      data-action="agent-account-remove-confirm"
-                      onClick={() => void remove(account)}
-                    >
-                      {props.removing === account.key
-                        ? language.t("settings.providers.agents.removingAccount")
-                        : language.t("settings.providers.agents.removeAccount")}
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="ghost"
-                      disabled={props.removing !== undefined}
-                      data-action="agent-account-remove-cancel"
-                      onClick={() => setConfirmingRemove(undefined)}
-                    >
-                      {language.t("common.cancel")}
-                    </Button>
-                  </div>
-                </Show>
-              </Show>
-            </div>
-          )}
-        </For>
+                  <AccountActions account={account} />
+                </RadioListItem>
+              )}
+            </For>
+          </RadioList>
+        </Show>
         <div class="py-1">
           <button
             type="button"

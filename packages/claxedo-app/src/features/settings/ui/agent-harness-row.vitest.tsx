@@ -1,23 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { ComponentProps, JSX } from "solid-js"
+import type { ComponentProps } from "solid-js"
 import { AgentHarnessRow, type AgentAccount } from "./agent-harness-row"
-
-// Kobalte's dropdown needs a real pointer stack to open. The shim renders the
-// menu's items inline so the wiring behind Check now and Remove is the thing
-// under test rather than the overlay that reveals them.
-vi.mock("@opencode-ai/ui/dropdown-menu", () => {
-  const Root = (props: { children: JSX.Element }) => <div data-testid="account-menu">{props.children}</div>
-  const Trigger = (props: Record<string, unknown> & { children: JSX.Element }) => (
-    <button type="button" {...props}>{props.children}</button>
-  )
-  const Portal = (props: { children: JSX.Element }) => <>{props.children}</>
-  const Content = (props: { children: JSX.Element }) => <div>{props.children}</div>
-  const Item = (props: { children: JSX.Element; onSelect?: () => void; disabled?: boolean } & Record<string, unknown>) => (
-    <button type="button" {...props} onClick={() => props.onSelect?.()}>{props.children}</button>
-  )
-  return { DropdownMenu: Object.assign(Root, { Trigger, Portal, Content, Item }) }
-})
 
 vi.mock("@opencode-ai/ui/provider-icon", () => ({ ProviderIcon: () => null }))
 
@@ -45,6 +29,17 @@ const account = (over: Partial<AgentAccount> = {}): AgentAccount => ({
   ...over,
 })
 
+const machineLogin = (over: Partial<AgentAccount> = {}): AgentAccount =>
+  account({
+    key: "machine",
+    ids: [],
+    label: "This computer's login",
+    source: "from ~/.codex",
+    selected: false,
+    machine: true,
+    ...over,
+  })
+
 function row(extra: Partial<ComponentProps<typeof AgentHarnessRow>> = {}) {
   return render(() => (
     <AgentHarnessRow
@@ -71,6 +66,19 @@ function entry(key: string) {
   const found = document.querySelector<HTMLElement>(`[data-component="agent-account"][data-account="${key}"]`)
   if (!found) throw new Error(`no entry for ${key}`)
   return found
+}
+
+function click(key: string, action: string) {
+  const button = entry(key).querySelector<HTMLElement>(`[data-action="${action}"]`)
+  if (!button) throw new Error(`no ${action} on ${key}`)
+  fireEvent.click(button)
+}
+
+/** The Check/Remove text that sits on the header line while there is one entry. */
+function headerAction(action: string) {
+  const button = document.querySelector<HTMLElement>(`[data-provider] > div [data-action="${action}"]`)
+  if (!button) throw new Error(`no ${action} on the header`)
+  return button
 }
 
 describe("AgentHarnessRow header", () => {
@@ -120,6 +128,59 @@ describe("AgentHarnessRow header", () => {
 })
 
 describe("AgentHarnessRow accounts", () => {
+  test("one entry is left to the header sentence, which carries its two actions", () => {
+    row()
+
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull()
+    expect(entries()).toEqual([])
+    expect(document.querySelector('[data-component="agent-header-status"]')?.textContent)
+      .toBe("Using work@acme.com · Working")
+    expect(headerAction("agent-account-check").textContent).toBe("settings.providers.agents.checkAccount")
+    expect(headerAction("agent-account-remove").textContent).toBe("settings.providers.agents.removeAccount")
+    expect(screen.getByRole("button", { name: "settings.providers.agents.addAnotherAccount" })).toBeTruthy()
+  })
+
+  test("the lone entry's Remove asks on the header line, then forgets every binding", () => {
+    const removed: string[][] = []
+    row({ accounts: [account({ ids: ["cred_1", "acp_1"] })], onRemove: (ids) => void removed.push([...ids]) })
+
+    fireEvent.click(headerAction("agent-account-remove"))
+
+    expect(removed).toEqual([])
+    fireEvent.click(headerAction("agent-account-remove-cancel"))
+    expect(document.querySelector('[data-action="agent-account-remove-confirm"]')).toBeNull()
+
+    fireEvent.click(headerAction("agent-account-remove"))
+    fireEvent.click(headerAction("agent-account-remove-confirm"))
+
+    expect(removed).toEqual([["cred_1", "acp_1"]])
+  })
+
+  test("the machine login on its own is that one entry too, and it has nothing stored to act on", () => {
+    row({ accounts: [machineLogin({ selected: true })] })
+
+    expect(document.querySelector('[role="radiogroup"]')).toBeNull()
+    expect(entries()).toEqual([])
+    expect(document.querySelector('[data-action="agent-account-check"]')).toBeNull()
+    expect(document.querySelector('[data-action="agent-account-remove"]')).toBeNull()
+  })
+
+  test("with two entries the actions belong to the rows, and the header carries none", () => {
+    row({ accounts: [account(), machineLogin()] })
+
+    expect(document.querySelector('[data-component="agent-header-status"]')?.parentElement
+      ?.querySelector('[data-action="agent-account-remove"]')).toBeNull()
+    expect(entry("cred_1").querySelector('[data-action="agent-account-remove"]')).not.toBeNull()
+  })
+
+  test("a second entry makes the choice real, so both are listed", () => {
+    row({ accounts: [account(), machineLogin()] })
+
+    expect(document.querySelector('[role="radiogroup"]')).not.toBeNull()
+    expect(entries()).toEqual(["cred_1", "machine"])
+    expect(entry("machine").textContent).toContain("from ~/.codex")
+  })
+
   test("the checked radio is the account in use, and choosing another reports its rows", () => {
     const chosen: string[][] = []
     row({
@@ -130,7 +191,7 @@ describe("AgentHarnessRow accounts", () => {
       onSelect: (item) => void chosen.push([...item.ids]),
     })
 
-    const radios = document.querySelectorAll<HTMLInputElement>('[data-action="agent-account-select"]')
+    const radios = document.querySelectorAll<HTMLInputElement>('[data-component="agent-account"] input[type="radio"]')
     expect([...radios].map((input) => input.checked)).toEqual([true, false])
     expect([...radios].map((input) => input.name)).toEqual(["agent-account-claude", "agent-account-claude"])
 
@@ -139,65 +200,55 @@ describe("AgentHarnessRow accounts", () => {
     expect(chosen).toEqual([["cred_2"]])
   })
 
-  test("this computer's login is an entry of the same list, named by where it was read from", () => {
-    row({
-      accounts: [
-        account({ key: "cred_1", selected: true }),
-        account({ key: "machine", ids: [], label: "This computer's login", source: "from ~/.codex", selected: false, machine: true }),
-      ],
-    })
-
-    expect(entries()).toEqual(["cred_1", "machine"])
-    expect(entry("machine").textContent).toContain("from ~/.codex")
-    // Nothing is stored for it yet, so there is nothing to check or forget.
-    expect(entry("machine").querySelector('[data-action="agent-account-menu"]')).toBeNull()
-  })
-
-  test("an entry carries no button at rest: its actions live behind the overflow menu", () => {
+  test("an entry's two actions are text on the row, and Check names the rows it asks about", () => {
     const checked: string[][] = []
-    row({ onCheck: (ids) => void checked.push([...ids]) })
+    row({ accounts: [account(), machineLogin()], onCheck: (ids) => void checked.push([...ids]) })
 
-    const buttons = [...entry("cred_1").querySelectorAll<HTMLElement>("button")]
-      .map((node) => node.getAttribute("data-action"))
-    expect(buttons.filter((action) => action !== "agent-account-menu" && action !== null)).toEqual([
-      "agent-account-check",
-      "agent-account-remove",
-    ])
+    expect([...entry("cred_1").querySelectorAll<HTMLElement>("button")].map((node) => node.getAttribute("data-action")))
+      .toEqual(["agent-account-check", "agent-account-remove"])
+    expect(entry("cred_1").querySelector('[data-action="agent-account-check"]')?.textContent)
+      .toBe("settings.providers.agents.checkAccount")
 
-    fireEvent.click(entry("cred_1").querySelector<HTMLElement>('[data-action="agent-account-check"]')!)
+    click("cred_1", "agent-account-check")
 
     expect(checked).toEqual([["cred_1"]])
+  })
+
+  test("nothing is stored for this computer's login yet, so it has nothing to check or forget", () => {
+    row({ accounts: [account(), machineLogin()] })
+
+    expect(entry("machine").querySelectorAll("button")).toHaveLength(0)
   })
 
   test("Remove asks before it forgets, and Cancel keeps the account", () => {
     const removed: string[][] = []
     row({
-      accounts: [account({ key: "cred_1", ids: ["cred_1", "acp_1"] })],
+      accounts: [account({ key: "cred_1", ids: ["cred_1", "acp_1"] }), machineLogin()],
       onRemove: (ids) => void removed.push([...ids]),
     })
 
-    fireEvent.click(entry("cred_1").querySelector<HTMLElement>('[data-action="agent-account-remove"]')!)
+    click("cred_1", "agent-account-remove")
 
     expect(removed).toEqual([])
     expect(entry("cred_1").textContent).toContain("settings.providers.agents.removeAccountConfirm")
 
-    fireEvent.click(entry("cred_1").querySelector<HTMLElement>('[data-action="agent-account-remove-cancel"]')!)
+    click("cred_1", "agent-account-remove-cancel")
 
     expect(removed).toEqual([])
     expect(entry("cred_1").querySelector('[data-action="agent-account-remove-confirm"]')).toBeNull()
 
-    fireEvent.click(entry("cred_1").querySelector<HTMLElement>('[data-action="agent-account-remove"]')!)
-    fireEvent.click(entry("cred_1").querySelector<HTMLElement>('[data-action="agent-account-remove-confirm"]')!)
+    click("cred_1", "agent-account-remove")
+    click("cred_1", "agent-account-remove-confirm")
 
     expect(removed).toEqual([["cred_1", "acp_1"]])
   })
 
-  test("the add link is the last list entry and names whether the list is empty", () => {
+  test("the add link is the last thing under the harness and names whether anything is set up", () => {
     row({ accounts: [] })
     expect(screen.getByRole("button", { name: "settings.providers.agents.addFirstAccount" })).toBeTruthy()
     cleanup()
 
-    row()
+    row({ accounts: [account(), machineLogin()] })
     const add = screen.getByRole("button", { name: "settings.providers.agents.addAnotherAccount" })
     const list = document.querySelector('[data-component="agent-accounts"]')!
     expect(list.lastElementChild?.contains(add)).toBe(true)

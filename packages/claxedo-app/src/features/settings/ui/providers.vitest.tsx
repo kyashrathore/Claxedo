@@ -166,18 +166,6 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 vi.mock("@opencode-ai/ui/provider-icon", () => ({ ProviderIcon: () => null }))
 // Kobalte's dropdown needs a real pointer stack to open; inline items keep the
 // wiring behind Check now and Remove reachable.
-vi.mock("@opencode-ai/ui/dropdown-menu", () => {
-  const Root = (props: { children: JSX.Element }) => <div>{props.children}</div>
-  const Trigger = (props: Record<string, unknown> & { children: JSX.Element }) => (
-    <button type="button" {...props}>{props.children}</button>
-  )
-  const Portal = (props: { children: JSX.Element }) => <>{props.children}</>
-  const Content = (props: { children: JSX.Element }) => <div>{props.children}</div>
-  const Item = (props: { children: JSX.Element; onSelect?: () => void } & Record<string, unknown>) => (
-    <button type="button" {...props} onClick={() => props.onSelect?.()}>{props.children}</button>
-  )
-  return { DropdownMenu: Object.assign(Root, { Trigger, Portal, Content, Item }) }
-})
 vi.mock("@/platform/api/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/platform/api/api")>()),
   authFetch: async (url: URL, init?: RequestInit) => {
@@ -342,7 +330,7 @@ function accountRow(id: string, key: string) {
 /** The account key whose radio is checked, or "" when none is. */
 function selectedAccount(id: string) {
   return [...agentRow(id).querySelectorAll<HTMLElement>('[data-component="agent-account"]')]
-    .find((node) => node.querySelector<HTMLInputElement>('[data-action="agent-account-select"]')?.checked)
+    .find((node) => node.querySelector<HTMLInputElement>('input[type="radio"]')?.checked)
     ?.getAttribute("data-account") ?? ""
 }
 
@@ -355,9 +343,15 @@ function accountStatus(id: string, key: string) {
   }
 }
 
-function menuItem(id: string, key: string, action: "check" | "remove") {
-  const item = accountRow(id, key).querySelector<HTMLElement>(`[data-action="agent-account-${action}"]`)
-  if (!item) throw new Error(`no ${action} item for ${key}`)
+/**
+ * One entry's Check or Remove. A lone entry is not listed, so its actions sit on
+ * the harness header instead; either way there is one of each per entry.
+ */
+function rowAction(id: string, key: string, action: "check" | "remove" | "remove-confirm") {
+  const scope = agentRow(id).querySelector<HTMLElement>(`[data-component="agent-account"][data-account="${key}"]`)
+    ?? agentRow(id)
+  const item = scope.querySelector<HTMLElement>(`[data-action="agent-account-${action}"]`)
+  if (!item) throw new Error(`no ${action} action for ${key}`)
   return item
 }
 
@@ -611,10 +605,11 @@ describe("Settings → Providers reports the agent logins on this machine", () =
   test("a row whose only name is its provider id is listed by its fingerprint instead", async () => {
     state.storedCredentials = [
       { id: "cred_key", provider_id: "claude-sdk", kind: "api_key", label: "claude-sdk", account_id: "fp_0123abcd…wxyz", is_active: true },
+      { id: "sdk_home", provider_id: "claude-sdk", kind: "oauth_token", label: "home@acme.com", account_id: "acc_home", is_active: false },
     ]
     mount()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_key"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_key", "sdk_home"]))
     expect(accountRow("anthropic", "cred_key").textContent).toContain("…wxyz")
     expect(accountRow("anthropic", "cred_key").textContent).not.toContain("claude-sdk")
     expect(agentHeader("anthropic").sentence).toContain("settings.providers.agents.usingAccount:…wxyz")
@@ -630,7 +625,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(selectedAccount("anthropic")).toBe("sdk_work"))
 
     accountRow("anthropic", "sdk_home")
-      .querySelector<HTMLInputElement>('[data-action="agent-account-select"]')!.click()
+      .querySelector<HTMLInputElement>('input[type="radio"]')!.click()
 
     await waitFor(() => expect(selectedAccount("anthropic")).toBe("sdk_home"))
     // One call names both bindings, so the store can never hold the account on
@@ -647,7 +642,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_two"]))
 
     accountRow("openai", "cred_codex_two")
-      .querySelector<HTMLInputElement>('[data-action="agent-account-select"]')!.click()
+      .querySelector<HTMLInputElement>('input[type="radio"]')!.click()
 
     await waitFor(() => expect(selectedAccount("openai")).toBe("cred_codex_two"))
     expect(state.activated).toEqual([["cred_codex_two"]])
@@ -683,22 +678,23 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(selectedAccount("openai")).toBe("cred_codex")
 
     accountRow("openai", "machine")
-      .querySelector<HTMLInputElement>('[data-action="agent-account-select"]')!.click()
+      .querySelector<HTMLInputElement>('input[type="radio"]')!.click()
 
     await waitFor(() => expect(state.saved).toEqual([["codex-app-server"]]))
     // Saving alone would leave the harness on whatever it ran on before.
     expect(state.activated).toEqual([["saved_codex-app-server"]])
   })
 
-  test("Check now asks the provider and rewrites that entry's status", async () => {
+  test("Check asks the provider and rewrites that entry's status", async () => {
     state.storedCredentials = [
       { id: "cred_codex", provider_id: "codex-app-server", kind: "oauth_token", label: "work@acme.com", is_active: true },
+      { id: "cred_codex_two", provider_id: "codex-app-server", kind: "oauth_token", label: "home@acme.com", account_id: "acc_2", is_active: false },
     ]
     mount()
-    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex"]))
+    await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_two"]))
     expect(accountStatus("openai", "cred_codex").text).toBe("settings.providers.agents.unchecked")
 
-    menuItem("openai", "cred_codex", "check").click()
+    rowAction("openai", "cred_codex", "check").click()
 
     await waitFor(() => expect(accountStatus("openai", "cred_codex").text).toContain("settings.providers.live.ok"))
     const status = accountStatus("openai", "cred_codex")
@@ -716,13 +712,15 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     mount()
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work", "sdk_home"]))
 
-    menuItem("anthropic", "sdk_home", "remove").click()
+    rowAction("anthropic", "sdk_home", "remove").click()
     expect(state.removed).toEqual([])
 
-    accountRow("anthropic", "sdk_home")
-      .querySelector<HTMLButtonElement>('[data-action="agent-account-remove-confirm"]')!.click()
+    rowAction("anthropic", "sdk_home", "remove-confirm").click()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
+    // One entry left is one the header sentence names, so the list goes away.
+    await waitFor(() => expect(accountIds("anthropic")).toEqual([]))
+    expect(agentHeader("anthropic").sentence)
+      .toBe("settings.providers.agents.usingAccount:work@acme.com · settings.providers.agents.unchecked")
     expect(state.removed).toEqual(["sdk_home", "acp_home"])
   })
 
@@ -730,31 +728,31 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     state.storedCredentials = [
       ...claudeLogin,
       { id: "sdk_home", provider_id: "claude-sdk", kind: "oauth_token", label: "home@acme.com", account_id: "acc_home", is_active: false },
+      { id: "sdk_spare", provider_id: "claude-sdk", kind: "api_key", label: "spare@acme.com", account_id: "acc_spare", is_active: false },
     ]
     mount()
     await waitFor(() => expect(selectedAccount("anthropic")).toBe("sdk_work"))
 
-    menuItem("anthropic", "sdk_work", "remove").click()
-    accountRow("anthropic", "sdk_work")
-      .querySelector<HTMLButtonElement>('[data-action="agent-account-remove-confirm"]')!.click()
+    rowAction("anthropic", "sdk_work", "remove").click()
+    rowAction("anthropic", "sdk_work", "remove-confirm").click()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_home"]))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_home", "sdk_spare"]))
     expect(selectedAccount("anthropic")).toBe("sdk_home")
   })
 
-  test("removing the last account returns the harness to Not set up", async () => {
+  test("removing the last account, which the header names rather than lists, returns the harness to Not set up", async () => {
     state.storedCredentials = [
       { id: "cred_token", provider_id: "claude-sdk", kind: "oauth_token", label: "work@acme.com", is_active: true },
     ]
     mount()
-    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_token"]))
+    await waitFor(() => expect(agentHeader("anthropic").sentence)
+      .toContain("settings.providers.agents.usingAccount:work@acme.com"))
+    expect(accountIds("anthropic")).toEqual([])
 
-    menuItem("anthropic", "cred_token", "remove").click()
-    accountRow("anthropic", "cred_token")
-      .querySelector<HTMLButtonElement>('[data-action="agent-account-remove-confirm"]')!.click()
+    rowAction("anthropic", "cred_token", "remove").click()
+    rowAction("anthropic", "cred_token", "remove-confirm").click()
 
-    await waitFor(() => expect(accountIds("anthropic")).toEqual([]))
-    expect(agentHeader("anthropic").sentence).toBe("settings.providers.agents.notSetUp")
+    await waitFor(() => expect(agentHeader("anthropic").sentence).toBe("settings.providers.agents.notSetUp"))
     expect(agentAction("anthropic")).toBe("agent-connect")
   })
 

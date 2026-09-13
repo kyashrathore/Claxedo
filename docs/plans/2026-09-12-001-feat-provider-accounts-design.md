@@ -255,24 +255,32 @@ disagree.
   another account."; "Using this computer's login · Working"; or "Not set up".
   The right side offers **Connect** when nothing is set up, **Reconnect** when
   the account in use was refused, and nothing otherwise.
-- **Accounts as a radio list** indented under the name. The checked radio is the
-  account in use, read from the server's effective credentials — the row a
-  session will actually be handed — falling back to the stored mark where the
-  host cannot enumerate its store. Choosing a radio activates that account, for
-  every harness whose registry provider is fanout-eligible, which today is all
-  three. Each entry is one line: the label, the account's identity where it adds
-  something, then a dot and the verdict ("Working", "Rejected by the provider",
-  "Not checked") with the time of that verdict behind it in muted text.
+- **Accounts as a radio list** indented under the name, drawn only when there
+  are **two or more entries**: one entry is the one the header sentence already
+  names, and a list restating it under itself reads as two accounts. The checked
+  radio is the account in use, read from the server's effective credentials —
+  the row a session will actually be handed — falling back to the stored mark
+  where the host cannot enumerate its store. Choosing a radio activates that
+  account, for every harness whose registry provider is fanout-eligible, which
+  today is all three. Each entry is one line: the label, the account's identity
+  where it adds something, then a dot and the verdict ("Working", "Rejected by
+  the provider", "Not checked") with the time of that verdict behind it in muted
+  text. The radio is the kit's themed control (`RadioList` in `packages/ui`), so
+  the checked state carries the app's tokens rather than the browser's accent.
 - **"This computer's login" is the last entry** whenever the scan found one,
   with its origin in muted text ("from ~/.codex/auth.json"). It is last by
   construction: every stored account is a choice the user made, and this login
   is the standing fallback underneath all of them. Choosing it saves the scanned
   login through `save-discovered` and then marks what was saved — saving alone
   would leave the harness on the entry the user just clicked away from.
-- **Per-entry actions live in a "…" overflow menu**: Check now and Remove, with
-  Remove's confirm inline on the entry. Nothing competes with the radio at rest.
-- **"+ Add another account"** ("+ Add an account" when the list is empty) is the
-  last list entry, styled as a link, and opens the same inline connect card.
+- **Per-entry actions are visible text**, muted and right-aligned at the end of
+  the entry: **Check** and **Remove**, with Remove's confirm inline on the same
+  line. While there is a single entry and therefore no list, those two links sit
+  at the end of the header sentence instead, so the sole account can still be
+  checked and forgotten. With two or more entries the header carries none.
+- **"+ Add another account"** ("+ Add an account" when nothing is set up) is the
+  last thing under the harness, styled as a link, and opens the same inline
+  connect card.
   Reconnect opens that card in reconnect mode against one row (rule 8).
 - **The scan is automatic**: it runs when the section mounts and after every
   write, so the list and the sentence are derived from one read. The section
