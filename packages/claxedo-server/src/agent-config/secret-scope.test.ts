@@ -37,11 +37,10 @@ describe("runtime config secret scoping", () => {
   })
 
   /**
-   * v4 removed every plaintext channel out of the producer: a key typed into the
-   * user config file, a registry secret resolved by scope, and the connection
-   * `secretRefs` values a managed VM used to read out of `auth`. What is left is
-   * whatever the installed credential authority projects, and this product
-   * installs none yet.
+   * A runtime snapshot has no plaintext credential channel at all: not the user
+   * config file, not a registry secret resolved by scope, not a connection's
+   * `secretRefs`. Everything a harness gets comes from the installed credential
+   * authority, as a placeholder.
    */
   test("no runtime snapshot carries credential material, in either scope", async () => {
     const put = (name: string, extra: object = {}, org = "org-a") => putCredential({

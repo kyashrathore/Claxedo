@@ -11,6 +11,21 @@ export const sandboxDriverIds = ["exe", "daytona", "modal", "vercel", "cloudflar
 
 export type SandboxDriverID = (typeof sandboxDriverIds)[number]
 
+/**
+ * How a driver can honor a credential the sandbox may USE but must never READ.
+ *
+ * Here rather than in `@claxedo/sandbox-manager` because both sides of the
+ * question live outside it: the manager's driver catalog declares the answer,
+ * and the credential authority reads it to decide what a workspace's accounts
+ * project to. That authority must not reach sandbox provisioning, and this
+ * package is the vocabulary they can share without it.
+ *
+ * There is no third state. A driver that would need a broker we operate is
+ * `"none"` until it has one, because the manager fails closed on anything that
+ * is not `"native"`.
+ */
+export type SandboxSecretBrokering = "native" | "none"
+
 export type SandboxDriverAuth = {
   exe?: { api_token?: string }
   daytona?: { api_key?: string }

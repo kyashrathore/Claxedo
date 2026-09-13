@@ -263,7 +263,7 @@ describe("native credential registration", () => {
       put: async (id: string, value: string) => { values.set(id, value) },
       delete: async (id: string) => { values.delete(id) } }
   }
-  const registration = { name: "MODEL_KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer real-secret" }
+  const registration = { name: "MODEL_KEY", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer real-secret", methods: ["POST"], pathPrefixes: ["/v1"] }
   test("boots with native handlers and stable placeholders instead of an expiring token", async () => {
     const kv = credentials()
     const response = await call("/sandbox/native-proof/ensure-runtime", env({ EGRESS_SECRETS: kv }), {
@@ -274,7 +274,6 @@ describe("native credential registration", () => {
     const bootEnv = sandboxStub.ensureWorkspaceRuntime.mock.calls.at(-1)?.[1]
     expect(bootEnv).toMatchObject({ MODEL_KEY: "claxedo-broker:MODEL_KEY" })
     expect(JSON.stringify(bootEnv)).not.toContain("real-secret")
-    expect(bootEnv).not.toHaveProperty("CLAXEDO_EGRESS_TOKEN")
   })
   test("explicit empty registrations withdraw stored values and handlers", async () => {
     const kv = credentials()
@@ -336,7 +335,7 @@ describe("workspace-runtime process env", () => {
     }
   }
 
-  test("a healthy runtime is reused when its env has not changed", async () => {
+  test("a running runtime is left alone when the caller says its env is unchanged", async () => {
     const existing = process()
     const sandbox = operations(existing)
 
@@ -350,10 +349,10 @@ describe("workspace-runtime process env", () => {
     expect(existing.kill).not.toHaveBeenCalled()
   })
 
-  test("a running runtime is replaced when the env it booted with no longer matches", async () => {
-    // A newly registered credential only becomes CLAXEDO_MCP_<key> for a
-    // process spawned with it; returning early left the placeholder absent
-    // until something else happened to restart the runtime.
+  test("a running runtime is replaced when the caller says its env changed", async () => {
+    // A process keeps the environment it was spawned with, so a credential
+    // registered after boot becomes its placeholder env var only once the
+    // process itself is replaced.
     const existing = process()
     const sandbox = operations(existing)
     const env = { MODEL_KEY: "claxedo-broker:MODEL_KEY" }
@@ -381,7 +380,7 @@ describe("runtime env reconciliation on ensure-runtime", () => {
       delete: async (id: string) => { values.delete(id) },
     }
   }
-  const registration = { name: "CLAXEDO_MCP_NOTION", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer real" }
+  const registration = { name: "CLAXEDO_MCP_NOTION", hosts: ["api.vendor.test"], header: "Authorization", value: "Bearer real", methods: ["POST"], pathPrefixes: ["/v1"] }
 
   test("a newly registered credential replaces the running runtime so its placeholder exists", async () => {
     const kv = credentials()

@@ -12,7 +12,7 @@ export type WorkspaceRuntimeHostIo = {
 }
 
 /** Named in the stderr line so a log search finds boot failures by one string. */
-export const WORKSPACE_RUNTIME_BOOT_FAILED = "workspace_runtime_boot_failed"
+const WORKSPACE_RUNTIME_BOOT_FAILED = "workspace_runtime_boot_failed"
 
 const BOOT_FAILURE_EXIT_CODE = 78
 

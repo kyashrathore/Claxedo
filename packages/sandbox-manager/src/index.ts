@@ -1,5 +1,7 @@
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
-import type { SandboxDriverID } from "@claxedo/sandbox-contract"
+import type { SandboxDriverID, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+
+export type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import {
   captureSandboxCheckpoint,
   restoreSandboxCheckpoint,
@@ -98,13 +100,8 @@ export type SandboxDriverMetadata = {
    *   provider may still have an encrypted secret STORE (e.g. Modal secrets),
    *   but it is exposed as a readable env var, which cannot satisfy the
    *   never-readable contract.
-   *
-   * There is no third state. A driver that would need a broker we operate is
-   * `"none"` until it has one, because the manager fails closed on anything
-   * that is not `"native"` and an "achievable but unwired" value read as
-   * provisionable in every caller that did not consult this comment.
    */
-  secretBrokering: "native" | "none"
+  secretBrokering: SandboxSecretBrokering
   /**
    * How the driver can enforce a RESTRICTED `SandboxNetworkPolicy` — i.e.
    * whether the sandbox's outbound network can actually be contained.
