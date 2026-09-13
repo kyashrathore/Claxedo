@@ -12,6 +12,7 @@ import { $ } from "bun"
 import * as fs from "fs"
 import * as path from "path"
 
+import { buildPublishedPackages } from "./published-packages"
 import { bundleClaxedoServer } from "./bundle-claxedo-server"
 import {
   buildClaxedoServerCompileCache,
@@ -30,13 +31,8 @@ import { copyIcons as copyChannelIcons } from "./utils"
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
-const HELPERS_DIR = path.resolve(PACKAGE_DIR, "../claxedo-helpers")
-const EVENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-event-runtime")
-const AGENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-sdk-runtime")
-const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
-const RUNTIME_CONTRACT_DIR = path.resolve(PACKAGE_DIR, "../agent-runtime-contract")
-const EGRESS_BROKER_DIR = path.resolve(PACKAGE_DIR, "../egress-broker")
 const RESOURCES_DIR = path.resolve(PACKAGE_DIR, "resources")
+const REPO_ROOT = path.resolve(PACKAGE_DIR, "../..")
 
 const log = (msg: string) => console.log(`[prebuild] ${msg}`)
 
@@ -65,25 +61,7 @@ async function bundleServer() {
   // larger build; this fails in the first second and names the
   // package the desktop cannot start without.
   log(`Local server entry: ${LOCAL_SERVER_ENTRY} → ${resolveLocalServerEntry(PACKAGE_DIR)}`)
-  // workspace-runtime imports agent-sdk-runtime through its published `dist`
-  // exports. Build that authoritative input first: otherwise a package can
-  // contain yesterday's adapter even though today's source and tests are green.
-  // The MCP endpoint consumes the helpers' published document and credential
-  // subpaths; build these before bundling so a clean checkout has every export.
-  log("Building claxedo-helpers...")
-  await $`bun run build`.cwd(HELPERS_DIR)
-  log("Building agent-event-runtime...")
-  await $`bun run build`.cwd(EVENT_RUNTIME_DIR)
-  log("Building agent-sdk-runtime...")
-  await $`bun run build`.cwd(AGENT_RUNTIME_DIR)
-  log("Building workspace-runtime...")
-  await $`bun run build`.cwd(WS_RUNTIME_DIR)
-  // The local server reaches the egress broker through its published dist, and
-  // the broker compiles against the contract's published types.
-  log("Building agent-runtime-contract...")
-  await $`bun run build`.cwd(RUNTIME_CONTRACT_DIR)
-  log("Building egress-broker...")
-  await $`bun run build`.cwd(EGRESS_BROKER_DIR)
+  await buildPublishedPackages(REPO_ROOT, log)
   log("Bundling claxedo-server...")
   const bundled = await bundleClaxedoServer(src, dest)
   log(`claxedo-server bundled to ${bundled.entry} (${Math.ceil(bundled.outputBytes / 1024 / 1024)} MB split)`)

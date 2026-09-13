@@ -12,6 +12,7 @@ import * as path from "path"
 
 import { readString } from "../src/shared/json-read"
 
+import { buildPublishedPackages, publishedPackageDistDirs } from "./published-packages"
 import { bundleClaxedoServer, resolveDeferredServerEntry } from "./bundle-claxedo-server"
 import {
   buildClaxedoServerCompileCache,
@@ -40,10 +41,6 @@ const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
 // cannot drift apart.
 const CLAXEDO_SERVER_DIR = localServerPackageDir(PACKAGE_DIR)
 const SERVER_CORE_DIR = path.resolve(PACKAGE_DIR, "../claxedo-server-core")
-const AGENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-sdk-runtime")
-const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
-const RUNTIME_CONTRACT_DIR = path.resolve(PACKAGE_DIR, "../agent-runtime-contract")
-const EGRESS_BROKER_DIR = path.resolve(PACKAGE_DIR, "../egress-broker")
 const require = createRequire(import.meta.url)
 
 try {
@@ -164,46 +161,7 @@ async function patchDevBundleMetadata() {
   console.log(`[predev] Patched dev Electron bundle metadata → ${displayName}`)
 }
 
-// workspace-runtime consumes agent-sdk-runtime through its `dist` exports, so
-// its build must never run against an older adapter than the source tree.
-const agentRuntimeOutput = path.resolve(AGENT_RUNTIME_DIR, "dist/index.mjs")
-if (outputIsStale(agentRuntimeOutput, [
-  path.resolve(AGENT_RUNTIME_DIR, "package.json"),
-  path.resolve(AGENT_RUNTIME_DIR, "scripts"),
-  path.resolve(AGENT_RUNTIME_DIR, "src"),
-])) {
-  console.log(`[predev] Building agent-sdk-runtime...`)
-  await $`bun run build`.cwd(AGENT_RUNTIME_DIR)
-} else {
-  console.log(`[predev] agent-sdk-runtime is current`)
-}
-
-// The local server reaches the egress broker through its published dist, and
-// the broker compiles against the contract's published types.
-for (const [name, dir, output] of [
-  ["agent-runtime-contract", RUNTIME_CONTRACT_DIR, "dist/index.mjs"],
-  ["egress-broker", EGRESS_BROKER_DIR, "dist/index.js"],
-] as const) {
-  if (outputIsStale(path.resolve(dir, output), [path.resolve(dir, "package.json"), path.resolve(dir, "src")])) {
-    console.log(`[predev] Building ${name}...`)
-    await $`bun run build`.cwd(dir)
-  } else {
-    console.log(`[predev] ${name} is current`)
-  }
-}
-
-// Bundle claxedo-server so dev mode doesn't rely on a stale prebuild artifact
-const workspaceRuntimeOutput = path.resolve(WS_RUNTIME_DIR, "dist/host.mjs")
-if (outputIsStale(workspaceRuntimeOutput, [
-  path.resolve(WS_RUNTIME_DIR, "package.json"),
-  path.resolve(WS_RUNTIME_DIR, "scripts"),
-  path.resolve(WS_RUNTIME_DIR, "src"),
-])) {
-  console.log(`[predev] Building workspace-runtime...`)
-  await $`bun run build`.cwd(WS_RUNTIME_DIR)
-} else {
-  console.log(`[predev] workspace-runtime is current`)
-}
+await buildPublishedPackages(path.resolve(PACKAGE_DIR, "../.."), (message) => console.log(`[predev] ${message}`))
 
 // The BOOT stub, not the product entry: it seeds the compile cache and then
 // reaches `claxedo-server-entry.ts` through a dynamic import, so the 9.11 MB
@@ -229,9 +187,9 @@ if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   path.resolve(PACKAGE_DIR, "../claxedo-server-core/src"),
   // Local product routes live here — same stale risk.
   path.resolve(PACKAGE_DIR, "../claxedo-local-server/src"),
-  path.resolve(PACKAGE_DIR, "../agent-event-runtime/src"),
-  path.resolve(PACKAGE_DIR, "../agent-sdk-runtime/src"),
-  path.resolve(PACKAGE_DIR, "../workspace-runtime/src"),
+  // Every published sibling enters the bundle as its dist, so the dist is what
+  // decides staleness, not the source behind it.
+  ...publishedPackageDistDirs(path.resolve(PACKAGE_DIR, "../..")),
 ])) {
   console.log(`[predev] Compiling standalone claxedo-server...`)
   const bundled = await bundleClaxedoServer(serverSource, serverDest)
