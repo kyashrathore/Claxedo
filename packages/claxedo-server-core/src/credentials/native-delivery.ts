@@ -15,14 +15,19 @@
 
 import type { ProviderProjectionSource } from "@claxedo/agent-sdk-runtime"
 import { Log } from "../platform/runtime/lib/log"
-import { destinationAuthMode, providerDestination, type ProviderDestination } from "./destinations"
+import {
+  destinationAuthMode,
+  providerDestination,
+  providerDestinationShape,
+  type ProviderDestination,
+} from "./destinations"
 import {
   readSecretById,
   requireActiveCredentialsForScope,
   SINGLE_TENANT_ORG,
   type CredentialOrgScope,
 } from "./registry"
-import type { CredentialMetadata } from "./types"
+import type { CredentialKind, CredentialMetadata } from "./types"
 
 /**
  * The secret a sandbox driver installs on its provider edge.
@@ -48,6 +53,12 @@ export type NativeProviderSecret = {
 
 export type NativeProviderDelivery = {
   providerId: string
+  /**
+   * The stored account this resolved to. Two accounts for one provider commonly
+   * both sit at revision 1, so without it a switch between them produces the
+   * same delivery identity and a sandbox holding the old one is left holding it.
+   */
+  credentialId: string
   projection: ProviderProjectionSource
   /** Absent when the projection says the selected account cannot be used. */
   secret?: NativeProviderSecret
@@ -68,6 +79,26 @@ export type NativeProviderDelivery = {
 /** How a sandbox driver can carry a brokered secret, as its catalog declares it. */
 export type SandboxSecretBrokering = "native" | "none"
 
+/**
+ * Where an account can actually be spent.
+ *
+ * `local` is always true: the loopback broker holds the value in this process
+ * and every stored account reaches it. `cloud` is the narrower question, and it
+ * is answered here rather than inferred from "we have it stored", because a
+ * provider edge attaches one header per secret and a destination that also
+ * needs a fixed companion header cannot be delivered through one at all.
+ */
+export type CredentialReach = { local: true; cloud: boolean; reason?: string }
+
+export function credentialReach(row: { provider_id: string; kind: CredentialKind }): CredentialReach {
+  const destination = providerDestinationShape({ providerId: row.provider_id, kind: row.kind })
+  if (!destination) return { local: true, cloud: false, reason: "no_destination" }
+  if (destination.injection.headers) {
+    return { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }
+  }
+  return { local: true, cloud: true }
+}
+
 const log = Log.create({ service: "native-delivery" })
 
 const ENV_PREFIX = "CLAXEDO_PROVIDER_"
@@ -83,8 +114,12 @@ export function providerPlaceholderEnv(providerId: string): string {
   return `${ENV_PREFIX}${providerId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`
 }
 
-function undeliverable(providerId: string, reason: string): NativeProviderDelivery {
-  return { providerId, projection: { unavailable: true, reason } }
+function undeliverable(credential: CredentialMetadata, reason: string): NativeProviderDelivery {
+  return {
+    providerId: credential.provider_id,
+    credentialId: credential.id,
+    projection: { unavailable: true, reason },
+  }
 }
 
 function delivery(credential: CredentialMetadata, destination: ProviderDestination): NativeProviderDelivery {
@@ -93,10 +128,11 @@ function delivery(credential: CredentialMetadata, destination: ProviderDestinati
   // account id its backend reads to pick the plan — cannot be delivered here: a
   // provider edge attaches one header per secret, and a turn that arrives
   // without the companion is refused by the vendor, not by us.
-  if (destination.injection.headers) return undeliverable(providerId, "native_delivery_needs_companion_header")
+  if (destination.injection.headers) return undeliverable(credential, "native_delivery_needs_companion_header")
   const name = providerPlaceholderEnv(providerId)
   return {
     providerId,
+    credentialId: credential.id,
     revision: credential.revision,
     secret: {
       name,
@@ -139,11 +175,11 @@ export async function nativeProviderDeliveries(input: {
   for (const row of byMostRecentMark(requireActiveCredentialsForScope("shared", org))) {
     const providerId = row.credential.provider_id
     if (row.unavailable) {
-      deliveries.push(undeliverable(providerId, row.unavailable))
+      deliveries.push(undeliverable(row.credential, row.unavailable))
       continue
     }
     if (input.secretBrokering === "none") {
-      deliveries.push(undeliverable(providerId, "secret_brokering_unsupported"))
+      deliveries.push(undeliverable(row.credential, "secret_brokering_unsupported"))
       continue
     }
     let secret: string | null | undefined
@@ -159,18 +195,18 @@ export async function nativeProviderDeliveries(input: {
       })
     }
     if (!secret) {
-      deliveries.push({ ...undeliverable(providerId, "unreadable_secret"), unreadable: true })
+      deliveries.push({ ...undeliverable(row.credential, "unreadable_secret"), unreadable: true })
       continue
     }
     const destination = providerDestination({ providerId, kind: row.credential.kind, secret })
     if (!destination) {
-      deliveries.push(undeliverable(providerId, "no_destination"))
+      deliveries.push(undeliverable(row.credential, "no_destination"))
       continue
     }
     const holder = claimed.get(destination.origin)
     if (holder) {
       deliveries.push(undeliverable(
-        providerId,
+        row.credential,
         `duplicate_destination_host: ${new URL(destination.origin).host} is delivered for ${holder}, marked more recently`,
       ))
       continue
@@ -239,16 +275,50 @@ export function nativeProviderSecrets(
  * Identity of the delivered set, for deciding whether what a sandbox already
  * holds is current.
  *
- * Reads the revision rather than the value, so the digest can be held on a
- * runtime's state and compared on every wake without a secret living there. A
- * rotation moves the revision, which is what makes a same-named, same-host
- * secret a different set.
+ * Reads the account and its revision rather than the value, so the digest can
+ * be held on a runtime's state and compared on every wake without a secret
+ * living there. A rotation moves the revision and a switch between two accounts
+ * moves the credential id, which is what makes a same-named, same-host secret a
+ * different set.
  */
 export function nativeDeliveryDigest(deliveries: readonly NativeProviderDelivery[]): string {
-  return deliveries
-    .flatMap((row) => row.secret
-      ? [[row.secret.name, row.secret.hosts.join(","), row.secret.header, row.secret.scheme ?? "", String(row.revision ?? "")].join(" ")]
-      : [])
-    .toSorted()
-    .join("")
+  return digestEntries(deliveries).map((row) => row.entry).toSorted().join(DIGEST_SEPARATOR)
+}
+
+/**
+ * The (provider, entry) pairs a digest names, so a caller holding one can tell
+ * which providers it installed a secret for and which entries have changed.
+ */
+export function nativeDeliveryDigestEntries(digest: string): Array<{ providerId: string; entry: string }> {
+  if (!digest) return []
+  return digest.split(DIGEST_SEPARATOR).flatMap((entry) => {
+    const providerId = entry.split(FIELD_SEPARATOR)[0]
+    return providerId ? [{ providerId, entry }] : []
+  })
+}
+
+/**
+ * Control characters rather than any printable byte: a provider id, an account
+ * id and a host are all free-form enough that a printable separator inside one
+ * would forge an entry boundary. Escaped rather than literal so `rg` does not
+ * read this file as binary.
+ */
+const FIELD_SEPARATOR = "\u0000"
+const DIGEST_SEPARATOR = "\u0001"
+
+function digestEntries(deliveries: readonly NativeProviderDelivery[]) {
+  return deliveries.flatMap((row) => row.secret
+    ? [{
+      providerId: row.providerId,
+      entry: [
+        row.providerId,
+        row.credentialId,
+        row.secret.name,
+        row.secret.hosts.join(","),
+        row.secret.header,
+        row.secret.scheme ?? "",
+        String(row.revision ?? ""),
+      ].join(FIELD_SEPARATOR),
+    }]
+    : [])
 }

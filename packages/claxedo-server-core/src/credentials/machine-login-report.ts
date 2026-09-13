@@ -19,13 +19,23 @@ import { agentUsageOrNone } from "./machine-agent-usage"
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import type { MachineAgentUsageReader } from "./machine-agent-usage"
 import type { HarnessId } from "@claxedo/agent-runtime-contract"
+import type { CredentialReach } from "./native-delivery"
 import type { MachineLogin } from "./machine-login"
 
 export type ReportedMachineLogin = MachineLogin & {
   usageAt?: number
   /** Why this login carries no windows, where the probe was told. */
   usageError?: string
+  /** Where this login can be spent, in the same shape a stored account answers. */
+  deliverable: CredentialReach
 }
+
+/**
+ * A machine login is a CLI's own token on this computer. Claxedo never holds
+ * its value, so there is nothing to hand a cloud sandbox's provider edge and no
+ * such CLI in the sandbox to hold it instead.
+ */
+const MACHINE_LOGIN_REACH: CredentialReach = { local: true, cloud: false, reason: "machine_login" }
 
 /** One harness's login is one address's login, and `""` is "the harness named none". */
 function usageKey(harness: string, account: string) {
@@ -53,7 +63,7 @@ export async function machineLoginsWithUsage(
     const account = login.email ?? ""
     if (login.usage?.length) {
       await recordMachineLoginUsage?.(login.harness, account, login.usage, at)
-      out.push({ ...login, usageAt: at })
+      out.push({ ...login, deliverable: MACHINE_LOGIN_REACH, usageAt: at })
       continue
     }
     // Only what a harness says about itself is recorded. The probe reads the
@@ -61,15 +71,19 @@ export async function machineLoginsWithUsage(
     // figure to go stale, and the account it names is nobody's stored row.
     const agent = agents.find((row) => row.harness === login.harness)
     if (agent?.windows.length) {
-      out.push({ ...login, usage: agent.windows, usageAt: agent.at })
+      out.push({ ...login, deliverable: MACHINE_LOGIN_REACH, usage: agent.windows, usageAt: agent.at })
       continue
     }
     const row = stored.get(usageKey(login.harness, account))
     if (row) {
-      out.push({ ...login, usage: row.windows, usageAt: row.at })
+      out.push({ ...login, deliverable: MACHINE_LOGIN_REACH, usage: row.windows, usageAt: row.at })
       continue
     }
-    out.push(agent?.error === undefined ? login : { ...login, usageError: agent.error })
+    out.push({
+      ...login,
+      deliverable: MACHINE_LOGIN_REACH,
+      ...(agent?.error === undefined ? {} : { usageError: agent.error }),
+    })
   }
   return out
 }

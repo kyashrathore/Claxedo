@@ -8,7 +8,7 @@
  * fact about that vendor, which is why they are one row.
  */
 
-import { credentialSecretMaterial } from "@claxedo/server-core/credentials/secret-material"
+import { credentialSecretMaterial, isSubscriptionKind } from "@claxedo/server-core/credentials/secret-material"
 import type { CredentialKind } from "@claxedo/server-core/credentials/types"
 
 export type ProviderDestination = {
@@ -164,6 +164,24 @@ const PROVIDER_ROWS: Record<string, ProviderRow> = {
  */
 export function hasProviderDestination(providerId: string): boolean {
   return Object.hasOwn(PROVIDER_ROWS, providerId)
+}
+
+/**
+ * The destination a stored row resolves to, asked with the row's shape rather
+ * than its value.
+ *
+ * A surface that lists accounts holds metadata and no secret, and the question
+ * it asks — can this account be delivered to a cloud sandbox — is answered by
+ * the header shape alone. `accountId` is unknown here, which is the same answer
+ * a login that names no account gives: the companion header is declared either
+ * way, because the name belongs to the row rather than to the value.
+ */
+export function providerDestinationShape(input: {
+  providerId: string
+  kind: CredentialKind
+}): Omit<ProviderDestination, "value"> | undefined {
+  const row = Object.hasOwn(PROVIDER_ROWS, input.providerId) ? PROVIDER_ROWS[input.providerId] : undefined
+  return row?.({ token: "", form: isSubscriptionKind(input.kind) ? "subscription" : "api-key" })
 }
 
 export function providerDestination(input: {

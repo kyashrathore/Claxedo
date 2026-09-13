@@ -15,7 +15,9 @@ const registryModule = await import("./registry")
 const { putCredential, setActiveCredentials, updateCredentialHealth, deleteCredential, listCredentials } =
   await import("./registry")
 const {
+  credentialReach,
   nativeDeliveryDigest,
+  nativeDeliveryDigestEntries,
   nativeProviderAuth,
   nativeProviderDeliveries,
   nativeProviderSecrets,
@@ -243,6 +245,50 @@ describe("native provider delivery", () => {
     await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-rotated")
 
     expect(nativeDeliveryDigest(await nativeProviderDeliveries())).not.toBe(before)
+  })
+
+  test("the digest moves when the operator switches to another account at the same revision", async () => {
+    // Two accounts for one provider are both at revision 1, so a digest built
+    // from the destination and the revision alone reads the switch as no
+    // change and leaves the sandbox spending the account the operator left.
+    const first = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY, label: "one" })
+    setActiveCredentials([first.id])
+    const before = nativeDeliveryDigest(await nativeProviderDeliveries())
+    await tick()
+    const second = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: "sk-ant-api03-second", label: "two" })
+    setActiveCredentials([second.id])
+
+    const after = nativeDeliveryDigest(await nativeProviderDeliveries())
+
+    expect(first.revision).toBe(second.revision)
+    expect(after).not.toBe(before)
+    expect(nativeDeliveryDigestEntries(after).map((row) => row.providerId)).toEqual(["claude-sdk"])
+  })
+
+  test("a digest names the providers it installed a secret for, and nothing at all when empty", () => {
+    expect(nativeDeliveryDigestEntries("")).toEqual([])
+    expect(nativeDeliveryDigestEntries(nativeDeliveryDigest([]))).toEqual([])
+  })
+
+  test("every delivery names the account it resolved to", async () => {
+    const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
+    setActiveCredentials([credential.id])
+
+    const deliveries = await nativeProviderDeliveries()
+
+    expect(deliveries.map((row) => [row.providerId, row.credentialId]))
+      .toEqual([["claude-sdk", credential.id]])
+  })
+
+  test("reach is read from the delivery rules rather than from the row being stored", () => {
+    // A ChatGPT subscription answers on a backend that reads a companion
+    // account header, and a provider edge attaches one header per secret.
+    expect(credentialReach({ provider_id: "openai", kind: "oauth_token" }))
+      .toEqual({ local: true, cloud: false, reason: "native_delivery_needs_companion_header" })
+    expect(credentialReach({ provider_id: "openai", kind: "api_key" })).toEqual({ local: true, cloud: true })
+    expect(credentialReach({ provider_id: "claude-sdk", kind: "oauth_token" })).toEqual({ local: true, cloud: true })
+    expect(credentialReach({ provider_id: "daytona", kind: "sandbox_driver" }))
+      .toEqual({ local: true, cloud: false, reason: "no_destination" })
   })
 
   test("a none-driver snapshot reaches the runtime saying the credential cannot be delivered", async () => {

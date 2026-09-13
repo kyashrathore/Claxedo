@@ -517,6 +517,11 @@ describe("credential routes", () => {
               "account_id": null,
               "consent": null,
               "created_at": 1,
+              "deliverable": {
+                "cloud": false,
+                "local": true,
+                "reason": "no_destination",
+              },
               "expires_at": null,
               "has_secret": true,
               "health": null,
@@ -681,8 +686,32 @@ describe("credential routes", () => {
         updated_at: 1,
         usage_windows: null,
         usage_at: null,
+        deliverable: { local: true, cloud: true },
       }],
     })
+  })
+
+  test("a row says where it can be spent, from the delivery rules rather than from being stored", async () => {
+    // A ChatGPT subscription answers on a backend that reads a companion
+    // account header, and a provider edge attaches one header per secret, so
+    // no amount of having it saved makes it reach a cloud sandbox.
+    const row = (await credentials().listCredentials())[0]
+    const registry = Object.assign(credentials(), {
+      listCredentials: async () => [
+        { ...row, id: "cred_key", provider_id: "openai", kind: "api_key" as const },
+        { ...row, id: "cred_sub", provider_id: "openai", kind: "oauth_token" as const },
+      ],
+    })
+    const app = CredentialRoutes(registry)
+
+    const list = await (await app.request("http://localhost/")).json() as {
+      credentials: Array<{ id: string; deliverable: unknown }>
+    }
+
+    expect(list.credentials.map((row) => [row.id, row.deliverable])).toEqual([
+      ["cred_key", { local: true, cloud: true }],
+      ["cred_sub", { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }],
+    ])
   })
 
   /**

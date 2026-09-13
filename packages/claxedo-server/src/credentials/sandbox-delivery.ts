@@ -1,6 +1,7 @@
 import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
 import {
   nativeDeliveryDigest,
+  nativeDeliveryDigestEntries,
   nativeProviderDeliveries,
   nativeProviderSecrets,
   unreadableDeliveries,
@@ -51,13 +52,25 @@ export async function sandboxBrokeredSecrets(input: {
   // installed, having no account left is a change, and the empty set is how the
   // last one reaches the provider edge as a withdrawal.
   if (!input.stated && deliveries.length === 0 && input.installed === undefined) return {}
+  const unreadable = new Set(unreadableDeliveries(deliveries))
   // An account whose secret could not be read is not a withdrawn one. Stating a
   // set without it would write the revoked value over a credential nobody
   // revoked, so a sandbox that already holds a set keeps it and the next ensure
   // after the backend answers again reconciles. A caller that stated secrets of
   // its own is asking for a reconcile this round and gets one.
-  if (unreadableDeliveries(deliveries).length > 0 && input.installed !== undefined && !input.stated) {
-    return { digest: input.installed }
+  //
+  // Holding the whole set is only safe while nothing else changed: an account
+  // revoked while another one's backend is down stays installed at the provider
+  // edge for as long as that backend stays down, which is the one direction
+  // this must never defer. So the installed entries are compared against what
+  // resolved now, and anything stranded that is not merely unreadable forces
+  // the reconcile through — the unreadable account loses its secret for a round
+  // rather than the revoked one keeping its own.
+  if (unreadable.size > 0 && input.installed !== undefined && !input.stated) {
+    const current = new Set(nativeDeliveryDigestEntries(nativeDeliveryDigest(deliveries)).map((row) => row.entry))
+    const stranded = nativeDeliveryDigestEntries(nativePart(input.installed))
+      .filter((row) => !current.has(row.entry) && !unreadable.has(row.providerId))
+    if (stranded.length === 0) return { digest: input.installed }
   }
   const delivered = nativeProviderSecrets(deliveries)
   const stated = input.stated ?? []
@@ -72,4 +85,12 @@ export async function sandboxBrokeredSecrets(input: {
     secrets: [...stated, ...delivered],
     digest: `${stated.map((row) => row.name).toSorted().join(" ")}\n${nativeDeliveryDigest(deliveries)}`,
   }
+}
+
+/**
+ * The provider half of a plan digest. The caller's own stated names lead it,
+ * separated by the one byte a brokered secret name cannot contain.
+ */
+function nativePart(digest: string) {
+  return digest.slice(digest.indexOf("\n") + 1)
 }

@@ -19,6 +19,7 @@ import {
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
 import { HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
+import { credentialReach } from "@claxedo/server-core/credentials/native-delivery"
 import type { MachineAgentUsageReader } from "@claxedo/server-core/credentials/machine-agent-usage"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
@@ -108,6 +109,11 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
     updated_at: cred.updated_at,
     usage_windows: cred.usage_windows ?? null,
     usage_at: cred.usage_at ?? null,
+    // Where this account can actually be spent, from the delivery rules
+    // themselves. "Stored" is not the same fact: a ChatGPT subscription needs a
+    // companion header no provider edge can attach, so it is local-only however
+    // it was saved.
+    deliverable: credentialReach(cred),
   }
 }
 
