@@ -1,5 +1,5 @@
 import type { ConfigurationSlot, SessionReference, StartPreview, Task, TaskSummary } from "@claxedo/tasks"
-import { groupLinksBySlot } from "@claxedo/tasks/solid"
+import { groupLinksBySlot, slotAttempt } from "@claxedo/tasks/solid"
 import { uuid } from "@/lib/uuid"
 import { useTasksAppPorts } from "../app-ports"
 import { refusalOf } from "./tasks-api"
@@ -68,18 +68,25 @@ export function useStartTaskCommands(scope: () => TasksScope) {
    * The whole of a row's Start. A preview the host refuses is reported as the
    * blocker it named rather than sent anyway: `available` is the server's
    * answer about this machine, and the row has no dialog to show it in.
+   *
+   * The task is read first because the attempt is not a constant: the service
+   * accepts the slot's current attempt only while its session is live, and
+   * `current + 1` once it is gone. Asking for 1 every time was refused by every
+   * slot that had already run.
    */
   const startNow = async (task: Task | TaskSummary, choice: { presetId: string; presetRevision: number; slot: ConfigurationSlot }): Promise<StartOutcome> => {
-    const request: StartRequest = {
-      taskId: task.id,
-      taskRevision: task.revision,
-      presetId: choice.presetId,
-      presetRevision: choice.presetRevision,
-      slot: choice.slot,
-      attempt: 1,
-      continueFromPrevious: false,
-    }
     try {
+      const detail = await client().getTask(task.id)
+      const next = slotAttempt(groupLinksBySlot(detail?.links ?? []), choice.slot)
+      const request: StartRequest = {
+        taskId: task.id,
+        taskRevision: detail?.task.revision ?? task.revision,
+        presetId: choice.presetId,
+        presetRevision: choice.presetRevision,
+        slot: choice.slot,
+        attempt: next.attempt,
+        continueFromPrevious: false,
+      }
       const resolved = await preview(request)
       if (!resolved.available) {
         return { ok: false, message: resolved.blockers[0]?.detail ?? "This preset cannot run here." }
@@ -93,17 +100,24 @@ export function useStartTaskCommands(scope: () => TasksScope) {
 
   /**
    * The session a row's Open goes to, read when it is pressed. A list read
-   * carries a link count and no liveness, so which session is current is a
-   * question only the task's own read answers.
+   * carries a link count and no liveness, so whether the slot's session is
+   * still there is a question only the task's own read answers — and a session
+   * the host reports gone is not somewhere to navigate to.
    */
-  const openLatestSession = async (taskId: string): Promise<StartOutcome> => {
+  const openLatestSession = async (taskId: string, slot: ConfigurationSlot = "primary"): Promise<StartOutcome> => {
     try {
       const detail = await client().getTask(taskId)
       const groups = groupLinksBySlot(detail?.links ?? [])
-      const current = groups.find((group) => group.slot === "primary")?.current ?? groups.find((group) => group.current)?.current
-      if (!current) return { ok: false, message: "This task has no session to open." }
-      openSession(current.sessionRef)
-      return { ok: true }
+      const next = slotAttempt(groups, slot)
+      if (next.open) {
+        openSession(next.open.sessionRef)
+        return { ok: true }
+      }
+      if (!next.current) return { ok: false, message: "This task has no session to open." }
+      return {
+        ok: false,
+        message: `The session for this task is ${next.current.liveness}. Start it again to get a new one.`,
+      }
     } catch (error) {
       return { ok: false, message: refusalOf(error).message }
     }

@@ -9,7 +9,7 @@ import {
 } from "../contracts"
 import type { ProseEditor } from "./prose-editor"
 import { StatusMenu } from "./status-menu"
-import { SLOT_LABELS, TASK_STATUS_LABELS, type TaskDetailView, type TaskLinkGroup } from "./view-model"
+import { SLOT_LABELS, TASK_STATUS_LABELS, slotAttempt, type TaskDetailView, type TaskLinkGroup } from "./view-model"
 
 export type TaskDetailEdit = {
   title: string
@@ -273,11 +273,11 @@ function SlotCard(props: {
   onStart: (input: { slot: ConfigurationSlot; attempt: number }) => void
   onSendTask: (link: TaskSessionLinkView) => void
 }) {
-  const current = () => props.group?.current
-  const live = () => {
-    const link = current()
-    return link?.liveness === "live" ? link : undefined
-  }
+  // The same rule a list row starts by: which attempt this slot will take and
+  // whether its session is somewhere to navigate to.
+  const next = () => slotAttempt(props.group ? [props.group] : [], props.slot)
+  const current = () => next().current
+  const live = () => next().open
   const unsent = () => {
     const link = live()
     return link?.handoff === "pending" ? link : undefined
@@ -365,19 +365,19 @@ function SlotCard(props: {
           data-variant="primary"
           data-testid={`task-slot-start-${props.slot}`}
           disabled={props.archived}
-          onClick={() => props.onStart({ slot: props.slot, attempt: 1 })}
+          onClick={() => props.onStart({ slot: props.slot, attempt: next().attempt })}
         >
           Start
         </button>
       </Show>
-      <Show when={current() && current()?.liveness !== "live"}>
+      <Show when={next().again}>
         <button
           type="button"
           class="tsk-button"
           data-variant="primary"
           data-testid={`task-slot-start-again-${props.slot}`}
           disabled={props.archived}
-          onClick={() => props.onStart({ slot: props.slot, attempt: (current()?.attempt ?? 0) + 1 })}
+          onClick={() => props.onStart({ slot: props.slot, attempt: next().attempt })}
         >
           Start again
         </button>

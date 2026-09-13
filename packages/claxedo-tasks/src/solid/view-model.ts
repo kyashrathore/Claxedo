@@ -157,6 +157,37 @@ export function shortAge(timestamp: number, now: number = Date.now()): string {
 }
 
 /**
+ * What a slot will accept next, from the links the detail read returned.
+ *
+ * The service admits exactly one attempt number per slot: the current one
+ * while its session is live — the idempotent re-request — and `current + 1`
+ * once the owner reports it gone. A caller that always asked for attempt 1 was
+ * refused with a conflict by every slot that had ever run.
+ *
+ * `open` is the session a row may navigate to, and is set only while the host
+ * says it is live: a dead session is not somewhere to send someone.
+ */
+export type SlotAttempt = {
+  attempt: number
+  current: TaskSessionLinkView | undefined
+  open: TaskSessionLinkView | undefined
+  /** True once the slot has run and its session is gone: the Start again case. */
+  again: boolean
+}
+
+export function slotAttempt(groups: readonly TaskLinkGroup[], slot: ConfigurationSlot): SlotAttempt {
+  const current = groups.find((group) => group.slot === slot)?.current
+  if (!current) return { attempt: 1, current: undefined, open: undefined, again: false }
+  const live = current.liveness === "live"
+  return {
+    attempt: live ? current.attempt : current.attempt + 1,
+    current,
+    open: live ? current : undefined,
+    again: !live,
+  }
+}
+
+/**
  * Links folded into one group per slot, highest attempt first.
  *
  * The head of each group is the slot's current link, and `startable` is read
