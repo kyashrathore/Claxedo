@@ -63,3 +63,16 @@ export function createPopoverDismissal<N>(host: PopoverDismissalHost<N>): Popove
     },
   }
 }
+
+/**
+ * The container a portaled layer mounts in: the ancestor of `node` that is a
+ * direct child of `body`. The body and the document element themselves are
+ * not layers — a browser moves focus to the body when the focused element is
+ * removed, and adopting the document would make every node "inside".
+ */
+export function portalRootUnder<N extends { parentElement: N | null }>(body: N, node: N): N | undefined {
+  if (node === body || node.parentElement === null) return undefined
+  let element = node
+  while (element.parentElement && element.parentElement !== body) element = element.parentElement
+  return element.parentElement === body ? element : undefined
+}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createPopoverDismissal } from "./popover-dismissal"
+import { createPopoverDismissal, portalRootUnder } from "./popover-dismissal"
 
 type Node = { id: string; root: string; connected: boolean }
 
@@ -66,5 +66,29 @@ describe("a popover deciding what is inside it", () => {
     })
     d.beginInteraction(content)
     expect(d.focusIn(elsewhere)).toBe("outside")
+  })
+})
+
+describe("the portal root under the body", () => {
+  type El = { name: string; parentElement: El | null }
+  const html: El = { name: "html", parentElement: null }
+  const body: El = { name: "body", parentElement: html }
+  const portal: El = { name: "portal", parentElement: body }
+  const list: El = { name: "list", parentElement: portal }
+  const item: El = { name: "item", parentElement: list }
+
+  test("walks a portaled node up to the child of the body", () => {
+    expect(portalRootUnder(body, item)).toBe(portal)
+    expect(portalRootUnder(body, portal)).toBe(portal)
+  })
+
+  test("the body and the document element are not layers to adopt", () => {
+    expect(portalRootUnder(body, body)).toBeUndefined()
+    expect(portalRootUnder(body, html)).toBeUndefined()
+  })
+
+  test("a node outside the body's tree has no portal root", () => {
+    const detached: El = { name: "detached", parentElement: { name: "other", parentElement: null } }
+    expect(portalRootUnder(body, detached)).toBeUndefined()
   })
 })

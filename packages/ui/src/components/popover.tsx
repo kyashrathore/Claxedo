@@ -4,7 +4,7 @@ import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useI18n } from "../context/i18n"
 import { IconButton } from "./icon-button"
-import { createPopoverDismissal } from "./popover-dismissal"
+import { createPopoverDismissal, portalRootUnder } from "./popover-dismissal"
 
 export interface PopoverProps<T extends ValidComponent = "div">
   extends ParentProps,
@@ -64,11 +64,7 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
 
     const dismissal = createPopoverDismissal<Node>({
       owns: (node) => Boolean(state.contentRef?.contains(node) || state.triggerRef?.contains(node)),
-      portalRoot: (node) => {
-        let element = node instanceof Element ? node : node.parentElement
-        while (element?.parentElement && element.parentElement !== document.body) element = element.parentElement
-        return element ?? undefined
-      },
+      portalRoot: (node) => portalRootUnder(document.body, node),
       contains: (layer, node) => layer.contains(node),
       isConnected: (layer) => layer.isConnected,
     })
