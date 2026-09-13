@@ -1,19 +1,13 @@
 import { Button } from "@opencode-ai/ui/button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { RadioList, RadioListItem } from "@opencode-ai/ui/radio-group"
-import { createSignal, For, Show, type Component, type JSX } from "solid-js"
+import { createSignal, For, Show, type Component } from "solid-js"
 import { ProviderConnectCard } from "@/features/settings/ui/provider-connect-card"
+import { ClaxedoIconButton } from "@/ui/controls/claxedo-icon-button"
 import { useLanguage } from "@/platform/i18n/provider"
 
-/** The colour the single status dot carries; nothing else on the row is coloured. */
-export type AgentTone = "success" | "danger" | "neutral"
-
-/** What the harness runs on, in one sentence, plus the one action that changes it. */
-export type AgentHeader = {
-  tone: AgentTone
-  sentence: string
-  action?: { kind: "connect" } | { kind: "reconnect"; credentialId: string }
-}
+/** The one thing a harness header offers, when it offers anything. */
+export type AgentAction = { kind: "connect" } | { kind: "reconnect"; credentialId: string }
 
 /** One entry of the harness's account list, already in words. */
 export type AgentAccount = {
@@ -22,60 +16,31 @@ export type AgentAccount = {
   /** Every stored row holding this account; empty while the login is only on disk. */
   ids: readonly string[]
   label: string
-  /** Where the login lives, or the account's identity at the provider. */
-  source?: string
-  tone: AgentTone
-  /** The verdict in words: "Working", "Expired", "Not checked". */
-  status: string
-  /** When that verdict was made, already in words. */
-  when?: string
+  /** The second line: where the login lives, its usage, when it was checked. */
+  detail?: string
+  /** The provider's refusal, in words. The row shows it as a ring, not as text. */
+  refused?: string
+  /** An identity worth having on the row but not worth reading. */
+  identity?: string
   selected: boolean
   /** The scan found this login on this computer; choosing it stores it first. */
   machine?: boolean
 }
 
-const HealthDot: Component<{ tone: AgentTone }> = (props) => (
-  <span
-    aria-hidden="true"
-    data-component="agent-status-dot"
-    data-tone={props.tone}
-    class="size-1.5 shrink-0 rounded-full"
-    classList={{
-      "bg-icon-success-base": props.tone === "success",
-      "bg-icon-critical-base": props.tone === "danger",
-      "bg-icon-weak-base": props.tone === "neutral",
-    }}
-  />
-)
-
-const TextAction: Component<{ action: string; disabled?: boolean; onClick: () => void; children: JSX.Element }> = (props) => (
-  <button
-    type="button"
-    class="shrink-0 border-none bg-transparent p-0 text-13-regular text-text-weak hover:text-text-strong disabled:opacity-60"
-    data-action={props.action}
-    disabled={props.disabled}
-    onClick={() => props.onClick()}
-  >
-    {props.children}
-  </button>
-)
-
 /**
- * One agent harness: what it runs on, the accounts it can run on, and the way
- * to add another.
+ * One agent harness: what it can run on, and the way to add another.
  *
- * A lone entry is not listed — the header sentence already names the only login
- * there is to name, and a list under it reads as a second account — so its
- * Check and Remove sit on the header line instead. The list appears once there
- * is a choice to make, and its checked radio is the same `selected` flag the
- * header sentence is derived from.
+ * The name and the single button are the whole header — the account rows say
+ * which login runs next, and a sentence above them restating it was read as a
+ * second account. A refused account is drawn as a ring on its own radio and a
+ * Reconnect in the header; nothing else on the row is coloured or worded.
  */
 export const AgentHarnessRow: Component<{
   id: string
   name: string
   providerId: string
   harness: string
-  header: AgentHeader
+  action?: AgentAction
   accounts: readonly AgentAccount[]
   /** Marks the account the harness runs on; a machine login is stored first. */
   onSelect: (account: AgentAccount) => void | Promise<void>
@@ -93,8 +58,6 @@ export const AgentHarnessRow: Component<{
   const [connecting, setConnecting] = createSignal<{ credentialId?: string }>()
   const [confirmingRemove, setConfirmingRemove] = createSignal<string>()
   const group = () => `agent-account-${props.harness}`
-  const listed = () => (props.accounts.length > 1 ? props.accounts : [])
-  const sole = () => (props.accounts.length === 1 ? props.accounts[0] : undefined)
   const selectedKey = () => props.accounts.find((account) => account.selected)?.key
 
   const remove = async (account: AgentAccount) => {
@@ -105,70 +68,81 @@ export const AgentHarnessRow: Component<{
     }
   }
 
+  /**
+   * At rest a row is its label alone. The actions arrive on hover or with
+   * keyboard focus, and a confirming row holds them on screen so the question
+   * it just asked cannot vanish under the pointer.
+   */
   const AccountActions: Component<{ account: AgentAccount }> = (self) => (
     <Show when={self.account.ids.length > 0}>
-      <Show
-        when={confirmingRemove() === self.account.key}
-        fallback={(
-          <span class="flex shrink-0 items-center gap-3">
-            <TextAction
-              action="agent-account-check"
-              disabled={props.checking !== undefined}
-              onClick={() => void props.onCheck(self.account.ids)}
-            >
-              {props.checking === self.account.key
-                ? language.t("settings.providers.agents.checking")
-                : language.t("settings.providers.agents.checkAccount")}
-            </TextAction>
-            <TextAction action="agent-account-remove" onClick={() => setConfirmingRemove(self.account.key)}>
-              {language.t("settings.providers.agents.removeAccount")}
-            </TextAction>
-          </span>
-        )}
+      <span
+        class="flex shrink-0 items-center gap-1 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+        classList={{ "opacity-0": confirmingRemove() !== self.account.key }}
+        data-component="agent-account-actions"
       >
-        <span class="flex shrink-0 items-center gap-3">
+        <Show
+          when={confirmingRemove() === self.account.key}
+          fallback={(
+            <>
+              <ClaxedoIconButton
+                icon="reload"
+                size="small"
+                variant="ghost"
+                data-action="agent-account-check"
+                aria-label={language.t("settings.providers.agents.checkAccount")}
+                disabled={props.checking !== undefined}
+                onClick={() => void props.onCheck(self.account.ids)}
+              />
+              <Show when={self.account.refused === undefined}>
+                <ClaxedoIconButton
+                  icon="trash"
+                  size="small"
+                  variant="ghost"
+                  data-action="agent-account-remove"
+                  aria-label={language.t("settings.providers.agents.removeAccount")}
+                  onClick={() => setConfirmingRemove(self.account.key)}
+                />
+              </Show>
+            </>
+          )}
+        >
           <span class="text-13-regular text-text-weak">
             {language.t("settings.providers.agents.removeAccountConfirm")}
           </span>
-          <TextAction
-            action="agent-account-remove-confirm"
+          <Button
+            size="small"
+            variant="primary"
             disabled={props.removing !== undefined}
+            data-action="agent-account-remove-confirm"
             onClick={() => void remove(self.account)}
           >
             {props.removing === self.account.key
               ? language.t("settings.providers.agents.removingAccount")
               : language.t("settings.providers.agents.removeAccount")}
-          </TextAction>
-          <TextAction
-            action="agent-account-remove-cancel"
+          </Button>
+          <Button
+            size="small"
+            variant="ghost"
             disabled={props.removing !== undefined}
+            data-action="agent-account-remove-cancel"
             onClick={() => setConfirmingRemove(undefined)}
           >
             {language.t("common.cancel")}
-          </TextAction>
-        </span>
-      </Show>
+          </Button>
+        </Show>
+      </span>
     </Show>
   )
 
   return (
     <div class="border-b border-border-weak-base last:border-none" data-provider={props.id}>
-      <div class="flex w-full flex-wrap items-start justify-between gap-4 py-3">
-        <div class="flex min-w-0 flex-1 items-start gap-3">
+      <div class="flex w-full flex-wrap items-center justify-between gap-4 py-3">
+        <div class="flex min-w-0 flex-1 items-center gap-3">
           <ProviderIcon id={props.id} class="size-5 shrink-0 icon-strong-base" />
-          <div class="flex min-w-0 flex-col gap-0.5">
-            <span class="text-14-medium text-text-strong">{props.name}</span>
-            <span class="flex min-w-0 flex-wrap items-center gap-3">
-              <span class="flex min-w-0 items-center gap-1.5" data-component="agent-header-status">
-                <HealthDot tone={props.header.tone} />
-                <span class="text-13-regular text-text-base">{props.header.sentence}</span>
-              </span>
-              <Show when={sole()}>{(account) => <AccountActions account={account()} />}</Show>
-            </span>
-          </div>
+          <span class="text-14-medium text-text-strong">{props.name}</span>
         </div>
         <div class="flex shrink-0 items-center gap-2" data-component="provider-actions">
-          <Show when={connecting() === undefined && props.header.action}>
+          <Show when={connecting() === undefined && props.action}>
             {(action) => (
               <Button
                 size="large"
@@ -191,7 +165,7 @@ export const AgentHarnessRow: Component<{
         </div>
       </div>
       <div class="mb-3 ml-8 flex flex-col" data-component="agent-accounts">
-        <Show when={listed().length > 0}>
+        <Show when={props.accounts.length > 0}>
           <RadioList
             name={group()}
             aria-label={props.name}
@@ -202,28 +176,29 @@ export const AgentHarnessRow: Component<{
               if (chosen) void props.onSelect(chosen)
             }}
           >
-            <For each={listed()}>
+            <For each={props.accounts}>
               {(account) => (
                 <RadioListItem
-                  class="py-1"
+                  class="group py-1"
                   value={account.key}
+                  invalid={account.refused !== undefined}
                   data-component="agent-account"
                   data-account={account.key}
                   data-selected={account.selected ? "true" : "false"}
-                  label={(
-                    <span class="flex min-w-0 flex-wrap items-center gap-2">
-                      <span class="text-13-regular text-text-strong">{account.label}</span>
-                      <Show when={account.source}>
-                        {(source) => <span class="text-13-regular text-text-weak">{source()}</span>}
-                      </Show>
-                      <span class="flex min-w-0 items-center gap-1.5" data-component="agent-account-status">
-                        <HealthDot tone={account.tone} />
-                        <span class="text-13-regular text-text-weak">
-                          {account.when ? `${account.status} · ${account.when}` : account.status}
-                        </span>
-                      </span>
-                    </span>
-                  )}
+                  title={[account.refused, account.identity].filter(Boolean).join(" · ") || undefined}
+                  label={<span class="text-13-regular text-text-strong">{account.label}</span>}
+                  description={account.detail ?? account.refused
+                    ? (
+                      <>
+                        <Show when={account.detail}>
+                          {(detail) => <span class="text-13-regular text-text-weak">{detail()}</span>}
+                        </Show>
+                        <Show when={account.refused}>
+                          {(refused) => <span class="sr-only" data-component="agent-account-refusal">{refused()}</span>}
+                        </Show>
+                      </>
+                    )
+                    : undefined}
                 >
                   <AccountActions account={account} />
                 </RadioListItem>
@@ -231,7 +206,8 @@ export const AgentHarnessRow: Component<{
             </For>
           </RadioList>
         </Show>
-        <div class="py-1">
+        {/* Indented past the radio column so the link starts where the labels do. */}
+        <div class="py-1 pl-[22px]">
           <button
             type="button"
             class="border-none bg-transparent p-0 text-13-regular text-text-interactive-base"

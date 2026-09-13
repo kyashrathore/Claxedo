@@ -14,6 +14,7 @@ import type { AIUsageWindow } from "@/features/onboarding/ai-connect-state"
 import {
   accountIdentity,
   activateCredential,
+  isMachineLogin,
   agentInUse,
   harnessAccounts,
   listEffectiveCredentials,
@@ -29,8 +30,7 @@ import { SettingsList } from "@/features/settings/ui/list"
 import {
   AgentHarnessRow,
   type AgentAccount,
-  type AgentHeader,
-  type AgentTone,
+  type AgentAction,
 } from "@/features/settings/ui/agent-harness-row"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -40,13 +40,6 @@ const AGENT_ICON: Record<string, string> = {
   claude: "anthropic",
   codex: "openai",
   cursor: "cursor",
-}
-
-/** Who rejected the login, named in the sentence that asks for a new one. */
-const AGENT_VENDOR: Record<string, string> = {
-  claude: "Anthropic",
-  codex: "OpenAI",
-  cursor: "Cursor",
 }
 
 /**
@@ -98,23 +91,13 @@ const WINDOW_KEY: Record<string, string> = {
   weekly_opus: "settings.providers.window.weeklyOpus",
 }
 
-/** The verdicts the vendor itself pronounced, which the sentence can name it for. */
+/** The verdicts only a different credential, or a fresh login, can answer. */
 function unusable(verdict: LiveCheck["verdict"]) {
   return verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired" || verdict === "broken"
 }
 
-function rejectedByVendor(verdict: LiveCheck["verdict"]) {
-  return verdict === "auth_failed" || verdict === "broken"
-}
-
 function isHealth(value: string): value is Extract<LiveCheck["verdict"], "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired"> {
   return value === "ok" || value === "auth_failed" || value === "no_billing" || value === "rate_capped" || value === "expired"
-}
-
-function tone(verdict: LiveCheck["verdict"] | undefined): AgentTone {
-  if (verdict === "ok") return "success"
-  if (verdict !== undefined && unusable(verdict)) return "danger"
-  return "neutral"
 }
 
 /** The scan's verdict for a harness, as the same shape a stored row's check produces. */
@@ -206,12 +189,19 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     return machineRow(check) ? MACHINE : undefined
   }
 
-  /** Never a bare provider id: a row that never got a name falls back to its fingerprint. */
-  const accountLabel = (row: StoredCredential) =>
-    row.label && row.label !== row.providerId ? row.label : accountIdentity(row) ?? row.kind ?? row.providerId
+  /**
+   * Never a bare provider id, and never the scan's wording for the file a login
+   * was read out of: a row with no name of its own falls back to its
+   * fingerprint, and this computer's own login is named for being that.
+   */
+  const accountLabel = (row: StoredCredential) => {
+    if (isMachineLogin(row)) return language.t("settings.providers.agents.machineLogin")
+    if (row.label && row.label !== row.providerId) return row.label
+    const identity = accountIdentity(row)
+    return identity?.readable ? identity.text : row.kind ?? row.providerId
+  }
 
-  const verdictWord = (live: LiveCheck | undefined) =>
-    live ? language.t(VERDICT_KEY[live.verdict]) : language.t("settings.providers.agents.unchecked")
+  const verdictWord = (live: LiveCheck) => language.t(VERDICT_KEY[live.verdict])
 
   const usageWords = (live: LiveCheck | undefined) =>
     (live?.usage ?? []).map((window) => {
@@ -231,77 +221,74 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     return at === undefined ? undefined : scanCheck(discovered().find((status) => status.id === check.id), at)
   }
 
+  /**
+   * The second line of one entry, or nothing when the label already said it
+   * all. An unchecked account says nothing here: "Not checked" is the absence
+   * of news, and every row would carry it.
+   */
+  const detailWords = (live: LiveCheck | undefined, origin?: string) => {
+    const words = [
+      ...(origin === undefined ? [] : [origin]),
+      ...usageWords(live),
+      ...(live === undefined ? [] : [checkedWords(live)]),
+    ]
+    return words.length > 0 ? words.join(" · ") : undefined
+  }
+
+  /** The provider's refusal, which the row draws as a ring rather than as text. */
+  const refusedWord = (live: LiveCheck | undefined) =>
+    live && unusable(live.verdict) ? verdictWord(live) : undefined
+
   const listedAccounts = (check: LocalHarnessCheck): AgentAccount[] => {
     const selected = selectedKey(check)
     const entries = accounts(check).map((row) => {
       const live = accountCheck(row)
       const identity = accountIdentity(row)
       const label = accountLabel(row)
+      const readable = identity && identity.readable && identity.text !== label ? identity.text : undefined
+      const detail = detailWords(live, readable)
+      const refused = refusedWord(live)
       return {
         key: row.id,
         ids: row.ids,
         label,
-        ...(identity === undefined || identity === label ? {} : { source: identity }),
-        tone: tone(live?.verdict),
-        status: verdictWord(live),
-        ...(live === undefined ? {} : { when: checkedWords(live) }),
+        ...(detail === undefined ? {} : { detail }),
+        ...(refused === undefined ? {} : { refused }),
+        // An id the reader cannot match to an account is worth having and not
+        // worth a line, so the row carries it where a full value belongs.
+        ...(identity === undefined || identity.readable ? {} : { identity: identity.text }),
         selected: selected === row.id,
       }
     })
     const machine = machineRow(check)
     if (!machine) return entries
     const live = machineCheck(check)
+    const detail = detailWords(live, language.t("settings.providers.agents.machineSource", { origin: machine.origin }))
     // Last by construction: every stored account is a choice the user made, and
     // this login is the standing fallback underneath all of them.
     return [...entries, {
       key: MACHINE,
       ids: [],
       label: language.t("settings.providers.agents.machineLogin"),
-      source: language.t("settings.providers.agents.machineSource", { origin: machine.origin }),
-      tone: tone(live?.verdict),
-      status: verdictWord(live),
+      ...(detail === undefined ? {} : { detail }),
       selected: selected === MACHINE,
       machine: true,
     }]
   }
 
-  const notSetUp = (): AgentHeader => ({
-    tone: "neutral",
-    sentence: language.t("settings.providers.agents.notSetUp"),
-    action: { kind: "connect" },
-  })
-
-  const header = (check: LocalHarnessCheck): AgentHeader => {
+  /**
+   * The one thing the header offers. Connect where the harness has no login to
+   * run on, Reconnect where the login it runs on was refused, and otherwise
+   * nothing: the rows already say which account is next.
+   */
+  const action = (check: LocalHarnessCheck): AgentAction | undefined => {
     const selected = selectedKey(check)
-    if (selected === undefined) return notSetUp()
-    if (selected === MACHINE) {
-      const live = machineCheck(check)
-      return {
-        tone: tone(live?.verdict),
-        sentence: [language.t("settings.providers.agents.usingMachine"), verdictWord(live), ...usageWords(live)].join(" · "),
-      }
-    }
+    if (selected === undefined) return { kind: "connect" }
+    if (selected === MACHINE) return undefined
     const row = accounts(check).find((account) => account.id === selected)
-    if (!row) return notSetUp()
+    if (!row) return { kind: "connect" }
     const live = accountCheck(row)
-    const label = accountLabel(row)
-    if (live && unusable(live.verdict)) {
-      return {
-        tone: "danger",
-        sentence: rejectedByVendor(live.verdict)
-          ? language.t("settings.providers.agents.headerRejected", { label, vendor: AGENT_VENDOR[check.id] ?? check.label })
-          : language.t("settings.providers.agents.headerUnusable", { label, verdict: verdictWord(live) }),
-        action: { kind: "reconnect", credentialId: row.id },
-      }
-    }
-    return {
-      tone: tone(live?.verdict),
-      sentence: [
-        language.t("settings.providers.agents.usingAccount", { label }),
-        verdictWord(live),
-        ...usageWords(live),
-      ].join(" · "),
-    }
+    return live && unusable(live.verdict) ? { kind: "reconnect", credentialId: row.id } : undefined
   }
 
   /**
@@ -445,7 +432,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
               name={harness.label}
               providerId={AGENT_CONNECT_PROVIDER[harness.id] ?? harness.providerIds[0]}
               harness={harness.id}
-              header={header(harness)}
+              action={action(harness)}
               accounts={listedAccounts(harness)}
               onSelect={(account) => select(harness, account)}
               selecting={selecting()}

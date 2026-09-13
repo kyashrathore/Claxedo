@@ -4,6 +4,7 @@ import {
   activateCredential,
   agentInUse,
   harnessAccounts,
+  isMachineLogin,
   listEffectiveCredentials,
   listStoredCredentials,
   removeCredential,
@@ -129,9 +130,39 @@ describe("harnessAccounts", () => {
 
 describe("accountIdentity", () => {
   test("a provider's own account id is shown as it is, and a pasted key by its last characters", () => {
-    expect(accountIdentity(account({ id: "a", providerId: "codex-app-server", accountId: "acc_1234" }))).toBe("acc_1234")
-    expect(accountIdentity(account({ id: "b", providerId: "claude-sdk", accountId: "fp_0123abcd…wxyz" }))).toBe("…wxyz")
+    expect(accountIdentity(account({ id: "a", providerId: "codex-app-server", accountId: "acc_1234" })))
+      .toEqual({ text: "acc_1234", readable: true })
+    expect(accountIdentity(account({ id: "b", providerId: "claude-sdk", accountId: "fp_0123abcd…wxyz" })))
+      .toEqual({ text: "…wxyz", readable: true })
     expect(accountIdentity(account({ id: "c", providerId: "claude-sdk" }))).toBeUndefined()
+  })
+
+  test("a bare UUID names nothing a reader can match, so it is carried but not readable", () => {
+    expect(accountIdentity(account({
+      id: "d",
+      providerId: "codex-app-server",
+      accountId: "f050517a-3e46-4798-a274-1d3a34084f2a",
+    }))).toEqual({ text: "f050517a-3e46-4798-a274-1d3a34084f2a", readable: false })
+  })
+})
+
+describe("isMachineLogin", () => {
+  test("a scanned row the provider never named is this computer's login", () => {
+    expect(isMachineLogin(account({ id: "a", providerId: "claude-sdk", consentSurface: "desktop_discovery" }))).toBe(true)
+  })
+
+  test("a scanned row the provider did name is that account, not the machine's", () => {
+    expect(isMachineLogin(account({
+      id: "b",
+      providerId: "codex-app-server",
+      consentSurface: "desktop_discovery",
+      accountId: "acc_1",
+    }))).toBe(false)
+  })
+
+  test("a typed key is never the machine's login", () => {
+    expect(isMachineLogin(account({ id: "c", providerId: "claude-sdk", consentSurface: "api_key" }))).toBe(false)
+    expect(isMachineLogin(account({ id: "d", providerId: "claude-sdk" }))).toBe(false)
   })
 })
 

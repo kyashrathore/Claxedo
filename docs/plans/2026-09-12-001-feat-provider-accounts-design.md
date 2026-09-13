@@ -242,51 +242,65 @@ never holds the token for).
 
 ### Settings → Providers
 
-Rebuilt 2026-09-13 to the owner-approved shape. The governing rule is that each
-harness has **one status sentence and at most one button**, because the old row
-carried a Connected/Detected tag, an "In use" line, a machine-login verdict and
-a per-account verdict at once, and four answers to "which login runs next" can
-disagree.
+Rebuilt 2026-09-13 to the owner-approved shape. The governing rule is that the
+**account rows are the only answer to "which login runs next"**, because the old
+row carried a Connected/Detected tag, an "In use" line, a machine-login verdict
+and a per-account verdict at once, and four answers to one question can
+disagree. A header sentence restating the checked row was the same defect in
+miniature — it read as a second account — so there is none.
 
-- **Header line** per harness: the brand mark, the name, and one sentence led by
-  a single coloured dot — success, danger, or neutral — derived from the account
-  in use: "Using <label> · Working" with the plan's usage windows appended when
-  the provider reported them; "<label> is rejected by <vendor>. Reconnect or pick
-  another account."; "Using this computer's login · Working"; or "Not set up".
-  The right side offers **Connect** when nothing is set up, **Reconnect** when
-  the account in use was refused, and nothing otherwise.
-- **Accounts as a radio list** indented under the name, drawn only when there
-  are **two or more entries**: one entry is the one the header sentence already
-  names, and a list restating it under itself reads as two accounts. The checked
-  radio is the account in use, read from the server's effective credentials —
-  the row a session will actually be handed — falling back to the stored mark
-  where the host cannot enumerate its store. Choosing a radio activates that
-  account, for every harness whose registry provider is fanout-eligible, which
-  today is all three. Each entry is one line: the label, the account's identity
-  where it adds something, then a dot and the verdict ("Working", "Rejected by
-  the provider", "Not checked") with the time of that verdict behind it in muted
-  text. The radio is the kit's themed control (`RadioList` in `packages/ui`), so
-  the checked state carries the app's tokens rather than the browser's accent.
-- **"This computer's login" is the last entry** whenever the scan found one,
-  with its origin in muted text ("from ~/.codex/auth.json"). It is last by
-  construction: every stored account is a choice the user made, and this login
-  is the standing fallback underneath all of them. Choosing it saves the scanned
-  login through `save-discovered` and then marks what was saved — saving alone
-  would leave the harness on the entry the user just clicked away from.
-- **Per-entry actions are visible text**, muted and right-aligned at the end of
-  the entry: **Check** and **Remove**, with Remove's confirm inline on the same
-  line. While there is a single entry and therefore no list, those two links sit
-  at the end of the header sentence instead, so the sole account can still be
-  checked and forgotten. With two or more entries the header carries none.
+- **Header line** per harness: the brand mark, the name, and at most one button.
+  **Connect** when the harness has no login to run on, **Reconnect** when the
+  login it runs on was refused, nothing otherwise. No sentence, no dot, no
+  credential kind words.
+- **Accounts as a radio list** indented under the name, always drawn, one row
+  per account including the single-account case. The checked radio is the
+  account in use, read from the server's effective credentials — the row a
+  session will actually be handed — falling back to the stored mark where the
+  host cannot enumerate its store. Choosing a radio activates that account, for
+  every harness whose registry provider is fanout-eligible, which today is all
+  three. The radio is the kit's themed control (`RadioList` in `packages/ui`),
+  so the checked state carries the app's tokens rather than the browser's
+  accent, and it sits on the label's first text line rather than in the middle
+  of a row that wrapped.
+- **A row is its label**, and a muted second line only where there is something
+  to say: the login's origin ("from ~/.codex/auth.json"), the plan's usage
+  windows ("Weekly 58% used"), and when the provider was last asked ("Checked
+  2 h ago"). An unchecked account says nothing — "Not checked" is the absence of
+  news and every row would carry it. An account id the reader cannot match to an
+  account — every real Codex row carries a ChatGPT UUID — is the row's tooltip,
+  never a line.
+- **A refused account** (rejected, expired, no billing, not working) is drawn as
+  a **ring on its own radio** in the danger token, with the verdict in the row's
+  tooltip and in a screen-reader-only description. Nothing else: no red text, no
+  sentence. Its action is the header's Reconnect.
+- **"This computer's login" is the last entry** whenever the scan found one, and
+  its origin is its second line. It is last by construction: every stored
+  account is a choice the user made, and this login is the standing fallback
+  underneath all of them. Choosing it saves the scanned login through
+  `save-discovered` and then marks what was saved — saving alone would leave the
+  harness on the entry the user just clicked away from. A saved scan row the
+  provider never named is still shown as this computer's login; one the provider
+  did name (every Codex account) is shown by that name, because a machine can
+  hold several of them.
+- **Saving runs no second check**: `save-discovered` writes the verdict the
+  discovery probe already reached onto the row it saved, so a freshly saved
+  account reads as checked without spending another request against the user's
+  own quota.
+- **Per-row actions arrive on hover or keyboard focus**, right-aligned icon
+  buttons with accessible names: **Check** (reload) and **Remove** (trash). A
+  refused row shows Check but no Remove — Reconnect in the header is its action.
+  Remove asks inline before it forgets, and the confirming row holds its actions
+  on screen so the question cannot vanish under the pointer.
 - **"+ Add another account"** ("+ Add an account" when nothing is set up) is the
-  last thing under the harness, styled as a link, and opens the same inline
-  connect card.
+  last thing under the harness, indented to the label column rather than the
+  radio column, styled as a link, and opens the same inline connect card.
   Reconnect opens that card in reconnect mode against one row (rule 8).
 - **The scan is automatic**: it runs when the section mounts and after every
-  write, so the list and the sentence are derived from one read. The section
-  header reads "Scanned just now · Rescan".
-- The only state colour is the dot. There are no status tags, no "Use this
-  login" button, no header-level Check, and no Make active button.
+  write, so the rows are derived from one read. The section header reads
+  "Scanned just now · Rescan".
+- The only state colour is the refused ring. There are no status tags, no dots,
+  no "Use this login" button, no header-level Check, and no Make active button.
 - For admins, on a project's settings page: **Team account** per provider and
   the one default-on switch "attach my AI provider accounts on every sandbox
   creation". Not built.

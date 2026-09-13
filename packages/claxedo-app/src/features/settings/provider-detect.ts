@@ -6,7 +6,7 @@ import {
   type AIDiscoveryRow,
   type LocalHarnessStatus,
 } from "@/features/settings/app-ports"
-import { readArray, readBoolean, readFiniteNumber, readString } from "@/lib/record"
+import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
 
 /** What the server would hand a harness for a provider: the row, without its secret. */
 export type EffectiveCredential = {
@@ -68,6 +68,19 @@ export function agentInUse(check: { providerIds: readonly string[] }, effective:
 export type StoredCredential = EffectiveCredential & {
   isActive: boolean
   expiresAt?: number
+  /** The surface the account was stored from; the machine scan is one of them. */
+  consentSurface?: string
+}
+
+/**
+ * The row is this computer's own login for its harness: the scan read it off
+ * the machine, and the provider gave it no account identity, so there is
+ * nothing to name it by but where it came from. A discovered row that does
+ * carry an identity — every Codex account does — is named by that instead,
+ * because a machine can hold several of them.
+ */
+export function isMachineLogin(row: StoredCredential) {
+  return row.consentSurface === "desktop_discovery" && row.accountId === undefined
 }
 
 /** Every account the server holds, in the order the store listed them. */
@@ -84,6 +97,7 @@ export async function listStoredCredentials(): Promise<StoredCredential[]> {
     const health = readString(row, "health")
     const lastValidatedAt = readFiniteNumber(row, "last_validated_at")
     const expiresAt = readFiniteNumber(row, "expires_at")
+    const consentSurface = readString(readField(row, "consent"), "surface")
     return [{
       id,
       providerId,
@@ -94,6 +108,7 @@ export async function listStoredCredentials(): Promise<StoredCredential[]> {
       ...(health === undefined ? {} : { health }),
       ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
       ...(expiresAt === undefined ? {} : { expiresAt }),
+      ...(consentSurface === undefined ? {} : { consentSurface }),
     }]
   })
 }
@@ -102,12 +117,19 @@ export async function listStoredCredentials(): Promise<StoredCredential[]> {
  * How an account names itself under a harness row: the identity its provider
  * gave it, or — for a pasted key the provider never named — the last characters
  * of the key, which are the ones the provider's own dashboard shows.
+ *
+ * `readable` is false for an opaque id. A ChatGPT account UUID names nothing a
+ * reader can match to an account, and every real Codex row carries one, so a
+ * surface shows it only where a full value belongs.
  */
-export function accountIdentity(row: StoredCredential): string | undefined {
+export function accountIdentity(row: StoredCredential): { text: string; readable: boolean } | undefined {
   if (row.accountId === undefined) return undefined
   const fingerprint = /^fp_[0-9a-f]{8}(….+)$/.exec(row.accountId)
-  return fingerprint ? fingerprint[1] : row.accountId
+  if (fingerprint?.[1]) return { text: fingerprint[1], readable: true }
+  return { text: row.accountId, readable: !OPAQUE_ACCOUNT_ID.test(row.accountId) }
 }
+
+const OPAQUE_ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /**
  * One account, however many of the harness's bindings store it.

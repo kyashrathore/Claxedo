@@ -301,15 +301,6 @@ function agentRow(id: string) {
   return row
 }
 
-/** The one sentence the harness header says about the credential it runs on. */
-function agentHeader(id: string) {
-  const header = agentRow(id).querySelector('[data-component="agent-header-status"]')
-  return {
-    sentence: header?.querySelector("span:last-child")?.textContent ?? "",
-    tone: header?.querySelector('[data-component="agent-status-dot"]')?.getAttribute("data-tone") ?? "",
-  }
-}
-
 /** The one action the header offers, or "" where it offers none. */
 function agentAction(id: string) {
   return agentRow(id).querySelector('[data-component="provider-actions"] button')?.getAttribute("data-action") ?? ""
@@ -334,23 +325,18 @@ function selectedAccount(id: string) {
     ?.getAttribute("data-account") ?? ""
 }
 
-/** The status words one entry shows after its dot, with the tone it was drawn in. */
-function accountStatus(id: string, key: string) {
-  const status = accountRow(id, key).querySelector('[data-component="agent-account-status"]')
-  return {
-    text: status?.querySelector("span:last-child")?.textContent ?? "",
-    tone: status?.querySelector('[data-component="agent-status-dot"]')?.getAttribute("data-tone") ?? "",
-  }
+/** The second line of one entry — usage, when it was checked, where it came from. */
+function accountDetail(id: string, key: string) {
+  return accountRow(id, key).querySelector('[data-slot="radio-list-item-description"]')?.textContent ?? ""
 }
 
-/**
- * One entry's Check or Remove. A lone entry is not listed, so its actions sit on
- * the harness header instead; either way there is one of each per entry.
- */
+/** Whether the entry's radio is ringed for a provider refusal. */
+function accountRefused(id: string, key: string) {
+  return accountRow(id, key).hasAttribute("data-invalid")
+}
+
 function rowAction(id: string, key: string, action: "check" | "remove" | "remove-confirm") {
-  const scope = agentRow(id).querySelector<HTMLElement>(`[data-component="agent-account"][data-account="${key}"]`)
-    ?? agentRow(id)
-  const item = scope.querySelector<HTMLElement>(`[data-action="agent-account-${action}"]`)
+  const item = accountRow(id, key).querySelector<HTMLElement>(`[data-action="agent-account-${action}"]`)
   if (!item) throw new Error(`no ${action} action for ${key}`)
   return item
 }
@@ -541,33 +527,36 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/discover"))
   })
 
-  test("a harness with no account and no machine login reads Not set up and offers Connect", async () => {
+  test("a harness with no account and no machine login lists nothing and offers Connect", async () => {
     mount()
     await waitFor(() => expect(providerIds("agents")).toHaveLength(3))
-    await waitFor(() => expect(agentHeader("cursor").sentence).toBe("settings.providers.agents.notSetUp"))
-    expect(agentHeader("cursor").tone).toBe("neutral")
     expect(agentAction("cursor")).toBe("agent-connect")
     expect(accountIds("cursor")).toEqual([])
+    // The header is the name and the button, and says nothing else.
+    expect(agentRow("cursor").querySelector("div")?.textContent).toBe("Cursorcommon.connect")
   })
 
-  test("a harness on a working stored account names it in the header and offers no action", async () => {
+  test("a harness on a working stored account offers no action, and the row carries the check", async () => {
     state.storedCredentials = claudeLogin.map((row) => ({ ...row, health: "ok", last_validated_at: Date.now() }))
     mount()
-    await waitFor(() => expect(agentHeader("anthropic").sentence)
-      .toBe("settings.providers.agents.usingAccount:work@acme.com · settings.providers.live.ok"))
-    expect(agentHeader("anthropic").tone).toBe("success")
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
     expect(agentAction("anthropic")).toBe("")
+    expect(accountRefused("anthropic", "sdk_work")).toBe(false)
+    expect(accountDetail("anthropic", "sdk_work")).toContain("settings.providers.live.checkedNow")
+    expect(accountRow("anthropic", "sdk_work").textContent).toContain("work@acme.com")
   })
 
-  test("a harness on a rejected account says who rejected it and offers Reconnect on that row", async () => {
+  test("a rejected account rings its own radio and moves the action to Reconnect", async () => {
     state.storedCredentials = [
       { id: "cred_bad", provider_id: "claude-sdk", kind: "api_key", label: "Old key", is_active: true, health: "auth_failed", last_validated_at: 7 },
     ]
     mount()
-    await waitFor(() => expect(agentHeader("anthropic").sentence)
-      .toBe("settings.providers.agents.headerRejected:Old key|Anthropic"))
-    expect(agentHeader("anthropic").tone).toBe("danger")
+    await waitFor(() => expect(accountRefused("anthropic", "cred_bad")).toBe(true))
     expect(agentAction("anthropic")).toBe("agent-reconnect")
+    // The verdict is said once, to a screen reader; the row itself stays plain.
+    expect(accountRow("anthropic", "cred_bad").querySelector('[data-component="agent-account-refusal"]')?.textContent)
+      .toBe("settings.providers.live.authFailed")
+    expect(accountRow("anthropic", "cred_bad").querySelector('[data-action="agent-account-remove"]')).toBeNull()
 
     agentRow("anthropic").querySelector<HTMLButtonElement>('[data-action="agent-reconnect"]')!.click()
 
@@ -575,16 +564,18 @@ describe("Settings → Providers reports the agent logins on this machine", () =
       .toBe("cred_bad")
   })
 
-  test("a harness running the login on this computer says so, with the scan's verdict", async () => {
+  test("the login on this computer is a row named for where it was read from, with the scan's usage", async () => {
     state.discoveryItems = [{
       provider_id: "codex-app-server", kind: "oauth_token", label: "Codex", origin: "~/.codex/auth.json",
       probe: { state: "working", usage: [{ window: "weekly", usedPercent: 64, resetsAt: null }] },
     }]
     mount()
-    await waitFor(() => expect(agentHeader("openai").sentence).toContain("settings.providers.agents.usingMachine"))
-    expect(agentHeader("openai").sentence).toContain("settings.providers.live.ok")
-    expect(agentHeader("openai").sentence).toContain("settings.providers.live.window:settings.providers.window.weekly|64")
-    expect(agentHeader("openai").tone).toBe("success")
+    await waitFor(() => expect(accountIds("openai")).toEqual(["machine"]))
+    expect(accountRow("openai", "machine").textContent).toContain("settings.providers.agents.machineLogin")
+    expect(accountDetail("openai", "machine"))
+      .toContain("settings.providers.agents.machineSource:~/.codex/auth.json")
+    expect(accountDetail("openai", "machine"))
+      .toContain("settings.providers.live.window:settings.providers.window.weekly|64")
     expect(agentAction("openai")).toBe("")
   })
 
@@ -612,7 +603,6 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_key", "sdk_home"]))
     expect(accountRow("anthropic", "cred_key").textContent).toContain("…wxyz")
     expect(accountRow("anthropic", "cred_key").textContent).not.toContain("claude-sdk")
-    expect(agentHeader("anthropic").sentence).toContain("settings.providers.agents.usingAccount:…wxyz")
   })
 
   test("choosing another account marks every binding of it, and the radio follows", async () => {
@@ -692,14 +682,13 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     ]
     mount()
     await waitFor(() => expect(accountIds("openai")).toEqual(["cred_codex", "cred_codex_two"]))
-    expect(accountStatus("openai", "cred_codex").text).toBe("settings.providers.agents.unchecked")
+    // Nothing to say until the provider has been asked.
+    expect(accountDetail("openai", "cred_codex")).toBe("")
 
     rowAction("openai", "cred_codex", "check").click()
 
-    await waitFor(() => expect(accountStatus("openai", "cred_codex").text).toContain("settings.providers.live.ok"))
-    const status = accountStatus("openai", "cred_codex")
-    expect(status.text).toContain("settings.providers.live.checkedNow")
-    expect(status.tone).toBe("success")
+    await waitFor(() => expect(accountDetail("openai", "cred_codex")).toContain("settings.providers.live.checkedNow"))
+    expect(accountRefused("openai", "cred_codex")).toBe(false)
     expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/cred_codex/verify")
   })
 
@@ -717,10 +706,7 @@ describe("Settings → Providers reports the agent logins on this machine", () =
 
     rowAction("anthropic", "sdk_home", "remove-confirm").click()
 
-    // One entry left is one the header sentence names, so the list goes away.
-    await waitFor(() => expect(accountIds("anthropic")).toEqual([]))
-    expect(agentHeader("anthropic").sentence)
-      .toBe("settings.providers.agents.usingAccount:work@acme.com · settings.providers.agents.unchecked")
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
     expect(state.removed).toEqual(["sdk_home", "acp_home"])
   })
 
@@ -740,19 +726,18 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(selectedAccount("anthropic")).toBe("sdk_home")
   })
 
-  test("removing the last account, which the header names rather than lists, returns the harness to Not set up", async () => {
+  test("removing the last account empties the list and puts Connect back in the header", async () => {
     state.storedCredentials = [
       { id: "cred_token", provider_id: "claude-sdk", kind: "oauth_token", label: "work@acme.com", is_active: true },
     ]
     mount()
-    await waitFor(() => expect(agentHeader("anthropic").sentence)
-      .toContain("settings.providers.agents.usingAccount:work@acme.com"))
-    expect(accountIds("anthropic")).toEqual([])
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["cred_token"]))
+    expect(agentAction("anthropic")).toBe("")
 
     rowAction("anthropic", "cred_token", "remove").click()
     rowAction("anthropic", "cred_token", "remove-confirm").click()
 
-    await waitFor(() => expect(agentHeader("anthropic").sentence).toBe("settings.providers.agents.notSetUp"))
+    await waitFor(() => expect(accountIds("anthropic")).toEqual([]))
     expect(agentAction("anthropic")).toBe("agent-connect")
   })
 

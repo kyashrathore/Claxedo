@@ -23,8 +23,6 @@ const account = (over: Partial<AgentAccount> = {}): AgentAccount => ({
   key: "cred_1",
   ids: ["cred_1"],
   label: "work@acme.com",
-  tone: "success",
-  status: "Working",
   selected: true,
   ...over,
 })
@@ -34,7 +32,7 @@ const machineLogin = (over: Partial<AgentAccount> = {}): AgentAccount =>
     key: "machine",
     ids: [],
     label: "This computer's login",
-    source: "from ~/.codex",
+    detail: "from ~/.codex/auth.json",
     selected: false,
     machine: true,
     ...over,
@@ -47,7 +45,6 @@ function row(extra: Partial<ComponentProps<typeof AgentHarnessRow>> = {}) {
       name="Claude Code"
       providerId="claude-sdk"
       harness="claude"
-      header={{ tone: "success", sentence: "Using work@acme.com · Working" }}
       accounts={[account()]}
       onSelect={() => undefined}
       onCheck={() => undefined}
@@ -74,26 +71,17 @@ function click(key: string, action: string) {
   fireEvent.click(button)
 }
 
-/** The Check/Remove text that sits on the header line while there is one entry. */
-function headerAction(action: string) {
-  const button = document.querySelector<HTMLElement>(`[data-provider] > div [data-action="${action}"]`)
-  if (!button) throw new Error(`no ${action} on the header`)
-  return button
-}
-
 describe("AgentHarnessRow header", () => {
-  test("says what the harness runs on in one sentence, with one dot and no action", () => {
+  test("is the name and nothing else: no sentence, no dot, no button", () => {
     row()
 
-    const header = document.querySelector('[data-component="agent-header-status"]')!
-    expect(header.textContent).toBe("Using work@acme.com · Working")
-    expect(header.querySelectorAll('[data-component="agent-status-dot"]')).toHaveLength(1)
-    expect(header.querySelector('[data-component="agent-status-dot"]')?.getAttribute("data-tone")).toBe("success")
-    expect(document.querySelector('[data-component="provider-actions"] button')).toBeNull()
+    const header = document.querySelector('[data-provider] > div')!
+    expect(header.textContent).toBe("Claude Code")
+    expect(header.querySelector("button")).toBeNull()
   })
 
   test("a harness with nothing set up offers Connect and nothing else", () => {
-    row({ header: { tone: "neutral", sentence: "Not set up", action: { kind: "connect" } }, accounts: [] })
+    row({ action: { kind: "connect" }, accounts: [] })
 
     const actions = document.querySelectorAll('[data-component="provider-actions"] button')
     expect(actions).toHaveLength(1)
@@ -104,20 +92,15 @@ describe("AgentHarnessRow header", () => {
     expect(screen.getByTestId("connect-form").dataset.credential).toBe("")
   })
 
-  test("a rejected account in use offers Reconnect, which opens the card on that same row", () => {
+  test("a refused account in use offers Reconnect, which opens the card on that same row", () => {
     row({
-      header: {
-        tone: "danger",
-        sentence: "Old key is rejected by Anthropic. Reconnect or pick another account.",
-        action: { kind: "reconnect", credentialId: "cred_1" },
-      },
+      action: { kind: "reconnect", credentialId: "cred_1" },
+      accounts: [account({ refused: "settings.providers.live.authFailed" })],
     })
 
     const actions = document.querySelectorAll('[data-component="provider-actions"] button')
     expect(actions).toHaveLength(1)
     expect(actions[0].textContent).toBe("settings.providers.agents.reconnectAccount")
-    expect(document.querySelector('[data-component="agent-header-status"] [data-component="agent-status-dot"]')
-      ?.getAttribute("data-tone")).toBe("danger")
 
     fireEvent.click(actions[0])
 
@@ -128,57 +111,12 @@ describe("AgentHarnessRow header", () => {
 })
 
 describe("AgentHarnessRow accounts", () => {
-  test("one entry is left to the header sentence, which carries its two actions", () => {
+  test("one account is a row of its own, because the header no longer names it", () => {
     row()
 
-    expect(document.querySelector('[role="radiogroup"]')).toBeNull()
-    expect(entries()).toEqual([])
-    expect(document.querySelector('[data-component="agent-header-status"]')?.textContent)
-      .toBe("Using work@acme.com · Working")
-    expect(headerAction("agent-account-check").textContent).toBe("settings.providers.agents.checkAccount")
-    expect(headerAction("agent-account-remove").textContent).toBe("settings.providers.agents.removeAccount")
-    expect(screen.getByRole("button", { name: "settings.providers.agents.addAnotherAccount" })).toBeTruthy()
-  })
-
-  test("the lone entry's Remove asks on the header line, then forgets every binding", () => {
-    const removed: string[][] = []
-    row({ accounts: [account({ ids: ["cred_1", "acp_1"] })], onRemove: (ids) => void removed.push([...ids]) })
-
-    fireEvent.click(headerAction("agent-account-remove"))
-
-    expect(removed).toEqual([])
-    fireEvent.click(headerAction("agent-account-remove-cancel"))
-    expect(document.querySelector('[data-action="agent-account-remove-confirm"]')).toBeNull()
-
-    fireEvent.click(headerAction("agent-account-remove"))
-    fireEvent.click(headerAction("agent-account-remove-confirm"))
-
-    expect(removed).toEqual([["cred_1", "acp_1"]])
-  })
-
-  test("the machine login on its own is that one entry too, and it has nothing stored to act on", () => {
-    row({ accounts: [machineLogin({ selected: true })] })
-
-    expect(document.querySelector('[role="radiogroup"]')).toBeNull()
-    expect(entries()).toEqual([])
-    expect(document.querySelector('[data-action="agent-account-check"]')).toBeNull()
-    expect(document.querySelector('[data-action="agent-account-remove"]')).toBeNull()
-  })
-
-  test("with two entries the actions belong to the rows, and the header carries none", () => {
-    row({ accounts: [account(), machineLogin()] })
-
-    expect(document.querySelector('[data-component="agent-header-status"]')?.parentElement
-      ?.querySelector('[data-action="agent-account-remove"]')).toBeNull()
-    expect(entry("cred_1").querySelector('[data-action="agent-account-remove"]')).not.toBeNull()
-  })
-
-  test("a second entry makes the choice real, so both are listed", () => {
-    row({ accounts: [account(), machineLogin()] })
-
+    expect(entries()).toEqual(["cred_1"])
     expect(document.querySelector('[role="radiogroup"]')).not.toBeNull()
-    expect(entries()).toEqual(["cred_1", "machine"])
-    expect(entry("machine").textContent).toContain("from ~/.codex")
+    expect(entry("cred_1").textContent).toContain("work@acme.com")
   })
 
   test("the checked radio is the account in use, and choosing another reports its rows", () => {
@@ -200,30 +138,71 @@ describe("AgentHarnessRow accounts", () => {
     expect(chosen).toEqual([["cred_2"]])
   })
 
-  test("an entry's two actions are text on the row, and Check names the rows it asks about", () => {
-    const checked: string[][] = []
-    row({ accounts: [account(), machineLogin()], onCheck: (ids) => void checked.push([...ids]) })
+  test("what the label does not say goes on a second line, and nothing goes there otherwise", () => {
+    row({
+      accounts: [
+        account({ detail: "settings.providers.live.window:Weekly|58 · settings.providers.live.checkedAt:2 h ago" }),
+        account({ key: "cred_2", ids: ["cred_2"], label: "home@acme.com", selected: false }),
+      ],
+    })
 
-    expect([...entry("cred_1").querySelectorAll<HTMLElement>("button")].map((node) => node.getAttribute("data-action")))
-      .toEqual(["agent-account-check", "agent-account-remove"])
-    expect(entry("cred_1").querySelector('[data-action="agent-account-check"]')?.textContent)
-      .toBe("settings.providers.agents.checkAccount")
+    expect(entry("cred_1").querySelector('[data-slot="radio-list-item-description"]')?.textContent)
+      .toContain("settings.providers.live.window:Weekly|58")
+    expect(entry("cred_2").querySelector('[data-slot="radio-list-item-description"]')).toBeNull()
+  })
+
+  test("this computer's login is a row like any other, named by where it was read from", () => {
+    row({ accounts: [account(), machineLogin()] })
+
+    expect(entries()).toEqual(["cred_1", "machine"])
+    expect(entry("machine").textContent).toContain("from ~/.codex/auth.json")
+    // Nothing is stored for it yet, so there is nothing to check or forget.
+    expect(entry("machine").querySelector('[data-component="agent-account-actions"]')).toBeNull()
+  })
+
+  test("an id the reader cannot match to an account is a tooltip, never a line", () => {
+    row({ accounts: [account({ identity: "f050517a-3e46-4798-a274-1d3a34084f2a" })] })
+
+    expect(entry("cred_1").textContent).not.toContain("f050517a")
+    expect(entry("cred_1").getAttribute("title")).toBe("f050517a-3e46-4798-a274-1d3a34084f2a")
+  })
+
+  test("a refused account is a ring and a screen-reader verdict, not red words", () => {
+    row({ accounts: [account({ refused: "settings.providers.live.authFailed" })] })
+
+    expect(entry("cred_1").hasAttribute("data-invalid")).toBe(true)
+    expect(entry("cred_1").querySelector('[data-component="agent-account-refusal"]')?.textContent)
+      .toBe("settings.providers.live.authFailed")
+    expect(entry("cred_1").getAttribute("title")).toBe("settings.providers.live.authFailed")
+  })
+
+  test("a refused account keeps Check but loses Remove: Reconnect in the header is its action", () => {
+    row({ accounts: [account({ refused: "settings.providers.live.expired" })] })
+
+    expect(entry("cred_1").querySelector('[data-action="agent-account-check"]')).not.toBeNull()
+    expect(entry("cred_1").querySelector('[data-action="agent-account-remove"]')).toBeNull()
+  })
+
+  test("the two actions are hidden at rest and arrive with the pointer or the keyboard", () => {
+    const checked: string[][] = []
+    row({ onCheck: (ids) => void checked.push([...ids]) })
+
+    const actions = entry("cred_1").querySelector('[data-component="agent-account-actions"]')!
+    expect(actions.className).toContain("opacity-0")
+    expect(actions.className).toContain("group-hover:opacity-100")
+    expect(actions.className).toContain("group-focus-within:opacity-100")
+    expect([...actions.querySelectorAll("button")].map((node) => node.getAttribute("aria-label")))
+      .toEqual(["settings.providers.agents.checkAccount", "settings.providers.agents.removeAccount"])
 
     click("cred_1", "agent-account-check")
 
     expect(checked).toEqual([["cred_1"]])
   })
 
-  test("nothing is stored for this computer's login yet, so it has nothing to check or forget", () => {
-    row({ accounts: [account(), machineLogin()] })
-
-    expect(entry("machine").querySelectorAll("button")).toHaveLength(0)
-  })
-
-  test("Remove asks before it forgets, and Cancel keeps the account", () => {
+  test("Remove asks before it forgets, holds the question on screen, and Cancel keeps the account", () => {
     const removed: string[][] = []
     row({
-      accounts: [account({ key: "cred_1", ids: ["cred_1", "acp_1"] }), machineLogin()],
+      accounts: [account({ key: "cred_1", ids: ["cred_1", "acp_1"] })],
       onRemove: (ids) => void removed.push([...ids]),
     })
 
@@ -231,6 +210,8 @@ describe("AgentHarnessRow accounts", () => {
 
     expect(removed).toEqual([])
     expect(entry("cred_1").textContent).toContain("settings.providers.agents.removeAccountConfirm")
+    expect(entry("cred_1").querySelector('[data-component="agent-account-actions"]')!.className)
+      .not.toContain("opacity-0")
 
     click("cred_1", "agent-account-remove-cancel")
 
@@ -243,7 +224,7 @@ describe("AgentHarnessRow accounts", () => {
     expect(removed).toEqual([["cred_1", "acp_1"]])
   })
 
-  test("the add link is the last thing under the harness and names whether anything is set up", () => {
+  test("the add link is last, indented to the labels rather than to the radios", () => {
     row({ accounts: [] })
     expect(screen.getByRole("button", { name: "settings.providers.agents.addFirstAccount" })).toBeTruthy()
     cleanup()
@@ -252,6 +233,7 @@ describe("AgentHarnessRow accounts", () => {
     const add = screen.getByRole("button", { name: "settings.providers.agents.addAnotherAccount" })
     const list = document.querySelector('[data-component="agent-accounts"]')!
     expect(list.lastElementChild?.contains(add)).toBe(true)
+    expect(list.lastElementChild?.className).toContain("pl-[22px]")
 
     fireEvent.click(add)
 
