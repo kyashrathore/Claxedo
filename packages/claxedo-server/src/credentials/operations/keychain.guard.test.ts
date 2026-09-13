@@ -90,18 +90,24 @@ describe("harness login access guard", () => {
     }
   })
 
-  test("exactly one module reaches a command line", () => {
-    const spawners = sources.filter((file) => /\b(execFileSync|execSync|execFile|spawnSync|spawn)\(/.test(code(file)))
+  test("exactly one module can reach a command line", () => {
+    // The import, not the call: `const exec = promisify(execFile)` spawns
+    // through a name this scan has never heard of, and a module that holds a
+    // spawner is already past the line whether or not it has called one yet.
+    const spawners = sources.filter((file) =>
+      /from "(node:)?child_process"/.test(code(file))
+      || /\b(execFileSync|execSync|execFile|spawnSync|spawn)\(/.test(code(file)))
 
     expect(spawners.map((file) => path.basename(file))).toEqual(["machine-login.ts"])
   })
 
-  test("the commands that module runs are the harnesses' own self-reports", () => {
-    const text = code(sources.find((file) => path.basename(file) === "machine-login.ts") ?? "")
-    const invocations = [...text.replace(/\s+/g, " ").matchAll(/(?:run|spawn)\( ?"([^"]+)", ?(\[[^\]]*\])/g)]
-      .map((match) => [match[1], ...JSON.parse(match[2]) as string[]])
+  test("the commands that module runs are the harnesses' own self-reports", async () => {
+    // The value the module runs from, not a regex over its source: an argv
+    // assembled from a variable reads as no invocation at all to a scan.
+    const { MACHINE_LOGIN_COMMANDS } = await import("@claxedo/server-core/credentials/machine-login")
 
-    expect(invocations.toSorted((a, b) => a.join(" ").localeCompare(b.join(" ")))).toEqual(SELF_REPORTS)
+    expect(Object.values(MACHINE_LOGIN_COMMANDS).map((command) => [...command])
+      .toSorted((a, b) => a.join(" ").localeCompare(b.join(" ")))).toEqual(SELF_REPORTS)
   })
 
   test("no credentials module opens the store a harness keeps its login in", () => {

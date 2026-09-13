@@ -38,6 +38,9 @@ import { createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
 import { getCredential, resolveSecretById } from "@claxedo/server-core/credentials/registry"
 import { renewSdkCredentialsIfDue } from "@claxedo/server-core/opencode/sdk-credential-bridge"
+import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+
+const log = Log.create({ service: "embedded-workspace-runtime" })
 
 type EmbeddedRuntime = ReturnType<typeof createWorkspaceRuntimeApp> & {
   workspace: Workspace
@@ -416,7 +419,7 @@ export async function syncEmbeddedWorkspaceRuntimes() {
 }
 
 /** How often the renewal check runs; what it renews is decided from each placeholder's expiry. */
-export const RENEWAL_CHECK_INTERVAL_MS = 30_000
+const RENEWAL_CHECK_INTERVAL_MS = 30_000
 const RENEWAL_RETRY_BASE_MS = 5_000
 const RENEWAL_RETRY_CEILING_MS = 5 * 60_000
 
@@ -436,7 +439,7 @@ export async function renewEmbeddedWorkspaceRuntimeConfigs(input: { at: number; 
   // The engine is one process serving every workspace, so its placeholder has
   // no runtime in `hosts` to expire with.
   await renewSdkCredentialsIfDue(input).catch((error: unknown) => {
-    console.warn("[claxedo] renewing the OpenCode engine's credentials failed", error)
+    log.warn("renewing the OpenCode engine's credentials failed", { error: String(error) })
   })
   for (const runtime of hosts.values()) {
     if (!input.all && (runtime.renewAt === undefined || runtime.renewAt > input.at)) continue
@@ -447,10 +450,11 @@ export async function renewEmbeddedWorkspaceRuntimeConfigs(input: { at: number; 
       runtime.renewFailures = failures
       runtime.renewAt = input.at
         + Math.min(RENEWAL_RETRY_BASE_MS * 2 ** (failures - 1), RENEWAL_RETRY_CEILING_MS)
-      console.warn(
-        `[claxedo] renewing workspace ${runtime.workspace.id} credentials failed (attempt ${failures})`,
-        error,
-      )
+      log.warn("renewing a workspace runtime's credentials failed", {
+        workspace_id: runtime.workspace.id,
+        attempt: failures,
+        error: String(error),
+      })
     }
   }
 }

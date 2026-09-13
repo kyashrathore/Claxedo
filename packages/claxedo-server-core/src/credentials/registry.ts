@@ -457,18 +457,32 @@ export function getCredentialByProvider(
   return row ? toMetadata(row) : undefined
 }
 
-/** Credential lookup for request paths where a registry outage must remain distinguishable from an absent credential. */
-export function requireCredentialRegistryLookup(
+/**
+ * The account a model provider or harness binding would authenticate with, for
+ * a caller that must not read a registry outage as an absent credential:
+ * `getCredentialByProvider` answers `undefined` for both, which a catalog
+ * serves as "this provider is not connected".
+ *
+ * Sandbox driver tokens are excluded by kind rather than by id, because
+ * `putCredential` upserts on (org, provider_id, kind, account_id) and several
+ * driver ids collide with model-provider ids — `vercel` is both — so without
+ * this a stored deploy token answers for the model provider.
+ */
+export function requireProviderAuthCredential(
   providerId: string,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): CredentialMetadata | undefined {
   const row = ClaxedoDB.use((db) =>
     db
       .select()
-        .from(ClaxedoProviderCredentialTable)
-        .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.provider_id, providerId)))
-        .orderBy(...activeFirst)
-        .get(),
+      .from(ClaxedoProviderCredentialTable)
+      .where(and(
+        inOrg(org),
+        eq(ClaxedoProviderCredentialTable.provider_id, providerId),
+        inArray(ClaxedoProviderCredentialTable.kind, [...FANOUT_ELIGIBLE_KINDS]),
+      ))
+      .orderBy(...activeFirst)
+      .get(),
   )
   return row ? toMetadata(row) : undefined
 }

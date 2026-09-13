@@ -58,6 +58,28 @@ export type MachineLoginProbes = {
   codexAccount?: () => Promise<{ account: unknown; rateLimits: unknown }>
 }
 
+/**
+ * Every command this module runs, and there are no others.
+ *
+ * Each one asks a harness about the login it already holds: `claude auth
+ * status` and `cursor-agent status` print it, `codex login status` says whether
+ * there is one, and the Codex app-server answers `account/read` over its own
+ * protocol. Named here rather than inline at four call sites because the guard
+ * that keeps Claxedo out of the harnesses' own credential stores reads this
+ * value; a fifth command added inline would not be in it.
+ */
+export const MACHINE_LOGIN_COMMANDS = {
+  claudeStatus: ["claude", "auth", "status"],
+  codexStatus: ["codex", "login", "status"],
+  codexAppServer: ["codex", "app-server", "--listen", "stdio://"],
+  cursorStatus: ["cursor-agent", "status", "--format", "json"],
+} as const satisfies Record<string, readonly [string, ...string[]]>
+
+/** `[file, ...args]` as the runners take them. */
+function argv(command: readonly [string, ...string[]]) {
+  return [command[0], command.slice(1)] as const
+}
+
 const TIMEOUT_MS = 10_000
 
 const runCommand = (file: string, args: readonly string[]): Promise<MachineLoginRun> =>
@@ -158,7 +180,7 @@ function report(
  * never a quota window.
  */
 async function claudeMachineLogin(run: NonNullable<MachineLoginProbes["run"]>): Promise<MachineLogin> {
-  const result = await run("claude", ["auth", "status"])
+  const result = await run(...argv(MACHINE_LOGIN_COMMANDS.claudeStatus))
   if (!result.found) return report("claude", { state: "absent" })
   const status = parseJsonRecord(result.stdout)
   if (!status) {
@@ -194,7 +216,7 @@ async function codexMachineLogin(
   run: NonNullable<MachineLoginProbes["run"]>,
   account: NonNullable<MachineLoginProbes["codexAccount"]>,
 ): Promise<MachineLogin> {
-  const presence = await run("codex", ["login", "status"])
+  const presence = await run(...argv(MACHINE_LOGIN_COMMANDS.codexStatus))
   if (!presence.found) return report("codex", { state: "absent" })
   if (!presence.ok) {
     const said = `${presence.stdout}\n${presence.stderr ?? ""}`
@@ -222,7 +244,7 @@ async function codexMachineLogin(
 
 /** `cursor-agent status --format json` answers from the CLI's own store. */
 async function cursorMachineLogin(run: NonNullable<MachineLoginProbes["run"]>): Promise<MachineLogin> {
-  const result = await run("cursor-agent", ["status", "--format", "json"])
+  const result = await run(...argv(MACHINE_LOGIN_COMMANDS.cursorStatus))
   if (!result.found) return report("cursor", { state: "absent" })
   const status = parseJsonRecord(result.stdout)
   if (!status) {
@@ -261,7 +283,8 @@ function appServerUsageWindows(input: unknown): CredentialUsageWindow[] {
  * is the protocol's own — one JSON object per line on stdin and stdout.
  */
 async function codexAccountRead(): Promise<{ account: unknown; rateLimits: unknown }> {
-  const child = spawn("codex", ["app-server", "--listen", "stdio://"], { stdio: ["pipe", "pipe", "ignore"] })
+  const [file, args] = argv(MACHINE_LOGIN_COMMANDS.codexAppServer)
+  const child = spawn(file, [...args], { stdio: ["pipe", "pipe", "ignore"] })
   const pending = new Map<number, (message: Record<string, unknown>) => void>()
   let sequence = 0
   let buffer = ""
