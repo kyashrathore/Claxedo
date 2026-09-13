@@ -198,7 +198,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     const broker = options.egressBroker
     app.all("/bindings/*", async (c) => isLoopbackLocalRequest(c.req.raw)
       ? broker(c.req.raw)
-      : c.json({ error: "loopback_required" }, 403))
+      : c.json({ error: { code: "loopback_required", message: "The credential broker answers loopback callers only" } }, 403))
   }
 
   app.post("/api/claxedo/track", async (c) => {
