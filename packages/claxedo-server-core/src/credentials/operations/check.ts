@@ -53,9 +53,10 @@ export async function checkCredential(
     now?: () => number
   },
 ): Promise<CredentialCheckOutcome> {
-  if (!credentials.updateCredentialHealth) return { status: "unsupported" }
-  if (options.secret === undefined && !credentials.resolveCredentialSecretById) return { status: "unsupported" }
-  if (options.replace && !credentials.updateCredentialSecret) return { status: "unsupported" }
+  const { updateCredentialHealth, resolveCredentialSecretById, updateCredentialSecret } = credentials
+  if (!updateCredentialHealth) return { status: "unsupported" }
+  if (options.secret === undefined && !resolveCredentialSecretById) return { status: "unsupported" }
+  if (options.replace && !updateCredentialSecret) return { status: "unsupported" }
   const verifyOptions = {
     ...(options.fetch ? { fetch: options.fetch } : {}),
     ...(options.now ? { now: options.now } : {}),
@@ -64,7 +65,7 @@ export async function checkCredential(
   try {
     // Inside the boundary: a secret backend that refuses is this account's
     // failure, and a caller checking several accounts must reach the next one.
-    secret = options.secret ?? (await credentials.resolveCredentialSecretById!(credential.id, options.org)) ?? undefined
+    secret = options.secret ?? (await resolveCredentialSecretById?.(credential.id, options.org)) ?? undefined
     if (!secret) return { status: "no_secret" }
     // The stored expiry describes the material being replaced. Left in place it
     // makes the verifier read a freshly pasted secret as stale, which for an
@@ -78,16 +79,11 @@ export async function checkCredential(
     if (options.replace) {
       // `null` rather than nothing: the replacement's own expiry is whatever the
       // provider just said, and keeping the old one would expire a live secret.
-      await credentials.updateCredentialSecret!(
-        credential.id,
-        refreshed?.secret ?? secret,
-        refreshed?.expiresAt ?? null,
-        options.org,
-      )
+      await updateCredentialSecret?.(credential.id, refreshed?.secret ?? secret, refreshed?.expiresAt ?? null, options.org)
     } else if (refreshed) {
-      await credentials.updateCredentialSecret?.(credential.id, refreshed.secret, refreshed.expiresAt, options.org)
+      await updateCredentialSecret?.(credential.id, refreshed.secret, refreshed.expiresAt, options.org)
     }
-    await credentials.updateCredentialHealth(credential.id, health, at, options.org)
+    await updateCredentialHealth(credential.id, health, at, options.org)
     if (usage?.length) await credentials.updateCredentialUsage?.(credential.id, usage, at, options.org)
     await nameAccount(credentials, credential, accountEmail, options.org)
     return { status: "checked", health, at, ...(usage ? { usage } : {}), ...(options.replace ? { stored: true } : {}) }

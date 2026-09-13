@@ -119,7 +119,7 @@ const ENV_PREFIX = "CLAXEDO_PROVIDER_"
  * processes spawned after a change in the mounted NAMES, so a name derived from
  * anything but the provider would restart the sandbox on every rotation.
  */
-export function providerPlaceholderEnv(providerId: string): string {
+function providerPlaceholderEnv(providerId: string): string {
   return `${ENV_PREFIX}${providerId.toUpperCase().replace(/[^A-Z0-9]/g, "_")}`
 }
 

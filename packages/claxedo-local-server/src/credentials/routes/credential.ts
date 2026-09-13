@@ -194,6 +194,16 @@ export function CredentialRoutes(
   // so no handler can accidentally run unscoped.
   const orgs = new WeakMap<Request, string>()
   const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
+  /**
+   * One row, in the caller's org. Scoped before anything else runs: an
+   * out-of-org id must 404 before a secret is resolved or a provider is called
+   * on another org's key. A store with no id lookup answers from the list it
+   * can scope.
+   */
+  const findCredential = async (id: string, scope: string) =>
+    credentials.getCredential
+      ? await credentials.getCredential(id, scope)
+      : (await credentials.listCredentials(scope)).find((item) => item.id === id)
   const checkOptions = {
     ...(options.fetch ? { fetch: options.fetch } : {}),
     ...(options.now ? { now: options.now } : {}),
@@ -372,11 +382,7 @@ export function CredentialRoutes(
     .post("/:id/verify", async (c) => {
       const id = c.req.param("id")
       const scope = org(c.req.raw)
-      // Scoped lookup FIRST: an out-of-org id must 404 here, before the secret
-      // is resolved or any provider round-trip is made on another org's key.
-      const credential = credentials.getCredential
-        ? await credentials.getCredential(id, scope)
-        : (await credentials.listCredentials(scope)).find((item) => item.id === id)
+      const credential = await findCredential(id, scope)
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
@@ -388,9 +394,7 @@ export function CredentialRoutes(
       if (!body.success) return c.json(invalidBody(body.error), 400)
       const id = c.req.param("id")
       const scope = org(c.req.raw)
-      const credential = credentials.getCredential
-        ? await credentials.getCredential(id, scope)
-        : (await credentials.listCredentials(scope)).find((item) => item.id === id)
+      const credential = await findCredential(id, scope)
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }

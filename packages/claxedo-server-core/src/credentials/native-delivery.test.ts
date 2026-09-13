@@ -22,7 +22,6 @@ const {
   nativeProviderDeliveries,
   nativeProviderSecrets,
   projectNativeProviderAuth,
-  providerPlaceholderEnv,
 } = await import("./native-delivery")
 const { configureAgentConfig, disposeAgentConfig } = await import("../agent-config/index")
 const { createClaxedoRuntimeConfig } = await import("../hosts/workspace-runtime/runtime-config")
@@ -60,11 +59,6 @@ describe("native provider delivery", () => {
     ClaxedoDB.close()
     await fs.rm(root, { recursive: true, force: true })
     process.env.CLAXEDO_DATA_DIR = previousDataDir
-  })
-
-  test("the placeholder variable is one name per provider", () => {
-    expect(providerPlaceholderEnv("claude-sdk")).toBe("CLAXEDO_PROVIDER_CLAUDE_SDK")
-    expect(providerPlaceholderEnv("openai")).toBe("CLAXEDO_PROVIDER_OPENAI")
   })
 
   test("an active API key becomes one secret for the vendor host and a projection naming its variable", async () => {

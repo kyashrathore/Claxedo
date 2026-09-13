@@ -88,12 +88,11 @@ function safeRead<T>(label: string, fallback: T, read: () => T): T {
 /**
  * The identity a pasted key carries when the provider gives none.
  *
- * The upsert key includes `account_id`, so an API key saved without one
- * overwrote whatever was stored for that provider and kind: a user could hold
- * exactly one, and a second paste silently destroyed the first. Hashing the
- * secret makes two keys two rows and the same key idempotent. The trailing
- * characters are the ones the provider's own dashboard shows, so the row is
- * recognisable in the accounts list without ever revealing the key.
+ * The upsert key includes `account_id`, so two keys saved without one are the
+ * same row: hashing the secret makes them two rows, and the same key saved
+ * twice idempotent. The trailing characters are the ones the provider's own
+ * dashboard shows, so the row is recognisable in the accounts list without ever
+ * revealing the key.
  *
  * OAuth and subscription rows carry the provider's account id already, and
  * everything that is not harness auth (sandbox drivers, `integration:` and
@@ -428,8 +427,8 @@ export function clearActiveCredentials(
  * kind, account_id), so one id can legitimately hold several rows. Several
  * sandbox driver ids collide with model-provider ids (`vercel` is both), and
  * without `kind` this returns whichever row sorts first, which for a sandbox
- * lookup can be the user's model-provider API key. Callers that mean one kind
- * should say so; omitting it keeps the historical any-kind behaviour.
+ * lookup can be the user's model-provider API key. A caller that means one kind
+ * says so.
  */
 export function getCredentialByProvider(
   providerId: string,
@@ -860,16 +859,14 @@ export async function deleteCredential(
   return true
 }
 
-/** Delete all credentials for a provider. */
 /**
  * Delete every credential for a provider in one org, optionally scoped to one
  * `kind`.
  *
- * Unscoped by kind this is genuinely destructive across features: `vercel` is
- * both a sandbox driver id and a model-provider id, so an unscoped delete
- * triggered by "Remove" in Sandbox settings also destroyed the user's Vercel
- * model API key. Pass `kind` whenever the caller owns only one kind of
- * credential. The ORG scope is not optional — it is what keeps one tenant's
+ * Unscoped by kind this is destructive across features: `vercel` is both a
+ * sandbox driver id and a model-provider id, so "Remove" in Sandbox settings
+ * takes the user's Vercel model API key with it. Pass `kind` whenever the
+ * caller owns only one kind of credential. The ORG scope is not optional — it is what keeps one tenant's
  * "remove provider" from wiping every other tenant's key for that provider.
  */
 export async function deleteCredentialsByProvider(

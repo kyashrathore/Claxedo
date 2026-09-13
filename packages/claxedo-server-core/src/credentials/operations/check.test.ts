@@ -60,8 +60,8 @@ describe("one stored account's Check", () => {
   })
 
   test("a secret backend that refuses is this account's failure, not the caller's", async () => {
-    // The refresh loop checks accounts in turn. A throw here aborted the whole
-    // pass, so one locked account left every later account unchecked.
+    // The refresh loop checks accounts in turn, so a throw here would leave
+    // every later account unchecked.
     const host = store({ secret: () => Promise.reject(new Error("keychain is locked")) })
 
     const outcome = await checkCredential(host.credentials, row(), options({ fetch: host.fetch }))

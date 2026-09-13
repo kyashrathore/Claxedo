@@ -44,13 +44,20 @@ export function createUsageQuotaReader(input: {
   const interval = input.refreshIntervalMs ?? REFRESH_INTERVAL_MS
   const lastRefresh = new Map<string, number>()
   return async ({ org, refresh }) => {
-    if (refresh && now() - (lastRefresh.get(org) ?? Number.NEGATIVE_INFINITY) >= interval) {
+    const since = now() - (lastRefresh.get(org) ?? Number.NEGATIVE_INFINITY)
+    if (refresh && since >= interval) {
       lastRefresh.set(org, now())
       await runChecks(input.credentials, org, {
         now,
         ...(input.fetch ? { fetch: input.fetch } : {}),
         ...(input.agentUsage ? { agentUsage: input.agentUsage } : {}),
       })
+    } else if (refresh) {
+      // A Check spends a vendor request per stored account, so a second Refresh
+      // inside the interval answers from what the first one wrote. Said out
+      // loud: the figures not moving is otherwise indistinguishable from a
+      // refresh that ran and found nothing changed.
+      log.info("Quota refresh answered from the last one", { org, since_ms: since, interval_ms: interval })
     }
     const snapshot = await composeSnapshot(input.credentials, org, now, input.agentUsage)
     return { status: quotaStatus(snapshot), snapshot }
@@ -87,7 +94,7 @@ async function composeSnapshot(
   // Ownership is resolved over every stored row, and only then narrowed to the
   // rows that can carry a plan. A harness running on a stored API key has no
   // card here — a key has no window to draw — but it is still the account that
-  // harness spends, and reading ownership off the cards alone reported the
+  // harness spends, so reading ownership off the cards alone would report its
   // machine login as the one in use.
   const inUse = await accountsInUse(credentials, org, rows)
   const harnessesInUse = new Set(rows.filter((row) => inUse.has(row.id)).map(harnessOf))

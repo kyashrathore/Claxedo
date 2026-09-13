@@ -119,10 +119,9 @@ const cursorDestination: ProviderRow = () => ({
  * The OpenAI-compatible model vendors the OpenCode engine and Pi define
  * providers for.
  *
- * They reached those harnesses as a plaintext copy of the stored key until the
- * broker took over delivery, and a provider with no row here reaches them not
- * at all — so a row is what keeps each of these accounts working. Each one is
- * the vendor's own API root and the header its SDK sends the key in.
+ * A provider with no row here reaches them not at all, so a row is what makes
+ * each of these accounts usable. Each one is the vendor's own API root and the
+ * header its SDK sends the key in.
  */
 const openAiCompatibleDestination = (input: {
   origin: string

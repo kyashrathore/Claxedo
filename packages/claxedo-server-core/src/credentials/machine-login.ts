@@ -3,7 +3,7 @@ import { HARNESS_IDS, HARNESS_TABLE, type HarnessId } from "@claxedo/agent-runti
 import { jsonNumber, jsonRecord, jsonString, jsonText, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { clampPercent, codexWindowName, usageResetMs } from "./usage-windows"
-import type { CredentialUsageWindow } from "./operations/verify"
+import type { CredentialUsageWindow } from "./types"
 
 const log = Log.create({ service: "credentials-machine-login" })
 

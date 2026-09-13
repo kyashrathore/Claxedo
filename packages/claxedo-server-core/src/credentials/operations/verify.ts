@@ -43,19 +43,16 @@ export async function verifyCredential(
   const now = options.now ?? Date.now
   const stale = credential.expires_at !== null && credential.expires_at !== undefined && credential.expires_at <= now()
 
-  // A stale access token is only a verdict when nothing can renew it. Imported
-  // Codex logins ship a refresh token in the same secret, so treating the local
-  // expiry as "expired" was calling working subscriptions dead (imported Codex
-  // accounts refresh transparently outside Claxedo; only the local expiry
-  // check, with no attempt to use the co-located refresh token, made them
-  // look permanently dead).
+  // A stale access token is only a verdict when nothing can renew it: an
+  // imported Codex login ships its refresh token in the same secret, and the
+  // account goes on refreshing outside Claxedo.
   let material = secret
   let refreshed: RefreshedCredentialSecret | undefined
   if (stale) {
     if (!isRefreshableCredential(credential) || !credentialRefreshToken(secret)) return { health: "expired" }
     const renewed = await refreshCredentialSecret(credential, secret, options).catch((error: unknown) => {
-      // Never swallow this silently: "expired" with no trace of an attempted
-      // renewal is indistinguishable from the bug this replaced.
+      // Never swallowed: "expired" with no trace of an attempted renewal is
+      // indistinguishable from never having tried.
       log.warn("Credential refresh failed", {
         credential_id: credential.id,
         provider_id: credential.provider_id,

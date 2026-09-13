@@ -295,7 +295,7 @@ describe("usage quota reader", () => {
 
   test("a secret the backend refuses on one account still leaves the next one checked", async () => {
     // A locked keychain answers for one row and throws for another. The throw
-    // used to escape the per-account boundary and abort the whole pass.
+    // has to stay inside the per-account boundary, or the pass stops there.
     const credentials = store({
       rows: [
         credential({ id: "a", provider_id: "anthropic", account_id: "acct_a" }),
