@@ -26,6 +26,7 @@ import {
   directorySections,
   isBuiltIn,
   isInstalled,
+  toolGroups,
   matchesQuery,
   personalEntries,
   pluginLabel,
@@ -161,37 +162,83 @@ export function AgentPluginDirectory(props: {
       : { scope: "all-projects" as const }
   }
 
+  /**
+   * Posts one activation per subject, threading each receipt's revision into
+   * the next request.
+   *
+   * The built-in's whole-plugin actions are the only caller that names more
+   * than one subject, and every post after the first would otherwise carry the
+   * revision the one before it just moved.
+   */
+  const activateAll = async (
+    subjects: readonly string[],
+    choice: boolean | null,
+    target: ReturnType<typeof activationTarget>,
+  ) => {
+    let expected = catalog()?.revision
+    if (expected === undefined) throw new Error("The plugin catalog is not loaded")
+    const receipts = []
+    for (const pluginInstanceId of subjects) {
+      const receipt = await withCurrentRevision({
+        revision: () => expected,
+        reread: async () => {
+          await reread()
+          expected = catalog()?.revision
+        },
+        run: (expectedRevision) => props.api.activation({
+          pluginInstanceId,
+          harnessIds: harnesses(),
+          choice,
+          expectedRevision,
+          ...(target ? { target } : {}),
+        }),
+      })
+      expected = receipt.revision
+      receipts.push(receipt)
+    }
+    return receipts
+  }
+
+  /**
+   * Enable, Disable and Clear, for one plugin or for the built-in's groups.
+   *
+   * `"claxedo"` is not an activation subject — only `claxedo:<group>` is — so
+   * the built-in's whole-plugin actions fan out across its groups. Enable
+   * clears them rather than turning them all on, because turning Tasks on
+   * mints a capability, and that is a consent the group's own switch asks for.
+   */
   const mutate = async (plugin: PluginCandidate, choice: boolean | null) => {
     const current = catalog()
     if (!current) return
+    const builtIn = isBuiltIn(plugin)
+    const subjects = builtIn
+      ? toolGroups(plugin).map((group) => group.pluginInstanceId)
+      : [plugin.pluginInstanceId]
+    const decision = builtIn && choice === true ? null : choice
     if (choice === false) {
-      // What disabling costs is not recoverable from the button label: it
-      // deletes the materialized tree the harnesses read.
-      const ok = await requestConfirm(dialog, {
-        title: `Disable ${pluginLabel(plugin)}?`,
-        body: "This removes its config and materialized files.",
-        confirmLabel: "Disable",
-      })
+      const ok = await requestConfirm(dialog, builtIn
+        ? {
+            title: "Turn off every tool group?",
+            body: "Sessions started from now get none of Claxedo's own tools.",
+            confirmLabel: "Turn off",
+          }
+        : {
+            // What disabling costs is not recoverable from the button label: it
+            // deletes the materialized tree the harnesses read.
+            title: `Disable ${pluginLabel(plugin)}?`,
+            body: "This removes its config and materialized files.",
+            confirmLabel: "Disable",
+          })
       if (!ok) return
     }
     setPending(plugin.pluginInstanceId)
     try {
-      const targetSelection = activationTarget(current)
-      const result = await withCurrentRevision({
-        revision: () => catalog()?.revision,
-        reread,
-        run: (expectedRevision) => props.api.activation({
-          pluginInstanceId: plugin.pluginInstanceId,
-          harnessIds: harnesses(),
-          choice,
-          expectedRevision,
-          ...(targetSelection ? { target: targetSelection } : {}),
-        }),
-      })
-      if (result.reconciliation.state === "failed") {
+      const receipts = await activateAll(subjects, decision, activationTarget(current))
+      const failed = receipts.find((receipt) => receipt.reconciliation.state === "failed")
+      if (failed) {
         showToast({
           title: "Activation saved",
-          description: result.reconciliation.message ?? "Runtime reconciliation will be retried.",
+          description: failed.reconciliation.message ?? "Runtime reconciliation will be retried.",
         })
       }
       await reread()
@@ -204,28 +251,16 @@ export function AgentPluginDirectory(props: {
   }
 
   /**
-   * A tool group is its own activation subject, so a switch posts the same
-   * activation the Enable button does, against the group's own instance id.
-   * It skips `mutate`'s confirm: turning a group off takes tools away from the
-   * next session and removes no materialized files.
+   * A switch posts the same activation the Enable button does, against the
+   * group's own instance id. It skips `mutate`'s confirm: turning a group off
+   * takes tools away from the next session and removes no materialized files.
    */
   const setToolGroup = async (plugin: PluginCandidate, group: PluginToolGroup, enabled: boolean) => {
     const current = catalog()
     if (!current) return
     setPending(plugin.pluginInstanceId)
     try {
-      const target = activationTarget(current)
-      await withCurrentRevision({
-        revision: () => catalog()?.revision,
-        reread,
-        run: (expectedRevision) => props.api.activation({
-          pluginInstanceId: group.pluginInstanceId,
-          harnessIds: harnesses(),
-          choice: enabled,
-          expectedRevision,
-          ...(target ? { target } : {}),
-        }),
-      })
+      await activateAll([group.pluginInstanceId], enabled, activationTarget(current))
       await reread()
     } catch (error) {
       showToast({

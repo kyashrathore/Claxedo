@@ -213,8 +213,9 @@ function builtInCandidate(overrides: BuiltInOverrides = {}): PluginCandidate {
   }
 }
 
+/** The catalog serves the built-in last, as the route does; nothing may find it by index. */
 function withBuiltIn(overrides: BuiltInOverrides = {}) {
-  return { candidates: [builtInCandidate(overrides), ...sourcedCandidates()] }
+  return { candidates: [...sourcedCandidates(), builtInCandidate(overrides)] }
 }
 
 function catalogBody(overrides: Record<string, unknown> = {}) {
@@ -266,6 +267,9 @@ function harness(options: {
   activationGate?: Promise<void>
 } = {}) {
   const recorded: Recorded[] = []
+  // Every write moves the catalog on, the way the route does, so a caller that
+  // reuses one revision across several posts is caught rather than tolerated.
+  let revision = 4
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(requestUrl(input))
     const method = init?.method ?? "GET"
@@ -290,7 +294,8 @@ function harness(options: {
     }
     if (method === "POST") {
       if (options.activationGate) await options.activationGate
-      return Response.json({ revision: 5, reconciliation: { state: "applied" } })
+      revision += 1
+      return Response.json({ revision, reconciliation: { state: "applied" } })
     }
     throw new Error(`unexpected request ${url}`)
   })
@@ -967,6 +972,66 @@ describe("Agent Plugin Directory built-in server", () => {
     release()
     await waitFor(() => expect(within(pane).getByRole("button", { name: "Disable" })).toBeTruthy())
     expect(within(pane).getByRole("switch", { name: "sessions" })).not.toBeDisabled()
+  })
+
+  test("Disable turns every group off, because \"claxedo\" is not an activation subject", async () => {
+    const { recorded } = await renderDirectory({ catalog: withBuiltIn() })
+    const pane = await openPane("claxedo")
+
+    await fireEvent.click(within(pane).getByRole("button", { name: "Disable" }))
+    await answerConfirm("Turn off")
+
+    const posts = () => posted(recorded, "/api/claxedo/plugins/activation")
+    await waitFor(() => expect(posts()).toHaveLength(8))
+    expect(posts().map((post) => (post.body as { pluginInstanceId: string }).pluginInstanceId)).toEqual([
+      "claxedo:sessions",
+      "claxedo:subagents",
+      "claxedo:attention",
+      "claxedo:processes",
+      "claxedo:documents",
+      "claxedo:tasks",
+      "claxedo:review",
+      "claxedo:workspaces",
+    ])
+    expect(posts().every((post) => (post.body as { choice: unknown }).choice === false)).toBe(true)
+    // Each post carries the revision the one before it moved the catalog to.
+    expect(posts().map((post) => (post.body as { expectedRevision: number }).expectedRevision))
+      .toEqual([4, 5, 6, 7, 8, 9, 10, 11])
+  })
+
+  test("Enable clears every group rather than granting Tasks the user never consented to", async () => {
+    const { recorded } = await renderDirectory({ catalog: withBuiltIn({ installed: false }) })
+    const pane = await openPane("claxedo")
+
+    await fireEvent.click(within(pane).getByRole("button", { name: "Enable" }))
+
+    const posts = () => posted(recorded, "/api/claxedo/plugins/activation")
+    await waitFor(() => expect(posts()).toHaveLength(8))
+    expect(posts().every((post) => (post.body as { choice: unknown }).choice === null)).toBe(true)
+    expect(posts().some((post) => (post.body as { choice: unknown }).choice === true)).toBe(false)
+  })
+
+  test("Clear my override hands every group back to the default", async () => {
+    const { recorded } = await renderDirectory({ catalog: withBuiltIn() })
+    const pane = await openPane("claxedo")
+
+    await fireEvent.click(within(pane).getAllByRole("menuitem")[0])
+
+    const posts = () => posted(recorded, "/api/claxedo/plugins/activation")
+    await waitFor(() => expect(posts()).toHaveLength(8))
+    expect(posts().every((post) => (post.body as { choice: unknown }).choice === null)).toBe(true)
+  })
+
+  test("no whole-plugin action ever names the built-in candidate itself", async () => {
+    const { recorded } = await renderDirectory({ catalog: withBuiltIn() })
+    const pane = await openPane("claxedo")
+
+    await fireEvent.click(within(pane).getByRole("button", { name: "Disable" }))
+    await answerConfirm("Turn off")
+    await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(8))
+
+    expect(recorded.some((entry) => entry.method === "POST"
+      && (entry.body as { pluginInstanceId?: string } | undefined)?.pluginInstanceId === "claxedo")).toBe(false)
   })
 
   test("a built-in with every group off says so rather than reporting a harness count", async () => {
