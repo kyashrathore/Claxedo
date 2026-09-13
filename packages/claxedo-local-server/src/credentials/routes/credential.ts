@@ -11,9 +11,14 @@ import { defaultControlPlaneCredentials } from "@claxedo/server-core/authority/d
 import type { ControlPlaneCredentials } from "@claxedo/server-core/authority/control-plane-contract"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
-import { CredentialVerificationError, verifyCredential } from "@claxedo/server-core/credentials/operations/verify"
+import {
+  checkCredential,
+  credentialFailureDetail,
+  type CredentialCheckOutcome,
+} from "@claxedo/server-core/credentials/operations/check"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
-import { MACHINE_LOGIN_HARNESSES, type MachineLogin } from "@claxedo/server-core/credentials/machine-login"
+import { MACHINE_LOGIN_HARNESSES } from "@claxedo/server-core/credentials/machine-login"
+import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
   ControlPlaneAuthError,
@@ -27,20 +32,6 @@ import { SINGLE_TENANT_ORG } from "@claxedo/server-core/credentials/provider-cre
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credential-routes" })
-
-/**
- * What went wrong, in the two fields a caller can act on. The stack never
- * travels — only the name and the message.
- *
- * `secret` is struck from the message wherever the handler holds one: a driver
- * or platform error can quote the value it was handed, and this detail is
- * written to a log line and to an HTTP body.
- */
-function failureDetail(error: unknown, secret?: string) {
-  const name = error instanceof Error ? error.name : "Error"
-  const message = error instanceof Error ? error.message : String(error)
-  return { name, message: secret ? message.split(secret).join("[redacted]") : message }
-}
 
 const putBody = z.object({
   provider_id: z.string().min(1),
@@ -119,66 +110,8 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
   }
 }
 
-/** One harness's login is one address's login, and `""` is "the harness named none". */
-function machineLoginUsageKey(harness: string, account: string) {
-  return `${harness} ${account}`
-}
-
-/**
- * What each harness said about its plan, joined to what it last said.
- *
- * A harness reports quota windows only on the reads that happen to carry them,
- * so a row that showed usage lost it on the next read. The join is here rather
- * than in `machine-login.ts` because that module spawns the CLIs and stays free
- * of the database.
- */
-async function machineLoginsWithUsage(
-  credentials: ControlPlaneCredentials,
-  logins: readonly MachineLogin[],
-  now: () => number,
-): Promise<Array<MachineLogin & { usageAt?: number }>> {
-  const { readMachineLoginUsage, recordMachineLoginUsage } = credentials
-  if (!readMachineLoginUsage || !recordMachineLoginUsage) return [...logins]
-  const stored = new Map(
-    (await readMachineLoginUsage()).map((row) => [machineLoginUsageKey(row.harness, row.account), row]),
-  )
-  const at = now()
-  const out: Array<MachineLogin & { usageAt?: number }> = []
-  for (const login of logins) {
-    const account = login.email ?? ""
-    if (login.usage?.length) {
-      await recordMachineLoginUsage(login.harness, account, login.usage, at)
-      out.push({ ...login, usageAt: at })
-      continue
-    }
-    const row = stored.get(machineLoginUsageKey(login.harness, account))
-    out.push(row ? { ...login, usage: row.windows, usageAt: row.at } : login)
-  }
-  return out
-}
-
 function invalidBody(error: z.ZodError) {
   return errorBody("credential_invalid_body", "Invalid credential request body", error.flatten())
-}
-
-/**
- * Names one row by the address the provider gave for it, unless the user has
- * already named it. A row whose only name is its provider id names the harness
- * binding, not the account, and reads identically for every login stored under
- * it.
- */
-async function nameAccount(
-  credentials: ControlPlaneCredentials,
-  credential: { id: string; provider_id: string; label?: string | null },
-  email: string | undefined,
-  org: string,
-) {
-  if (!email || !credentials.updateCredentialLabel) return
-  const named = credential.label?.trim()
-  if (named && named !== credential.provider_id) return
-  await credentials.updateCredentialLabel(credential.id, email, org).catch((error: unknown) => {
-    log.warn("Failed to name credential", { credential_id: credential.id, ...failureDetail(error) })
-  })
 }
 
 export type CredentialRoutesOptions = {
@@ -248,6 +181,37 @@ export function CredentialRoutes(
   // so no handler can accidentally run unscoped.
   const orgs = new WeakMap<Request, string>()
   const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
+  const checkOptions = {
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(options.now ? { now: options.now } : {}),
+  }
+  /**
+   * One Check, in the answer its caller can act on. A host that cannot verify,
+   * a row whose secret is gone and a provider that refused the request are
+   * three different repairs, so they are three different status codes rather
+   * than one failure.
+   */
+  const checkAnswer = (id: string, outcome: CredentialCheckOutcome): readonly [unknown, 200 | 409 | 500 | 501 | 502] => {
+    if (outcome.status === "unsupported") {
+      return [errorBody("credential_verification_unavailable", "Credential verification is unavailable"), 501]
+    }
+    if (outcome.status === "no_secret") {
+      return [errorBody("credential_secret_unavailable", "Credential secret is unavailable"), 409]
+    }
+    if (outcome.status === "failed") {
+      log.warn("Credential verification failed", { credential_id: id, ...outcome.detail })
+      return [
+        errorBody("credential_verification_failed", "Credential verification failed", { detail: outcome.detail }),
+        outcome.provider ? 502 : 500,
+      ]
+    }
+    return [{
+      result: outcome.health,
+      health: outcome.health,
+      verified_at: outcome.at,
+      ...(outcome.usage ? { usage: outcome.usage } : {}),
+    }, 200]
+  }
   if (options.authenticate) {
     app.use(async (c, next) => {
       try {
@@ -320,12 +284,15 @@ export function CredentialRoutes(
       // read: it is the button a user presses to find out what changed.
       const fresh = c.req.query("fresh") === "1"
       try {
-        const logins = await credentials.machineLogins(harness ? [harness.data] : undefined, { fresh })
         return c.json({
-          machine_logins: await machineLoginsWithUsage(credentials, logins, options.now ?? Date.now),
+          machine_logins: await machineLoginsWithUsage(credentials, {
+            ...(harness ? { harnesses: [harness.data] } : {}),
+            fresh,
+            now: options.now ?? Date.now,
+          }),
         })
       } catch (error) {
-        const detail = failureDetail(error)
+        const detail = credentialFailureDetail(error)
         log.warn("Machine login read failed", detail)
         return c.json(errorBody("credential_machine_login_failed", "Failed to read this computer's logins", { detail }), 500)
       }
@@ -357,7 +324,7 @@ export function CredentialRoutes(
       try {
         return c.json(await credentials.discoverLocalCredentials(org(c.req.raw)))
       } catch (error) {
-        const detail = failureDetail(error)
+        const detail = credentialFailureDetail(error)
         log.warn("Credential discovery failed", detail)
         return c.json(errorBody("credential_discovery_failed", "Failed to discover credentials", { detail }), 500)
       }
@@ -399,31 +366,8 @@ export function CredentialRoutes(
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
-      if (!credentials.resolveCredentialSecretById || !credentials.updateCredentialHealth) {
-        return c.json(errorBody("credential_verification_unavailable", "Credential verification is unavailable"), 501)
-      }
-      const secret = await credentials.resolveCredentialSecretById(id, scope)
-      if (!secret) {
-        return c.json(errorBody("credential_secret_unavailable", "Credential secret is unavailable"), 409)
-      }
-      try {
-        const { health, refreshed, usage, accountEmail } = await verifyCredential(credential, secret, options)
-        const verifiedAt = (options.now ?? Date.now)()
-        // Persist first: a renewed access token that is verified but not stored
-        // would make every later read fall back to the stale one.
-        if (refreshed) {
-          await credentials.updateCredentialSecret?.(id, refreshed.secret, refreshed.expiresAt, scope)
-        }
-        await credentials.updateCredentialHealth(id, health, verifiedAt, scope)
-        if (usage?.length) await credentials.updateCredentialUsage?.(id, usage, verifiedAt, scope)
-        await nameAccount(credentials, credential, accountEmail, scope)
-        return c.json({ result: health, health, verified_at: verifiedAt, ...(usage ? { usage } : {}) })
-      } catch (error) {
-        const detail = failureDetail(error, secret)
-        log.warn("Credential verification failed", { credential_id: id, ...detail })
-        const status = error instanceof CredentialVerificationError ? 502 : 500
-        return c.json(errorBody("credential_verification_failed", "Credential verification failed", { detail }), status)
-      }
+      const [body, status] = checkAnswer(id, await checkCredential(credentials, credential, { org: scope, ...checkOptions }))
+      return c.json(body, status)
     })
     .post("/:id/reconnect", async (c) => {
       const body = reconnectBody.safeParse(await c.req.json().catch(() => null))
@@ -442,29 +386,18 @@ export function CredentialRoutes(
       if (!await credentials.updateCredentialSecret(id, body.data.secret, undefined, scope)) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
-      try {
-        // The stored expiry described the material that was just replaced. Left
-        // in place it makes the verifier read a freshly pasted secret as stale,
-        // which for an API key — nothing to refresh with — answers "expired".
-        const { health, refreshed, usage, accountEmail } = await verifyCredential(
-          { ...credential, expires_at: null },
-          body.data.secret,
-          options,
-        )
-        const verifiedAt = (options.now ?? Date.now)()
-        if (refreshed) {
-          await credentials.updateCredentialSecret(id, refreshed.secret, refreshed.expiresAt, scope)
-        }
-        await credentials.updateCredentialHealth(id, health, verifiedAt, scope)
-        if (usage?.length) await credentials.updateCredentialUsage?.(id, usage, verifiedAt, scope)
-        await nameAccount(credentials, credential, accountEmail, scope)
-        return c.json({ result: health, health, verified_at: verifiedAt, ...(usage ? { usage } : {}) })
-      } catch (error) {
-        const detail = failureDetail(error, body.data.secret)
-        log.warn("Credential reconnect verification failed", { credential_id: id, ...detail })
-        const status = error instanceof CredentialVerificationError ? 502 : 500
-        return c.json(errorBody("credential_verification_failed", "Credential verification failed", { detail }), status)
-      }
+      // The stored expiry described the material that was just replaced. Left
+      // in place it makes the verifier read a freshly pasted secret as stale,
+      // which for an API key — nothing to refresh with — answers "expired".
+      const [answer, status] = checkAnswer(
+        id,
+        await checkCredential(credentials, { ...credential, expires_at: null }, {
+          org: scope,
+          secret: body.data.secret,
+          ...checkOptions,
+        }),
+      )
+      return c.json(answer, status)
     })
     .post("/activate", async (c) => {
       const body = activateBody.safeParse(await c.req.json().catch(() => null))
