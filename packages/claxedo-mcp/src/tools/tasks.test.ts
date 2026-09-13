@@ -93,8 +93,8 @@ type ServiceState = {
   /** Answers returned in place of the defaults, keyed by `"<METHOD> <path without query>"`. */
   answers: Record<string, { status: number; body: unknown }>
   links: readonly unknown[]
-  presets: readonly unknown[]
-  presetsNextCursor: string | null
+  /** The `/presets` catalog, one entry per page; page n is served for `cursor=page_n`. */
+  presetPages: ReadonlyArray<readonly unknown[]>
   preview: Record<string, unknown>
   throws?: string
 }
@@ -104,8 +104,7 @@ function tasksService(input: Partial<ServiceState> = {}) {
   const state: ServiceState = {
     answers: {},
     links: [],
-    presets: [PRESET],
-    presetsNextCursor: null,
+    presetPages: [[PRESET]],
     preview: PREVIEW,
     ...input,
   }
@@ -121,14 +120,23 @@ function tasksService(input: Partial<ServiceState> = {}) {
     if (answer) return Response.json(answer.body, { status: answer.status })
     if (method === "GET" && route === "/tasks") return Response.json({ items: [SUMMARY], nextCursor: null })
     if (method === "GET" && route === "/tasks/tsk_1") return Response.json({ task: TASK, links: state.links })
-    if (method === "GET" && route === "/presets") return Response.json({ items: state.presets, nextCursor: state.presetsNextCursor })
+    if (method === "GET" && route === "/presets") {
+      const index = Number(url.searchParams.get("cursor")?.slice("page_".length) ?? 0)
+      const next = index + 1 < state.presetPages.length ? `page_${index + 1}` : null
+      return Response.json({ items: state.presetPages[index] ?? [], nextCursor: next })
+    }
     if (method === "GET" && route === "/presets/pst_1") return Response.json({ preset: PRESET })
     if (method === "POST" && route === "/commands") {
       return Response.json({ result: { type: "task.create", task: { ...TASK, createdFrom: body?.command?.input?.createdFrom ?? null }, parent: null }, replayed: false })
     }
     if (method === "POST" && route === "/tasks/tsk_1/start-preview") return Response.json({ preview: state.preview })
     if (method === "POST" && route === "/tasks/tsk_1/sessions") {
-      return Response.json({ link: { ...LINK, attempt: body?.attempt ?? 1, slot: body?.slot ?? "primary" }, created: true })
+      const presetId = body?.presetId ?? LINK.presetId
+      const preset = state.presetPages.flat().find((row) => (row as { id: string }).id === presetId) as { name: string } | undefined
+      return Response.json({
+        link: { ...LINK, attempt: body?.attempt ?? 1, slot: body?.slot ?? "primary", presetId, presetNameAtStart: preset?.name ?? LINK.presetNameAtStart },
+        created: true,
+      })
     }
     return Response.json({ error: { code: "not_found", message: `Task ${route} was not found` } }, { status: 404 })
   }
@@ -471,7 +479,7 @@ describe("task_start", () => {
     await json(await connect(first.url), "task_start", { task: "tsk_1" })
     expect(one.calls[1]).toEqual({ method: "GET", path: "/api/claxedo/tasks/presets" })
 
-    const many = tasksService({ presets: [PRESET, { ...PRESET, id: "pst_2", name: "Cloud" }] })
+    const many = tasksService({ presetPages: [[PRESET, { ...PRESET, id: "pst_2", name: "Cloud" }]] })
     const second = await listen({ service: many, crossMachineWrites: true })
     expect(await call(await connect(second.url), "task_start", { task: "tsk_1" })).toEqual({
       text: "Name the preset to start on: pst_1 (Default), pst_2 (Cloud).",
@@ -550,6 +558,39 @@ describe("task_start", () => {
       text: "No preset is named Nope. The presets are: pst_1 (Default).",
       isError: true,
     })
+    expect(service.calls.some((sent) => sent.path.endsWith("/sessions"))).toBe(false)
+  })
+
+  test("follows the catalog's cursor to a preset named on a later page", async () => {
+    const service = tasksService({ presetPages: [[PRESET], [{ ...PRESET, id: "pst_2", name: "Cloud" }]] })
+    const { url } = await listen({ service })
+    const client = await connect(url)
+
+    const answer = await json(client, "task_start", { task: "tsk_1", preset: "cloud" })
+    expect(answer.preset).toEqual({ id: "pst_2", name: "Cloud" })
+    expect(service.calls.map((sent) => sent.path)).toEqual([
+      "/api/claxedo/tasks/tasks/tsk_1",
+      "/api/claxedo/tasks/presets/cloud",
+      "/api/claxedo/tasks/presets",
+      "/api/claxedo/tasks/presets?cursor=page_1",
+      "/api/claxedo/tasks/tasks/tsk_1/start-preview",
+      "/api/claxedo/tasks/tasks/tsk_1/sessions",
+    ])
+    expect(service.calls[4]?.body).toMatchObject({ presetId: "pst_2" })
+  })
+
+  test("exhausts every page before refusing, and the refusal lists them all", async () => {
+    const service = tasksService({ presetPages: [[PRESET], [{ ...PRESET, id: "pst_2", name: "Cloud" }]] })
+    const { url } = await listen({ service })
+    const client = await connect(url)
+
+    expect(await call(client, "task_start", { task: "tsk_1", preset: "Nope" })).toEqual({
+      text: "No preset is named Nope. The presets are: pst_1 (Default), pst_2 (Cloud).",
+      isError: true,
+    })
+    expect(service.calls.map((sent) => sent.path).filter((path) => path.includes("/presets?"))).toEqual([
+      "/api/claxedo/tasks/presets?cursor=page_1",
+    ])
     expect(service.calls.some((sent) => sent.path.endsWith("/sessions"))).toBe(false)
   })
 

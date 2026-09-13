@@ -16,36 +16,14 @@ import {
   TasksClientPayloadError,
   type TasksClient,
 } from "@claxedo/tasks/client"
-import type {
-  ConfigurationSlot,
-  Preset,
-  SessionReference,
-  TaskCreateStatus,
-  TaskSessionLinkView,
-  TaskStatus,
-  TaskSummary,
-} from "@claxedo/tasks"
-import { admissibleAttempt } from "@claxedo/tasks"
+import type { ConfigurationSlot, Preset, SessionReference, TaskSessionLinkView, TaskSummary } from "@claxedo/tasks"
+import { CONFIGURATION_SLOTS, TASK_CREATE_STATUSES, TASK_STATUSES, admissibleAttempt } from "@claxedo/tasks"
 import { record, text } from "../json"
 import type { McpToolContext } from "../context"
 import { mcpToolRefusal, type McpToolResult } from "../mcp-tool"
 import type { ToolRegistrar } from "./registry"
 import { declaredToolAccess } from "./inventory"
 import { targetScope, toolJson, toolTarget } from "./target"
-
-/**
- * The kit's own lists, spelled out rather than imported.
- *
- * `TASK_STATUSES`, `TASK_CREATE_STATUSES` and `CONFIGURATION_SLOTS` are values
- * on `@claxedo/tasks`'s root export, which also carries the services, the
- * stores and the command layer; importing them would pull that whole kit into
- * every mount's bundle for three arrays. `satisfies` checks each name against
- * the kit's own type, and the routes stay the validator for anything added
- * there and missing here.
- */
-const SLOTS = ["primary", "planning", "implementation", "review"] as const satisfies readonly ConfigurationSlot[]
-const STATUSES = ["backlog", "todo", "doing", "needs_you", "done"] as const satisfies readonly TaskStatus[]
-const CREATE_STATUSES = ["backlog", "todo"] as const satisfies readonly TaskCreateStatus[]
 
 const PROJECT_ARG = {
   project: z.string().trim().min(1).optional().describe("Project id. Defaults to the project of this session's own workspace."),
@@ -60,7 +38,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
       description: "List a project's tasks: id, number, title, status, parent, how many sessions each has run and how its subtasks stand.",
       inputSchema: {
         ...PROJECT_ARG,
-        status: z.enum(STATUSES).optional().describe("Only tasks in this status."),
+        status: z.enum(TASK_STATUSES).optional().describe("Only tasks in this status."),
         limit: z.number().int().min(1).max(100).optional().describe("Rows per page. Defaults to the service's own page size."),
         cursor: z.string().min(1).optional().describe("`nextCursor` from a previous call."),
       },
@@ -102,7 +80,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
       inputSchema: {
         title: z.string().trim().min(1).describe("What the task is, in one line."),
         description: z.string().optional().describe("The task in full, as Markdown."),
-        status: z.enum(CREATE_STATUSES).optional().describe("Defaults to todo."),
+        status: z.enum(TASK_CREATE_STATUSES).optional().describe("Defaults to todo."),
         parent: z.string().trim().min(1).optional().describe("Task id this one is a subtask of."),
         ...PROJECT_ARG,
         clientRequestId: z
@@ -154,7 +132,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
       inputSchema: {
         ...TASK_ARG,
         preset: z.string().trim().min(1).optional().describe("Preset id or name. Optional only while the account has exactly one preset."),
-        slot: z.enum(SLOTS).optional().describe("Which configuration of the preset to run. Defaults to primary."),
+        slot: z.enum(CONFIGURATION_SLOTS).optional().describe("Which configuration of the preset to run. Defaults to primary."),
         continue: z.boolean().optional().describe("Hand the slot's previous session over to the new one. Defaults to false."),
         clientRequestId: z
           .string()
@@ -233,7 +211,7 @@ function nextAttempt(links: readonly TaskSessionLinkView[], slot: ConfigurationS
  * The routes page a personal catalog by the store's own cursor and record
  * nothing about which preset was used last, so there is no "the usual one" to
  * default to. A single preset is the whole catalog and needs no naming; past
- * that the refusal carries the ids and names, because nothing else here lists
+ * that the refusal carries every id and name, because nothing else here lists
  * them.
  */
 async function presetFor(client: TasksClient, requested: string | undefined): Promise<Preset> {
@@ -243,19 +221,24 @@ async function presetFor(client: TasksClient, requested: string | undefined): Pr
     } catch (cause) {
       if (!(cause instanceof TasksApiError) || cause.status !== 404) throw cause
     }
-    const page = await client.listPresets()
-    const named = page.items.find((preset) => preset.name.toLowerCase() === requested.toLowerCase())
-    if (named) return named
-    throw new RefusalSentence(`No preset is named ${requested}. The presets are: ${catalog(page.items)}.`)
   }
-  const page = await client.listPresets()
-  const only = page.items[0]
+  const seen: Preset[] = []
+  let cursor: string | undefined
+  do {
+    const page = await client.listPresets(cursor ? { cursor } : {})
+    if (requested) {
+      const named = page.items.find((preset) => preset.name.toLowerCase() === requested.toLowerCase())
+      if (named) return named
+    }
+    seen.push(...page.items)
+    cursor = page.nextCursor ?? undefined
+  } while (cursor)
+  if (requested) throw new RefusalSentence(`No preset is named ${requested}. The presets are: ${catalog(seen)}.`)
+  const only = seen[0]
   if (!only) {
     throw new RefusalSentence("This account has no execution preset, and a task's session starts from one. Create a preset first.")
   }
-  if (page.items.length > 1 || page.nextCursor !== null) {
-    throw new RefusalSentence(`Name the preset to start on: ${catalog(page.items)}.`)
-  }
+  if (seen.length > 1) throw new RefusalSentence(`Name the preset to start on: ${catalog(seen)}.`)
   return only
 }
 
