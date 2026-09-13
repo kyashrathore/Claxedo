@@ -29,7 +29,7 @@ import {
   AgentHarnessRow,
   type AgentAccount,
 } from "@/features/settings/ui/agent-harness-row"
-import { harnessBindingIds, harnessIcon } from "@/platform/identity/harness-catalog"
+import { bindingIdsForHarness, harnessIcon } from "@/platform/identity/harness-catalog"
 import {
   accountReach,
   isRefusal,
@@ -65,7 +65,7 @@ const MACHINE_REACH: Record<string, readonly string[]> = {
  */
 function partialMachineLogin(login: MachineLogin) {
   const serves = login.serves
-  return serves !== undefined && harnessBindingIds(login.harness).some((id) => !serves.includes(id))
+  return serves !== undefined && bindingIdsForHarness(login.harness).some((id) => !serves.includes(id))
 }
 
 /**
@@ -312,7 +312,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     if (inUse === undefined) return false
     // A vendor key was never this login's to replace: withdrawing its mark hands
     // the harness back to the CLI login, which is the whole point of the row.
-    return harnessBindingIds(login.harness).includes(inUse.providerId) && !serves.includes(inUse.providerId)
+    return bindingIdsForHarness(login.harness).includes(inUse.providerId) && !serves.includes(inUse.providerId)
   }
 
   /**

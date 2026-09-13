@@ -137,14 +137,17 @@ export function harnessProviderIds(id: string): readonly string[] {
 }
 
 /**
- * Those of them the harness resolves its own auth through.
+ * Those of them the harness resolves its own auth through, for a key of any
+ * shape — the server's report names its harness as a string — where the
+ * table's own reader takes only the ids it knows. A key it has never heard of
+ * has no vendor row to subtract, so its whole list is its bindings.
  *
  * A harness's vendor id — `anthropic` under Claude Code — is that vendor's
  * models routed through the harness, never something signing its CLI in
  * answers for. Comparing a login's reach against the full list therefore reads
  * every complete login as partial.
  */
-export function harnessBindingIds(id: string): readonly string[] {
+export function bindingIdsForHarness(id: string): readonly string[] {
   return isHarnessId(id) ? tableBindingIds(id) : harnessProviderIds(id)
 }
 
