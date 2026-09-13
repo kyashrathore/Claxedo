@@ -36,7 +36,11 @@ describe("first-turn error taxonomy", () => {
     ['Failed to authenticate. API Error: 403 {"error":"binding_unavailable"}', "credential"],
     ['API Error: 401 {"error":"runtime_token_invalid"}', "credential"],
     ['API Error: 503 {"error":"credential_unavailable"}', "credential"],
-    ['API Error: 403 {"error":"binding_not_permitted"}', "credential"],
+    // A token presented at a binding it does not name, and a request carrying
+    // none: both are requests the harness should never have made, and the
+    // account behind the binding is not what is wrong with either.
+    ['API Error: 403 {"error":"binding_not_permitted"}', "harness"],
+    ['API Error: 401 {"error":"runtime_token_required"}', "harness"],
     ['API Error: 403 {"error":"request_outside_policy"}', "harness"],
     ['API Error: 503 {"error":"broker_authority_unavailable"}', "harness"],
     ['API Error: 502 {"error":"upstream_unavailable"}', "model"],

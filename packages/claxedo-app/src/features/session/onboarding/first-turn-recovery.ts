@@ -3,13 +3,16 @@
 // The server stamps error.data.firstTurnErrorClass on the wire and this module
 // prefers it; the regexes below are only a fallback for errors that arrive
 // class-less. Keep them in lockstep with that file — it is the source of truth.
-// (agent-sdk-runtime cannot be imported here: it is not browser-safe.)
+// (agent-sdk-runtime cannot be imported here: it is not browser-safe.) The
+// credential broker's own codes are the exception: both sides read them out of
+// @claxedo/agent-runtime-contract, so that half cannot drift.
 import { providerErrorDetail, providerUsageLimitDetail } from "./provider-error-detail"
 import type { HarnessSelectionSnapshot } from "@/features/session/harness/controller"
 import type { PickerItem } from "@/features/session/ui/model/select-model"
 import { harnessSelectionValue } from "@/platform/identity/harness-selection"
 import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
 import { asRecord } from "@/lib/record"
+import { credentialBrokerErrorCode, CREDENTIAL_BROKER_ERRORS } from "@claxedo/agent-runtime-contract"
 
 export type SessionErrorClass = "credential" | "harness" | "model" | "usage_limit" | "workspace" | "session" | "unknown"
 export type FirstTurnMessage =
@@ -98,6 +101,11 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
     classified === "workspace" || classified === "session" || classified === "unknown"
   ) return classified
   const message = typeof data?.message === "string" ? data.message : ""
+  // The broker's own vocabulary, from the table the broker writes it out of.
+  // Without it a 403 naming a route the binding does not allow reads as
+  // `credential` below and asks the user to reconnect a working account.
+  const broker = credentialBrokerErrorCode(message)
+  if (broker) return CREDENTIAL_BROKER_ERRORS[broker].fault
   if (/(?:reached|hit)\s+(?:your|the)\s+.+?\s+limit|usage\s+(?:limit|cap)\s+(?:reached|exceeded)|limit.*(?:reset|usage credits)|usage_limit_reached|rate_limit_reached|credits_depleted/i.test(message)) return "usage_limit"
   if (/\b(401|403|unauthori[sz]ed|api[ _-]?key|oauth|token|credential|authentication|billing|payment|quota|rate[ _-]?limit)\b/i.test(message)) return "credential"
   if (/(thread not found|session not found|conversation not found|no such (thread|session))/i.test(message)) return "session"

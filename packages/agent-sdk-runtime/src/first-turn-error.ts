@@ -1,55 +1,30 @@
-import { asRecord } from "@claxedo/helpers/guards"
+import {
+  credentialBrokerErrorCode,
+  CREDENTIAL_BROKER_ERRORS,
+  isCredentialBrokerErrorCode,
+} from "@claxedo/agent-runtime-contract"
 
 export const FIRST_TURN_ERROR_CLASSES = ["credential", "harness", "model", "usage_limit", "workspace", "session", "unknown"] as const
 
 export type FirstTurnErrorClass = (typeof FIRST_TURN_ERROR_CLASSES)[number]
 
 /**
- * The credential broker's own vocabulary, and that of the mounts in front of
- * it, which a brokered harness echoes in the message it reports.
+ * The broker's verdict, out of the vocabulary the broker itself writes.
  *
- * The status beside it cannot stand in for these: the broker answers 403 both
- * for a credential it will not serve and for a route the binding does not
- * allow, and reading that 403 as a credential failure tells the operator to
- * replace a working account for a request the harness should never have made.
+ * Imported rather than restated: a code this file forgot used to fall through
+ * to the prose rules below, which read the 403 the broker answers both for a
+ * credential it will not serve and for a route the binding does not allow — and
+ * told the operator to replace a working account for a request the harness
+ * should never have made.
  */
-const BROKER_ERROR_CLASSES: Record<string, FirstTurnErrorClass> = {
-  binding_unavailable: "credential",
-  binding_not_permitted: "credential",
-  credential_unavailable: "credential",
-  runtime_token_invalid: "credential",
-  runtime_token_required: "credential",
-  binding_destination_invalid: "harness",
-  binding_injection_invalid: "harness",
-  binding_route_required: "harness",
-  broker_authority_unavailable: "harness",
-  loopback_required: "harness",
-  request_outside_policy: "harness",
-  upstream_redirect_refused: "model",
-  upstream_unavailable: "model",
-}
+const brokerError = new RegExp(`\\b(${Object.keys(CREDENTIAL_BROKER_ERRORS).join("|")})\\b`)
 
-const brokerError = new RegExp(`\\b(${Object.keys(BROKER_ERROR_CLASSES).join("|")})\\b`)
-
-/**
- * The broker's code out of the JSON body a harness echoed.
- *
- * Preferred over a bare-token match because a harness that retried names the
- * first failure in its own prose, and the verdict belongs to the response it
- * gave up on. The match stays as the fallback: a harness that summarises the
- * body rather than quoting it leaves no JSON to read.
- */
-function brokerBodyCode(message: string): string | undefined {
-  const start = message.indexOf("{")
-  const end = message.lastIndexOf("}")
-  if (start === -1 || end <= start) return undefined
-  try {
-    const error = asRecord(JSON.parse(message.slice(start, end + 1)))?.error
-    const code = typeof error === "string" ? error : asRecord(error)?.code
-    return typeof code === "string" ? code : undefined
-  } catch {
-    return undefined
-  }
+function brokerFault(message: string): FirstTurnErrorClass | undefined {
+  const code = credentialBrokerErrorCode(message)
+    // A harness that summarises the body rather than quoting it leaves no JSON
+    // to read, so the bare code in its prose is the fallback.
+    ?? brokerError.exec(message)?.[1]
+  return code && isCredentialBrokerErrorCode(code) ? CREDENTIAL_BROKER_ERRORS[code].fault : undefined
 }
 
 const credential = /\b(401|403|unauthori[sz]ed|api[ _-]?key|oauth|token|credential|authentication|billing|payment|quota)\b/i
@@ -63,8 +38,8 @@ export function classifyFirstTurnError(error: unknown): FirstTurnErrorClass {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error)
   // First, because everything below it reads the status and the prose the
   // harness wrapped around this code.
-  const broker = brokerBodyCode(message) ?? brokerError.exec(message)?.[1]
-  if (broker && BROKER_ERROR_CLASSES[broker]) return BROKER_ERROR_CLASSES[broker]
+  const broker = brokerFault(message)
+  if (broker) return broker
   if (usageLimit.test(message)) return "usage_limit"
   if (credential.test(message)) return "credential"
   // Lost native conversations use session recovery, even when the message also names a harness.

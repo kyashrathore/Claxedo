@@ -17,12 +17,23 @@
       "import": "./dist/node.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run src"
   },
-  "dependencies": { "jose": "6.2.4", "@hono/node-server": "1.19.11" },
-  "devDependencies": { "@tsconfig/node-lts": "22.0.4", "typescript": "catalog:", "@types/bun": "catalog:", "vitest": "2.1.9" }
+  "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
+    "@hono/node-server": "1.19.11",
+    "jose": "6.2.4"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "typescript": "catalog:",
+    "@types/bun": "catalog:",
+    "vitest": "2.1.9"
+  }
 }

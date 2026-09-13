@@ -1,5 +1,6 @@
 import { expect, test } from "vitest"
-import { BROKER_ERRORS, brokerErrorBody, type BrokerErrorCode } from "./errors.js"
+import { CREDENTIAL_BROKER_ERRORS, type CredentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
+import { brokerErrorBody } from "./errors.js"
 
 /**
  * `@opencode-ai/ai@0.0.0-beta-18684` reads a failed provider response through
@@ -17,10 +18,10 @@ const decodesLikeProviderMessage = (body: unknown) => {
 }
 
 test("every refusal names a code and carries a message the engine will show", () => {
-  for (const code of Object.keys(BROKER_ERRORS) as BrokerErrorCode[]) {
+  for (const code of Object.keys(CREDENTIAL_BROKER_ERRORS) as CredentialBrokerErrorCode[]) {
     const body = brokerErrorBody(code)
     expect(body.error.code).toBe(code)
-    expect(decodesLikeProviderMessage(body)).toBe(BROKER_ERRORS[code])
+    expect(decodesLikeProviderMessage(body)).toBe(CREDENTIAL_BROKER_ERRORS[code].message)
   }
 })
 

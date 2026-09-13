@@ -485,6 +485,7 @@
       "name": "@claxedo/egress-broker",
       "version": "0.8.0",
       "dependencies": {
+        "@claxedo/agent-runtime-contract": "workspace:*",
         "@hono/node-server": "1.19.11",
         "jose": "6.2.4",
       },

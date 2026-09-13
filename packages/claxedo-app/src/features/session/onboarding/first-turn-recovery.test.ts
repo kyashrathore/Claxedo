@@ -44,6 +44,25 @@ describe("first-turn recovery", () => {
     expect(sessionRecovery(kind)).toEqual(expect.objectContaining({ kind, label }))
   })
 
+  test("a class-less broker refusal is read from the broker's own code", () => {
+    // Without it the 403 and the word "token" below reach the credential rule
+    // and the card asks the user to reconnect an account that works.
+    expect(sessionRecoveryClass({
+      name: "UnknownError",
+      data: {
+        message: 'API Error: 403 {"error":{"code":"binding_not_permitted",'
+          + '"message":"This runtime token does not name that binding"}}',
+      },
+    })).toBe("harness")
+    expect(sessionRecoveryClass({
+      name: "UnknownError",
+      data: {
+        message: 'API Error: 403 {"error":{"code":"binding_unavailable",'
+          + '"message":"The binding names no account this runtime can spend"}}',
+      },
+    })).toBe("credential")
+  })
+
   test("reads the server classification and has a legacy-message fallback", () => {
     expect(sessionRecoveryClass({
       name: "UnknownError",

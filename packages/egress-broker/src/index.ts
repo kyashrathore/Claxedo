@@ -1,5 +1,5 @@
 export { createEgressBroker, type BrokerOptions } from "./broker.js"
-export { brokerErrorBody, BROKER_ERRORS, type BrokerErrorCode } from "./errors.js"
+export { brokerErrorBody, type BrokerErrorCode } from "./errors.js"
 export { mintRuntimeToken, verifyRuntimeToken, type RuntimeTokenClaims } from "./token.js"
 export { bindingBaseUrl, sameRuntime, type Binding, type BindingAuthority, type BindingFailure, type RuntimeIdentity } from "./binding.js"
 export { createGenericDeliveryAdapter } from "./delivery.js"
