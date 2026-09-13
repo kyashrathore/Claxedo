@@ -227,6 +227,19 @@ export function TaskDetail(props: TaskDetailProps) {
                 </div>
               )}
             </Show>
+            <Show when={task().createdFrom}>
+              {(session) => (
+                <button
+                  type="button"
+                  class="tsk-prop tsk-prop-link"
+                  data-testid="task-detail-created-from"
+                  onClick={() => props.onOpenSession(session())}
+                >
+                  <Icon name="comment" size="small" />
+                  <span class="tsk-truncate">Created from session</span>
+                </button>
+              )}
+            </Show>
           </div>
         </section>
 

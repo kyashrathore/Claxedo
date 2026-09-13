@@ -153,6 +153,23 @@ describe("the properties rail", () => {
     expect(within(rail).getByLabelText("Workspace").textContent).toBe("ws_1")
   })
 
+  test("a task an agent created opens the session it was created from", () => {
+    const { onOpenSession } = mount([], { createdFrom: { sessionId: "ses_author", workspaceId: "ws_1" } })
+
+    const row = within(screen.getByLabelText("Properties")).getByTestId("task-detail-created-from")
+    expect(row.textContent).toBe("Created from session")
+    fireEvent.click(row)
+
+    expect(onOpenSession).toHaveBeenCalledWith({ sessionId: "ses_author", workspaceId: "ws_1" })
+  })
+
+  test("a task a person created in the app names no session it came from", () => {
+    mount([link(1, "live")], { workspaceId: "ws_1" })
+
+    expect(screen.queryByTestId("task-detail-created-from")).toBeNull()
+    expect(screen.queryByText("Created from session")).toBeNull()
+  })
+
   test("names no property twice, because the row is the value", () => {
     mount([link(1, "live")], { workspaceId: "ws_1" })
 

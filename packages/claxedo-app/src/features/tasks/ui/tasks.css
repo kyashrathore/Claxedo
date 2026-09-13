@@ -829,6 +829,27 @@
   color: var(--icon-base);
 }
 
+/* A property that is somewhere to go, quieter than the ones that are only read. */
+.tsk-prop-link {
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-3);
+  color: var(--text-weak);
+  font: inherit;
+  font-size: var(--font-size-x-small);
+  cursor: pointer;
+}
+
+.tsk-prop-link:hover,
+.tsk-prop-link:focus-visible {
+  color: var(--text-strong);
+}
+
+.tsk-prop-link:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
 .tsk-slots {
   display: flex;
   flex-direction: column;
