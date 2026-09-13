@@ -290,4 +290,23 @@ describe("unsigned Agent Plugins public route contribution", () => {
     expect(response.status).toBe(409)
     expect(subject.activations.read(candidate.pluginInstanceId, "cursor").machineOverride).toBe(true)
   })
+
+  test("refuses a write against the built-in's own name instead of writing a row nothing reads", async () => {
+    const subject = await fixture()
+    const before = subject.activations.revision()
+    const response = await subject.app.request("http://local.test/api/claxedo/plugins/activation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pluginInstanceId: "claxedo",
+        harnessIds: ["opencode"],
+        choice: false,
+        expectedRevision: before,
+      }),
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "agent_plugins_tool_group_required" } })
+    expect(subject.activations.revision()).toBe(before)
+  })
+
 })

@@ -18,6 +18,7 @@ import {
   builtinCatalogEntry,
   builtinPluginInstanceId,
   builtinToolGroupId,
+  isBuiltinFamilyName,
   isBuiltinPluginInstanceId,
   resolveBuiltinGroupActivation,
   type BuiltinDeployment,
@@ -274,6 +275,12 @@ export function LocalAgentPluginActivationRoutes(input: {
       return c.json(errorBody("agent_plugins_unsupported_harness", "Activation contains an unsupported harness"), 400)
     }
 
+    if (isBuiltinFamilyName(body.pluginInstanceId)) {
+      return c.json(errorBody(
+        "agent_plugins_tool_group_required",
+        "The first-party server is activated one tool group at a time; name claxedo:<group>",
+      ), 400)
+    }
     let revision: number | undefined
     const existingPin = input.activations.read(body.pluginInstanceId, body.harnessIds[0]).pins.localMachine
     // The built-in comes from no source: there is nothing to fetch, hash or
@@ -325,6 +332,12 @@ export function LocalAgentPluginActivationRoutes(input: {
   app.post("/update", async (c) => {
     const body = updateBody(await c.req.json().catch(() => undefined))
     if (!body) return c.json(errorBody("agent_plugins_invalid_body", "Invalid Agent Plugins update request"), 400)
+    if (isBuiltinFamilyName(body.pluginInstanceId) || isBuiltinPluginInstanceId(body.pluginInstanceId)) {
+      return c.json(errorBody(
+        "agent_plugins_builtin_not_updatable",
+        "The first-party server ships with this deployment and has no artifact to update",
+      ), 400)
+    }
     const candidate = await currentCandidate(input.sources, body.pluginInstanceId)
     if (!candidate) return c.json(errorBody("agent_plugins_candidate_unavailable", "Plugin is not available in the current catalog"), 409)
     let revision: number | undefined

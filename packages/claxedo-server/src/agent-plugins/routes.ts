@@ -25,6 +25,7 @@ import {
   builtinCatalogEntry,
   builtinPluginInstanceId,
   builtinToolGroupId,
+  isBuiltinFamilyName,
   isBuiltinPluginInstanceId,
   resolveBuiltinGroupActivation,
   type BuiltinDeployment,
@@ -528,6 +529,12 @@ export function HostedAgentPluginRoutes(input: {
     const auth = authResult.auth
     const body = userMutation(await readJsonRecord(c.req))
     if (!body) return c.json(error("agent_plugins_invalid_body", "Invalid signed Agent Plugins activation request"), 400)
+    if (isBuiltinFamilyName(body.pluginInstanceId)) {
+      return c.json(error(
+        "agent_plugins_tool_group_required",
+        "The first-party server is activated one tool group at a time; name claxedo:<group>",
+      ), 400)
+    }
     if (isBuiltinPluginInstanceId(body.pluginInstanceId)) {
       const groupId = builtinToolGroupId(body.pluginInstanceId)
       if (!input.builtIn.groups.some((group) => group.id === groupId)) {
@@ -564,6 +571,21 @@ export function HostedAgentPluginRoutes(input: {
     const auth = authResult.auth
     const body = organizationMutation(await readJsonRecord(c.req))
     if (!body) return c.json(error("agent_plugins_invalid_body", "Organization defaults accept only true or return-to-default"), 400)
+    if (isBuiltinFamilyName(body.pluginInstanceId)) {
+      return c.json(error(
+        "agent_plugins_tool_group_required",
+        "The first-party server is activated one tool group at a time; name claxedo:<group>",
+      ), 400)
+    }
+    if (isBuiltinPluginInstanceId(body.pluginInstanceId)) {
+      const groupId = builtinToolGroupId(body.pluginInstanceId)
+      if (!input.builtIn.groups.some((group) => group.id === groupId)) {
+        return c.json(error("agent_plugins_unknown_tool_group", "The first-party server has no such tool group"), 404)
+      }
+      const committed = await input.activations.mutateOrganizationDefault(auth, body)
+      const applied = await apply(committed)
+      return c.json({ revision: committed, reconciliation: applied }, applied.state === "failed" ? 202 : 200)
+    }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
     let revision: number | undefined
     if (body.choice === true && !known?.pins.organization) {
@@ -592,6 +614,12 @@ export function HostedAgentPluginRoutes(input: {
     const auth = authResult.auth
     const body = updateMutation(await readJsonRecord(c.req))
     if (!body) return c.json(error("agent_plugins_invalid_body", "Invalid Agent Plugins update request"), 400)
+    if (isBuiltinFamilyName(body.pluginInstanceId) || isBuiltinPluginInstanceId(body.pluginInstanceId)) {
+      return c.json(error(
+        "agent_plugins_builtin_not_updatable",
+        "The first-party server ships with this deployment and has no artifact to update",
+      ), 400)
+    }
     const known = (await input.activations.listKnown(auth)).find((item) => item.pluginInstanceId === body.pluginInstanceId)
     const ownedPin = body.authority === "user" ? known?.pins.user : known?.pins.organization
     if (!ownedPin) return c.json(error("agent_plugins_pin_not_owned", `No retained ${body.authority} artifact exists for this plugin`), 409)
