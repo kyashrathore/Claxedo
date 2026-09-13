@@ -166,6 +166,19 @@ export function disposeAgentConfig() {
   harnessConnectionSchema = createHarnessConnectionSchema()
 }
 
+/**
+ * The credential authority this composition installed, for a consumer whose
+ * credentials do not travel in a runtime snapshot. Answers nothing when no
+ * authority is installed, which means every harness runs on its machine's login.
+ */
+export function projectRuntimeAuth(input: {
+  scope: RuntimeConfigSecretScope
+  orgId?: string
+  workspaceId?: string
+}): Promise<Record<string, ProviderProjection>> {
+  return agentConfigOptions.projectAuth?.(input) ?? Promise.resolve({})
+}
+
 export function configureAgentConfig(options: AgentConfigOptions = {}) {
   disposeAgentConfig()
   agentConfigOptions = options

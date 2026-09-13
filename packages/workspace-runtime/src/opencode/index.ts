@@ -57,3 +57,4 @@ export {
 } from "./configuration-port"
 export { OpenCodeSdkHarnessAdapter } from "./harness-adapter"
 export { createLaunchPolicy, type LaunchPolicyStore, type OpenCodeLaunchDocument } from "./launch-policy"
+export { createProviderBindingPolicy, type ProviderBindingOverlay } from "./provider-binding"
