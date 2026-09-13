@@ -28,7 +28,7 @@ export type TasksCapabilityScope = Readonly<{
 }>
 
 /** One workspace's canonical owner, as the deployment's authority records it now. */
-export type TasksCapabilityOwner = Readonly<{ userId: string; orgId: string; projectId: string }>
+export type TasksCapabilityOwner = Readonly<{ userId: string; actorId: string; orgId: string; projectId: string }>
 
 export type TasksCapabilityPort = Readonly<{
   /** The scope of a bearer this control plane minted, or undefined for anything else. */
