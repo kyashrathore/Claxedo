@@ -57,8 +57,7 @@ function useStartTaskCommands(scope: () => TasksScope) {
       handoffText: null,
       continueFromPrevious: request.continueFromPrevious,
     })
-    invalidate.task(request.taskId)
-    await invalidate.everything()
+    await invalidate.afterCommand(request.taskId)
     openSession(response.link.sessionRef)
     return response.link.sessionRef
   }

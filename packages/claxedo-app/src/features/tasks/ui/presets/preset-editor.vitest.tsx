@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, within } from "@solidjs/testing-library"
 import { createEffect, createSignal } from "solid-js"
 import type { HarnessReference } from "@claxedo/tasks"
-import { emptyPresetEditorDraft, type ConfigurationEditorProps, type PresetEditorDraft } from "../../preset-editor-model"
+import {
+  emptyPresetEditorDraft,
+  parsePresetEditorDraft,
+  type ConfigurationEditorProps,
+  type PresetEditorDraft,
+} from "../../preset-editor-model"
 import { type CapabilityCatalog } from "../../view-model"
 import { PresetEditor } from "./preset-editor"
 
@@ -200,13 +205,29 @@ describe("preset editor", () => {
     expect(notice).toContain("repository, shell and network still follow the host's policy")
   })
 
-  test("Cloud shows the installed catalog and records the exact selection", () => {
+  // Both kinds are picked through one list and one toggle, and the contract
+  // spells the name per kind: a plugin is saved as `pluginName`, a skill as
+  // `skillName`, from the same `{ sourceId, name }` the picker records.
+  test("Cloud shows the installed catalog and saves each selection under its own name", () => {
     const { draft } = mount({ placement: "cloud" })
 
     expect(screen.getByTestId("preset-editor-cloud-capabilities")).toBeTruthy()
     fireEvent.click(within(screen.getByTestId("preset-editor-plugin-src/linter")).getByRole("checkbox"))
+    fireEvent.click(within(screen.getByTestId("preset-editor-skill-src/review")).getByRole("checkbox"))
+    fireEvent.click(screen.getByTestId("stub-pick-claude-primary"))
 
-    expect(draft().plugins).toEqual([{ sourceId: "src", pluginName: "linter" }])
+    expect(draft().plugins).toEqual([{ sourceId: "src", name: "linter" }])
+    expect(draft().skills).toEqual([{ sourceId: "src", name: "review" }])
+
+    const parsed = parsePresetEditorDraft(draft())
+    expect(parsed.ok && parsed.draft.execution).toEqual({
+      placement: "cloud",
+      capabilities: {
+        mode: "selected",
+        plugins: [{ sourceId: "src", pluginName: "linter" }],
+        skills: [{ sourceId: "src", skillName: "review" }],
+      },
+    })
   })
 
   test("an optional slot appears only once it is enabled", () => {

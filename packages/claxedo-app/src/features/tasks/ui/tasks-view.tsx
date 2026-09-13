@@ -65,8 +65,7 @@ export function TasksView(props: TasksViewProps) {
     offers.busyWhile(input.taskId, async () => {
       try {
         await client().command({ clientRequestId: uuid(), command: { type: "task.set_status", input } })
-        await invalidate.everything()
-        invalidate.task(input.taskId)
+        await invalidate.afterCommand(input.taskId)
         props.store.taskSaved(input.taskId)
       } catch (error) {
         props.store.refuseTaskEdit(input.taskId, refusalOf(error))

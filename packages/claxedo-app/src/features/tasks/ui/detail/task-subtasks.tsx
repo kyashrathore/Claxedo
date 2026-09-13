@@ -11,7 +11,6 @@ export type TaskSubtasksProps = {
   items: readonly TaskSummary[]
   /** False while the parent is Done or archived: a child cannot be added under a closed parent. */
   canAdd: boolean
-  addDisabledReason?: string
   busy?: boolean
   error?: string
   more?: MorePages
@@ -76,7 +75,7 @@ export function TaskSubtasks(props: TaskSubtasksProps) {
 
       <Show
         when={props.canAdd}
-        fallback={<p class="tsk-hint">{props.addDisabledReason ?? "Reopen this task to add a subtask."}</p>}
+        fallback={<p class="tsk-hint">Reopen this task to add a subtask.</p>}
       >
         {/* A placeholder in an always-present field reads as a hint, not as a
             control. The row is a link until it is pressed. */}

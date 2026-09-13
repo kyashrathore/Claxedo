@@ -63,8 +63,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
     offers.busyWhile(taskId, async () => {
       try {
         await run()
-        await invalidate.everything()
-        invalidate.task(taskId)
+        await invalidate.afterCommand(taskId)
         props.store.taskSaved(taskId)
       } catch (error) {
         props.store.refuseTaskEdit(taskId, refusalOf(error))
@@ -108,8 +107,7 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
       } catch (error) {
         setSendError(refusalOf(error).message)
       } finally {
-        invalidate.task(current.id)
-        await invalidate.everything()
+        await invalidate.afterCommand(current.id)
       }
     })
 
@@ -196,7 +194,6 @@ export function TaskDetailPanel(props: TaskDetailPanelProps) {
               <TaskSubtasks
                 items={children.items()}
                 canAdd={current().status !== "done" && current().archivedAt === null}
-                addDisabledReason="Reopen this task to add a subtask."
                 busy={busy()}
                 error={props.store.state.taskErrors[current().id]}
                 more={followRetry(children)}

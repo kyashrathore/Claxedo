@@ -37,9 +37,9 @@ type Grouping = (typeof GROUPINGS)[number]
 /**
  * Collection, filter and display controls for the task list.
  *
- * The view toggle is in the bar as well as in Display: it is the one control
- * that changes what the page is, and a control behind a popover cannot be
- * reached by the keyboard without opening it first.
+ * The view toggle sits in the bar rather than inside Display: it is the one
+ * control that changes what the page is, and a control behind a popover cannot
+ * be reached by the keyboard without opening it first.
  */
 export function TasksToolbar(props: TasksToolbarProps) {
   const [filterOpen, setFilterOpen] = createSignal(false)
@@ -152,27 +152,6 @@ export function TasksToolbar(props: TasksToolbarProps) {
         trigger={<span>Display</span>}
       >
         <div class="tsk-popover">
-          <div class="tsk-segmented tsk-segmented-wide" role="group" aria-label="View">
-            <Button
-              size="small"
-              variant="ghost"
-              data-selected={board() ? undefined : "true"}
-              aria-pressed={!board()}
-              onClick={() => props.store.setView("list")}
-            >
-              List
-            </Button>
-            <Button
-              size="small"
-              variant="ghost"
-              data-selected={board() ? "true" : undefined}
-              aria-pressed={board()}
-              onClick={() => props.store.setView("board")}
-            >
-              Board
-            </Button>
-          </div>
-
           <div class="tsk-option">
             <span class="tsk-option-label">Show subtasks</span>
             <Switch

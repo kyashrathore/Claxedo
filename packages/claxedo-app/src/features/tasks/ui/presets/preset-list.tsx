@@ -1,10 +1,10 @@
 import { For, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Switch } from "@opencode-ai/ui/switch"
-import { CONFIGURATION_SLOTS, type Preset } from "@claxedo/tasks"
+import type { Preset } from "@claxedo/tasks"
 import { ListFailureNotice, type ListFailure } from "../shared/list-failure"
 import { LoadMore, type MorePages } from "../shared/load-more"
-import { PLACEMENT_LABELS, SLOT_LABELS, shortAge } from "../../view-model"
+import { PLACEMENT_LABELS, SLOT_LABELS, configuredSlotsOf, shortAge } from "../../view-model"
 
 export type PresetListProps = {
   presets: readonly Preset[]
@@ -135,7 +135,7 @@ export function PresetList(props: PresetListProps) {
 }
 
 function slotSummary(preset: Preset) {
-  return CONFIGURATION_SLOTS.filter((slot) => preset.configurations[slot])
+  return configuredSlotsOf(preset)
     .map((slot) => SLOT_LABELS[slot])
     .join(" · ")
 }

@@ -13,9 +13,10 @@ import {
 import {
   EMPTY_CONFIGURATION,
   parsePresetEditorDraft,
-  togglePluginReference,
-  toggleSkillReference,
+  isCapabilitySelected,
+  toggleCapability,
   rebaseConfiguration,
+  type CapabilitySelection,
   type ConfigurationDraft,
   type ConfigurationEditor,
   type PresetEditorDraft,
@@ -26,6 +27,7 @@ import {
   PLACEMENT_LABELS,
   SLOT_LABELS,
   type CapabilityCatalogReader,
+  type CapabilityOption,
   type FieldErrors,
 } from "../../view-model"
 
@@ -273,10 +275,6 @@ function CapabilityPicker(props: {
   onDraftChange: (draft: PresetEditorDraft) => void
 }) {
   const catalog = () => props.catalog()
-  const pluginSelected = (sourceId: string, name: string) =>
-    props.draft.plugins.some((entry) => entry.sourceId === sourceId && entry.pluginName === name)
-  const skillSelected = (sourceId: string, name: string) =>
-    props.draft.skills.some((entry) => entry.sourceId === sourceId && entry.skillName === name)
 
   return (
     <div class="tsk-stack" data-testid="preset-editor-cloud-capabilities">
@@ -289,58 +287,72 @@ function CapabilityPicker(props: {
         <p class="tsk-hint">Loading installed capabilities…</p>
       </Show>
 
-      <span class="tsk-label">Plugins</span>
-      <div class="tsk-capability-list" data-testid="preset-editor-plugins">
-        <For each={catalog().plugins} fallback={<span class="tsk-hint">No installed plugins.</span>}>
-          {(option) => (
-            <Checkbox
-              class="tsk-pick"
-              data-testid={`preset-editor-plugin-${option.key}`}
-              description={option.bundledSkills?.length ? `Bundled skills: ${option.bundledSkills.join(", ")}` : option.description}
-              checked={pluginSelected(option.sourceId, option.name)}
-              disabled={!option.available && !pluginSelected(option.sourceId, option.name)}
-              onChange={() =>
-                props.onDraftChange({
-                  ...props.draft,
-                  plugins: togglePluginReference(props.draft.plugins, { sourceId: option.sourceId, pluginName: option.name }),
-                })
-              }
-            >
-              {option.label}
-              <Show when={!option.available}>
-                <span class="tsk-error"> {option.unavailableReason ?? "Unavailable"}</span>
-              </Show>
-            </Checkbox>
-          )}
-        </For>
-      </div>
-
-      <span class="tsk-label">Skills</span>
-      <div class="tsk-capability-list" data-testid="preset-editor-skills">
-        <For each={catalog().skills} fallback={<span class="tsk-hint">No installed skills.</span>}>
-          {(option) => (
-            <Checkbox
-              class="tsk-pick"
-              data-testid={`preset-editor-skill-${option.key}`}
-              description={option.description}
-              checked={skillSelected(option.sourceId, option.name)}
-              disabled={!option.available && !skillSelected(option.sourceId, option.name)}
-              onChange={() =>
-                props.onDraftChange({
-                  ...props.draft,
-                  skills: toggleSkillReference(props.draft.skills, { sourceId: option.sourceId, skillName: option.name }),
-                })
-              }
-            >
-              {option.label}
-              <Show when={!option.available}>
-                <span class="tsk-error"> {option.unavailableReason ?? "Unavailable"}</span>
-              </Show>
-            </Checkbox>
-          )}
-        </For>
-      </div>
+      <CapabilityGroup
+        label="Plugins"
+        kind="plugin"
+        options={catalog().plugins}
+        empty="No installed plugins."
+        selected={props.draft.plugins}
+        onToggle={(capability) =>
+          props.onDraftChange({ ...props.draft, plugins: toggleCapability(props.draft.plugins, capability) })
+        }
+      />
+      <CapabilityGroup
+        label="Skills"
+        kind="skill"
+        options={catalog().skills}
+        empty="No installed skills."
+        selected={props.draft.skills}
+        onToggle={(capability) =>
+          props.onDraftChange({ ...props.draft, skills: toggleCapability(props.draft.skills, capability) })
+        }
+      />
       <p class="tsk-hint">A selected skill adds guidance only. It does not enable the plugin that supplies it.</p>
     </div>
+  )
+}
+
+/**
+ * One kind of capability as a list of checkboxes.
+ *
+ * A revoked capability the preset still names stays checked and enabled, so the
+ * only way to lose it is to clear it here; one that was never selected cannot be
+ * added while it is unavailable.
+ */
+function CapabilityGroup(props: {
+  label: string
+  /** Names this group's test ids, so a checkbox is addressable by what it selects. */
+  kind: "plugin" | "skill"
+  options: readonly CapabilityOption[]
+  empty: string
+  selected: readonly CapabilitySelection[]
+  onToggle: (capability: CapabilitySelection) => void
+}) {
+  const chosen = (option: CapabilityOption) =>
+    isCapabilitySelected(props.selected, { sourceId: option.sourceId, name: option.name })
+
+  return (
+    <>
+      <span class="tsk-label">{props.label}</span>
+      <div class="tsk-capability-list" data-testid={`preset-editor-${props.kind}s`}>
+        <For each={props.options} fallback={<span class="tsk-hint">{props.empty}</span>}>
+          {(option) => (
+            <Checkbox
+              class="tsk-pick"
+              data-testid={`preset-editor-${props.kind}-${option.key}`}
+              description={option.bundledSkills?.length ? `Bundled skills: ${option.bundledSkills.join(", ")}` : option.description}
+              checked={chosen(option)}
+              disabled={!option.available && !chosen(option)}
+              onChange={() => props.onToggle({ sourceId: option.sourceId, name: option.name })}
+            >
+              {option.label}
+              <Show when={!option.available}>
+                <span class="tsk-error"> {option.unavailableReason ?? "Unavailable"}</span>
+              </Show>
+            </Checkbox>
+          )}
+        </For>
+      </div>
+    </>
   )
 }

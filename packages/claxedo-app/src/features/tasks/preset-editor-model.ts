@@ -5,14 +5,21 @@ import {
   type HarnessReference,
   type ModelConfiguration,
   type ModelReference,
-  type PluginReference,
   type Preset,
   type PresetDraft,
   type PresetPlacement,
-  type SkillReference,
 } from "@claxedo/tasks"
 import type { JSX } from "solid-js"
 import type { FieldErrors } from "./view-model"
+
+/**
+ * One plugin or skill the draft has selected.
+ *
+ * The contract spells the name differently per kind (`pluginName`, `skillName`);
+ * the draft holds one shape so the picker and its toggle are written once, and
+ * `parsePresetEditorDraft` puts the contract's spelling back on.
+ */
+export type CapabilitySelection = { sourceId: string; name: string }
 
 /**
  * A configuration while it is being edited. Model is nullable because a
@@ -31,8 +38,8 @@ export type PresetEditorDraft = {
   instructions: string
   placement: PresetPlacement
   /** Retained while Local is selected so switching back to Cloud does not lose the selection. */
-  plugins: readonly PluginReference[]
-  skills: readonly SkillReference[]
+  plugins: readonly CapabilitySelection[]
+  skills: readonly CapabilitySelection[]
   configurations: Readonly<Record<ConfigurationSlot, ConfigurationDraft | null>>
 }
 
@@ -91,8 +98,8 @@ export function presetEditorDraftOf(preset: Preset): PresetEditorDraft {
     name: preset.name,
     instructions: preset.instructions,
     placement: preset.execution.placement,
-    plugins: selected?.plugins ?? [],
-    skills: selected?.skills ?? [],
+    plugins: (selected?.plugins ?? []).map((entry) => ({ sourceId: entry.sourceId, name: entry.pluginName })),
+    skills: (selected?.skills ?? []).map((entry) => ({ sourceId: entry.sourceId, name: entry.skillName })),
     configurations,
   }
 }
@@ -169,29 +176,32 @@ export function parsePresetEditorDraft(draft: PresetEditorDraft): PresetEditorPa
       instructions: draft.instructions,
       execution:
         draft.placement === "cloud"
-          ? { placement: "cloud", capabilities: { mode: "selected", plugins: draft.plugins, skills: draft.skills } }
+          ? {
+              placement: "cloud",
+              capabilities: {
+                mode: "selected",
+                plugins: draft.plugins.map((entry) => ({ sourceId: entry.sourceId, pluginName: entry.name })),
+                skills: draft.skills.map((entry) => ({ sourceId: entry.sourceId, skillName: entry.name })),
+              },
+            }
           : { placement: "local", capabilities: { mode: "inherit-local" } },
       configurations: { ...configurations, primary },
     },
   }
 }
 
-export function togglePluginReference(
-  selected: readonly PluginReference[],
-  reference: PluginReference,
-): readonly PluginReference[] {
-  const present = selected.some((entry) => entry.sourceId === reference.sourceId && entry.pluginName === reference.pluginName)
-  return present
-    ? selected.filter((entry) => !(entry.sourceId === reference.sourceId && entry.pluginName === reference.pluginName))
-    : [...selected, reference]
+export function isCapabilitySelected(
+  selected: readonly CapabilitySelection[],
+  capability: CapabilitySelection,
+): boolean {
+  return selected.some((entry) => entry.sourceId === capability.sourceId && entry.name === capability.name)
 }
 
-export function toggleSkillReference(
-  selected: readonly SkillReference[],
-  reference: SkillReference,
-): readonly SkillReference[] {
-  const present = selected.some((entry) => entry.sourceId === reference.sourceId && entry.skillName === reference.skillName)
-  return present
-    ? selected.filter((entry) => !(entry.sourceId === reference.sourceId && entry.skillName === reference.skillName))
-    : [...selected, reference]
+export function toggleCapability(
+  selected: readonly CapabilitySelection[],
+  capability: CapabilitySelection,
+): readonly CapabilitySelection[] {
+  return isCapabilitySelected(selected, capability)
+    ? selected.filter((entry) => !(entry.sourceId === capability.sourceId && entry.name === capability.name))
+    : [...selected, capability]
 }

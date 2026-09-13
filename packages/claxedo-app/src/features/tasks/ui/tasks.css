@@ -360,14 +360,6 @@
   gap: 2px;
 }
 
-.tsk-segmented-wide {
-  width: 100%;
-}
-
-.tsk-segmented-wide > .ui-button {
-  flex: 1 1 0;
-}
-
 .tsk-filter-tag {
   display: inline-flex;
   align-items: center;
@@ -815,11 +807,6 @@
 
 .tsk-rail-title {
   margin: 0 0 2px;
-  color: var(--text-weak);
-  font-size: var(--font-size-2x-small);
-  font-weight: var(--font-weight-medium);
-  letter-spacing: var(--letter-spacing-section);
-  text-transform: uppercase;
 }
 
 .tsk-rail-action.ui-button {

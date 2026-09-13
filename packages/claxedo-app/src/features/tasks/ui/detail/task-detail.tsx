@@ -205,7 +205,7 @@ export function TaskDetail(props: TaskDetailProps) {
 
       <aside class="tsk-rail">
         <section class="tsk-rail-section" aria-label="Properties">
-          <h3 class="tsk-rail-title">Properties</h3>
+          <h3 class="tsk-section-title tsk-rail-title">Properties</h3>
           {/* Each row is its value: the status control is the status, and a
               property nothing can change is the glyph and the name alone. */}
           <div class="tsk-props-list">
@@ -240,7 +240,7 @@ export function TaskDetail(props: TaskDetailProps) {
         </section>
 
         <section class="tsk-rail-section" aria-label="Linked sessions">
-          <h3 class="tsk-rail-title">Sessions</h3>
+          <h3 class="tsk-section-title tsk-rail-title">Sessions</h3>
           <Show
             when={props.view.configuredSlots.length > 0}
             fallback={<p class="tsk-hint">Choose a preset to see its configurations.</p>}

@@ -3,11 +3,11 @@ import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { CONFIGURATION_SLOTS, type ConfigurationSlot, type Preset, type TaskStatus, type TaskSummary } from "@claxedo/tasks"
+import type { ConfigurationSlot, Preset, TaskStatus, TaskSummary } from "@claxedo/tasks"
 import { ListFailureNotice, type ListFailure } from "./list-failure"
 import { LoadMore, type MorePages } from "./load-more"
 import { StatusMenuItems } from "./status-control"
-import { SLOT_LABELS } from "../../view-model"
+import { SLOT_LABELS, configuredSlotsOf } from "../../view-model"
 
 export type StartChoice = { presetId: string; slot: ConfigurationSlot }
 
@@ -51,8 +51,7 @@ export function TaskStartControl(props: {
   testIdPrefix: string
 }) {
   const preset = () => props.offer.presets.find((entry) => entry.id === props.offer.defaultPresetId)
-  const slotsOf = (entry: Preset) =>
-    props.offer.slot ? [props.offer.slot] : CONFIGURATION_SLOTS.filter((slot) => entry.configurations[slot])
+  const slotsOf = (entry: Preset) => (props.offer.slot ? [props.offer.slot] : configuredSlotsOf(entry))
   const label = () => props.offer.startLabel ?? "Start"
   const startable = () => props.task.archivedAt === null && props.offer.busy !== true
 

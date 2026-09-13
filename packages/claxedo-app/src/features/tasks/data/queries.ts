@@ -191,11 +191,18 @@ export function useTaskChildren(
  */
 export function useTasksInvalidation(scope: Accessor<TasksScope>) {
   const queryClient = useQueryClient()
+  const everything = () => queryClient.invalidateQueries({ queryKey: tasksQueryKeys(scope()).scope })
   return {
-    everything: () => queryClient.invalidateQueries({ queryKey: tasksQueryKeys(scope()).scope }),
-    task: (taskId: string) => {
+    everything,
+    /**
+     * What a command against one task is followed by: its own entries, then
+     * every list that may name it. Awaiting the second is what lets a caller
+     * navigate or report only once the re-read is in flight.
+     */
+    afterCommand: async (taskId: string) => {
       void queryClient.invalidateQueries({ queryKey: tasksQueryKeys(scope()).detail(taskId) })
       void queryClient.invalidateQueries({ queryKey: tasksQueryKeys(scope()).children(taskId) })
+      await everything()
     },
   }
 }

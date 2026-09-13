@@ -1,11 +1,10 @@
+import { CONFIGURATION_SLOTS } from "@claxedo/tasks"
 import type {
   ConfigurationSlot,
   ModelConfiguration,
-  PluginReference,
   Preset,
   PresetDraft,
   PresetPlacement,
-  SkillReference,
   Task,
   TaskDraft,
   TaskSessionLinkView,
@@ -118,11 +117,11 @@ export type TaskDetailView = {
   /** The task this one is a subtask of, once its own read has answered. */
   parent?: { id: string; title: string }
   groups: readonly TaskLinkGroup[]
-  /** Slots the chosen presets actually configure; unconfigured slots are not offered. */
+  /** The slots this page draws a Start control for: Primary, plus any slot the task has already run. */
   configuredSlots: readonly ConfigurationSlot[]
 }
 
-export type { ModelConfiguration, PluginReference, PresetDraft, SkillReference, TaskDraft }
+export type { ModelConfiguration, PresetDraft, TaskDraft }
 
 const MINUTE = 60_000
 const HOUR = 60 * MINUTE
@@ -173,6 +172,11 @@ export function projectKey(projectName: string): string {
 export function taskKey(projectName: string, taskNumber: number): string {
   const key = projectKey(projectName)
   return key.length === 0 ? `#${taskNumber}` : `${key}-${taskNumber}`
+}
+
+/** The slots a preset carries a configuration for, in catalog order. */
+export function configuredSlotsOf(preset: Pick<Preset, "configurations">): readonly ConfigurationSlot[] {
+  return CONFIGURATION_SLOTS.filter((slot) => preset.configurations[slot])
 }
 
 /** The timestamp the chosen Display option points at. */
