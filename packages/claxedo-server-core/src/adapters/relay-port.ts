@@ -93,6 +93,19 @@ export type RelayTargetResult =
       code: "relay_resolver_workspace_not_found" | "relay_resolver_workspace_target_unavailable"
     }
 
+/**
+ * Which enrolled host currently serves a user-hosted workspace, read on the
+ * service side with no end-user principal: the relay resolver asks it for a
+ * `(workspaceId, hostId)` pair. The concrete resolver is a storage adapter
+ * (D1 in `@claxedo/server`, SQLite in this package); the route module only
+ * depends on the shape.
+ */
+export type UserHostedTargetResult =
+  | { active: true; hostId: string; backing: "local-worktree" | "cloud-vm" }
+  | { active: false }
+
+export type UserHostedTargetResolver = (workspaceId: string) => Promise<UserHostedTargetResult>
+
 export type RelayTargetLookup = (args: {
   workspaceId: string
   hostId: string

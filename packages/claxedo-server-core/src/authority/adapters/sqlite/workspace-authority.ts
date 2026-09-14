@@ -344,12 +344,13 @@ async function verifyHostSignature(input: {
  *
  * `activeWorkspaceHost` answers it for one workspace; `listWorkspaces` stamps
  * it on every user-hosted row so the rail can say "host offline" before any
- * pane opens the workspace, and both must mean the same thing. Mirrors the D1
- * adapter's `HOST_SERVING_WORKSPACE_SQL`. A re-pointed directory (new
- * revision) or a superseded instance (new generation) stops routing on the
- * next read, not on the next token.
+ * pane opens the workspace; the relay resolver's `user-hosted-relay-target.ts`
+ * routes by it with no principal — all three must mean the same thing.
+ * Mirrors the D1 adapter's `HOST_SERVING_WORKSPACE_SQL`. A re-pointed
+ * directory (new revision) or a superseded instance (new generation) stops
+ * routing on the next read, not on the next token.
  */
-const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at IS NULL AND enrollment.paused_at IS NULL
+export const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at IS NULL AND enrollment.paused_at IS NULL
           AND enrollment.expires_at > ?
           AND EXISTS (
             SELECT 1 FROM host_assignment_readiness readiness
