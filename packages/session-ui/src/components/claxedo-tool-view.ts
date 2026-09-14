@@ -352,7 +352,7 @@ function taskLink(id: string | undefined, number?: number, title?: string): Clax
     ? `#${number} ${title}`
     : number !== undefined
       ? `#${number}`
-      : title ?? (id && /^\d+$/.test(id) ? `#${id}` : clampLabel(id ?? "", 28))
+      : title ?? (id && /^\d+$/.test(id) ? `#${id}` : clampLabel(id ?? "", 13))
   return { kind: "task", id: id ?? "", label }
 }
 

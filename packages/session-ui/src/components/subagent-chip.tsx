@@ -4,6 +4,7 @@ import { useI18n, type UiI18n } from "@opencode-ai/ui/context/i18n"
 import { AgentGlyph } from "./agent-glyph"
 import { useData, type SubagentView } from "../context"
 import { clampLabel } from "./message-part-text"
+import { asRecord } from "@claxedo/helpers/guards"
 import { claxedoToolArguments } from "./claxedo-tool-view"
 
 /**
@@ -68,15 +69,16 @@ export function dispatchSubagentOpen(target: EventTarget | null, input: {
 
 /**
  * What a spawn asked the child to run, read from the spawn call's own input:
- * `create_subagent` names a configuration slot or a harness, a model and an
- * effort; Claude's Agent tool names a model. The runtime's view of the child
- * carries none of this, so the tool input is the only place it survives.
+ * `create_subagent` names a configuration slot or a harness and a model;
+ * Claude's Agent tool names a model. The runtime's view of the child carries
+ * none of this, so the tool input is the only place it survives. Effort is
+ * left out: the chip has one line, and the slot already implies it.
  */
 export function subagentSpawnDetail(input: Record<string, unknown> | undefined): string | undefined {
   const args = claxedoToolArguments(input)
   const model = args.model
-  const modelId = typeof model === "string" ? model : typeof model === "object" && model !== null ? (model as { id?: unknown }).id : undefined
-  const parts = [args.configuration ?? args.harness, modelId, args.effort]
+  const modelId = typeof model === "string" ? model : asRecord(model)?.id
+  const parts = [args.configuration ?? args.harness, modelId]
     .filter((value): value is string => typeof value === "string" && value.length > 0)
   return parts.length > 0 ? parts.join(" · ") : undefined
 }

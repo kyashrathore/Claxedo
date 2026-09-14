@@ -28,9 +28,9 @@ describe("subagent chip click semantics", () => {
 })
 
 describe("subagentSpawnDetail", () => {
-  test("names the configuration slot, model and effort a create_subagent asked for", () => {
+  test("names the configuration slot and model a create_subagent asked for, and leaves the effort out", () => {
     expect(subagentSpawnDetail({ configuration: "review", prompt: "check it", model: { providerID: "anthropic", id: "claude-opus-5" }, effort: "high" }))
-      .toBe("review · claude-opus-5 · high")
+      .toBe("review · claude-opus-5")
   })
 
   test("falls back to the harness when no configuration slot was named", () => {

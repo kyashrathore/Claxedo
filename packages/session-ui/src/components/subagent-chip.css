@@ -12,7 +12,7 @@
   align-items: center;
   gap: 6px;
   height: 28px;
-  max-width: 24rem;
+  max-width: 28rem;
   padding: 0 8px 0 6px;
   border-radius: var(--radius-pill);
   border: 0.5px solid var(--border-weak-base);
@@ -24,8 +24,10 @@
     border-color 0.15s ease,
     background-color 0.15s ease;
 
+  /* The name yields last: the detail and the summary give way before it does. */
   [data-slot="subagent-chip-name"] {
-    min-width: 0;
+    flex-shrink: 0;
+    max-width: 10rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -38,12 +40,12 @@
   /* The configuration and model sit beside the name at the summary's size and one step
      dimmer, so the chip still reads name-first. */
   [data-slot="subagent-chip-detail"] {
-    flex-shrink: 0;
-    max-width: 12rem;
+    flex: 0 1 auto;
+    min-width: 4rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--font-family-mono);
+    font-family: var(--font-family-sans);
     font-size: var(--font-size-small);
     color: var(--text-weaker);
   }
