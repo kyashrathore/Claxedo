@@ -20,7 +20,7 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // delegates steering to `harnesses/shared/turn-steering.ts` and keeps only
       // the entrypoint.
       "runtime.ts": 819,
-      "harnesses/acp/index.ts": 844,
+      "harnesses/acp/index.ts": 820,
       // 626 rather than 625: the driver imports `harness-projection.ts` in
       // place of the provider-alias reader it kept beside itself, which is one
       // more import line here and eight fewer in `broker.ts`.

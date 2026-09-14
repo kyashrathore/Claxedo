@@ -627,6 +627,22 @@ describe("Claude spawns against the broker, never a credential", () => {
     expect(() => driver.applyConfig({ auth: { "claude-sdk": "sk-ant-api03-plaintext" }, mcp: {} }))
       .toThrow("not provider projections")
   })
+
+  test("a selected account that cannot be bound fails the turn by name instead of running on the machine login", async () => {
+    const calls: Parameters<NonNullable<ClaudeSdkDriverOptions["query"]>>[0][] = []
+    const driver = createClaudeSdkDriver(turnHost(), { query: probeQuery(calls), executable: () => "/fake/claude" })
+    void driver.applyConfig({ auth: { "claude-sdk": { unavailable: true, reason: "account_withdrawn" } }, mcp: {} })
+
+    await expect(driver.runTurn({
+      sessionId: "session-unavailable",
+      getAgentSessionId: () => "claude-sdk:session-unavailable",
+      input: { parts: [{ type: "text", text: "hi" }], assistantMessageId: "assistant-unavailable", model: { providerID: "claude", modelID: "auto" } },
+      directory: "/repo", abort: new AbortController(), ingest() {}, associateChild() {},
+      observeSubagent: async () => ({ event: {} }), rebindAgentSession() {}, model: "",
+    } as unknown as SdkRuntimeTurnInput))
+      .rejects.toThrow("the claude credential selected for this workspace cannot be used: account_withdrawn")
+    expect(calls).toEqual([])
+  })
 })
 
 /**
