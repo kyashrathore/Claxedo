@@ -6,13 +6,24 @@ import path from "node:path"
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "pi-provider-route-"))
 const previous = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
-const [{ agentConfigProviderRoutes }, { putCredential }, { listCustomProviders }, { createTestBackend, setBackendOverride }, { ClaxedoDB }] = await Promise.all([
+const [
+  { agentConfigProviderRoutes },
+  { putCredential },
+  { listCustomProviders },
+  { createTestBackend, setBackendOverride },
+  { ClaxedoDB },
+  { ControlPlaneAuthError },
+] = await Promise.all([
   import("./provider-routes"),
   import("@claxedo/server-core/credentials/registry"),
   import("@claxedo/server-core/credentials/custom-provider"),
   import("@claxedo/server-core/credentials/backend-registry"),
   import("@claxedo/server-core/platform/db/index"),
+  import("@claxedo/server-core/platform/auth/auth"),
 ])
+
+/** The bearers the issuer signed; every other token is refused the way the real verifier refuses one. */
+const SIGNED_TOKENS = new Set(["org_a", "org_b", "org_custom", "org_secret"])
 
 const ACME = {
   providerID: "acme",
@@ -32,10 +43,13 @@ function putCustom(org: string, body: unknown) {
 }
 const app = agentConfigProviderRoutes({
   authConfig: { enabled: true, issuer: "https://auth.test", jwksUrl: "custom:test" },
-  verifier: async (token) => ({
-    mode: "signed",
-    user: { subject: token, orgId: token, issuer: "https://auth.test", tokenIdentifier: token },
-  }),
+  verifier: async (token) => {
+    if (!SIGNED_TOKENS.has(token)) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token is invalid")
+    return {
+      mode: "signed",
+      user: { subject: token, orgId: token, issuer: "https://auth.test", tokenIdentifier: token },
+    }
+  },
 })
 
 beforeAll(async () => {
@@ -71,6 +85,24 @@ describe("control-plane Pi catalog", () => {
       const response = await app.request(`${route}?nativeHarness=pi`)
       expect(response.status).toBe(401)
     }
+  })
+
+  test("refuses a bearer the verifier does not recognise on every route", async () => {
+    const forged = { authorization: "Bearer org_forged" }
+    const responses = await Promise.all([
+      app.request("/providers?nativeHarness=pi", { headers: forged }),
+      app.request("/providers/auth?nativeHarness=pi", { headers: forged }),
+      app.request("/providers/custom?nativeHarness=opencode", {
+        method: "PUT",
+        headers: { ...forged, "content-type": "application/json" },
+        body: JSON.stringify(ACME),
+      }),
+    ])
+    for (const response of responses) {
+      expect(response.status).toBe(401)
+      expect((await response.json()).error.code).toBe("invalid_bearer_token")
+    }
+    expect(listCustomProviders("org_forged")).toEqual([])
   })
 
   test("rejects absent, external, and conflicting selectors", async () => {
