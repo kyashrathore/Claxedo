@@ -3,6 +3,7 @@ import { jwtVerify, type JWTPayload } from "jose"
 import { bearerToken } from "./routes/http"
 import {
   loadWorkspaceRuntimeManagementVerificationKey,
+  stringClaim,
   type LoadWorkspaceRuntimeManagementKeyEnv,
   type WorkspaceRuntimeManagementVerifierKey,
 } from "./management-auth"
@@ -20,11 +21,6 @@ export const WORKSPACE_RUNTIME_OWNER_GRANT_AUDIENCE = "workspace-runtime-owner"
  * proceeds with no actor, exactly as one that presented none.
  */
 export type OwnerGrantIdentity = (token: string) => Promise<EmbeddedRelayHostIdentity | undefined>
-
-function claim(payload: JWTPayload, name: string) {
-  const value = payload[name]
-  return typeof value === "string" && value.trim() ? value : undefined
-}
 
 /**
  * How a runtime reads the owner grant the control plane launched it with.
@@ -45,9 +41,9 @@ export function ownerGrantIdentity(input: { key: WorkspaceRuntimeManagementVerif
     } catch {
       return undefined
     }
-    const actorId = claim(payload, "actor_id")
-    const orgId = claim(payload, "org_id")
-    const workspaceId = claim(payload, "workspace_id")
+    const actorId = stringClaim(payload, "actor_id")
+    const orgId = stringClaim(payload, "org_id")
+    const workspaceId = stringClaim(payload, "workspace_id")
     if (!actorId || !orgId || workspaceId !== input.workspaceId) return undefined
     return {
       principal_kind: "user",

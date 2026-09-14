@@ -1,6 +1,7 @@
 import { decodeJwt } from "jose"
 import type { TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
 import { workspaceRuntimeOwnerGrantEnv } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import { credentialFault } from "../platform/auth/runtime-token-keys"
 import { mintSandboxPass, verifySandboxPass } from "../platform/auth/sandbox-pass"
 import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import type { OwnerGrantProof, ResolveWorkspaceOwner } from "../routes/runtime-session-authority"
@@ -28,7 +29,7 @@ export class OwnerGrantConfigurationError extends Error {
   readonly code = "owner_grant_misconfigured"
 }
 
-const unsignable = (name: string) => new OwnerGrantConfigurationError(`Owner grant requires ${name}`)
+const ownerGrantFault = credentialFault("Owner grant", OwnerGrantConfigurationError)
 
 /**
  * A sandbox pass under its own audience whose one extra claim is the owner's
@@ -45,7 +46,7 @@ export async function mintOwnerGrant(
   return await mintSandboxPass(
     { audience: OWNER_GRANT_AUDIENCE, scope: identity, operations: OWNER_GRANT_OPERATIONS, extra: { actor_id: actorId }, ...options },
     env,
-    unsignable,
+    ownerGrantFault,
   )
 }
 
@@ -63,7 +64,7 @@ export async function verifyOwnerGrant(
   env: Record<string, string | undefined>,
   options: { revoked?: (jti: string) => Promise<boolean>; now?: () => number } = {},
 ): Promise<OwnerGrantScope> {
-  const pass = await verifySandboxPass(token, env, { audience: OWNER_GRANT_AUDIENCE, fault: unsignable, ...options })
+  const pass = await verifySandboxPass(token, env, { audience: OWNER_GRANT_AUDIENCE, fault: ownerGrantFault, ...options })
   const actorId = pass.extra.actor_id
   const { userId, orgId, projectId, workspaceId } = pass.scope
   const operations = [...pass.operations].sort()

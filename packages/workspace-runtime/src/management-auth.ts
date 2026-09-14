@@ -65,7 +65,7 @@ function pem(input: string | undefined) {
   return trimToUndefined(input)?.replaceAll("\\n", "\n")
 }
 
-function stringClaim(payload: Record<string, unknown>, key: string) {
+export function stringClaim(payload: Record<string, unknown>, key: string) {
   const value = payload[key]
   return typeof value === "string" && value.length > 0 ? value : undefined
 }

@@ -12,6 +12,11 @@ import { runtimeAccessTokenAlgorithm } from "@claxedo/server-core/platform/auth/
  */
 export type CredentialFault = (message: string) => Error
 
+/** The fault one credential raises for what its deployment lacks, in that credential's own error class. */
+export function credentialFault(credential: string, error: new (message: string) => Error): CredentialFault {
+  return (name) => new error(`${credential} requires ${name}`)
+}
+
 function pem(value: string | undefined) {
   const clean = value?.trim()
   return clean?.replaceAll("\\n", "\n") || undefined

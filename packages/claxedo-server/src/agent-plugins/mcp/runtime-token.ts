@@ -1,3 +1,4 @@
+import { credentialFault } from "../../platform/auth/runtime-token-keys"
 import { mintSandboxPass, verifySandboxPass } from "../../platform/auth/sandbox-pass"
 import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
@@ -32,7 +33,7 @@ export class McpGatewayConfigurationError extends Error {
   readonly code = "mcp_gateway_misconfigured"
 }
 
-const misconfigured = (name: string) => new McpGatewayConfigurationError(`MCP gateway token requires ${name}`)
+const gatewayTokenFault = credentialFault("MCP gateway token", McpGatewayConfigurationError)
 
 function gatewayScope(
   scope: { userId: string; orgId: string; workspaceId: string; projectId?: string },
@@ -89,7 +90,7 @@ export async function mintMcpGatewayToken(
       ...options,
     },
     env,
-    misconfigured,
+    gatewayTokenFault,
   )
 }
 
@@ -99,7 +100,7 @@ export async function verifyMcpGatewayToken(
   env: Record<string, string | undefined>,
   options: { revoked?: (jti: string) => Promise<boolean> } = {},
 ) {
-  const pass = await verifySandboxPass(token, env, { audience: MCP_GATEWAY_TOKEN_AUDIENCE, fault: misconfigured, ...options })
+  const pass = await verifySandboxPass(token, env, { audience: MCP_GATEWAY_TOKEN_AUDIENCE, fault: gatewayTokenFault, ...options })
   const scope = gatewayScope(pass.scope, pass.extra)
   if (!scope || scope.integrationId !== expected.integrationId) throw new Error("MCP gateway token scope is invalid")
   return scope
