@@ -24,6 +24,7 @@ import { Hono } from "hono"
 import { createHash } from "node:crypto"
 import os from "node:os"
 import path from "node:path"
+import type { Duplex } from "node:stream"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
@@ -336,6 +337,14 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     server.once("listening", () => resolve())
   })
   injectWebSocket(server)
+  // `closeAllConnections` reaches only the sockets the HTTP parser still owns.
+  // A WebSocket handshake hands its socket off that list, while `close()` keeps
+  // waiting for it, so the drain deadline below has to end those itself.
+  const upgraded = new Set<Duplex>()
+  server.on("upgrade", (_request: unknown, socket: Duplex) => {
+    upgraded.add(socket)
+    socket.once("close", () => upgraded.delete(socket))
+  })
 
   let stopOperation: Promise<void> | undefined
   const stop = () => {
@@ -351,6 +360,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       // an otherwise idle daemon resident. Ingress is already rejected above.
       const deadline = setTimeout(() => {
         ;(server as typeof server & { closeAllConnections?: () => void }).closeAllConnections?.()
+        for (const socket of upgraded) socket.destroy()
       }, 5_000)
       deadline.unref()
       server.close(() => {
