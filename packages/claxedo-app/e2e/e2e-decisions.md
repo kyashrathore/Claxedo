@@ -893,6 +893,18 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **C**: defer Browser persistence until a documented lifecycle contract and acceptance test are implemented.
 - **Decision**:
 
+### 77. core-harness-rendering-matrix — interrupted Codex command returns to Running when its start frames replay on reattach
+
+- **Status**: skipped after intended Tier M build-preview failures in both auth modes (interrupted-replay-1270/1271; 0 pass / 1 fail each, zero retries).
+- **Tests**: `an interrupted Codex command stays interrupted when rail-return replay resends its start`.
+- **Expected**: a stored tool part with `status: "error"` stays terminal when the runtime stream resends that tool's `tool-start`/`tool-input` frames after a rail return and reload.
+- **Why**: this qualifies the numbered-inventory issue Codex #19 (interrupted command returns as Running). Mechanism proven in code and in the run: the reattached `/api/wr/runtime-events` stream replays the turn's start frames; a fresh client-presentation projection has no record of the terminal state and re-mints the stored part id (`seqId` = `000000_<callID>`) with `status: "running"`; the store's live-event path (`upsertPart` → `upsertChatParts`) replaces the stored part unconditionally, with none of the terminality ranking `mergeChatPart` applies on the REST snapshot path. The row renders Running with an advancing elapsed timer (sampled 0s→7s) until a later canonical refetch reverts it — the same Running + shimmer signature captured in the original heavy-transcript report. The replay's announced `message.updated` also strips `time.completed` (`preserveMessageFields` keeps only author and ranked error), un-settling the message and disabling the late-part guard. A `QA_REPLAY_PROBE` text-delta assertion proves the replayed frames reached this session's conversation, so the failure is the overwrite, not a silent channel. The fix belongs in the live-event merge: live frames must not downgrade a part/message state that canonical data already settled. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/interrupted-replay-1270/result.json` and `interrupted-replay-1271/result.json`.
+- **Options**:
+  - **A (recommended)**: apply the settled/terminal ranking to live `message.part.updated` and `message.updated` upserts — an existing terminal part cannot be replaced by a non-terminal state, and a completed message does not lose `time.completed` — then enable the regression.
+  - **B**: carry per-call terminal memory in the client-presentation projection across reattach so a replayed `tool-input` emits the terminal state like `tool-start` already does when it knows the outcome — insufficient alone, since the projection cache is evicted at turn end and cannot see stored history.
+  - **C**: defer the affected reattach flow until terminal-state protection is verified.
+- **Decision**:
+
 ## 3. Live-suite skips (not in core CI)
 
 These four `*.spec.ts` suites are gated behind `CLAXEDO_E2E_LIVE=1` (Tier L: real claxedo-server, real relay/tunnel, real MCP subprocess, real harness binaries) and do **not** run in core CI. Within them, the following bodies are `test.fixme` (real app bug/gap) or `test.skip` (missing prereq). Listed for triage; not blocking core CI.
