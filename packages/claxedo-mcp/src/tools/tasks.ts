@@ -179,6 +179,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
       })
       addressed?.(started.link.sessionRef.sessionId)
       return toolJson({
+        task: { id: detail.task.id, number: detail.task.number, title: detail.task.title },
         session: started.link.sessionRef,
         slot: started.link.slot,
         attempt: started.link.attempt,
