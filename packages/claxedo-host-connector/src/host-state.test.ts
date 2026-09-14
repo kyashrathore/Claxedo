@@ -53,7 +53,7 @@ describe("store", () => {
 
     expect(await store.load()).toBeUndefined()
 
-    memory.files.set("/s/state.json", { text: '{"host_id":"h","private_key_jwk":{"d":"d"},"contr', mode: 0o600 })
+    memory.files.set("/s/state.json", { text: '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"contr', mode: 0o600 })
     await expect(store.load()).rejects.toThrow(/not JSON/)
   })
 
@@ -111,14 +111,15 @@ describe("parseHostState", () => {
   test.each([
     ["{}", /host_id/],
     ['{"host_id":"h"}', /private_key_jwk/],
-    ['{"host_id":"h","private_key_jwk":{"d":"d"}}', /control_plane_url/],
-    ['{"host_id":"h","private_key_jwk":{"d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":"x"}', /cli_roots/],
+    ['{"host_id":"h","private_key_jwk":{"d":"d"}}', /private_key_jwk.kty/],
+    ['{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"created_at":1}', /control_plane_url/],
+    ['{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":"x"}', /cli_roots/],
     [
-      '{"host_id":"h","private_key_jwk":{"d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":[],"scope":{"allowed_roots":[]}}',
+      '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":[],"scope":{"allowed_roots":[]}}',
       /scope.revision/,
     ],
     [
-      '{"host_id":"h","private_key_jwk":{"d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":[],"bootstrap":{"invitation_id":"a"}}',
+      '{"host_id":"h","private_key_jwk":{"kty":"EC","crv":"P-256","x":"x","y":"y","d":"d"},"control_plane_url":"u","created_at":1,"storage_root":"/s","cli_roots":[],"bootstrap":{"invitation_id":"a"}}',
       /bootstrap/,
     ],
   ])("names the missing field in %s", (text, message) => {

@@ -362,7 +362,8 @@ export function createHostConnector(options: ConnectorOptions) {
       acked.delete(description.workspaceId)
       changed = true
     }
-    for (const workspaceId of [...descriptions.keys()]) {
+    // Deleting during iteration is defined for Map: a removed key is skipped, nothing is revisited.
+    for (const workspaceId of descriptions.keys()) {
       if (present.has(workspaceId)) continue
       descriptions.delete(workspaceId)
       acked.delete(workspaceId)

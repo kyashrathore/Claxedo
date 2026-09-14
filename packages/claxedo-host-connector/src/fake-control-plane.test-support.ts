@@ -23,8 +23,9 @@ import {
   hostSha256Hex,
   MACHINE_REQUEST_HEADERS,
   newHostId,
+  publicKeyJwk,
 } from "./host-identity"
-import { createHostStateStore, newHostState, type HostStateFs } from "./host-state"
+import { createHostStateStore, isPlainRecord, newHostState, type HostStateFs } from "./host-state"
 import type { FetchLike } from "./machine-transport"
 
 const SKEW_MS = 60_000
@@ -187,7 +188,12 @@ export function createFakeControlPlane(options: { now?: () => number; url?: stri
     if (typeof body.generation !== "number" || body.generation !== enrollment.serving_generation) {
       throw new FakeRefusal(409, "enrollment_generation_superseded")
     }
-    const acks = Array.isArray(body.acks) ? (body.acks as Array<{ workspaceId: string; revision: number }>) : []
+    const acks = (Array.isArray(body.acks) ? body.acks : [])
+      .filter(isPlainRecord)
+      .map((ack) => ({
+        workspaceId: typeof ack.workspaceId === "string" ? ack.workspaceId : "",
+        revision: typeof ack.revision === "number" ? ack.revision : -1,
+      }))
     const mine = [...assignments.values()].filter((assignment) => assignment.enrollment_id === enrollment.enrollment_id)
     for (const ack of acks) {
       const assignment = mine.find((entry) => entry.workspace_id === ack.workspaceId)
@@ -242,9 +248,9 @@ export function createFakeControlPlane(options: { now?: () => number; url?: stri
   })
 
   const redeem = async (body: Record<string, unknown>) => {
-    const invitationId = String(body.invitationId ?? "")
-    const secret = String(body.secret ?? "")
-    const hostId = String(body.hostId ?? "")
+    const invitationId = typeof body.invitationId === "string" ? body.invitationId : ""
+    const secret = typeof body.secret === "string" ? body.secret : ""
+    const hostId = typeof body.hostId === "string" ? body.hostId : ""
     const invitation = invitations.get(invitationId)
     if (!invitation || invitation.secret_hash !== (await hostSha256Hex(secret))) {
       throw new FakeRefusal(400, "invitation_invalid")
@@ -254,7 +260,7 @@ export function createFakeControlPlane(options: { now?: () => number; url?: stri
     if (typeof body.publicKey !== "string" || typeof body.signature !== "string") {
       throw new FakeRefusal(400, "invitation_invalid")
     }
-    const publicKey = JSON.parse(body.publicKey) as JsonWebKey
+    const publicKey = publicKeyJwk(body.publicKey)
     const fingerprint = await hostPublicKeyFingerprint(publicKey)
     const payload = hostInvitationRedeemPayload({ invitationId, hostId, publicKeySha256: fingerprint })
     if (!(await verify(publicKey, payload, body.signature))) throw new FakeRefusal(401, "invitation_signature_invalid")
@@ -301,7 +307,8 @@ export function createFakeControlPlane(options: { now?: () => number; url?: stri
     const target = new URL(input.href)
     const headers = new Headers(init?.headers)
     const bodyText = typeof init?.body === "string" ? init.body : ""
-    const body: Record<string, unknown> = bodyText ? (JSON.parse(bodyText) as Record<string, unknown>) : {}
+    const parsed: unknown = bodyText ? JSON.parse(bodyText) : {}
+    const body = isPlainRecord(parsed) ? parsed : {}
     log.push({ path: target.pathname, body, headers: Object.fromEntries(headers.entries()) })
     try {
       if (target.pathname === "/api/claxedo/host/enrollments/redeem") return json(200, await redeem(body))

@@ -154,13 +154,21 @@ export async function machineRequestSignature(
  * coordinates, base64url. Never the JWK text — two serializations of one key
  * (field order, `ext`, `key_ops`) must compare equal.
  */
-export async function hostPublicKeyFingerprint(jwk: JsonWebKey | string) {
-  const parsed: JsonWebKey = typeof jwk === "string" ? JSON.parse(jwk) : jwk
-  if (parsed.kty !== "EC" || parsed.crv !== "P-256" || !parsed.x || !parsed.y) {
-    throw new Error("public key fingerprint needs a P-256 EC JWK with x and y")
+/** A P-256 public JWK from JSON text or a parsed object; anything else throws with the reason. */
+export function publicKeyJwk(input: JsonWebKey | string): JsonWebKey {
+  const value: unknown = typeof input === "string" ? JSON.parse(input) : input
+  if (typeof value !== "object" || value === null) throw new Error("public key is not a JWK object")
+  const jwk: Record<string, unknown> = { ...value }
+  if (jwk.kty !== "EC" || jwk.crv !== "P-256" || typeof jwk.x !== "string" || typeof jwk.y !== "string") {
+    throw new Error("public key must be a P-256 EC JWK with x and y")
   }
-  const x = base64urlDecode(parsed.x)
-  const y = base64urlDecode(parsed.y)
+  return { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y }
+}
+
+export async function hostPublicKeyFingerprint(jwk: JsonWebKey | string) {
+  const parsed = publicKeyJwk(jwk)
+  const x = base64urlDecode(parsed.x ?? "")
+  const y = base64urlDecode(parsed.y ?? "")
   const joined = new Uint8Array(new ArrayBuffer(x.length + y.length))
   joined.set(x, 0)
   joined.set(y, x.length)
@@ -197,8 +205,8 @@ export function parseInvitationToken(token: string) {
   if (parts.length !== 3 || parts[0] !== INVITATION_TOKEN_PREFIX) {
     throw new Error(`invitation token is not of the form ${INVITATION_TOKEN_PREFIX}.<invitation_id>.<secret>`)
   }
-  const [, invitationId, secret] = parts as [string, string, string]
-  if (!BASE64URL.test(invitationId) || !BASE64URL.test(secret)) {
+  const [, invitationId, secret] = parts
+  if (!invitationId || !secret || !BASE64URL.test(invitationId) || !BASE64URL.test(secret)) {
     throw new Error("invitation token carries characters outside base64url")
   }
   return { invitationId, secret }

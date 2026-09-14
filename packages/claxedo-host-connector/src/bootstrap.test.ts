@@ -53,7 +53,7 @@ describe("a fresh redeem", () => {
 
     expect(atRequest, "the key was on disk before the control plane heard from us").toMatchObject({
       host_id: h.state.host_id,
-      private_key_jwk: h.created.privateKeyJwk,
+      private_key_jwk: h.state.private_key_jwk,
       control_plane_url: h.cp.url,
       bootstrap: { invitation_id: h.invitation.invitationId, token_file: TOKEN_FILE },
     })

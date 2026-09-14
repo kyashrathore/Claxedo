@@ -72,57 +72,144 @@ export function isPlainRecord(value: unknown): value is Record<string, unknown> 
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function requireStringList(value: unknown, field: string) {
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
-    throw new Error(`host state: ${field} must be a list of strings`)
+function stateFieldError(field: string, what: string): never {
+  throw new Error(`host state: ${field} ${what}`)
+}
+
+function stateStrings(value: unknown, field: string): string[] {
+  if (!Array.isArray(value)) stateFieldError(field, "must be a list of strings")
+  const list: string[] = []
+  for (const entry of value) {
+    if (typeof entry !== "string") stateFieldError(field, "must be a list of strings")
+    list.push(entry)
   }
-  return value as string[]
+  return list
+}
+
+function stateString(value: unknown, field: string): string {
+  if (typeof value !== "string" || !value) stateFieldError(field, "missing")
+  return value
+}
+
+function stateNumber(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) stateFieldError(field, "missing")
+  return value
+}
+
+function stateRecord(value: unknown, field: string): Record<string, unknown> {
+  if (!isPlainRecord(value)) stateFieldError(field, "must be an object")
+  return value
+}
+
+function stateStringOrUndefined(value: unknown) {
+  return typeof value === "string" ? value : undefined
+}
+
+function stateNumberOrUndefined(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function privateKeyJwk(value: unknown): JsonWebKey {
+  const jwk = stateRecord(value, "private_key_jwk")
+  return {
+    kty: stateString(jwk.kty, "private_key_jwk.kty"),
+    crv: stateString(jwk.crv, "private_key_jwk.crv"),
+    x: stateString(jwk.x, "private_key_jwk.x"),
+    y: stateString(jwk.y, "private_key_jwk.y"),
+    d: stateString(jwk.d, "private_key_jwk.d"),
+  }
+}
+
+function scopeRecord(value: unknown): HostScope {
+  const record = stateRecord(value, "scope")
+  return {
+    revision: stateNumber(record.revision, "scope.revision"),
+    allowed_roots: stateStrings(record.allowed_roots, "scope.allowed_roots"),
+    visibility: record.visibility === "org" ? "org" : "owner",
+  }
+}
+
+function runRecord(value: unknown): NonNullable<HostState["run"]> {
+  const record = stateRecord(value, "run")
+  const served = Array.isArray(record.served)
+    ? record.served.filter(isPlainRecord).map((entry) => ({
+        workspace_id: stateString(entry.workspace_id, "run.served.workspace_id"),
+        revision: stateNumber(entry.revision, "run.served.revision"),
+        connected: entry.connected === true,
+      }))
+    : undefined
+  const lastBeatOkAt = stateNumberOrUndefined(record.last_beat_ok_at)
+  const leaseExpiresAt = stateNumberOrUndefined(record.lease_expires_at)
+  const lastBeatError = stateStringOrUndefined(record.last_beat_error)
+  return {
+    pid: stateNumber(record.pid, "run.pid"),
+    started_at: stateNumber(record.started_at, "run.started_at"),
+    generation: stateNumber(record.generation, "run.generation"),
+    ...(lastBeatOkAt !== undefined ? { last_beat_ok_at: lastBeatOkAt } : {}),
+    ...(leaseExpiresAt !== undefined ? { lease_expires_at: leaseExpiresAt } : {}),
+    ...(lastBeatError !== undefined ? { last_beat_error: lastBeatError } : {}),
+    ...(served ? { served } : {}),
+  }
 }
 
 /**
- * The file is untrusted input like any other JSON on disk; the fields the
- * connector cannot run without are checked here, once, so a truncated or
- * hand-edited file fails with the file named rather than deep inside a signer.
+ * The file is untrusted input like any other JSON on disk; every field is
+ * read back through a check here, once, so a truncated or hand-edited file
+ * fails with the field named rather than deep inside a signer.
  */
 export function parseHostState(text: string): HostState {
   let value: unknown
   try {
     value = JSON.parse(text)
   } catch (error) {
-    throw new Error(`host state is not JSON: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(`host state is not JSON: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
   }
   if (!isPlainRecord(value)) throw new Error("host state must be a JSON object")
-  if (typeof value.host_id !== "string" || !value.host_id) throw new Error("host state: host_id missing")
-  if (!isPlainRecord(value.private_key_jwk) || typeof value.private_key_jwk.d !== "string") {
-    throw new Error("host state: private_key_jwk missing")
-  }
-  if (typeof value.control_plane_url !== "string" || !value.control_plane_url) {
-    throw new Error("host state: control_plane_url missing")
-  }
-  if (typeof value.created_at !== "number") throw new Error("host state: created_at missing")
-  if (typeof value.storage_root !== "string" || !value.storage_root) throw new Error("host state: storage_root missing")
-  requireStringList(value.cli_roots, "cli_roots")
-  if (value.scope !== undefined) {
-    if (!isPlainRecord(value.scope) || typeof value.scope.revision !== "number") {
-      throw new Error("host state: scope.revision missing")
-    }
-    requireStringList(value.scope.allowed_roots, "scope.allowed_roots")
-  }
-  if (value.enrollment !== undefined) {
-    if (!isPlainRecord(value.enrollment) || typeof value.enrollment.enrollment_id !== "string") {
-      throw new Error("host state: enrollment.enrollment_id missing")
-    }
+  const state: HostState = {
+    host_id: stateString(value.host_id, "host_id"),
+    private_key_jwk: privateKeyJwk(value.private_key_jwk),
+    created_at: stateNumber(value.created_at, "created_at"),
+    control_plane_url: stateString(value.control_plane_url, "control_plane_url"),
+    cli_roots: stateStrings(value.cli_roots, "cli_roots"),
+    storage_root: stateString(value.storage_root, "storage_root"),
   }
   if (value.bootstrap !== undefined) {
-    if (
-      !isPlainRecord(value.bootstrap) ||
-      typeof value.bootstrap.invitation_id !== "string" ||
-      typeof value.bootstrap.token_file !== "string"
-    ) {
-      throw new Error("host state: bootstrap must name invitation_id and token_file")
+    const record = stateRecord(value.bootstrap, "bootstrap")
+    state.bootstrap = {
+      invitation_id: stateString(record.invitation_id, "bootstrap.invitation_id"),
+      token_file: stateString(record.token_file, "bootstrap.token_file"),
     }
   }
-  return value as HostState
+  if (value.enrollment !== undefined) {
+    const record = stateRecord(value.enrollment, "enrollment")
+    state.enrollment = {
+      enrollment_id: stateString(record.enrollment_id, "enrollment.enrollment_id"),
+      owner_display: stateStringOrUndefined(record.owner_display) ?? "",
+      org_id: stateStringOrUndefined(record.org_id) ?? "",
+      enrolled_via: stateStringOrUndefined(record.enrolled_via) ?? "invitation",
+      enrolled_at: stateNumberOrUndefined(record.enrolled_at) ?? 0,
+      key_version: stateNumberOrUndefined(record.key_version) ?? 1,
+    }
+  }
+  if (value.relay !== undefined) {
+    const record = stateRecord(value.relay, "relay")
+    state.relay = { url: stateString(record.url, "relay.url"), jwksUrl: stateString(record.jwksUrl, "relay.jwksUrl") }
+  }
+  if (value.authority !== undefined) {
+    const record = stateRecord(value.authority, "authority")
+    state.authority = { sessionAuthorityUrl: stateString(record.sessionAuthorityUrl, "authority.sessionAuthorityUrl") }
+  }
+  if (value.scope !== undefined) state.scope = scopeRecord(value.scope)
+  if (value.service !== undefined) {
+    const record = stateRecord(value.service, "service")
+    state.service = {
+      kind: record.kind === "launchd" ? "launchd" : "systemd-user",
+      unit: stateString(record.unit, "service.unit"),
+      installed_at: stateNumber(record.installed_at, "service.installed_at"),
+    }
+  }
+  if (value.run !== undefined) state.run = runRecord(value.run)
+  return state
 }
 
 export function serializeHostState(state: HostState) {
@@ -189,7 +276,9 @@ export function newHostState(input: {
 }): HostState {
   return {
     host_id: input.hostId,
-    private_key_jwk: input.privateKeyJwk,
+    // Only the five fields the key is rebuilt from; `key_ops`/`ext` from the
+    // exporting runtime would otherwise round-trip through the file for nothing.
+    private_key_jwk: privateKeyJwk(input.privateKeyJwk),
     created_at: (input.now ?? Date.now)(),
     control_plane_url: input.controlPlaneUrl,
     cli_roots: [...input.cliRoots],

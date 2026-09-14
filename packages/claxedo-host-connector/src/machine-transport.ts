@@ -44,8 +44,8 @@ export function decisionCode(error: unknown): string | undefined {
   if (!match) return undefined
   try {
     const body: unknown = JSON.parse(match[1] ?? "")
-    const code = (body as { error?: { code?: unknown } })?.error?.code
-    return typeof code === "string" ? code : undefined
+    if (!isPlainRecord(body) || !isPlainRecord(body.error)) return undefined
+    return typeof body.error.code === "string" ? body.error.code : undefined
   } catch {
     return undefined
   }
@@ -95,9 +95,11 @@ export function requireString(value: unknown, field: string) {
 export function decodeScope(value: unknown): HostScope | undefined {
   if (!isPlainRecord(value)) return undefined
   const roots = value.allowed_roots
-  if (!Array.isArray(roots) || roots.some((root) => typeof root !== "string")) return undefined
+  if (!Array.isArray(roots)) return undefined
+  const allowed = roots.filter((root): root is string => typeof root === "string")
+  if (allowed.length !== roots.length) return undefined
   const visibility = value.visibility === "org" ? "org" : "owner"
-  return { revision: requireNumber(value.revision, "scope.revision"), allowed_roots: roots as string[], visibility }
+  return { revision: requireNumber(value.revision, "scope.revision"), allowed_roots: allowed, visibility }
 }
 
 export function decodeEndpoints(value: Record<string, unknown>) {
