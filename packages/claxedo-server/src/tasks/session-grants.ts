@@ -25,10 +25,13 @@ import {
  * The registry is only how the scope gets from the mount to the routes.
  */
 export type TasksSessionGrants = Readonly<{
-  /** A handle the mount presents as its bearer, for the workspace's current owner. */
+  /**
+   * A handle the mount presents as its bearer, for the workspace's current
+   * owner. It is issued once per MCP session and lives until this process
+   * ends: nothing on the box reports a session's end here, so what bounds a
+   * handle is the request-time owner read behind it, not its lifetime.
+   */
   issue(input: { workspaceId: string; sessionId?: string }): Promise<string | undefined>
-  /** Forgets a handle. A session that ends keeps no way back in. */
-  revoke(token: string): void
   capability: TasksCapabilityPort
 }>
 
@@ -59,9 +62,6 @@ export function createTasksSessionGrants(input: {
         operations: TASKS_OPERATIONS,
       })
       return token
-    },
-    revoke(token) {
-      scopes.delete(token)
     },
     capability: {
       async verify(token) {
