@@ -7,7 +7,7 @@
  * cannot drift into two different answers about what `task_start` costs.
  */
 import { asRecord } from "@claxedo/helpers/guards"
-import { parseJson, stringField } from "@claxedo/server-core/platform/json/index"
+import { parseJsonRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 export type TasksOperation = "read" | "create" | "start"
 
@@ -41,8 +41,15 @@ export type TasksCapabilityPort = Readonly<{
   workspaceOwner(workspaceId: string): Promise<TasksCapabilityOwner | undefined>
 }>
 
-/** What one Tasks request costs a capability, and the project it names. */
-export type TasksRequestCost = Readonly<{ operation: TasksOperation; projectId?: string }>
+/** What one Tasks request costs a capability, and the names it would act under. */
+export type TasksRequestCost = Readonly<{
+  operation: TasksOperation
+  projectId?: string
+  /** The workspace a created task would prefer; absent when the body names none. */
+  workspaceId?: string
+  /** Whatever the create body put under `createdFrom`, absent only when the key is. */
+  createdFrom?: unknown
+}>
 
 /**
  * The cost of a request, or undefined for a route no capability may reach.
@@ -63,9 +70,16 @@ export async function tasksRequestCost(request: Request): Promise<TasksRequestCo
   if (!url.pathname.endsWith("/commands")) return undefined
   // The route reads the body again through Hono's own cache; consuming the
   // original here would leave it with nothing to parse.
-  const body = asRecord(parseJson(await request.clone().text()))
+  const body = parseJsonRecord(await request.clone().text())
   const command = asRecord(body?.command)
   if (stringField(command, "type") !== "task.create") return undefined
-  const projectId = stringField(asRecord(command?.input), "projectId")
-  return { operation: "create", ...(projectId ? { projectId } : {}) }
+  const input = asRecord(command?.input)
+  const projectId = stringField(input, "projectId")
+  const workspaceId = stringField(input, "workspaceId")
+  return {
+    operation: "create",
+    ...(projectId ? { projectId } : {}),
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(input?.createdFrom === undefined ? {} : { createdFrom: input.createdFrom }),
+  }
 }

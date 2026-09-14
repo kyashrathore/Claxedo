@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { subagentChipHandlesClick, subagentChipUnclaimedClick } from "./subagent-chip"
+import { subagentChipHandlesClick, subagentChipUnclaimedClick, subagentSpawnDetail } from "./subagent-chip"
 
 describe("subagent chip click semantics", () => {
   test("a modified click on an anchor chip belongs to the browser", () => {
@@ -24,5 +24,27 @@ describe("subagent chip click semantics", () => {
   test("without a router the anchor's href is what is left", () => {
     expect(subagentChipUnclaimedClick({ openable: true, canNavigate: false, hasHref: true })).toBe("href")
     expect(subagentChipUnclaimedClick({ openable: true, canNavigate: false, hasHref: false })).toBe("none")
+  })
+})
+
+describe("subagentSpawnDetail", () => {
+  test("names the configuration slot and model a create_subagent asked for, and leaves the effort out", () => {
+    expect(subagentSpawnDetail({ configuration: "review", prompt: "check it", model: { providerID: "anthropic", id: "claude-opus-5" }, effort: "high" }))
+      .toBe("review · claude-opus-5")
+  })
+
+  test("falls back to the harness when no configuration slot was named", () => {
+    expect(subagentSpawnDetail({ harness: "codex", prompt: "go" })).toBe("codex")
+  })
+
+  test("reads codex's nested arguments and claude's string model", () => {
+    expect(subagentSpawnDetail({ server: "claxedo", tool: "create_subagent", arguments: { harness: "claude", model: { providerID: "anthropic", id: "claude-sonnet-5" } } }))
+      .toBe("claude · claude-sonnet-5")
+    expect(subagentSpawnDetail({ subagent_type: "Explore", model: "opus", prompt: "find it" })).toBe("opus")
+  })
+
+  test("says nothing when the spawn named nothing", () => {
+    expect(subagentSpawnDetail({ prompt: "go" })).toBeUndefined()
+    expect(subagentSpawnDetail(undefined)).toBeUndefined()
   })
 })

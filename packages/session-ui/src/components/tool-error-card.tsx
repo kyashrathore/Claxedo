@@ -79,7 +79,14 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
     return head[0] ? head[0].toUpperCase() + head.slice(1) : i18n.t("ui.toolErrorCard.failed")
   })
 
+  /**
+   * With no subtitle given, the text before the first ": " has become the
+   * subtitle and the body is the rest. A caller that names the subtitle itself
+   * has taken nothing from the text, so a colon inside a sentence must not cut
+   * the sentence's head off.
+   */
   const body = createMemo(() => {
+    if (split.subtitle) return cleaned()
     const parts = tail().split(": ")
     if (parts.length <= 1) return cleaned()
     return parts.slice(1).join(": ").trim() || cleaned()

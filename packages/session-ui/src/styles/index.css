@@ -3,6 +3,7 @@
 @import "../components/activity-row.css" layer(components);
 @import "../components/agent-glyph.css" layer(components);
 @import "../components/basic-tool.css" layer(components);
+@import "../components/claxedo-tool.css" layer(components);
 @import "../components/file.css" layer(components);
 @import "../components/markdown.css" layer(components);
 @import "../components/message-part.css" layer(components);

@@ -442,6 +442,7 @@ describe("task_start", () => {
       },
     ])
     expect(answer).toEqual({
+      task: { id: "tsk_1", number: 7, title: TASK.title },
       session: { sessionId: "ses_started", workspaceId: "ws_local" },
       slot: "primary",
       attempt: 1,

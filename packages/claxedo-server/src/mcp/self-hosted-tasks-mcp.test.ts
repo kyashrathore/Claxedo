@@ -179,7 +179,7 @@ describe("the self-hosted node's Tasks grant", () => {
     await expect(grants.issue({ workspaceId: "ws_unknown" })).resolves.toBeUndefined()
   })
 
-  test("stops answering once it is revoked", async () => {
+  test("names the workspace and session it was issued for, and answers nothing it did not issue", async () => {
     const services = signedServices()
     const owner = services.authority?.resolveWorkspaceOwner?.bind(services.authority)
     if (!owner) throw new Error("the fixture authority resolves no workspace owner")
@@ -196,7 +196,6 @@ describe("the self-hosted node's Tasks grant", () => {
       sessionId: CLAIMS.sessionId,
       operations: ["read", "create", "start"],
     })
-    grants.revoke(token)
-    await expect(grants.capability.verify(token)).resolves.toBeUndefined()
+    await expect(grants.capability.verify(`${token}x`)).resolves.toBeUndefined()
   })
 })

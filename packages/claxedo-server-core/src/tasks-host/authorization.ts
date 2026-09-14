@@ -1,9 +1,17 @@
+import { asRecord } from "@claxedo/helpers/guards"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { bearerToken, localControlPlaneAuth, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { asOrgId, asProjectId } from "@claxedo/server-core/platform/auth/branded-id"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
-import type { SessionReference, TasksActor, TasksAuthorizationPort } from "@claxedo/tasks"
+import {
+  tasksErrorDetail,
+  type SessionReference,
+  type Task,
+  type TasksActor,
+  type TasksAuthorizationPort,
+  type TasksSessionBridgePort,
+} from "@claxedo/tasks"
 import type { TasksAuthenticate, TasksAuthenticated } from "@claxedo/tasks/http"
 import {
   tasksRequestCost,
@@ -71,17 +79,57 @@ export function createTasksPrincipals(): TasksPrincipals {
  */
 export type TasksRuntimePrincipal = (actor: TasksActor) => Promise<PrivateSessionRuntimePrincipal | undefined>
 
+/**
+ * A capability carries no principal of its own, and the actor it resolved to
+ * is the workspace's owner: a session it starts is reserved for that person,
+ * and a session it asks to open is opened as that person, not as the agent
+ * that asked.
+ */
+function capabilityRuntimePrincipal(grant: TasksCapabilityGrant): PrivateSessionRuntimePrincipal {
+  return { principalKind: "user", actorId: grant.owner.actorId, actorKind: "human" }
+}
+
 export function signedTasksRuntimePrincipal(principals: TasksPrincipals): TasksRuntimePrincipal {
   return async (actor) => {
     const grant = principals.capabilityOf(actor)
-    // A capability carries no principal of its own, and the actor it resolved
-    // to is the workspace's owner: the session it starts is reserved for that
-    // person, not for the agent that asked.
-    if (grant) return { principalKind: "user", actorId: grant.owner.actorId, actorKind: "human" }
+    if (grant) return capabilityRuntimePrincipal(grant)
     const principal = principals.authOf(actor)?.principal
     if (!principal || principal.actorKind !== "human") return undefined
     return { principalKind: "user", actorId: principal.actorId, actorKind: "human" }
   }
+}
+
+/**
+ * The one rule for what a capability may name beyond its own workspace, asked
+ * at every door a name comes through: the create body, the task a Start reads
+ * back, and the workspace a linked session lives in.
+ *
+ * A workspace is admitted when the authority places it in the scope's project
+ * now, so a task may prefer any of the project's workspaces and none else; a
+ * preference of none is admitted because the project the scope already
+ * confines then chooses. Provenance is compared whole against the scope's own
+ * session, so a grant minted for no session in particular records none, and a
+ * malformed reference is refused here rather than left for the kit to reject
+ * as merely invalid.
+ */
+export async function capabilityScopeRefusal(
+  scope: TasksCapabilityScope,
+  capability: Pick<TasksCapabilityPort, "workspaceOwner">,
+  named: Readonly<{ workspaceId?: string | null; createdFrom?: unknown }>,
+): Promise<string | undefined> {
+  if (named.workspaceId != null && named.workspaceId !== scope.workspaceId) {
+    const owner = await capability.workspaceOwner(named.workspaceId).catch(() => undefined)
+    if (!owner || owner.orgId !== scope.orgId || owner.projectId !== scope.projectId) {
+      return `This session may act only in project ${scope.projectId}`
+    }
+  }
+  if (named.createdFrom !== undefined) {
+    const from = asRecord(named.createdFrom)
+    if (!scope.sessionId || from?.sessionId !== scope.sessionId || from.workspaceId !== scope.workspaceId) {
+      return "This session may record only itself as a task's provenance"
+    }
+  }
+  return undefined
 }
 
 export type SignedTasksAuthenticateInput = {
@@ -147,7 +195,35 @@ export function capabilityTasksAuthenticate(input: {
     if (owner.projectId !== scope.projectId || (cost.projectId !== undefined && cost.projectId !== scope.projectId)) {
       return capabilityRefusal(`This session may act only in project ${scope.projectId}`)
     }
+    const refused = await capabilityScopeRefusal(scope, input.capability, cost)
+    if (refused) return capabilityRefusal(refused)
     return { actor: input.principals.capabilityActorOf({ scope, owner }) }
+  }
+}
+
+/**
+ * The Start door for a capability: a task the owner pointed at a workspace
+ * outside the scope's project is refused before the bridge resolves a runtime,
+ * reads a transcript or reserves a session there. The task's stored preference
+ * is what is checked, because it is the one thing Start reads that admission
+ * never saw. A signed person's Start passes untouched.
+ */
+export function confineCapabilityBridge(
+  principals: TasksPrincipals,
+  capability: TasksCapabilityPort,
+  bridge: TasksSessionBridgePort,
+): TasksSessionBridgePort {
+  const refusal = async (actor: TasksActor, task: Task) => {
+    const grant = principals.capabilityOf(actor)
+    const message = grant ? await capabilityScopeRefusal(grant.scope, capability, { workspaceId: task.workspaceId }) : undefined
+    return message ? { ok: false as const, error: tasksErrorDetail("forbidden", message) } : undefined
+  }
+  return {
+    sessionState: (origins) => bridge.sessionState(origins),
+    preview: async (command) => (await refusal(command.actor, command.task)) ?? bridge.preview(command),
+    start: async (command) => (await refusal(command.actor, command.task)) ?? bridge.start(command),
+    handoff: (command) => bridge.handoff(command),
+    abandon: (command) => bridge.abandon(command),
   }
 }
 
@@ -175,6 +251,8 @@ export function loopbackTasksAuthenticate(principals: TasksPrincipals): TasksAut
 export function createTasksAuthorization(input: {
   authority: WorkspaceAuthority
   principals: TasksPrincipals
+  /** The port a grant was admitted through; a grant actor on a host that names none is refused everything. */
+  capability?: TasksCapabilityPort
 }): TasksAuthorizationPort {
   const authOf = (actor: TasksActor): SignedControlPlaneAuth | undefined => input.principals.authOf(actor)
   return {
@@ -195,18 +273,33 @@ export function createTasksAuthorization(input: {
         )
     },
     async authorizeSessionOpen(actor, session: SessionReference) {
-      // A capability reaches links only through a task in its own project,
-      // which admission already resolved through the workspace's owner. What
-      // is still checked here is the same thing the signed branch checks: a
-      // link naming no workspace cannot be re-checked by anyone, so it is not
-      // shown rather than shown unchecked.
-      if (input.principals.capabilityOf(actor)) return session.workspaceId !== null
-      const auth = authOf(actor)
-      if (!auth) return false
       // A hosted session is always registered under a workspace. A link that
       // names none cannot be re-checked, so it is not shown rather than shown
       // unchecked.
       if (session.workspaceId === null) return false
+      const grant = input.principals.capabilityOf(actor)
+      if (grant) {
+        // Project membership is not session access: a shared task can link a
+        // session of another participant's that the workspace's owner may not
+        // open. The scope rule refuses a link into another project without
+        // asking, and the rest is the session authority's answer for the owner
+        // the grant resolved to — asked by canonical actor because a grant
+        // carries no signed bearer to ask with — never for the user the token
+        // names.
+        const { capability, authority } = input
+        if (!capability || !authority.authorizeRuntimeSession) return false
+        if (await capabilityScopeRefusal(grant.scope, capability, { workspaceId: session.workspaceId })) return false
+        return await authority
+          .authorizeRuntimeSession({
+            ...capabilityRuntimePrincipal(grant),
+            sessionId: session.sessionId,
+            workspaceId: session.workspaceId,
+            action: "read",
+          })
+          .then(() => true, () => false)
+      }
+      const auth = authOf(actor)
+      if (!auth) return false
       return await input.authority
         .authorizeSessionRead(auth, { sessionId: session.sessionId, workspaceId: session.workspaceId })
         .then(() => true)

@@ -106,7 +106,7 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
         store: createD1TasksStore({ database: input.database }),
         authorization: identity.authorization,
         authenticate: identity.authenticate,
-        bridge: input.bridge(identity.runtimePrincipal, (actor) => identity.principals.authOf(actor)),
+        bridge: identity.bridge(input.bridge(identity.runtimePrincipal, (actor) => identity.principals.authOf(actor))),
         capabilities: createTasksCapabilities({
           placements,
           // A root's own machine is half of the promise; the other half is the

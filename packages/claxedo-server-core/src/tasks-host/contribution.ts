@@ -20,6 +20,7 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import {
   capabilityTasksAuthenticate,
+  confineCapabilityBridge,
   createTasksAuthorization,
   createTasksPrincipals,
   signedTasksAuthenticate,
@@ -53,6 +54,12 @@ export type SignedTasksIdentity = {
   authenticate: TasksAuthenticate
   /** The canonical human a session is reserved for, for a host whose authority records a creator. */
   runtimePrincipal: TasksRuntimePrincipal
+  /**
+   * The composition's bridge behind the capability's Start door. A signed
+   * composition that mounts its bridge bare lets a grant start a task the
+   * owner pointed at another project's workspace.
+   */
+  bridge(bridge: TasksSessionBridgePort): TasksSessionBridgePort
 }
 
 export function signedTasksIdentity(input: {
@@ -67,12 +74,12 @@ export function signedTasksIdentity(input: {
 }): SignedTasksIdentity {
   const principals = createTasksPrincipals()
   const signed = signedTasksAuthenticate({ authority: input.authority, principals, signed: input.signed })
+  const capability = input.capability
   return {
     principals,
-    authorization: createTasksAuthorization({ authority: input.authority, principals }),
-    authenticate: input.capability
-      ? capabilityTasksAuthenticate({ capability: input.capability, principals, signed })
-      : signed,
+    authorization: createTasksAuthorization({ authority: input.authority, principals, ...(capability ? { capability } : {}) }),
+    authenticate: capability ? capabilityTasksAuthenticate({ capability, principals, signed }) : signed,
     runtimePrincipal: signedTasksRuntimePrincipal(principals),
+    bridge: (bridge) => (capability ? confineCapabilityBridge(principals, capability, bridge) : bridge),
   }
 }
