@@ -42,9 +42,11 @@ async function database(): Promise<D1Database> {
 /** alice belongs to org-1 and may write project-a; bob belongs to org-2 and may write nothing of alice's. */
 const ORGS: Record<string, string> = { alice: "org-1", bob: "org-2" }
 
-/** The one cloud root a capability can be minted for, and who the authority says owns it. */
+/** The cloud root a capability is minted for, a sibling in its project, and one of alice's roots in another project. */
 const WORKSPACE_OWNERS: Record<string, { userId: string; actorId: string; orgId: string; projectId: string }> = {
   ws_root: { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-a" },
+  ws_sibling: { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-a" },
+  ws_other: { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-b" },
 }
 
 function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
@@ -420,6 +422,87 @@ describe("hosted Tasks capability", () => {
       }),
     })
     expect(created.status).toBe(403)
+  })
+
+  test("may prefer a workspace of its own project for a task, and no other", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv)
+    const create = (clientRequestId: string, workspaceId: string | null) =>
+      app.request(`https://core.test${TASKS}/commands`, {
+        method: "POST",
+        headers: bearer(token),
+        body: JSON.stringify({ clientRequestId, command: { ...TASK, input: { ...TASK.input, workspaceId } } }),
+      })
+
+    expect((await create("agent-own", "ws_root")).status).toBe(200)
+    expect((await create("agent-sibling", "ws_sibling")).status).toBe(200)
+
+    for (const [clientRequestId, workspaceId] of [["agent-other-project", "ws_other"], ["agent-unknown", "ws_elsewhere"]]) {
+      const refused = await create(clientRequestId, workspaceId)
+      expect(refused.status).toBe(403)
+      expect(await refused.json()).toMatchObject({ error: { message: "This session may act only in project project-a" } })
+    }
+
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: headers("alice") })
+    const preferred = ((await listed.json()) as { items: { workspaceId: string | null }[] }).items.map((item) => item.workspaceId)
+    expect(new Set(preferred)).toEqual(new Set(["ws_root", "ws_sibling"]))
+  })
+
+  test("may record only itself as a task's provenance", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv)
+    const create = (clientRequestId: string, createdFrom: { workspaceId: string | null; sessionId: string }) =>
+      app.request(`https://core.test${TASKS}/commands`, {
+        method: "POST",
+        headers: bearer(token),
+        body: JSON.stringify({ clientRequestId, command: { ...TASK, input: { ...TASK.input, createdFrom } } }),
+      })
+
+    const own = await create("agent-own", { workspaceId: "ws_root", sessionId: "ses_1" })
+    expect(own.status).toBe(200)
+    expect(await own.json()).toMatchObject({
+      result: { task: { createdFrom: { workspaceId: "ws_root", sessionId: "ses_1" } } },
+    })
+
+    const forged = await create("agent-forged", { workspaceId: "ws_victim", sessionId: "ses_victim" })
+    expect(forged.status).toBe(403)
+    expect(await forged.json()).toMatchObject({
+      error: { message: "This session may record only itself as a task's provenance" },
+    })
+
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: headers("alice") })
+    expect(((await listed.json()) as { items: unknown[] }).items).toHaveLength(1)
+  })
+
+  test("cannot start a task the owner pointed at another project's workspace", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv)
+    await command(app, "alice", "owner-preset", PRESET)
+    const created = await command(app, "alice", "owner-task", {
+      ...TASK,
+      input: { ...TASK.input, workspaceId: "ws_other" },
+    })
+    const taskId = (created.body.result as { task: { id: string } }).task.id
+
+    const preview = await app.request(`https://core.test${TASKS}/tasks/${taskId}/start-preview`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({
+        taskRevision: 1,
+        presetId: await presetId(app, "alice"),
+        presetRevision: 1,
+        slot: "primary",
+        attempt: 1,
+        continueFromPrevious: false,
+      }),
+    })
+    // The stub bridge names the principal it was handed; a refusal in its
+    // words would mean the Start reached it.
+    expect(preview.status).toBe(403)
+    expect(await preview.json()).toMatchObject({ error: { message: "This session may act only in project project-a" } })
   })
 
   test("is refused an operation its scope does not carry", async () => {
