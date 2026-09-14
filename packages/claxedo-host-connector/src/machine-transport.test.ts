@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest"
 
 import { transientHeartbeatFailure } from "./connector"
-import { createFakeControlPlane, enrollFakeHost } from "./fake-control-plane.test-support"
+import { createFakeControlPlane, decodeFakeTunnelToken, enrollFakeHost } from "./fake-control-plane.test-support"
 import { createHostKeyPair } from "./host-identity"
 import { createMachineSignedTransport, decisionCode, HostedHttpError, HostedRequestTimeoutError } from "./machine-transport"
 
@@ -65,11 +65,28 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
     expect(String(error)).toContain("HOSTED_HTTP 401")
   })
 
-  test("a signature by a different key", async () => {
+  test("a signature by a different key, and an enrollment id the control plane does not know, are one and the same 401", async () => {
     const other = await createHostKeyPair()
     const { transport } = await host(undefined, { keys: other })
+    const wrongKey = await transport.acquire().catch((e: unknown) => e)
+    const { transport: unknown } = await host(undefined, { enrollmentId: "enr_nobody" })
+    const unknownRow = await unknown.acquire().catch((e: unknown) => e)
 
-    expect(decisionCode(await transport.acquire().catch((e: unknown) => e))).toBe("machine_signature_invalid")
+    expect(decisionCode(wrongKey)).toBe("machine_request_denied")
+    expect(decisionCode(unknownRow)).toBe("machine_request_denied")
+    expect(String(wrongKey)).toContain("HOSTED_HTTP 401")
+    expect(transientHeartbeatFailure(wrongKey)).toBe(false)
+  })
+
+  test("a paused enrollment is a 403 decision the verified caller is told about", async () => {
+    const { cp, enrolled, transport } = await host()
+    cp.pause(enrolled.enrollmentId, true)
+
+    const error = await transport.acquire().catch((e: unknown) => e)
+
+    expect(decisionCode(error)).toBe("enrollment_paused")
+    expect(String(error)).toContain("HOSTED_HTTP 403")
+    expect(transientHeartbeatFailure(error)).toBe(false)
   })
 
   test("a key version the control plane has moved past", async () => {
@@ -81,16 +98,19 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
     expect(String(error)).toContain("HOSTED_HTTP 403")
   })
 
-  test("a beat from a superseded generation", async () => {
+  test("a beat from a superseded generation, or one the control plane has not issued", async () => {
     const { transport } = await host()
     const { generation } = await transport.acquire()
     await transport.acquire()
 
     const error = await transport.heartbeat({ generation, acks: [] }).catch((e: unknown) => e)
+    const ahead = await transport.heartbeat({ generation: generation + 5, acks: [] }).catch((e: unknown) => e)
 
     expect(decisionCode(error)).toBe("enrollment_generation_superseded")
     expect(String(error)).toContain("HOSTED_HTTP 409")
     expect(transientHeartbeatFailure(error)).toBe(false)
+    expect(decisionCode(ahead)).toBe("invalid_input")
+    expect(String(ahead)).toContain("HOSTED_HTTP 400")
   })
 
   test("a revoked enrollment", async () => {
@@ -168,15 +188,20 @@ describe("heartbeat", () => {
       expires_at: expect.any(Number),
       assignments: [{ workspaceId: "ws_1", remoteDirectory: "/srv/api", displayName: "API", revision }],
       scope: { revision: 1, allowed_roots: ["/srv"], visibility: "owner" },
-      relay: { url: `${cp.url}/relay`, jwksUrl: `${cp.url}/relay/jwks` },
-      authority: { sessionAuthorityUrl: `${cp.url}/api/runtime-authority` },
+      relay: { url: cp.relayUrl, jwksUrl: `${cp.relayUrl}/.well-known/jwks.json` },
+      authority: { sessionAuthorityUrl: `${cp.url}/api/runtime-authority/session-authorize` },
       assigned_workspace_ids: ["ws_1"],
     })
     expect(first.hostTunnel, "nothing acked yet, so nothing is routable").toBeUndefined()
 
     const acked = await transport.heartbeat({ generation, acks: [{ workspaceId: "ws_1", revision }] })
 
-    expect(acked.hostTunnel).toMatchObject({ workspace_ids: ["ws_1"] })
+    expect(acked.hostTunnel).toMatchObject({ hostId: enrolled.state.host_id, workspaceIds: ["ws_1"], relayUrl: cp.relayUrl })
+    expect(decodeFakeTunnelToken(String(acked.hostTunnel?.hostTunnelToken))).toEqual({
+      workspace_ids: ["ws_1"],
+      enrollment_id: enrolled.enrollmentId,
+      generation,
+    })
   })
 
   test("a stale ack revision earns no credential", async () => {

@@ -36,9 +36,9 @@ export const hostHelp = `${hostUsage}
 
 Owner commands, run from a signed-in laptop (\`claxedo login\`), never on the host.
   invite    mints a single-use invitation (default 1 h, 5m–24h) scoped to the roots; the token prints ONCE
-  list      every enrolled machine: name, enrollment id, host id, key fingerprint, generation, online
-  assign    have a machine serve <dir> (absolute, under its roots); creates the workspace row when new
-  unassign  stop serving <dir>; the workspace is retired
+  list      every enrolled machine: name, enrollment id, host id, key fingerprint, generation, online (yes, no, or paused)
+  assign    have a machine serve <dir> (absolute, under its roots); re-points the workspace that machine already acks at <dir>, else creates a new one
+  unassign  stop serving <dir>; the workspace that machine acks at <dir> is retired (a folder the machine never acked is retired by \`scope\` or \`revoke\`)
   scope     replace a machine's allowed roots; assignments outside them are retired
   revoke    revoke a machine for good (assignments, readiness and tokens cascade); its next beat is refused and \`claxedo connect\` exits 78
 --machine matches an enrollment id, else a display name exactly (case-sensitive); an ambiguous name is refused.
@@ -53,6 +53,10 @@ export type Machine = {
   expires_at: number | undefined
   last_seen_at: number | undefined
   enrolled_via: string | undefined
+  /** Set while the owner has paused the enrollment; its beats are refused until resumed. */
+  paused_at: number | undefined
+  /** What the machine acks at its current generation — the only per-machine view of its folders the owner routes give. */
+  acked_workspace_ids: string[]
   scope: { allowed_roots: string[]; visibility: string } | undefined
 }
 
@@ -72,8 +76,17 @@ export function machineRow(input: unknown): Machine | undefined {
     expires_at: asFiniteNumber(row.expires_at),
     last_seen_at: asFiniteNumber(row.last_seen_at),
     enrolled_via: trimToUndefined(row.enrolled_via),
+    paused_at: asFiniteNumber(row.paused_at),
+    acked_workspace_ids: Array.isArray(row.acked)
+      ? row.acked.map((ack) => trimToUndefined(asRecordOrEmpty(ack).workspaceId)).filter((id): id is string => id !== undefined)
+      : [],
     scope: roots ? { allowed_roots: roots, visibility: trimToUndefined(scope.visibility) ?? "owner" } : undefined,
   }
+}
+
+export function machineOnline(machine: Machine, now: number) {
+  if (machine.paused_at !== undefined) return "paused"
+  return machine.expires_at !== undefined && machine.expires_at > now ? "yes" : "no"
 }
 
 /** An enrollment id wins outright; otherwise the display name, exactly, and only when it names one machine. */
@@ -169,14 +182,26 @@ async function selectMachine(deps: HostDeps, token: string, selector: string) {
   return resolveMachine(await listMachines(deps, token), selector)
 }
 
-async function userHostedWorkspace(deps: HostDeps, token: string, directory: string) {
+/**
+ * The workspace THIS machine serves at `directory`, or nothing. The catalog
+ * row carries the folder but not the machine, so the match is the row whose
+ * id the machine acks: a second machine assigned the same directory string
+ * gets its own workspace, never this one re-pointed.
+ */
+async function machineWorkspaceAt(deps: HostDeps, token: string, machine: Machine, directory: string) {
   const response = asRecordOrEmpty(
     await deps.request({ url: url(deps.controlPlaneUrl, "/api/workspace?access=user-hosted"), token }),
   )
   const workspaces = Array.isArray(response.workspaces) ? response.workspaces : []
+  const acked = new Set(machine.acked_workspace_ids)
   return workspaces
     .map((item) => asRecordOrEmpty(item))
-    .find((item) => trimToUndefined(item.remote_directory) === directory)
+    .map((item) => ({
+      workspace_id: trimToUndefined(item.workspace_id) ?? trimToUndefined(item.workspaceId),
+      remote_directory: trimToUndefined(item.remote_directory),
+      display_name: trimToUndefined(item.display_name),
+    }))
+    .find((item) => item.workspace_id !== undefined && acked.has(item.workspace_id) && item.remote_directory === directory)
 }
 
 function fixedWidth(rows: string[][]) {
@@ -238,7 +263,7 @@ async function printMachines(deps: HostDeps) {
       machine.host_id,
       machine.public_key_fingerprint?.slice(0, 16) ?? "-",
       machine.serving_generation === undefined ? "-" : String(machine.serving_generation),
-      machine.expires_at !== undefined && machine.expires_at > now ? "yes" : "no",
+      machineOnline(machine, now),
       machine.scope?.allowed_roots.join(",") ?? "-",
     ]),
   ]
@@ -250,10 +275,9 @@ async function assignFolder(deps: HostDeps, parsed: Parsed) {
   const directory = requireMachineDirectory(parsed)
   const token = await deps.token()
   const machine = await selectMachine(deps, token, selector)
-  const existing = await userHostedWorkspace(deps, token, directory)
-  const workspaceId =
-    trimToUndefined(existing?.workspace_id) ?? trimToUndefined(existing?.workspaceId) ?? `ws_${randomUUID().replaceAll("-", "")}`
-  const displayName = parsed.name ?? trimToUndefined(existing?.display_name) ?? path.posix.basename(directory)
+  const existing = await machineWorkspaceAt(deps, token, machine, directory)
+  const workspaceId = existing?.workspace_id ?? `ws_${randomUUID().replaceAll("-", "")}`
+  const displayName = parsed.name ?? existing?.display_name ?? path.posix.basename(directory)
   await deps.request({
     url: url(deps.controlPlaneUrl, `/api/workspace/${encodeURIComponent(workspaceId)}/host-assignment`),
     token,
@@ -272,12 +296,12 @@ async function unassignFolder(deps: HostDeps, parsed: Parsed) {
   const directory = requireMachineDirectory(parsed)
   const token = await deps.token()
   const machine = await selectMachine(deps, token, selector)
-  const existing = await userHostedWorkspace(deps, token, directory)
-  const workspaceId = trimToUndefined(existing?.workspace_id) ?? trimToUndefined(existing?.workspaceId)
-  if (!workspaceId) throw new Error(`No user-hosted workspace is registered for ${directory}`)
-  const hostId = trimToUndefined(existing?.host_id) ?? trimToUndefined(existing?.hostId)
-  if (hostId && hostId !== machine.host_id) {
-    throw new Error(`${directory} (${workspaceId}) is assigned to host ${hostId}, not to ${machine.display_name || machine.enrollment_id}`)
+  const existing = await machineWorkspaceAt(deps, token, machine, directory)
+  const workspaceId = existing?.workspace_id
+  if (!workspaceId) {
+    throw new Error(
+      `${machine.display_name || machine.enrollment_id} acks no workspace at ${directory}; a folder it never acked is retired by \`claxedo host scope\` or \`claxedo host revoke\``,
+    )
   }
   await deps.request({
     url: url(deps.controlPlaneUrl, `/api/workspace/${encodeURIComponent(workspaceId)}/host-assignment`),

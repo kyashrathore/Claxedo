@@ -146,8 +146,8 @@ describe("start", () => {
 
     expect(endpoints).toEqual([
       {
-        relay: { url: `${cp.url}/relay`, jwksUrl: `${cp.url}/relay/jwks` },
-        authority: { sessionAuthorityUrl: `${cp.url}/api/runtime-authority` },
+        relay: { url: cp.relayUrl, jwksUrl: `${cp.relayUrl}/.well-known/jwks.json` },
+        authority: { sessionAuthorityUrl: `${cp.url}/api/runtime-authority/session-authorize` },
       },
     ])
   })
@@ -186,7 +186,7 @@ describe("assignment discovery", () => {
     expect(h.beats().length - before).toBe(2)
     expect(h.beats().at(-1)?.body).toMatchObject({ acks: [{ workspaceId: "ws_1", revision }] })
     expect(h.connector.acked()).toEqual([{ workspaceId: "ws_1", revision }])
-    expect(h.tunnels.at(-1)).toMatchObject({ workspace_ids: ["ws_1"] })
+    expect(h.tunnels.at(-1)).toMatchObject({ workspaceIds: ["ws_1"] })
     expect(h.seen).toEqual([[{ workspaceId: "ws_1", remoteDirectory: "/srv/api", revision }]])
   })
 
@@ -223,12 +223,12 @@ describe("assignment discovery", () => {
     expect(reack?.body).toMatchObject({ acks: [{ workspaceId: "ws_1", revision: 2 }] })
     expect(cp.readiness.get("ws_1")).toMatchObject({ revision: 2, generation: 1 })
     expect(h.tunnels.at(-2), "the delivering beat's credential did not cover the moved workspace").toBeUndefined()
-    expect(h.tunnels.at(-1)).toMatchObject({ workspace_ids: ["ws_1"] })
+    expect(h.tunnels.at(-1)).toMatchObject({ workspaceIds: ["ws_1"] })
   })
 
   test("a folder outside the effective roots is never acked", async () => {
     const cp = createFakeControlPlane()
-    const h = await machineHost(cp, { allowedRoots: ["/srv"], cliRoots: ["/srv/api"] })
+    const h = await machineHost(cp, { allowedRoots: ["/srv", "/home"], cliRoots: ["/srv/api"] })
     await h.connector.start()
 
     cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_out", remoteDirectory: "/home/u/secret" })
@@ -334,11 +334,13 @@ describe("assignment discovery", () => {
     h.tick()
     await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
 
-    // The owner narrows the roots and moves the folder outside them in the
-    // same window. The new scope must be in force when the new revision is
-    // validated, or the host would ack a folder the owner just excluded.
-    cp.setScope(h.enrolled.enrollmentId, { allowed_roots: ["/srv/only"], visibility: "owner" })
+    // A new revision of the folder and a narrower scope reach the host in the
+    // same beat (the scope is set behind the route so the retirement the
+    // control plane's own update would do does not hide the case). The new
+    // scope must be in force when the new revision is validated, or the host
+    // would ack a folder the owner just excluded.
     cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    cp.enrollments.get(h.enrolled.enrollmentId)!.scope = { revision: 2, allowed_roots: ["/srv/only"], visibility: "owner" }
     h.tick()
     await vi.waitFor(() => expect(h.ackFailures).toHaveLength(1))
 

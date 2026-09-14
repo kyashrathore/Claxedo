@@ -319,7 +319,7 @@ describe("claxedo connect", () => {
     const { file } = await invitationFile(h, [h.root])
     const running = connect(["--token-file", file], h.deps)
     await until(() => h.cp.beats().length >= 1, "first beat")
-    h.cp.revoke((await h.deps.store.load())!.host_id)
+    h.cp.revoke(enrollmentIdOf(h))
     h.tick()
     expect(await running).toBe(78)
     expect(h.lines.at(-1)).toContain("enrollment_revoked")

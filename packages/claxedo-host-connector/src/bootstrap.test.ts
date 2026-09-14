@@ -68,8 +68,8 @@ describe("a fresh redeem", () => {
         enrolled_via: "invitation",
         key_version: 1,
       },
-      relay: { url: `${h.cp.url}/relay`, jwksUrl: `${h.cp.url}/relay/jwks` },
-      authority: { sessionAuthorityUrl: `${h.cp.url}/api/runtime-authority` },
+      relay: { url: h.cp.relayUrl, jwksUrl: `${h.cp.relayUrl}/.well-known/jwks.json` },
+      authority: { sessionAuthorityUrl: `${h.cp.url}/api/runtime-authority/session-authorize` },
       scope: { revision: 1, allowed_roots: ["/srv"], visibility: "owner" },
     })
     expect(outcome.state.bootstrap).toBeUndefined()

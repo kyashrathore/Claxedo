@@ -52,6 +52,13 @@
       "development": "./src/machine-transport.ts",
       "import": "./dist/machine-transport.mjs",
       "default": "./dist/machine-transport.mjs"
+    },
+    "./test-support": {
+      "types": "./src/fake-control-plane.test-support.ts",
+      "bun": "./src/fake-control-plane.test-support.ts",
+      "development": "./src/fake-control-plane.test-support.ts",
+      "import": "./src/fake-control-plane.test-support.ts",
+      "default": "./src/fake-control-plane.test-support.ts"
     }
   },
   "files": [

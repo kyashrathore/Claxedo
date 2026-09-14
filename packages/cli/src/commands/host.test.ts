@@ -3,7 +3,8 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { redeemInvitation } from "@claxedo/host-connector/bootstrap"
-import { createHostKeyPair, newHostId } from "@claxedo/host-connector/host-identity"
+import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "@claxedo/host-connector/host-identity"
+import { createMachineSignedTransport } from "@claxedo/host-connector/machine-transport"
 import { newHostState } from "@claxedo/host-connector/host-state"
 import { createFakeConnectControlPlane, OWNER_TOKEN, type FakeControlPlane } from "../connect/fake-control-plane.test-support"
 import { connectStateStore } from "../connect/paths"
@@ -21,7 +22,11 @@ function owner(cp: FakeControlPlane, token = OWNER_TOKEN) {
   return { deps, lines }
 }
 
-/** A machine enrolled through the real bootstrap, so the list carries a real fingerprint and host id. */
+/**
+ * A machine enrolled through the real bootstrap and serving through the real
+ * signed transport, so the list carries a real fingerprint, host id and the
+ * acks the machine actually sent.
+ */
 async function enrolledMachine(cp: FakeControlPlane, name: string, roots = ["/srv"]) {
   const home = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-owner-"))
   const invitation = await cp.createInvitation({ displayName: name, scope: { allowed_roots: roots, visibility: "owner" } })
@@ -37,7 +42,24 @@ async function enrolledMachine(cp: FakeControlPlane, name: string, roots = ["/sr
   })
   const outcome = await redeemInvitation({ tokenFile, store: connectStateStore(home), state, keys, fetch: cp.fetch, displayName: name })
   await fs.rm(home, { recursive: true, force: true })
-  return { hostId: state.host_id, enrollmentId: outcome.state.enrollment!.enrollment_id }
+  const enrollmentId = outcome.state.enrollment!.enrollment_id
+  const transport = createMachineSignedTransport({
+    controlPlaneUrl: cp.url,
+    keys: await hostKeyPairFromJwk(keys.privateKeyJwk),
+    enrollmentId,
+    hostId: state.host_id,
+    keyVersion: 1,
+    fetch: cp.fetch,
+  })
+  const { generation } = await transport.acquire()
+  /** One beat acking every current assignment of this machine, as the running host would. */
+  const ackAll = async () => {
+    const acks = [...cp.assignments.values()]
+      .filter((assignment) => assignment.enrollment_id === enrollmentId)
+      .map((assignment) => ({ workspaceId: assignment.workspace_id, revision: assignment.revision }))
+    await transport.heartbeat({ generation, acks })
+  }
+  return { hostId: state.host_id, enrollmentId, ackAll }
 }
 
 describe("claxedo host", () => {
@@ -95,10 +117,15 @@ describe("claxedo host", () => {
     const machine = await enrolledMachine(cp, "build-box")
     await host(["list"], deps)
     expect(lines[1]).toMatch(/^NAME\s+ENROLLMENT\s+HOST\s+FINGERPRINT\s+GEN\s+ONLINE\s+ROOTS$/)
-    expect(lines[2]).toMatch(new RegExp(`^build-box\\s+${machine.enrollmentId}\\s+${machine.hostId}\\s+\\S{16}\\s+0\\s+yes\\s+/srv$`))
+    expect(lines[2]).toMatch(new RegExp(`^build-box\\s+${machine.enrollmentId}\\s+${machine.hostId}\\s+\\S{16}\\s+1\\s+yes\\s+/srv$`))
+    // Paused: the lease may still be live, but its beats are refused, so it is not online.
+    cp.pause(machine.enrollmentId, true)
+    await host(["list"], deps)
+    expect(lines[4]).toMatch(/\s1\s+paused\s+\/srv$/)
+    cp.pause(machine.enrollmentId, false)
     cp.enrollments.get(machine.enrollmentId)!.expires_at = Date.now() - 1
     await host(["list"], deps)
-    expect(lines[4]).toMatch(/\s0\s+no\s+\/srv$/)
+    expect(lines[6]).toMatch(/\s1\s+no\s+\/srv$/)
   })
 
   test("--machine resolves an enrollment id first, then an exact display name, and refuses ambiguity with the ids", () => {
@@ -111,6 +138,8 @@ describe("claxedo host", () => {
       expires_at: undefined,
       last_seen_at: undefined,
       enrolled_via: undefined,
+      paused_at: undefined,
+      acked_workspace_ids: [],
       scope: undefined,
     })
     const machines = [row("enr_1", "alpha"), row("enr_2", "beta"), row("enr_3", "beta"), row("enr_4", "enr_1")]
@@ -134,21 +163,49 @@ describe("claxedo host", () => {
     const workspaceId = [...cp.assignments.keys()][0]
     expect(lines.at(-1)).toBe(`build-box will serve /srv/api as ${workspaceId} (API); it acks on its next beat`)
 
+    // Acked by the machine, the same folder re-points the same workspace.
+    await machine.ackAll()
     await host(["assign", "--machine", machine.enrollmentId, "/srv/api"], deps)
     expect(cp.assignments.size).toBe(1)
     expect(cp.assignments.get(workspaceId)).toMatchObject({ revision: 2, display_name: "API" })
 
-    await expect(host(["assign", "--machine", "build-box", "/elsewhere"], deps)).rejects.toThrow("remote_directory_outside_scope")
+    await expect(host(["assign", "--machine", "build-box", "/elsewhere"], deps)).rejects.toThrow("host_assignment_outside_scope")
 
-    const other = await enrolledMachine(cp, "other-box")
-    await expect(host(["unassign", "--machine", "other-box", "/srv/api"], deps)).rejects.toThrow(
-      `/srv/api (${workspaceId}) is assigned to host ${machine.hostId}, not to other-box`,
-    )
-    expect(other.hostId).not.toBe(machine.hostId)
+    await machine.ackAll()
     await host(["unassign", "--machine", "build-box", "/srv/api"], deps)
     expect(cp.assignments.size).toBe(0)
     expect(lines.at(-1)).toBe(`build-box no longer serves /srv/api (${workspaceId} retired)`)
-    await expect(host(["unassign", "--machine", "build-box", "/srv/api"], deps)).rejects.toThrow("No user-hosted workspace is registered for /srv/api")
+    await expect(host(["unassign", "--machine", "build-box", "/srv/api"], deps)).rejects.toThrow("build-box acks no workspace at /srv/api")
+  })
+
+  test("the same directory string on two machines is two workspaces; unassign on one leaves the other's", async () => {
+    const box1 = await enrolledMachine(cp, "box1")
+    const box2 = await enrolledMachine(cp, "box2")
+    const { deps } = owner(cp)
+    await host(["assign", "--machine", "box1", "/srv/api"], deps)
+    await box1.ackAll()
+    const [ws1] = [...cp.assignments.keys()]
+
+    await host(["assign", "--machine", "box2", "/srv/api"], deps)
+
+    expect(cp.assignments.size).toBe(2)
+    const ws2 = [...cp.assignments.keys()].find((id) => id !== ws1)!
+    expect(cp.assignments.get(ws1)).toMatchObject({ host_id: box1.hostId, remote_directory: "/srv/api", revision: 1 })
+    expect(cp.assignments.get(ws2)).toMatchObject({ host_id: box2.hostId, remote_directory: "/srv/api", revision: 1 })
+    await box2.ackAll()
+
+    // box2 cannot retire what box1 serves, and only retires its own.
+    await host(["unassign", "--machine", "box2", "/srv/api"], deps)
+    expect([...cp.assignments.keys()]).toEqual([ws1])
+    await expect(host(["unassign", "--machine", "box2", "/srv/api"], deps)).rejects.toThrow("box2 acks no workspace at /srv/api")
+    expect(cp.assignments.get(ws1)).toMatchObject({ host_id: box1.hostId, revision: 1 })
+
+    // A folder box1 was assigned but never acked (offline) is not box2's to touch either, and
+    // is not what a new assignment on box2 re-points.
+    cp.assign({ hostId: box1.hostId, workspaceId: "ws_pending", remoteDirectory: "/srv/web" })
+    await host(["assign", "--machine", "box2", "/srv/web"], deps)
+    expect(cp.assignments.get("ws_pending")).toMatchObject({ host_id: box1.hostId, revision: 1 })
+    expect([...cp.assignments.values()].filter((entry) => entry.remote_directory === "/srv/web")).toHaveLength(2)
   })
 
   test("scope patches the roots and visibility; revoke deletes the machine through the devices route", async () => {
