@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AgentContentPart } from "@claxedo/agent-runtime-contract"
-import { groupParts, isHiddenTool, isSubagentToolPart } from "./part-groups"
+import { groupParts, isClaxedoToolPart, isHiddenTool, isSubagentToolPart, isWorkGroupTool } from "./part-groups"
 
 function tool_(id: string, name: string, input: Record<string, unknown> = {}): AgentContentPart {
   return {
@@ -38,6 +38,25 @@ function shape(parts: AgentContentPart[]) {
 }
 
 describe("groupParts", () => {
+  test("a first-party Claxedo call keeps its own row inside a run of work, in every harness spelling", () => {
+    expect(shape([tool_("p1", "bash"), tool_("p2", "mcp__claxedo__task_create", { title: "T" }), tool_("p3", "bash")]))
+      .toEqual(["part", "part", "part"])
+    expect(shape([tool_("p1", "bash"), tool_("p2", "bash"), tool_("p3", "task_start", { server: "claxedo" }), tool_("p4", "edit")]))
+      .toEqual(["work:bash", "part", "part"])
+    expect(shape([tool_("p1", "claxedo_task_list"), tool_("p2", "claxedo_task_get", { task: "1" })])).toEqual(["part", "part"])
+    expect(isClaxedoToolPart(tool_("p1", "mcp__claxedo__task_create"))).toBe(true)
+    expect(isWorkGroupTool(tool_("p1", "mcp__claxedo__task_create"))).toBe(false)
+  })
+
+  test("another server's MCP call still folds into work", () => {
+    expect(shape([tool_("p1", "bash"), tool_("p2", "mcp__linear__task_create"), tool_("p3", "bash")])).toEqual(["work:bash"])
+    expect(isClaxedoToolPart(tool_("p1", "task_create", { server: "linear" }))).toBe(false)
+  })
+
+  test("the first-party spawn stays an agents group in the engine spelling too", () => {
+    expect(shape([tool_("p1", "claxedo_create_subagent", { prompt: "go" })])).toEqual(["agents"])
+  })
+
   test("folds a single context tool but keeps a single work tool standalone", () => {
     expect(shape([tool_("p1", "read")])).toEqual(["context"])
     expect(shape([tool_("p1", "bash")])).toEqual(["part"])

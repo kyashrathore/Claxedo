@@ -1,4 +1,6 @@
 import { canonicalToolName, isSubagentSpawnToolName, type AgentContentPart, type AgentToolPart } from "@claxedo/agent-runtime-contract"
+import { asRecord } from "@claxedo/helpers/guards"
+import { claxedoToolName } from "./claxedo-tool-view"
 
 export type PartRef = {
   messageID: string
@@ -100,7 +102,17 @@ export function isContextGroupTool(part: AgentContentPart): part is AgentToolPar
 export function isWorkGroupTool(part: AgentContentPart): part is AgentToolPart {
   if (part.type !== "tool") return false
   if (CONTEXT_GROUP_TOOLS.has(canonicalToolName(part.tool)) || isHiddenTool(part) || isStandaloneTool(part)) return false
-  return !isSubagentToolPart(part)
+  return !isSubagentToolPart(part) && !isClaxedoToolPart(part)
+}
+
+/**
+ * A call to Claxedo's own MCP, in whichever spelling the harness gave it. It keeps
+ * its own row: the task it created or the session it started is the record the
+ * reader came for, and a folded run of machinery would put it behind a count.
+ */
+export function isClaxedoToolPart(part: { type: string; tool?: string; state?: { input?: unknown } }): boolean {
+  if (part.type !== "tool" || !part.tool) return false
+  return claxedoToolName(part.tool, asRecord(part.state?.input)) !== undefined
 }
 
 /**

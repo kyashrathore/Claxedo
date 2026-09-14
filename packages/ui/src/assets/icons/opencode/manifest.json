@@ -1,8 +1,8 @@
 {
   "source": "packages/ui/src/components/icon.tsx",
   "extraction": "Source artwork; SHA-256 of viewBox + newline + SVG content",
-  "count": 119,
-  "uniqueGeometries": 118,
+  "count": 120,
+  "uniqueGeometries": 119,
   "icons": [
     {
       "id": "opencode-icon-codex-collapse-all",
@@ -93,6 +93,12 @@
       "name": "pi",
       "viewBox": "0 0 20 20",
       "hash": "fc834e97551ef73880a49f270f9a685c493085e73a8507ab54c1bee43e1cf216"
+    },
+    {
+      "id": "opencode-icon-claxedo",
+      "name": "claxedo",
+      "viewBox": "0 0 20 20",
+      "hash": "e9a295c09767316925d59aa604c0ed0a1cf5ac10c7de24b486bca23d2ac61669"
     },
     {
       "id": "opencode-icon-panel-restore",

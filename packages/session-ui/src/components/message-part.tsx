@@ -47,6 +47,8 @@ import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { ToolErrorCard } from "./tool-error-card"
+import { ClaxedoTool } from "./claxedo-tool"
+import { claxedoToolName, claxedoToolTitle, claxedoToolView } from "./claxedo-tool-view"
 import { QuestionCard } from "./question-card"
 import { isQuestionDeclined } from "./question-result"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
@@ -1578,7 +1580,21 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     return taskId()
   })
 
-  const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)
+  /** The first-party tool this call is, when the registry has no renderer of its own for its spelling. */
+  const claxedo = createMemo(() => (ToolRegistry.render(part().tool) ? undefined : claxedoToolName(part().tool, input())))
+  /** What a refused first-party call was about, for the error card's subtitle and link. */
+  const claxedoSubject = createMemo(() => {
+    const name = claxedo()
+    if (!name) return undefined
+    const view = claxedoToolView({ name, input: input(), output: undefined, i18n })
+    if (view.link) {
+      const href = view.link.kind === "task" ? data.taskHref?.(view.link.id) : data.sessionHref?.(view.link.id)
+      return { subtitle: view.link.label, href }
+    }
+    return view.subject ? { subtitle: view.subject, href: undefined } : undefined
+  })
+
+  const render = createMemo(() => ToolRegistry.render(part().tool) ?? (claxedo() ? ClaxedoTool : GenericTool))
   const controlledOpen = () => (props.onToolOpenChange ? (props.toolOpen ?? props.defaultOpen) : undefined)
   const handleToolOpenChange = (open: boolean) => props.onToolOpenChange?.(open)
 
@@ -1601,12 +1617,18 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                 <ToolErrorCard
                   tool={part().tool}
                   error={error()}
-                  title={part().tool === "websearch" ? webSearchProviderLabel(partMetadata().provider) : undefined}
+                  title={
+                    claxedo()
+                      ? claxedoToolTitle(claxedo()!, i18n)
+                      : part().tool === "websearch"
+                        ? webSearchProviderLabel(partMetadata().provider)
+                        : undefined
+                  }
                   defaultOpen={props.defaultOpen}
                   open={controlledOpen()}
                   onOpenChange={props.onToolOpenChange ? handleToolOpenChange : undefined}
-                  subtitle={taskSubtitle()}
-                  href={taskHref()}
+                  subtitle={taskSubtitle() ?? claxedoSubject()?.subtitle}
+                  href={taskHref() ?? claxedoSubject()?.href}
                 />
               )
             }}
@@ -2130,7 +2152,7 @@ ToolRegistry.register({
     const subagents = createMemo(() =>
       props.sessionID ? data.resolveSubagents?.(props.sessionID, props.toolCallId) ?? [] : []
     )
-    return <SubagentChipRow subagents={subagents()} />
+    return <SubagentChipRow subagents={subagents()} spawnInput={props.input} />
   },
 })
 

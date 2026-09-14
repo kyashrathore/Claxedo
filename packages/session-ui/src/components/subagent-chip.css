@@ -35,6 +35,19 @@
     text-transform: capitalize;
   }
 
+  /* The configuration and model sit beside the name at the summary's size and one step
+     dimmer, so the chip still reads name-first. */
+  [data-slot="subagent-chip-detail"] {
+    flex-shrink: 0;
+    max-width: 12rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-family-mono);
+    font-size: var(--font-size-small);
+    color: var(--text-weaker);
+  }
+
   [data-slot="subagent-chip-summary"] {
     min-width: 0;
     flex-shrink: 1;

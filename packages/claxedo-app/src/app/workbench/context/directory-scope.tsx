@@ -29,7 +29,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { DataProvider } from "@/ui/session-kit-context"
 import { SessionSyncProvider } from "@/features/session/providers/session-sync"
 import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
-import { sessionRoute } from "@/platform/identity/route"
+import { sessionRoute, tasksRoute } from "@/platform/identity/route"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { isRelayBackedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
@@ -211,6 +211,7 @@ function DirectoryDataProvider(props: ParentProps<{
       directory={props.directory}
       onNavigateToSession={navigateToSession}
       onSessionHref={sessionHref}
+      onTaskHref={(taskId) => tasksRoute({ kind: "task", taskId })}
       resolveSubagents={resolveSubagents}
       fileUrl={fileUrl}
     >

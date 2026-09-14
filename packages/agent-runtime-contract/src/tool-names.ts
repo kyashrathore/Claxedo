@@ -12,6 +12,7 @@ const TOOL_NAME_ALIASES: Record<string, string> = {
   spawnagent: "task",
   create_subagent: "task",
   mcp__claxedo__create_subagent: "task",
+  claxedo_create_subagent: "task",
   command: "bash",
   shell: "bash",
   local_shell: "bash",

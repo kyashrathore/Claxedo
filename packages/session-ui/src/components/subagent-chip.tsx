@@ -4,6 +4,7 @@ import { useI18n, type UiI18n } from "@opencode-ai/ui/context/i18n"
 import { AgentGlyph } from "./agent-glyph"
 import { useData, type SubagentView } from "../context"
 import { clampLabel } from "./message-part-text"
+import { claxedoToolArguments } from "./claxedo-tool-view"
 
 /**
  * The one line under a subagent's name. `description` is whatever the runtime last
@@ -31,6 +32,8 @@ type ChipModel = {
   key: string
   childSessionId?: string
   name: string
+  /** What the child runs: its configuration slot or harness, model and effort. */
+  detail?: string
   description?: string
   mode?: SubagentView["mode"]
   status: SubagentView["status"]
@@ -63,11 +66,27 @@ export function dispatchSubagentOpen(target: EventTarget | null, input: {
   }))
 }
 
-function chipFromView(view: SubagentView): ChipModel {
+/**
+ * What a spawn asked the child to run, read from the spawn call's own input:
+ * `create_subagent` names a configuration slot or a harness, a model and an
+ * effort; Claude's Agent tool names a model. The runtime's view of the child
+ * carries none of this, so the tool input is the only place it survives.
+ */
+export function subagentSpawnDetail(input: Record<string, unknown> | undefined): string | undefined {
+  const args = claxedoToolArguments(input)
+  const model = args.model
+  const modelId = typeof model === "string" ? model : typeof model === "object" && model !== null ? (model as { id?: unknown }).id : undefined
+  const parts = [args.configuration ?? args.harness, modelId, args.effort]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
+  return parts.length > 0 ? parts.join(" · ") : undefined
+}
+
+function chipFromView(view: SubagentView, detail?: string): ChipModel {
   return {
     key: view.subagentKey,
     childSessionId: view.childSessionId,
     name: view.agentLabel || view.label,
+    ...(detail ? { detail } : {}),
     ...(view.description ? { description: view.description } : {}),
     ...(view.mode ? { mode: view.mode } : {}),
     status: view.status,
@@ -84,10 +103,10 @@ function chipFromView(view: SubagentView): ChipModel {
  * draw the reader another agent that never existed. The spawn is the canonical
  * resolution, so it wins the row.
  */
-export function subagentChips(views: SubagentView[]) {
+export function subagentChips(views: SubagentView[], details?: ReadonlyMap<string, string>) {
   const chips = new Map<string, ChipModel>()
   for (const view of views) {
-    const chip = chipFromView(view)
+    const chip = chipFromView(view, details?.get(view.subagentKey))
     if (chips.get(chip.key)?.toolCallRole === "spawn") continue
     chips.set(chip.key, chip)
   }
@@ -153,13 +172,26 @@ export function subagentChipUnclaimedClick(input: {
 export function SubagentChipRow(props: {
   parts?: AgentToolPart[]
   subagents?: SubagentView[]
+  /** The spawn input behind `subagents`, when the caller holds it rather than the parts. */
+  spawnInput?: Record<string, unknown>
 }) {
   const data = useData()
   const i18n = useI18n()
-  const chips = createMemo(() => subagentChips(
-    props.subagents
-      ?? (props.parts ?? []).flatMap((part) => data.resolveSubagents?.(part.sessionID, part.callID) ?? []),
-  ))
+  const chips = createMemo(() => {
+    const details = new Map<string, string>()
+    if (props.subagents) {
+      const detail = subagentSpawnDetail(props.spawnInput)
+      if (detail) for (const view of props.subagents) details.set(view.subagentKey, detail)
+      return subagentChips(props.subagents, details)
+    }
+    const views = (props.parts ?? []).flatMap((part) => {
+      const resolved = data.resolveSubagents?.(part.sessionID, part.callID) ?? []
+      const detail = subagentSpawnDetail(part.state.input)
+      if (detail) for (const view of resolved) if (view.toolCallRole !== "interaction") details.set(view.subagentKey, detail)
+      return resolved
+    })
+    return subagentChips(views, details)
+  })
   const [expanded, setExpanded] = createSignal(false)
   const visible = createMemo(() => (expanded() ? chips() : chips().slice(0, 3)))
   const overflow = createMemo(() => Math.max(0, chips().length - 3))
@@ -178,6 +210,9 @@ export function SubagentChipRow(props: {
               <>
                 <AgentGlyph seed={chip.childSessionId || chip.key} active={chip.status === "running"} size={14} />
                 <span data-slot="subagent-chip-name">{chip.name}</span>
+                <Show when={chip.detail}>
+                  <span data-slot="subagent-chip-detail" title={chip.detail}>{chip.detail}</span>
+                </Show>
                 <Show when={summary()}>
                   <span data-slot="subagent-chip-summary" title={chip.description || summary()}>{summary()}</span>
                 </Show>
