@@ -28,9 +28,21 @@ import path from "path"
  * that coming back under another name.
  */
 const PACKAGES = path.resolve(__dirname, "../../../..")
-const CREDENTIAL_ROOTS = ["claxedo-server", "claxedo-server-core", "claxedo-local-server"]
-  .map((pkg) => path.join(PACKAGES, pkg, "src", "credentials"))
+/**
+ * The local server's usage tree is in here because its machine-wide plan probe
+ * is the one module that reaches the harnesses' own stores from outside a
+ * `credentials` directory: it hands `tokentracker-cli` the home directory, and
+ * that library reads the Keychain and `~/.codex/auth.json` on this process's
+ * behalf.
+ */
+const CREDENTIAL_ROOTS = [
+  ...["claxedo-server", "claxedo-server-core", "claxedo-local-server"]
+    .map((pkg) => path.join(PACKAGES, pkg, "src", "credentials")),
+  path.join(PACKAGES, "claxedo-local-server", "src", "usage"),
+]
 const CLI_ROOT = path.join(PACKAGES, "cli", "src")
+/** The library that reads the harnesses' stores for the plan probe. */
+const STORE_READING_LIBRARY = "tokentracker-cli/src/lib/usage-limits"
 
 /**
  * The self-reports, exactly. Each asks a harness about the login it already
@@ -108,6 +120,12 @@ describe("harness login access guard", () => {
 
     expect(Object.values(MACHINE_LOGIN_COMMANDS).map((command) => [...command])
       .toSorted((a, b) => a.join(" ").localeCompare(b.join(" ")))).toEqual(SELF_REPORTS)
+  })
+
+  test("exactly one module hands the harnesses' stores to the plan-reading library", () => {
+    const readers = sources.filter((file) => code(file).includes(STORE_READING_LIBRARY))
+
+    expect(readers.map((file) => path.basename(file))).toEqual(["token-tracker-usage-limits.ts"])
   })
 
   test("no credentials module opens the store a harness keeps its login in", () => {
