@@ -8,7 +8,7 @@ explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
 
-- [Remote machine connection: implementation plan](./2026-09-14-003-feat-connect-implementation-plan.md) — proposed; not started. Companions: [investigation](./2026-09-14-001-feat-connect-enrollment-foundation-proposal.md), [components and flows](./2026-09-14-002-feat-connect-components-and-flows.md).
+- [Remote machine connection: implementation plan](./2026-09-14-003-feat-connect-implementation-plan.md) — P1–P3 implemented on `feat/connect`, live acceptance green; P4–P7 not started. Companions: [investigation](./2026-09-14-001-feat-connect-enrollment-foundation-proposal.md), [components and flows](./2026-09-14-002-feat-connect-components-and-flows.md).
   - First slice = invitation-file bootstrap with idempotent redeem,
     route-local machine verifier keyed by enrollment id with key-version and
     nonce guards, revision-aware assignment discovery, serving-generation

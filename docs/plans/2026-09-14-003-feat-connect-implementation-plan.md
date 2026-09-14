@@ -1,6 +1,6 @@
 # Remote machine connection: implementation plan
 
-Status: proposed; not started. Revision 4. Builds on the investigation
+Status: P1–P3 implemented on branch `feat/connect` (2026-09-14); P4–P7 not started. Revision 4. Builds on the investigation
 (`2026-09-14-001-feat-connect-enrollment-foundation-proposal.md`) and the
 component map (`2026-09-14-002-feat-connect-components-and-flows.md`). Nothing
 here is authorized until the product questions in §0 are answered.
@@ -347,12 +347,12 @@ its single-row shape under `active` for the desktop and adds `machines`.
 
 ### P1 Definition of done
 
-- [ ] `machine-auth.ts` + tests on both adapters; route-local; identity by `enrollment_id`; key_version guard on every machine mutation; adapter-neutral eligibility with the SQLite predicate written separately; nonce table with exact-row sweep; check order as specified. Progress:
-- [ ] Heartbeat accepts the machine caller; `assignments` with monotonic revisions; readiness table is the one serving predicate for mint, `activeWorkspaceHost`, catalog and relay target; `acquire` + generation fencing; relay: generation admission with the cache rules, registration-update preservation, outage policy, 30 s host-tunnel check, Bun tunnels keyed by (host, workspace) — in Bun **and** workerd; SQLite migration + upgrade test. Progress:
-- [ ] Invitations: frozen token encoding; org recorded; transactional redeem; idempotent same-key+host resume; occupied-pair conflict (live or revoked); concurrency + revoke-race tests; secret hashed; SQLite twin. Progress:
-- [ ] Scope: root rule (segment-aware, resolved-path on host), versioned scope delivered on redeem/heartbeat, visibility applied at assignment and scope change, one workspace-scoped fragment across three computations, project access untouched; scope PATCH deletes assignments + retires workspaces transactionally and the catalog drops them; regrouping explicitly excluded. Progress:
-- [ ] Operation matrix + inventory test updated for every new route. Progress:
-- [ ] Ratchets, per-package typecheck, `claxedo-server` and `server-core` suites green with recorded commands and counts. Progress:
+- [x] `machine-auth.ts` + tests on both adapters; route-local; identity by `enrollment_id`; key_version guard on every machine mutation; adapter-neutral eligibility with the SQLite predicate written separately; nonce table with exact-row sweep; check order as specified. Progress: done 2026-09-14 — server-core `machine-auth.ts` (0fccb78e36), D1 `machineAuth` adapter (9895cb17fa), SQLite (bc0402abb5); 52 + 19 + 32 scenario tests
+- [x] Heartbeat accepts the machine caller; `assignments` with monotonic revisions; readiness table is the one serving predicate for mint, `activeWorkspaceHost`, catalog and relay target; `acquire` + generation fencing; relay: generation admission with the cache rules, registration-update preservation, outage policy, 30 s host-tunnel check, Bun tunnels keyed by (host, workspace) — in Bun **and** workerd; SQLite migration + upgrade test. Progress: done 2026-09-14 — D1 9895cb17fa, SQLite bc0402abb5, relay b905edd413 (Bun + workerd, 373+92+13 tests); SQLite upgrade test `host-connect-upgrade.test.ts`
+- [x] Invitations: frozen token encoding; org recorded; transactional redeem; idempotent same-key+host resume; occupied-pair conflict (live or revoked); concurrency + revoke-race tests; secret hashed; SQLite twin. Progress: done 2026-09-14 — D1 + SQLite; live: fixture items 2 and 3 (re-redeem resumes, fresh key → invitation_redeemed, wrong secret → invitation_invalid without redeemed-by detail)
+- [x] Scope: root rule (segment-aware, resolved-path on host), versioned scope delivered on redeem/heartbeat, visibility applied at assignment and scope change, one workspace-scoped fragment across three computations, project access untouched; scope PATCH deletes assignments + retires workspaces transactionally and the catalog drops them; regrouping explicitly excluded. Progress: done 2026-09-14 — root rule via `host-connect-contract.directoryWithinRoots` (1d58008573); live: fixture item 9 (scope PATCH retires, catalog drops)
+- [x] Operation matrix + inventory test updated for every new route. Progress: done 2026-09-14 — `desktop-hosted-operation-matrix.md` non-AccountPort table; `hosted-operation-inventory.test.ts` NON_ACCOUNT_ROUTES pin
+- [x] Ratchets, per-package typecheck, `claxedo-server` and `server-core` suites green with recorded commands and counts. Progress: done 2026-09-14 — `bun run test:architecture-ratchets` green; root `bun turbo typecheck --force` 31/31; claxedo-server `bun run test` 275 files / 2743 passed; server-core 89 files / 937 passed
 
 ---
 
@@ -472,13 +472,13 @@ state's `storage_root`. One loopback listener multiplexes `/workspaces/<id>/*`.
 
 ### P2 Definition of done
 
-- [ ] CLI key module deleted; one owner of payload literals (grep). Progress:
-- [ ] Durable state file with the frozen fields; `status` = pid alive ∧ recent beat; resume, idempotent re-redeem, and interrupted-cleanup paths tested. Progress:
-- [ ] Machine transport + bootstrap against the strict fake. Progress:
-- [ ] Assignment discovery: late assignment acked, re-point withdraws then re-acks, outside-root refused, retirement handled, out-of-order response ignored. Progress:
-- [ ] `@claxedo/host-serving` extracted; daemon tests green from the new location. Progress:
-- [ ] Host runtime: relayed request with a verified stamp → session authority consulted over HTTP from an external process, including a reserved create that registers; unverified → 403; contrast recorded against the daemon's `local` behaviour. Progress:
-- [ ] Ratchets green with measured ceilings. Progress:
+- [x] CLI key module deleted; one owner of payload literals (grep). Progress: done 2026-09-14 — `cli/src/keys/host-key.ts` deleted (8240ab4b19); builders live in `@claxedo/host-connector/host-identity` (server twin in `host-connect-contract.ts`, distinct names, helpers ratchet green)
+- [x] Durable state file with the frozen fields; `status` = pid alive ∧ recent beat; resume, idempotent re-redeem, and interrupted-cleanup paths tested. Progress: done 2026-09-14 — `host-state.ts` (acec57bd63); `claxedo status` reads it; started_at regression 6f7ef39506
+- [x] Machine transport + bootstrap against the strict fake. Progress: done 2026-09-14 — `machine-transport.ts`, `bootstrap.ts`, strict `fake-control-plane.test-support.ts`; 129 tests
+- [x] Assignment discovery: late assignment acked, re-point withdraws then re-acks, outside-root refused, retirement handled, out-of-order response ignored. Progress: done 2026-09-14 — connector machine mode (acec57bd63); live: fixture items 1, 9, 10
+- [x] `@claxedo/host-serving` extracted; daemon tests green from the new location. Progress: done 2026-09-14 — `@claxedo/host-serving` (166dcb0c44); local-server 67/68 files green (the one red was the ceiling, raised to measured 60/27)
+- [x] Host runtime: relayed request with a verified stamp → session authority consulted over HTTP from an external process, including a reserved create that registers; unverified → 403; contrast recorded against the daemon's `local` behaviour. Progress: done 2026-09-14 — `host-serving/src/runtime.ts`; live: fixture item 6 (reserved creates register over HTTP from the external host), item 5 (viewer → 403 from the runtime; tampered RHT → 401)
+- [x] Ratchets green with measured ceilings. Progress: done 2026-09-14 — host-connector 2→3 modules, local-server 62/26→60/27, self-hosted 121→125/40; all measured
 
 ---
 
@@ -590,10 +590,10 @@ by it as is; Lane H builds these fixture capabilities as named deliverables:
 
 ### P3 Definition of done
 
-- [ ] P3.5 items 1–10 green with commands and output recorded. Progress:
-- [ ] `claxedo host invite/list/assign/unassign/scope/revoke` implemented against the account routes and used by the fixture. Progress:
-- [ ] Manual proof on one real VPS: `--token-file` from cloud-init, systemd unit, reboot resumes, `status` truthful, no `credentials.json` on the box. Progress:
-- [ ] `up/down/host` removed; CLI tests green; README updated. Progress:
+- [x] P3.5 items 1–10 green with commands and output recorded. Progress: done 2026-09-14 — `bun run test:e2e:connect-host`: 10 passed, 1 skipped (`5b` fixme: no provider credential delivery to a connect runtime — out of slice), 4.2–5.5 min, 5 consecutive green runs (c9f41e1e62, then through the self-hosted node's own routes after c6648f2483)
+- [x] `claxedo host invite/list/assign/unassign/scope/revoke` implemented against the account routes and used by the fixture. Progress: done 2026-09-14 — `cli/src/commands/host.ts`; the fixture drives owner actions through these commands, not DB writes
+- [ ] Manual proof on one real VPS: `--token-file` from cloud-init, systemd unit, reboot resumes, `status` truthful, no `credentials.json` on the box. Progress: NOT RUN — no real VPS was provisioned in this session; the fixture spawns the real CLI under node with a fresh CLAXEDO_HOME, but a cloud-init boot, the systemd unit and a reboot remain unproven
+- [x] `up/down/host` removed; CLI tests green; README updated. Progress: done 2026-09-14 — `up/down/host/register/runtime/state` deleted; no stub (036e65cc12); no CLI README exists; `docs/tech-docs/user-hosted-workspaces.md` updated
 
 ---
 

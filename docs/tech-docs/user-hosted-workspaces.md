@@ -1,7 +1,7 @@
 # User-hosted workspaces: full access from the web over the relay
 
 A **user-hosted workspace** is a directory on a machine the user (or a
-teammate) owns and runs Claxedo on — the desktop app or `claxedo up`. The web
+teammate) owns and runs Claxedo on — the desktop app or `claxedo connect`. The web
 client reaches it only through the Workspace Relay: no central sandbox sits
 behind it. Everything the desktop can do against that workspace, the web client
 does the same way, and the machine's own runtime stays the authority for its
