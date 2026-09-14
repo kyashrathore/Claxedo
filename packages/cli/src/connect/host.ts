@@ -8,6 +8,7 @@ import {
   createMachineSignedTransport,
   decisionCode,
   HostedHttpError,
+  HostedRequestTimeoutError,
   type FetchLike,
 } from "@claxedo/host-connector/machine-transport"
 import { createHostRuntimeListener, type HostRuntimeListener, type HostWorkspaceRuntimeOptions } from "@claxedo/host-serving/runtime"
@@ -75,7 +76,12 @@ export function defaultHostDeps(): HostDeps {
 
 export const BEAT_INTERVAL_MS = Math.min(LEASE_TTL_MS / 3, 20_000)
 
-/** Transport errors are retried for this long before the process gives up with exit 1. */
+/**
+ * Transport failures are retried until this much wall-clock time has passed
+ * since the first attempt, then the process gives up with exit 1. Every
+ * request the attempts make is bounded by the transport's own deadline, so
+ * the last attempt overruns the budget by at most one request timeout.
+ */
 export const BOOTSTRAP_RETRY_BUDGET_MS = 5 * 60_000
 const RETRY_CAP_MS = 30_000
 
@@ -85,7 +91,7 @@ const DECISION_STATUSES = new Set([400, 401, 403, 404, 409, 410])
 export function transientBootstrapFailure(error: unknown) {
   if (error instanceof HostConnectDecisionError) return false
   if (error instanceof HostedHttpError) return !DECISION_STATUSES.has(error.status)
-  if (error instanceof TypeError) return true
+  if (error instanceof HostedRequestTimeoutError || error instanceof TypeError) return true
   return typeof error === "object" && error !== null && typeof (error as { code?: unknown }).code === "string"
 }
 
@@ -96,18 +102,20 @@ export async function withBootstrapRetry<T>(
   transient: (error: unknown) => boolean = transientBootstrapFailure,
 ): Promise<T> {
   const started = deps.now()
+  const deadline = started + BOOTSTRAP_RETRY_BUDGET_MS
   let delay = 1_000
   for (;;) {
     try {
       return await attempt()
     } catch (error) {
       if (!transient(error)) throw error
-      const elapsed = deps.now() - started
-      if (elapsed + delay > BOOTSTRAP_RETRY_BUDGET_MS) {
-        throw new Error(`${label} failed for ${Math.round(elapsed / 1000)}s: ${errorMessage(error)}`, { cause: error })
+      const remaining = deadline - deps.now()
+      if (remaining <= 0) {
+        throw new Error(`${label} failed for ${Math.round((deps.now() - started) / 1000)}s: ${errorMessage(error)}`, { cause: error })
       }
-      deps.log(`${label} failed (${errorMessage(error)}); retrying in ${delay / 1000}s`)
-      await deps.sleep(delay)
+      const wait = Math.min(delay, remaining)
+      deps.log(`${label} failed (${errorMessage(error)}); retrying in ${wait / 1000}s`)
+      await deps.sleep(wait)
       delay = Math.min(delay * 2, RETRY_CAP_MS)
     }
   }

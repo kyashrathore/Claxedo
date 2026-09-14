@@ -4,7 +4,7 @@ import { HostConnectDecisionError, redeemInvitation } from "./bootstrap"
 import { createFakeControlPlane, memoryHostStateFs } from "./fake-control-plane.test-support"
 import { createHostKeyPair, hostKeyPairFromJwk, newHostId } from "./host-identity"
 import { createHostStateStore, newHostState, parseHostState } from "./host-state"
-import type { FetchLike } from "./machine-transport"
+import { HostedRequestTimeoutError, type FetchLike } from "./machine-transport"
 
 /**
  * The bootstrap's writes, in order, against the strict fake. The recovery
@@ -235,5 +235,16 @@ describe("decisions", () => {
     expect(error).not.toBeInstanceOf(HostConnectDecisionError)
     expect(String(error)).toContain("HOSTED_HTTP 503")
     expect(h.stored()?.bootstrap, "the pending marker stays for the retry").toBeDefined()
+  })
+
+  test("a control plane that never answers is a timeout, not a decision, and leaves the marker for the retry", async () => {
+    const h = await freshHost()
+    const never: FetchLike = () => new Promise(() => undefined)
+
+    const error = await h.redeem({ fetch: never, requestTimeoutMs: 20 }).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(HostedRequestTimeoutError)
+    expect(String(error)).toContain("did not answer POST /api/claxedo/host/enrollments/redeem within 0.02s")
+    expect(h.stored()?.bootstrap).toBeDefined()
   })
 })

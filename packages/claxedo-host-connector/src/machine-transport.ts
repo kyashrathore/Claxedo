@@ -22,6 +22,26 @@ export const HOST_ENROLLMENT_HEARTBEAT_PATH = "/api/claxedo/host/enrollments/hea
 export const HOST_ENROLLMENT_REDEEM_PATH = "/api/claxedo/host/enrollments/redeem"
 
 /**
+ * Headers and body of one beat or acquire; a beat that outlives this is
+ * abandoned and the lease it was renewing is left to the next one.
+ */
+export const MACHINE_REQUEST_TIMEOUT_MS = 15_000
+/** Redeem writes the enrollment; a longer bound, and the bootstrap retry re-redeems the same key. */
+export const REDEEM_REQUEST_TIMEOUT_MS = 30_000
+
+/** A request the control plane did not answer within its bound; a transport failure, never a decision. */
+export class HostedRequestTimeoutError extends Error {
+  readonly pathname: string
+  readonly timeoutMs: number
+  constructor(pathname: string, timeoutMs: number, cause?: unknown) {
+    super(`control plane did not answer POST ${pathname} within ${timeoutMs / 1000}s`, cause === undefined ? undefined : { cause })
+    this.name = "HostedRequestTimeoutError"
+    this.pathname = pathname
+    this.timeoutMs = timeoutMs
+  }
+}
+
+/**
  * An HTTP refusal, in the one message shape every reader of this package
  * already parses: `transientHeartbeatFailure` reads the status, `decisionCode`
  * the control plane's error code.
@@ -56,22 +76,48 @@ export function controlPlaneRequestUrl(controlPlaneUrl: string, pathname: string
 }
 
 /**
- * Send JSON and parse JSON; a non-2xx answer becomes a `HostedHttpError`. The
- * body is read once as text so a non-JSON error page is still reported with
- * its status rather than as a parse failure that hides it.
+ * Send JSON and parse JSON within `timeoutMs`; a non-2xx answer becomes a
+ * `HostedHttpError`, a request still open at the deadline a
+ * `HostedRequestTimeoutError`. The body is read once as text so a non-JSON
+ * error page is still reported with its status rather than as a parse
+ * failure that hides it.
+ *
+ * The deadline is raced here as well as handed to `fetch` as its signal: the
+ * signal is what closes the socket, the race is what returns even through a
+ * `fetch` that ignores it (the response body's reader included).
  */
 export async function postJson(
   fetchImpl: FetchLike,
   url: URL,
   bodyText: string,
   headers: Record<string, string>,
+  timeoutMs: number,
 ): Promise<unknown> {
-  const response = await fetchImpl(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...headers },
-    body: bodyText,
+  const signal = AbortSignal.timeout(timeoutMs)
+  const timedOut = new Promise<never>((_, reject) => {
+    signal.addEventListener("abort", () => reject(new HostedRequestTimeoutError(url.pathname, timeoutMs, signal.reason)), { once: true })
   })
-  const text = await response.text()
+  let text: string
+  let response: Response
+  try {
+    ;({ response, text } = await Promise.race([
+      (async () => {
+        const answer = await fetchImpl(url, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...headers },
+          body: bodyText,
+          signal,
+        })
+        return { response: answer, text: await answer.text() }
+      })(),
+      timedOut,
+    ]))
+  } catch (error) {
+    if (signal.aborted && !(error instanceof HostedRequestTimeoutError)) {
+      throw new HostedRequestTimeoutError(url.pathname, timeoutMs, error)
+    }
+    throw error
+  }
   let parsed: unknown
   try {
     parsed = text ? JSON.parse(text) : {}
@@ -159,11 +205,13 @@ export type MachineSignedTransportOptions = {
   fetch: FetchLike
   now?: () => number
   nonce?: () => string
+  requestTimeoutMs?: number
 }
 
 export function createMachineSignedTransport(options: MachineSignedTransportOptions): MachineTransport {
   const now = options.now ?? (() => Date.now())
   const nonce = options.nonce ?? randomNonce
+  const timeoutMs = options.requestTimeoutMs ?? MACHINE_REQUEST_TIMEOUT_MS
 
   const signedPost = async (pathname: string, body: Record<string, unknown>) => {
     const url = controlPlaneRequestUrl(options.controlPlaneUrl, pathname)
@@ -185,7 +233,7 @@ export function createMachineSignedTransport(options: MachineSignedTransportOpti
       [MACHINE_REQUEST_HEADERS.ts]: String(ts),
       [MACHINE_REQUEST_HEADERS.nonce]: requestNonce,
       [MACHINE_REQUEST_HEADERS.signature]: signature,
-    })
+    }, timeoutMs)
   }
 
   return {

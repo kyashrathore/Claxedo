@@ -9,7 +9,7 @@ import { createFakeConnectControlPlane, decodeFakeTunnelToken, type FakeControlP
 import { BEAT_INTERVAL_MS, servingCredential, transientBootstrapFailure, withBootstrapRetry, type HostDeps } from "../connect/host"
 import { connectPaths, connectStateStore } from "../connect/paths"
 import type { ServiceDeps } from "../connect/service"
-import { HostedHttpError } from "@claxedo/host-connector/machine-transport"
+import { HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
 import { HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { connect, type ConnectDeps } from "./connect"
 import { hostOnline, statusLines } from "./status"
@@ -475,8 +475,30 @@ describe("exit-code mapping and bootstrap retry", () => {
       ),
     ).rejects.toThrow(/^redeem failed for \d+s: HOSTED_HTTP 503/)
     expect(delays.slice(0, 6)).toEqual([1_000, 2_000, 4_000, 8_000, 16_000, 30_000])
-    expect(delays.reduce((sum, ms) => sum + ms, 0)).toBeLessThanOrEqual(5 * 60_000)
-    expect(delays.reduce((sum, ms) => sum + ms, 0) + 30_000).toBeGreaterThan(5 * 60_000)
+    expect(delays.reduce((sum, ms) => sum + ms, 0)).toBe(5 * 60_000)
+    expect(attempts.at(-1)).toBe(5 * 60_000)
+  })
+
+  test("the budget is wall-clock across attempts: slow attempts eat it, and a request that never answers is transient", async () => {
+    let clock = 0
+    const delays: number[] = []
+    const attempts: number[] = []
+    const error = await withBootstrapRetry(
+      { now: () => clock, sleep: async (ms) => { delays.push(ms); clock += ms }, log: () => undefined },
+      "acquire",
+      async () => {
+        attempts.push(clock)
+        // Each attempt is one request abandoned at the transport's 15 s deadline.
+        clock += 15_000
+        throw new HostedRequestTimeoutError("/api/claxedo/host/enrollments/acquire", 15_000)
+      },
+    ).catch((e: unknown) => e)
+
+    expect(String(error)).toMatch(/^Error: acquire failed for 3\d\ds: control plane did not answer POST/)
+    expect(transientBootstrapFailure(new HostedRequestTimeoutError("/p", 1))).toBe(true)
+    expect(attempts.at(-1)! + 15_000, "the last attempt started inside the budget and overran it by one request").toBeGreaterThanOrEqual(5 * 60_000)
+    expect(attempts.at(-1)!).toBeLessThan(5 * 60_000)
+    expect(delays.reduce((sum, ms) => sum + ms, 0) + attempts.length * 15_000).toBeGreaterThanOrEqual(5 * 60_000)
   })
 
   test("the beat interval is a third of the lease, capped at 20 s", () => {

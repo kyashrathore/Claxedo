@@ -3,7 +3,7 @@ import { describe, expect, test } from "vitest"
 import { transientHeartbeatFailure } from "./connector"
 import { createFakeControlPlane, enrollFakeHost } from "./fake-control-plane.test-support"
 import { createHostKeyPair } from "./host-identity"
-import { createMachineSignedTransport, decisionCode, HostedHttpError } from "./machine-transport"
+import { createMachineSignedTransport, decisionCode, HostedHttpError, HostedRequestTimeoutError } from "./machine-transport"
 
 /**
  * The transport against a control plane that enforces P1.1. Each refusal
@@ -98,6 +98,36 @@ describe("refusals surface as HOSTED_HTTP decisions", () => {
     cp.revoke(enrolled.enrollmentId)
 
     expect(decisionCode(await transport.acquire().catch((e: unknown) => e))).toBe("enrollment_revoked")
+  })
+
+  test("a control plane that never answers is abandoned at the deadline as a transport failure", async () => {
+    const answered: Array<() => void> = []
+    const { transport } = await host(undefined, {
+      requestTimeoutMs: 20,
+      fetch: (_url, init) =>
+        new Promise((resolve) => {
+          // A fetch that ignores its signal, so the transport's own deadline is what returns.
+          answered.push(() => resolve(new Response("{}", { status: 200 })))
+          expect(init.signal).toBeInstanceOf(AbortSignal)
+        }),
+    })
+
+    const error = await transport.acquire().catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(HostedRequestTimeoutError)
+    expect(String(error)).toContain("did not answer POST /api/claxedo/host/enrollments/acquire within 0.02s")
+    expect(transientHeartbeatFailure(error)).toBe(true)
+    expect(decisionCode(error)).toBeUndefined()
+    answered.forEach((answer) => answer())
+  })
+
+  test("a body that never finishes is bounded by the same deadline", async () => {
+    const { transport } = await host(undefined, {
+      requestTimeoutMs: 20,
+      fetch: async () => new Response(new ReadableStream({ start: () => undefined }), { status: 200 }),
+    })
+
+    await expect(transport.acquire()).rejects.toBeInstanceOf(HostedRequestTimeoutError)
   })
 
   test("a control plane mid-deploy is a disruption, not a decision", async () => {

@@ -21,6 +21,7 @@ import {
   decodeEndpoints,
   decodeScope,
   postJson,
+  REDEEM_REQUEST_TIMEOUT_MS,
   requireNumber,
   requireString,
   type FetchLike,
@@ -71,6 +72,7 @@ export async function redeemInvitation(input: {
   displayName?: string
   fetch: FetchLike
   now?: () => number
+  requestTimeoutMs?: number
 }): Promise<RedeemOutcome> {
   if (input.state.enrollment) {
     throw new HostConnectDecisionError(
@@ -112,7 +114,13 @@ export async function redeemInvitation(input: {
   })
   let value: unknown
   try {
-    value = await postJson(input.fetch, controlPlaneRequestUrl(pending.control_plane_url, HOST_ENROLLMENT_REDEEM_PATH), bodyText, {})
+    value = await postJson(
+      input.fetch,
+      controlPlaneRequestUrl(pending.control_plane_url, HOST_ENROLLMENT_REDEEM_PATH),
+      bodyText,
+      {},
+      input.requestTimeoutMs ?? REDEEM_REQUEST_TIMEOUT_MS,
+    )
   } catch (error) {
     throw asDecision(error) ?? error
   }
