@@ -1,6 +1,6 @@
 # Remote machine connection: implementation plan
 
-Status: P1–P3 implemented on branch `feat/connect` (2026-09-14); P4–P7 not started. Revision 4. Builds on the investigation
+Status: P1–P3 implemented on branch `feat/connect` (2026-09-14–15), reviewed twice (Fable + Codex) with every finding fixed, live-proven on the fixture (12/12 + 1 fixme) and on real EC2; P4–P7 not started. Revision 4. Builds on the investigation
 (`2026-09-14-001-feat-connect-enrollment-foundation-proposal.md`) and the
 component map (`2026-09-14-002-feat-connect-components-and-flows.md`). Nothing
 here is authorized until the product questions in §0 are answered.
@@ -178,7 +178,11 @@ Authority (both adapters):
   today they hold only host id + workspace ids) and preserves them through
   `host.registration.update` (both implementations re-verify the token and
   rewrite registration there; a registration update with a lower generation
-  than the socket's is refused). Admission consults a new
+  than the socket's is refused; an update carrying no generation on a fenced
+  socket is refused; every update runs the same admission pipeline as a
+  connect, and a socket that becomes fenced starts the periodic check).
+  A token that carries a generation on a relay with no resolver is refused
+  403 `host_generation_unverifiable`. Admission consults a new
   `GET /internal/relay/host-generation?enrollmentId=` lookup with these
   rules: a cached value is used only when it **equals** the token's
   generation; a token with a **higher** generation than the cache forces a
@@ -522,7 +526,11 @@ state prints how to mint an invitation and exits 78.
 
 `--install-service` writes a `systemd --user` unit (Linux) or a LaunchAgent
 (macOS) running `claxedo connect --foreground`, `Restart=on-failure`,
-`RestartPreventExitStatus=78`; prints the `loginctl enable-linger` command.
+`RestartPreventExitStatus=78`, `TimeoutStopSec=25` (launchd `ExitTimeOut`
+25 with a wrapper that forwards SIGTERM and boots the job out on 78). On
+Linux it first checks linger and the user manager; when either is missing it
+writes the unit, records `service`, prints the exact `loginctl enable-linger`
+line and exits 78 without claiming a start.
 `claxedo connect --uninstall-service` stops and removes it. A user service is
 process isolation from other users only; it does not by itself separate the
 connector from an agent running as the same user — documented in the CLI help
@@ -590,9 +598,9 @@ by it as is; Lane H builds these fixture capabilities as named deliverables:
 
 ### P3 Definition of done
 
-- [x] P3.5 items 1–10 green with commands and output recorded. Progress: done 2026-09-14 — `bun run test:e2e:connect-host`: 10 passed, 1 skipped (`5b` fixme: no provider credential delivery to a connect runtime — out of slice), 4.2–5.5 min, 5 consecutive green runs (c9f41e1e62, then through the self-hosted node's own routes after c6648f2483)
+- [x] P3.5 items 1–11 green with commands and output recorded (item 11 = service-managed lifecycle; item 8 has partial and full resolver-outage variants). Progress: third pass 2026-09-15 — 12 passed, 1 skipped (5b), done 2026-09-14 — `bun run test:e2e:connect-host`: 10 passed, 1 skipped (`5b` fixme: no provider credential delivery to a connect runtime — out of slice), 4.2–5.5 min, 5 consecutive green runs (c9f41e1e62, then through the self-hosted node's own routes after c6648f2483)
 - [x] `claxedo host invite/list/assign/unassign/scope/revoke` implemented against the account routes and used by the fixture. Progress: done 2026-09-14 — `cli/src/commands/host.ts`; the fixture drives owner actions through these commands, not DB writes
-- [ ] Manual proof on one real VPS: `--token-file` from cloud-init, systemd unit, reboot resumes, `status` truthful, no `credentials.json` on the box. Progress: NOT RUN — no real VPS was provisioned in this session; the fixture spawns the real CLI under node with a fresh CLAXEDO_HOME, but a cloud-init boot, the systemd unit and a reboot remain unproven
+- [x] Manual proof on one real VPS: `--token-file` from cloud-init, systemd unit, reboot resumes, `status` truthful, no `credentials.json` on the box. Progress: done 2026-09-14 on EC2 ap-south-1 — real self-hosted Node control plane + real Bun relay on one t3.medium, host on a second with no ingress except SSH from the operator; cloud-init token file → enrolled, `~/.claxedo` held only `connect/state.json`; assign → served in 6.4 s; file read through the relay 258 ms; `sudo reboot` → same enrollment, generation 1→2, served 9 s after kernel up; revoke → 403 → exit 78, `NRestarts=0`; both instances terminated and confirmed. Deterministic twin: `packages/cli/src/connect/machine-lifecycle.test.ts` (fake systemd parsing the real unit, cloud-init provisioner, reboot, revoke-no-restart, crash restart, linger-off refusal) and Tier R item 11 (real CLI installed as a service on the fixture box)
 - [x] `up/down/host` removed; CLI tests green; README updated. Progress: done 2026-09-14 — `up/down/host/register/runtime/state` deleted; no stub (036e65cc12); no CLI README exists; `docs/tech-docs/user-hosted-workspaces.md` updated
 
 ---
