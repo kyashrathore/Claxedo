@@ -1,0 +1,345 @@
+import { afterEach, describe, expect, test } from "bun:test"
+import fs from "node:fs/promises"
+import http from "node:http"
+import os from "node:os"
+import path from "node:path"
+import { connect, type ConnectDeps } from "../commands/connect"
+import { processAlive, statusLines } from "../commands/status"
+import { desktopDaemonDiscoveryFiles, liveDesktopDaemon } from "./desktop-daemon"
+import { createFakeConnectControlPlane, decodeFakeTunnelToken, type FakeControlPlane } from "./fake-control-plane.test-support"
+import { defaultHostDeps } from "./host"
+import { createFakeSystemdUserManager, provision, type FakeServiceManager } from "./machine-simulator.test-support"
+import { connectPaths, connectStateStore } from "./paths"
+import { relayStub, until, type RelayStub } from "./relay-stub.test-support"
+import { SYSTEMD_UNIT } from "./service"
+
+/**
+ * The EC2 proof, on a machine this process owns: cloud-init writes the
+ * invitation and runs `claxedo connect --token-file --root --install-service`
+ * as a user with lingering on; a systemd user manager reads the unit the CLI
+ * wrote and runs the real `connect` command as a child process; the owner
+ * assigns; the box reboots; the owner revokes. The control plane is the
+ * strict fake served over HTTP, the relay a stub that admits host tunnels.
+ * Time is compressed through the seams the code already has — the child's
+ * beat interval and the manager's restart and stop timers — never by
+ * sleeping.
+ */
+
+/** The child's beat interval; every bound below is a count of beats, and the ms are reported. */
+const BEAT_MS = 200
+const INSTALLED_AT = 1_700_000_000_000
+const CHILD_ENTRY = path.join(import.meta.dir, "machine-simulator-child.test-support.ts")
+
+/**
+ * The strict fake behind a real socket: the child process speaks HTTP to it
+ * as it would to the control plane. Node's server, not `Bun.serve`: the host
+ * runtime listener's `@hono/node-server` replaces the global `Response` with
+ * its own class once a listener exists, and `Bun.serve` refuses that class.
+ */
+async function serveFakeControlPlane(relayUrl: string) {
+  let cp: FakeControlPlane | undefined
+  const server = http.createServer(async (request, response) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of request) chunks.push(chunk as Buffer)
+    const body = Buffer.concat(chunks).toString()
+    const answer = await cp!.fetch(new URL(request.url ?? "/", `http://${request.headers.host}`), {
+      method: request.method ?? "GET",
+      headers: Object.fromEntries(Object.entries(request.headers).flatMap(([key, value]) => (typeof value === "string" ? [[key, value]] : []))),
+      ...(body ? { body } : {}),
+    })
+    response.writeHead(answer.status, Object.fromEntries(answer.headers.entries()))
+    response.end(await answer.text())
+  })
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+  const address = server.address()
+  if (!address || typeof address === "string") throw new Error("fake control plane did not bind a port")
+  cp = createFakeConnectControlPlane({ url: `http://127.0.0.1:${address.port}`, relayUrl })
+  return {
+    cp,
+    stop: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections()
+        server.close(() => resolve())
+      }),
+  }
+}
+
+function timing(label: string, values: Record<string, number | string | undefined>) {
+  console.log(`[machine-lifecycle timing] ${label}: ${JSON.stringify(values)}`)
+}
+
+type Machine = {
+  home: string
+  claxedoHome: string
+  root: string
+  tokenFile: string
+  unitFile: string
+  cp: FakeControlPlane
+  relay: RelayStub
+  manager: FakeServiceManager
+  deps: ConnectDeps
+  /** What the installing `connect` printed. */
+  lines: string[]
+  /** Every wait the manager asked its timer for, in ms; the timer itself fires at once. */
+  timerWaitsMs: number[]
+  state: () => Promise<Awaited<ReturnType<ConnectDeps["store"]["load"]>>>
+  status: () => Promise<string>
+  close: () => Promise<void>
+}
+
+async function machine(input: { linger: boolean }): Promise<Machine> {
+  const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-ec2-")))
+  const relay = relayStub()
+  const served = await serveFakeControlPlane(relay.url)
+  // Off the default `$HOME/.claxedo`, so the child finds the state only through the unit's `Environment=`.
+  const claxedoHome = path.join(home, "var", "lib", "claxedo")
+  const timerWaitsMs: number[] = []
+  const manager = createFakeSystemdUserManager({
+    home,
+    username: "ec2-user",
+    linger: input.linger,
+    runtimeDir: "/run/user/1000",
+    cwd: home,
+    environment: { HOME: home, PATH: process.env.PATH ?? "", XDG_RUNTIME_DIR: "/run/user/1000", CLAXEDO_SIM_BEAT_MS: String(BEAT_MS) },
+    setTimeout: (fn, ms) => {
+      timerWaitsMs.push(ms)
+      const handle = setTimeout(fn, 0)
+      return { cancel: () => clearTimeout(handle) }
+    },
+  })
+  const lines: string[] = []
+  const store = connectStateStore(claxedoHome)
+  const deps: ConnectDeps = {
+    host: { ...defaultHostDeps(), log: (line) => lines.push(line), sleep: async () => undefined },
+    service: () => manager.serviceDeps({ command: [process.execPath, CHILD_ENTRY], claxedoHome, now: () => INSTALLED_AT }),
+    store,
+    paths: connectPaths(claxedoHome),
+    controlPlaneUrl: served.cp.url,
+    displayName: "ip-10-0-0-12",
+    removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
+    desktopDaemon: () => liveDesktopDaemon({ files: desktopDaemonDiscoveryFiles({}, home) }),
+  }
+  return {
+    home,
+    claxedoHome,
+    root: path.join(home, "srv"),
+    tokenFile: path.join(home, "run", "claxedo", "invite"),
+    unitFile: path.join(home, ".config", "systemd", "user", SYSTEMD_UNIT),
+    cp: served.cp,
+    relay,
+    manager,
+    deps,
+    lines,
+    timerWaitsMs,
+    state: () => store.load(),
+    status: async () =>
+      (
+        await statusLines({
+          load: () => store.load(),
+          stateFile: connectPaths(claxedoHome).stateFile,
+          resolvePath: (target) => fs.realpath(target),
+          pidAlive: processAlive,
+          now: () => Date.now(),
+          log: () => undefined,
+        })
+      ).join("\n"),
+    close: async () => {
+      await manager.dispose()
+      await relay.stop()
+      await served.stop()
+      await fs.rm(home, { recursive: true, force: true })
+    },
+  }
+}
+
+const enrollmentIdOf = (m: Machine) => [...m.cp.enrollments.keys()][0]!
+
+/** The invitation minted on the owner's laptop, then the box's user-data: token file, repo, `claxedo connect … --install-service`. */
+async function cloudInit(m: Machine) {
+  const invitation = await m.cp.createInvitation({ displayName: "ec2-host", scope: { allowed_roots: [m.root], visibility: "owner" } })
+  return await provision({
+    tokenFile: m.tokenFile,
+    token: invitation.token,
+    repos: [path.join(m.root, "api")],
+    runcmd: [() => connect(["--token-file", m.tokenFile, "--root", m.root, "--name", "ec2-host", "--install-service"], m.deps)],
+  })
+}
+
+async function beating(m: Machine, since: number) {
+  await until(async () => {
+    const run = (await m.state())?.run
+    return run !== undefined && run.pid === m.manager.service().pid && (run.last_beat_ok_at ?? 0) >= since
+  }, "the unit's process to record a beat")
+}
+
+/** Readiness at the control plane, the tunnel at the relay, and the host's own served row, for one workspace. */
+async function servedEverywhere(m: Machine, workspaceId: string, generation: number) {
+  await until(() => m.cp.routable(enrollmentIdOf(m)).includes(workspaceId), `readiness for ${workspaceId}`)
+  await until(() => m.relay.open().some((socket) => socket.workspaceIds.includes(workspaceId)), `a tunnel for ${workspaceId}`)
+  const socket = m.relay.open().find((socket) => socket.workspaceIds.includes(workspaceId))!
+  expect(decodeFakeTunnelToken(socket.token)).toEqual({ workspace_ids: [workspaceId], enrollment_id: enrollmentIdOf(m), generation })
+  await until(async () => (await m.state())?.run?.served?.some((row) => row.workspace_id === workspaceId && row.connected) === true, "the served row to show the tunnel")
+  return socket
+}
+
+describe("claxedo connect on a simulated machine", () => {
+  let m: Machine
+  afterEach(async () => {
+    await m?.close()
+  })
+
+  test("cloud-init installs the unit; the manager runs it; an assignment is served; a reboot resumes unattended; a revoke ends it with 78 and no restart", async () => {
+    m = await machine({ linger: true })
+    const provisioned = await cloudInit(m)
+    expect(provisioned.tokenFileMode).toBe(0o600)
+    expect(provisioned.exitCodes).toEqual([0])
+    expect(m.manager.calls).toEqual([
+      "loginctl show-user ec2-user --property=Linger --value",
+      "systemctl --user is-system-running",
+      "systemctl --user daemon-reload",
+      `systemctl --user enable --now ${SYSTEMD_UNIT}`,
+    ])
+    expect(m.lines.some((line) => line.startsWith("Enrolled as "))).toBe(true)
+    expect(m.lines.some((line) => line.startsWith(`Installed and started ${SYSTEMD_UNIT}`))).toBe(true)
+
+    // What the box holds after user-data: the enrollment and the service, no invitation, no account credential.
+    expect(await fs.readFile(m.tokenFile, "utf8").catch(() => "gone")).toBe("gone")
+    expect(await fs.stat(path.join(m.claxedoHome, "credentials.json")).catch(() => "absent")).toBe("absent")
+    const installed = await m.state()
+    expect(installed?.enrollment?.enrollment_id).toBe(enrollmentIdOf(m))
+    expect(installed?.bootstrap).toBeUndefined()
+    expect(installed?.service).toEqual({ kind: "systemd-user", unit: m.unitFile, installed_at: INSTALLED_AT })
+    const unit = await fs.readFile(m.unitFile, "utf8")
+    expect(unit).toContain(`ExecStart="${process.execPath}" "${CHILD_ENTRY}" "connect" "--foreground"`)
+    expect(unit).toContain(`Environment=CLAXEDO_HOME="${m.claxedoHome}"`)
+
+    // The manager parsed that unit and is running its ExecStart.
+    const first = m.manager.service()
+    expect(first).toMatchObject({ enabled: true, running: true, state: "active/running", restarts: 0 })
+    expect(first.pid).toBe(m.manager.child()!.pid)
+    await beating(m, INSTALLED_AT)
+    expect(m.cp.log.map((entry) => entry.path).slice(0, 3)).toEqual([
+      "/api/claxedo/host/enrollments/redeem",
+      "/api/claxedo/host/enrollments/acquire",
+      "/api/claxedo/host/enrollments/heartbeat",
+    ])
+    expect((await m.state())?.run).toMatchObject({ pid: first.pid, generation: 1, served: [] })
+    let status = await m.status()
+    expect(status).toContain(`enrollment   ${enrollmentIdOf(m)} (via invitation, owner Alice)`)
+    expect(status).toContain("status       online")
+    expect(status).toContain(`service      systemd-user ${m.unitFile}`)
+    expect(status).toContain("Served folders: none")
+
+    // The owner assigns the folder user-data created; the host learns it on
+    // its next beat and acks on the one it requests right after.
+    const api = path.join(m.root, "api")
+    const beatsBefore = m.cp.beats().length
+    const assignedAt = Date.now()
+    m.cp.assign({ hostId: installed!.host_id, workspaceId: "ws_api", remoteDirectory: api, displayName: "api" })
+    const socket = await servedEverywhere(m, "ws_api", 1)
+    const servedAt = Date.now()
+    const ackBeat = m.cp.beats().findIndex((beat) => JSON.stringify(beat.body.acks).includes("ws_api"))
+    const beatsUsed = ackBeat - beatsBefore + 1
+    timing("assign → readiness + tunnel", { elapsedMs: servedAt - assignedAt, beatsUsed, beatMs: BEAT_MS })
+    expect(beatsUsed, "one beat to learn the assignment, the requested one to ack it").toBeLessThanOrEqual(2)
+    expect(m.manager.journal()).toContain(`workspace ws_api: serving ${api} (revision 1)`)
+    status = await m.status()
+    expect(status).toContain("ws_api  revision 1  connected")
+
+    // Power loss and a boot. Nothing but the manager acts: the unit is enabled
+    // on disk, its process reads the state file, acquires the next generation
+    // and re-acks what the beat delivers.
+    const requestsBeforeReboot = m.cp.log.length
+    const { bootedAt } = await m.manager.reboot()
+    await until(() => socket.closed, "the dead process's tunnel to close at the relay")
+    const rebooted = m.manager.service()
+    expect(rebooted).toMatchObject({ running: true, state: "active/running", restarts: 0 })
+    expect(rebooted.pid).not.toBe(first.pid)
+    const resumed = await servedEverywhere(m, "ws_api", 2)
+    const resumedAt = Date.now()
+    expect(resumed).not.toBe(socket)
+    timing("boot → readiness + tunnel, unattended", { elapsedMs: resumedAt - bootedAt, beatMs: BEAT_MS })
+    const afterReboot = m.cp.log.slice(requestsBeforeReboot).map((entry) => entry.path)
+    expect(afterReboot[0]).toBe("/api/claxedo/host/enrollments/acquire")
+    expect(afterReboot.filter((entry) => !entry.endsWith("/heartbeat"))).toEqual(["/api/claxedo/host/enrollments/acquire"])
+    const resumedState = await m.state()
+    expect(resumedState?.enrollment?.enrollment_id).toBe(enrollmentIdOf(m))
+    expect(resumedState?.run).toMatchObject({ pid: rebooted.pid, generation: 2 })
+    expect(resumedState?.service).toEqual(installed?.service)
+    expect(m.manager.journal()).toContain(`serving as ${enrollmentIdOf(m)} (generation 2)`)
+    expect(m.manager.journal()).not.toContain("Enrolled as")
+    expect(m.manager.journal()).not.toContain("Resumed as")
+    expect(await m.status()).toContain("ws_api  revision 1  connected")
+
+    // The owner revokes. The next beat is 403 enrollment_revoked, the process
+    // exits 78, and the unit's RestartPreventExitStatus keeps the manager
+    // from starting it again.
+    const callsBeforeRevoke = m.manager.calls.length
+    const revokedAt = Date.now()
+    m.cp.revoke(enrollmentIdOf(m))
+    await until(() => !m.manager.service().running, "the unit's process to exit")
+    const exitedAt = Date.now()
+    const ended = m.manager.service()
+    expect(ended).toMatchObject({ running: false, state: "failed/failed", restarts: 0, lastExit: { code: 78, signal: null } })
+    expect(ended.raw).toContain("ActiveState=failed\n")
+    expect(ended.raw).toContain("NRestarts=0\n")
+    expect(ended.raw).toContain("ExecMainStatus=78\n")
+    expect(ended.raw).toContain("Result=exit-code\n")
+    expect(m.timerWaitsMs, "no restart was scheduled").toEqual([])
+    expect(m.manager.restartWaitsMs).toEqual([])
+    expect(m.manager.calls.length).toBe(callsBeforeRevoke)
+    timing("revoke → exit 78", { elapsedMs: exitedAt - revokedAt, beatMs: BEAT_MS })
+    expect(m.manager.journal()).toContain("the control plane no longer accepts this machine (enrollment_revoked)")
+    expect(m.relay.open()).toEqual([])
+    const revokedState = await m.state()
+    expect(revokedState?.run).toBeUndefined()
+    expect(revokedState?.service).toEqual(installed?.service)
+    status = await m.status()
+    expect(status).toContain("status       offline")
+    expect(status).toContain("Served folders: none")
+    expect(m.cp.log.slice(-1)[0]?.path, "nothing acquired after the decision").toBe("/api/claxedo/host/enrollments/heartbeat")
+  }, 30_000)
+
+  test("a process the kernel kills is restarted by the manager after the unit's RestartSec, acquiring the next generation and serving again", async () => {
+    m = await machine({ linger: true })
+    expect((await cloudInit(m)).exitCodes).toEqual([0])
+    await beating(m, INSTALLED_AT)
+    const hostId = (await m.state())!.host_id
+    m.cp.assign({ hostId, workspaceId: "ws_api", remoteDirectory: path.join(m.root, "api") })
+    const socket = await servedEverywhere(m, "ws_api", 1)
+    const killed = m.manager.child()!
+    const killedAt = Date.now()
+    killed.kill("SIGKILL")
+    await until(() => m.manager.service().restarts === 1 && m.manager.service().running, "the manager to restart the unit")
+    expect(m.manager.restartWaitsMs, "RestartSec=5 from the unit, in ms").toEqual([5_000])
+    expect(m.manager.child()!.pid).not.toBe(killed.pid)
+    await until(() => socket.closed, "the killed process's tunnel to close")
+    await servedEverywhere(m, "ws_api", 2)
+    timing("SIGKILL → restarted + served", { elapsedMs: Date.now() - killedAt, beatMs: BEAT_MS })
+    const restarted = m.manager.service()
+    expect(restarted).toMatchObject({ state: "active/running", restarts: 1 })
+    expect(restarted.raw).toContain("NRestarts=1\n")
+    expect((await m.state())?.run).toMatchObject({ pid: restarted.pid, generation: 2 })
+  }, 30_000)
+
+  test("without lingering the unit is written and recorded but nothing starts, exit 78; --uninstall-service removes it", async () => {
+    m = await machine({ linger: false })
+    const provisioned = await cloudInit(m)
+    expect(provisioned.exitCodes).toEqual([78])
+    expect(m.manager.calls).toEqual(["loginctl show-user ec2-user --property=Linger --value"])
+    expect(await fs.readFile(m.unitFile, "utf8")).toContain("RestartPreventExitStatus=78")
+    const state = await m.state()
+    expect(state?.enrollment?.enrollment_id).toBe(enrollmentIdOf(m))
+    expect(state?.service).toEqual({ kind: "systemd-user", unit: m.unitFile, installed_at: INSTALLED_AT })
+    expect(m.manager.service()).toMatchObject({ loaded: false, enabled: false, running: false })
+    expect(m.manager.child()).toBeUndefined()
+    expect(m.cp.beats()).toEqual([])
+    expect(m.lines.some((line) => line.startsWith(`Wrote ${SYSTEMD_UNIT}`) && line.includes("did not start it"))).toBe(true)
+    expect(m.lines).toContain("  sudo loginctl enable-linger ec2-user")
+    expect(await m.status()).toContain("status       offline")
+
+    expect(await connect(["--uninstall-service"], m.deps)).toBe(0)
+    expect(await fs.readFile(m.unitFile, "utf8").catch(() => "gone")).toBe("gone")
+    expect((await m.state())?.service).toBeUndefined()
+  }, 30_000)
+})

@@ -15,6 +15,7 @@ import {
   type DesktopDaemonDiscovery,
 } from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
+import { relayStub, until } from "../connect/relay-stub.test-support"
 import type { ServiceDeps } from "../connect/service"
 import { HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
 import { HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
@@ -27,40 +28,6 @@ import { hostOnline, statusLines } from "./status"
  * accepts host tunnels and records the credential each one presents. Beats
  * and the stop signal are driven by hand.
  */
-
-type RelaySocket = { token: string; workspaceIds: string[]; closed: boolean }
-
-function relayStub() {
-  const sockets: RelaySocket[] = []
-  const server = Bun.serve<RelaySocket>({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch(request, bun) {
-      const url = new URL(request.url)
-      if (!url.pathname.startsWith("/host-tunnels/")) return new Response("not a tunnel", { status: 404 })
-      const data: RelaySocket = {
-        token: (request.headers.get("authorization") ?? "").replace(/^Bearer /, ""),
-        workspaceIds: url.searchParams.getAll("workspaceId"),
-        closed: false,
-      }
-      return bun.upgrade(request, { data }) ? undefined : new Response("upgrade failed", { status: 400 })
-    },
-    websocket: {
-      open(ws) {
-        sockets.push(ws.data)
-      },
-      message() {},
-      close(ws) {
-        ws.data.closed = true
-      },
-    },
-  })
-  return {
-    url: `http://127.0.0.1:${server.port}`,
-    sockets,
-    stop: () => server.stop(true),
-  }
-}
 
 /** The desktop daemon's identity route, as `claxedo-local-server` serves it: bearer-checked, answering who it is. */
 function fakeDesktopDaemon(identity: { pid: number; generation: string; token: string }) {
@@ -94,14 +61,6 @@ function fakeDesktopDaemon(identity: { pid: number; generation: string; token: s
         ...overrides,
       }),
     stop: () => server.stop(true),
-  }
-}
-
-async function until(predicate: () => boolean | Promise<boolean>, what: string, timeoutMs = 10_000) {
-  const started = Date.now()
-  while (!(await predicate())) {
-    if (Date.now() - started > timeoutMs) throw new Error(`timed out waiting for ${what}`)
-    await new Promise((resolve) => setTimeout(resolve, 10))
   }
 }
 
