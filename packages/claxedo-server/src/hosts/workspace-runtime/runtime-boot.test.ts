@@ -2,8 +2,9 @@ import { describe, expect, test } from "vitest"
 import { execFileSync } from "node:child_process"
 import { mkdtemp, rm } from "node:fs/promises"
 import path from "node:path"
-import { exportSPKI, generateKeyPair } from "jose"
+import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
+import { mintOwnerGrant } from "../../session/owner-grant"
 import { FIRST_PARTY_MCP_RUNTIME_CONTRIBUTION_ID } from "./first-party-mcp"
 import {
   claxedoCorsOrigin,
@@ -197,6 +198,39 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.options.exposure?.kind).toBe("relay")
     expect(boot.options.relayHostAuth).toBeDefined()
     expect(boot.options.hostTunnel).toMatchObject({ relayUrl: "https://relay.example", hostId: "ws-env" })
+  })
+
+  test("seeds the first-party issuer with the owner the grant names, and verifies that grant with the management key", async () => {
+    const key = await generateKeyPair("EdDSA", { extractable: true })
+    const signing = {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(key.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(key.publicKey),
+    }
+    const scope = { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-a", workspaceId: "ws-env" }
+    const grant = await mintOwnerGrant(scope, signing)
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM: await exportSPKI(key.publicKey),
+      WORKSPACE_RUNTIME_OWNER_GRANT: grant.token,
+    })
+    const issuer = boot.options.firstPartyMcpLaunch!.issuer
+    expect(issuer.verify(issuer.current("ses_1"))).toMatchObject({ userId: "alice", sessionId: "ses_1", workspaceId: "ws-env" })
+    const identity = boot.options.ownerGrantIdentity
+    expect(identity).toBeDefined()
+    expect(await identity!(grant.token)).toMatchObject({ actor_id: "actor:alice", org_id: "org-1", workspace_id: "ws-env", role: "owner" })
+    expect(await identity!((await mintOwnerGrant({ ...scope, workspaceId: "ws-other" }, signing)).token)).toBeUndefined()
+    const foreign = await generateKeyPair("EdDSA", { extractable: true })
+    const forged = await mintOwnerGrant(scope, {
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: await exportPKCS8(foreign.privateKey),
+      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: await exportSPKI(foreign.publicKey),
+    })
+    expect(await identity!(forged.token)).toBeUndefined()
+
+    const plain = await claxedoWorkspaceRuntimeBootFromEnv({ WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env", WORKSPACE_RUNTIME_DIRECTORY: process.cwd() })
+    const plainIssuer = plain.options.firstPartyMcpLaunch!.issuer
+    expect(plainIssuer.verify(plainIssuer.current("ses_1"))?.userId).toBeUndefined()
+    expect(plain.options.ownerGrantIdentity).toBeUndefined()
   })
 
   test("boot composes claxedo's cors policy", async () => {

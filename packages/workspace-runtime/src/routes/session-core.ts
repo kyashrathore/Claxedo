@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { Hono, type Context } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
@@ -1357,8 +1358,16 @@ export function createSessionRoutes(opts: Opts) {
           }
           body.id = children.deriveSessionId({ callerIdentity, clientRequestId: body.clientRequestId })
         }
-        const operationId = registrationOperationId(c)
-        if (managedRegistration(opts) && (!body.id || !operationId)) {
+        let operationId = registrationOperationId(c)
+        // A child the workspace's own runtime creates in process has no caller
+        // that reserved first, so it reserves itself as the verified actor —
+        // the owner grant's identity — and the control plane decides. A root
+        // create keeps needing the caller's own reservation.
+        const selfReservation = managedRegistration(opts) && !operationId && body.parentID && children
+          ? opts.sessionAccessPolicy?.reserveSession?.bind(opts.sessionAccessPolicy)
+          : undefined
+        if (selfReservation && !body.id) body.id = `ses_${randomUUID()}`
+        if (managedRegistration(opts) && (!body.id || (!operationId && !selfReservation))) {
           return c.json(errorBody(
             "session_reservation_required",
             "Managed session creation requires a preassigned session id and reservation operation",
@@ -1425,6 +1434,19 @@ export function createSessionRoutes(opts: Opts) {
             : inherited ?? body.permissionCeiling
           const childMode = await permissionModeUnderCeiling(c, adapter, directory, ceiling, body.permissionMode)
           if (childMode.refusal) return childMode.refusal
+          if (selfReservation && !existing) {
+            const reservation = await selfReservation({
+              ...sessionAccessContext(c),
+              operation: "session_create",
+              sessionId: body.id!,
+              parentSessionId: body.parentID!,
+              ...(body.title ? { sessionTitle: body.title } : {}),
+              method: c.req.method,
+              path: c.req.path,
+            })
+            if (!reservation.allowed) return sessionAccessDenied(reservation)
+            operationId = reservation.operationId
+          }
           const createOptions = {
             ...(body.instructions ? { instructions: body.instructions } : {}),
             ...(body.group ? { group: body.group } : {}),

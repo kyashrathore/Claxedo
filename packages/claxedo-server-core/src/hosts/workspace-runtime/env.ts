@@ -64,7 +64,7 @@ export function workspaceRuntimeOwnerGrantEnv(input: { token: string }): Record<
   return { [WORKSPACE_RUNTIME_OWNER_GRANT]: input.token }
 }
 
-export function workspaceRuntimeOwnerGrant(env: Record<string, string | undefined>): string | undefined {
+export function workspaceRuntimeOwnerGrantToken(env: Record<string, string | undefined>): string | undefined {
   return env[WORKSPACE_RUNTIME_OWNER_GRANT]?.trim() || undefined
 }
 

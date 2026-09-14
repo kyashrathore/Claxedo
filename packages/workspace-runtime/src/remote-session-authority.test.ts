@@ -66,6 +66,43 @@ describe("remote workspace session authority", () => {
     ])
   })
 
+  test("reserves a child as the presented proof's principal and answers the operation the authority minted", async () => {
+    const requests: Array<{ headers: Headers; body: unknown }> = []
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/authorize",
+      fetch: async (_url, init) => {
+        requests.push({ headers: new Headers(init?.headers), body: fetchBodyJson(init?.body) })
+        return Response.json({ allowed: true, operationId: "session_registration_child" })
+      },
+    })
+    expect(typeof policy.reserveSession).toBe("function")
+    expect(await policy.reserveSession!({
+      ...input,
+      operation: "session_create",
+      sessionId: "ses_child",
+      parentSessionId: "ses_parent",
+      sessionTitle: "Reviewer",
+    })).toEqual({ allowed: true, operationId: "session_registration_child" })
+    expect(requests).toHaveLength(1)
+    expect(requests[0].headers.get("authorization")).toBe("Bearer signed-rht")
+    expect(requests[0].body).toEqual({ sessionId: "ses_child", action: "reserve", parentSessionId: "ses_parent", title: "Reviewer" })
+
+    for (const body of [{ allowed: true }, { allowed: true, operationId: 7 }, {}]) {
+      const invalid = remoteWorkspaceSessionAccessPolicy({ url: "https://control.test/authorize", fetch: async () => Response.json(body) })
+      expect(await invalid.reserveSession!({ ...input, operation: "session_create", sessionId: "ses_child", parentSessionId: "ses_parent" }))
+        .toMatchObject({ allowed: false, status: 503, code: "session_authority_invalid_response" })
+    }
+    const refused = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/authorize",
+      fetch: async () => Response.json({ error: { code: "session_private", message: "not the owner's parent" } }, { status: 403 }),
+    })
+    expect(await refused.reserveSession!({ ...input, operation: "session_create", sessionId: "ses_child", parentSessionId: "ses_parent" }))
+      .toEqual({ allowed: false, status: 403, code: "session_private", message: "not the owner's parent" })
+    const { credential: _credential, ...unproven } = input
+    expect(await policy.reserveSession!({ ...unproven, operation: "session_create", sessionId: "ses_child", parentSessionId: "ses_parent" }))
+      .toMatchObject({ allowed: false, status: 503, code: "session_authority_unavailable" })
+  })
+
   test("fails closed when proof, endpoint, network, or authority is unavailable", async () => {
     expect((await remoteWorkspaceSessionAccessPolicy().authorize({
       ...input,

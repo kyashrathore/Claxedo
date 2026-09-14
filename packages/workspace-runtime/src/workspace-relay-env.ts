@@ -10,6 +10,7 @@ import {
   type WorkspaceRuntimeManagementAuth,
   type WorkspaceRuntimeManagementTarget,
 } from "./management-auth"
+import { ownerGrantIdentityFromEnv, type OwnerGrantIdentity } from "./owner-grant"
 
 export type WorkspaceRelayRuntimeOptions = {
   relayHostAuth?: RelayHostAuthOptions
@@ -17,6 +18,8 @@ export type WorkspaceRelayRuntimeOptions = {
   configToken?: string
   managementAuth?: WorkspaceRuntimeManagementAuth
   managementTarget?: WorkspaceRuntimeManagementTarget
+  /** Present wherever the management verification key is: the same key signs the owner grant. */
+  ownerGrantIdentity?: OwnerGrantIdentity
 }
 
 type Env = NodeJS.ProcessEnv
@@ -139,10 +142,12 @@ export async function workspaceRelayRuntimeOptionsFromEnv(
   port = 3002,
 ): Promise<WorkspaceRelayRuntimeOptions> {
   const managementAuth = await managementAuthFromEnv(env)
+  const ownerGrantIdentity = await ownerGrantIdentityFromEnv(env)
   return {
     relayHostAuth: await relayHostAuthFromEnv(env),
     hostTunnel: hostTunnelFromEnv(env, port),
     configToken: configTokenFromEnv(env),
     ...(managementAuth ? { managementAuth, managementTarget: managementTargetFromEnv(env) } : {}),
+    ...(ownerGrantIdentity ? { ownerGrantIdentity } : {}),
   }
 }

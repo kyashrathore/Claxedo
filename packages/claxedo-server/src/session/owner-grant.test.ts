@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import type { TasksCapabilityOwner } from "@claxedo/server-core/tasks-host/capability"
-import { WORKSPACE_RUNTIME_OWNER_GRANT, workspaceRuntimeOwnerGrant } from "@claxedo/server-core/hosts/workspace-runtime/env"
+import { WORKSPACE_RUNTIME_OWNER_GRANT, workspaceRuntimeOwnerGrantToken } from "@claxedo/server-core/hosts/workspace-runtime/env"
 import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import { mintTasksCapability, verifyTasksCapability } from "../tasks/capability"
 import {
@@ -98,7 +98,7 @@ describe("the owner grant a cloud root is launched with", () => {
     const capability = createOwnerRootCapability({ signingEnv: env, passes, workspaceOwner: async (id) => (id === "ws_root" ? owner : undefined) })
     const environment = await capability(root)
     expect(Object.keys(environment)).toEqual([WORKSPACE_RUNTIME_OWNER_GRANT])
-    const token = workspaceRuntimeOwnerGrant(environment)
+    const token = workspaceRuntimeOwnerGrantToken(environment)
     if (!token) throw new Error("the launch environment carries no owner grant")
     await expect(verifyOwnerGrant(token, env, { revoked: passes.revoked })).resolves.toEqual(scope)
     expect(await passes.outstanding({ orgId: "org-1", audience: OWNER_GRANT_AUDIENCE })).toHaveLength(1)

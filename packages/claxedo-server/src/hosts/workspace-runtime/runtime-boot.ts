@@ -20,6 +20,7 @@ import { workspaceRelayRuntimeOptionsFromEnv } from "@claxedo/workspace-runtime/
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 import { configureRuntimeGitAuth } from "./git-auth"
+import { workspaceRuntimeOwnerGrant } from "./owner-grant"
 import { workspaceRuntimeTasksGrant } from "./tasks-grant"
 import {
   sandboxLeaseEnv,
@@ -139,10 +140,18 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const opencodeRuntime = harness?.kind === "native" && harness.harnessId === "opencode"
     ? createWorkspaceOpenCodeRuntime(targetDirectory)
     : undefined
+  // The owner the control plane launched this root for, presented on the
+  // runtime's own session calls. Its unverified `user_id` names the actor in
+  // the MCP audit trail; nothing here trusts it for more than that.
+  const ownerGrant = workspaceRuntimeOwnerGrant(env)
   // One issuer per runtime process: it mints the bearer every session this
   // runtime launches carries, and its `verify` is both the endpoint's admission
   // check and the runtime's proof that the caller is a harness it started.
-  const firstPartyMcp = createRuntimeCredentialIssuer({ runtimeId: randomUUID(), workspaceId: workspaceId(env) })
+  const firstPartyMcp = createRuntimeCredentialIssuer({
+    runtimeId: randomUUID(),
+    workspaceId: workspaceId(env),
+    ...(ownerGrant?.userId ? { userId: ownerGrant.userId } : {}),
+  })
   // What this root's project consented to, as the control plane wrote it at
   // launch. A sandbox cannot ask again, and a variable that never arrived is
   // not consent, so an absent one leaves every group off.
@@ -178,6 +187,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
         tasks: () => tasks?.current(),
+        ...(ownerGrant ? { ownerGrant: () => ownerGrant.current() } : {}),
       }),
     ],
   }

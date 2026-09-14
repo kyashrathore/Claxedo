@@ -4,6 +4,7 @@ import { createWorkspaceRuntimeApp } from "./server"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "./exposure"
 import { createRuntimeCredentialIssuer } from "./first-party-mcp/index"
 import type { WorkspaceRuntimeRouteContribution } from "./route-contribution"
+import type { EmbeddedRelayHostIdentity } from "./workspace-host-service-auth"
 
 function probe(calls: Array<() => Promise<Response>>): WorkspaceRuntimeRouteContribution {
   return {
@@ -40,6 +41,67 @@ describe("the route-contribution in-process fetch", () => {
     })
     try {
       expect((await calls[0]()).status).toBe(200)
+    } finally {
+      await runtime.host.dispose()
+    }
+  })
+})
+
+describe("an owner grant presented on the in-process fetch", () => {
+  const owner: EmbeddedRelayHostIdentity = {
+    principal_kind: "user",
+    actor_id: "actor_owner",
+    actor_kind: "human",
+    actor_public_id: "actor_owner",
+    actor_name: "workspace owner",
+    org_id: "org_1",
+    workspace_id: "ws_1",
+    role: "owner",
+  }
+
+  function echo(): WorkspaceRuntimeRouteContribution & { calls: Array<(headers?: Record<string, string>) => Promise<Response>> } {
+    const calls: Array<(headers?: Record<string, string>) => Promise<Response>> = []
+    return {
+      calls,
+      id: "echo",
+      mount(context) {
+        calls.push((headers) => context.fetch(new Request("http://127.0.0.1/echo-identity", { headers })))
+        const routes = new Hono()
+        routes.get("/echo-identity", (c) =>
+          c.json({ identity: (c as unknown as { get(name: string): unknown }).get("relayHostAuth") ?? null }))
+        return { path: "/", routes, dispose: () => {} }
+      },
+    }
+  }
+
+  test("is stamped as the verified actor when this runtime's verifier accepts it, and leaves the request actor-less otherwise", async () => {
+    const probe = echo()
+    const seen: string[] = []
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: relayWorkspaceRuntimeExposure(relayAuth),
+      ownerGrantIdentity: async (token) => {
+        seen.push(token)
+        return token === "minted-for-ws_1" ? owner : undefined
+      },
+      routeContributions: [probe],
+    })
+    try {
+      expect(await (await probe.calls[0]({ authorization: "Bearer minted-for-ws_1" })).json()).toEqual({ identity: owner })
+      expect(await (await probe.calls[0]({ authorization: "Bearer minted-for-ws_2" })).json()).toEqual({ identity: null })
+      expect(await (await probe.calls[0]()).json()).toEqual({ identity: null })
+      expect(seen).toEqual(["minted-for-ws_1", "minted-for-ws_2"])
+      // The same bearer from outside the process is not an owner: it is not a relay host token.
+      expect((await runtime.app.request("http://127.0.0.1/echo-identity", { headers: { authorization: "Bearer minted-for-ws_1" } })).status).toBe(401)
+    } finally {
+      await runtime.host.dispose()
+    }
+  })
+
+  test("is ignored by a runtime composed without a verifier", async () => {
+    const probe = echo()
+    const runtime = createWorkspaceRuntimeApp({ exposure: relayWorkspaceRuntimeExposure(relayAuth), routeContributions: [probe] })
+    try {
+      expect(await (await probe.calls[0]({ authorization: "Bearer minted-for-ws_1" })).json()).toEqual({ identity: null })
     } finally {
       await runtime.host.dispose()
     }

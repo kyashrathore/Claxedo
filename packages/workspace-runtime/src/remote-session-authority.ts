@@ -3,6 +3,7 @@ import {
   type SessionAccessDecision,
   type SessionAccessPolicyInput,
   type SessionAuthorityInput,
+  type SessionReservationDecision,
   type SessionTurnLeaseDecision,
   sessionAccessRequiresWrite,
 } from "./session-access-policy"
@@ -13,6 +14,7 @@ export const WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = "WORKSPACE_RUNTIME_SESSIO
 type AuthorityAction =
   | "read"
   | "write"
+  | "reserve"
   | "register"
   | "registration_ambiguous"
   | "compensation_begin"
@@ -125,6 +127,8 @@ export function remoteWorkspaceSessionAccessPolicy(
       return denied(503, "session_authority_unavailable")
     }
   }
+  policy.reserveSession = (input) =>
+    request(input, "reserve", decodeReservation, { parentSessionId: input.parentSessionId })
   policy.markRegistrationAmbiguous = (input) =>
     request(input, "registration_ambiguous", decodeAllowed, { reason: input.reason })
   policy.beginRegistrationCompensation = (input) =>
@@ -146,6 +150,7 @@ type AuthorityRequestOptions = {
   lease?: string
   stream?: boolean
   reason?: string
+  parentSessionId?: string
   turnId?: string
   leaseId?: string
   fencingToken?: number
@@ -166,6 +171,11 @@ async function jsonBody(response: Response): Promise<Record<string, unknown> | u
 /** A plain grant: the action succeeded and carries no payload. */
 function decodeAllowed(): { allowed: true } {
   return { allowed: true }
+}
+
+function decodeReservation(body: Record<string, unknown> | undefined): SessionReservationDecision {
+  const operationId = str(body?.operationId)
+  return operationId === undefined ? denied(503, "session_authority_invalid_response") : { allowed: true, operationId }
 }
 
 function decodeStreamLease(
@@ -228,7 +238,8 @@ function authorityRequestBody(
       ? { stream: true, ...(requestOptions.lease ? { lease: requestOptions.lease } : {}) }
       : {}),
     ...(requestOptions?.reason ? { reason: requestOptions.reason } : {}),
-    ...(action === "register" && input.sessionTitle ? { title: input.sessionTitle } : {}),
+    ...(requestOptions?.parentSessionId ? { parentSessionId: requestOptions.parentSessionId } : {}),
+    ...((action === "register" || action === "reserve") && input.sessionTitle ? { title: input.sessionTitle } : {}),
     ...(requestOptions?.turnId ? { turnId: requestOptions.turnId } : {}),
     ...(requestOptions?.leaseId ? { leaseId: requestOptions.leaseId } : {}),
     ...(requestOptions?.fencingToken !== undefined ? { fencingToken: requestOptions.fencingToken } : {}),

@@ -22,6 +22,7 @@ import {
   type WorkspaceRuntimeRouteContribution,
 } from "./route-contribution"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth, type WorkspaceRuntimeManagementTarget } from "./management-auth"
+import { createOwnerGrantInProcessMiddleware, type OwnerGrantIdentity } from "./owner-grant"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import { WorktreeRoutes } from "./routes/worktree"
 import { workspaceRuntimeLivenessResponse } from "./routes/health"
@@ -75,6 +76,12 @@ export type WorkspaceRuntimeServerOptions = {
   configToken?: string
   managementAuth?: WorkspaceRuntimeManagementAuth
   managementTarget?: WorkspaceRuntimeManagementTarget
+  /**
+   * How an in-process request's bearer becomes the workspace owner's verified
+   * identity. Only a relay-exposed runtime consults it: its session policy
+   * requires an actor, and the contribution seam supplies none of its own.
+   */
+  ownerGrantIdentity?: OwnerGrantIdentity
   /** The process-owned public embedded-SDK runtime behind the native `opencode` harness. */
   opencodeRuntime?: OpenCodeRuntime
   /** Standalone hosts close their injected SDK owner during process drain. */
@@ -524,8 +531,11 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
         || await relayHostAuthOptions.trustedDirectTokenForRequest?.(input)
         || false,
     }) as MiddlewareHandler
+    const inProcessOwner = options.ownerGrantIdentity
+      ? createOwnerGrantInProcessMiddleware(options.ownerGrantIdentity) as MiddlewareHandler
+      : undefined
     app.use("*", async (c, next) => {
-      if (inProcessRequests.has(c.req.raw)) return await next()
+      if (inProcessRequests.has(c.req.raw)) return inProcessOwner ? await inProcessOwner(c, next) : await next()
       if (
         c.req.method === "POST"
         && c.req.path === WorkspaceRuntimeRoutes.config
