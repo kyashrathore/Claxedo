@@ -27,6 +27,7 @@ import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/wo
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
 import {
   createAcpConnectionProvider,
+  projectionRenewalDue,
   projectionRenewalDueAt,
   type AgentTurnOutcome,
   type CompatEnvelope,
@@ -442,7 +443,7 @@ export async function renewEmbeddedWorkspaceRuntimeConfigs(input: { at: number; 
     log.warn("renewing the OpenCode engine's credentials failed", { error: String(error) })
   })
   for (const runtime of hosts.values()) {
-    if (!input.all && (runtime.renewAt === undefined || runtime.renewAt > input.at)) continue
+    if (!projectionRenewalDue(input, runtime.renewAt)) continue
     try {
       await configure(runtime)
     } catch (error) {
