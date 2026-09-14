@@ -136,32 +136,36 @@ function launchdDomain() {
 
 export type InstalledService = NonNullable<HostState["service"]>
 
-export async function installService(deps: ServiceDeps): Promise<{ service: InstalledService; lines: string[] }> {
+/**
+ * Write the unit file and describe it; nothing runs yet. The caller records
+ * the returned service in the host state BEFORE `startService`, because the
+ * unit's process loads that file on its own and rewrites it on every beat —
+ * a record saved after the start is overwritten by the child's copy, which
+ * never had it.
+ */
+export async function writeServiceUnit(deps: ServiceDeps): Promise<InstalledService> {
   const kind = serviceKind(deps.platform)
   const unit = serviceUnitPath(deps)
-  if (kind === "systemd-user") {
-    await deps.writeFile(unit, systemdUnit(deps))
+  await deps.writeFile(unit, kind === "systemd-user" ? systemdUnit(deps) : launchdPlist(deps))
+  return { kind, unit, installed_at: deps.now() }
+}
+
+export async function startService(deps: ServiceDeps, service: InstalledService): Promise<string[]> {
+  if (service.kind === "systemd-user") {
     await deps.run("systemctl", ["--user", "daemon-reload"])
     await deps.run("systemctl", ["--user", "enable", "--now", SYSTEMD_UNIT])
-    return {
-      service: { kind, unit, installed_at: deps.now() },
-      lines: [
-        `Installed and started ${SYSTEMD_UNIT} (${unit}).`,
-        `A user service stops at logout unless lingering is on: run \`loginctl enable-linger ${os.userInfo().username}\`.`,
-        `Restart=on-failure with RestartPreventExitStatus=78: a control-plane decision (exit 78) is not retried; fix the cause, then \`systemctl --user start ${SYSTEMD_UNIT}\`.`,
-      ],
-    }
+    return [
+      `Installed and started ${SYSTEMD_UNIT} (${service.unit}).`,
+      `A user service stops at logout unless lingering is on: run \`loginctl enable-linger ${os.userInfo().username}\`.`,
+      `Restart=on-failure with RestartPreventExitStatus=78: a control-plane decision (exit 78) is not retried; fix the cause, then \`systemctl --user start ${SYSTEMD_UNIT}\`.`,
+    ]
   }
-  await deps.writeFile(unit, launchdPlist(deps))
   await deps.run("launchctl", ["bootout", `${launchdDomain()}/${LAUNCHD_LABEL}`]).catch(() => undefined)
-  await deps.run("launchctl", ["bootstrap", launchdDomain(), unit])
-  return {
-    service: { kind, unit, installed_at: deps.now() },
-    lines: [
-      `Installed and started ${LAUNCHD_LABEL} (${unit}).`,
-      `KeepAlive/SuccessfulExit=false restarts the job after any failure except a control-plane decision (exit 78), which unloads it until the next login or \`launchctl bootstrap ${launchdDomain()} ${unit}\`.`,
-    ],
-  }
+  await deps.run("launchctl", ["bootstrap", launchdDomain(), service.unit])
+  return [
+    `Installed and started ${LAUNCHD_LABEL} (${service.unit}).`,
+    `KeepAlive/SuccessfulExit=false restarts the job after any failure except a control-plane decision (exit 78), which unloads it until the next login or \`launchctl bootstrap ${launchdDomain()} ${service.unit}\`.`,
+  ]
 }
 
 export async function uninstallService(deps: ServiceDeps, installed: InstalledService | undefined): Promise<string[]> {

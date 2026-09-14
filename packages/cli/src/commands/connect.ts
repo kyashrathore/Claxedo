@@ -8,7 +8,7 @@ import { errorMessage } from "../json"
 import { connectUsage, parseConnectArgs, type ConnectArgs } from "../connect/args"
 import { defaultHostDeps, runHost, withBootstrapRetry, type HostDeps } from "../connect/host"
 import { connectPaths, connectStateStore } from "../connect/paths"
-import { defaultServiceDeps, installService, uninstallService, type ServiceDeps } from "../connect/service"
+import { defaultServiceDeps, startService, uninstallService, writeServiceUnit, type ServiceDeps } from "../connect/service"
 
 export type ConnectDeps = {
   host: HostDeps
@@ -171,9 +171,10 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
     }
 
     if (args.installService) {
-      const installed = await installService(deps.service())
-      for (const line of installed.lines) log(line)
-      await deps.store.save({ ...state, service: installed.service })
+      const service = deps.service()
+      const installed = await writeServiceUnit(service)
+      await deps.store.save({ ...state, service: installed })
+      for (const line of await startService(service, installed)) log(line)
       return 0
     }
     return await runHost({ store: deps.store, state, deps: deps.host })

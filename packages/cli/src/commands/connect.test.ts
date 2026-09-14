@@ -405,6 +405,32 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.service).toBeUndefined()
   })
 
+  test("--install-service records the service before the unit starts, so the child's own saves keep it", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    let child: Promise<number> | undefined
+    const service = serviceDeps(h.home, h.serviceCalls)
+    h.deps.service = () => ({
+      ...service,
+      run: async (bin, args) => {
+        await service.run(bin, args)
+        if (!args.includes("--now")) return
+        // The unit's process: it loads the state file on its own and rewrites it on every beat.
+        child = connect([], h.deps)
+        await until(() => h.cp.beats().length >= 1, "the service's first beat")
+      },
+    })
+
+    expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(0)
+    h.tick()
+    await until(() => h.cp.beats().length >= 2, "the service's second beat")
+    await until(async () => (await h.deps.store.load())?.run?.last_beat_ok_at !== undefined, "the child's run record")
+
+    expect((await h.deps.store.load())?.service).toMatchObject({ kind: "systemd-user", installed_at: 1_700_000_000_000 })
+    h.stop()
+    expect(await child!).toBe(0)
+    expect((await h.deps.store.load())?.service).toMatchObject({ kind: "systemd-user" })
+  })
+
   test("--reset prints what goes and removes the state directory", async () => {
     const { file } = await invitationFile(h, [h.root])
     const running = connect(["--token-file", file], h.deps)
