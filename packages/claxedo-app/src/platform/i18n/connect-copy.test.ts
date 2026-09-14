@@ -24,8 +24,11 @@ describe("connect-card copy", () => {
   for (const entry of LOCALE_ENTRIES) {
     test(`${entry.code} never renders a registry provider id on the connect card`, async () => {
       const dict = await loadDict(entry.code)
-      const offenders = Object.entries(dict)
-        .filter(([key]) => key.startsWith("provider.connect."))
+      const scanned = Object.entries(dict).filter(([key]) => key.startsWith("provider.connect."))
+      // The prefix is the card's own: every method title lives under it.
+      expect(scanned.map(([key]) => key))
+        .toEqual(expect.arrayContaining(CONNECT_METHOD_COPY_BASES.map((base) => `${base}.title`)))
+      const offenders = scanned
         .filter(([, value]) => value.includes("{{provider}}") || REGISTRY_IDS.test(value))
         .map(([key]) => key)
 

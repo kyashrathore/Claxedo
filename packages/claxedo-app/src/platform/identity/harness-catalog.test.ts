@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test"
-import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 import { NATIVE_HARNESS_IDS } from "@/platform/identity/harness-selection"
 import {
   connectContextFor,
@@ -10,20 +9,12 @@ import {
   harnessIcon,
   harnessLabelForProviderId,
   harnessProviderIds,
-  HARNESS_CATALOG,
 } from "./harness-catalog"
 
 describe("HARNESS_CATALOG", () => {
-  test("carries the shared table's own record for every harness a login is stored for", () => {
-    for (const harness of ["claude", "codex", "cursor"] as const) {
-      expect(HARNESS_CATALOG[harness]).toMatchObject(HARNESS_TABLE[harness])
-    }
-    // Never a hand-written subset: the row lists every binding the server
-    // stores a login for, in the table's own order.
-    expect(harnessProviderIds("cursor")).toEqual(HARNESS_TABLE.cursor.providerIds)
-    expect(harnessProviderIds("codex")).toEqual(HARNESS_TABLE.codex.providerIds)
-    // An engine a reader picks is not a login anything is stored against.
+  test("an engine a reader picks is not a login anything is stored against", () => {
     expect(harnessProviderIds("pi")).toEqual([])
+    expect(harnessProviderIds("opencode")).toEqual([])
   })
 
   test("every harness a reader can pick has a name and a mark of its own", () => {

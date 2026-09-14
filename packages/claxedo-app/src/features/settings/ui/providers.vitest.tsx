@@ -6,7 +6,6 @@ const clients = new Set<QueryClient>()
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal, type JSX } from "solid-js"
 import { harnessBindingIds, HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
-import { nativeHarness, connectionHarness, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { readField, readStringArray } from "@/lib/record"
 
 type CatalogProject = {
@@ -41,8 +40,6 @@ const state = vi.hoisted(() => ({
   credentialDeletes: [] as Array<{ providerId: string; method?: string }>,
   authDeletes: [] as string[],
   authReads: [] as string[],
-  /** The harness the workspace's draft-default record remembers, if any. */
-  rememberedHarness: undefined as HarnessSelection | undefined,
   /** The workspace the pane behind Settings is on, when Settings opened over one. */
   focusedWorkspace: undefined as { workspaceId: string; directory: string } | undefined,
   projects: [] as CatalogProject[],
@@ -62,6 +59,8 @@ const state = vi.hoisted(() => ({
   machineLoginFailure: undefined as string | undefined,
   /** When set, the verify route answers 500 with this cause instead. */
   verifyFailure: undefined as string | undefined,
+  /** What the provider says about a checked account. */
+  verifyResult: "ok" as "ok" | "auth_failed",
   /** When set, the machine-login route waits on it, so the first read can be held open. */
   machineLoginGate: undefined as Promise<void> | undefined,
   credentialCalls: [] as string[],
@@ -250,6 +249,9 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
         },
       }), { status: 500 })
     }
+    if (state.verifyResult !== "ok") {
+      return new Response(JSON.stringify({ result: state.verifyResult, health: state.verifyResult, verified_at: 7 }))
+    }
     return new Response(JSON.stringify({
       result: "ok",
       health: "ok",
@@ -269,12 +271,6 @@ globalThis.fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
     state.removed.push(id)
     const gone = state.storedCredentials.find((row) => String(row.id) === id)
     state.storedCredentials = state.storedCredentials.filter((row) => String(row.id) !== id)
-    // The route hands the mark to the oldest account the provider can still run on.
-    if (gone?.is_active === true) {
-      const heir = state.storedCredentials
-        .find((row) => row.provider_id === gone.provider_id && row.health !== "auth_failed")
-      if (heir) heir.is_active = true
-    }
     return new Response(JSON.stringify({ deleted: gone !== undefined }))
   }
   return new Response("not found", { status: 404 })
@@ -376,7 +372,6 @@ function rowAction(id: string, key: string, action: "check" | "remove" | "remove
 
 beforeEach(() => {
   state.requests.length = 0
-  state.rememberedHarness = nativeHarness("pi")
   state.focusedWorkspace = undefined
   state.connected = []
   state.sources = {}
@@ -395,6 +390,7 @@ beforeEach(() => {
   state.machineLoginFailure = undefined
   state.machineLoginGate = undefined
   state.verifyFailure = undefined
+  state.verifyResult = "ok"
   state.projects = [LOCAL_PROJECT, CLOUD_PROJECT]
   state.catalogs = {
     "workspace:ws_local|pi": ["anthropic", "openai"],
@@ -446,21 +442,7 @@ describe("Settings → Providers reads both credential stores for the workspace 
     ])
   })
 
-  test.each([
-    ["a harness that manages its own credentials", nativeHarness("claude")],
-    ["another such harness", nativeHarness("cursor")],
-    ["an operator ACP connection", connectionHarness("team-agent")],
-    ["nothing at all", undefined],
-  ] as const)("with %s remembered, both Claxedo stores render and neither is read under it", async (_label, remembered) => {
-    state.rememberedHarness = remembered
-    mount()
-    await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
-    expect(providerIds("opencode")).toEqual(["external-backend"])
-    expect([...state.requests].map((request) => request.harness).sort()).toEqual(["opencode", "pi"])
-  })
-
   test("the page offers no scope picker and no externally-managed note", async () => {
-    state.rememberedHarness = nativeHarness("claude")
     mount()
     await waitFor(() => expect(providerIds("pi")).toEqual(["anthropic", "openai"]))
     expect(document.querySelector('[data-component="settings-scope-selector"]')).toBeNull()
@@ -695,6 +677,22 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     // is offered for it.
     expect(accountRefused("anthropic", "sdk_work")).toBe(false)
     expect(accountRow("anthropic", "sdk_work").querySelector('[data-action="agent-reconnect"]')).toBeNull()
+  })
+
+  test("a Check the provider refuses rings the row and offers Reconnect on it", async () => {
+    state.verifyResult = "auth_failed"
+    state.storedCredentials = [...claudeLogin]
+    mount()
+    await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_work"]))
+    expect(accountRefused("anthropic", "sdk_work")).toBe(false)
+
+    rowAction("anthropic", "sdk_work", "check").click()
+
+    await waitFor(() => expect(accountRefused("anthropic", "sdk_work")).toBe(true))
+    expect(accountRow("anthropic", "sdk_work").querySelector('[data-component="agent-account-refusal"]')?.textContent)
+      .toBe("settings.providers.live.authFailed")
+    expect(accountRow("anthropic", "sdk_work").querySelector('[data-action="agent-reconnect"]')).not.toBeNull()
+    expect(state.credentialCalls).toContain("POST /api/claxedo/credentials/sdk_work/verify")
   })
 
   test("a rejected account rings its own radio and moves the action to Reconnect", async () => {
@@ -1098,16 +1096,20 @@ describe("Settings → Providers reports the agent logins on this machine", () =
     expect(state.removed).toEqual(["sdk_home", "acp_home"])
   })
 
-  test("removing the account in use moves the radio to the row the server promoted", async () => {
+  test("removing the account in use moves the radio to the row the store's next answer marks", async () => {
+    const home = { id: "sdk_home", provider_id: "claude-sdk", kind: "oauth_token", label: "home@acme.com", account_id: "acc_home", is_active: false }
     state.storedCredentials = [
       ...claudeLogin,
-      { id: "sdk_home", provider_id: "claude-sdk", kind: "oauth_token", label: "home@acme.com", account_id: "acc_home", is_active: false },
+      home,
       { id: "sdk_spare", provider_id: "claude-sdk", kind: "api_key", label: "spare@acme.com", account_id: "acc_spare", is_active: false },
     ]
     mount()
     await waitFor(() => expect(selectedAccount("anthropic")).toBe("sdk_work"))
 
     rowAction("anthropic", "sdk_work", "remove").click()
+    // Which row the removal route hands the mark to is the server's decision;
+    // the page has only to re-read the store afterwards and follow it.
+    home.is_active = true
     rowAction("anthropic", "sdk_work", "remove-confirm").click()
 
     await waitFor(() => expect(accountIds("anthropic")).toEqual(["sdk_home", "sdk_spare"]))

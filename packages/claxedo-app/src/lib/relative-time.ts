@@ -3,8 +3,7 @@
  * luxon spellings the app used (`toRelative()` and `DATETIME_MED`) so luxon
  * (~70 kB min) stays out of the eager bundle. The compact spelling reads the
  * same bucket table as the sentence, so a row and its tooltip never disagree
- * about which unit the age falls in. The rail counts seconds and calls the
- * first ten of them "now", which is its own convention and its own formatter.
+ * about which unit the age falls in.
  */
 
 const UNITS: Array<[Intl.RelativeTimeFormatUnit, number, string]> = [

@@ -2,7 +2,6 @@ import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
   abortSidebarSessionStatusBatches,
   invalidateSidebarSessionStatusGroupsForSession,
-  relativeTime,
   pruneSidebarSessionStatusBatches,
   publishFocusedRailSessionMeta,
   readRailBatchLeg,
@@ -49,6 +48,7 @@ import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-butt
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { useLanguage } from "@/platform/i18n/provider"
+import { formatCompactAge } from "@/lib/relative-time"
 import { useServer } from "@/app/connection/server"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -1109,7 +1109,7 @@ export function RailSidebar(props: RailSidebarProps) {
       get timeLabel() {
         if (!time) return undefined
         clock()
-        return relativeTime(time)
+        return formatCompactAge(time) ?? language.t("common.justNow")
       },
       ...(metadata ? { metadata } : {}),
       ...(links.link ? { link: links.link } : {}),
