@@ -1,4 +1,5 @@
 import fs from "node:fs/promises"
+import os from "node:os"
 import path from "node:path"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
@@ -8,6 +9,7 @@ import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-a
 import { userHostedSurface } from "../../claxedo-host-serving/src/surface.ts"
 import { createMachineSignedTransport } from "../../claxedo-host-connector/src/machine-transport.ts"
 import { hostKeyPairFromJwk } from "../../claxedo-host-connector/src/host-identity.ts"
+import { createFakeServiceManager, writeManagerShims } from "../../cli/src/connect/machine-simulator.test-support.ts"
 
 // The `claxedo connect` half of `signed-browser-relay-fixture.mjs`: the
 // machine-side process lifecycle a spec drives through `/__fixture/connect/*`,
@@ -28,6 +30,15 @@ export const CLI_ENTRY = path.resolve(process.cwd(), "..", "cli", "src", "index.
 export function cliCommand(args) {
   return ["node", ["--conditions=development", "--import", "./src/text-imports.mjs", "--import", "tsx", CLI_ENTRY, ...args]]
 }
+
+/**
+ * The same recipe as `NODE_OPTIONS`, for a process a service manager starts
+ * from the unit `--install-service` wrote: that ExecStart is the bare
+ * `node <index.ts> connect --foreground` the installing process was, so the
+ * loaders travel in the manager's environment. Absolute, because the manager
+ * runs the unit from its own working directory.
+ */
+const SERVICE_NODE_OPTIONS = `--conditions=development --import ${path.resolve(process.cwd(), "src", "text-imports.mjs")} --import tsx`
 
 async function git(cwd, ...args) {
   await execFileAsync("git", ["-c", "user.email=fixture@example.test", "-c", "user.name=Connect Fixture", ...args], { cwd })
@@ -119,6 +130,7 @@ function tail(text, max = 16_000) {
  */
 export function createConnectInstances(input) {
   const instances = new Map()
+  let shimDir
 
   async function homeFor(id, cloneOf) {
     const existing = instances.get(id)
@@ -134,51 +146,117 @@ export function createConnectInstances(input) {
     return home
   }
 
+  function running(child) {
+    return !!child && child.exitCode === null && !child.signalCode
+  }
+
+  function childEnv(home) {
+    return {
+      ...process.env,
+      CLAXEDO_HOME: home,
+      CLAXEDO_DATA_DIR: path.join(home, "data"),
+      CLAXEDO_CONTROL_PLANE_URL: input.controlPlaneUrl,
+      // A host has no account credential; the fixture process may carry one.
+      CLAXEDO_DEV_TOKEN: "",
+      CLAXEDO_ACCESS_TOKEN: "",
+    }
+  }
+
+  /** The instance's main process from now on: its output is the instance log, its exit the instance exit. */
+  function attach(instance, child) {
+    instance.child = child
+    instance.log = ""
+    instance.exit = undefined
+    instance.startedAt = Date.now()
+    instance.exited = new Promise((resolve) => {
+      child.once("exit", (code, signal) => {
+        if (instance.child !== child) return
+        instance.exit = { code, signal, at: Date.now() }
+        resolve(instance.exit)
+      })
+    })
+    child.stdout.on("data", (chunk) => {
+      if (instance.child === child) instance.log += chunk.toString()
+    })
+    child.stderr.on("data", (chunk) => {
+      if (instance.child === child) instance.log += chunk.toString()
+    })
+  }
+
+  /**
+   * The box `--install-service` runs on: this platform's service manager,
+   * with the shims on the installing process's PATH forwarding to it, and the
+   * same environment for the unit's process that the fixture gives every
+   * connect child. Lingering is on and a runtime dir is set, the state the
+   * EC2 proof provisioned.
+   */
+  async function machineFor(instance, id) {
+    if (instance.machine) return instance.machine
+    shimDir ??= await writeManagerShims(path.join(input.homesRoot, "manager-bin"))
+    const home = instance.home
+    const env = {
+      ...childEnv(home),
+      HOME: home,
+      XDG_RUNTIME_DIR: path.join(home, "run"),
+      PATH: `${shimDir}${path.delimiter}${process.env.PATH ?? ""}`,
+      CLAXEDO_FAKE_MANAGER_URL: `${input.controlPlaneUrl}/__fixture/machine/exec`,
+      CLAXEDO_FAKE_MANAGER_INSTANCE: id,
+    }
+    const manager = createFakeServiceManager(process.platform, {
+      home,
+      username: os.userInfo().username,
+      uid: process.getuid?.() ?? 501,
+      linger: true,
+      runtimeDir: env.XDG_RUNTIME_DIR,
+      cwd: process.cwd(),
+      environment: { ...env, NODE_OPTIONS: SERVICE_NODE_OPTIONS },
+      onChild: (child) => attach(instance, child),
+      log: (line) => console.error(`[machine ${id}] ${line}`),
+    })
+    instance.machine = { manager, env }
+    return instance.machine
+  }
+
   return {
     async start(options) {
       const current = instances.get(options.id)
-      if (current?.child && current.child.exitCode === null && !current.child.signalCode) {
-        throw new Error(`connect instance ${options.id} is already running`)
-      }
+      if (running(current?.child)) throw new Error(`connect instance ${options.id} is already running`)
       const home = await homeFor(options.id, options.cloneOf)
-      const args = ["connect", "--foreground"]
+      const instance = current ?? { id: options.id, home, child: undefined, log: "", exit: undefined }
+      instances.set(options.id, instance)
+      const args = ["connect", options.service === "fake-systemd" ? "--install-service" : "--foreground"]
+      const tokenFile = path.join(home, "invitation.token")
       if (options.token) {
-        const tokenFile = path.join(home, "invitation.token")
         await fs.writeFile(tokenFile, `${options.token}\n`, { mode: 0o600 })
         args.push("--token-file", tokenFile)
       }
       for (const root of options.roots ?? []) args.push("--root", root)
       if (options.name) args.push("--name", options.name)
       const [command, commandArgs] = cliCommand(args)
-      const child = spawn(command, commandArgs, {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          CLAXEDO_HOME: home,
-          CLAXEDO_DATA_DIR: path.join(home, "data"),
-          CLAXEDO_CONTROL_PLANE_URL: input.controlPlaneUrl,
-          // A host has no account credential; the fixture process may carry one.
-          CLAXEDO_DEV_TOKEN: "",
-          CLAXEDO_ACCESS_TOKEN: "",
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      })
-      const instance = { id: options.id, home, child, log: "", exit: undefined, startedAt: Date.now() }
-      const exited = new Promise((resolve) => {
+      const env = options.service === "fake-systemd" ? (await machineFor(instance, options.id)).env : childEnv(home)
+      const child = spawn(command, commandArgs, { cwd: process.cwd(), env, stdio: ["ignore", "pipe", "pipe"] })
+      const started = { id: options.id, pid: child.pid, home, stateFile: path.join(home, "connect", "state.json"), tokenFile }
+      if (options.service !== "fake-systemd") {
+        attach(instance, child)
+        return started
+      }
+      // The installer is not the instance's process: it writes the unit,
+      // asks the manager to start it — which attaches the unit's process —
+      // and exits. Its own output and exit come back to the caller.
+      let log = ""
+      child.stdout.on("data", (chunk) => (log += chunk.toString()))
+      child.stderr.on("data", (chunk) => (log += chunk.toString()))
+      const exit = await new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          child.kill("SIGKILL")
+          resolve({ code: null, signal: "SIGKILL", timedOut: true })
+        }, 60_000)
         child.once("exit", (code, signal) => {
-          instance.exit = { code, signal, at: Date.now() }
-          resolve(instance.exit)
+          clearTimeout(timer)
+          resolve({ code, signal })
         })
       })
-      instance.exited = exited
-      child.stdout.on("data", (chunk) => {
-        instance.log += chunk.toString()
-      })
-      child.stderr.on("data", (chunk) => {
-        instance.log += chunk.toString()
-      })
-      instances.set(options.id, instance)
-      return { id: options.id, pid: child.pid, home, stateFile: path.join(home, "connect", "state.json") }
+      return { ...started, pid: instance.child?.pid ?? null, installer: { exit, log: tail(log) } }
     },
     async cloneState(from, to) {
       if (instances.get(to)?.home) throw new Error(`connect instance ${to} already has a home`)
@@ -189,7 +267,7 @@ export function createConnectInstances(input) {
     async signal(id, signal) {
       const instance = instances.get(id)
       if (!instance?.child) throw new Error(`no connect instance ${id}`)
-      if (instance.child.exitCode === null && !instance.child.signalCode) instance.child.kill(signal)
+      if (running(instance.child)) instance.child.kill(signal)
       return instance
     },
     async waitExit(id, timeoutMs) {
@@ -204,15 +282,33 @@ export function createConnectInstances(input) {
       if (!instance) return undefined
       const stateFile = path.join(instance.home, "connect", "state.json")
       const state = await fs.readFile(stateFile, "utf8").then((text) => JSON.parse(text)).catch(() => null)
+      const invitationTokenPresent = await fs.stat(path.join(instance.home, "invitation.token")).then(() => true, () => false)
       return {
         id,
         home: instance.home,
-        pid: instance.child?.pid ?? null,
-        running: !!instance.child && instance.child.exitCode === null && !instance.child.signalCode,
+        pid: running(instance.child) ? instance.child.pid : null,
+        running: running(instance.child),
         exit: instance.exit ?? null,
         state,
+        invitationTokenPresent,
         log: tail(instance.log),
       }
+    },
+    /** The manager's exec seam for the PATH shims: `systemctl`, `loginctl`, `launchctl` as the instance's machine answers them. */
+    async machineExec(id, file, args) {
+      const instance = instances.get(id)
+      if (!instance?.machine) throw new Error(`connect instance ${id} has no machine`)
+      return await instance.machine.manager.run(file, args)
+    },
+    async machineService(id) {
+      const instance = instances.get(id)
+      if (!instance?.machine) throw new Error(`connect instance ${id} has no machine`)
+      return instance.machine.manager.service()
+    },
+    async machineReboot(id) {
+      const instance = instances.get(id)
+      if (!instance?.machine) throw new Error(`connect instance ${id} has no machine`)
+      return await instance.machine.manager.reboot()
     },
     async listeningPorts(id) {
       const instance = instances.get(id)
@@ -224,8 +320,9 @@ export function createConnectInstances(input) {
     },
     async stopAll() {
       for (const instance of instances.values()) {
+        await instance.machine?.manager.dispose()
         const child = instance.child
-        if (!child || child.exitCode !== null || child.signalCode) continue
+        if (!running(child)) continue
         await new Promise((resolve) => {
           const timer = setTimeout(() => {
             child.kill("SIGKILL")
@@ -286,7 +383,36 @@ export function connectFixtureRoutes(app, ctx) {
         ...(Array.isArray(body.roots) ? { roots: body.roots } : {}),
         ...(typeof body.name === "string" ? { name: body.name } : {}),
         ...(typeof body.cloneOf === "string" ? { cloneOf: body.cloneOf } : {}),
+        ...(body.service === "fake-systemd" ? { service: body.service } : {}),
       }))
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 409)
+    }
+  })
+  // The machine an instance was installed on as a service: the shims on the
+  // installing process's PATH land here, and a spec reads and reboots it.
+  app.post("/__fixture/machine/exec", async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    if (typeof body.id !== "string" || typeof body.file !== "string" || !Array.isArray(body.args)) {
+      return c.json({ error: "id, file and args are required" }, 400)
+    }
+    try {
+      return c.json(await ctx.instances.machineExec(body.id, body.file, body.args.map(String)))
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 409)
+    }
+  })
+  app.get("/__fixture/machine/service", async (c) => {
+    try {
+      return c.json(await ctx.instances.machineService(c.req.query("id") ?? ""))
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 404)
+    }
+  })
+  app.post("/__fixture/machine/reboot", async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    try {
+      return c.json(await ctx.instances.machineReboot(body.id))
     } catch (error) {
       return c.json({ error: error instanceof Error ? error.message : String(error) }, 409)
     }

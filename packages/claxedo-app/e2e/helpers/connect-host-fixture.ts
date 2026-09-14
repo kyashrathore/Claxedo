@@ -267,12 +267,14 @@ export async function hostGeneration(fixture: RunningConnectFixture, enrollmentI
   return { status: response.status, body: await response.json().catch(() => undefined) as { generation?: number; revoked?: boolean } | undefined }
 }
 
+export type ProcessExit = { code: number | null; signal: string | null; at: number }
+
 export type ConnectStatus = {
   id: string
   home: string
   pid: number | null
   running: boolean
-  exit: { code: number | null; signal: string | null; at: number } | null
+  exit: ProcessExit | null
   state: {
     host_id: string
     control_plane_url: string
@@ -280,13 +282,46 @@ export type ConnectStatus = {
     bootstrap?: { invitation_id: string }
     run?: { pid: number; generation: number; last_beat_ok_at?: number; lease_expires_at?: number; last_beat_error?: string; served?: Array<{ workspace_id: string; revision: number; connected: boolean }> }
     scope?: { revision: number; allowed_roots: string[] }
+    service?: { kind: "systemd-user" | "launchd"; unit: string; installed_at: number }
   } | null
+  /** Whether the invitation the instance was started with is still on disk. */
+  invitationTokenPresent: boolean
   log: string
 }
 
+export type ConnectStart = {
+  id: string
+  /** The instance's process; with `service`, the one the manager started, or null when it started nothing. */
+  pid: number | null
+  home: string
+  stateFile: string
+  tokenFile: string
+  /** With `service`: the `--install-service` process's own exit and output. */
+  installer?: { exit: { code: number | null; signal: string | null; timedOut?: boolean }; log: string }
+}
+
+/** What the instance's service manager reports about the unit `--install-service` wrote (`machine-simulator.test-support.ts` `ServiceView`). */
+export type MachineService = {
+  kind: "systemd-user" | "launchd"
+  loaded: boolean
+  enabled: boolean
+  running: boolean
+  pid: number | undefined
+  state: string
+  restarts: number
+  lastExit: { code: number | null; signal: string | null } | undefined
+  raw: string
+}
+
 export const connect = {
-  async start(fixture: RunningConnectFixture, input: { id: string; token?: string; roots?: string[]; name?: string; cloneOf?: string }) {
-    return await json<{ id: string; pid: number; home: string; stateFile: string }>(
+  /**
+   * `service: "fake-systemd"` runs `claxedo connect --install-service` on a
+   * machine the fixture owns: the platform's service manager, faked behind
+   * PATH shims, starts the unit's process and applies its restart policy;
+   * `machine` reads and reboots it.
+   */
+  async start(fixture: RunningConnectFixture, input: { id: string; token?: string; roots?: string[]; name?: string; cloneOf?: string; service?: "fake-systemd" }) {
+    return await json<ConnectStart>(
       await fetch(`${fixture.info.backendUrl}/__fixture/connect/start`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input) }),
       `connect start ${input.id}`,
     )
@@ -330,6 +365,19 @@ export const connect = {
   },
   async status(fixture: RunningConnectFixture, id: string) {
     return await json<ConnectStatus>(await fetch(`${fixture.info.backendUrl}/__fixture/connect/status?id=${encodeURIComponent(id)}`), `connect status ${id}`)
+  },
+}
+
+export const machine = {
+  async service(fixture: RunningConnectFixture, id: string) {
+    return await json<MachineService>(await fetch(`${fixture.info.backendUrl}/__fixture/machine/service?id=${encodeURIComponent(id)}`), `machine service ${id}`)
+  },
+  /** Power loss and a boot: every process SIGKILLed, then whatever the disk says is enabled started again. */
+  async reboot(fixture: RunningConnectFixture, id: string) {
+    return await json<{ bootedAt: number }>(
+      await fetch(`${fixture.info.backendUrl}/__fixture/machine/reboot`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) }),
+      `machine reboot ${id}`,
+    )
   },
 }
 

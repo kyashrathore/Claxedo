@@ -5,10 +5,11 @@
  * plane for targets, revocation and serving generations. No embedded host,
  * no browser: every assertion is against processes and their routes.
  *
- * The ten items run in one serial describe because they are ten steps in the
- * life of one machine — an enrollment the later items supersede, revoke and
- * retire — so a failure stops the rest rather than letting them assert on a
- * machine in an unknown state.
+ * The items run in one serial describe because they are steps in the life of
+ * one machine — an enrollment the later items supersede, revoke and retire —
+ * so a failure stops the rest rather than letting them assert on a machine in
+ * an unknown state. Item 11 is a second machine, installed as a service on a
+ * box the fixture owns, through the same lifecycle the EC2 proof ran by hand.
  *
  * Timing bounds are the configured ones (`TIMING` and the CLI's own beat
  * interval), never "eventually": each wait records how long it took and
@@ -25,6 +26,7 @@ import {
   hostGeneration,
   hostTunnelAdmission,
   invitationTokenFrom,
+  machine,
   machines,
   mintConnection,
   mintHtt,
@@ -42,6 +44,7 @@ import {
   tunnelDeliver,
   until,
   userHostedWorkspaces,
+  type MachineService,
   type RelayTiming,
   type RunningConnectFixture,
   type Teammate,
@@ -63,6 +66,12 @@ const LEASE_TTL_MS = 60_000
 const BEAT_INTERVAL_MS = Math.min(LEASE_TTL_MS / 3, 20_000)
 /** `workspace-runtime/src/workspace-relay-host-tunnel.ts` `DEFAULT_RECONNECT_MAX_INTERVAL_MS`: the longest a host waits before redialling. */
 const HOST_TUNNEL_RECONNECT_MAX_MS = 30_000
+/**
+ * `packages/cli/src/connect/service.ts`: the unit's `RestartSec=5`, the
+ * LaunchAgent's `ThrottleInterval` 10 s. A manager that was going to restart
+ * the process has done so within this much of the exit.
+ */
+const SERVICE_RESTART_WINDOW_MS: Record<MachineService["kind"], number> = { "systemd-user": 5_000, launchd: 10_000 }
 /** Scheduling slack on every bound; the bound itself is the configured value. */
 const SLACK_MS = 3_000
 
@@ -933,6 +942,107 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     const admission = await hostTunnelAdmission(fixture.info.relayUrl, hostId, wsApi, stale.hostTunnelToken)
     expect(admission.status, admission.body).toBe(403)
     expect(admission.code).toBe("host_enrollment_revoked")
+  })
+  test("11. installed as a service on a fresh box: cloud-init enrollment with --install-service, the manager runs the unit, a reboot resumes it unattended at the next generation, and a revoke exits 78 without a restart", async () => {
+    test.setTimeout(240_000)
+    const roots = fixture.info.roots
+
+    // The owner mints; the box's user-data writes the token and runs the
+    // install as a lingering user. The installing process exits 0 once the
+    // manager has the unit; the unit's process is the instance from then on.
+    const invite = await cli("host", "invite", "--name", "box3", "--root", roots.root)
+    expect(invite.code, invite.output).toBe(0)
+    const token = invitationTokenFrom(invite.stdout)
+    const installedAt = Date.now()
+    const started = await connect.start(fixture, { id: "box3", token, roots: [roots.root], name: "box3", service: "fake-systemd" })
+    expect(started.installer?.exit.code, started.installer?.log).toBe(0)
+    expect(started.installer?.log).toContain("Enrolled as ")
+    expect(started.installer?.log).toContain("Installed and started ")
+    const service = await machine.service(fixture, "box3")
+    expect(service, service.raw).toMatchObject({ loaded: true, enabled: true, running: true, restarts: 0 })
+    expect(started.pid).toBe(service.pid ?? null)
+    const booted = await bootedInstance("box3", installedAt)
+    timing("item 11 install → unit process enrolled + first beat", { elapsedMs: booted.elapsedMs, boundMs: BOOT_MS, manager: service.kind })
+    expect(booted.value.invitationTokenPresent, "the invitation is removed once the enrollment is on disk").toBe(false)
+    expect(booted.value.state!.service?.kind).toBe(service.kind)
+    expect(booted.value.pid).toBe(service.pid)
+    expect(booted.value.log).not.toContain("Enrolled as")
+    const enrollmentId = booted.value.state!.enrollment!.enrollment_id
+    const hostId = booted.value.state!.host_id
+    expect((await machines(fixture)).filter((row) => row.display_name === "box3").map((row) => row.enrollment_id)).toEqual([enrollmentId])
+
+    const assignedAt = Date.now()
+    const assign = await cli("host", "assign", "--machine", "box3", roots.api)
+    expect(assign.code, assign.output).toBe(0)
+    const wsApi = assignedWorkspaceId(assign.stdout)
+    const served = await until(
+      async () => {
+        const [row, presence] = await Promise.all([servedByHost("box3", wsApi), relayHostPresence(fixture, hostId, wsApi)])
+        return row && presence.active ? { row, presence } : undefined
+      },
+      { since: assignedAt, timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the service never acked the assignment and opened its tunnel" },
+    )
+    timing("item 11 assign → ack + tunnel", { elapsedMs: served.elapsedMs, boundMs: 2 * BEAT_INTERVAL_MS + SLACK_MS })
+    expectAgreement(await routability(wsApi, hostId), true, "served by the unit's process")
+    const file = await relayFetch(fixture.info.relayUrl, wsApi, (await mintConnection(fixture, wsApi)).body!.runtimeAccessToken, "/file/content?path=hello.txt")
+    expect(file.status, file.text).toBe(200)
+    expect(String(file.json?.content)).toContain("hello from api")
+
+    // Power loss. Nothing but the manager acts: the unit is enabled on disk,
+    // its process reads the state file, acquires the next generation and
+    // re-acks what its first beat delivers.
+    const before = await connect.status(fixture, "box3")
+    const generationBefore = before.state!.run!.generation
+    const { bootedAt } = await machine.reboot(fixture, "box3")
+    const afterBoot = await machine.service(fixture, "box3")
+    expect(afterBoot, afterBoot.raw).toMatchObject({ running: true, restarts: 0 })
+    expect(afterBoot.pid).not.toBe(service.pid)
+    const resumed = await bootedInstance("box3", bootedAt, generationBefore)
+    expect(resumed.value.state!.enrollment!.enrollment_id).toBe(enrollmentId)
+    expect(resumed.value.state!.run!.generation).toBe(generationBefore + 1)
+    expect(resumed.value.pid).toBe(afterBoot.pid)
+    expect(resumed.value.log).not.toContain("Enrolled as")
+    expect(resumed.value.log).not.toContain("Resumed as")
+    expect(resumed.value.log).toContain(`serving as ${enrollmentId} (generation ${generationBefore + 1})`)
+    const reserved = await until(
+      async () => {
+        const presence = await relayHostPresence(fixture, hostId, wsApi)
+        return presence.active && presence.presence!.connectedAt >= bootedAt ? presence : undefined
+      },
+      { since: bootedAt, timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the rebooted service never re-served the api workspace" },
+    )
+    timing("item 11 boot → served again, unattended", { bootToBeatMs: resumed.elapsedMs, bootToTunnelMs: reserved.elapsedMs, boundMs: 2 * BEAT_INTERVAL_MS + SLACK_MS })
+    expectAgreement(await routability(wsApi, hostId), true, "served again after the reboot")
+    const again = await relayFetch(fixture.info.relayUrl, wsApi, (await mintConnection(fixture, wsApi)).body!.runtimeAccessToken, "/file/content?path=hello.txt")
+    expect(again.status, again.text).toBe(200)
+
+    // The owner revokes: the next beat is refused, the process exits 78, and
+    // the unit's policy leaves it down. The window is the manager's own
+    // restart delay; a manager that ignored the status has restarted by then.
+    const revokedAt = Date.now()
+    const revoke = await cli("host", "revoke", "--machine", "box3")
+    expect(revoke.code, revoke.output).toBe(0)
+    const exited = await connect.waitExit(fixture, "box3", BEAT_INTERVAL_MS + SLACK_MS)
+    const host = await connect.status(fixture, "box3")
+    expect(exited.exit?.code, host.log).toBe(78)
+    expect(host.log).toContain("the control plane no longer accepts this machine")
+    await sleep(SERVICE_RESTART_WINDOW_MS[service.kind] + 1_000)
+    const ended = await machine.service(fixture, "box3")
+    expect(ended, ended.raw).toMatchObject({ running: false, restarts: 0, lastExit: { code: 78, signal: null } })
+    if (ended.kind === "systemd-user") {
+      expect(ended.state).toBe("failed/failed")
+      expect(ended.raw).toContain("ExecMainStatus=78\n")
+      expect(ended.raw).toContain("NRestarts=0\n")
+    } else {
+      // The LaunchAgent's wrapper booted the job out on 78; launchd has nothing to relaunch.
+      expect(ended.loaded).toBe(false)
+    }
+    const final = await connect.status(fixture, "box3")
+    expect(final.running).toBe(false)
+    expect(final.pid).toBeNull()
+    expect(final.state!.run, "the process cleared its run record on the way out").toBeUndefined()
+    expect(final.state!.service?.kind).toBe(service.kind)
+    timing("item 11 revoke → exit 78, no restart", { exitMs: exited.exit!.at - revokedAt, boundMs: BEAT_INTERVAL_MS + SLACK_MS, restartWindowMs: SERVICE_RESTART_WINDOW_MS[service.kind] })
   })
 })
 

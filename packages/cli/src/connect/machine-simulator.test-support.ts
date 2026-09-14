@@ -6,10 +6,6 @@
  * installs on Linux; launchd is what it installs on macOS, where the Tier R
  * fixture runs the real binary. Node APIs only: the fixture imports this under
  * tsx, the CLI's tests under bun.
- *
- * The manager is a policy model, not a re-implementation: it keeps what
- * `systemctl show` / `launchctl print` would report and nothing a test does
- * not read.
  */
 
 import { execFile, spawn, type ChildProcess } from "node:child_process"
@@ -252,6 +248,16 @@ function track(child: ChildProcess, tracked: Tracked, onChild: ((child: ChildPro
 
 const alive = (child: ChildProcess | undefined) => child !== undefined && child.exitCode === null && child.signalCode === null
 
+const unitFileDeps: Pick<ServiceDeps, "writeFile" | "unlink"> = {
+  writeFile: async (file, text) => {
+    await fs.mkdir(path.dirname(file), { recursive: true })
+    await fs.writeFile(file, text, { mode: 0o644 })
+  },
+  unlink: async (file) => {
+    await fs.rm(file, { force: true })
+  },
+}
+
 const signalNumber = (signal: NodeJS.Signals) => os.constants.signals[signal] ?? 0
 
 export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeServiceManager {
@@ -311,11 +317,14 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
     return unit
   }
 
-  const isEnabled = (name: string) =>
-    fs
-      .lstat(path.join(wantsDir, name))
-      .then(() => true)
-      .catch(() => false)
+  const isEnabled = (name: string) => {
+    try {
+      lstatSync(path.join(wantsDir, name))
+      return true
+    } catch {
+      return false
+    }
+  }
 
   const settle = (unit: Unit, exit: MainProcessExit) => {
     unit.lastExit = exit
@@ -447,7 +456,7 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
       }
       if (verb === "show") {
         const unit = units.get(name) ?? (await load(name))
-        return { code: 0, stdout: show(unit, await isEnabled(name)) }
+        return { code: 0, stdout: show(unit, isEnabled(name)) }
       }
       return { code: 1, stdout: "" }
     } catch (error) {
@@ -457,15 +466,6 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
   }
 
   const only = () => units.get(SYSTEMD_UNIT)
-
-  const isEnabledSync = (name: string) => {
-    try {
-      lstatSync(path.join(wantsDir, name))
-      return true
-    } catch {
-      return false
-    }
-  }
 
   const killAll = async () => {
     for (const unit of units.values()) {
@@ -486,7 +486,7 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
     journal: () => only()?.journal ?? "",
     service: () => {
       const unit = only()
-      const enabled = isEnabledSync(SYSTEMD_UNIT)
+      const enabled = isEnabled(SYSTEMD_UNIT)
       if (!unit) return { kind: "systemd-user", loaded: false, enabled, running: false, pid: undefined, state: "not-found", restarts: 0, lastExit: undefined, raw: "" }
       return {
         kind: "systemd-user",
@@ -520,13 +520,7 @@ export function createFakeSystemdUserManager(options: FakeSystemdOptions): FakeS
       claxedoHome: input.claxedoHome,
       env: options.runtimeDir === undefined ? {} : { XDG_RUNTIME_DIR: options.runtimeDir },
       run,
-      writeFile: async (file, text) => {
-        await fs.mkdir(path.dirname(file), { recursive: true })
-        await fs.writeFile(file, text, { mode: 0o644 })
-      },
-      unlink: async (file) => {
-        await fs.rm(file, { force: true })
-      },
+      ...unitFileDeps,
       now: input.now ?? (() => Date.now()),
     }),
     dispose: async () => {
@@ -714,13 +708,7 @@ export function createFakeLaunchd(options: FakeLaunchdOptions): FakeServiceManag
       claxedoHome: input.claxedoHome,
       env: {},
       run,
-      writeFile: async (file, text) => {
-        await fs.mkdir(path.dirname(file), { recursive: true })
-        await fs.writeFile(file, text, { mode: 0o644 })
-      },
-      unlink: async (file) => {
-        await fs.rm(file, { force: true })
-      },
+      ...unitFileDeps,
       now: input.now ?? (() => Date.now()),
     }),
     dispose: async () => {
