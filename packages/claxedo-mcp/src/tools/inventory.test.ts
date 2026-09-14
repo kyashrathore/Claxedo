@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, test } from "vitest"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import type { SessionAccessOperation } from "@claxedo/workspace-runtime/client"
@@ -262,11 +263,14 @@ describe("the tool names the catalog publishes", () => {
 })
 
 describe("the transcript's first-party roster", () => {
-  // A relative import rather than a package edge: session-ui is a UI package this
-  // server package must not depend on, and the roster module itself is pure.
-  test("names exactly the tools the groups register, so a renamed or added tool cannot render as a generic row", async () => {
-    const { CLAXEDO_TOOL_TITLE_KEYS } = await import("../../../session-ui/src/components/claxedo-tool-view")
+  // Read as text, not imported: session-ui is a UI package this server package
+  // must not resolve, and its module pulls a .tsx type import this tsconfig cannot compile.
+  test("names exactly the tools the groups register, so a renamed or added tool cannot render as a generic row", () => {
+    const source = readFileSync(new URL("../../../session-ui/src/components/claxedo-tool-view.ts", import.meta.url), "utf8")
+    const block = source.split("export const CLAXEDO_TOOL_TITLE_KEYS = {")[1]?.split("} as const")[0] ?? ""
+    const roster = [...block.matchAll(/^\s*([a-z_]+):\s*"ui\.claxedoTool\.[a-z_]+",$/gm)].map((match) => match[1]).sort()
     const registered = claxedoMcpToolGroupInventory().flatMap((group) => group.tools).sort()
-    expect(Object.keys(CLAXEDO_TOOL_TITLE_KEYS).sort()).toEqual(registered)
+    expect(roster.length).toBeGreaterThan(0)
+    expect(roster).toEqual(registered)
   })
 })
