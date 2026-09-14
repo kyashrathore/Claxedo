@@ -149,11 +149,6 @@ export async function machineRequestSignature(
   return await keys.sign(await hostMachineRequestPayload(input))
 }
 
-/**
- * How the control plane identifies a public key: sha256 over the raw P-256
- * coordinates, base64url. Never the JWK text — two serializations of one key
- * (field order, `ext`, `key_ops`) must compare equal.
- */
 /** A P-256 public JWK from JSON text or a parsed object; anything else throws with the reason. */
 export function publicKeyJwk(input: JsonWebKey | string): JsonWebKey {
   const value: unknown = typeof input === "string" ? JSON.parse(input) : input
@@ -165,6 +160,11 @@ export function publicKeyJwk(input: JsonWebKey | string): JsonWebKey {
   return { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y }
 }
 
+/**
+ * How the control plane identifies a public key: sha256 over the raw P-256
+ * coordinates, base64url. Never the JWK text — two serializations of one key
+ * (field order, `ext`, `key_ops`) must compare equal.
+ */
 export async function hostPublicKeyFingerprint(jwk: JsonWebKey | string) {
   const parsed = publicKeyJwk(jwk)
   const x = base64urlDecode(parsed.x ?? "")
