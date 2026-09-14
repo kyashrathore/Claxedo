@@ -11,6 +11,7 @@ import type {
   ProjectRoleResult,
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
+import type { PrivateSessionRuntimePrincipal } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
 import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
@@ -37,7 +38,9 @@ export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "listWorkspaces",
   "registerLocalForSharing",
   "createCloudWorkspace",
+  "createRuntimeCloudWorkspace",
   "deleteWorkspace",
+  "deleteRuntimeWorkspace",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
 export type D1WorkspaceAuthorityCore = Pick<WorkspaceAuthority, (typeof D1_WORKSPACE_AUTHORITY_METHODS)[number]>
@@ -1097,7 +1100,17 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   /** Explicit-org creation seam used by new hosted organization routes. */
   async createWorkspace(auth: SignedControlPlaneAuth, input: D1WorkspaceCreateArgs) {
-    const who = await this.requirePrincipal(auth)
+    return await this.createWorkspaceAs(await this.requirePrincipal(auth), input)
+  }
+
+  /**
+   * The one creation path, for a creator already resolved: the signed
+   * caller, or the canonical actor a runtime credential resolved to. Every
+   * admission is `who`'s own — organization admin, project admin through
+   * `adminProjectOrgId` — so a person who could not create this workspace
+   * from the app cannot have it created for them by a credential either.
+   */
+  private async createWorkspaceAs(who: Principal, input: D1WorkspaceCreateArgs) {
     const workspaceId = requireText(input.workspaceId, "workspaceId")
     const orgId = requireText(input.orgId, "orgId")
     const displayName = requireText(input.displayName, "displayName")
@@ -1252,6 +1265,34 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     })
   }
 
+  /**
+   * What admits this caller is not a signature but a resolution the caller
+   * made: the principal is the workspace owner's active human actor, resolved
+   * from the grant by the control plane, and `orgId`/`projectId` are that
+   * owner's. What is checked here is that the actor is that person now, that
+   * they may admin the project, and that the project is in the organization
+   * named — the same admission `createWorkspace` gives a signed creator.
+   */
+  async createRuntimeCloudWorkspace(
+    principal: PrivateSessionRuntimePrincipal,
+    args: {
+      workspaceId: string
+      orgId: string
+      projectId: string
+      displayName: string
+      repoUrl?: string
+      repoName?: string
+      gitBranch?: string
+      homeRegion?: string
+    },
+  ) {
+    const who = await this.requireRuntimeActor(principal)
+    const projectId = requireText(args.projectId, "projectId")
+    const orgId = await this.adminProjectOrgId(who.userId, projectId)
+    if (orgId !== requireText(args.orgId, "orgId")) throw denied("Project creation authority was denied")
+    return await this.createWorkspaceAs(who, { ...args, orgId, projectId, backing: "cloud-vm", access: "cloud" })
+  }
+
   async registerLocalForSharing(
     auth: SignedControlPlaneAuth,
     args: {
@@ -1274,7 +1315,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   async deleteWorkspace(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
-    const who = await this.requirePrincipal(auth)
+    return await this.deleteWorkspaceAs(await this.requirePrincipal(auth), args)
+  }
+
+  async deleteRuntimeWorkspace(principal: PrivateSessionRuntimePrincipal, args: { workspaceId: string }) {
+    return await this.deleteWorkspaceAs(await this.requireRuntimeActor(principal), args)
+  }
+
+  private async deleteWorkspaceAs(who: Principal, args: { workspaceId: string }) {
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const row = await this.workspaceAccess(who.userId, workspaceId)
     if (!row || row.role_rank < 4) throw denied()
@@ -1427,6 +1475,30 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return { userId: principal.userId, actorId: principal.actorId }
   }
 
+  /**
+   * A user principal only. The plane's own service actor reaches the session
+   * authority as itself, but a workspace it created would belong to nobody a
+   * person can open, so a service principal is refused here rather than
+   * given an owner.
+   */
+  private async requireRuntimeActor(principal: PrivateSessionRuntimePrincipal): Promise<Principal> {
+    if (principal.principalKind !== "user" || principal.actorKind !== "human") {
+      throw denied("Canonical human actor is required")
+    }
+    const row = await this.database
+      .prepare(
+        `
+      select a.actor_id, a.user_id from actors a
+      join users u on u.user_id = a.user_id and u.state = 'active'
+      where a.actor_id = ? and a.kind = 'human' and a.state = 'active'
+    `,
+      )
+      .bind(requireText(principal.actorId, "actorId"))
+      .first<{ actor_id: string; user_id: string }>()
+    if (!row) throw denied("Canonical active actor is required")
+    return { userId: row.user_id, actorId: row.actor_id }
+  }
+
   private async organizationRows(userId: string) {
     const result = await this.database
       .prepare(
@@ -1572,12 +1644,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   }
 
   private async creationOrgId(auth: SignedControlPlaneAuth, projectId?: string) {
-    if (projectId) {
-      const result = await this.authorizeProject(auth, { projectId, action: "admin" })
-      if (result.ok) return result.orgId
-      throw denied("Project creation authority was denied")
-    }
+    if (projectId) return await this.adminProjectOrgId((await this.requirePrincipal(auth)).userId, projectId)
     return await this.resolveOrgId(auth)
+  }
+
+  private async adminProjectOrgId(userId: string, projectId: string) {
+    const row = await this.projectAccess(userId, projectId)
+    if (!row || row.role_rank < actionRank("admin")) throw denied("Project creation authority was denied")
+    return row.org_id
   }
 }
 
