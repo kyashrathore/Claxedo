@@ -361,7 +361,7 @@ describe("driver egress capability declarations", () => {
     // rather than hidden behind the credential's own host list.
     const calls: { url: string; body: Record<string, unknown> }[] = []
     const fetch = vi.fn(async (url: unknown, init?: RequestInit) => {
-      calls.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : {} })
+      calls.push({ url: String(url), body: typeof init?.body === "string" ? JSON.parse(init.body) : {} })
       return new Response(JSON.stringify({ ready: true, url: "https://sbx.example.com/proxy", port: 3002 }), { status: 200 })
     }) as unknown as typeof globalThis.fetch
     const driver = createCloudflareSandboxDriver({

@@ -32,7 +32,7 @@ export function jwtClaims(token: string | undefined): Record<string, unknown> | 
   const base64 = payload.replaceAll("-", "+").replaceAll("_", "/")
   try {
     const binary = atob(base64 + "=".repeat((4 - (base64.length % 4)) % 4))
-    const bytes = Uint8Array.from([...binary], (character) => character.charCodeAt(0))
+    const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0))
     return asRecord(JSON.parse(new TextDecoder().decode(bytes)))
   } catch {
     return undefined
