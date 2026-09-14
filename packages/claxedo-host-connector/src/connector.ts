@@ -286,6 +286,15 @@ export function createHostConnector(options: ConnectorOptions) {
   let generation: number | undefined
   let scopeRevision: number | undefined
   let deliveredEndpoints: string | undefined
+  /**
+   * Set by `drain()` and never cleared: from then on `ack` is refused, the
+   * timer is gone, a beat still in flight delivers nothing when it lands,
+   * and the only beat left to send is the drain's own. Consent given during
+   * a drain would be published by that final beat and then abandoned by the
+   * process closing behind it — readiness at the control plane for a host
+   * that is gone.
+   */
+  let draining = false
 
   const stop = (reason: Extract<ConnectorState, { status: "stopped" }>["reason"], detail: string) => {
     era++
@@ -420,6 +429,7 @@ export function createHostConnector(options: ConnectorOptions) {
   let queued: Promise<ConnectorState> | undefined
 
   const machineBeat = (machine: MachineConnectorOptions): Promise<ConnectorState> => {
+    if (draining) return Promise.resolve(state)
     if (inFlight) {
       queued ??= inFlight
         .catch(() => undefined)
@@ -429,13 +439,13 @@ export function createHostConnector(options: ConnectorOptions) {
         })
       return queued
     }
-    inFlight = runMachineBeat(machine).finally(() => {
+    inFlight = runMachineBeat(machine, "serving").finally(() => {
       inFlight = undefined
     })
     return inFlight
   }
 
-  const runMachineBeat = async (machine: MachineConnectorOptions): Promise<ConnectorState> => {
+  const runMachineBeat = async (machine: MachineConnectorOptions, purpose: "serving" | "drain"): Promise<ConnectorState> => {
     if (state.status !== "enrolled" || generation === undefined) return state
     const startedIn = era
     const enrollment = state.enrollment
@@ -450,12 +460,20 @@ export function createHostConnector(options: ConnectorOptions) {
       // machine the control plane has already stopped recognising.
       if (startedIn !== era) return state
       state = { status: "enrolled", enrollment: { ...enrollment, expires_at: result.expires_at } }
+      if (purpose === "drain") {
+        options.onServing?.(undefined)
+        return state
+      }
+      // A serving beat that lands after `drain()` began describes a host
+      // that is leaving: its descriptions would start preparations the
+      // drain then refuses, and its credential would reopen tunnels.
+      if (draining) return state
       try {
         await reconcile(machine, result)
       } catch (error) {
         options.onError?.("reconcile", error)
       }
-      if (startedIn !== era) return state
+      if (startedIn !== era || draining) return state
       options.onServing?.(result.hostTunnel)
       options.onLeaseRenewed?.(state)
     } catch (error) {
@@ -472,11 +490,14 @@ export function createHostConnector(options: ConnectorOptions) {
    * inside — the queued beat runs the moment this one settles.
    *
    * Refused — and never sent — for a revision that is not the current one
-   * (the owner moved on again) and for a directory whose RESOLVED path is
+   * (the owner moved on again), for a directory whose RESOLVED path is
    * outside the effective roots (a symlink out of a root is the case the
-   * lexical check at the control plane cannot see).
+   * lexical check at the control plane cannot see), and once `drain()` has
+   * begun, so a preparation that outlives the stop signal retires its
+   * workspace instead of publishing it.
    */
   const machineAck = async (machine: MachineConnectorOptions, input: AssignmentAck) => {
+    if (draining) throw new Error(`assignment ${input.workspaceId}: this host is draining and serves nothing new`)
     if (state.status !== "enrolled") throw new Error("remote access is not active on this machine")
     const current = descriptions.get(input.workspaceId)
     if (!current) throw new Error(`no assignment for workspace ${input.workspaceId} on this machine`)
@@ -497,6 +518,7 @@ export function createHostConnector(options: ConnectorOptions) {
     if (descriptions.get(input.workspaceId)?.revision !== input.revision || state.status !== "enrolled") {
       throw new Error(`assignment ${input.workspaceId} changed while revision ${input.revision} was being validated`)
     }
+    if (draining) throw new Error(`assignment ${input.workspaceId}: this host is draining and serves nothing new`)
     acked.set(input.workspaceId, input.revision)
     pending.delete(input.workspaceId)
     void machineBeat(machine)
@@ -548,7 +570,7 @@ export function createHostConnector(options: ConnectorOptions) {
     async unack(workspaceId: string): Promise<void> {
       if (options.mode !== "machine") throw new Error("unack is for machine-mode connectors; use unshareWorkspace")
       if (!acked.delete(workspaceId)) return
-      if (state.status !== "enrolled") return
+      if (state.status !== "enrolled" || draining) return
       await machineBeat(options)
     },
 
@@ -557,13 +579,22 @@ export function createHostConnector(options: ConnectorOptions) {
      * machine that exited cleanly stays routable at the control plane until
      * its lease expires, and every client sees an offline host answer as a
      * live one for that long.
+     *
+     * The beat is sent only after the beat in flight — and the preparation
+     * its reconciliation may be awaiting — has settled, and the acks are
+     * cleared at that moment rather than when the drain was requested: an
+     * ack that landed in between would otherwise ride the final beat.
      */
     async drain(): Promise<void> {
       if (options.mode !== "machine") throw new Error("drain is for machine-mode connectors; close lets an account lease lapse")
-      if (state.status !== "enrolled") return
+      if (state.status !== "enrolled" || draining) return
+      draining = true
+      timer?.cancel()
+      timer = undefined
+      while (inFlight) await inFlight.catch(() => undefined)
       acked.clear()
       pending.clear()
-      await machineBeat(options)
+      await runMachineBeat(options, "drain")
     },
 
     /** Workspaces this machine currently publishes, sorted for stable display. */

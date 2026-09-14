@@ -22,7 +22,7 @@ import { createWorkspaceOpenCodeRuntime } from "@claxedo/workspace-runtime"
 import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { trimToUndefined } from "@claxedo/helpers/string"
 import { errorMessage } from "../json"
-import { LEASE_TTL_MS } from "./paths"
+import { DRAIN_TIMEOUT_MS, LEASE_TTL_MS, RUNTIME_CLOSE_TIMEOUT_MS } from "./paths"
 
 /** A runtime's private SDK owner; the listener disposes the runtime, this process closes the owner. */
 export type OwnedOpenCodeRuntime = NonNullable<HostWorkspaceRuntimeOptions["opencodeRuntime"]>
@@ -36,6 +36,7 @@ export type HostDeps = {
   stopServing: typeof stopUserHostedServing
   resolvePath: (target: string) => Promise<string>
   setInterval: (fn: () => void, ms: number) => { cancel: () => void }
+  setTimeout: (fn: () => void, ms: number) => { cancel: () => void }
   /** Subscribe to the process's stop request; the returned function unsubscribes. */
   onStopSignal: (fn: (signal: string) => void) => () => void
   now: () => number
@@ -47,7 +48,7 @@ export type HostDeps = {
 export function defaultHostDeps(): HostDeps {
   return {
     fetch: (input, init) => fetch(input, init),
-    createListener: () => createHostRuntimeListener({ hostname: "127.0.0.1", port: 0 }),
+    createListener: () => createHostRuntimeListener({ hostname: "127.0.0.1", port: 0, drainTimeoutMs: RUNTIME_CLOSE_TIMEOUT_MS }),
     openCodeRuntime: (directory) => createWorkspaceOpenCodeRuntime(directory),
     setServing: setUserHostedServing,
     servingState: userHostedServingState,
@@ -56,6 +57,10 @@ export function defaultHostDeps(): HostDeps {
     setInterval: (fn, ms) => {
       const handle = setInterval(fn, ms)
       return { cancel: () => clearInterval(handle) }
+    },
+    setTimeout: (fn, ms) => {
+      const handle = setTimeout(fn, ms)
+      return { cancel: () => clearTimeout(handle) }
     },
     onStopSignal: (fn) => {
       const onTerm = () => fn("SIGTERM")
@@ -123,6 +128,19 @@ export async function withBootstrapRetry<T>(
 
 /** `connector.start()` reporting a transport failure on acquire; the connector can be started again. */
 class StartFailure extends Error {}
+
+async function drainWithin(drain: Promise<void>, deps: Pick<HostDeps, "setTimeout" | "log">) {
+  let timer: { cancel: () => void } | undefined
+  const expired = new Promise<"expired">((resolve) => {
+    timer = deps.setTimeout(() => resolve("expired"), DRAIN_TIMEOUT_MS)
+  })
+  try {
+    const outcome = await Promise.race([drain.then(() => "drained" as const), expired])
+    if (outcome === "expired") deps.log(`drain did not finish within ${DRAIN_TIMEOUT_MS / 1000}s; closing anyway`)
+  } finally {
+    timer?.cancel()
+  }
+}
 
 /** The heartbeat ack's `hostTunnel` verbatim from the control plane, or nothing serveable. */
 export function servingCredential(tunnel: unknown, fallbackRelayUrl: string | undefined): UserHostedServingCredential | null {
@@ -355,7 +373,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
   }
 
   unsubscribe()
-  await connector.drain()
+  await drainWithin(connector.drain(), deps)
   connector.close()
   deps.stopServing()
   await listener.close()

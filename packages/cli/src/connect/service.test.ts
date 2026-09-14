@@ -1,6 +1,11 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import { EXIT_TIMEOUT_S } from "./paths"
 import {
   launchdPlist,
+  launchdWrapperScript,
   linuxUserManager,
   serviceKind,
   serviceUnitPath,
@@ -58,6 +63,7 @@ describe("service units", () => {
     expect(files.get(unit)).toBe(systemdUnit(deps, { alongsideDesktop: false }))
     expect(systemdUnit(deps, { alongsideDesktop: true })).toContain(`"connect" "--foreground" "--alongside-desktop"`)
     expect(files.get(unit)).toContain(`ExecStart="/usr/local/bin/node" "/opt/claxedo/dist/index.mjs" "connect" "--foreground"`)
+    expect(files.get(unit)).toContain(`TimeoutStopSec=${EXIT_TIMEOUT_S}`)
     expect(files.get(unit)).toContain("Restart=on-failure\nRestartSec=5\nRestartPreventExitStatus=78")
     expect(files.get(unit)).toContain(`Environment=CLAXEDO_HOME="/var/lib/claxedo"`)
     expect(files.get(unit)).toContain("WantedBy=default.target")
@@ -151,9 +157,10 @@ describe("service units", () => {
     expect(text).toBe(launchdPlist(deps, { alongsideDesktop: true }))
     expect(text).toContain("<key>Label</key><string>dev.claxedo.connect</string>")
     expect(text).toContain("<key>KeepAlive</key>\n  <dict><key>SuccessfulExit</key><false/></dict>")
-    expect(text).toContain(
-      `'/usr/local/bin/node' '/opt/claxedo/dist/index.mjs' 'connect' '--foreground' '--alongside-desktop'; status=$?; if [ &quot;$status&quot; -eq 78 ]; then launchctl bootout &quot;gui/$(id -u)/dev.claxedo.connect&quot;; fi; exit &quot;$status&quot;`.replace(/&quot;/g, '"'),
-    )
+    expect(text).toContain(`'/usr/local/bin/node' '/opt/claxedo/dist/index.mjs' 'connect' '--foreground' '--alongside-desktop' &amp; child=$!`)
+    expect(text).toContain(`if [ "$status" -eq 78 ]; then launchctl bootout "gui/$(id -u)/dev.claxedo.connect"; fi`)
+    expect(text).toContain(`<key>ExitTimeOut</key><integer>${EXIT_TIMEOUT_S}</integer>`)
+    expect(EXIT_TIMEOUT_S).toBe(25)
     expect(text).not.toContain("CLAXEDO_HOME")
     expect(calls[0]).toMatch(/^launchctl bootout gui\/\d+\/dev\.claxedo\.connect$/)
     expect(calls[1]).toMatch(new RegExp(`^launchctl bootstrap gui/\\d+ ${plist}$`))
@@ -161,6 +168,51 @@ describe("service units", () => {
 
     await uninstallService(deps, undefined)
     expect(files.has(plist)).toBe(false)
+  })
+
+  describe("the launchd wrapper, run under /bin/sh", () => {
+    const dirs: string[] = []
+    afterEach(async () => {
+      for (const dir of dirs.splice(0)) await fs.rm(dir, { recursive: true, force: true })
+    })
+
+    async function stubs() {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-launchd-"))
+      dirs.push(dir)
+      const connect = path.join(dir, "connect.sh")
+      await fs.writeFile(connect, `#!/bin/sh\ntrap 'echo drained; exit 0' TERM\necho serving\nwhile :; do sleep 0.05; done\n`, { mode: 0o755 })
+      const decided = path.join(dir, "decided.sh")
+      await fs.writeFile(decided, "#!/bin/sh\nexit 78\n", { mode: 0o755 })
+      const bootout = path.join(dir, "bootout.txt")
+      return { connect, decided, bootout: `echo booted-out > '${bootout}'`, bootoutFile: bootout }
+    }
+
+    test("forwards SIGTERM to connect and exits with connect's own status", async () => {
+      const { connect, bootout, bootoutFile } = await stubs()
+      const wrapper = Bun.spawn(["/bin/sh", "-c", launchdWrapperScript(`'${connect}'`, bootout)], { stdout: "pipe", stderr: "pipe" })
+      const reader = wrapper.stdout.getReader()
+      const decoder = new TextDecoder()
+      let output = ""
+      while (!output.includes("serving")) output += decoder.decode((await reader.read()).value)
+      wrapper.kill("SIGTERM")
+      for (;;) {
+        const chunk = await reader.read()
+        if (chunk.done) break
+        output += decoder.decode(chunk.value)
+      }
+
+      expect(await wrapper.exited, "the child's 0, not the shell's 143").toBe(0)
+      expect(output).toBe("serving\ndrained\n")
+      expect(await fs.readFile(bootoutFile, "utf8").catch(() => "absent")).toBe("absent")
+    })
+
+    test("a decision boots the job out and keeps 78", async () => {
+      const { decided, bootout, bootoutFile } = await stubs()
+      const wrapper = Bun.spawn(["/bin/sh", "-c", launchdWrapperScript(`'${decided}'`, bootout)], { stdout: "pipe", stderr: "pipe" })
+
+      expect(await wrapper.exited).toBe(78)
+      expect((await fs.readFile(bootoutFile, "utf8")).trim()).toBe("booted-out")
+    })
   })
 
   test("other platforms are refused before anything is written", async () => {

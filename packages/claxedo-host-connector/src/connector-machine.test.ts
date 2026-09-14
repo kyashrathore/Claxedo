@@ -586,6 +586,103 @@ describe("mode boundaries", () => {
     expect(cp.log.length).toBe(requests + 1)
   })
 
+  test("drain during an in-flight preparation: the late ack is refused and the final beat carries no acks", async () => {
+    const cp = createFakeControlPlane()
+    let releasePreparation: (() => void) | undefined
+    let ackOutcome: unknown = "not attempted"
+    const h: Awaited<ReturnType<typeof machineHost>> = await machineHost(cp, {
+      onAssignments: async (descriptions, ack) => {
+        for (const d of descriptions) {
+          if (d.workspaceId === "ws_slow") {
+            await new Promise<void>((resolve) => {
+              releasePreparation = resolve
+            })
+            ackOutcome = await h.connector.ack({ workspaceId: d.workspaceId, revision: d.revision }).then(
+              () => "acked",
+              (error: unknown) => error,
+            )
+            continue
+          }
+          await ack(d)
+        }
+      },
+    })
+    await h.connector.start()
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_fast", remoteDirectory: "/srv/fast" })
+    h.tick()
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_fast"]))
+
+    // SIGTERM lands while ws_slow's runtime is still being prepared inside a beat.
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_slow", remoteDirectory: "/srv/slow" })
+    h.tick()
+    await vi.waitFor(() => expect(releasePreparation).toBeDefined())
+    const beatsBeforeDrain = h.beats().length
+    let drained = false
+    const draining = h.connector.drain().then(() => {
+      drained = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(drained, "drain waits for the beat that is preparing ws_slow").toBe(false)
+
+    releasePreparation?.()
+    await draining
+    h.connector.close()
+
+    expect(ackOutcome).toBeInstanceOf(Error)
+    expect(String(ackOutcome)).toContain("draining")
+    expect(h.beats().length, "exactly one beat after the in-flight one").toBe(beatsBeforeDrain + 1)
+    expect(h.beats().at(-1)?.body).toMatchObject({ acks: [] })
+    expect(cp.routable(h.enrolled.enrollmentId), "the control plane holds no readiness for the exiting host").toEqual([])
+    expect(h.seen.at(-1)?.map((d) => d.workspaceId)).toEqual(["ws_fast", "ws_slow"])
+    expect(h.tunnels.at(-1)).toBeUndefined()
+  })
+
+  test("while draining, a beat already in flight delivers nothing and no further beat is sent", async () => {
+    const cp = createFakeControlPlane()
+    let releaseBeat: (() => void) | undefined
+    const h = await machineHost(cp, {
+      wrap: (transport) => ({
+        ...transport,
+        heartbeat: async (input) => {
+          const result = await transport.heartbeat(input)
+          if (releaseBeat === undefined && input.acks.length > 0) {
+            await new Promise<void>((resolve) => {
+              releaseBeat = resolve
+            })
+          }
+          return result
+        },
+      }),
+    })
+    await h.connector.start()
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    h.tick()
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
+    // The next timer beat is held open at the transport; the owner re-points
+    // the folder while it is out, so its answer carries a new description.
+    h.tick()
+    await vi.waitFor(() => expect(releaseBeat).toBeDefined())
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api-v2" })
+    const deliveries = h.seen.length
+    const tunnels = h.tunnels.length
+    const requests = h.beats().length
+
+    const draining = h.connector.drain()
+    h.tick()
+    h.tick()
+    await h.connector.beat()
+    await h.connector.unack("ws_1")
+    releaseBeat?.()
+    await draining
+
+    expect(h.seen.length, "the held beat's description list was not delivered").toBe(deliveries)
+    expect(h.beats().length, "the held beat, then the drain beat and nothing else").toBe(requests + 1)
+    expect(h.beats().at(-1)?.body).toMatchObject({ acks: [] })
+    expect(h.tunnels.slice(tunnels), "the held beat's credential was not reported; the drain reports nothing served").toEqual([undefined])
+    expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
+    await expect(h.connector.ack({ workspaceId: "ws_1", revision: 1 })).rejects.toThrow(/draining/)
+  })
+
   test("unack withdraws consent and beats", async () => {
     const cp = createFakeControlPlane()
     const h = await machineHost(cp)

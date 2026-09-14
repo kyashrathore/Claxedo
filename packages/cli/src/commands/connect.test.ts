@@ -130,6 +130,10 @@ async function harness(input: { home?: string; cp?: FakeControlPlane; relay?: Re
       tick = fn
       return { cancel: () => undefined }
     },
+    setTimeout: (fn, ms) => {
+      const handle = setTimeout(fn, ms)
+      return { cancel: () => clearTimeout(handle) }
+    },
     onStopSignal: (fn) => {
       stop = fn
       return () => undefined
@@ -367,6 +371,79 @@ describe("claxedo connect", () => {
     await until(() => h.listener()?.workspaceIds().length === 0, "retirement to dispose the runtime")
     h.stop()
     expect(await running).toBe(0)
+  })
+
+  test("SIGTERM during a preparation: the workspace is refused, never acked, and the final beat withdraws everything", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const slow = path.join(h.root, "slow")
+    const fast = path.join(h.root, "fast")
+    await fs.mkdir(slow)
+    await fs.mkdir(fast)
+    let releaseSlow: (() => void) | undefined
+    const realpath = h.deps.host.resolvePath
+    h.deps.host.resolvePath = async (target) => {
+      if (target === slow) {
+        await new Promise<void>((resolve) => {
+          releaseSlow = resolve
+        })
+      }
+      return realpath(target)
+    }
+    const running = connect(["--token-file", file], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    const hostId = (await h.deps.store.load())!.host_id
+    h.cp.assign({ hostId, workspaceId: "ws_fast", remoteDirectory: fast })
+    h.tick()
+    await until(() => h.cp.routable(enrollmentIdOf(h)).includes("ws_fast"), "the fast folder to be served")
+    h.cp.assign({ hostId, workspaceId: "ws_slow", remoteDirectory: slow })
+    h.tick()
+    await until(() => releaseSlow !== undefined, "the slow folder's preparation to be in flight")
+
+    h.stop()
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(h.cp.log.at(-1)?.body, "the final beat waits for the preparation").not.toEqual(expect.objectContaining({ acks: [] }))
+    releaseSlow?.()
+
+    expect(await running).toBe(0)
+    expect(h.lines.some((line) => line.startsWith("workspace ws_slow: refused: ") && line.includes("draining"))).toBe(true)
+    expect(h.lines).not.toContain(`workspace ws_slow: serving ${slow} (revision 1)`)
+    expect(h.cp.beats().every((beat) => !JSON.stringify(beat.body.acks).includes("ws_slow"))).toBe(true)
+    expect(h.cp.log.at(-1)).toMatchObject({ path: "/api/claxedo/host/enrollments/heartbeat", body: { acks: [] } })
+    expect(h.cp.routable(enrollmentIdOf(h))).toEqual([])
+    expect(h.listener()?.workspaceIds()).toEqual([])
+    expect((await h.deps.store.load())?.run).toBeUndefined()
+  })
+
+  test("a preparation that never finishes cannot hold the exit past the drain bound", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const stuck = path.join(h.root, "stuck")
+    await fs.mkdir(stuck)
+    const realpath = h.deps.host.resolvePath
+    let stuckAttempted = false
+    h.deps.host.resolvePath = (target) => {
+      if (target !== stuck) return realpath(target)
+      stuckAttempted = true
+      return new Promise<string>(() => undefined)
+    }
+    const timeouts: number[] = []
+    h.deps.host.setTimeout = (fn, ms) => {
+      timeouts.push(ms)
+      fn()
+      return { cancel: () => undefined }
+    }
+    const running = connect(["--token-file", file], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    h.cp.assign({ hostId: (await h.deps.store.load())!.host_id, workspaceId: "ws_stuck", remoteDirectory: stuck })
+    h.tick()
+    await until(() => stuckAttempted, "the preparation to hang")
+
+    h.stop()
+
+    expect(await running).toBe(0)
+    expect(timeouts).toEqual([10_000])
+    expect(h.lines).toContain("drain did not finish within 10s; closing anyway")
+    expect(h.cp.routable(enrollmentIdOf(h))).toEqual([])
+    expect((await h.deps.store.load())?.run).toBeUndefined()
   })
 
   test("a folder assigned before it exists is served once it appears, without a restart", async () => {

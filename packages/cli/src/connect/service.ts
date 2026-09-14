@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import type { HostState } from "@claxedo/host-connector/host-state"
+import { EXIT_TIMEOUT_S } from "./paths"
 
 const execFileAsync = promisify(execFile)
 
@@ -100,6 +101,7 @@ export function systemdUnit(deps: Pick<ServiceDeps, "command" | "claxedoHome">, 
     "Restart=on-failure",
     "RestartSec=5",
     "RestartPreventExitStatus=78",
+    `TimeoutStopSec=${EXIT_TIMEOUT_S}`,
     ...(deps.claxedoHome ? [`Environment=CLAXEDO_HOME=${systemdQuote(deps.claxedoHome)}`] : []),
     "",
     "[Install]",
@@ -117,15 +119,36 @@ function singleQuoted(value: string) {
 }
 
 /**
- * launchd's `SuccessfulExit=false` restarts the job on EVERY non-zero exit
- * and knows no exempt status, so a decision (78) would relaunch every 10 s
- * and beat against a refusal forever. The job therefore boots itself out on
- * 78: the plist stays, and the next login (or `launchctl bootstrap`) loads it
+ * The shell wrapper launchd runs. Two things `sh -c '<connect>; ...'` alone
+ * gets wrong:
+ *
+ * `SuccessfulExit=false` restarts the job on EVERY non-zero exit and knows
+ * no exempt status, so a decision (78) would relaunch every 10 s and beat
+ * against a refusal forever. The wrapper therefore boots the job out on 78:
+ * the plist stays, and the next login (or `launchctl bootstrap`) loads it
  * again — a deliberate re-run after the operator changed something.
+ *
+ * launchd's SIGTERM reaches the shell, not the command it is waiting on; a
+ * non-interactive shell dies on it, and launchd then SIGKILLs the orphaned
+ * process group — connect never saw a signal and never drained. The wrapper
+ * runs connect in the background, forwards TERM and INT, and waits again
+ * after the interrupted `wait` (which answers 128+signal, not the child's
+ * status) so the exit status is connect's own.
  */
+export function launchdWrapperScript(connect: string, bootout: string) {
+  return [
+    `trap 'signalled=1; kill -TERM "$child" 2>/dev/null' TERM INT`,
+    `${connect} & child=$!`,
+    `wait "$child"; status=$?`,
+    `while [ -n "$signalled" ]; do signalled=; wait "$child"; status=$?; done`,
+    `if [ "$status" -eq 78 ]; then ${bootout}; fi`,
+    `exit "$status"`,
+  ].join("\n")
+}
+
 export function launchdPlist(deps: Pick<ServiceDeps, "command" | "claxedoHome">, options: ServiceUnitOptions) {
   const connect = [...deps.command, ...connectArgs(options)].map(singleQuoted).join(" ")
-  const script = `${connect}; status=$?; if [ "$status" -eq 78 ]; then launchctl bootout "gui/$(id -u)/${LAUNCHD_LABEL}"; fi; exit "$status"`
+  const script = launchdWrapperScript(connect, `launchctl bootout "gui/$(id -u)/${LAUNCHD_LABEL}"`)
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
     `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">`,
@@ -142,6 +165,7 @@ export function launchdPlist(deps: Pick<ServiceDeps, "command" | "claxedoHome">,
     `  <key>KeepAlive</key>`,
     `  <dict><key>SuccessfulExit</key><false/></dict>`,
     `  <key>ThrottleInterval</key><integer>10</integer>`,
+    `  <key>ExitTimeOut</key><integer>${EXIT_TIMEOUT_S}</integer>`,
     ...(deps.claxedoHome
       ? [
           `  <key>EnvironmentVariables</key>`,
