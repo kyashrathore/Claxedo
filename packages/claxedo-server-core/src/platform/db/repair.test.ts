@@ -465,6 +465,26 @@ describe("claxedo schema", () => {
       .toEqual([{ id: "cred_new" }])
   })
 
+  test("repair keeps the mark stated last, not the row touched last", () => {
+    const sqlite = new Database(":memory:")
+    applyMigration(sqlite, "20260411000000_provider_credentials")
+    sqlite.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `owner` text")
+    sqlite.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `is_active` integer NOT NULL DEFAULT 0")
+    sqlite.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `activated_at` integer")
+    const insert = sqlite.prepare(`
+      INSERT INTO claxedo_provider_credential (id, provider_id, kind, source, status, is_active, activated_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+    `)
+    // A Check after the switch stamps the older mark's row last.
+    insert.run("cred_checked", "claude-sdk", "oauth_token", "managed", "available", 20, 1, 30)
+    insert.run("cred_marked", "claude-sdk", "oauth_token", "managed", "available", 25, 2, 25)
+
+    repair(sqlite)
+
+    expect(sqlite.prepare("SELECT id FROM claxedo_provider_credential WHERE is_active = 1").all())
+      .toEqual([{ id: "cred_marked" }])
+  })
+
   test("repair leaves an already-built active index and its marks alone", () => {
     const sqlite = new Database(":memory:")
     apply(sqlite)

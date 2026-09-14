@@ -422,9 +422,10 @@ function ensureProviderCredentialColumns(db: SqliteInstance, out: string[]) {
  * Created last and on its own, because it is the one repair statement that can
  * be refused: a database that drifted while rows were being marked can hold two
  * actives for a provider, and `CREATE UNIQUE INDEX` on that throws and takes
- * the whole boot with it. The extra marks are dropped first — most recently
- * stated wins, which is the same order `nativeProviderDeliveries` resolves a
- * contested destination by.
+ * the whole boot with it. The extra marks are dropped first, keeping the row
+ * marked most recently, which is the order `nativeProviderDeliveries` resolves
+ * a contested destination by; `updated_at` stands in only for a row marked
+ * before the column recording the mark existed.
  */
 function ensureProviderCredentialActiveIndex(db: SqliteInstance, out: string[]) {
   if (hasIndex(db, "claxedo_provider_credential_active_idx")) return
@@ -434,7 +435,7 @@ function ensureProviderCredentialActiveIndex(db: SqliteInstance, out: string[]) 
       SELECT \`id\` FROM (
         SELECT \`id\`, row_number() OVER (
           PARTITION BY \`org_id\`, coalesce(\`owner\`, ''), \`provider_id\`
-          ORDER BY \`updated_at\` DESC, \`id\` ASC
+          ORDER BY coalesce(\`activated_at\`, \`updated_at\`) DESC, \`created_at\` DESC, \`id\` ASC
         ) AS \`rank\`
         FROM \`claxedo_provider_credential\` WHERE \`is_active\` = 1
       ) WHERE \`rank\` = 1
