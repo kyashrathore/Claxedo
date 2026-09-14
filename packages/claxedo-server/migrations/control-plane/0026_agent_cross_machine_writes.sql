@@ -27,3 +27,8 @@ alter table task_session_links add column started_from_workspace_id text;
 alter table task_session_links add column placement text not null default 'local';
 
 create index task_session_links_session_idx on task_session_links (scope_id, session_id);
+
+-- Who asked for a linked attempt, apart from which session: a root's own
+-- grant starts as an agent with no session to name.
+
+alter table task_session_links add column started_by text not null default 'person' check (started_by in ('person', 'agent'));

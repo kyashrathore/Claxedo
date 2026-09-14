@@ -437,7 +437,15 @@ describe("task_start", () => {
       {
         method: "POST",
         path: "/api/claxedo/tasks/tasks/tsk_1/start-preview",
-        body: { taskRevision: 3, presetId: "pst_1", presetRevision: 2, slot: "primary", attempt: 1, continueFromPrevious: false },
+        body: {
+          taskRevision: 3,
+          presetId: "pst_1",
+          presetRevision: 2,
+          slot: "primary",
+          attempt: 1,
+          continueFromPrevious: false,
+          startedFrom: { sessionId: "ses_caller", workspaceId: "ws_local" },
+        },
       },
       {
         method: "POST",
@@ -452,6 +460,7 @@ describe("task_start", () => {
           previewDigest: "dgst_1",
           handoffText: null,
           continueFromPrevious: false,
+          startedFrom: { sessionId: "ses_caller", workspaceId: "ws_local" },
         },
       },
     ])

@@ -208,7 +208,7 @@ function operations(state: State): TasksStoreOperations {
             (link) =>
               link.scopeId === scopeId
               && inProject.has(link.taskId)
-              && link.startedFrom !== null
+              && link.startedBy === "agent"
               && link.placement === "cloud",
           )
           .sort((left, right) => right.createdAt - left.createdAt)

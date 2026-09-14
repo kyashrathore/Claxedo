@@ -4,6 +4,7 @@ import type {
   SessionHandoffState,
   SessionLiveness,
   SessionReference,
+  SessionStarter,
   StartPreview,
   Task,
   TaskSessionLink,
@@ -60,6 +61,8 @@ export type StartPreviewCommand = {
   currentLink: TaskSessionLink | null
   currentState: SessionLiveness | null
   authorizeTranscript: TranscriptGrant
+  /** The session the request says it is asked from, as the route parsed it; the host decides whether to believe it. */
+  startedFrom?: SessionReference
 }
 
 export type StartCommand = {
@@ -76,6 +79,8 @@ export type StartCommand = {
   /** The slot's previous session, when Continue was chosen; null starts from task text alone. */
   previousSession: SessionReference | null
   authorizeTranscript: TranscriptGrant
+  /** The session the request says it is asked from, as the route parsed it; the host decides whether to believe it. */
+  startedFrom?: SessionReference
 }
 
 export type SessionHandoffCommand = {
@@ -102,8 +107,9 @@ export type SessionAbandonCommand = {
 export type StartedSession = {
   sessionRef: SessionReference
   continuedFrom: SessionReference | null
-  /** The session whose agent asked for this Start, from the grant the host admitted; null for a person. */
+  /** The session whose agent asked for this Start, as the host established it; null for a person or a root with none. */
   startedFrom: SessionReference | null
+  startedBy: SessionStarter
 }
 
 /**

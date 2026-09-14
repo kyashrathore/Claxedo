@@ -27,7 +27,7 @@ import type {
 import type { WorkspaceAuthority } from "../platform/auth/authority"
 import { MAX_AGENT_STARTED_CLOUD_ROOTS_PER_PROJECT, MAX_AGENT_START_CHAIN_DEPTH, gateAgentStarts } from "./agent-start-gates"
 import { createTasksPrincipals } from "./authorization"
-import type { TasksCapabilityOwner, TasksCapabilityScope } from "./capability"
+import type { TasksCapabilityOwner, TasksCapabilityPort, TasksCapabilityScope } from "./capability"
 import { signedTasksIdentity } from "./contribution"
 
 const ORG = SCOPES.first
@@ -45,6 +45,16 @@ const SCOPE: TasksCapabilityScope = {
 const OWNER: TasksCapabilityOwner = { userId: "alice", actorId: "actor:alice", orgId: ORG, projectId: PROJECT }
 
 const CLOUD: Preset["execution"] = { placement: "cloud", capabilities: { mode: "selected", plugins: [], skills: [] } }
+
+/** The sessions the control plane places in the root, as the session authority would answer for the owner. */
+const SESSION_WORKSPACES: Record<string, string> = { ses_root: "ws_root", ses_caller: "ws_root", ses_elsewhere: "ws_other" }
+
+const CAPABILITY: TasksCapabilityPort = {
+  verify: async () => undefined,
+  workspaceOwner: async () => OWNER,
+  ownerMayReadSession: async (owner, session) =>
+    owner.actorId === OWNER.actorId && SESSION_WORKSPACES[session.sessionId] === session.workspaceId,
+}
 
 function preset(input: { placement: "local" | "cloud"; agentStartable: boolean; name?: string }): Preset {
   return presetRow({
@@ -75,7 +85,13 @@ function previewCommand(actor: TasksActor, task: Task, chosen: Preset, attempt =
   }
 }
 
-function startCommand(actor: TasksActor, task: Task, chosen: Preset, attempt = 1): StartCommand {
+function startCommand(
+  actor: TasksActor,
+  task: Task,
+  chosen: Preset,
+  attempt = 1,
+  startedFrom?: SessionReference,
+): StartCommand {
   return {
     actor,
     task,
@@ -88,6 +104,7 @@ function startCommand(actor: TasksActor, task: Task, chosen: Preset, attempt = 1
     configurationDigest: "c".repeat(64),
     previousSession: null,
     authorizeTranscript: async () => true,
+    ...(startedFrom ? { startedFrom } : {}),
   }
 }
 
@@ -106,7 +123,7 @@ function fixture(scope: TasksCapabilityScope = SCOPE): Fixture {
   return {
     store,
     inner,
-    gated: gateAgentStarts(principals, store, inner),
+    gated: gateAgentStarts(principals, CAPABILITY, store, inner),
     agent: principals.capabilityActorOf({ scope, owner: OWNER }),
     person: principals.actorOf({ mode: "signed", token: "jwt", user: { subject: "alice", tokenIdentifier: "t", issuer: "i" } }, ORG),
   }
@@ -134,6 +151,7 @@ async function chain(store: TasksStorePort, length: number): Promise<Task[]> {
         attempt: 1,
         sessionRef: session,
         startedFrom: createdFrom ?? null,
+        startedBy: createdFrom ? "agent" : "person",
         placement: "cloud",
       }),
     )
@@ -154,6 +172,7 @@ async function agentStartedRoots(store: TasksStorePort, to: number, projectId = 
         attempt: 1,
         sessionRef: { sessionId: `ses_held_${projectId}_${index}`, workspaceId: `ws_held_${index}` },
         startedFrom: ROOT,
+        startedBy: "agent",
         placement: "cloud",
       }),
     )
@@ -225,7 +244,7 @@ describe("how far a chain of agent-started tasks may run", () => {
     const looping = task("tsk_loop", { createdFrom: own })
     await store.tasks.insert(looping)
     await store.links.insert(
-      linkRow({ scopeId: ORG, taskId: looping.id, attempt: 1, sessionRef: own, startedFrom: own, placement: "cloud" }),
+      linkRow({ scopeId: ORG, taskId: looping.id, attempt: 1, sessionRef: own, startedFrom: own, startedBy: "agent", placement: "cloud" }),
     )
     expect(refusal(await gated.preview(previewCommand(agent, looping, marked)))).toBe(
       "forbidden Task tsk_loop is two machines away from the person who started this chain; start it from the app",
@@ -299,7 +318,7 @@ describe("how many agent-started cloud roots a project may hold", () => {
       linkRow({ scopeId: ORG, taskId: next.id, slot: "review", attempt: 1, sessionRef: { sessionId: "ses_person", workspaceId: "ws_p" }, placement: "cloud" }),
     )
     await store.links.insert(
-      linkRow({ scopeId: ORG, taskId: next.id, slot: "planning", attempt: 1, sessionRef: { sessionId: "ses_local", workspaceId: "ws_root" }, startedFrom: ROOT, placement: "local" }),
+      linkRow({ scopeId: ORG, taskId: next.id, slot: "planning", attempt: 1, sessionRef: { sessionId: "ses_local", workspaceId: "ws_root" }, startedFrom: ROOT, startedBy: "agent", placement: "local" }),
     )
     await agentStartedRoots(store, 4, "project-b")
     expect(refusal(await gated.preview(previewCommand(agent, next, marked)))).toBe("admitted")
@@ -307,10 +326,24 @@ describe("how many agent-started cloud roots a project may hold", () => {
     // The fourth is this very origin: previewing attempt 1 again while it
     // runs would otherwise refuse the Start that only returns that session.
     await store.links.insert(
-      linkRow({ scopeId: ORG, taskId: next.id, attempt: 1, sessionRef: { sessionId: "ses_own", workspaceId: "ws_own" }, startedFrom: ROOT, placement: "cloud" }),
+      linkRow({ scopeId: ORG, taskId: next.id, attempt: 1, sessionRef: { sessionId: "ses_own", workspaceId: "ws_own" }, startedFrom: ROOT, startedBy: "agent", placement: "cloud" }),
     )
     expect(refusal(await gated.preview(previewCommand(agent, next, marked, 1)))).toBe("admitted")
     expect(refusal(await gated.preview(previewCommand(agent, next, marked, 2)))).not.toBe("admitted")
+  })
+
+  test("counts a root an agent started under a grant minted for no session, which records no session at all", async () => {
+    const { store, gated, agent } = fixture()
+    const marked = preset({ placement: "cloud", agentStartable: true })
+    const next = task("tsk_next")
+    await store.tasks.insert(next)
+    await agentStartedRoots(store, 3)
+    const sessionless = task("tsk_sessionless")
+    await store.tasks.insert(sessionless)
+    await store.links.insert(
+      linkRow({ scopeId: ORG, taskId: sessionless.id, attempt: 1, sessionRef: { sessionId: "ses_sessionless", workspaceId: "ws_s" }, startedBy: "agent", placement: "cloud" }),
+    )
+    expect(refusal(await gated.preview(previewCommand(agent, next, marked)))).toMatch(/^forbidden Project /)
   })
 
   test("a local preset is not cap-gated", async () => {
@@ -352,23 +385,49 @@ describe("the order of refusals, and who is refused", () => {
     expect(inner.starts).toHaveLength(1)
   })
 
-  test("an agent's start records the grant's own session as what started it, never the request", async () => {
+  test("an agent's start is marked as the agent's, from the grant's own session whatever the request names", async () => {
     const { store, gated, agent } = fixture()
     const marked = preset({ placement: "cloud", agentStartable: true })
     const fresh = task("tsk_1")
     await store.tasks.insert(fresh)
     const started = await gated.start(startCommand(agent, fresh, marked))
+    expect(started.ok && started.session.startedBy).toBe("agent")
     expect(started.ok && started.session.startedFrom).toEqual(ROOT)
     expect(started.ok && started.session.sessionRef.sessionId).toBe("session-1")
+
+    const other = await gated.start(startCommand(agent, fresh, marked, 2, { sessionId: "ses_caller", workspaceId: "ws_root" }))
+    expect(refusal(other)).toBe("forbidden This session may record only itself as a task's provenance")
   })
 
-  test("a grant minted for no session in particular starts as nobody's session", async () => {
+  test("a grant minted for a root records the calling session the request names, once the control plane places it in the root", async () => {
     const { sessionId: _sessionId, ...sessionless } = SCOPE
-    const { store, gated, agent } = fixture(sessionless)
+    const { store, inner, gated, agent } = fixture(sessionless)
+    const marked = preset({ placement: "cloud", agentStartable: true })
     const fresh = task("tsk_1")
     await store.tasks.insert(fresh)
-    const started = await gated.start(startCommand(agent, fresh, preset({ placement: "cloud", agentStartable: true })))
-    expect(started.ok && started.session.startedFrom).toBe(null)
+
+    const caller = { sessionId: "ses_caller", workspaceId: "ws_root" }
+    const started = await gated.start(startCommand(agent, fresh, marked, 1, caller))
+    expect(started.ok && started.session.startedBy).toBe("agent")
+    expect(started.ok && started.session.startedFrom).toEqual(caller)
+
+    const unsaid = await gated.start(startCommand(agent, fresh, marked, 2))
+    expect(unsaid.ok && unsaid.session.startedBy).toBe("agent")
+    expect(unsaid.ok && unsaid.session.startedFrom).toBe(null)
+
+    for (const forged of [
+      { sessionId: "ses_elsewhere", workspaceId: "ws_other" },
+      { sessionId: "ses_elsewhere", workspaceId: "ws_root" },
+      { sessionId: "ses_stranger", workspaceId: "ws_root" },
+    ]) {
+      expect(refusal(await gated.start(startCommand(agent, fresh, marked, 3, forged)))).toBe(
+        "forbidden This session may record only a session of its own workspace as provenance",
+      )
+      expect(refusal(await gated.preview({ ...previewCommand(agent, fresh, marked, 3), startedFrom: forged }))).toBe(
+        "forbidden This session may record only a session of its own workspace as provenance",
+      )
+    }
+    expect(inner.starts).toHaveLength(2)
   })
 })
 
@@ -380,6 +439,7 @@ describe("the signed identity's bridge", () => {
       authority: { authorizeSessionRead: async () => undefined } as unknown as WorkspaceAuthority,
       signed: async () => ({ error: "unsigned", status: 401 }),
       capability: {
+        ...CAPABILITY,
         verify: async (token) => (token === "grant" ? SCOPE : undefined),
         workspaceOwner: async (workspaceId) => ({ ...OWNER, projectId: workspaceId === "ws_other" ? "project-b" : PROJECT }),
       },

@@ -7,7 +7,7 @@
  * row outside the caller's scope is unreachable rather than filtered out
  * afterwards.
  */
-import { and, count, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm"
+import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm"
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core"
 import {
   serializedTransactions,
@@ -364,7 +364,7 @@ function tasksOperations(use: Reader): TasksStoreOperations {
               and(
                 eq(ClaxedoTaskSessionLinkTable.scope_id, scopeId),
                 eq(ClaxedoTaskTable.project_id, projectId),
-                isNotNull(ClaxedoTaskSessionLinkTable.started_from_session_id),
+                eq(ClaxedoTaskSessionLinkTable.started_by, "agent"),
                 eq(ClaxedoTaskSessionLinkTable.placement, "cloud"),
               ),
             )

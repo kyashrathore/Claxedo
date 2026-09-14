@@ -611,6 +611,7 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
           attempt: 1,
           sessionRef: { sessionId: "ses_agent", workspaceId: "ws_agent" },
           startedFrom: origin,
+          startedBy: "agent",
           placement: "cloud",
         }),
       )
@@ -632,10 +633,12 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
       assertEqual(agent?.taskId, "task-agent", "the link was not found by its session")
       assertEqual(agent?.startedFrom?.sessionId, "ses_root", "a read dropped the session that started the link")
       assertEqual(agent?.startedFrom?.workspaceId, "ws_root", "a read dropped the starting session's workspace")
+      assertEqual(agent?.startedBy, "agent", "a read dropped who started the link")
       assertEqual(agent?.placement, "cloud", "a read dropped where the link runs")
 
       const person = await store.links.bySession(CONFORMANCE_SCOPES.first, "ses_person")
       assertEqual(person?.startedFrom, null, "a link a person started was read as started by a session")
+      assertEqual(person?.startedBy, "person", "a link a person started was read as an agent's")
       assertEqual(person?.placement, "local", "a local link was read as running elsewhere")
       assertEqual(await store.links.bySession(CONFORMANCE_SCOPES.first, "ses_nobody"), undefined, "a session nothing started was answered with a link")
       assertEqual(
@@ -663,22 +666,24 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
       await store.tasks.insert(taskRow({ id: "task-beta", projectId: "project-beta" }))
       await store.tasks.insert(taskRow({ id: "task-alpha-one", scopeId: CONFORMANCE_SCOPES.second, projectId: "project-alpha" }))
 
-      await store.links.insert(linkRow({ taskId: "task-alpha-one", attempt: 1, startedFrom: origin, placement: "cloud", createdAt: 1_000 }))
+      await store.links.insert(linkRow({ taskId: "task-alpha-one", attempt: 1, startedFrom: origin, startedBy: "agent", placement: "cloud", createdAt: 1_000 }))
       await store.links.insert(linkRow({ taskId: "task-alpha-one", attempt: 2, placement: "cloud", createdAt: 2_000 }))
-      await store.links.insert(linkRow({ taskId: "task-alpha-one", slot: "review", attempt: 1, startedFrom: origin, placement: "local", createdAt: 3_000 }))
-      await store.links.insert(linkRow({ taskId: "task-alpha-two", attempt: 1, startedFrom: origin, placement: "cloud", createdAt: 4_000 }))
-      await store.links.insert(linkRow({ taskId: "task-beta", attempt: 1, startedFrom: origin, placement: "cloud", createdAt: 5_000 }))
+      await store.links.insert(linkRow({ taskId: "task-alpha-one", slot: "review", attempt: 1, startedFrom: origin, startedBy: "agent", placement: "local", createdAt: 3_000 }))
+      // A root's own grant names no session, and its start is still an agent's.
+      await store.links.insert(linkRow({ taskId: "task-alpha-one", slot: "planning", attempt: 1, startedBy: "agent", placement: "cloud", createdAt: 3_500 }))
+      await store.links.insert(linkRow({ taskId: "task-alpha-two", attempt: 1, startedFrom: origin, startedBy: "agent", placement: "cloud", createdAt: 4_000 }))
+      await store.links.insert(linkRow({ taskId: "task-beta", attempt: 1, startedFrom: origin, startedBy: "agent", placement: "cloud", createdAt: 5_000 }))
       await store.links.insert(
-        linkRow({ taskId: "task-alpha-one", scopeId: CONFORMANCE_SCOPES.second, attempt: 1, startedFrom: origin, placement: "cloud", createdAt: 6_000 }),
+        linkRow({ taskId: "task-alpha-one", scopeId: CONFORMANCE_SCOPES.second, attempt: 1, startedFrom: origin, startedBy: "agent", placement: "cloud", createdAt: 6_000 }),
       )
 
       const listed = await store.links.listAgentStartedCloud(CONFORMANCE_SCOPES.first, "project-alpha")
       assertEqual(
         listed.map((link) => `${link.taskId}/${link.slot}/${link.attempt}`).sort().join(" "),
-        "task-alpha-one/primary/1 task-alpha-two/primary/1",
+        "task-alpha-one/planning/1 task-alpha-one/primary/1 task-alpha-two/primary/1",
         "the project's agent-started cloud links are not exactly the ones listed",
       )
-      assertEqual(listed[0]?.startedFrom?.sessionId, "ses_root", "a listed link dropped what started it")
+      assertEqual(listed.find((link) => link.slot === "primary" && link.taskId === "task-alpha-one")?.startedFrom?.sessionId, "ses_root", "a listed link dropped what started it")
       assertEqual(
         (await store.links.listAgentStartedCloud(CONFORMANCE_SCOPES.first, "project-beta")).length,
         1,

@@ -45,6 +45,9 @@ async function database(): Promise<D1Database> {
 /** alice belongs to org-1 and may write project-a; bob belongs to org-2 and may write nothing of alice's. */
 const ORGS: Record<string, string> = { alice: "org-1", bob: "org-2" }
 
+/** The sessions the control plane places in each workspace, as the session authority answers for the owner. */
+const SESSION_WORKSPACES: Record<string, string> = { ses_1: "ws_root", ses_2: "ws_root", ses_sibling: "ws_sibling" }
+
 /** The cloud root a capability is minted for, a sibling in its project, and one of alice's roots in another project. */
 const WORKSPACE_OWNERS: Record<string, { userId: string; actorId: string; orgId: string; projectId: string }> = {
   ws_root: { userId: "alice", actorId: "actor:alice", orgId: "org-1", projectId: "project-a" },
@@ -72,6 +75,9 @@ function plane(sandbox: Record<string, unknown> = {}): HostedControlPlane {
         ORGS[auth.user.subject] === "org-1" && args.projectId === "project-a" ? { ok: true, role: "admin", orgId: "org-1" } : { ok: false },
       ),
       authorizeSessionRead: vi.fn(async () => undefined),
+      authorizeRuntimeSession: vi.fn(async (input: { actorId: string; sessionId: string; workspaceId: string }) => {
+        if (input.actorId !== "actor:alice" || SESSION_WORKSPACES[input.sessionId] !== input.workspaceId) throw new Error("denied")
+      }),
       resolveWorkspaceOwner: vi.fn(async (workspaceId: string) => WORKSPACE_OWNERS[workspaceId]),
       usersMe: vi.fn(async () => ({ user_id: "user-1" })),
       listOrgs: vi.fn(async () => [{ org_id: "org-1" }]),
@@ -383,6 +389,13 @@ describe("hosted Tasks capability", () => {
     signingEnv,
   )
 
+  /** A cloud root's own grant, minted for the root rather than for any one session. */
+  const rootGrant = (signingEnv: Record<string, string | undefined>) =>
+    mintTasksCapability(
+      { userId: "alice", orgId: "org-1", projectId: "project-a", workspaceId: "ws_root", operations: ["read", "create", "start"] },
+      signingEnv,
+    )
+
   const bearer = (token: string) => ({ authorization: `Bearer ${token}`, "content-type": "application/json" })
 
   test("reads and writes the project of its own workspace", async () => {
@@ -519,6 +532,73 @@ describe("hosted Tasks capability", () => {
 
     const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: headers("alice") })
     expect(((await listed.json()) as { items: unknown[] }).items).toHaveLength(1)
+  })
+
+  test("minted for a root, records as provenance a session the control plane places in that root", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await rootGrant(signingEnv)
+    const create = (clientRequestId: string, createdFrom: { workspaceId: string | null; sessionId: string }) =>
+      app.request(`https://core.test${TASKS}/commands`, {
+        method: "POST",
+        headers: bearer(token),
+        body: JSON.stringify({ clientRequestId, command: { ...TASK, input: { ...TASK.input, createdFrom } } }),
+      })
+
+    const own = await create("root-own", { workspaceId: "ws_root", sessionId: "ses_2" })
+    expect(own.status).toBe(200)
+    expect(await own.json()).toMatchObject({ result: { task: { createdFrom: { workspaceId: "ws_root", sessionId: "ses_2" } } } })
+
+    for (const [clientRequestId, forged] of [
+      ["root-sibling", { workspaceId: "ws_sibling", sessionId: "ses_sibling" }],
+      ["root-elsewhere", { workspaceId: "ws_root", sessionId: "ses_sibling" }],
+      ["root-stranger", { workspaceId: "ws_root", sessionId: "ses_stranger" }],
+    ] as const) {
+      const refused = await create(clientRequestId, forged)
+      expect(refused.status).toBe(403)
+      expect(await refused.json()).toMatchObject({
+        error: { message: "This session may record only a session of its own workspace as provenance" },
+      })
+    }
+
+    const listed = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: headers("alice") })
+    const items = ((await listed.json()) as { items: { createdFrom: unknown }[] }).items
+    expect(items).toHaveLength(1)
+    expect(items[0]?.createdFrom).toEqual({ workspaceId: "ws_root", sessionId: "ses_2" })
+  })
+
+  test("minted for a root, names the calling session at Start only when the control plane places it in that root", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await rootGrant(signingEnv)
+    await command(app, "alice", "owner-preset", { ...PRESET, input: { ...PRESET.input, agentStartable: true } })
+    const created = await command(app, "alice", "owner-task", TASK)
+    const taskId = (created.body.result as { task: { id: string } }).task.id
+    const preview = async (startedFrom: { workspaceId: string | null; sessionId: string }) =>
+      app.request(`https://core.test${TASKS}/tasks/${taskId}/start-preview`, {
+        method: "POST",
+        headers: bearer(token),
+        body: JSON.stringify({
+          taskRevision: 1,
+          presetId: await presetId(app, "alice"),
+          presetRevision: 1,
+          slot: "primary",
+          attempt: 1,
+          continueFromPrevious: false,
+          startedFrom,
+        }),
+      })
+
+    // The stub bridge refuses every Start naming the principal it was handed,
+    // so its sentence is the proof the provenance was admitted.
+    expect(await (await preview({ workspaceId: "ws_root", sessionId: "ses_2" })).json()).toMatchObject({
+      error: { message: "principal actor:alice" },
+    })
+    const forged = await preview({ workspaceId: "ws_root", sessionId: "ses_sibling" })
+    expect(forged.status).toBe(403)
+    expect(await forged.json()).toMatchObject({
+      error: { message: "This session may record only a session of its own workspace as provenance" },
+    })
   })
 
   test("cannot start a task the owner pointed at another project's workspace", async () => {

@@ -232,9 +232,9 @@ const FORGETS_THE_AGENT_MARK = everywhere((operations) => {
   }
 })
 
-/** The two columns an adapter never added: every link read back as a person's, run locally. */
+/** The columns an adapter never added: every link read back as a person's, from nowhere, run locally. */
 const FORGETS_WHAT_STARTED_A_LINK = everywhere((operations) => {
-  const forget = (link: TaskSessionLink): TaskSessionLink => ({ ...link, startedFrom: null, placement: "local" })
+  const forget = (link: TaskSessionLink): TaskSessionLink => ({ ...link, startedFrom: null, startedBy: "person", placement: "local" })
   const forgetOne = async (read: Promise<TaskSessionLink | undefined>) => {
     const link = await read
     return link === undefined ? undefined : forget(link)

@@ -202,8 +202,22 @@ export type TaskSessionLink = {
    * on agent-started cloud machines counts.
    */
   startedFrom: SessionReference | null
+  /**
+   * Who asked for this attempt: a person from the app, or a session's agent
+   * through its grant. Recorded beside `startedFrom` because a grant minted
+   * for a root rather than a session starts as an agent without a session to
+   * name, and a cap on agent-started machines must still count it.
+   */
+  startedBy: SessionStarter
   placement: PresetPlacement
   createdAt: number
+}
+
+export const SESSION_STARTERS = ["person", "agent"] as const
+export type SessionStarter = (typeof SESSION_STARTERS)[number]
+
+export function isSessionStarter(value: unknown): value is SessionStarter {
+  return typeof value === "string" && SESSION_STARTERS.some((starter) => starter === value)
 }
 
 export const SESSION_LIVENESS = ["live", "archived", "deleted", "unavailable"] as const
@@ -431,6 +445,8 @@ export type StartPreviewRequest = {
   slot: ConfigurationSlot
   attempt: number
   continueFromPrevious: boolean
+  /** Sent by a session asking from inside itself; the app sends nothing. The host checks it before believing it. */
+  startedFrom?: SessionReference
 }
 
 /**
@@ -467,6 +483,8 @@ export type StartRequest = {
   previewDigest: string
   handoffText: string | null
   continueFromPrevious: boolean
+  /** Sent by a session asking from inside itself; the app sends nothing. The host checks it before believing it. */
+  startedFrom?: SessionReference
 }
 
 export type StartResponse = {

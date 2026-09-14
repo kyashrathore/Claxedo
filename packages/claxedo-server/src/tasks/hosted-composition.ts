@@ -85,12 +85,31 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
   // Both halves or neither: a grant whose owner this deployment cannot look
   // up would have to be believed on its own claims, so it is not accepted at
   // all.
+  // A root's grant names its calling session in a request; whether that
+  // session lives in the root is the session authority's answer for the
+  // owner, the same one that opens a linked session.
+  const sessions = authority.authorizeRuntimeSession?.bind(authority)
   const capability: TasksCapabilityPort | undefined = signingEnv && owners
     ? {
         verify: async (token) =>
           await verifyTasksCapability(token, signingEnv, input.passes ? { revoked: input.passes.revoked } : {})
             .catch(() => undefined),
         workspaceOwner: owners,
+        ...(sessions
+          ? {
+              ownerMayReadSession: async (owner, session) =>
+                session.workspaceId === null
+                  ? false
+                  : await sessions({
+                      principalKind: "user",
+                      actorId: owner.actorId,
+                      actorKind: "human",
+                      sessionId: session.sessionId,
+                      workspaceId: session.workspaceId,
+                      action: "read",
+                    }).then(() => true, () => false),
+            }
+          : {}),
       }
     : undefined
   const identity = signedTasksIdentity({

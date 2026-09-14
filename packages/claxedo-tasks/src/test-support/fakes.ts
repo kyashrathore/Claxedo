@@ -166,6 +166,7 @@ export function fakeBridge(): FakeBridge {
           sessionRef: { sessionId: nextSessionId, workspaceId: "workspace-1" },
           continuedFrom: command.continueFromPrevious ? command.previousSession : null,
           startedFrom: null,
+          startedBy: "person",
         },
       }
     },

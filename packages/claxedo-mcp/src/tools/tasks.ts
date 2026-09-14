@@ -150,6 +150,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
       const preset = await presetFor(client, args.preset)
       const attempt = nextAttempt(detail.links, slot)
       const continueFromPrevious = args.continue ?? false
+      const startedFrom = callingSession(ctx)
       const { preview } = await client.startPreview(args.task, {
         taskRevision: detail.task.revision,
         presetId: preset.id,
@@ -157,6 +158,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
         slot,
         attempt,
         continueFromPrevious,
+        ...(startedFrom ? { startedFrom } : {}),
       })
       if (!preview.available || preview.blockers.length > 0) {
         const blockers = preview.blockers.map((blocker) => blocker.detail)
@@ -176,6 +178,7 @@ export function registerTaskTools(registry: ToolRegistrar) {
         previewDigest: preview.digest,
         handoffText: null,
         continueFromPrevious,
+        ...(startedFrom ? { startedFrom } : {}),
       })
       addressed?.(started.link.sessionRef.sessionId)
       return toolJson({

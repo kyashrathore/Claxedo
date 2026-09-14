@@ -110,7 +110,7 @@ export type LinkStoreOperations = {
   bySession(scopeId: string, sessionId: string): Promise<TaskSessionLink | undefined>
   /**
    * Every link in the project's tasks that an agent started in the cloud:
-   * `startedFrom` set and `placement` cloud, archived tasks included, because
+   * `startedBy` agent and `placement` cloud, archived tasks included, because
    * the machine a link names is not released by archiving the task.
    */
   listAgentStartedCloud(scopeId: string, projectId: string): Promise<readonly TaskSessionLink[]>

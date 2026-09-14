@@ -140,6 +140,7 @@ function link(sessionRef: { sessionId: string; workspaceId: string | null }, con
     configurationDigest,
     handoffText: null,
     startedFrom: null,
+    startedBy: "person",
     placement: "local",
     createdAt: 1,
   }

@@ -39,6 +39,14 @@ export type TasksCapabilityPort = Readonly<{
    * workspace that changed hands or was deleted ends the grant.
    */
   workspaceOwner(workspaceId: string): Promise<TasksCapabilityOwner | undefined>
+  /**
+   * Whether the control plane places this session in this workspace, asked
+   * as the workspace's owner. A grant minted for a root rather than for one
+   * session names its calling session in a request, and this is how that
+   * name is checked before anything records it. A port without it admits no
+   * such name at all.
+   */
+  ownerMayReadSession?(owner: TasksCapabilityOwner, session: { sessionId: string; workspaceId: string | null }): Promise<boolean>
 }>
 
 /** What one Tasks request costs a capability, and the names it would act under. */
@@ -49,6 +57,8 @@ export type TasksRequestCost = Readonly<{
   workspaceId?: string
   /** Whatever the create body put under `createdFrom`, absent only when the key is. */
   createdFrom?: unknown
+  /** Whatever a start or preview body put under `startedFrom`, absent only when the key is. */
+  startedFrom?: unknown
 }>
 
 /**
@@ -66,11 +76,12 @@ export async function tasksRequestCost(request: Request): Promise<TasksRequestCo
     return { operation: "read", ...(projectId ? { projectId } : {}) }
   }
   if (request.method !== "POST") return undefined
-  if (url.pathname.endsWith("/start-preview") || url.pathname.endsWith("/sessions")) return { operation: "start" }
-  if (!url.pathname.endsWith("/commands")) return undefined
+  const start = url.pathname.endsWith("/start-preview") || url.pathname.endsWith("/sessions")
+  if (!start && !url.pathname.endsWith("/commands")) return undefined
   // The route reads the body again through Hono's own cache; consuming the
   // original here would leave it with nothing to parse.
   const body = parseJsonRecord(await request.clone().text())
+  if (start) return { operation: "start", ...(body?.startedFrom === undefined ? {} : { startedFrom: body.startedFrom }) }
   const command = asRecord(body?.command)
   if (stringField(command, "type") !== "task.create") return undefined
   const input = asRecord(command?.input)

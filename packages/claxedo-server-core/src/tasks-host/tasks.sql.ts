@@ -80,6 +80,7 @@ export const ClaxedoTaskSessionLinkTable = sqliteTable(
     handoff_text: text(),
     started_from_session_id: text(),
     started_from_workspace_id: text(),
+    started_by: text().notNull().default("person"),
     placement: text().notNull().default("local"),
     created_at: integer().notNull(),
   },

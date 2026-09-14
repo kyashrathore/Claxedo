@@ -459,6 +459,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         currentLink: current.link,
         currentState: current.state,
         authorizeTranscript: transcriptGrant(actor, current.state === "deleted" ? null : current.link?.sessionRef ?? null),
+        ...(request.startedFrom ? { startedFrom: request.startedFrom } : {}),
       })
       if (!previewed.ok) throw new TasksError(previewed.error)
       return previewed.preview
@@ -507,6 +508,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         clientRequestId: request.clientRequestId,
         configurationDigest,
         previousSession: continued?.sessionRef ?? null,
+        ...(request.startedFrom ? { startedFrom: request.startedFrom } : {}),
       })
       if (!started.ok) throw new TasksError(started.error)
 
@@ -523,6 +525,7 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         configurationDigest,
         handoffText: request.handoffText,
         startedFrom: started.session.startedFrom,
+        startedBy: started.session.startedBy,
         placement: preset.execution.placement,
         createdAt: deps.clock.now(),
       }

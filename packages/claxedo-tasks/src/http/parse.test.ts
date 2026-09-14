@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { TASKS_BOUNDS } from "../contracts"
 import { parsedReasons } from "../test-support/refusals"
 import { presetDraft, primaryConfiguration } from "../test-support/rows"
-import { parseCommandRequest, parsePresetListQuery, parseStartRequest, parseTaskListQuery } from "./parse"
+import { parseCommandRequest, parsePresetListQuery, parseStartPreviewRequest, parseStartRequest, parseTaskListQuery } from "./parse"
 
 const startBody = {
   clientRequestId: "request-1",
@@ -233,5 +233,33 @@ describe("query parsing", () => {
     expect(parsedReasons(parseTaskListQuery(new URLSearchParams("projectId=p&status=blocked")))).toEqual({
       status: "unknown_value",
     })
+  })
+})
+
+describe("start provenance", () => {
+  const previewBody = {
+    taskRevision: 1,
+    presetId: "preset-1",
+    presetRevision: 1,
+    slot: "primary",
+    attempt: 1,
+    continueFromPrevious: false,
+  }
+
+  test("a start or a preview may name the session it is asked from, or say nothing", () => {
+    const from = { sessionId: "ses_caller", workspaceId: "ws_root" }
+    const preview = parseStartPreviewRequest({ ...previewBody, startedFrom: from })
+    expect(preview.ok && preview.value.startedFrom).toEqual(from)
+    const start = parseStartRequest({ ...startBody, startedFrom: { sessionId: "ses_caller", workspaceId: null } })
+    expect(start.ok && start.value.startedFrom).toEqual({ sessionId: "ses_caller", workspaceId: null })
+    const unsaid = parseStartRequest(startBody)
+    expect(unsaid.ok && unsaid.value.startedFrom).toBeUndefined()
+  })
+
+  test("a malformed provenance is refused by field rather than dropped", () => {
+    expect(parsedReasons(parseStartRequest({ ...startBody, startedFrom: { workspaceId: "ws_root" } }))).toEqual({
+      "startedFrom.sessionId": "required",
+    })
+    expect(parsedReasons(parseStartPreviewRequest({ ...previewBody, startedFrom: "ses_caller" })).startedFrom).toBe("type")
   })
 })

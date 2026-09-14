@@ -85,6 +85,6 @@ export function signedTasksIdentity(input: {
     authenticate: capability ? capabilityTasksAuthenticate({ capability, principals, signed }) : signed,
     runtimePrincipal: signedTasksRuntimePrincipal(principals),
     bridge: (bridge, store) =>
-      capability ? confineCapabilityBridge(principals, capability, gateAgentStarts(principals, store, bridge)) : bridge,
+      capability ? confineCapabilityBridge(principals, capability, gateAgentStarts(principals, capability, store, bridge)) : bridge,
   }
 }

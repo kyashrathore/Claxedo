@@ -66,7 +66,7 @@ const PRESET_COLUMNS =
 const TASK_COLUMNS =
   "scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, created_from_session_id, created_from_workspace_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
 const LINK_COLUMNS =
-  "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, handoff_text, started_from_session_id, started_from_workspace_id, placement, created_at"
+  "scope_id, task_id, slot, attempt, session_id, session_workspace_id, continued_from_session_id, continued_from_workspace_id, preset_id, preset_revision, preset_name_at_start, configuration_digest, handoff_text, started_from_session_id, started_from_workspace_id, started_by, placement, created_at"
 /** `LINK_COLUMNS` qualified for a read that joins the task table. */
 const JOINED_LINK_COLUMNS = LINK_COLUMNS.split(", ")
   .map((column) => `l.${column}`)
@@ -170,6 +170,7 @@ function linkValues(link: TaskSessionLink): unknown[] {
     row.handoff_text,
     row.started_from_session_id,
     row.started_from_workspace_id,
+    row.started_by,
     row.placement,
     row.created_at,
   ]
@@ -595,7 +596,7 @@ export function createD1TasksStore(input: D1TasksStoreInput): TasksStorePort {
           .prepare(
             `select ${JOINED_LINK_COLUMNS} from task_session_links l` +
               ` join tasks t on t.scope_id = l.scope_id and t.task_id = l.task_id` +
-              ` where l.scope_id = ? and t.project_id = ? and l.started_from_session_id is not null and l.placement = 'cloud'` +
+              ` where l.scope_id = ? and t.project_id = ? and l.started_by = 'agent' and l.placement = 'cloud'` +
               ` order by l.created_at desc`,
           )
           .bind(scopeId, projectId)

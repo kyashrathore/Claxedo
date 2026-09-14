@@ -99,35 +99,67 @@ export function signedTasksRuntimePrincipal(principals: TasksPrincipals): TasksR
   }
 }
 
+type CapabilityScopeReader = Pick<TasksCapabilityPort, "workspaceOwner" | "ownerMayReadSession">
+
+/**
+ * Whether a session reference a request names may be recorded as where the
+ * request came from.
+ *
+ * A grant minted for one session may name exactly that session. A grant
+ * minted for a root names none of its own, so it may name a session of its
+ * workspace that the control plane places there now, asked as the owner —
+ * the same answer that opens a linked session — and a plane that cannot
+ * answer admits no name. A malformed reference is refused here rather than
+ * left for the kit to reject as merely invalid.
+ */
+async function provenanceRefusal(
+  grant: TasksCapabilityGrant,
+  capability: CapabilityScopeReader,
+  named: unknown,
+): Promise<string | undefined> {
+  const { scope, owner } = grant
+  const from = asRecord(named)
+  if (scope.sessionId) {
+    return from?.sessionId === scope.sessionId && from.workspaceId === scope.workspaceId
+      ? undefined
+      : "This session may record only itself as a task's provenance"
+  }
+  const refusal = "This session may record only a session of its own workspace as provenance"
+  const sessionId = from?.sessionId
+  if (typeof sessionId !== "string" || sessionId.length === 0 || from?.workspaceId !== scope.workspaceId) return refusal
+  if (!capability.ownerMayReadSession) return refusal
+  const placed = await capability.ownerMayReadSession(owner, { sessionId, workspaceId: scope.workspaceId }).catch(() => false)
+  return placed ? undefined : refusal
+}
+
 /**
  * The one rule for what a capability may name beyond its own workspace, asked
  * at every door a name comes through: the create body, the task a Start reads
- * back, and the workspace a linked session lives in.
+ * back, the session a Start says it is asked from, and the workspace a linked
+ * session lives in.
  *
  * A workspace is admitted when the authority places it in the scope's project
  * now, so a task may prefer any of the project's workspaces and none else; a
  * preference of none is admitted because the project the scope already
- * confines then chooses. Provenance is compared whole against the scope's own
- * session, so a grant minted for no session in particular records none, and a
- * malformed reference is refused here rather than left for the kit to reject
- * as merely invalid.
+ * confines then chooses. Both provenance fields are held to
+ * `provenanceRefusal`.
  */
 export async function capabilityScopeRefusal(
-  scope: TasksCapabilityScope,
-  capability: Pick<TasksCapabilityPort, "workspaceOwner">,
-  named: Readonly<{ workspaceId?: string | null; createdFrom?: unknown }>,
+  grant: TasksCapabilityGrant,
+  capability: CapabilityScopeReader,
+  named: Readonly<{ workspaceId?: string | null; createdFrom?: unknown; startedFrom?: unknown }>,
 ): Promise<string | undefined> {
+  const { scope } = grant
   if (named.workspaceId != null && named.workspaceId !== scope.workspaceId) {
     const owner = await capability.workspaceOwner(named.workspaceId).catch(() => undefined)
     if (!owner || owner.orgId !== scope.orgId || owner.projectId !== scope.projectId) {
       return `This session may act only in project ${scope.projectId}`
     }
   }
-  if (named.createdFrom !== undefined) {
-    const from = asRecord(named.createdFrom)
-    if (!scope.sessionId || from?.sessionId !== scope.sessionId || from.workspaceId !== scope.workspaceId) {
-      return "This session may record only itself as a task's provenance"
-    }
+  for (const reference of [named.createdFrom, named.startedFrom]) {
+    if (reference === undefined) continue
+    const refused = await provenanceRefusal(grant, capability, reference)
+    if (refused) return refused
   }
   return undefined
 }
@@ -195,7 +227,7 @@ export function capabilityTasksAuthenticate(input: {
     if (owner.projectId !== scope.projectId || (cost.projectId !== undefined && cost.projectId !== scope.projectId)) {
       return capabilityRefusal(`This session may act only in project ${scope.projectId}`)
     }
-    const refused = await capabilityScopeRefusal(scope, input.capability, cost)
+    const refused = await capabilityScopeRefusal({ scope, owner }, input.capability, cost)
     if (refused) return capabilityRefusal(refused)
     return { actor: input.principals.capabilityActorOf({ scope, owner }) }
   }
@@ -215,7 +247,7 @@ export function confineCapabilityBridge(
 ): TasksSessionBridgePort {
   const refusal = async (actor: TasksActor, task: Task) => {
     const grant = principals.capabilityOf(actor)
-    const message = grant ? await capabilityScopeRefusal(grant.scope, capability, { workspaceId: task.workspaceId }) : undefined
+    const message = grant ? await capabilityScopeRefusal(grant, capability, { workspaceId: task.workspaceId }) : undefined
     return message ? { ok: false as const, error: tasksErrorDetail("forbidden", message) } : undefined
   }
   return {
@@ -288,7 +320,7 @@ export function createTasksAuthorization(input: {
         // names.
         const { capability, authority } = input
         if (!capability || !authority.authorizeRuntimeSession) return false
-        if (await capabilityScopeRefusal(grant.scope, capability, { workspaceId: session.workspaceId })) return false
+        if (await capabilityScopeRefusal(grant, capability, { workspaceId: session.workspaceId })) return false
         return await authority
           .authorizeRuntimeSession({
             ...capabilityRuntimePrincipal(grant),

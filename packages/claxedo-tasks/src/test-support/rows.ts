@@ -102,6 +102,7 @@ export function linkRow(input: Partial<TaskSessionLink> & Pick<TaskSessionLink, 
     configurationDigest: input.configurationDigest ?? "c".repeat(64),
     handoffText: input.handoffText ?? null,
     startedFrom: input.startedFrom ?? null,
+    startedBy: input.startedBy ?? "person",
     placement: input.placement ?? "local",
     createdAt: input.createdAt ?? 2_000,
   }

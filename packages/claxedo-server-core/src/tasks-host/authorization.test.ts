@@ -31,21 +31,36 @@ const OWNERS: Record<string, TasksCapabilityOwner> = {
   ws_other: { ...ALICE, projectId: "project-b" },
 }
 
-function identity(options: { scope?: TasksCapabilityScope; authorizeRuntimeSession?: WorkspaceAuthority["authorizeRuntimeSession"] } = {}) {
+/** The sessions the control plane places in each workspace, as the session authority would answer. */
+const SESSION_WORKSPACES: Record<string, string> = { ses_1: "ws_root", ses_2: "ws_root", ses_sibling: "ws_sibling" }
+
+function identity(
+  options: {
+    scope?: TasksCapabilityScope
+    authorizeRuntimeSession?: WorkspaceAuthority["authorizeRuntimeSession"]
+    /** Whether the capability port can ask the control plane where a session lives. */
+    sessions?: boolean
+  } = {},
+) {
   const scope = options.scope ?? SCOPE
   const authority = {
     authorizeSessionRead: vi.fn(async () => undefined),
     ...(options.authorizeRuntimeSession ? { authorizeRuntimeSession: options.authorizeRuntimeSession } : {}),
   } as unknown as WorkspaceAuthority
+  const ownerMayReadSession = vi.fn(
+    async (owner: TasksCapabilityOwner, session: { sessionId: string; workspaceId: string | null }) =>
+      owner.actorId === ALICE.actorId && SESSION_WORKSPACES[session.sessionId] === session.workspaceId,
+  )
   const composed = signedTasksIdentity({
     authority,
     signed: async () => ({ error: "unsigned", status: 401 }),
     capability: {
       verify: async (token) => (token === "grant" ? scope : undefined),
       workspaceOwner: async (workspaceId) => OWNERS[workspaceId],
+      ...(options.sessions === false ? {} : { ownerMayReadSession }),
     },
   })
-  return { ...composed, authority }
+  return { ...composed, authority, ownerMayReadSession }
 }
 
 const TASKS = "https://core.test/api/claxedo/tasks"
@@ -111,13 +126,46 @@ describe("a Tasks grant creating a task", () => {
     )
   })
 
-  test("minted for no session in particular may record no provenance at all", async () => {
+  test("minted for a root rather than a session, may record a session the control plane places in its workspace", async () => {
     const { sessionId: _sessionId, ...sessionless } = SCOPE
     const composed = identity({ scope: sessionless })
     expect(await refusal(composed, createRequest({}))).toBe("admitted")
+    expect(await refusal(composed, createRequest({ createdFrom: { workspaceId: "ws_root", sessionId: "ses_1" } }))).toBe("admitted")
+    expect(await refusal(composed, createRequest({ createdFrom: { workspaceId: "ws_root", sessionId: "ses_2" } }))).toBe("admitted")
+    expect(composed.ownerMayReadSession).toHaveBeenCalledWith(
+      expect.objectContaining({ actorId: "actor:alice" }),
+      { sessionId: "ses_1", workspaceId: "ws_root" },
+    )
+    // A session of another workspace, even the owner's own sibling; a session
+    // the control plane does not place in the root; a malformed reference.
+    for (const forged of [
+      { workspaceId: "ws_sibling", sessionId: "ses_sibling" },
+      { workspaceId: "ws_root", sessionId: "ses_sibling" },
+      { workspaceId: "ws_root", sessionId: "ses_stranger" },
+      { workspaceId: null, sessionId: "ses_1" },
+      { sessionId: "ses_1" },
+    ]) {
+      expect(await refusal(composed, createRequest({ createdFrom: forged }))).toBe(
+        "403 This session may record only a session of its own workspace as provenance",
+      )
+    }
+  })
+
+  test("minted for a root on a plane that cannot place sessions, may record no provenance at all", async () => {
+    const { sessionId: _sessionId, ...sessionless } = SCOPE
+    const composed = identity({ scope: sessionless, sessions: false })
+    expect(await refusal(composed, createRequest({}))).toBe("admitted")
     expect(await refusal(composed, createRequest({ createdFrom: { workspaceId: "ws_root", sessionId: "ses_1" } }))).toBe(
+      "403 This session may record only a session of its own workspace as provenance",
+    )
+  })
+
+  test("minted for a session, keeps to exactly that session however the plane places others", async () => {
+    const composed = identity()
+    expect(await refusal(composed, createRequest({ createdFrom: { workspaceId: "ws_root", sessionId: "ses_2" } }))).toBe(
       "403 This session may record only itself as a task's provenance",
     )
+    expect(composed.ownerMayReadSession).not.toHaveBeenCalled()
   })
 })
 

@@ -14,6 +14,7 @@ import {
   decodeTask,
   PRESET_PLACEMENTS,
   isConfigurationSlot,
+  isSessionStarter,
   isTasksCommandName,
   type Preset,
   type PresetPlacement,
@@ -76,6 +77,7 @@ export type StoredLinkColumns = {
   handoff_text: string | null
   started_from_session_id: string | null
   started_from_workspace_id: string | null
+  started_by: string
   placement: string
   created_at: number
 }
@@ -192,6 +194,7 @@ export function linkColumns(link: TaskSessionLink): StoredLinkColumns {
     handoff_text: link.handoffText,
     started_from_session_id: link.startedFrom?.sessionId ?? null,
     started_from_workspace_id: link.startedFrom?.workspaceId ?? null,
+    started_by: link.startedBy,
     placement: link.placement,
     created_at: link.createdAt,
   }
@@ -207,6 +210,9 @@ export function linkOfColumns(row: StoredLinkColumns): TaskSessionLink {
   }
   if (!isPresetPlacement(row.placement)) {
     throw new TasksStoredRowError(`Stored task session link ${row.task_id} names an unknown placement ${row.placement}`)
+  }
+  if (!isSessionStarter(row.started_by)) {
+    throw new TasksStoredRowError(`Stored task session link ${row.task_id} names an unknown starter ${row.started_by}`)
   }
   // A continued-from workspace without its session is a half-written origin,
   // not "continued from the workspace": the pair is stored and read together.
@@ -231,6 +237,7 @@ export function linkOfColumns(row: StoredLinkColumns): TaskSessionLink {
     configurationDigest: row.configuration_digest,
     handoffText: row.handoff_text,
     startedFrom,
+    startedBy: row.started_by,
     placement: row.placement,
     createdAt: row.created_at,
   }
