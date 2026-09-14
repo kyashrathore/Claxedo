@@ -329,6 +329,44 @@ export type WorkspaceAuthority = {
     workspace_ids: string[]
     acked_workspace_ids: string[]
   }>>
+  /**
+   * The machine's own heartbeat: the caller is the verified machine principal
+   * (`verifyMachineRequest`), not an account bearer, and `who` is the row's
+   * owner. The renewal is refused with `enrollment_generation_superseded` when
+   * `args.generation` is below the stored serving generation.
+   */
+  heartbeatHostEnrollmentByMachine?: (
+    machine: MachinePrincipal,
+    args: HostMachineHeartbeatInput,
+  ) => Promise<HostMachineHeartbeatResult>
+  /**
+   * A starting instance claims the next serving generation; beats and tunnels
+   * of every earlier generation are refused from this point. Readiness rows of
+   * prior generations are dropped in the same batch.
+   */
+  acquireHostServingGeneration?: (
+    machine: MachinePrincipal,
+  ) => Promise<{ generation: number; generation_acquired_at: number }>
+  createHostInvitation?: (
+    auth: SignedControlPlaneAuth,
+    args: HostInvitationCreateInput,
+  ) => Promise<HostInvitationCreateResult>
+  listHostInvitations?: (auth: SignedControlPlaneAuth) => Promise<HostInvitationRow[]>
+  revokeHostInvitation?: (
+    auth: SignedControlPlaneAuth,
+    args: { invitationId: string },
+  ) => Promise<{ revoked: boolean }>
+  /** No caller auth: the single-use invitation secret is the credential. */
+  redeemHostInvitation?: (args: HostInvitationRedeemInput) => Promise<HostInvitationRedeemResult>
+  /**
+   * Owner only. Assignments whose directory falls outside the new roots are
+   * deleted and their workspaces retired in the same batch.
+   */
+  updateHostEnrollmentScope?: (
+    auth: SignedControlPlaneAuth,
+    args: { enrollmentId: string; scope: HostScopeDefinition },
+  ) => Promise<HostScopeUpdateResult>
+  listHostEnrollments?: (auth: SignedControlPlaneAuth) => Promise<HostEnrollmentListRow[]>
   markSecondDeviceOpen: (
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
@@ -596,3 +634,166 @@ export type HostEnrollmentState =
    * tell them apart shows the user the wrong one.
    */
   | { active: false; reason: "not-enrolled" | "paused" | "expired" | "revoked" }
+
+export type HostEnrolledVia = "account" | "invitation"
+
+/** What an owner grants a machine: the roots it may serve and who may see them. */
+export type HostScopeDefinition = {
+  /** Absolute POSIX paths. Empty means the machine may serve nothing. */
+  allowed_roots: string[]
+  /** `"owner"`: no implicit org-member access to the machine's workspaces. */
+  visibility: "owner" | "org"
+}
+
+/** The stored scope, versioned so a host can tell a newer delivery from a stale one. */
+export type HostEnrollmentScope = HostScopeDefinition & { revision: number }
+
+/**
+ * Narrow a stored `scope_json` column to a scope. Undefined when the column is
+ * NULL or malformed — an account enrollment has no scope, and every caller
+ * must treat that as an answer rather than a default.
+ */
+export function hostEnrollmentScope(json: unknown, revision: number): HostEnrollmentScope | undefined {
+  if (typeof json !== "string") return undefined
+  let value: unknown
+  try {
+    value = JSON.parse(json)
+  } catch {
+    return undefined
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const { allowed_roots, visibility } = value as Record<string, unknown>
+  if (!Array.isArray(allowed_roots) || !allowed_roots.every((root) => typeof root === "string")) return undefined
+  if (visibility !== "owner" && visibility !== "org") return undefined
+  return { allowed_roots: [...allowed_roots], visibility, revision }
+}
+
+/**
+ * The verified caller of a machine-signed route (`verifyMachineRequest`).
+ * `keyVersion` and `generation` are what the verifier read; every mutation
+ * re-asserts them inside its batch so a key replaced or an instance
+ * superseded between verification and write writes nothing.
+ */
+export type MachinePrincipal = {
+  enrollmentId: string
+  hostId: string
+  ownerUserId: string
+  ownerActorId: string
+  /** Absent for an account enrollment, which records none. */
+  scope: HostEnrollmentScope | undefined
+  keyVersion: number
+  generation: number
+}
+
+/** One workspace the owner points at this machine, versioned per re-point. */
+export type HostAssignmentDescription = {
+  workspace_id: string
+  remote_directory: string
+  display_name?: string
+  /** Strictly increasing per workspace; bumped in the same batch as `remote_directory`. */
+  revision: number
+}
+
+/** The host's statement that it serves a workspace at a given description. */
+export type HostAssignmentAck = { workspaceId: string; revision: number }
+
+export type HostMachineHeartbeatInput = {
+  enrollmentId: string
+  hostId: string
+  generation: number
+  acks: HostAssignmentAck[]
+  ttlMs?: number
+  sessionAuthority?: HostSessionAuthority
+}
+
+export type HostMachineHeartbeatResult = {
+  expires_at: number
+  last_seen_at: number
+  assignments: HostAssignmentDescription[]
+  scope: HostEnrollmentScope | undefined
+  /** Kept for the desktop's set reconciliation. */
+  assigned_workspace_ids: string[]
+}
+
+export type HostInvitationCreateInput = {
+  scope: HostScopeDefinition
+  displayName?: string
+  /** Clamped to [5 min, 24 h]; 1 h when absent. */
+  expiresInMs?: number
+}
+
+export type HostInvitationCreateResult = {
+  invitationId: string
+  /** `chx_inv_1.<invitation_id>.<secret>`; the secret is never stored, only its hash. */
+  token: string
+  expiresAt: number
+}
+
+export type HostInvitationRow = {
+  invitation_id: string
+  display_name?: string
+  scope: HostScopeDefinition
+  org_id?: string
+  created_at: number
+  expires_at: number
+  redeemed_at?: number
+  redeemed_host_id?: string
+  redeemed_enrollment_id?: string
+  revoked_at?: number
+}
+
+export type HostInvitationRedeemInput = {
+  invitationId: string
+  secret: string
+  hostId: string
+  /** Public P-256 JWK JSON. */
+  publicKey: string
+  /** Over `invitationRedeemPayload` (host-connect-contract). */
+  signature: string
+  displayName?: string
+}
+
+export type HostInvitationRedeemResult = {
+  /** True when the invitation was already redeemed by this same key and host id. */
+  resumed: boolean
+  enrollment: HostEnrollment
+  owner_user_id: string
+  owner_actor_id: string
+  org_id?: string
+  owner_display_name?: string
+  key_version: number
+  serving_generation: number
+  scope: HostEnrollmentScope
+}
+
+export type HostScopeUpdateResult = {
+  scope: HostEnrollmentScope
+  /** Assignments deleted because their directory fell outside the new roots. */
+  retired_workspace_ids: string[]
+}
+
+export type HostEnrollmentListRow = {
+  enrollment_id: string
+  display_name?: string
+  host_id: string
+  public_key_fingerprint: string
+  key_version: number
+  enrolled_via: HostEnrolledVia
+  last_seen_at: number
+  expires_at: number
+  serving_generation: number
+  generation_acquired_at?: number
+  acked: HostAssignmentAck[]
+  scope: HostEnrollmentScope | undefined
+}
+
+export type HostInvitationErrorCode =
+  | "invitation_invalid"
+  | "invitation_expired"
+  | "invitation_revoked"
+  | "invitation_redeemed"
+  | "invitation_host_conflict"
+
+export type HostMachineErrorCode = "enrollment_generation_superseded" | "host_assignment_outside_scope"
+
+export type HostConnectErrorCode = HostInvitationErrorCode | HostMachineErrorCode
