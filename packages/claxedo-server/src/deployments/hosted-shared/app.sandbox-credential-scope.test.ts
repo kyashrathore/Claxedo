@@ -25,6 +25,7 @@ import { mintTasksCapability } from "../../tasks/capability"
 import { tasksGrantRenewalContribution } from "../../tasks/grant-renewal"
 import { createTasksRootGrant } from "../../tasks/root-capability"
 import { mintMcpGatewayToken } from "../../agent-plugins/mcp/runtime-token"
+import { mintOwnerGrant } from "../../session/owner-grant"
 
 /**
  * Every credential a sandbox can carry, against every route the composed
@@ -305,6 +306,16 @@ const SANDBOX_CREDENTIALS: readonly SandboxCredential[] = [
       ).token,
   },
   {
+    kind: "owner grant",
+    mint: async (env) =>
+      (
+        await mintOwnerGrant(
+          { userId: "alice", actorId: "actor:alice", orgId: OWN.orgId, projectId: OWN.projectId, workspaceId: OWN.workspaceId },
+          env,
+        )
+      ).token,
+  },
+  {
     kind: "loopback runtime bearer",
     mint: async () =>
       createRuntimeCredentialIssuer({ runtimeId: "runtime_1", workspaceId: OWN.workspaceId, userId: "alice" }).current(
@@ -319,7 +330,10 @@ const SANDBOX_CREDENTIALS: readonly SandboxCredential[] = [
  * signed; the gateway token is signed with the same key and must reach none of
  * them; a host's signed token is verified by the runtime it addresses and the
  * relay in front of it, never by this plane; the runtime's own bearer never
- * leaves the sandbox's loopback and is nobody here.
+ * leaves the sandbox's loopback and is nobody here. The owner grant is for
+ * one route, `POST /api/runtime-authority/session-authorize`, which refuses
+ * the probe body before reading any bearer and so sits in nobody's set; what
+ * that route admits the grant to is held in `runtime-session-authority.test.ts`.
  *
  * The status beside each route is the answer to the caller's own names, which
  * says how far the probe body got: a 2xx or a 404 is a route that read the
@@ -341,6 +355,7 @@ const EXPECTED_ADMISSION: Record<string, readonly string[]> = {
     "POST /api/claxedo/tasks/tasks/:taskId/start-preview -> 400",
   ],
   "gateway capability": [],
+  "owner grant": [],
   "loopback runtime bearer": [],
 }
 

@@ -91,6 +91,7 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     ...base,
     options: {
       ...base.options,
+      sandboxPasses: passes,
       routeContributions: [...feature.routeContributions, ...tasks],
       integrationRoutes: feature.integrationRoutes,
       productWorkspace: {
