@@ -10,8 +10,10 @@ import {
 import { LiveSyncRoom } from "./core-worker.cf"
 import { settledCompositionCache } from "./settled-composition-cache"
 import { hostedTasksRouteContributions } from "./tasks-contributions"
-import { createTasksRootCapability } from "../../tasks/root-capability"
+import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/root-capability"
+import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
+import { d1CrossMachineWrites } from "../../authority/adapters/d1/agent-settings"
 
 export { LiveSyncRoom }
 
@@ -51,12 +53,20 @@ export function composeBetterAuthD1AgentPluginsCandidate(
   // One signing key decides both halves: the deployment that mints a root's
   // Tasks grant is exactly the one whose routes will verify it.
   const signingEnv = stringEnvironment(env)
+  // Every pass a root is launched with is written here, and every verifier
+  // asks here first: the switch and the workspace's deletion revoke by
+  // workspace, and a renewal is refused for a revoked grant like any request.
+  const passes = createD1SandboxPassRegister({ database: env.CONTROL_PLANE_DB })
+  // One input for the launch grant and the renewed one, so `start` follows
+  // the account's setting at both.
+  const tasksRoot = { signingEnv, passes, crossMachineWrites: d1CrossMachineWrites(env.CONTROL_PLANE_DB) }
   const feature = createHostedAgentPluginsComposition({
     env,
     plane: base.plane,
     database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
-    tasksGrant: createTasksRootCapability({ signingEnv }),
+    tasksGrant: createTasksRootCapability(tasksRoot),
+    passes,
   })
   const tasks = hostedTasksRouteContributions({
     services: base.plane.services,
@@ -64,8 +74,11 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     authentication: base.options.authentication,
     selectedCapabilities: feature.selectedCapabilities,
     rootEnvironment: feature.rootEnvironment,
+    releaseRuntime: feature.releaseRuntime,
     sandboxEgress: { controlPlaneOrigin: hostedControlPlaneOrigin(signingEnv) },
     signingEnv,
+    passes,
+    renewal: { tasksGroupEnabled: feature.tasksGroupEnabled, grant: createTasksRootGrant(tasksRoot) },
   })
   return {
     ...base,
@@ -77,6 +90,7 @@ export function composeBetterAuthD1AgentPluginsCandidate(
         ...base.options.productWorkspace,
         prepareRuntime: feature.prepareRuntime,
         provisionRuntime: feature.provisionRuntime,
+        releaseRuntime: feature.releaseRuntime,
       },
     },
   }

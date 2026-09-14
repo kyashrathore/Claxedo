@@ -22,6 +22,7 @@ import { selectedAgentPluginProjection } from "../runtime/selected-projection"
 import type { AgentPluginExecutionSelection } from "@claxedo/server-core/agent-plugins/runtime/execution-selection"
 import { mintMcpGatewayToken, type McpGatewayTokenScope } from "./runtime-token"
 import { isRecord } from "@claxedo/helpers/guards"
+import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
 
 type ConnectionReadiness = (input: {
   ownerUserId: string
@@ -139,6 +140,8 @@ export type HostedMcpRuntimePreparerInput = {
   endpointStyle?: McpGatewayEndpointStyle
   signingEnv: Record<string, string | undefined>
   secretBrokering: SandboxDriverMetadata["secretBrokering"]
+  /** Where each minted gateway token is written down, so a workspace's deletion can take it back. */
+  passes?: SandboxPassRegister
 }
 
 export function createHostedMcpRuntimePreparation(input: HostedMcpRuntimePreparerInput) {
@@ -321,7 +324,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
             execution: execution ? "selected" : "default",
           }
           const endpoint = gatewayEndpoint(base, scope, style)
-          const credential = await mintMcpGatewayToken(scope, input.signingEnv)
+          const credential = await mintMcpGatewayToken(scope, input.signingEnv, input.passes ? { register: input.passes } : {})
           secrets.push({
             name: endpoint.secretName,
             value: `Bearer ${credential.token}`,

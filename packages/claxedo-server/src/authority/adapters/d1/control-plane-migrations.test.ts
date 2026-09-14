@@ -34,6 +34,7 @@ const CONTROL_PLANE_MIGRATIONS = [
   "0024_session_last_human_turn.sql",
   "0025_claxedo_tasks.sql",
   "0026_agent_cross_machine_writes.sql",
+  "0027_sandbox_pass_revocations.sql",
 ]
 
 const BEFORE_ADAPTER_REBUILD = CONTROL_PLANE_MIGRATIONS.slice(

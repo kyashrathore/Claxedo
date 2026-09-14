@@ -3,6 +3,7 @@ import { exportPKCS8, exportSPKI, generateKeyPair, jwtVerify, SignJWT } from "jo
 import { runtimeAccessTokenAudience, runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { MCP_GATEWAY_TOKEN_AUDIENCE } from "../agent-plugins/mcp/runtime-token"
 import { TASKS_CAPABILITY_AUDIENCE, mintTasksCapability, verifyTasksCapability } from "./capability"
+import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 
 async function fixture() {
   const key = await generateKeyPair("EdDSA", { extractable: true })
@@ -25,6 +26,19 @@ const scope = {
 } as const
 
 describe("Tasks capability", () => {
+  test("is written to the register it is minted with and refused once its workspace's Tasks passes are revoked", async () => {
+    const { env } = await fixture()
+    const register = memorySandboxPassRegister()
+    const minted = await mintTasksCapability(scope, env, { register })
+    expect(await register.outstanding({ orgId: scope.orgId, audience: TASKS_CAPABILITY_AUDIENCE })).toMatchObject([
+      { jti: minted.jti, scope: { userId: scope.userId, orgId: scope.orgId, projectId: scope.projectId, workspaceId: scope.workspaceId, sessionId: scope.sessionId } },
+    ])
+    await expect(verifyTasksCapability(minted.token, env, { revoked: register.revoked })).resolves.toEqual(scope)
+
+    await register.revoke({ workspaceId: scope.workspaceId, audience: TASKS_CAPABILITY_AUDIENCE, reason: "tasks_group_disabled" })
+    await expect(verifyTasksCapability(minted.token, env, { revoked: register.revoked })).rejects.toThrow("was revoked")
+  })
+
   test("round trips one workspace's scope and the operations it grants", async () => {
     const { env } = await fixture()
     const now = Date.now()

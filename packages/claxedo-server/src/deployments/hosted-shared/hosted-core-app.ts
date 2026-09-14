@@ -72,7 +72,7 @@ import { asRecord, stringField } from "@claxedo/server-core/platform/json/index"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
   HostedWorkspaceRouteOptions,
-  "connections" | "countActiveOrgSandboxLeases" | "sandboxUsage" | "prepareRuntime" | "provisionRuntime"
+  "connections" | "countActiveOrgSandboxLeases" | "sandboxUsage" | "prepareRuntime" | "provisionRuntime" | "releaseRuntime"
 >
 
 export type HostedCoreAppOptions = {

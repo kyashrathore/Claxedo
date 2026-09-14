@@ -144,6 +144,8 @@ describe("the hosted Worker Tasks closure", () => {
       // The grant a cloud root launches with, and the signer that mints it.
       "src/tasks/capability.ts",
       "src/tasks/d1-store.ts",
+      "src/tasks/grant-renewal.ts",
+      "src/tasks/grant-withdrawal.ts",
       "src/tasks/hosted-composition.ts",
       "src/tasks/root-capability.ts",
       "src/tasks/session-bridge.ts",

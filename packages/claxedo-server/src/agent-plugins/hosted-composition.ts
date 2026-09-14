@@ -32,7 +32,7 @@ import { githubEdgeCachedFetch, type EdgeCache } from "./sources/github-edge-cac
 import { oauthMetadataEdgeCachedFetch } from "./mcp/oauth-metadata-edge-cache"
 import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner } from "./runtime/provision"
-import { createCloudRootEnvironment, type CloudRootIdentity } from "./runtime/cloud-root-environment"
+import { createCloudRootEnvironment, createTasksGroupReader, type CloudRootIdentity } from "./runtime/cloud-root-environment"
 import { createHostedAgentPluginSelfRuntime } from "./runtime/self-runtime"
 import { hostedAgentPluginConnectionIntegrations } from "./mcp/connections"
 import { HostedMcpGatewayRoutes } from "./mcp/routes"
@@ -46,6 +46,9 @@ import { hostedMcpCatalogAuthentication } from "./mcp/catalog-auth"
 import { hostedMcpClientMetadata } from "./mcp/client-metadata"
 import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
 import { asRecord, isRecord, parseJson, stringField } from "@claxedo/server-core/platform/json/index"
+import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import { createTasksGrantWithdrawal } from "../tasks/grant-withdrawal"
 
 /**
  * The credential partition a deployment-wide secret belongs to. Not an org id:
@@ -67,11 +70,15 @@ export type HostedAgentPluginsComposition = {
   integrationRoutes: Hono
   prepareRuntime: (context: WorkspaceRuntimeContext) => Promise<WorkspaceRuntimePreparation>
   provisionRuntime: (context: WorkspaceRuntimeContext, preparation?: WorkspaceRuntimePreparation) => Promise<void>
+  /** Revokes every pass `prepareRuntime` minted for a root whose workspace is now deleted. */
+  releaseRuntime: (context: WorkspaceRuntimeContext) => Promise<void>
   /**
    * The environment `prepareRuntime` launches a cloud root with, for a caller
    * that allocates its own workspace and prepares its own selection.
    */
   rootEnvironment: (root: CloudRootIdentity) => Promise<Record<string, string>>
+  /** Whether the root's project has Tasks on now, read as the launch environment reads it. */
+  tasksGroupEnabled: (root: CloudRootIdentity) => Promise<boolean>
   /**
    * One root's own capability set, for a caller that allocates its own
    * workspace: the same preparation and apply the workspace routes run, over
@@ -161,6 +168,12 @@ export function createHostedAgentPluginsComposition(input: {
   authentication: RequestAuthenticationAdapter
   /** The grant a root whose project turned Tasks on is launched with. */
   tasksGrant: (root: CloudRootIdentity) => Promise<Record<string, string>>
+  /**
+   * The register every pass a root is launched with is written to, and the
+   * one its gateway checks. The Tasks grant is minted by `tasksGrant` and
+   * has to be minted into the same register, which is the entry's to hold.
+   */
+  passes: SandboxPassRegister
 }): HostedAgentPluginsComposition {
   const bucket = input.env.CLAXEDO_AGENT_PLUGINS
   if (!bucket) throw new Error("Enabled Agent Plugins build requires CLAXEDO_AGENT_PLUGINS R2")
@@ -266,6 +279,7 @@ export function createHostedAgentPluginsComposition(input: {
     endpointStyle: endpointStyle(env.CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_STYLE),
     signingEnv: env,
     secretBrokering: secretBrokering(input.plane),
+    passes: input.passes,
   })
   const provisioner = createHostedAgentPluginRuntimeProvisioner({
     activations,
@@ -310,6 +324,8 @@ export function createHostedAgentPluginsComposition(input: {
     return row?.backing === "cloud-vm" && row.access === "cloud"
   }
   const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant })
+  const tasksGroupEnabled = createTasksGroupReader({ activations, builtIn })
+  const withdrawal = createTasksGrantWithdrawal({ passes: input.passes, tasksGroupEnabled })
   const prepareRuntime = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (!(await cloudWorkspace(workspaceId))) return {}
     const snapshot = await activations.runtimeSnapshot(workspaceId)
@@ -345,6 +361,7 @@ export function createHostedAgentPluginsComposition(input: {
 
   const gateway = HostedMcpGatewayRoutes({
     env,
+    revoked: input.passes.revoked,
     authorize: hostedMcpGatewayAuthorization({ activations, artifacts }),
     resolveConnection: async (scope) => resolveToken({
       ownerUserId: scope.userId,
@@ -386,6 +403,10 @@ export function createHostedAgentPluginsComposition(input: {
     mcpClientMetadata: clientMetadata,
     mcpGatewayRoutes: gateway,
     selfRuntime: createHostedAgentPluginSelfRuntime({ activations, artifacts, preparer }),
+    builtInConsentChanged: async (auth, groupId) => {
+      if (groupId !== BUILTIN_TASKS_TOOL_GROUP) return
+      await withdrawal.reconcile(await authority.resolveOrgId(auth))
+    },
   })
   return {
     routeContributions: [
@@ -404,7 +425,9 @@ export function createHostedAgentPluginsComposition(input: {
     integrationRoutes,
     prepareRuntime,
     provisionRuntime,
+    releaseRuntime: ({ workspaceId }) => withdrawal.release(workspaceId),
     rootEnvironment,
+    tasksGroupEnabled,
     selectedCapabilities,
   }
 }

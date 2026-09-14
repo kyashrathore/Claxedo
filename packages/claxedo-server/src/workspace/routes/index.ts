@@ -456,6 +456,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
               })
             })
           }
+          await options.releaseRuntime?.({ workspaceId: id })
         }
         await discardSupervisorSandbox(id, "workspace_deleted").catch(() => {})
         await deleteWorkspace(id)

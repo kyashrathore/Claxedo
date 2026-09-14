@@ -26,6 +26,7 @@ export function hostedAgentPluginsModule(input: {
   mcpClientMetadata?: HostedMcpClientMetadata
   mcpGatewayRoutes?: Hono
   selfRuntime?: AgentPluginSelfRuntimeReader
+  builtInConsentChanged?: (auth: SignedControlPlaneAuth, groupId: string) => Promise<void>
 }): AgentPluginsModule {
   const routes = HostedAgentPluginRoutes(input)
   if (input.mcpGatewayRoutes) routes.route("/mcp", input.mcpGatewayRoutes)

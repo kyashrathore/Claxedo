@@ -1,4 +1,5 @@
 import { mintSandboxPass, verifySandboxPass } from "../../platform/auth/sandbox-pass"
+import type { SandboxPassRegister } from "../../platform/auth/sandbox-pass-register"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { isArtifactDigest, type ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 
@@ -69,7 +70,7 @@ function gatewayScope(
 export async function mintMcpGatewayToken(
   scope: McpGatewayTokenScope,
   env: Record<string, string | undefined>,
-  options: { ttlSeconds?: number; now?: () => number } = {},
+  options: { ttlSeconds?: number; now?: () => number; register?: SandboxPassRegister } = {},
 ) {
   const { userId, orgId, projectId, workspaceId, ...plugin } = scope
   return await mintSandboxPass(
@@ -96,8 +97,9 @@ export async function verifyMcpGatewayToken(
   token: string,
   expected: Pick<McpGatewayTokenScope, "integrationId">,
   env: Record<string, string | undefined>,
+  options: { revoked?: (jti: string) => Promise<boolean> } = {},
 ) {
-  const pass = await verifySandboxPass(token, env, { audience: MCP_GATEWAY_TOKEN_AUDIENCE, fault: misconfigured })
+  const pass = await verifySandboxPass(token, env, { audience: MCP_GATEWAY_TOKEN_AUDIENCE, fault: misconfigured, ...options })
   const scope = gatewayScope(pass.scope, pass.extra)
   if (!scope || scope.integrationId !== expected.integrationId) throw new Error("MCP gateway token scope is invalid")
   return scope

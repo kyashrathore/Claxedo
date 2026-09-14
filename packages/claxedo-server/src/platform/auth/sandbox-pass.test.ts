@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import { decodeJwt, exportPKCS8, exportSPKI, generateKeyPair, SignJWT } from "jose"
 import { runtimeAccessTokenIssuer } from "@claxedo/workspace-relay"
 import { mintSandboxPass, SandboxPassError, verifySandboxPass } from "./sandbox-pass"
+import { memorySandboxPassRegister } from "./sandbox-pass-register"
 
 async function fixture() {
   const key = await generateKeyPair("EdDSA", { extractable: true })
@@ -144,6 +145,27 @@ describe("sandbox pass family", () => {
     await expect(mintSandboxPass({ audience: ONE, scope, operations: ["read"], extra: { sub: "user-2" } }, env, fault)).rejects.toThrow("pass family owns")
     await expect(mintSandboxPass({ audience: ONE, scope, operations: ["read"], extra: { workspace_id: "ws_2" } }, env, fault)).rejects.toThrow("pass family owns")
     await expect(mintSandboxPass({ audience: ONE, scope, operations: ["read"], extra: { server_name: "" } }, env, fault)).rejects.toThrow("server_name")
+  })
+
+  test("a revoked pass is refused by every verifier that asks the register, and a live one is not", async () => {
+    const { env } = await fixture()
+    const now = 1_700_000_000_000
+    const register = memorySandboxPassRegister({ now: () => now })
+    const minted = await mintSandboxPass({ audience: ONE, scope, operations: ["read"], now: () => now, register }, env, fault)
+    const sibling = await mintSandboxPass({ audience: OTHER, scope, operations: ["read"], now: () => now, register }, env, fault)
+    expect(await register.outstanding({ orgId: scope.orgId, audience: ONE })).toMatchObject([
+      { jti: minted.jti, audience: ONE, scope, issuedAt: now, expiresAt: minted.expiresAt },
+    ])
+    const verify = (token: string, audience: string) =>
+      verifySandboxPass(token, env, { audience, fault, now: () => now, revoked: register.revoked })
+    await expect(verify(minted.token, ONE)).resolves.toMatchObject({ jti: minted.jti })
+
+    await register.revoke({ workspaceId: scope.workspaceId, audience: ONE, reason: "tasks_group_disabled" })
+    await expect(verify(minted.token, ONE)).rejects.toThrow(SandboxPassError)
+    await expect(verify(minted.token, ONE)).rejects.toThrow("was revoked")
+    await expect(verify(sibling.token, OTHER)).resolves.toMatchObject({ jti: sibling.jti })
+    // A verifier given no register keeps answering for the signature alone.
+    await expect(verifySandboxPass(minted.token, env, { audience: ONE, fault, now: () => now })).resolves.toBeTruthy()
   })
 
   test("names the deployment fault the audience supplied when the key is missing", async () => {

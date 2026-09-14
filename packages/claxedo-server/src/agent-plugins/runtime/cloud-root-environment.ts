@@ -59,24 +59,43 @@ export function createCloudRootEnvironment(input: CloudRootEnvironmentInput) {
 }
 
 async function enabledBuiltinGroups(input: CloudRootEnvironmentInput, root: CloudRootIdentity): Promise<string[]> {
-  const enabled = await Promise.all(input.builtIn.groups.map(async (group) => {
-    const snapshot = await input.activations.readRuntime({
-      ownerUserId: root.userId,
-      organizationId: root.orgId,
-      projectId: root.projectId,
-      workspaceId: root.workspaceId,
-      pluginInstanceId: builtinPluginInstanceId(group.id),
-      harnessId: "opencode",
-    })
-    return resolveBuiltinGroupActivation({
-      group,
-      harnessId: "opencode",
-      deployment: input.builtIn.deployment,
-      mode: "signed",
-      ...(snapshot.projectOverride === undefined ? {} : { projectOverride: snapshot.projectOverride }),
-      ...(snapshot.userDefault === undefined ? {} : { userDefault: snapshot.userDefault }),
-      ...(snapshot.organizationDefault === undefined ? {} : { organizationDefault: snapshot.organizationDefault }),
-    }) ? group.id : undefined
-  }))
+  const enabled = await Promise.all(input.builtIn.groups.map(async (group) =>
+    (await groupEnabled(input, root, group)) ? group.id : undefined,
+  ))
   return enabled.filter((group): group is string => group !== undefined)
+}
+
+async function groupEnabled(
+  input: Pick<CloudRootEnvironmentInput, "activations" | "builtIn">,
+  root: CloudRootIdentity,
+  group: BuiltinToolGroup,
+): Promise<boolean> {
+  const snapshot = await input.activations.readRuntime({
+    ownerUserId: root.userId,
+    organizationId: root.orgId,
+    projectId: root.projectId,
+    workspaceId: root.workspaceId,
+    pluginInstanceId: builtinPluginInstanceId(group.id),
+    harnessId: "opencode",
+  })
+  return resolveBuiltinGroupActivation({
+    group,
+    harnessId: "opencode",
+    deployment: input.builtIn.deployment,
+    mode: "signed",
+    ...(snapshot.projectOverride === undefined ? {} : { projectOverride: snapshot.projectOverride }),
+    ...(snapshot.userDefault === undefined ? {} : { userDefault: snapshot.userDefault }),
+    ...(snapshot.organizationDefault === undefined ? {} : { organizationDefault: snapshot.organizationDefault }),
+  })
+}
+
+/**
+ * Whether one root's project has Tasks on right now, read exactly as the
+ * launch environment reads it: as the workspace's recorded owner, for the
+ * harness the runtime serves. The renewal route and the switch's withdrawal
+ * both ask this so a grant lives by the same reading it was launched under.
+ */
+export function createTasksGroupReader(input: Pick<CloudRootEnvironmentInput, "activations" | "builtIn">) {
+  const tasks = input.builtIn.groups.find((group) => group.id === BUILTIN_TASKS_TOOL_GROUP)
+  return async (root: CloudRootIdentity): Promise<boolean> => tasks !== undefined && (await groupEnabled(input, root, tasks))
 }

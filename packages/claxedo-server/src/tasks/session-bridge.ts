@@ -65,6 +65,8 @@ export type HostedTasksSessionBridgeInput = TasksSessionReserveInput & {
    * tools, which is what a control plane those sessions cannot reach means.
    */
   capability?: (root: TasksRootIdentity, auth: SignedControlPlaneAuth) => Promise<Record<string, string>>
+  /** The withdrawal the workspace routes run on deletion; a discarded root is deleted here, so it runs here too. */
+  releaseRuntime?: (context: { workspaceId: string }) => Promise<void>
   /**
    * The rest of what a cloud root's egress allowlist is built from: the
    * origin the runtime reports back to this control plane at, and the
@@ -183,6 +185,7 @@ function createTasksCloudTarget(
       discard: async (workspace) => {
         if (!auth) return
         await requireAuthority(input.services).deleteWorkspace(auth, { workspaceId: workspace.id })
+        await input.releaseRuntime?.({ workspaceId: workspace.id })
       },
     })
     let allocated

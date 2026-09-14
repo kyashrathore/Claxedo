@@ -6,7 +6,7 @@ import {
   WORKSPACE_RUNTIME_MCP_TOOL_GROUPS,
   workspaceRuntimeMcpToolGroups,
 } from "@claxedo/server-core/hosts/workspace-runtime/env"
-import { createCloudRootEnvironment } from "./cloud-root-environment"
+import { createCloudRootEnvironment, createTasksGroupReader } from "./cloud-root-environment"
 
 const root = { userId: "user-1", orgId: "org-1", projectId: "project-a", workspaceId: "ws_root" }
 
@@ -30,6 +30,40 @@ function activations(overrides: Record<string, boolean> = {}) {
     }),
   }
 }
+
+describe("whether a cloud root's project has Tasks on", () => {
+  test("answers from the Tasks group's own activation, read once as the workspace's owner", async () => {
+    const on = activations({ tasks: true })
+    await expect(createTasksGroupReader({ activations: on, builtIn })(root)).resolves.toBe(true)
+    expect(on.readRuntime).toHaveBeenCalledTimes(1)
+    expect(on.readRuntime).toHaveBeenCalledWith({
+      ownerUserId: root.userId,
+      organizationId: root.orgId,
+      projectId: root.projectId,
+      workspaceId: root.workspaceId,
+      pluginInstanceId: builtinPluginInstanceId("tasks"),
+      harnessId: "opencode",
+    })
+    await expect(createTasksGroupReader({ activations: activations({ tasks: false }), builtIn })(root)).resolves.toBe(false)
+    await expect(createTasksGroupReader({ activations: activations(), builtIn })(root)).resolves.toBe(false)
+  })
+
+  test("agrees with the launch environment about the same root", async () => {
+    for (const tasks of [true, false]) {
+      const store = activations({ tasks })
+      const environment = await createCloudRootEnvironment({ activations: store, builtIn, tasksGrant: async () => ({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: "t" }) })(root)
+      expect(await createTasksGroupReader({ activations: store, builtIn })(root)).toBe("WORKSPACE_RUNTIME_TASKS_CAPABILITY" in environment)
+    }
+  })
+
+  test("a build whose first-party server registers no Tasks group answers off", async () => {
+    const reader = createTasksGroupReader({
+      activations: activations({ tasks: true }),
+      builtIn: { groups: builtIn.groups.filter((group) => group.id !== "tasks"), deployment: builtIn.deployment },
+    })
+    await expect(reader(root)).resolves.toBe(false)
+  })
+})
 
 describe("the first-party environment a cloud root boots with", () => {
   test("declares the groups the project has on, readable by the runtime's own parser, and no Tasks grant while Tasks is off", async () => {

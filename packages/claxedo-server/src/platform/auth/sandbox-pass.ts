@@ -8,6 +8,7 @@ import {
   runtimeTokenVerificationKey,
   type CredentialFault,
 } from "./runtime-token-keys"
+import type { SandboxPassRegister } from "./sandbox-pass-register"
 
 /**
  * The one shape of every pass a sandbox holds that this control plane can
@@ -42,6 +43,8 @@ export type SandboxPassInput = Readonly<{
   extra?: Readonly<Record<string, string>>
   ttlSeconds?: number
   now?: () => number
+  /** Where the minted `jti` is written down, so the pass can be taken back before it expires. */
+  register?: SandboxPassRegister
 }>
 
 export type SandboxPass = Readonly<{
@@ -117,7 +120,9 @@ export async function mintSandboxPass(input: SandboxPassInput, env: Record<strin
     .setExpirationTime(now + ttl)
     .setJti(jti)
     .sign(key)
-  return { token, jti, expiresAt: (now + ttl) * 1_000 }
+  const expiresAt = (now + ttl) * 1_000
+  await input.register?.record({ jti, audience: input.audience, scope, issuedAt: now * 1_000, expiresAt })
+  return { token, jti, expiresAt }
 }
 
 function claimString(payload: JWTPayload, name: string) {
@@ -151,7 +156,13 @@ function passOperations(payload: JWTPayload): readonly string[] | undefined {
 export async function verifySandboxPass(
   token: string,
   env: Record<string, string | undefined>,
-  options: { audience: string; fault: CredentialFault; now?: () => number },
+  options: {
+    audience: string
+    fault: CredentialFault
+    now?: () => number
+    /** Asked only for a well-signed, unexpired pass; a verifier given none answers for the signature alone. */
+    revoked?: (jti: string) => Promise<boolean>
+  },
 ): Promise<SandboxPass> {
   const { key } = await runtimeTokenVerificationKey(env, options.fault)
   const { payload } = await jwtVerify(token, key, {
@@ -163,6 +174,7 @@ export async function verifySandboxPass(
   })
   const jti = claimString(payload, "jti")
   if (!jti) throw new SandboxPassError(options.audience, "has no jti")
+  if (options.revoked && (await options.revoked(jti))) throw new SandboxPassError(options.audience, "was revoked")
   const { iat, exp } = payload
   if (iat === undefined || exp === undefined) throw new SandboxPassError(options.audience, "has no lifetime")
   const scope = passScope(payload)

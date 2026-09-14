@@ -1,4 +1,5 @@
 import { mintSandboxPass, verifySandboxPass } from "../platform/auth/sandbox-pass"
+import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import {
   isTasksOperation,
   type TasksCapabilityScope,
@@ -22,7 +23,7 @@ const unsignable = (name: string) => new TasksCapabilityConfigurationError(`Task
 export async function mintTasksCapability(
   scope: TasksCapabilityScope,
   env: Record<string, string | undefined>,
-  options: { ttlSeconds?: number; now?: () => number } = {},
+  options: { ttlSeconds?: number; now?: () => number; register?: SandboxPassRegister } = {},
 ) {
   const { operations, ...identity } = scope
   return await mintSandboxPass({ audience: TASKS_CAPABILITY_AUDIENCE, scope: identity, operations, ...options }, env, unsignable)
@@ -31,8 +32,9 @@ export async function mintTasksCapability(
 export async function verifyTasksCapability(
   token: string,
   env: Record<string, string | undefined>,
+  options: { revoked?: (jti: string) => Promise<boolean> } = {},
 ): Promise<TasksCapabilityScope> {
-  const pass = await verifySandboxPass(token, env, { audience: TASKS_CAPABILITY_AUDIENCE, fault: unsignable })
+  const pass = await verifySandboxPass(token, env, { audience: TASKS_CAPABILITY_AUDIENCE, fault: unsignable, ...options })
   const { userId, orgId, projectId, workspaceId, sessionId } = pass.scope
   if (!projectId || pass.operations.length === 0 || !pass.operations.every(isTasksOperation)) {
     throw new Error("Tasks capability scope is invalid")
