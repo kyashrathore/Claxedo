@@ -73,6 +73,10 @@ test.each(["resolve", "reject"] as const)(
         upstreamSessionId: store.getAgentSessionId(session.id)!,
         connectionId: "native:pi",
       }
+      // The stale check only reaches disposal for a session whose file exists —
+      // Pi writes it at the first assistant message — so a real turn runs first.
+      for await (const _event of adapter.executeTurn(binding, prompt("first"))) {
+      }
       armed = true
       await idle.promise
       const events: unknown[] = []
@@ -216,6 +220,31 @@ describe("native Pi through the shared adapter", () => {
     try {
       await collect(f.adapter, f.binding, "provider-error")
       expect(JSON.stringify(f.store.getMessages(f.binding.sessionId))).toContain("Provider rejected request")
+    } finally {
+      await f.cleanup()
+    }
+  })
+  test("a rotation before the first turn recreates the session instead of losing it", async () => {
+    const f = await fixture()
+    try {
+      // A re-applied snapshot carries a fresh placeholder, which rotates the
+      // managed profile and disposes the live process before Pi ever wrote its
+      // session file. The turn must still run on the session it was created as.
+      await f.adapter.applyConfig({
+        auth: {
+          anthropic: {
+            baseUrl: "http://127.0.0.1:2595/bindings/rotated",
+            placeholder: "rotated-placeholder",
+            authMode: "bearer",
+            expiresAt: Date.now() + 60 * 60 * 1000,
+            apiPath: "",
+          },
+        },
+      })
+      await collect(f.adapter, f.binding, "hello")
+      expect(JSON.stringify(f.store.getMessages(f.binding.sessionId))).toContain("work done")
+      expect(f.store.getAgentSessionId(f.binding.sessionId)).toBe(f.binding.upstreamSessionId)
+      expect((await fs.readdir(path.join(f.agentDir, "sessions"))).some((name) => name.endsWith(`_${f.binding.upstreamSessionId}.jsonl`))).toBe(true)
     } finally {
       await f.cleanup()
     }

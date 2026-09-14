@@ -22,13 +22,16 @@ if (args.includes("-p")) {
 }
 const sessionDir = args[args.indexOf("--session-dir") + 1]
 const resume = args.includes("--session") ? args[args.indexOf("--session") + 1] : undefined
-const id = resume ? JSON.parse(fs.readFileSync(resume, "utf8")).id : randomUUID()
+const sessionId = args.includes("--session-id") ? args[args.indexOf("--session-id") + 1] : undefined
+const id = resume ? JSON.parse(fs.readFileSync(resume, "utf8")).id : (sessionId ?? randomUUID())
 const file = resume || path.join(sessionDir, "session_" + id + ".jsonl")
-fs.mkdirSync(sessionDir, { recursive: true }); fs.writeFileSync(file, JSON.stringify({ id }))
+// Real Pi defers writing the session file until its first assistant message.
+fs.mkdirSync(sessionDir, { recursive: true })
 fs.writeFileSync(path.join(sessionDir, "..", "launch-env.json"), JSON.stringify(process.env))
 const emit = value => process.stdout.write(JSON.stringify(value) + "\\n")
 let pending
 const done = text => {
+  fs.writeFileSync(file, JSON.stringify({ id }))
   emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], usage: { input: 11, output: 3, cacheRead: 0, cacheWrite: 0 }, timestamp: Date.now() } })
   emit({ type: "agent_end" }); emit({ type: "agent_settled" })
 }
