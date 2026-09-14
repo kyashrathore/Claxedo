@@ -46,10 +46,19 @@ export type TasksSessionGrants = Readonly<{
  */
 export function createTasksSessionGrants(input: {
   workspaceOwner: NonNullable<WorkspaceAuthority["resolveWorkspaceOwner"]>
+  /**
+   * Whether this machine has Tasks on, read at every issue and every verify.
+   * The hosted plane revokes a sandbox's signed pass when its project turns
+   * Tasks off; here the handle never left the process, so the switch is
+   * simply asked again at the door. Absent means always on.
+   */
+  enabled?: () => boolean
 }): TasksSessionGrants {
   const scopes = new Map<string, TasksCapabilityScope>()
+  const enabled = input.enabled ?? (() => true)
   return {
     async issue({ workspaceId, sessionId }) {
+      if (!enabled()) return undefined
       const owner = await input.workspaceOwner(workspaceId).catch(() => undefined)
       if (!owner) return undefined
       const token = randomToken()
@@ -65,7 +74,7 @@ export function createTasksSessionGrants(input: {
     },
     capability: {
       async verify(token) {
-        return scopes.get(token)
+        return enabled() ? scopes.get(token) : undefined
       },
       workspaceOwner: input.workspaceOwner,
     },

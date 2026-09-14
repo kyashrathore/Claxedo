@@ -18,6 +18,8 @@ import { createDefaultLocalControlPlaneServices, startControlPlaneStack } from "
 import type { ControlPlaneServices } from "../../authority/services"
 import { assertSelfHostedPosture } from "./posture"
 import { createLocalTasksComposition } from "@claxedo/local-server/tasks/local-composition"
+import { localBuiltinToolGroupsReader } from "@claxedo/local-server/agent-plugins/builtin-groups"
+import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { createSelfHostedTasksComposition } from "../../tasks/self-hosted-composition"
 import { createTasksSessionGrants, type TasksSessionGrants } from "../../tasks/session-grants"
 
@@ -108,7 +110,10 @@ export function selfHostedTasks(services: ControlPlaneServices): {
   // Without an owner to resolve, a grant could only be believed on what it
   // says about itself, so this box issues none and its sessions get no Tasks
   // tools rather than tools that act as nobody in particular.
-  const grants = workspaceOwner ? createTasksSessionGrants({ workspaceOwner }) : undefined
+  const toolGroups = localBuiltinToolGroupsReader()
+  const grants = workspaceOwner
+    ? createTasksSessionGrants({ workspaceOwner, enabled: () => toolGroups().includes(BUILTIN_TASKS_TOOL_GROUP) })
+    : undefined
   return {
     routeContributions: createSelfHostedTasksComposition({
       services,

@@ -7,7 +7,7 @@ import { firstPartyMcpRuntimeContribution } from "./first-party-mcp"
 
 const relayAuth = { key: new Uint8Array([1]), workspaceId: "ws_1", hostId: "host_1" }
 
-function runtime(options: { contribute?: boolean; tasks?: TasksGrant; groups?: readonly string[] } = {}) {
+function runtime(options: { contribute?: boolean; tasks?: () => TasksGrant | undefined; groups?: readonly string[] } = {}) {
   const issuer = createRuntimeCredentialIssuer({ runtimeId: "rt_1", workspaceId: "ws_1" })
   const enabledToolGroups = options.groups ?? CLAXEDO_MCP_TOOL_GROUP_IDS
   const app = createWorkspaceRuntimeApp({
@@ -112,12 +112,26 @@ describe("the cloud runtime's first-party MCP contribution", () => {
   })
 
   test("offers exactly the Tasks tools the root's grant carries", async () => {
-    const app = runtime({ tasks: { fetch: async () => new Response(null, { status: 503 }), operations: ["read", "create"] } })
+    const app = runtime({ tasks: () => ({ fetch: async () => new Response(null, { status: 503 }), operations: ["read", "create"] }) })
     try {
       const names = await toolNames(app.app, app.issuer.current("ses_1"))
       expect(names).toContain("task_list")
       expect(names).toContain("task_create")
       expect(names).not.toContain("task_start")
+    } finally {
+      await app.host.dispose()
+    }
+  })
+
+  test("reads the grant per session, so a session opened after a renewal sees the renewed operations and one after a lapse sees none", async () => {
+    let grant: TasksGrant | undefined = { fetch: async () => new Response(null, { status: 503 }), operations: ["read", "create"] }
+    const app = runtime({ tasks: () => grant })
+    try {
+      expect(await toolNames(app.app, app.issuer.current("ses_1"))).not.toContain("task_start")
+      grant = { ...grant, operations: ["read", "create", "start"] }
+      expect(await toolNames(app.app, app.issuer.current("ses_1"))).toContain("task_start")
+      grant = undefined
+      expect(await toolNames(app.app, app.issuer.current("ses_1"))).not.toContain("task_list")
     } finally {
       await app.host.dispose()
     }

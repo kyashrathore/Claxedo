@@ -147,6 +147,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   // launch. A sandbox cannot ask again, and a variable that never arrived is
   // not consent, so an absent one leaves every group off.
   const enabledToolGroups = workspaceRuntimeMcpToolGroups(env) ?? []
+  // Renewed for as long as the control plane will renew it; the host has no
+  // later moment to start this at, and the timer holds nothing open.
+  const tasks = workspaceRuntimeTasksGrant(env)
+  tasks?.start()
   const options: WorkspaceRuntimeServerOptions = {
     target: { workspaceId: workspaceId(env), directory: targetDirectory },
     firstPartyMcpLaunch: { baseUrl: `http://127.0.0.1:${port}`, issuer: firstPartyMcp, enabledToolGroups: () => enabledToolGroups },
@@ -173,7 +177,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
       firstPartyMcpRuntimeContribution({
         verifyRuntimeCredential: firstPartyMcp.verify,
         enabledToolGroups,
-        tasks: workspaceRuntimeTasksGrant(env),
+        tasks: () => tasks?.current(),
       }),
     ],
   }
