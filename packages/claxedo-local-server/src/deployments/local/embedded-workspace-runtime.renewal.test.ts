@@ -106,10 +106,10 @@ test("a process that slept re-pushes every runtime on the next check", async () 
     vi.setSystemTime(Date.now() + 6 * TICK_MS)
     await vi.advanceTimersByTimeAsync(TICK_MS)
     // The tick's own work is not awaited by the timer, and the renewal pass
-    // asks the OpenCode engine first, so the re-push lands a few microtasks in.
-    for (let flush = 0; flush < 50 && projections.length < 2; flush++) await Promise.resolve()
-
-    expect(projections).toHaveLength(2)
+    // reads the workspace config from disk before it projects, so the re-push
+    // lands after real I/O: a wait that only drains microtasks misses it once
+    // the machine is busy.
+    await vi.waitFor(() => expect(projections).toHaveLength(2))
   } finally {
     stop()
   }

@@ -348,8 +348,8 @@ const credentials = vi.hoisted(() => ({
 }))
 
 vi.mock("@claxedo/server-core/credentials/registry", () => ({
-  selectCredentialsForScope: vi.fn(() => []),
-  requireActiveCredentialsForScope: vi.fn(() => credentials.active),
+  activeCredentialsForScope: vi.fn(() => credentials.active),
+  usableCredentials: vi.fn((rows: typeof credentials.active) => rows.flatMap((row) => (row.unavailable ? [] : [row.credential]))),
   readSecretById: vi.fn(async (id: string) => {
     if (credentials.locked.has(id)) throw new Error("keychain is locked")
     return credentials.secrets.get(id)
@@ -941,6 +941,8 @@ describe("workspace-supervisor", () => {
           value: "sk-ant-api03-fixture",
           hosts: ["api.anthropic.com"],
           header: "x-api-key",
+          methods: ["POST", "GET"],
+          pathPrefixes: ["/v1/messages", "/v1/models"],
         },
       ])
       expect(JSON.stringify(launch.env)).not.toContain("sk-ant-api03-fixture")
@@ -1338,9 +1340,18 @@ describe("workspace-supervisor", () => {
     test("opens the hosts of the providers the fanout sends to the sandbox", async () => {
       const policy = await import("@claxedo/server-core/sandbox/network/policy")
       const resolve = await import("../../sandbox/network/resolve")
-      const registry = await import("@claxedo/server-core/credentials/registry")
       ;(policy.listPolicies as any).mockReturnValueOnce([{ target: "api.example.test", kind: "host" }])
-      ;(registry.selectCredentialsForScope as any).mockReturnValueOnce([{ provider_id: "claude-sdk" }])
+      credentials.active.push({
+        credential: {
+          id: "cred-1",
+          provider_id: "claude-sdk",
+          kind: "api_key",
+          revision: 1,
+          secure_ref: "ref-1",
+          status: "available",
+        },
+      })
+      credentials.secrets.set("cred-1", "sk-ant-api03-fixture")
 
       await supervisor.ensureSupervisorSandbox("ws-daytona-credential-network")
 
