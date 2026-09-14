@@ -9,8 +9,15 @@ import { oauthDeviceAuthorization, oauthProvider } from "@better-auth/oauth-prov
 import { getMigrations } from "better-auth/db/migration"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import type { BetterAuthVerifier } from "@claxedo/server-core/platform/auth/auth"
+import { asRecord } from "@claxedo/server-core/platform/json/index"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
-import { BETTER_AUTH_INTROSPECTION_CLIENT_ID } from "../../platform/auth/better-auth-native-clients"
+import { BETTER_AUTH_NATIVE_SCOPES, betterAuthIssuer } from "../../platform/auth/better-auth-d1-foundation"
+import {
+  BETTER_AUTH_CLI_CLIENT_ID,
+  BETTER_AUTH_DESKTOP_CLIENT_ID,
+  BETTER_AUTH_DESKTOP_REDIRECT_URI,
+  BETTER_AUTH_INTROSPECTION_CLIENT_ID,
+} from "../../platform/auth/better-auth-native-clients"
 import { CLAXEDO_MCP_RESOURCE_SCOPES, claxedoMcpResource } from "../../platform/auth/mcp-oauth-scopes"
 import { oauthConsentRevocation } from "../../platform/auth/oauth-consent-revocation"
 
@@ -50,6 +57,11 @@ export const EMBEDDED_AUTH_ISSUER = "claxedo-embedded"
 export function embeddedAuthPublicOrigin(env: NodeJS.ProcessEnv = process.env): string {
   const configured = env.BETTER_AUTH_URL?.trim()
   return new URL(configured || `http://localhost:${DEFAULT_CLAXEDO_SERVER_PORT}`).origin
+}
+
+/** The RFC 8707 resource the native clients (CLI, desktop) hold control-plane tokens for; the descriptor advertises it. */
+export function embeddedControlPlaneResource(env: NodeJS.ProcessEnv = process.env): string {
+  return `${embeddedAuthPublicOrigin(env)}/control-plane`
 }
 
 const EMBEDDED_AUTH_COOKIE_PREFIX = "claxedo"
@@ -120,6 +132,32 @@ function trustedOrigins(env: NodeJS.ProcessEnv): string[] {
   return [...new Set(["http://localhost:*", "http://127.0.0.1:*", "https://localhost:*", "https://127.0.0.1:*", embeddedAuthPublicOrigin(env), ...extra])]
 }
 
+const NATIVE_CLIENT_IDS: ReadonlySet<string> = new Set([BETTER_AUTH_CLI_CLIENT_ID, BETTER_AUTH_DESKTOP_CLIENT_ID])
+
+function audienceIncludes(aud: unknown, resource: string) {
+  return aud === resource || (Array.isArray(aud) && aud.includes(resource))
+}
+
+/**
+ * The subject behind an introspected native access token, or undefined for
+ * anything the control plane must not accept: an inactive token, one from
+ * another issuer, one a dynamically registered MCP host holds, or one whose
+ * audience does not name this control plane.
+ */
+export function nativeAccessTokenSubject(
+  introspection: unknown,
+  expected: { issuer: string; resource: string },
+): { subject: string; tokenIdentifier: string } | undefined {
+  const claims = asRecord(introspection)
+  if (!claims) return undefined
+  if (claims.active !== true || claims.iss !== expected.issuer || claims.token_type !== "Bearer") return undefined
+  if (typeof claims.sub !== "string" || !claims.sub || typeof claims.client_id !== "string") return undefined
+  if (!NATIVE_CLIENT_IDS.has(claims.client_id) || !audienceIncludes(claims.aud, expected.resource)) return undefined
+  const jti = typeof claims.jti === "string" && claims.jti ? claims.jti : undefined
+  const sid = typeof claims.sid === "string" && claims.sid ? claims.sid : undefined
+  return { subject: claims.sub, tokenIdentifier: jti ?? sid ?? `${claims.client_id}|${claims.sub}` }
+}
+
 export function createEmbeddedAuth(
   input: {
     env?: NodeJS.ProcessEnv
@@ -138,6 +176,13 @@ export function createEmbeddedAuth(
     identifier: claxedoMcpResource(embeddedAuthPublicOrigin(env)),
     name: "Claxedo MCP",
     allowedScopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
+    accessTokenTtl: 300,
+    refreshTokenTtl: 30 * 24 * 60 * 60,
+  }
+  const controlPlaneResource = {
+    identifier: embeddedControlPlaneResource(env),
+    name: "Claxedo control plane",
+    allowedScopes: [...BETTER_AUTH_NATIVE_SCOPES],
     accessTokenTtl: 300,
     refreshTokenTtl: 30 * 24 * 60 * 60,
   }
@@ -173,8 +218,8 @@ export function createEmbeddedAuth(
       oauthProvider({
         loginPage: `${embeddedAuthPublicOrigin(env)}/login`,
         consentPage: `${embeddedAuthPublicOrigin(env)}/oauth/consent`,
-        scopes: [...CLAXEDO_MCP_RESOURCE_SCOPES],
-        resources: [mcpResource],
+        scopes: [...BETTER_AUTH_NATIVE_SCOPES, ...CLAXEDO_MCP_RESOURCE_SCOPES],
+        resources: [controlPlaneResource, mcpResource],
         clientRegistrationDefaultResources: [mcpResource.identifier],
         // Without this Better Auth writes the provider's whole scope list onto
         // every dynamically registered client; this box offers no other
@@ -207,58 +252,86 @@ export function createEmbeddedAuth(
   const auth = betterAuth(options)
 
   /**
-   * The confidential client the box introspects with. Better Auth offers no
-   * server-side call that reads an access token's claims without one, and its
-   * dynamic registration mints ids for MCP hosts, so the resource server needs
-   * a client of its own — the same `claxedo-control-plane` row the hosted
-   * deployment provisions in `better-auth-native-clients.ts`.
+   * The rows the hosted D1 plane provisions through
+   * `betterAuthNativeClientStatements`, written here through Better Auth's
+   * adapter: the two public native clients the descriptor advertises
+   * (`claxedo-cli` for the RFC 8628 device grant, `claxedo-desktop` for
+   * PKCE), the confidential client the box introspects with, the resource
+   * rows, and the client↔resource links.
    *
-   * `storeClientSecret: "encrypted"` decides the stored shape, so the row
-   * carries the ciphertext, not the secret.
+   * The introspection client exists because Better Auth offers no server-side
+   * call that reads an access token's claims without one, and its dynamic
+   * registration mints ids for MCP hosts. `storeClientSecret: "encrypted"`
+   * decides the stored shape, so the row carries the ciphertext, not the
+   * secret.
    *
-   * It is also linked to the MCP resource in `oauthClientResource`. RFC 7662 §4
-   * lets an authorization server answer `active: false` rather than reveal a
-   * token to a caller with no claim on it, and Better Auth authorizes an
-   * introspection only from the client that issued the token or one linked to
-   * a resource in the token's audience. Every MCP token here is issued to a
-   * dynamically registered host, so without the link this box reports every
-   * token it has just minted as inactive — indistinguishable from garbage, and
-   * `/api/claxedo/mcp` refuses all of them.
+   * Every link matters: RFC 7662 §4 lets an authorization server answer
+   * `active: false` rather than reveal a token to a caller with no claim on
+   * it, and Better Auth authorizes an introspection only from the client that
+   * issued the token or one linked to a resource in the token's audience. A
+   * missing link makes every token for that resource look like garbage.
    */
-  const seedIntrospectionClient = async () => {
+  const seedNativeClients = async () => {
     const { adapter } = await auth.$context
-    const row = {
-      clientId: BETTER_AUTH_INTROSPECTION_CLIENT_ID,
-      clientSecret: await symmetricEncrypt({ key: options.secret, data: introspectionClientSecret(options.secret) }),
+    const scopes = JSON.stringify(BETTER_AUTH_NATIVE_SCOPES)
+    const nativeClient = (clientId: string, redirectUris: string[], grantTypes: string[]) => ({
+      clientId,
       disabled: false,
-      skipConsent: true,
+      skipConsent: false,
       subjectType: "public",
-      scopes: "[]",
-      redirectUris: "[]",
-      tokenEndpointAuthMethod: "client_secret_post",
-      applicationType: "web",
-      grantTypes: "[]",
-      responseTypes: "[]",
-      requirePKCE: false,
+      scopes,
+      redirectUris: JSON.stringify(redirectUris),
+      tokenEndpointAuthMethod: "none",
+      applicationType: "native",
+      grantTypes: JSON.stringify(grantTypes),
+      responseTypes: JSON.stringify(["code"]),
+      requirePKCE: true,
+    })
+    const clients = [
+      nativeClient(BETTER_AUTH_CLI_CLIENT_ID, [], ["urn:ietf:params:oauth:grant-type:device_code", "refresh_token"]),
+      nativeClient(BETTER_AUTH_DESKTOP_CLIENT_ID, [BETTER_AUTH_DESKTOP_REDIRECT_URI], ["authorization_code", "refresh_token"]),
+      {
+        clientId: BETTER_AUTH_INTROSPECTION_CLIENT_ID,
+        clientSecret: await symmetricEncrypt({ key: options.secret, data: introspectionClientSecret(options.secret) }),
+        disabled: false,
+        skipConsent: true,
+        subjectType: "public",
+        scopes: "[]",
+        redirectUris: "[]",
+        tokenEndpointAuthMethod: "client_secret_post",
+        applicationType: "web",
+        grantTypes: "[]",
+        responseTypes: "[]",
+        requirePKCE: false,
+      },
+    ]
+    for (const row of clients) {
+      const where = [{ field: "clientId", value: row.clientId }]
+      if (await adapter.findOne({ model: "oauthClient", where })) {
+        await adapter.update({ model: "oauthClient", where, update: row })
+      } else {
+        await adapter.create({ model: "oauthClient", data: row })
+      }
     }
-    const where = [{ field: "clientId", value: BETTER_AUTH_INTROSPECTION_CLIENT_ID }]
-    if (await adapter.findOne({ model: "oauthClient", where })) {
-      await adapter.update({ model: "oauthClient", where, update: row })
-    } else {
-      await adapter.create({ model: "oauthClient", data: row })
-    }
-    // The join row references `oauthResource.identifier`, and a resource named
+    // The join rows reference `oauthResource.identifier`, and a resource named
     // only in the plugin options has no row to reference.
-    const resourceWhere = [{ field: "identifier", value: mcpResource.identifier }]
-    if (!(await adapter.findOne({ model: "oauthResource", where: resourceWhere }))) {
-      await adapter.create({ model: "oauthResource", data: { ...mcpResource, disabled: false, createdAt: new Date(), updatedAt: new Date() } })
+    for (const resource of [controlPlaneResource, mcpResource]) {
+      const where = [{ field: "identifier", value: resource.identifier }]
+      if (!(await adapter.findOne({ model: "oauthResource", where }))) {
+        await adapter.create({ model: "oauthResource", data: { ...resource, disabled: false, createdAt: new Date(), updatedAt: new Date() } })
+      }
     }
-    const link = [{ field: "clientId", value: BETTER_AUTH_INTROSPECTION_CLIENT_ID }, { field: "resourceId", value: mcpResource.identifier }]
-    if (!(await adapter.findOne({ model: "oauthClientResource", where: link }))) {
-      await adapter.create({
-        model: "oauthClientResource",
-        data: { clientId: BETTER_AUTH_INTROSPECTION_CLIENT_ID, resourceId: mcpResource.identifier, createdAt: new Date() },
-      })
+    const links = [
+      [BETTER_AUTH_CLI_CLIENT_ID, controlPlaneResource.identifier],
+      [BETTER_AUTH_DESKTOP_CLIENT_ID, controlPlaneResource.identifier],
+      [BETTER_AUTH_INTROSPECTION_CLIENT_ID, controlPlaneResource.identifier],
+      [BETTER_AUTH_INTROSPECTION_CLIENT_ID, mcpResource.identifier],
+    ]
+    for (const [clientId, resourceId] of links) {
+      const where = [{ field: "clientId", value: clientId }, { field: "resourceId", value: resourceId }]
+      if (!(await adapter.findOne({ model: "oauthClientResource", where }))) {
+        await adapter.create({ model: "oauthClientResource", data: { clientId, resourceId, createdAt: new Date() } })
+      }
     }
   }
 
@@ -268,7 +341,7 @@ export function createEmbeddedAuth(
   // awaits this.
   const ready = getMigrations(options)
     .then(({ runMigrations }) => runMigrations())
-    .then(seedIntrospectionClient)
+    .then(seedNativeClients)
   // A boot failure still reaches whoever awaits `ready`; this only stops an
   // instance nobody went on to use — one closed while the schema work was
   // still in flight — from raising an unhandled rejection.
@@ -279,34 +352,53 @@ export function createEmbeddedAuth(
     return auth.handler(request)
   }
 
+  const introspectAccessToken = async (token: string) => {
+    await ready
+    return auth.api.oauth2Introspect({
+      body: {
+        client_id: BETTER_AUTH_INTROSPECTION_CLIENT_ID,
+        client_secret: introspectionClientSecret(options.secret),
+        token,
+        token_type_hint: "access_token",
+      },
+    })
+  }
+
+  /**
+   * Two credentials reach the signed routes as a bearer: the session token the
+   * `bearer()` plugin hands the web app and sign-in scripts, and the opaque
+   * access token the OAuth server issues the CLI (device grant) and the
+   * desktop (PKCE) for the control-plane resource. The second is verified the
+   * way the hosted D1 plane verifies it (`verifyNative` in
+   * better-auth-d1-request-authentication.ts): introspected, and accepted only
+   * from one of the two native clients this box registers for itself, with
+   * this box's control plane in its audience.
+   */
   const verifier: BetterAuthVerifier = async (token) => {
     await ready
     const resolved = await auth.api
       .getSession({ headers: new Headers({ authorization: `Bearer ${token}` }) })
       .catch(() => null)
-    if (!resolved?.user?.id) return null
-    return {
-      subject: resolved.user.id,
-      tokenIdentifier: resolved.session.id,
-      issuer: EMBEDDED_AUTH_ISSUER,
+    if (resolved?.user?.id) {
+      return {
+        subject: resolved.user.id,
+        tokenIdentifier: resolved.session.id,
+        issuer: EMBEDDED_AUTH_ISSUER,
+      }
     }
+    const native = nativeAccessTokenSubject(
+      await introspectAccessToken(token).catch(() => undefined),
+      { issuer: betterAuthIssuer(embeddedAuthPublicOrigin(env)), resource: controlPlaneResource.identifier },
+    )
+    if (!native) return null
+    return { subject: native.subject, tokenIdentifier: native.tokenIdentifier, issuer: EMBEDDED_AUTH_ISSUER }
   }
 
   return {
     issuer: EMBEDDED_AUTH_ISSUER,
     handler,
     verifier,
-    introspectAccessToken: async (token) => {
-      await ready
-      return auth.api.oauth2Introspect({
-        body: {
-          client_id: BETTER_AUTH_INTROSPECTION_CLIENT_ID,
-          client_secret: introspectionClientSecret(options.secret),
-          token,
-          token_type_hint: "access_token",
-        },
-      })
-    },
+    introspectAccessToken,
     ready,
     close: () => db.close(),
   }
