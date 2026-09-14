@@ -131,6 +131,34 @@ describe("firstPartyMcpContribution", () => {
     ])
   })
 
+  test("serves only the tool groups the composition says this caller consented to", async () => {
+    const other: McpToolGroup = { id: "other", reach: "runtime", register: (registry) => {
+      registry.tool("other_ping", {
+        description: "read",
+        inputSchema: {},
+        access: { audiences: ["runtime", "user"], write: false, scope: "read" },
+      }, async () => ({ content: [{ type: "text", text: "pong" }] }))
+    } }
+    const consented = (groups: readonly string[]) =>
+      compose({
+        mount: "node",
+        options: { createClient: () => stubClient, registerTools: [tools, other], enabledToolGroups: () => groups },
+      })
+
+    const one = await connect(consented(["fixture"]).app, { authorization: "Bearer jwt" })
+    expect((await one.listTools()).tools.map((tool) => tool.name)).toEqual(["session_send"])
+    expect(await one.callTool({ name: "other_ping", arguments: {} })).toMatchObject({ isError: true })
+    expect(await one.callTool({ name: "session_send", arguments: { session: "ses_1" } })).toMatchObject({
+      content: [{ type: "text", text: "sent:ses_1" }],
+    })
+
+    // With no group left there is no tools/call handler at all, so the
+    // protocol itself refuses the call.
+    const none = await connect(consented([]).app, { authorization: "Bearer jwt" })
+    expect((await none.listTools()).tools).toEqual([])
+    await expect(none.callTool({ name: "session_send", arguments: { session: "ses_1" } })).rejects.toThrow(/Method not found/)
+  })
+
   test("challenges a caller with no credential and admits an anonymous one only where the mount allows it", async () => {
     const { app } = compose()
     const bare = await app.request("http://127.0.0.1/api/claxedo/mcp", { method: "POST", body: "{}" })

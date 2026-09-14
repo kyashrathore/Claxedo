@@ -77,6 +77,7 @@ export function firstPartyMcpContribution(input: FirstPartyMcpContributionInput)
       })
     },
     registerTools: input.options.registerTools ?? [],
+    ...(input.options.enabledToolGroups ? { enabledToolGroups: input.options.enabledToolGroups } : {}),
     audit: async (event: McpAuditEvent) => {
       const record = mcpAuditRecord(event)
       const auth = auths.get(event.credential)
