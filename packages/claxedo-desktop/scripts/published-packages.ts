@@ -1,15 +1,12 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
 import { $ } from "bun"
+import { jsonRecord } from "@claxedo/helpers"
 
 /**
  * The sibling packages the server bundle consumes through their published
  * `dist` rather than their source (see `script/published-exports-plugin.ts`):
  * every `@claxedo/*` workspace package that is not private and has a build.
- *
- * Scanned from the manifests rather than listed here: a hand-kept list is how
- * the desktop shipped a `sandbox-manager` build five days older than its source
- * while every listed package was current.
  */
 export function publishedPackageNames(repoRoot: string): string[] {
   return publishedPackages(repoRoot).map((entry) => entry.name)
@@ -20,34 +17,25 @@ export function publishedPackageDistDirs(repoRoot: string): string[] {
   return publishedPackages(repoRoot).map((entry) => path.join(entry.dir, "dist"))
 }
 
-function jsonRecord(value: unknown): Record<string, unknown> | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined
-  return Object.fromEntries(Object.entries(value))
-}
-
 function publishedPackages(repoRoot: string): { name: string; dir: string }[] {
   const packagesDir = path.join(repoRoot, "packages")
-  const names: { name: string; dir: string }[] = []
+  const entries: { name: string; dir: string }[] = []
   for (const entry of fs.readdirSync(packagesDir, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue
     const manifestPath = path.join(packagesDir, entry.name, "package.json")
     if (!fs.existsSync(manifestPath)) continue
-    const record = jsonRecord(JSON.parse(fs.readFileSync(manifestPath, "utf8")))
+    const record = jsonRecord(fs.readFileSync(manifestPath, "utf8"))
     if (!record) continue
     const name = record.name
     const scripts = record.scripts
     if (typeof name !== "string" || !name.startsWith("@claxedo/")) continue
     if (record.private === true) continue
     if (typeof scripts !== "object" || scripts === null || !("build" in scripts)) continue
-    names.push({ name, dir: path.join(packagesDir, entry.name) })
+    entries.push({ name, dir: path.join(packagesDir, entry.name) })
   }
-  return names.sort((a, b) => a.name.localeCompare(b.name))
+  return entries.sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/**
- * Build every published sibling package, in dependency order, skipping the
- * ones turbo already has a cached output for.
- */
 export async function buildPublishedPackages(repoRoot: string, log: (message: string) => void) {
   const names = publishedPackageNames(repoRoot)
   log(`Building ${names.length} published package(s) the server bundle consumes from dist...`)
