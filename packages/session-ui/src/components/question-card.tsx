@@ -37,7 +37,7 @@ export function QuestionCard(props: { questions: AgentQuestionInfo[]; answers: A
   return (
     <div data-component="question-card" class="ui-question-card">
       <div data-slot="question-card-header">
-        <Icon name="bubble-5" size="small" style={{ "stroke-width": 1.5 }} />
+        <Icon name="bubble-5" size="small" />
         <span data-slot="question-card-title">{i18n.t("ui.tool.questions")}</span>
         <Show when={answered() > 0}>
           <span data-slot="question-card-count">

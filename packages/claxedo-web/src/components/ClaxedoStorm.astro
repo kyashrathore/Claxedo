@@ -29,28 +29,90 @@ const sessions = [
   {
     id: "migrate-relay-tokens",
     title: "Migrate relay tokens",
-    user: "Rotate the relay host tokens to EdDSA and keep the old verifier for one release.",
-    responses: ["I'll add the new signer, keep the legacy verifier behind a flag, and run the relay contract tests.", "Both verifiers pass. The flag defaults to the new signer.", "Ready for review."],
-    tools: ["Worked for 1m 12s", "Changed 6 files", "Running relay tests", "Read token contract"],
+    user: "Rotate the relay host tokens to EdDSA. Keep the old verifier for exactly one release, and make sure a token signed today still opens a session after the rollout.",
+    responses: [
+      "Reading the token contract and both verifier paths first. A rotation that breaks the invite links already in people's inboxes is worse than no rotation.",
+      "The old HMAC verifier stays behind a flag that defaults on for this release. New tokens are EdDSA, old ones still verify, and the relay logs which path each token took so we can see when the old one goes quiet.",
+      "Both verifiers pass the contract suite. Rehearsed the rollout on a scratch Worker: a token minted before the deploy opened a session after it.",
+    ],
+    tools: ["Worked for 1m 12s", "Read token contract", "Rehearsing rollout on scratch Worker", "Changed 6 files"],
     context: "packages/workspace-relay",
     branch: "chore/eddsa-tokens",
   },
   {
     id: "fix-usage-meter",
     title: "Fix usage meter",
-    user: "The usage meter undercounts Codex turns. Find where the cumulative value is dropped.",
-    responses: ["Tracing the usage event from the harness adapter to the meter.", "The adapter reports last-turn usage; the meter treats it as cumulative. Fixing the fold.", "Meter matches the provider dashboard on the replay fixture."],
-    tools: ["Worked for 48s", "Read 9 files", "Replaying usage fixture", "Read meter fold"],
+    user: "The usage meter undercounts Codex turns. Yesterday's session shows 41k tokens in the meter and 118k on the OpenAI dashboard. Find where it goes wrong, don't just scale it.",
+    responses: [
+      "Tracing one usage event from the Codex app-server adapter through to the meter, with yesterday's session replayed from its event log.",
+      "Found it. Codex reports usage per turn, cumulative for the whole session. The meter treats every event as a delta and adds it, so the total is whatever the last turn said plus noise. The meter fold needs to take the max, not the sum.",
+      "Replay of yesterday's session now reads 118,204 tokens against the dashboard's 118k. Added a fixture so this exact shape stays covered.",
+    ],
+    tools: ["Worked for 48s", "Replaying yesterday's session", "Running meter tests", "Read 9 files"],
     context: "packages/claxedo-app",
     branch: "fix/usage-meter",
+  },
+  {
+    id: "flaky-sidebar-spec",
+    title: "Flaky sidebar tree spec on Windows",
+    user: "core-sidebar-tree fails one run in five on Windows CI and never locally. Find the race. Do not add a retry.",
+    responses: [
+      "Pulling the traces from the last three red runs before touching the spec. If they fail in three different places it is the test; if they fail in one place it is the app.",
+      "All three fail the same way: the tree asserts its first row before the file watcher's first event lands. Windows delivers that event later than macOS, so the spec is right and the watcher boot has an ordering gap.",
+      "The watcher now emits a ready event before the rail subscribes, and the rail waits for it. 40 runs on windows-latest, all green.",
+    ],
+    tools: ["Worked for 3m 02s", "Read 3 CI traces", "Running spec 40× on windows-latest", "Changed 2 files"],
+    context: "packages/claxedo-app",
+    branch: "fix/watcher-ready-event",
+  },
+  {
+    id: "explain-relay-handshake",
+    title: "How does Share reach Maya?",
+    user: "Walk me through exactly what happens between me clicking Share and Maya seeing this session in her browser.",
+    responses: [
+      "Starting from the button. Share asks the control plane for a grant: a signed statement that the holder may join this one session, with an expiry.",
+      "The grant rides in the invite link. When Maya opens it, her browser dials the relay Worker, the Worker checks the signature, then pins her socket to the same session projection your desktop is writing to.",
+      "From that point both of you read one event log. Her approval is an event with her actor id, which is why it shows up in your transcript with her name on it.",
+    ],
+    tools: ["Worked for 41s", "Read invite contract", "Tracing relay grant flow", "Read 6 files"],
+    context: "packages/claxedo-server",
+    branch: "dev",
+  },
+  {
+    id: "cut-cold-start",
+    title: "Cut cold start under 1.4s",
+    user: "Cold start is 1.9s on the benchmark box. Get it under 1.4s without lazy-loading the composer; that has to be ready on first paint.",
+    responses: [
+      "Profiling the boot with the benchmark harness first. Guessing at bundles would burn the afternoon.",
+      "Two thirds of the wait is the syntax theme bundle: all 60 themes load eagerly, and only the active one is ever used at boot. The composer is not on the critical path at all.",
+      "Themes load on demand now, keyed by the setting. Cold start p95 is 1.31s over five runs, and the composer is interactive on the first frame.",
+    ],
+    tools: ["Worked for 2m 10s", "Read boot flame graph", "Running cold-start benchmark ×5", "Changed 3 files"],
+    context: "packages/claxedo-app",
+    branch: "perf/theme-on-demand",
+  },
+  {
+    id: "formlink-overview",
+    title: "What is this project?",
+    project: "formlink",
+    user: "What is this project, and what would you fix first?",
+    responses: [
+      "Reading the README, the route table and the last twenty commits before answering.",
+      "Formlink is a form builder: a Hono API, a Solid editor, and a shared schema package. Validation currently lives in three places and they disagree about which fields are required.",
+      "I would start by making the shared schema the only validator, so the API and the editor reject the same input. It is a two-file change and removes the class of bug the last four commits fixed.",
+    ],
+    tools: ["Worked for 58s", "Read README", "Reading git log", "Read 24 files"],
+    context: "apps/formlink",
+    branch: "main",
   },
 ] as const
 ---
 
 <Nav />
-<div class="progress" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i><i></i></div>
+<div class="progress" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 
 <main id="main-content" class="storm">
+  <div class="backdrop" aria-hidden="true"><i></i><i></i></div>
   <section class="hero-block">
     <h1 class="disp">Set up your coding agents once.<br /><span class="dim">Run them anywhere, with anyone.</span></h1>
     <p class="hero-sub">{site.hero.lead}</p>
@@ -58,15 +120,22 @@ const sessions = [
   <div class="track" id="track" data-prompt={prompt}>
     <div class="stage" id="stage" data-scene="0">
 
-      <div class="cap" data-cap="1"><h2 class="disp">Once.</h2><p>Add a plugin, skill, MCP server, or credential one time. Claxedo writes it into every agent's own config before the session starts.</p><small>.mcp.json · .codex/config.toml · .opencode/opencode.jsonc · .cursor/mcp.json</small></div>
-      <div class="cap" data-cap="2"><h2 class="disp">Any&shy;where.</h2><p>Move a session from your laptop to a cloud VM on any provider you already pay for.</p><small>exe.dev · daytona · modal · vercel · cloudflare · box</small></div>
-      <div class="cap" data-cap="3"><h2 class="disp">Any&shy;one.</h2><p>Multiplayer on a Cloudflare Worker you deploy in one command, free tier included. Invite your team, approve from your phone.</p><small>your-team.workers.dev · no hosted connect service</small></div>
-      <div class="cap" data-cap="4"><h2 class="disp">Your way.</h2><p>Sidebar or tabs. The chat view and the real CLI live in the same workbench and get the same treatment.</p><small>Claude Code · Codex · Cursor · OpenCode</small></div>
+      <div class="cap t-stagger" data-cap="1"><h2 class="disp t-stagger-line t-stagger-line--1">Set up once.</h2><p class="t-stagger-line t-stagger-line--2">Agent plugins, skills, MCP servers, or AI provider credentials. Add them once. Claxedo syncs them to every agent on every device, and shares them with your team.</p><small class="t-stagger-line t-stagger-line--3">Claude Code · Codex · Cursor · OpenCode</small></div>
+      <div class="cap t-stagger" data-cap="2"><h2 class="disp t-stagger-line t-stagger-line--1">Access from anywhere.</h2><p class="t-stagger-line t-stagger-line--2">Open the same session from any browser. Move it to a cloud VM on a provider you already pay for, and your setup is already there.</p><small class="t-stagger-line t-stagger-line--3">exe.dev · daytona · modal · vercel · cloudflare · box</small></div>
+      <div class="cap t-stagger" data-cap="3"><h2 class="disp t-stagger-line t-stagger-line--1">Share with anyone.</h2><p class="t-stagger-line t-stagger-line--2">Invite your team into a session. They see every turn, add their own, and approve from a phone. Multiplayer runs on a Cloudflare Worker you deploy in one command.</p><small class="t-stagger-line t-stagger-line--3">your-team.workers.dev · no hosted connect service</small></div>
+      <div class="cap t-stagger" data-cap="4"><h2 class="disp t-stagger-line t-stagger-line--1">Sidebar or tabs.</h2><p class="t-stagger-line t-stagger-line--2">Hide the sidebar and your sessions turn into tabs. Show it and they move back. The chat view and the real CLI live in the same workbench.</p><small class="t-stagger-line t-stagger-line--3">chat · terminal · Claude Code · Codex · Cursor · OpenCode</small></div>
+      <div class="cap t-stagger" data-cap="5"><h2 class="disp t-stagger-line t-stagger-line--1">Orchestrate over MCP.</h2><p class="t-stagger-line t-stagger-line--2">Any agent can drive Claxedo. Ask Claude Code to consult a second model, open a Codex session, or file the follow-ups as a task, all through the Claxedo MCP.</p><small class="t-stagger-line t-stagger-line--3">session_create · session_send · task_create · task_start</small></div>
+      <div class="cap t-stagger" data-cap="6"><h2 class="disp t-stagger-line t-stagger-line--1">Tasks board.</h2><p class="t-stagger-line t-stagger-line--2">The work in flight, as cards. Each card starts a session from a preset, and the task the agent just filed is already on the board.</p><small class="t-stagger-line t-stagger-line--3">backlog · to do · in progress · needs you · done</small></div>
       <div class="win-wrap" id="win">
+        <div class="storm-url" aria-hidden="true"><span class="storm-url-nav"><svg viewBox="0 0 16 16"><path d="m10 4-4 4 4 4"></path></svg><svg viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"></path></svg></span><span class="storm-url-bar"><svg viewBox="0 0 16 16"><rect x="3.5" y="7" width="9" height="6.5" rx="1.5"></rect><path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7"></path></svg><b>app.claxedo.com</b>/s/ship-connections</span></div>
         <ClaxedoAppReplica canvasOnly sessions={sessions}>
           <span slot="title-prefix" class="storm-shared" title="Owner: Yash" aria-label="Owner: Yash"><i>Y</i></span>
           <article slot="timeline-extra" class="message user-message storm-other"><div class="storm-author"><i class="m">M</i>Maya</div><div>Approve the relay edit and run the contract tests before we merge.</div></article>
-          <article slot="timeline-extra" class="message assistant-message"><p>Approved by Maya. Contract tests pass on box-1. Ready to merge.</p></article>
+          <article slot="timeline-extra" class="message assistant-message storm-reply"><p>Approved by Maya. Contract tests pass on box-1. Ready to merge.</p></article>
+          <article slot="timeline-extra" class="message user-message storm-orch"><div class="storm-author"><i>Y</i>Yash</div><div>Consult GPT-Astra on the verifier rotation, then file the follow-ups as a task.</div></article>
+          <div slot="timeline-extra" class="storm-mcp storm-orch"><small>MCP</small><b>claxedo · session_create</b><span>Codex · GPT-Astra</span></div>
+          <div slot="timeline-extra" class="storm-mcp storm-orch"><small>MCP</small><b>claxedo · task_create</b><span>#18 Rotate relay verifier behind a flag</span></div>
+          <article slot="timeline-extra" class="message assistant-message storm-reply storm-orch"><p>GPT-Astra agrees: rotate now, keep the legacy verifier for one release. Filed #18 on the board.</p></article>
         </ClaxedoAppReplica>
       </div>
     </div>
@@ -115,9 +184,10 @@ const sessions = [
       </div>
       <p class="lead" style="margin-bottom:56px"><a href={routes.compare}>Full comparison →</a></p>
       <div class="soon">
-        <div><small>Next</small><b>Connections</b><p>Plug in GitHub, Linear, Slack, and the other platforms your agents already need.</p></div>
-        <div><small>After</small><b>Channels</b><p>Drive a session from anywhere: a message, a webhook, your phone.</p></div>
-        <div><small>Then</small><b>Bot profiles</b><p>Long-lived agents with preconfigured plugins and permissions, always ready.</p></div>
+        <div><small>Now</small><b>Connections</b><p>GitHub, Linear, Slack, and the other platforms your agents already need, plugged in once for every harness.</p></div>
+        <div><small>Now</small><b>Agent presets</b><p>Harness, model, plugins, and permissions saved as one preset. Start a session from it in a click.</p></div>
+        <div><small>Now</small><b>Multiple accounts per harness</b><p>Several Claude or Codex accounts, chosen per session. Switch when one hits its limit.</p></div>
+        <div><small>Next</small><b>Channels</b><p>Drive a session from anywhere: a message, a webhook, your phone.</p></div>
       </div>
     </div>
   </section>
@@ -130,12 +200,25 @@ const sessions = [
   --mono:var(--font-mono); --body:var(--font-sans); --display:var(--font-display);
   --ease:cubic-bezier(.2,.75,.2,1); --dur:.7s;
   --dw:var(--display-weight); --dls:var(--display-tracking); --dff:var(--display-features);
-  --h1:clamp(36px,4.8vw,68px); --h1-lh:1.06; --cap:clamp(48px,5.8vw,84px);
-  --nav:64px;
+  --h1:clamp(36px,4.8vw,68px); --h1-lh:1.06; --cap:clamp(38px,3.6vw,56px);
+  --nav:64px; --split:max(31vw,calc(var(--gutter) + 22vw));
 }
 html{scroll-behavior:auto}
 body{overflow-x:hidden;font-size:15.5px}
+.storm{position:relative;z-index:1}
 .storm a{text-decoration:none}
+
+/* backdrop: a faint dot grid under the hero and two slow drifting glows */
+.backdrop{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.backdrop::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.16) 1px,transparent 1.3px);background-size:28px 28px;mask-image:radial-gradient(ellipse 60% 55% at 50% 22%,#000 20%,transparent 100%);-webkit-mask-image:radial-gradient(ellipse 60% 55% at 50% 22%,#000 20%,transparent 100%)}
+/* Softness comes from the gradient stops, not a filter: a blur on two
+   viewport-sized layers halved the frame budget under the hero. */
+.backdrop i{position:absolute;width:60vw;height:60vw;border-radius:50%;opacity:.2;will-change:transform}
+.backdrop i:first-child{left:-20vw;top:-24vw;background:radial-gradient(closest-side,rgba(200,131,79,.9) 0%,rgba(200,131,79,.45) 28%,rgba(200,131,79,.12) 55%,transparent 72%);animation:driftA 42s ease-in-out infinite alternate}
+.backdrop i:last-child{right:-22vw;top:2vw;background:radial-gradient(closest-side,rgba(79,107,143,.9) 0%,rgba(79,107,143,.45) 28%,rgba(79,107,143,.12) 55%,transparent 72%);animation:driftB 54s ease-in-out infinite alternate}
+@keyframes driftA{to{transform:translate(9vw,7vw)}}
+@keyframes driftB{to{transform:translate(-7vw,11vw)}}
+body.past .backdrop i{opacity:0;transition:opacity .6s}
 .disp{font-family:var(--display);font-weight:var(--dw);letter-spacing:var(--dls);font-feature-settings:var(--dff);text-wrap:balance}
 /* the shared nav floats over the pinned story */
 .nav{position:fixed;left:0;right:0;top:0}
@@ -153,33 +236,90 @@ body.story .progress{opacity:1}
 .hero-block h1 .dim{color:var(--ink-2)}
 .hero-sub{margin:22px 0 0;max-width:56ch;font-size:clamp(16px,1.35vw,18px);line-height:1.5;color:var(--ink-2);text-wrap:pretty}
 
-.track{position:relative;height:calc(100vh * 6)}
+.track{position:relative;height:calc(100vh * 8)}
 .stage{position:sticky;top:0;height:100vh;overflow:hidden}
-.win-wrap{position:absolute;inset:var(--nav) var(--gutter) 22px var(--gutter);transition:inset var(--dur) var(--ease),opacity var(--dur) var(--ease);clip-path:inset(0 0 calc(var(--roll,0) * 100%) 0 round 12px)}
+.win-wrap{position:absolute;inset:var(--nav) var(--gutter) 22px var(--gutter);display:flex;flex-direction:column;transition:inset var(--dur) var(--ease),opacity var(--dur) var(--ease);clip-path:inset(0 0 calc(var(--roll,0) * 100%) 0 round 12px)}
 .stage .cap.on{opacity:calc(1 - var(--roll,0))}
-.stage[data-scene="1"] .win-wrap,.stage[data-scene="2"] .win-wrap,.stage[data-scene="3"] .win-wrap,.stage[data-scene="4"] .win-wrap{inset:var(--nav) var(--gutter) 22px max(37vw,calc(var(--gutter) + 30vw))}
+.stage:not([data-scene="0"]) .win-wrap{inset:var(--nav) calc(var(--gutter) * .5) 22px var(--split)}
 
 
 /* the site's app replica, made to fill the wrap */
-.win-wrap .hero.canvas-only{height:100%}
-.win-wrap .hero.canvas-only .app-window{height:100%!important;min-height:0!important;aspect-ratio:auto!important}
+.win-wrap .hero.canvas-only{flex:1;min-height:0;height:auto}
+.win-wrap .hero.canvas-only .app-window{height:100%!important;min-height:0!important;aspect-ratio:auto!important;transition:border-radius var(--duration-fast) var(--ease-smooth-out)}
+
+/* browser chrome above the app once the story leaves the laptop */
+.storm-url{display:none;animation:barIn var(--panel-open-dur) var(--panel-ease) both;flex:0 0 36px;align-items:center;gap:12px;padding:0 12px;border:1px solid rgba(255,255,255,.2);border-bottom:0;border-radius:12px 12px 0 0;background:#151515;font:500 12px var(--mono);color:var(--ink-2)}
+.win-wrap.web .storm-url{display:flex}
+.win-wrap.web .hero.canvas-only .app-window{border-top-left-radius:0!important;border-top-right-radius:0!important;animation:none!important}
+.win-wrap.web .traffic-lights{display:none}
+.storm-url-nav{display:flex;gap:6px;color:var(--ink-3)}
+.storm-url svg{width:14px;height:14px;fill:none;stroke:currentColor;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round}
+.storm-url-bar{flex:1;max-width:520px;height:24px;display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:6px;background:#0b0b0b}
+.storm-url-bar svg{width:11px;height:11px}
+.storm-url-bar b{font-weight:500;color:var(--ink)}
+
+/* spotlights: a ring on the element the caption is about, a label on a leader line */
+.spots{position:absolute;inset:0;z-index:6;pointer-events:none;opacity:0}
+.spots.in{opacity:1;transition:opacity var(--duration-slow) var(--ease-smooth-out)}
+.stage.rolling .spots{opacity:0}
+.spot-ring{position:absolute;box-sizing:border-box;border:1px solid rgba(255,255,255,.5);border-radius:6px}
+.spot-tag{position:absolute;padding:5px 8px;border:1px solid rgba(255,255,255,.14);border-radius:5px;background:rgba(11,11,11,.82);backdrop-filter:blur(4px);color:var(--ink);font:500 11px/1 var(--mono);letter-spacing:.02em;white-space:nowrap}
+.spot-lead{position:absolute;background:rgba(255,255,255,.45)}
+.spot-lead::after{content:"";position:absolute;width:5px;height:5px;border:0 solid rgba(255,255,255,.45)}
+.spot-lead.up::after{top:0;left:50%;border-width:1px 0 0 1px;transform:translate(-50%,0) rotate(45deg)}
+.spot-lead.down::after{bottom:0;left:50%;border-width:0 1px 1px 0;transform:translate(-50%,0) rotate(45deg)}
+.spot-lead.toright::after{right:0;top:50%;border-width:1px 1px 0 0;transform:translate(0,-50%) rotate(45deg)}
+.spot-lead.toleft::after{left:0;top:50%;border-width:0 0 1px 1px;transform:translate(0,-50%) rotate(45deg)}
+.spots [hidden]{display:none}
 
 /* timeline reveal: rows appear as the story advances (order = replica DOM order) */
-.storm .timeline-column>*{transition:opacity .4s var(--ease),transform .4s var(--ease)}
-.storm .timeline-column>:nth-child(n+2){opacity:0;transform:translateY(6px)}
-.storm .win-wrap.sent .timeline-column>:nth-child(2){opacity:1;transform:none}
-.stage:not([data-scene="0"]) .timeline-column>:nth-child(-n+7){opacity:1;transform:none}
-.stage[data-scene="2"] .timeline-column>:nth-child(-n+9),.stage[data-scene="3"] .timeline-column>:nth-child(-n+9),.stage[data-scene="4"] .timeline-column>:nth-child(-n+9){opacity:1;transform:none}
-.stage[data-scene="3"] .timeline-column>*,.stage[data-scene="4"] .timeline-column>*{opacity:1;transform:none}
-.storm .timeline-column>:nth-child(3){transition-delay:.05s}.storm .timeline-column>:nth-child(4){transition-delay:.15s}.storm .timeline-column>:nth-child(5){transition-delay:.25s}.storm .timeline-column>:nth-child(6){transition-delay:.35s}.storm .timeline-column>:nth-child(7){transition-delay:.45s}
+.storm .timeline-column>*{transition:opacity var(--stagger-dur) var(--stagger-ease),transform var(--stagger-dur) var(--stagger-ease),filter var(--stagger-dur) var(--stagger-ease)}
+.storm .timeline-column>:nth-child(n+2){opacity:0;transform:translateY(var(--stagger-distance));filter:blur(var(--stagger-blur))}
+.storm .win-wrap.sent .timeline-column>:nth-child(2){opacity:1;transform:none;filter:none}
+/* The hero answers the typed prompt: the reply streams in, then the tool
+   rows arrive at working pace. Once the story starts, the scene rules
+   own the reveal and its short stagger applies instead. */
+.storm .win-wrap.replied .timeline-column>:nth-child(-n+7){opacity:1;transform:none;filter:none}
+.stage[data-scene="0"] .win-wrap.replied .timeline-column>:nth-child(3){transition-delay:0s}
+.stage[data-scene="0"] .win-wrap.replied .timeline-column>:nth-child(4){transition-delay:1.8s}
+.stage[data-scene="0"] .win-wrap.replied .timeline-column>:nth-child(5){transition-delay:2.3s}
+.stage[data-scene="0"] .win-wrap.replied .timeline-column>:nth-child(6){transition-delay:3s}
+.stage[data-scene="0"] .win-wrap.replied .timeline-column>:nth-child(7){transition-delay:3.5s}
+
+.t-stream-w {
+  opacity: 0;
+  filter: blur(var(--stream-blur));
+  transition:
+    opacity var(--stream-fade) var(--stream-ease),
+    filter var(--stream-fade) var(--stream-ease);
+}
+.t-stream-w.is-in {
+  opacity: 1;
+  filter: blur(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-stream-w { transition: none !important; filter: none !important; opacity: 1 !important; }
+}
+.storm .win-wrap.browsing .timeline-column>*{opacity:1;transform:none;filter:none}
+.storm [data-app-replica]:not([data-active-session="ship-connections"]) .timeline-column>:is(.storm-other,.storm-reply,.storm-orch){display:none}
+.stage:not([data-scene="0"]) .timeline-column>:nth-child(-n+7){opacity:1;transform:none;filter:none}
+.stage[data-scene="2"] .timeline-column>:nth-child(-n+9){opacity:1;transform:none;filter:none}
+.stage.people .timeline-column>*{opacity:1;transform:none;filter:none}
+.storm .timeline-column>:nth-child(3){transition-delay:var(--stagger-stagger)}.storm .timeline-column>:nth-child(4){transition-delay:calc(var(--stagger-stagger) * 2)}.storm .timeline-column>:nth-child(5){transition-delay:calc(var(--stagger-stagger) * 3)}.storm .timeline-column>:nth-child(6){transition-delay:calc(var(--stagger-stagger) * 4)}.storm .timeline-column>:nth-child(7){transition-delay:calc(var(--stagger-stagger) * 5)}
 
 /* multiplayer: author marks on people's messages + owner mark on the session title.
    Slotted content carries this component's scope, not the replica's, so the
    replica's .message rules are mirrored here for the slotted articles. */
 .storm .timeline-column>article.user-message{display:flex;flex-direction:column;align-items:flex-end;gap:5px;width:100%;margin-bottom:24px;color:var(--text-base);font-size:13px;line-height:1.55}
 .storm .timeline-column>article.user-message>div:last-child{width:fit-content;max-width:min(82%,64ch);padding:8px 12px;border-radius:16px 16px 4px 16px;background:rgba(255,255,255,.05);white-space:pre-line}
-.storm .timeline-column>article.assistant-message:last-child{width:100%;margin-top:24px;color:var(--text-base);font-size:13px;line-height:1.55}
-.storm .timeline-column>article.assistant-message:last-child p{margin:0}
+.storm .timeline-column>article.storm-reply{width:100%;margin-top:24px;color:var(--text-base);font-size:13px;line-height:1.55}
+.storm .timeline-column>article.storm-reply p{margin:0}
+.storm .timeline-column>.storm-mcp{display:flex;align-items:center;gap:8px;width:fit-content;max-width:100%;min-height:28px;margin:8px 0 0;padding:0 8px 0 6px;border:1px solid rgba(255,255,255,.08);border-radius:6px;font-size:12px;color:var(--text-weak)}
+.storm .timeline-column>.storm-mcp small{padding:2px 5px;border-radius:4px;background:rgba(255,255,255,.08);font:600 9px/1 var(--mono);letter-spacing:.06em;color:var(--text-base)}
+.storm .timeline-column>.storm-mcp b{font-weight:500;color:var(--text-base);white-space:nowrap}
+.storm .timeline-column>.storm-mcp span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stage:not(.orchestrating) .timeline-column>.storm-orch{display:none}
 .storm .session-name-row{justify-content:flex-start;gap:8px}
 .storm .session-name-row h2{flex:1}
 .storm .user-message>.storm-author{display:none;align-items:center;gap:6px;width:auto;max-width:none;margin:0 2px 0 0;padding:0;border-radius:0;background:none;font-size:11px;line-height:1;color:var(--text-weak)}
@@ -187,14 +327,96 @@ body.story .progress{opacity:1}
 .storm-author i.m{background:#4f6b8f}
 .storm-shared{display:none;margin-right:2px}
 .storm-shared i{width:18px;height:18px;font-size:9px}
-.stage[data-scene="3"] .storm-shared,.stage[data-scene="4"] .storm-shared{display:inline-grid}
-.stage[data-scene="3"] .user-message>.storm-author,.stage[data-scene="4"] .user-message>.storm-author{display:flex}
+.stage.people .storm-shared{display:inline-grid}
+.stage.people .user-message>.storm-author{display:flex}
 
 /* captions */
-.cap{position:absolute;left:var(--gutter);top:0;bottom:0;width:calc(max(37vw,calc(var(--gutter) + 30vw)) - var(--gutter) - 32px);display:flex;flex-direction:column;justify-content:center;padding:0;opacity:0;transform:translateY(24px);transition:opacity .5s var(--ease),transform .5s var(--ease);pointer-events:none}
-.cap.on{opacity:1;transform:none;pointer-events:auto;transition-delay:.15s}
-.cap h2{margin:0 0 14px;font-size:var(--cap);line-height:1;color:var(--ink)}
-.cap p{margin:0;max-width:30ch;font-size:clamp(16px,1.3vw,18px);line-height:1.5;color:var(--ink-2)}
+.cap{position:absolute;left:var(--gutter);top:0;bottom:0;width:calc(var(--split) - var(--gutter) - 28px);display:flex;flex-direction:column;justify-content:center;padding:0;pointer-events:none}
+.cap.on{pointer-events:auto}
+.cap h2{margin:0 0 14px;font-size:var(--cap);line-height:1.02;color:var(--ink)}
+.cap p{margin:0;max-width:28ch;font-size:clamp(15px,1.15vw,17px);line-height:1.5;color:var(--ink-2)}
+
+/* Lines start translated down + blurred + invisible; .is-shown
+   on the parent flips them to their resting state. The second
+   line's transition-delay holds it back by --stagger-stagger
+   so the eye lands on the headline first. */
+.t-stagger-line {
+  display: block;
+  opacity: 0;
+  transform: translateY(var(--stagger-distance));
+  filter: blur(var(--stagger-blur));
+  transition:
+    opacity   var(--stagger-dur) var(--stagger-ease),
+    transform var(--stagger-dur) var(--stagger-ease),
+    filter    var(--stagger-dur) var(--stagger-ease);
+  will-change: transform, opacity, filter;
+}
+.t-stagger-line--2 { transition-delay: var(--stagger-stagger); }
+.t-stagger-line--3 { transition-delay: calc(var(--stagger-stagger) * 2); }
+
+.t-stagger.is-shown .t-stagger-line {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+/* Exit decouples from the stagger: same fade for every line,
+   no Y return, no blur — so the disappearance reads as a
+   single quiet fade instead of a reverse reveal. */
+.t-stagger.is-hiding .t-stagger-line {
+  opacity: 0;
+  transform: translateY(0);
+  filter: blur(0);
+  transition:
+    opacity 200ms ease,
+    transform 0s linear,
+    filter 0s linear;
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-stagger-line { transition: none !important; }
+}
+
+.t-text-swap {
+  display: inline-block;
+  transform: translateY(0);
+  filter: blur(0);
+  opacity: 1;
+  transition:
+    transform var(--text-swap-dur) var(--text-swap-ease),
+    filter    var(--text-swap-dur) var(--text-swap-ease),
+    opacity   var(--text-swap-dur) var(--text-swap-ease);
+  will-change: transform, filter, opacity;
+}
+.t-text-swap.is-exit {
+  transform: translateY(calc(var(--text-swap-translate-y) * -1));
+  filter: blur(var(--text-swap-blur));
+  opacity: 0;
+}
+.t-text-swap.is-enter-start {
+  transform: translateY(var(--text-swap-translate-y));
+  filter: blur(var(--text-swap-blur));
+  opacity: 0;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-text-swap { transition: none !important; }
+}
+
+/* Surfaces, the address bar and their rows toggle through display:none,
+   which a transition cannot cross, so they enter on a keyframe cut from
+   the panel-reveal and texts-reveal tokens instead. */
+@keyframes surfaceIn{from{opacity:0;transform:translateY(12px);filter:blur(var(--panel-blur))}}
+@keyframes barIn{from{opacity:0;transform:translateY(-8px);filter:blur(var(--panel-blur))}}
+@keyframes rowIn{from{opacity:0;transform:translateY(var(--stagger-distance));filter:blur(var(--stagger-blur))}}
+.storm .app-window[data-surface=chat] .chat-surface,.storm .app-window[data-surface=terminal] .terminal-surface,.storm .app-window[data-surface=marketplace] .marketplace-surface,.storm .app-window[data-surface=tasks] .tasks-surface{animation:surfaceIn var(--panel-open-dur) var(--panel-ease) both}
+.storm .market-card,.storm .task-card,.storm .timeline-column>.storm-mcp{animation:rowIn var(--stagger-dur) var(--stagger-ease) both}
+.storm .market-card:nth-child(2),.storm .board-col:nth-child(2) .task-card,.storm .timeline-column>.storm-mcp+.storm-mcp{animation-delay:var(--stagger-stagger)}
+.storm .board-col:nth-child(3) .task-card{animation-delay:calc(var(--stagger-stagger) * 2)}
+.storm .board-col:nth-child(4) .task-card{animation-delay:calc(var(--stagger-stagger) * 3)}
+.storm .board-col:nth-child(5) .task-card{animation-delay:calc(var(--stagger-stagger) * 4)}
+.storm .task-card+.task-card{animation-delay:calc(var(--stagger-stagger) * 6)}
 .cap small{display:block;margin-top:14px;font:500 12px/1.4 var(--mono);color:var(--ink-3);letter-spacing:.04em}
 /* finale: CTA + benchmark, normal flow after the pinned story */
 .finale-section{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:clamp(32px,6vw,96px);align-items:center;padding:clamp(40px,6vh,64px) var(--gutter) clamp(72px,10vh,120px)}
@@ -241,7 +463,7 @@ body.story .progress{opacity:1}
 .tail td:first-child{font-weight:500}
 .tail td{color:var(--ink-2)}
 .tail td.y{color:var(--ink);font-weight:600}.tail td.n{color:var(--ink-3)}
-.soon{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:56px}
+.soon{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:56px}
 .soon div{padding:18px;border:1px solid var(--line);border-radius:10px}
 .soon small{display:inline-block;margin-bottom:10px;padding:2px 8px;border-radius:999px;border:1px solid var(--line-strong);font:500 10px/1.5 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
 .soon b{display:block;font-size:17px;margin-bottom:6px;letter-spacing:-.01em}
@@ -261,8 +483,9 @@ body.story .progress{opacity:1}
   .cap,.cap.finale{position:relative;left:auto;width:auto;padding:0;opacity:1;transform:none;pointer-events:auto;display:none}
   .cap.mobile-on{display:block}
   .finale-section{grid-template-columns:1fr;padding:64px 14px 40px}
-  .cap h2{font-size:56px}
+  .cap h2{font-size:40px}
   .progress{display:none}
+  .spots,.storm-url{display:none!important}
   .soon{grid-template-columns:1fr}
 }
 </style>
@@ -293,14 +516,70 @@ body.story .progress{opacity:1}
     mine.prepend(author)
   }
   const envTitle = app.querySelector<HTMLElement>(".environment-expanded header b")
+  envTitle?.classList.add("t-text-swap")
+  const textSwapDur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--text-swap-dur")) || 200
+  // Three-phase text swap: old text exits up with blur, the new text jumps
+  // below without a transition, then a reflow lets it animate back to rest.
+  const swapText = (el: HTMLElement, next: string) => {
+    if (el.textContent === next) return
+    el.classList.add("is-exit")
+    window.setTimeout(() => {
+      el.textContent = next
+      el.classList.remove("is-exit")
+      el.classList.add("is-enter-start")
+      void el.offsetHeight
+      el.classList.remove("is-enter-start")
+    }, textSwapDur)
+  }
+  const showCap = (cap: HTMLElement) => {
+    cap.classList.remove("is-hiding")
+    cap.classList.remove("is-shown")
+    void cap.offsetHeight
+    cap.classList.add("is-shown")
+  }
+  const hideCap = (cap: HTMLElement) => {
+    if (!cap.classList.contains("is-shown")) return
+    cap.classList.add("is-hiding")
+    cap.classList.remove("is-shown")
+    window.setTimeout(() => cap.classList.remove("is-hiding"), 200)
+  }
 
 
+  // Wrap each word of the first reply in a span once; stream() wipes them
+  // (no transition) and resolves them in order, one every --stream-gap.
+  const streamGap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--stream-gap")) || 60
+  const streamReply = () => {
+    const block = app.querySelector<HTMLElement>('[data-transcript-response="0"]')
+    if (!block || app.dataset.activeSession !== "ship-connections") return
+    const words = block.textContent?.trim().split(/\s+/) ?? []
+    block.textContent = ""
+    const spans = words.map((w, i) => {
+      const span = document.createElement("span")
+      span.className = "t-stream-w"
+      span.textContent = w
+      block.appendChild(span)
+      if (i < words.length - 1) block.appendChild(document.createTextNode(" "))
+      return span
+    })
+    void block.offsetWidth
+    const next = (n: number) => {
+      if (n >= spans.length) return
+      spans[n].classList.add("is-in")
+      window.setTimeout(() => next(n + 1), streamGap)
+    }
+    next(0)
+  }
   const finishTyping = () => {
     if (typed) return
     typed = true
     clearTimeout(typingTimer)
     composer.value = ""
     wrap.classList.add("sent")
+    window.setTimeout(() => {
+      if (scene !== 0 || wrap.classList.contains("browsing")) return
+      wrap.classList.add("replied")
+      streamReply()
+    }, 600)
   }
   const type = () => {
     if (reduce) { finishTyping(); return }
@@ -333,15 +612,152 @@ body.story .progress{opacity:1}
   // Real app states only: sidebar, environment card, workspace panel, chat/terminal tab.
   let terminalCreated = false
   const clickTab = (id: string) => app.querySelector<HTMLButtonElement>(`.compact-tab [data-session-tab-id="${id}"][role=tab]`)?.click()
+  // Browsing a session in the hero shows its whole transcript; the story
+  // returns to its own session and its own reveal order once it starts.
+  app.addEventListener("click", (event) => {
+    if (!event.isTrusted || !(event.target as Element).closest("[data-session-id], [data-session-tab-id]")) return
+    finishTyping()
+    wrap.classList.add("browsing")
+  })
+
+  const SCENES = 6
   const applyAppState = (n: number) => {
-    app.dataset.sidebar = n === 0 ? "open" : "closed"
+    if (n >= 1) {
+      wrap.classList.remove("browsing")
+      if (n !== 4 && app.dataset.activeSession !== "ship-connections") clickTab("ship-connections")
+    }
+    app.dataset.sidebar = n <= 1 ? "open" : "closed"
     app.dataset.panel = "closed"
-    app.dataset.environment = n === 0 || n >= 2 ? "expanded" : "collapsed"
-    if (envTitle) envTitle.textContent = n >= 2 ? "Cloud VM · box-1" : "Environment"
+    app.dataset.environment = n === 0 || n === 2 ? "expanded" : "collapsed"
+    wrap.classList.toggle("web", n >= 2)
+    stage.classList.toggle("people", n >= 3)
+    stage.classList.toggle("orchestrating", n >= 5)
+    if (envTitle) swapText(envTitle, n >= 2 ? "Cloud VM · box-1" : "Environment")
     if (n === 4) {
       if (!terminalCreated) { terminalCreated = true; app.querySelector<HTMLButtonElement>('[data-surface-button="terminal"]')?.click() }
       else clickTab("created-terminal-1")
-    } else if (terminalCreated) clickTab("ship-connections")
+    } else {
+      if (terminalCreated) clickTab("ship-connections")
+      app.dataset.surface = n === 1 ? "marketplace" : n === 6 ? "tasks" : "chat"
+    }
+  }
+
+  // Each beat rings the element it talks about. The rings are re-measured
+  // every frame while the story is pinned, so they ride the window inset,
+  // the sidebar width transition and the timeline's smooth scroll.
+  type Spot = { el: Element | null; label?: string; side?: "below" | "above" | "left" | "right"; align?: "start" | "end" }
+  const spotLayer = document.createElement("div")
+  spotLayer.className = "spots"
+  stage.append(spotLayer)
+  const spotsFor = (n: number): Spot[] => {
+    const open = app.dataset.sidebar === "open"
+    switch (n) {
+      case 1: return [
+        { el: app.querySelector('[data-surface-button="marketplace"]') },
+        { el: app.querySelector('[data-marketplace-plugin="composio"]'), label: "Added once, synced everywhere", side: "below" },
+      ]
+      case 2: return [
+        { el: wrap.querySelector(".storm-url-bar"), label: "Same session, any browser", side: "right" },
+        { el: app.querySelector(".environment-expanded header b"), label: "Running on a cloud VM", side: "above" },
+      ]
+      case 3: return [
+        ...Array.from(app.querySelectorAll(".user-message > .storm-author")).map((el): Spot => ({ el, label: el.closest(".storm-other") ? "Maya, on your team" : "You", side: "left" })),
+        { el: app.querySelector(".storm-shared") },
+      ]
+      case 4: return [
+        { el: app.querySelector(open ? ".rail-titlebar [data-sidebar-toggle]" : ".closed-chrome [data-sidebar-toggle]"), label: "Click to switch", side: "below" },
+        open
+          ? { el: app.querySelector(".project-rail .session-list"), label: "Sessions in the sidebar", side: "right" }
+          : { el: app.querySelector(".compact-tabs"), label: "Sessions as tabs", side: "below", align: "end" },
+      ]
+      case 5: {
+        const [create, task] = Array.from(app.querySelectorAll(".storm-mcp"))
+        return [
+          { el: create ?? null, label: "Claxedo MCP, called by the agent", side: "right" },
+          { el: task ?? null },
+        ]
+      }
+      case 6: return [
+        { el: app.querySelector('[data-task-card="relay-verifier"]'), label: "Filed by the agent, over MCP", side: "below" },
+      ]
+      default: return []
+    }
+  }
+  type Placed = { spot: Spot; ring: HTMLElement; lead?: HTMLElement; tag?: HTMLElement }
+  let placed: Placed[] = []
+  let placedKey = ""
+  const buildSpots = () => {
+    spotLayer.replaceChildren()
+    placed = spotsFor(scene).map((spot) => {
+      const ring = document.createElement("i")
+      ring.className = "spot-ring"
+      spotLayer.append(ring)
+      if (!spot.label) return { spot, ring }
+      const lead = document.createElement("i")
+      lead.className = "spot-lead"
+      const tag = document.createElement("span")
+      tag.className = "spot-tag"
+      tag.textContent = spot.label
+      spotLayer.append(lead, tag)
+      return { spot, ring, lead, tag }
+    })
+  }
+  const positionSpots = () => {
+    const base = stage.getBoundingClientRect()
+    const pad = 4, gap = 18
+    for (const { spot, ring, lead, tag } of placed) {
+      const r = spot.el?.getBoundingClientRect()
+      const clip = spot.el?.closest(".timeline-scroll, .market-scroll, .board")?.getBoundingClientRect()
+      const hidden = !r || r.width < 8 || r.height < 8 || (clip !== undefined && (r.top < clip.top || r.bottom > clip.bottom))
+      ring.hidden = hidden
+      if (lead) lead.hidden = hidden
+      if (tag) tag.hidden = hidden
+      if (hidden) continue
+      const box = { left: r.left - base.left - pad, top: r.top - base.top - pad, width: r.width + pad * 2, height: r.height + pad * 2 }
+      Object.assign(ring.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` })
+      if (!lead || !tag) continue
+      const side = spot.side ?? "below"
+      const end = spot.align === "end"
+      lead.className = "spot-lead"
+      const inset = Math.min(18, box.width / 2)
+      const anchorX = end ? box.left + box.width - inset : box.left + inset
+      const tagX = end ? box.left + box.width : box.left
+      const midY = box.top + box.height / 2
+      if (side === "below") {
+        Object.assign(lead.style, { left: `${anchorX}px`, top: `${box.top + box.height}px`, width: "1.5px", height: `${gap}px` }); lead.classList.add("up")
+        Object.assign(tag.style, { left: `${tagX}px`, top: `${box.top + box.height + gap}px`, transform: end ? "translateX(-100%)" : "none" })
+      } else if (side === "above") {
+        Object.assign(lead.style, { left: `${anchorX}px`, top: `${box.top - gap}px`, width: "1.5px", height: `${gap}px` }); lead.classList.add("down")
+        Object.assign(tag.style, { left: `${tagX}px`, top: `${box.top - gap}px`, transform: end ? "translate(-100%,-100%)" : "translateY(-100%)" })
+      } else if (side === "left") {
+        Object.assign(lead.style, { left: `${box.left - gap}px`, top: `${midY}px`, width: `${gap}px`, height: "1.5px" }); lead.classList.add("toright")
+        Object.assign(tag.style, { left: `${box.left - gap}px`, top: `${midY}px`, transform: "translate(-100%,-50%)" })
+      } else {
+        Object.assign(lead.style, { left: `${box.left + box.width}px`, top: `${midY}px`, width: `${gap}px`, height: "1.5px" }); lead.classList.add("toleft")
+        Object.assign(tag.style, { left: `${box.left + box.width + gap}px`, top: `${midY}px`, transform: "translateY(-50%)" })
+      }
+    }
+  }
+  let tracking = false
+  const trackSpots = () => {
+    if (!tracking) return
+    const key = `${scene}:${app.dataset.sidebar}`
+    if (key !== placedKey) { placedKey = key; buildSpots() }
+    positionSpots()
+    requestAnimationFrame(trackSpots)
+  }
+  const setTracking = (on: boolean) => {
+    if (on === tracking) return
+    tracking = on
+    if (on) requestAnimationFrame(trackSpots)
+    else { placedKey = ""; spotLayer.replaceChildren() }
+  }
+  let fadeTimer = 0
+  const scheduleSpots = () => {
+    clearTimeout(fadeTimer)
+    spotLayer.classList.remove("in")
+    setTracking(!mobile.matches && scene > 0)
+    fadeTimer = window.setTimeout(() => spotLayer.classList.add("in"), 150)
   }
 
   const setScene = (n: number) => {
@@ -350,15 +766,21 @@ body.story .progress{opacity:1}
     if (n >= 1) finishTyping()
     stage.dataset.scene = String(n)
     document.body.classList.toggle("s0", n === 0)
-    caps.forEach((c) => c.classList.toggle("on", parseInt(c.dataset.cap ?? "-1", 10) === n))
+    caps.forEach((c) => {
+      const on = parseInt(c.dataset.cap ?? "-1", 10) === n
+      c.classList.toggle("on", on)
+      if (on) showCap(c); else hideCap(c)
+    })
     dots.forEach((d, i) => d.classList.toggle("on", i === n))
     applyAppState(n)
-    // The app keeps the newest turn in view; do the same as rows reveal.
+    scheduleSpots()
+    // The app keeps the newest turn in view. Jump there before the rings fade
+    // in; a smooth scroll under the reader's own page scroll reads as drift.
     const timeline = app.querySelector<HTMLElement>(".timeline-scroll")
-    if (timeline) window.setTimeout(() => timeline.scrollTo({ top: n >= 3 ? timeline.scrollHeight : 0, behavior: reduce ? "auto" : "smooth" }), 450)
+    if (timeline) timeline.scrollTo({ top: n >= 3 ? timeline.scrollHeight : 0 })
   }
   const finale = document.querySelector<HTMLElement>(".finale-section")
-  const lastCap = stage.querySelector<HTMLElement>('[data-cap="4"] small')!
+  const lastCap = stage.querySelector<HTMLElement>(`[data-cap="${SCENES}"] small`)!
   let storyPx = 0, rollPx = 0, winH = 0
   const layout = () => {
     if (mobile.matches) { track.style.removeProperty("height"); finale?.style.removeProperty("margin-top"); return }
@@ -369,7 +791,7 @@ body.story .progress{opacity:1}
     const winBottom = vh - 22
     winH = winBottom - 64
     rollPx = Math.max(0, Math.round(winBottom - capBottom))
-    storyPx = 4 * vh
+    storyPx = SCENES * vh
     track.style.height = `${vh + storyPx + rollPx}px`
     if (finale) finale.style.marginTop = `${-Math.max(0, Math.round(vh - capBottom - 40))}px`
   }
@@ -384,11 +806,13 @@ body.story .progress{opacity:1}
     const y = window.scrollY - track.offsetTop
     const ps = storyPx > 0 ? Math.min(1, Math.max(0, y / storyPx)) : 0
     const intro = 0.05
-    const n = ps < intro ? 0 : Math.min(4, 1 + Math.floor((ps - intro) / ((1 - intro) / 4)))
+    const n = ps < intro ? 0 : Math.min(SCENES, 1 + Math.floor((ps - intro) / ((1 - intro) / SCENES)))
     setScene(n)
     const rolled = rollPx > 0 ? Math.min(rollPx, Math.max(0, y - storyPx)) : 0
     stage.style.setProperty("--roll", winH > 0 ? (rolled / winH).toFixed(4) : "0")
+    stage.classList.toggle("rolling", rolled > 0)
     const past = y > storyPx + rollPx + 40
+    if (past) setTracking(false); else if (n > 0 && !mobile.matches) setTracking(true)
     document.body.classList.toggle("past", past)
     document.body.classList.toggle("story", n >= 1 && !past)
   }
@@ -401,9 +825,10 @@ body.story .progress{opacity:1}
     if (!mobile.matches) return
     finishTyping()
     stage.dataset.scene = "3"
+    stage.classList.add("people")
     app.dataset.sidebar = "closed"
     document.body.classList.remove("s0", "story")
-    caps.forEach((c) => c.classList.add("mobile-on"))
+    caps.forEach((c) => { c.classList.add("mobile-on", "is-shown") })
   }
   mobileMode()
   mobile.addEventListener("change", mobileMode)

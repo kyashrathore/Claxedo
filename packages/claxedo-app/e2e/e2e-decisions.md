@@ -819,7 +819,7 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: correct native session creation and durable identity ownership, then enable the existing journey.
   - **B**: explicitly distinguish new-session startup from resuming native history in the canonical contract.
   - **C**: defer exposing the affected native first-send flow until corrected.
-- **Decision**:
+- **Decision**: Option A applied 2026-09-14 (`20fdb18874`): the driver recreates a session id it created but never saw persisted, via `pi --session-id`, when the live process was lost (e.g. per-request credential rotation); unknown ids still refuse. The rerun journeys now reach the model request and fail on a real OpenAI 401 — the seeded `local_only` credential is brokered to hardcoded `https://api.openai.com`, so the scripted endpoint is unreachable. Resolving that is a credential-delivery decision (destination override or unbrokered local delivery) outside this entry; the session-file defect itself is closed. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/`.
 
 ### 71. real-harness-local — Codex first send references missing native history
 
@@ -891,6 +891,30 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **A (recommended)**: retain the Browser's canonical URL and restore it when its session panel remounts, then enable this regression.
   - **B**: keep each session's Browser guest mounted through session switches while preserving resource limits and session isolation.
   - **C**: defer Browser persistence until a documented lifecycle contract and acceptance test are implemented.
+- **Decision**:
+
+### 77. core-harness-rendering-matrix — interrupted Codex command returns to Running when its start frames replay on reattach
+
+- **Status**: skipped after intended Tier M build-preview failures in both auth modes (interrupted-replay-1270/1271; 0 pass / 1 fail each, zero retries).
+- **Tests**: `an interrupted Codex command stays interrupted when rail-return replay resends its start`.
+- **Expected**: a stored tool part with `status: "error"` stays terminal when the runtime stream resends that tool's `tool-start`/`tool-input` frames after a rail return and reload.
+- **Why**: this qualifies the numbered-inventory issue Codex #19 (interrupted command returns as Running). Mechanism proven in code and in the run: the reattached `/api/wr/runtime-events` stream replays the turn's start frames; a fresh client-presentation projection has no record of the terminal state and re-mints the stored part id (`seqId` = `000000_<callID>`) with `status: "running"`; the store's live-event path (`upsertPart` → `upsertChatParts`) replaces the stored part unconditionally, with none of the terminality ranking `mergeChatPart` applies on the REST snapshot path. The row renders Running with an advancing elapsed timer (sampled 0s→7s) until a later canonical refetch reverts it — the same Running + shimmer signature captured in the original heavy-transcript report. The replay's announced `message.updated` also strips `time.completed` (`preserveMessageFields` keeps only author and ranked error), un-settling the message and disabling the late-part guard. A `QA_REPLAY_PROBE` text-delta assertion proves the replayed frames reached this session's conversation, so the failure is the overwrite, not a silent channel. The fix belongs in the live-event merge: live frames must not downgrade a part/message state that canonical data already settled. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/interrupted-replay-1270/result.json` and `interrupted-replay-1271/result.json`.
+- **Options**:
+  - **A (recommended)**: apply the settled/terminal ranking to live `message.part.updated` and `message.updated` upserts — an existing terminal part cannot be replaced by a non-terminal state, and a completed message does not lose `time.completed` — then enable the regression.
+  - **B**: carry per-call terminal memory in the client-presentation projection across reattach so a replayed `tool-input` emits the terminal state like `tool-start` already does when it knows the outcome — insufficient alone, since the projection cache is evicted at turn end and cannot see stored history.
+  - **C**: defer the affected reattach flow until terminal-state protection is verified.
+- **Decision**:
+
+### 78. core-busy-abort-errors — Thinking anchors to the previous turn while its completion envelope is in flight
+
+- **Status**: skipped after intended Tier M build-preview failures in both auth modes (thinking-anchor-1272/1273; 0 pass / 1 fail each, zero retries).
+- **Tests**: `Thinking stays with the new prompt while the previous turn's completion envelope is in flight`.
+- **Expected**: after a follow-up send, every painted Thinking row belongs to the new prompt's user message.
+- **Why**: this qualifies the numbered-inventory issue Codex #5 (Thinking appears under the preceding turn). The prior turn's assistant envelope lacks `time.completed` (reply parts painted, completion envelope still in flight) and the session reads busy. `activeMessageID` resolves `pending()` — the last un-completed assistant — to its `parentID`, the OLD user message; the old turn stays `isActive && busy && !settled` and emits the Thinking row inside its own block, painted beneath its completed-looking reply and above the newly sent prompt bubbles — the layout in `evidence/codex-thinking-placement/previous-turn.jpg`. Per-frame sampling attributes 496 consecutive post-submit Thinking frames to the previous user message in the unsigned run; when the new turn's `message.updated`(pending) lands, the anchor relocates. The earlier normalized control (runs 1112–1114) never reproduced this because its seeded assistant was already completed, so `pending()` never resolved backwards. The defect is the anchor: once a newer user message exists, a stale un-completed assistant from an older turn must not win `activeMessageID`. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/thinking-anchor-1272/result.json` and `thinking-anchor-1273/result.json`.
+- **Options**:
+  - **A (recommended)**: in `activeMessageID`, prefer the last user message when it postdates the pending assistant's parent — i.e., resolve `pending()`'s parent only when no newer user message exists — then enable the regression.
+  - **B**: stamp the pending assistant's turn when its parent is superseded by a newer user message, so `settled`/anchor reads never point backwards.
+  - **C**: leave the anchor and document the transitory wrong-owner window — rejected: the original defect was reported as a fail and the observed window exceeded half a second.
 - **Decision**:
 
 ## 3. Live-suite skips (not in core CI)

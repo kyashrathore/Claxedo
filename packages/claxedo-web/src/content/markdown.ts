@@ -48,11 +48,13 @@ ${site.description}
 
 ## What it does
 
-1. **Set up once.** Add a plugin, skill, MCP server, or credential one time. Claxedo writes it into each agent's own config before a session starts.
-2. **Anywhere.** Move a session from your laptop to a cloud VM on any supported provider. Your setup arrives before the agent does.
-3. **Anyone.** Multiplayer on a Cloudflare Worker you deploy in one command. Invite your team and approve edits from a phone.
-4. **Your way.** Sidebar or tabs. The chat view and the real CLI live in the same workbench.
-5. **Fast.** A published, repeatable benchmark against T3 Code; see the comparison pages for the current figures.
+1. **Set up once.** Add agent plugins, skills, MCP servers, or AI provider credentials once. Claxedo syncs them to every agent on every device and shares them with your team.
+2. **Access from anywhere.** Open the same session from any browser, and move it to a cloud VM on any supported provider with your setup already there.
+3. **Share with anyone.** Invite your team into a session on a Cloudflare Worker you deploy in one command. They see every turn and approve from a phone.
+4. **Sidebar or tabs.** Hide the sidebar and sessions turn into tabs. The chat view and the real CLI live in the same workbench.
+5. **Orchestrate over MCP.** Any agent can consult a second model, open a session in another harness, or file a task through the Claxedo MCP.
+6. **Tasks board.** The work in flight as cards; each card starts a session from a preset, and agents file cards over MCP.
+7. **Fast.** A published, repeatable benchmark against T3 Code; see the comparison pages for the current figures.
 
 ## Pages
 
