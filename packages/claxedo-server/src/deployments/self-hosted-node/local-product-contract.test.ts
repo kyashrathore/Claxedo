@@ -272,6 +272,7 @@ describe("desktop-local product contract", () => {
       "/internal/documents/jobs/activate",
       "/internal/documents/jobs/revoke",
       "/internal/relay/*",
+      "/internal/relay/host-generation",
       "/internal/relay/revocation",
       "/internal/relay/target",
     ])

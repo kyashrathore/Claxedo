@@ -29,6 +29,7 @@ const MIGRATIONS = [
   "0017_adapter_custom.sql",
   "0018_drop_agent_extensions.sql",
   "0019_agent_plugin_activations.sql",
+  "0026_workspace_org_member_visible.sql",
 ]
 
 const PLUGIN = "claxedo/review"
