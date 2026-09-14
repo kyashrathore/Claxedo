@@ -14,7 +14,7 @@ export const HARNESS_IDS = ["claude", "codex", "cursor"] as const
 
 export type HarnessId = (typeof HARNESS_IDS)[number]
 
-export type HarnessRecord = {
+type HarnessRecord = {
   /** The product's own name, as every surface writes it. */
   label: string
   vendor: string

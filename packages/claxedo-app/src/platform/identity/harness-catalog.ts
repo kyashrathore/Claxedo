@@ -132,7 +132,7 @@ export function harnessLabelForProviderId(providerId: string): string | undefine
 }
 
 /** The provider ids a harness's accounts are stored under, its connect id first. */
-export function harnessProviderIds(id: string): readonly string[] {
+function harnessProviderIds(id: string): readonly string[] {
   return entry(id)?.providerIds ?? []
 }
 
@@ -151,17 +151,13 @@ export function bindingIdsForHarness(id: string): readonly string[] {
   return isHarnessId(id) ? tableBindingIds(id) : harnessProviderIds(id)
 }
 
-export function harnessConnectProvider(id: string): string | undefined {
-  return entry(id)?.connectProvider
-}
-
 /**
  * The harness whose own login is stored under this provider id, for the id its
  * connect card writes. Every other provider id — `openai` under Codex, say —
  * names a vendor an engine can run, which is a different sentence on the card.
  */
 export function harnessForConnectProvider(providerId: string): string | undefined {
-  return Object.keys(HARNESS_CATALOG).find((id) => harnessConnectProvider(id) === providerId)
+  return Object.keys(HARNESS_CATALOG).find((id) => entry(id)?.connectProvider === providerId)
 }
 
 /**

@@ -26,7 +26,7 @@ declare const TextDecoder: { new (): { decode(input: Uint8Array): string } }
  * bundle, and through `TextDecoder` rather than `atob`'s own output, because a
  * claim holding a non-ASCII name is UTF-8 and `atob` yields latin1 code units.
  */
-export function jwtClaims(token: string | undefined): Record<string, unknown> | undefined {
+function jwtClaims(token: string | undefined): Record<string, unknown> | undefined {
   const payload = token?.split(".")[1]
   if (!payload) return undefined
   const base64 = payload.replaceAll("-", "+").replaceAll("_", "/")
@@ -84,7 +84,7 @@ export function accountIdFromClaims(input: Record<string, unknown> | undefined):
   return tokensOf(input).map(accountIdFromJwt).find((value) => value !== undefined)
 }
 
-export function accountIdFromJwt(token: string | undefined): string | undefined {
+function accountIdFromJwt(token: string | undefined): string | undefined {
   const claims = jwtClaims(token)
   if (!claims) return undefined
   const openai = asRecord(claims["https://api.openai.com/auth"])

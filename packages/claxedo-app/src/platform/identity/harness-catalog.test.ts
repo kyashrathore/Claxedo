@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { NATIVE_HARNESS_IDS } from "@/platform/identity/harness-selection"
 import {
+  bindingIdsForHarness,
   connectContextFor,
   engineConnectContext,
   harnessConnectContext,
@@ -8,13 +9,12 @@ import {
   harnessForConnectProvider,
   harnessIcon,
   harnessLabelForProviderId,
-  harnessProviderIds,
 } from "./harness-catalog"
 
 describe("HARNESS_CATALOG", () => {
   test("an engine a reader picks is not a login anything is stored against", () => {
-    expect(harnessProviderIds("pi")).toEqual([])
-    expect(harnessProviderIds("opencode")).toEqual([])
+    expect(bindingIdsForHarness("pi")).toEqual([])
+    expect(bindingIdsForHarness("opencode")).toEqual([])
   })
 
   test("every harness a reader can pick has a name and a mark of its own", () => {

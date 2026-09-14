@@ -142,7 +142,7 @@ export function quotaSummary(snapshot: QuotaSnapshot | undefined) {
 type Note = { text: string; check?: true }
 
 /** The last moment any card's figures were read, which a refresh moves for every card it could read. */
-export function lastReadAt(snapshot: QuotaSnapshot | undefined): number | undefined {
+function lastReadAt(snapshot: QuotaSnapshot | undefined): number | undefined {
   const read = (snapshot?.accounts ?? []).flatMap((account) => (account.usageAt === undefined ? [] : [account.usageAt]))
   return read.length === 0 ? undefined : Math.max(...read)
 }
