@@ -1,7 +1,7 @@
 import fs from "node:fs/promises"
 import { hostPublicKeyFingerprint } from "@claxedo/host-connector/host-identity"
 import { effectiveRoots, type HostState } from "@claxedo/host-connector/host-state"
-import { connectPaths, connectStateStore, LEASE_TTL_MS } from "../connect/paths"
+import { connectPaths, connectStateStore } from "../connect/paths"
 
 export type StatusDeps = {
   load: () => Promise<HostState | undefined>
@@ -32,11 +32,11 @@ export function defaultStatusDeps(): StatusDeps {
   }
 }
 
-/** Online means the connect process is alive AND its last successful beat is within one lease. */
+/** Online means the connect process is alive AND the lease the control plane issued on its last good beat has not expired. */
 export function hostOnline(state: HostState, deps: Pick<StatusDeps, "pidAlive" | "now">) {
   const run = state.run
   if (!run || !deps.pidAlive(run.pid)) return false
-  return run.last_beat_ok_at !== undefined && deps.now() - run.last_beat_ok_at <= LEASE_TTL_MS
+  return run.lease_expires_at !== undefined && deps.now() <= run.lease_expires_at
 }
 
 function iso(value: number | undefined) {

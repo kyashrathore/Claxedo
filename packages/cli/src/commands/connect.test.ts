@@ -431,6 +431,25 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.service).toMatchObject({ kind: "systemd-user" })
   })
 
+  test("status reads online from the lease the control plane issued, not from a client-side TTL", async () => {
+    const enrolled = (await (async () => {
+      const { file } = await invitationFile(h, [h.root])
+      const running = connect(["--token-file", file], h.deps)
+      await until(() => h.cp.beats().length >= 1, "first beat")
+      h.stop()
+      await running
+      return (await h.deps.store.load())!
+    })())
+    const run = { pid: process.pid, started_at: 1_000, generation: 1, last_beat_ok_at: 10_000, lease_expires_at: 18_000 }
+    const alive = { pidAlive: () => true }
+
+    expect(hostOnline({ ...enrolled, run }, { ...alive, now: () => 18_000 })).toBe(true)
+    // 8 s after the last good beat — inside any client-side guess at the TTL — the issued lease is over.
+    expect(hostOnline({ ...enrolled, run }, { ...alive, now: () => 18_001 })).toBe(false)
+    expect(hostOnline({ ...enrolled, run: { ...run, lease_expires_at: undefined } }, { ...alive, now: () => 10_001 })).toBe(false)
+    expect(hostOnline({ ...enrolled, run }, { pidAlive: () => false, now: () => 10_001 })).toBe(false)
+  })
+
   test("--reset prints what goes and removes the state directory", async () => {
     const { file } = await invitationFile(h, [h.root])
     const running = connect(["--token-file", file], h.deps)
