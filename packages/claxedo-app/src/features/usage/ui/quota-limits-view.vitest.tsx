@@ -173,11 +173,12 @@ describe("quota limits view", () => {
   })
 
   test("a refresh the server answered from its last one says when it read and when it will read again", async () => {
-    const { container } = await renderView({ snapshot, throttledUntil: Date.now() + 45_500 })
-    // The cards were last read a minute ago; the next refresh is 45.5 s out and
-    // the line has no room for a fraction, so it names the second it lands in.
+    // Ninety seconds out lands in the same minute bucket however long the
+    // render takes; a sub-minute spacing would name a second the clock can
+    // cross mid-test.
+    const { container } = await renderView({ snapshot, throttledUntil: Date.now() + 90_000 })
     expect(container.querySelector('[data-component="usage-quota-throttled"]')?.textContent)
-      .toBe("usage.quota.throttled:1m|46s")
+      .toBe("usage.quota.throttled:1m|1m")
   })
 
   test("a read that was not throttled draws no refresh line, and neither does a spacing already past", async () => {
