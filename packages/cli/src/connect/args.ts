@@ -7,10 +7,11 @@ export type ConnectArgs = {
   installService: boolean
   uninstallService: boolean
   foreground: boolean
+  alongsideDesktop: boolean
   reset: boolean
 }
 
-export const connectUsage = `claxedo connect [--token-file F] [--root DIR]... [--name N] [--install-service] [--uninstall-service] [--foreground] [--reset]`
+export const connectUsage = `claxedo connect [--token-file F] [--root DIR]... [--name N] [--install-service] [--uninstall-service] [--foreground] [--alongside-desktop] [--reset]`
 
 /** `--flag value` and `--flag=value` both read; a flag with no value is an error, not an empty string. */
 export function takeValue(args: string[], index: number, flag: string): { value: string; next: number } {
@@ -22,7 +23,7 @@ export function takeValue(args: string[], index: number, flag: string): { value:
 }
 
 export function parseConnectArgs(args: string[]): ConnectArgs {
-  const parsed: ConnectArgs = { roots: [], installService: false, uninstallService: false, foreground: false, reset: false }
+  const parsed: ConnectArgs = { roots: [], installService: false, uninstallService: false, foreground: false, alongsideDesktop: false, reset: false }
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i] ?? ""
     if (arg === "--token-file" || arg.startsWith("--token-file=")) {
@@ -56,6 +57,10 @@ export function parseConnectArgs(args: string[]): ConnectArgs {
       parsed.foreground = true
       continue
     }
+    if (arg === "--alongside-desktop") {
+      parsed.alongsideDesktop = true
+      continue
+    }
     if (arg === "--reset") {
       parsed.reset = true
       continue
@@ -65,7 +70,7 @@ export function parseConnectArgs(args: string[]): ConnectArgs {
   if (parsed.installService && parsed.uninstallService) {
     throw new Error("--install-service and --uninstall-service cannot be combined")
   }
-  if (parsed.reset && (parsed.tokenFile || parsed.installService || parsed.uninstallService || parsed.foreground)) {
+  if (parsed.reset && (parsed.tokenFile || parsed.installService || parsed.uninstallService || parsed.foreground || parsed.alongsideDesktop)) {
     throw new Error("--reset takes no other options")
   }
   return parsed

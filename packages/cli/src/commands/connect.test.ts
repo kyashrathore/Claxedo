@@ -7,6 +7,7 @@ import { setUserHostedServing, stopUserHostedServing, userHostedServingState } f
 import { parseConnectArgs } from "../connect/args"
 import { createFakeConnectControlPlane, decodeFakeTunnelToken, type FakeControlPlane } from "../connect/fake-control-plane.test-support"
 import { BEAT_INTERVAL_MS, servingCredential, transientBootstrapFailure, withBootstrapRetry, type HostDeps } from "../connect/host"
+import { desktopDaemonDiscoveryFile, liveDesktopDaemon, parseDesktopDaemonDiscovery } from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
 import type { ServiceDeps } from "../connect/service"
 import { HostedHttpError, HostedRequestTimeoutError } from "@claxedo/host-connector/machine-transport"
@@ -140,6 +141,7 @@ async function harness(input: { home?: string; cp?: FakeControlPlane; relay?: Re
     controlPlaneUrl: cp.url,
     displayName: "build-box",
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
+    desktopDaemon: () => liveDesktopDaemon({ file: path.join(home, "desktop", "local-daemon.json"), pidAlive: (pid) => pid === process.pid }),
   }
   return {
     home,
@@ -450,6 +452,39 @@ describe("claxedo connect", () => {
     expect(hostOnline({ ...enrolled, run }, { pidAlive: () => false, now: () => 10_001 })).toBe(false)
   })
 
+  test("a live desktop daemon on this machine refuses connect with 78 unless --alongside-desktop is passed", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const discovery = path.join(h.home, "desktop", "local-daemon.json")
+    await fs.mkdir(path.dirname(discovery), { recursive: true })
+    const record = (pid: number) =>
+      JSON.stringify({ service: "claxedo-local-daemon", protocol: 1, generation: "g", token: "t", pid, port: 4321, startedAt: "now" })
+    await fs.writeFile(discovery, record(process.pid))
+
+    expect(await connect(["--token-file", file], h.deps)).toBe(78)
+    expect(h.lines.at(-1)).toBe(
+      `the Claxedo desktop app's daemon is running on this machine (pid ${process.pid}, port 4321, ${discovery}) and already serves it under its own enrollment; pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
+    )
+    expect(h.cp.log, "refused before any request").toHaveLength(0)
+    expect(await fs.readFile(file, "utf8")).toContain("chx_inv_1.")
+    expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(78)
+    expect(h.serviceCalls).toEqual([])
+
+    // A stale file — the daemon it names has exited — is no daemon.
+    await fs.writeFile(discovery, record(process.pid + 1))
+    const staleRun = connect(["--token-file", file, "--alongside-desktop"], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    h.stop()
+    expect(await staleRun).toBe(0)
+    await fs.writeFile(discovery, record(process.pid))
+
+    // Beside a live daemon, only when told to; the unit carries the choice.
+    expect(await connect(["--install-service", "--alongside-desktop"], h.deps)).toBe(0)
+    const unit = path.join(h.home, ".config", "systemd", "user", "claxedo-connect.service")
+    expect(await fs.readFile(unit, "utf8")).toContain(`"connect" "--foreground" "--alongside-desktop"`)
+    expect(await connect(["--uninstall-service"], h.deps)).toBe(0)
+    expect(await connect(["--reset"], h.deps), "reset is not serving").toBe(0)
+  })
+
   test("--reset prints what goes and removes the state directory", async () => {
     const { file } = await invitationFile(h, [h.root])
     const running = connect(["--token-file", file], h.deps)
@@ -476,15 +511,36 @@ describe("claxedo connect", () => {
   })
 })
 
+describe("desktop daemon discovery", () => {
+  test("the file lives under CLAXEDO_DATA_DIR, else ~/.claxedo, and only the daemon's own record counts", () => {
+    expect(desktopDaemonDiscoveryFile({ CLAXEDO_DATA_DIR: "/data" }, "/home/u")).toBe("/data/local-daemon.json")
+    expect(desktopDaemonDiscoveryFile({ CLAXEDO_DATA_DIR: "  " }, "/home/u")).toBe("/home/u/.claxedo/local-daemon.json")
+    expect(desktopDaemonDiscoveryFile({}, "/home/u")).toBe("/home/u/.claxedo/local-daemon.json")
+    expect(parseDesktopDaemonDiscovery(JSON.stringify({ service: "claxedo-local-daemon", pid: 7, port: 8 }))).toEqual({ pid: 7, port: 8 })
+    expect(parseDesktopDaemonDiscovery(JSON.stringify({ service: "other", pid: 7, port: 8 }))).toBeUndefined()
+    expect(parseDesktopDaemonDiscovery(JSON.stringify({ service: "claxedo-local-daemon", pid: "7", port: 8 }))).toBeUndefined()
+    expect(parseDesktopDaemonDiscovery("{not json")).toBeUndefined()
+  })
+
+  test("a missing file, a stale pid or a dead process is no daemon", async () => {
+    const text = JSON.stringify({ service: "claxedo-local-daemon", pid: 7, port: 8 })
+    expect(await liveDesktopDaemon({ file: "/f", readFile: async () => undefined, pidAlive: () => true })).toBeUndefined()
+    expect(await liveDesktopDaemon({ file: "/f", readFile: async () => text, pidAlive: () => false })).toBeUndefined()
+    expect(await liveDesktopDaemon({ file: "/f", readFile: async () => text, pidAlive: (pid) => pid === 7 })).toEqual({ pid: 7, port: 8, file: "/f" })
+    expect(await liveDesktopDaemon({ file: path.join(os.tmpdir(), "claxedo-no-such-file", "local-daemon.json") })).toBeUndefined()
+  })
+})
+
 describe("connect argument parsing", () => {
   test("reads every flag in both spellings and resolves paths", () => {
-    expect(parseConnectArgs(["--token-file=/etc/x", "--root", "/srv", "--root=/opt", "--name", "box", "--foreground"])).toEqual({
+    expect(parseConnectArgs(["--token-file=/etc/x", "--root", "/srv", "--root=/opt", "--name", "box", "--foreground", "--alongside-desktop"])).toEqual({
       tokenFile: "/etc/x",
       roots: ["/srv", "/opt"],
       name: "box",
       installService: false,
       uninstallService: false,
       foreground: true,
+      alongsideDesktop: true,
       reset: false,
     })
   })
@@ -495,6 +551,7 @@ describe("connect argument parsing", () => {
     expect(() => parseConnectArgs(["--root", "srv"])).toThrow("absolute")
     expect(() => parseConnectArgs(["--install-service", "--uninstall-service"])).toThrow("cannot be combined")
     expect(() => parseConnectArgs(["--reset", "--foreground"])).toThrow("--reset takes no other options")
+    expect(() => parseConnectArgs(["--reset", "--alongside-desktop"])).toThrow("--reset takes no other options")
   })
 })
 

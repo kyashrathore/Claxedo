@@ -26,12 +26,13 @@ function fakeDeps(platform: NodeJS.Platform, claxedoHome?: string) {
 describe("service units", () => {
   test("Linux gets a systemd --user unit that never restarts into a decision", async () => {
     const { deps, calls, files } = fakeDeps("linux", "/var/lib/claxedo")
-    const service = await writeServiceUnit(deps)
+    const service = await writeServiceUnit(deps, { alongsideDesktop: false })
     const unit = "/home/svc/.config/systemd/user/claxedo-connect.service"
     expect(service).toEqual({ kind: "systemd-user", unit, installed_at: 42 })
     expect(calls, "writing the unit starts nothing").toEqual([])
     const lines = await startService(deps, service)
-    expect(files.get(unit)).toBe(systemdUnit(deps))
+    expect(files.get(unit)).toBe(systemdUnit(deps, { alongsideDesktop: false }))
+    expect(systemdUnit(deps, { alongsideDesktop: true })).toContain(`"connect" "--foreground" "--alongside-desktop"`)
     expect(files.get(unit)).toContain(`ExecStart="/usr/local/bin/node" "/opt/claxedo/dist/index.mjs" "connect" "--foreground"`)
     expect(files.get(unit)).toContain("Restart=on-failure\nRestartSec=5\nRestartPreventExitStatus=78")
     expect(files.get(unit)).toContain(`Environment=CLAXEDO_HOME="/var/lib/claxedo"`)
@@ -47,16 +48,16 @@ describe("service units", () => {
 
   test("macOS gets a LaunchAgent whose wrapper boots the job out on exit 78", async () => {
     const { deps, calls, files } = fakeDeps("darwin")
-    const service = await writeServiceUnit(deps)
+    const service = await writeServiceUnit(deps, { alongsideDesktop: true })
     const plist = "/home/svc/Library/LaunchAgents/dev.claxedo.connect.plist"
     expect(service).toEqual({ kind: "launchd", unit: plist, installed_at: 42 })
     const lines = await startService(deps, service)
     const text = files.get(plist)!
-    expect(text).toBe(launchdPlist(deps))
+    expect(text).toBe(launchdPlist(deps, { alongsideDesktop: true }))
     expect(text).toContain("<key>Label</key><string>dev.claxedo.connect</string>")
     expect(text).toContain("<key>KeepAlive</key>\n  <dict><key>SuccessfulExit</key><false/></dict>")
     expect(text).toContain(
-      `'/usr/local/bin/node' '/opt/claxedo/dist/index.mjs' 'connect' '--foreground'; status=$?; if [ &quot;$status&quot; -eq 78 ]; then launchctl bootout &quot;gui/$(id -u)/dev.claxedo.connect&quot;; fi; exit &quot;$status&quot;`.replace(/&quot;/g, '"'),
+      `'/usr/local/bin/node' '/opt/claxedo/dist/index.mjs' 'connect' '--foreground' '--alongside-desktop'; status=$?; if [ &quot;$status&quot; -eq 78 ]; then launchctl bootout &quot;gui/$(id -u)/dev.claxedo.connect&quot;; fi; exit &quot;$status&quot;`.replace(/&quot;/g, '"'),
     )
     expect(text).not.toContain("CLAXEDO_HOME")
     expect(calls[0]).toMatch(/^launchctl bootout gui\/\d+\/dev\.claxedo\.connect$/)
@@ -70,7 +71,7 @@ describe("service units", () => {
   test("other platforms are refused before anything is written", async () => {
     const { deps, files } = fakeDeps("win32")
     expect(() => serviceKind("win32")).toThrow("this is win32")
-    await expect(writeServiceUnit(deps)).rejects.toThrow("supports Linux (systemd --user) and macOS (launchd)")
+    await expect(writeServiceUnit(deps, { alongsideDesktop: false })).rejects.toThrow("supports Linux (systemd --user) and macOS (launchd)")
     expect(files.size).toBe(0)
     expect(serviceUnitPath({ platform: "linux", homedir: "/h" })).toBe("/h/.config/systemd/user/claxedo-connect.service")
   })

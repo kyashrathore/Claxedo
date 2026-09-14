@@ -63,8 +63,14 @@ function systemdQuote(value: string) {
   return `"${value.replace(/["\\]/g, "\\$&")}"`
 }
 
-export function systemdUnit(deps: Pick<ServiceDeps, "command" | "claxedoHome">) {
-  const exec = [...deps.command, "connect", "--foreground"].map(systemdQuote).join(" ")
+export type ServiceUnitOptions = { alongsideDesktop: boolean }
+
+function connectArgs(options: ServiceUnitOptions) {
+  return ["connect", "--foreground", ...(options.alongsideDesktop ? ["--alongside-desktop"] : [])]
+}
+
+export function systemdUnit(deps: Pick<ServiceDeps, "command" | "claxedoHome">, options: ServiceUnitOptions) {
+  const exec = [...deps.command, ...connectArgs(options)].map(systemdQuote).join(" ")
   return [
     "[Unit]",
     "Description=Claxedo connect host",
@@ -99,8 +105,8 @@ function singleQuoted(value: string) {
  * 78: the plist stays, and the next login (or `launchctl bootstrap`) loads it
  * again — a deliberate re-run after the operator changed something.
  */
-export function launchdPlist(deps: Pick<ServiceDeps, "command" | "claxedoHome">) {
-  const connect = [...deps.command, "connect", "--foreground"].map(singleQuoted).join(" ")
+export function launchdPlist(deps: Pick<ServiceDeps, "command" | "claxedoHome">, options: ServiceUnitOptions) {
+  const connect = [...deps.command, ...connectArgs(options)].map(singleQuoted).join(" ")
   const script = `${connect}; status=$?; if [ "$status" -eq 78 ]; then launchctl bootout "gui/$(id -u)/${LAUNCHD_LABEL}"; fi; exit "$status"`
   return [
     `<?xml version="1.0" encoding="UTF-8"?>`,
@@ -143,10 +149,10 @@ export type InstalledService = NonNullable<HostState["service"]>
  * a record saved after the start is overwritten by the child's copy, which
  * never had it.
  */
-export async function writeServiceUnit(deps: ServiceDeps): Promise<InstalledService> {
+export async function writeServiceUnit(deps: ServiceDeps, options: ServiceUnitOptions): Promise<InstalledService> {
   const kind = serviceKind(deps.platform)
   const unit = serviceUnitPath(deps)
-  await deps.writeFile(unit, kind === "systemd-user" ? systemdUnit(deps) : launchdPlist(deps))
+  await deps.writeFile(unit, kind === "systemd-user" ? systemdUnit(deps, options) : launchdPlist(deps, options))
   return { kind, unit, installed_at: deps.now() }
 }
 

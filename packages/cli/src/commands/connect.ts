@@ -7,6 +7,7 @@ import { config } from "../config"
 import { errorMessage } from "../json"
 import { connectUsage, parseConnectArgs, type ConnectArgs } from "../connect/args"
 import { defaultHostDeps, runHost, withBootstrapRetry, type HostDeps } from "../connect/host"
+import { desktopDaemonDiscoveryFile, liveDesktopDaemon, type LiveDesktopDaemon } from "../connect/desktop-daemon"
 import { connectPaths, connectStateStore } from "../connect/paths"
 import { defaultServiceDeps, startService, uninstallService, writeServiceUnit, type ServiceDeps } from "../connect/service"
 
@@ -18,6 +19,8 @@ export type ConnectDeps = {
   controlPlaneUrl: string
   displayName: string
   removeDir: (dir: string) => Promise<void>
+  /** The desktop app's local daemon on this machine, when one is alive. */
+  desktopDaemon: () => Promise<LiveDesktopDaemon | undefined>
 }
 
 export function defaultConnectDeps(): ConnectDeps {
@@ -30,6 +33,7 @@ export function defaultConnectDeps(): ConnectDeps {
     controlPlaneUrl: config().controlPlaneUrl,
     displayName: os.hostname(),
     removeDir: (dir) => fs.rm(dir, { recursive: true, force: true }),
+    desktopDaemon: () => liveDesktopDaemon({ file: desktopDaemonDiscoveryFile(process.env, os.homedir()) }),
   }
 }
 
@@ -41,6 +45,7 @@ export const connectHelp = `${connectUsage}
   --install-service     enroll if --token-file is given, then install and start a user service that runs \`claxedo connect --foreground\`
   --uninstall-service   stop and remove that service
   --foreground          serve in this process (the default when no service flag is given)
+  --alongside-desktop   serve even while the Claxedo desktop app's daemon is running on this machine; without it, connect refuses to start beside a live daemon (exit 78), since the desktop already serves this machine under its own enrollment
   --reset               delete the host state — key, enrollment and endpoints — after printing what goes; a fresh state is a fresh host id
 
 Exit codes: 0 after SIGTERM/SIGINT drained every runtime and tunnel; 78 when the
@@ -154,6 +159,16 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
       return 0
     }
 
+    if (!args.alongsideDesktop) {
+      const daemon = await deps.desktopDaemon()
+      if (daemon) {
+        throw new HostConnectDecisionError(
+          `the Claxedo desktop app's daemon is running on this machine (pid ${daemon.pid}, port ${daemon.port}, ${daemon.file}) and already serves it under its own enrollment; pass --alongside-desktop to run \`claxedo connect\` as a second machine beside it`,
+          {},
+        )
+      }
+    }
+
     let state = await loadState(deps)
     if (state?.enrollment && args.tokenFile) {
       throw new HostConnectDecisionError(
@@ -172,7 +187,7 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
 
     if (args.installService) {
       const service = deps.service()
-      const installed = await writeServiceUnit(service)
+      const installed = await writeServiceUnit(service, { alongsideDesktop: args.alongsideDesktop })
       await deps.store.save({ ...state, service: installed })
       for (const line of await startService(service, installed)) log(line)
       return 0
