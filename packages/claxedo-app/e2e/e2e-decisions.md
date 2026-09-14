@@ -893,6 +893,42 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **C**: defer Browser persistence until a documented lifecycle contract and acceptance test are implemented.
 - **Decision**:
 
+### 77. core-harness-rendering-matrix — interrupted Codex command returns to Running when its start frames replay on reattach
+
+- **Status**: skipped after intended Tier M build-preview failures in both auth modes (interrupted-replay-1270/1271; 0 pass / 1 fail each, zero retries).
+- **Tests**: `an interrupted Codex command stays interrupted when rail-return replay resends its start`.
+- **Expected**: a stored tool part with `status: "error"` stays terminal when the runtime stream resends that tool's `tool-start`/`tool-input` frames after a rail return and reload.
+- **Why**: this qualifies the numbered-inventory issue Codex #19 (interrupted command returns as Running). Mechanism proven in code and in the run: the reattached `/api/wr/runtime-events` stream replays the turn's start frames; a fresh client-presentation projection has no record of the terminal state and re-mints the stored part id (`seqId` = `000000_<callID>`) with `status: "running"`; the store's live-event path (`upsertPart` → `upsertChatParts`) replaces the stored part unconditionally, with none of the terminality ranking `mergeChatPart` applies on the REST snapshot path. The row renders Running with an advancing elapsed timer (sampled 0s→7s) until a later canonical refetch reverts it — the same Running + shimmer signature captured in the original heavy-transcript report. The replay's announced `message.updated` also strips `time.completed` (`preserveMessageFields` keeps only author and ranked error), un-settling the message and disabling the late-part guard. A `QA_REPLAY_PROBE` text-delta assertion proves the replayed frames reached this session's conversation, so the failure is the overwrite, not a silent channel. The fix belongs in the live-event merge: live frames must not downgrade a part/message state that canonical data already settled. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/interrupted-replay-1270/result.json` and `interrupted-replay-1271/result.json`.
+- **Options**:
+  - **A (recommended)**: apply the settled/terminal ranking to live `message.part.updated` and `message.updated` upserts — an existing terminal part cannot be replaced by a non-terminal state, and a completed message does not lose `time.completed` — then enable the regression.
+  - **B**: carry per-call terminal memory in the client-presentation projection across reattach so a replayed `tool-input` emits the terminal state like `tool-start` already does when it knows the outcome — insufficient alone, since the projection cache is evicted at turn end and cannot see stored history.
+  - **C**: defer the affected reattach flow until terminal-state protection is verified.
+- **Decision**:
+
+### 78. core-busy-abort-errors — Thinking anchors to the previous turn while its completion envelope is in flight
+
+- **Status**: skipped after intended Tier M build-preview failures in both auth modes (thinking-anchor-1272/1273; 0 pass / 1 fail each, zero retries).
+- **Tests**: `Thinking stays with the new prompt while the previous turn's completion envelope is in flight`.
+- **Expected**: after a follow-up send, every painted Thinking row belongs to the new prompt's user message.
+- **Why**: this qualifies the numbered-inventory issue Codex #5 (Thinking appears under the preceding turn). The prior turn's assistant envelope lacks `time.completed` (reply parts painted, completion envelope still in flight) and the session reads busy. `activeMessageID` resolves `pending()` — the last un-completed assistant — to its `parentID`, the OLD user message; the old turn stays `isActive && busy && !settled` and emits the Thinking row inside its own block, painted beneath its completed-looking reply and above the newly sent prompt bubbles — the layout in `evidence/codex-thinking-placement/previous-turn.jpg`. Per-frame sampling attributes 496 consecutive post-submit Thinking frames to the previous user message in the unsigned run; when the new turn's `message.updated`(pending) lands, the anchor relocates. The earlier normalized control (runs 1112–1114) never reproduced this because its seeded assistant was already completed, so `pending()` never resolved backwards. The defect is the anchor: once a newer user message exists, a stale un-completed assistant from an older turn must not win `activeMessageID`. Evidence: `docs/verification/session-rendering/2026-09-12/evidence/thinking-anchor-1272/result.json` and `thinking-anchor-1273/result.json`.
+- **Options**:
+  - **A (recommended)**: in `activeMessageID`, prefer the last user message when it postdates the pending assistant's parent — i.e., resolve `pending()`'s parent only when no newer user message exists — then enable the regression.
+  - **B**: stamp the pending assistant's turn when its parent is superseded by a newer user message, so `settled`/anchor reads never point backwards.
+  - **C**: leave the anchor and document the transitory wrong-owner window — rejected: the original defect was reported as a fail and the observed window exceeded half a second.
+- **Decision**:
+
+### 79. real-harness-local — a Codex child session's escalated command must surface an approval dock (state 75)
+
+- **Status**: fixme; the scenario cannot currently reach the child turn — the parent's first send dies with "no rollout found for thread id" (the codex missing-rollout defect, same churn class as the Pi session-file defect fixed in `20fdb18874`: per-request config apply rotates the brokered placeholder, `replaceAuth` restarts the app-server, and a thread created-but-never-persisted is gone; `startTurnWithThreadRecovery` cannot help because its matcher (`/thread not found/i`) does not match "no rollout found" and `thread/resume` cannot recover a thread with no rollout file). The test detects that blocker and `test.skip`s explicitly so it can only go red on the actual defect once the parent turn works.
+- **Tests**: `codex child session's escalated command surfaces an approval dock, not a silent denial`.
+- **Expected**: a `spawn_agent` child whose `exec_command` carries `require_escalated` surfaces a permission dock on the parent (the child's own tab is read-only), so no command reports "User declined" without a user-visible decision.
+- **Why**: this qualifies the numbered-inventory issue Codex #75 (child command reports denial without a visible decision). The Tier M control `a child session's permission request reaches a decision dock on the parent` (core-docks.spec) PASSES in both auth modes: `sessionTreeRequest` walks `parentID`-linked child sessions, so a `permission.asked` on the child mounts the dock on the parent's composer and Deny posts `reject` to the child's route. The UI path is therefore not the defect — the runtime must have auto-denied without ever asking. Only the real producer can prove that, which is why the repro lives at Tier R.
+- **Options**:
+  - **A (recommended)**: fix the upstream missing-rollout churn (driver-side recovery for created-but-unpersisted threads, as Pi got in `20fdb18874`, or stop rotating the brokered placeholder within its TTL), then this test reaches the child ask; if the dock still never mounts, the defect is the runtime auto-denying approvals for sessions without an active-thread entry.
+  - **B**: route child-session approval asks to the parent's decision surface explicitly in the runtime, so a child can never be denied without a visible decision.
+  - **C**: keep the denial semantics but relabel the stored error so it no longer claims a user decision that never happened.
+- **Decision**:
+
 ## 3. Live-suite skips (not in core CI)
 
 These four `*.spec.ts` suites are gated behind `CLAXEDO_E2E_LIVE=1` (Tier L: real claxedo-server, real relay/tunnel, real MCP subprocess, real harness binaries) and do **not** run in core CI. Within them, the following bodies are `test.fixme` (real app bug/gap) or `test.skip` (missing prereq). Listed for triage; not blocking core CI.

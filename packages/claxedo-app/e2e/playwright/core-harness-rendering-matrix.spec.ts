@@ -883,6 +883,96 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(row).not.toContainText("Running")
   })
 
+  test("an interrupted Codex command stays interrupted when rail-return replay resends its start", async ({ page }, testInfo) => {
+    test.fixme(true, "a replayed runtime tool start overwrites the stored interrupted state and the row returns to Running")
+    const dir = "/tmp/e2e-interrupted-replay"
+    const sessionId = "ses_interrupted_replay"
+    const otherId = "ses_interrupted_replay_other"
+    const userId = "msg_interrupted_replay"
+    const assistantId = `${userId}_r`
+    const callId = "exec-interrupted-replay"
+    const captured = JSON.parse(readFileSync(join(FIXTURES_DIR, "codex-interrupted-command.json"), "utf8"))
+    // The stored part id is the client projection's `seqId` mint (`000000_<callID>`);
+    // a replayed start for the same callID regenerates that id, which is how a
+    // stale frame reaches the already-settled part.
+    const part = {
+      ...captured,
+      id: `000000_${callId}`,
+      callID: callId,
+      sessionID: sessionId,
+      messageID: assistantId,
+    }
+    const messages = [
+      {
+        info: {
+          id: userId, sessionID: sessionId, role: "user",
+          time: { created: captured.state.time.start - 2000 },
+          agent: "build", model: { providerID: "codex", modelID: "gpt-5.6-sol" },
+        },
+        parts: [{ id: `prt_${userId}`, sessionID: sessionId, messageID: userId, type: "text", text: "Run the bounded command" }],
+      },
+      {
+        info: {
+          id: assistantId, sessionID: sessionId, role: "assistant", parentID: userId,
+          time: { created: captured.state.time.start - 1000, completed: captured.state.time.end },
+          modelID: "gpt-5.6-sol", providerID: "codex", mode: "auto", agent: "build",
+          path: { cwd: dir, root: dir }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [part],
+      },
+    ] as unknown as MockMessageRow[]
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "codex-app-server",
+      existingSession: { messages },
+      otherSessions: [{ id: otherId, title: "Other session", prompt: "Other prompt", reply: "Other reply" }],
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session/${sessionId}`)
+    const row = page.locator(SELECTORS.toolPart(part.id))
+    await expect(row).toBeVisible()
+    await expect(row).toContainText(/Failed|Interrupted/)
+    await page.screenshot({ path: testInfo.outputPath("interrupted-before-replay.png") })
+    await (await expectRailRowVisible({ page, sessionId: otherId })).click()
+    await expectAssistantReplyVisible(page, "Other reply", { spec: "core-harness-rendering-matrix", scenario: `interrupt-away-${testInfo.repeatEachIndex}` })
+    await (await expectRailRowVisible({ page, sessionId })).click()
+    // Reload first: the canonical refetch must finish before the replay lands,
+    // or the arriving messages overwrite the stale frame back to terminal and
+    // mask the defect — the original report showed Running AFTER the reload.
+    const refetched = page.waitForResponse(response =>
+      response.request().method() === "GET"
+      && /\/session\/[^/]+\/message/.test(new URL(response.url()).pathname)
+      && response.status() === 200)
+    await page.reload()
+    await refetched
+    await expect(row).toBeVisible()
+    await expect(row).toContainText(/Failed|Interrupted/)
+    // The runtime stream replays the turn's start frames on reattach: the
+    // terminal frame is what the stored part already carries, and a fresh
+    // projection has no memory of it.
+    for (const payload of [
+      {
+        harness: "codex", threadId: sessionId, type: "tool-start",
+        toolCallId: callId, toolName: "command", kind: "command_execution",
+        display: { kind: "command_execution", intent: "shell", command: captured.state.input.command, description: captured.state.input.command },
+      },
+      { harness: "codex", threadId: sessionId, type: "tool-input", toolCallId: callId, input: captured.state.input },
+      { harness: "codex", threadId: sessionId, type: "text-delta", delta: "QA_REPLAY_PROBE" },
+    ]) {
+      mock.emitRuntime({ directory: dir, sessionId, agentSessionId: sessionId, assistantMessageId: assistantId, payload: payload as never })
+    }
+    // The probe proves the replayed frames reached this session's conversation —
+    // without it a silent channel would read as "no resurrection".
+    await expect(page.getByText("QA_REPLAY_PROBE", { exact: false })).toBeVisible({ timeout: 10_000 })
+    await page.screenshot({ path: testInfo.outputPath("interrupted-after-replay.png") })
+    const sawRunning = await expect
+      .poll(async () => (await row.textContent())?.includes("Running"), { timeout: 5_000 })
+      .toBe(true)
+      .then(() => true)
+      .catch(() => false)
+    expect(sawRunning, "the stored interrupted command returned to Running after its start frames replayed").toBe(false)
+  })
+
   test("renderer-only canonical fixture — session.diff routes to the diff cache, never a phantom message row", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
