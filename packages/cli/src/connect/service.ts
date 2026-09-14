@@ -47,10 +47,10 @@ export function defaultServiceDeps(): ServiceDeps {
         const { stdout } = await execFileAsync(file, [...args])
         return { code: 0, stdout }
       } catch (error) {
-        const failed = error as { code?: unknown; stdout?: unknown }
+        const failed = typeof error === "object" && error !== null ? error : {}
         return {
-          code: typeof failed.code === "number" ? failed.code : -1,
-          stdout: typeof failed.stdout === "string" ? failed.stdout : "",
+          code: "code" in failed && typeof failed.code === "number" ? failed.code : -1,
+          stdout: "stdout" in failed && typeof failed.stdout === "string" ? failed.stdout : "",
         }
       }
     },
