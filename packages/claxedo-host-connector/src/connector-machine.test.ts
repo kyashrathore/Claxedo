@@ -237,10 +237,12 @@ describe("assignment discovery", () => {
     h.tick()
     await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_in"]))
 
-    expect(h.ackFailures.map(String)).toEqual([
+    // The refused two stay pending and are refused again on each re-delivery.
+    expect(h.ackFailures.slice(0, 2).map(String)).toEqual([
       expect.stringContaining("ws_cli: /srv/other is outside this host's roots"),
       expect.stringContaining("ws_out: /home/u/secret is outside this host's roots"),
     ])
+    expect(new Set(h.ackFailures.map(String)).size).toBe(2)
     for (const beat of h.beats()) {
       const acks = beat.body.acks as Array<{ workspaceId: string }>
       expect(acks.map((ack) => ack.workspaceId)).not.toContain("ws_out")
@@ -261,6 +263,48 @@ describe("assignment discovery", () => {
 
     expect(String(h.ackFailures[0])).toContain("outside this host's roots")
     expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
+  })
+
+  test("a description whose preparation failed stays pending and is re-delivered: every beat for five attempts, then every tenth", async () => {
+    const cp = createFakeControlPlane()
+    let exists = false
+    const h = await machineHost(cp, {
+      resolvePath: async (p) => {
+        if (p === "/srv/api" && !exists) throw Object.assign(new Error(`ENOENT: ${p}`), { code: "ENOENT" })
+        return p
+      },
+    })
+    await h.connector.start()
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_1", remoteDirectory: "/srv/api" })
+    const deliveriesAfter = async () => {
+      h.tick()
+      await vi.waitFor(() => expect(h.beats().length).toBe(beatsBefore + 1))
+      beatsBefore = h.beats().length
+      return h.seen.length
+    }
+    let beatsBefore = h.beats().length
+
+    const perBeat: number[] = []
+    for (let beat = 1; beat <= 15; beat++) perBeat.push(await deliveriesAfter())
+
+    // Beats 1–5 each deliver the pending description again; 6–14 do not; 15 does.
+    expect(perBeat).toEqual([1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 6])
+    expect(h.ackFailures).toHaveLength(6)
+    expect(String(h.ackFailures[0])).toContain("cannot be resolved")
+    expect(h.connector.acked()).toEqual([])
+    expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
+
+    exists = true
+    for (let beat = 1; beat <= 9; beat++) expect(await deliveriesAfter()).toBe(6)
+    h.tick()
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_1"]))
+
+    expect(h.seen).toHaveLength(7)
+    expect(h.connector.acked()).toEqual([{ workspaceId: "ws_1", revision: 1 }])
+    // Acked: nothing is pending, so a further beat delivers nothing.
+    await h.connector.beat()
+    await h.connector.beat()
+    expect(h.seen).toHaveLength(7)
   })
 
   test("a retired assignment is unacked on the next beat", async () => {
@@ -557,11 +601,12 @@ describe("with a real filesystem", () => {
     h.tick()
     await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_alias"]))
 
-    expect(h.ackFailures.map(String)).toEqual([
+    expect(h.ackFailures.slice(0, 2).map(String)).toEqual([
       expect.stringContaining("ws_escape"),
       expect.stringContaining("ws_missing"),
     ])
     expect(String(h.ackFailures[1])).toContain("cannot be resolved")
+    expect(new Set(h.ackFailures.map(String)).size).toBe(2)
   })
 
   test("a --root that is a symlink under the control plane's root cannot carry that root's authority to the link target", async () => {

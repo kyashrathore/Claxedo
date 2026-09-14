@@ -179,11 +179,14 @@ export type MachineConnectorOptions = CommonConnectorOptions & {
   /** `realpath`: a symlink out of the roots is refused on the resolved path, not the lexical one. */
   resolvePath: (path: string) => Promise<string>
   /**
-   * The complete current description list, every time it changes. Anything
-   * whose revision is not the one the caller already serves has ALREADY been
-   * unacked here: the caller closes that workspace's tunnel and runtime,
-   * validates, prepares the new directory, then `ack`s the new revision. A
-   * workspace the caller serves that is absent from the list is retired.
+   * The complete current description list, every time it changes and again
+   * while any description is delivered but unacked (next beat for five
+   * attempts, then every tenth beat). Anything whose revision is not the one
+   * the caller already serves has ALREADY been unacked here: the caller
+   * closes that workspace's tunnel and runtime, validates, prepares the new
+   * directory, then `ack`s the new revision; a preparation that fails leaves
+   * the description pending for the next delivery. A workspace the caller
+   * serves that is absent from the list is retired.
    */
   onAssignments?: (descriptions: AssignmentDescription[]) => void | Promise<void>
   /** A newer scope revision, delivered before the same beat's assignments are reconciled. */
@@ -261,14 +264,25 @@ export function createHostConnector(options: ConnectorOptions) {
   /**
    * Machine mode's view of the owner's intent and this host's consent.
    *
-   * `descriptions` is the last applied assignment list, `acked` the subset
+   * `descriptions` is the last delivered assignment list, `acked` the subset
    * this host has said it serves, by revision. The two disagree by design
    * between a change arriving and the caller re-acking it: that gap is the
    * withdrawal, and the control plane stops routing the workspace for exactly
    * as long as it lasts.
+   *
+   * `pending` is every description delivered but not yet acked at its
+   * current revision, with how many deliveries it has had and how many beats
+   * to sit out before the next one. A preparation that failed (directory not
+   * there yet, endpoints not delivered yet) is re-delivered on the next beat
+   * for the first five attempts and on every tenth beat after that, so a
+   * folder created after the assignment is served without a restart while a
+   * folder that never appears costs one attempt every ten beats.
    */
   const descriptions = new Map<string, AssignmentDescription>()
   const acked = new Map<string, number>()
+  const pending = new Map<string, { attempts: number; skip: number }>()
+  const PENDING_EVERY_BEAT_ATTEMPTS = 5
+  const PENDING_RETRY_EVERY_BEATS = 10
   let generation: number | undefined
   let scopeRevision: number | undefined
   let deliveredEndpoints: string | undefined
@@ -280,6 +294,7 @@ export function createHostConnector(options: ConnectorOptions) {
     links.clear()
     descriptions.clear()
     acked.clear()
+    pending.clear()
     state = { status: "stopped", reason, detail }
   }
 
@@ -363,6 +378,7 @@ export function createHostConnector(options: ConnectorOptions) {
       // smaller set and the control plane stops minting for this workspace
       // until the new revision is acked.
       acked.delete(description.workspaceId)
+      pending.set(description.workspaceId, { attempts: 0, skip: 0 })
       changed = true
     }
     // Deleting during iteration is defined for Map: a removed key is skipped, nothing is revisited.
@@ -370,9 +386,19 @@ export function createHostConnector(options: ConnectorOptions) {
       if (present.has(workspaceId)) continue
       descriptions.delete(workspaceId)
       acked.delete(workspaceId)
+      pending.delete(workspaceId)
       changed = true
     }
-    if (!changed) return
+    let due = changed
+    for (const entry of pending.values()) {
+      if (entry.skip === 0) due = true
+      else entry.skip--
+    }
+    if (!due) return
+    for (const entry of pending.values()) {
+      entry.attempts++
+      entry.skip = entry.attempts < PENDING_EVERY_BEAT_ATTEMPTS ? 0 : PENDING_RETRY_EVERY_BEATS - 1
+    }
     await machine.onAssignments?.(currentDescriptions())
   }
 
@@ -472,6 +498,7 @@ export function createHostConnector(options: ConnectorOptions) {
       throw new Error(`assignment ${input.workspaceId} changed while revision ${input.revision} was being validated`)
     }
     acked.set(input.workspaceId, input.revision)
+    pending.delete(input.workspaceId)
     void machineBeat(machine)
   }
 

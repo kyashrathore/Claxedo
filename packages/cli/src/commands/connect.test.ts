@@ -357,6 +357,28 @@ describe("claxedo connect", () => {
     expect(await running).toBe(0)
   })
 
+  test("a folder assigned before it exists is served once it appears, without a restart", async () => {
+    const { file } = await invitationFile(h, [h.root])
+    const running = connect(["--token-file", file], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    const hostId = (await h.deps.store.load())!.host_id
+    const later = path.join(h.root, "later")
+    h.cp.assign({ hostId, workspaceId: "ws_later", remoteDirectory: later })
+    h.tick()
+    await until(() => h.lines.some((line) => line.startsWith("workspace ws_later: refused: ")), "the first attempt to fail")
+    expect(h.lines.at(-1)).toContain("cannot be resolved")
+    expect(h.listener()?.workspaceIds()).toEqual([])
+
+    await fs.mkdir(later)
+    h.tick()
+    await until(() => h.cp.routable(enrollmentIdOf(h)).includes("ws_later"), "the ack after the folder appeared")
+    expect(h.listener()?.workspaceIds()).toEqual(["ws_later"])
+    expect(h.lines).toContain(`workspace ws_later: serving ${later} (revision 1)`)
+    expect(h.cp.log.filter((entry) => entry.path.endsWith("/acquire"))).toHaveLength(1)
+    h.stop()
+    expect(await running).toBe(0)
+  })
+
   test("--install-service enrolls, writes the unit and records it; --uninstall-service removes it", async () => {
     const { file } = await invitationFile(h, [h.root])
     expect(await connect(["--token-file", file, "--install-service"], h.deps)).toBe(0)
