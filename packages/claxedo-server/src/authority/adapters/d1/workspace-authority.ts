@@ -12,6 +12,7 @@ import type {
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
+import { normalizeStoredDirectory } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { HOST_SERVING_WORKSPACE_SQL, organizationRoleRankSql } from "./host-access-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 
@@ -79,6 +80,19 @@ export type D1WorkspaceCreateArgs = {
   backing: "local-worktree" | "cloud-vm"
   access: "user-hosted" | "cloud"
   /** Whether ordinary org members get the implicit viewer rank; the serving host's scope decides it. */
+  orgMemberVisible?: boolean
+}
+
+export type D1LocalWorkspaceRegistrationArgs = {
+  workspaceId: string
+  displayName: string
+  projectId?: string
+  repoUrl?: string
+  repoName?: string
+  gitBranch?: string
+  remoteDirectory?: string
+  homeRegion?: string
+  orgId?: string
   orgMemberVisible?: boolean
 }
 
@@ -1099,6 +1113,31 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   /** Explicit-org creation seam used by new hosted organization routes. */
   async createWorkspace(auth: SignedControlPlaneAuth, input: D1WorkspaceCreateArgs) {
+    const creation = await this.workspaceCreation(auth, input)
+    await this.guardedBatch(creation.statements, "Workspace identity conflicts with existing authority state")
+    const workspace = await this.workspaceAccess(creation.who.userId, creation.workspaceId)
+    if (!workspace || workspace.org_id !== creation.orgId || workspace.role_rank < 3) {
+      throw denied("Workspace creation authority was denied")
+    }
+    return {
+      workspace_doc_id: creation.workspaceId,
+      workspace_id: creation.workspaceId,
+      project_id: workspace.project_id,
+      org_id: creation.orgId,
+    }
+  }
+
+  /**
+   * The statements that create a workspace, and its project when the
+   * repository has none, for a caller that composes them into its own batch:
+   * the host assignment lands a cold workspace and the assignment together,
+   * so a batch its guard refuses leaves no workspace behind. The organization
+   * admin check is repeated inside the insert and the batch assertion proves
+   * the row landed as described, so nothing here depends on the reads staying
+   * true until the batch runs. The directory is recorded normalized, which is
+   * the form the scope retirement compares by prefix.
+   */
+  async workspaceCreation(auth: SignedControlPlaneAuth, input: D1WorkspaceCreateArgs) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(input.workspaceId, "workspaceId")
     const orgId = requireText(input.orgId, "orgId")
@@ -1109,9 +1148,10 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     }
     validateWorkspacePlacement(input.backing, input.access)
     const homeRegion = validateHomeRegion(input.homeRegion)
+    const remoteDirectory = input.remoteDirectory === undefined ? null : normalizeStoredDirectory(input.remoteDirectory)
     const repoKey = canonicalRepositoryKey({
       repoUrl: input.repoUrl,
-      remoteDirectory: input.remoteDirectory,
+      remoteDirectory,
       workspaceId,
     })
     const existingProject = await this.database
@@ -1133,8 +1173,11 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const now = this.now()
     const adminGuard = organizationAdminSql("?", "?")
 
-    await this.guardedBatch(
-      [
+    return {
+      who,
+      workspaceId,
+      orgId,
+      statements: [
         this.database
           .prepare(
             `
@@ -1181,7 +1224,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             input.repoUrl ?? null,
             input.repoName ?? null,
             input.gitBranch ?? null,
-            input.remoteDirectory ?? null,
+            remoteDirectory,
             now,
             now,
             input.orgMemberVisible === false ? 0 : 1,
@@ -1219,21 +1262,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             input.repoUrl ?? null,
             input.repoName ?? null,
             input.gitBranch ?? null,
-            input.remoteDirectory ?? null,
+            remoteDirectory,
             repoKey,
             input.projectId ?? null,
             input.projectId ?? null,
           ),
         this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId),
       ],
-      "Workspace identity conflicts with existing authority state",
-    )
-
-    const workspace = await this.workspaceAccess(who.userId, workspaceId)
-    if (!workspace || workspace.org_id !== orgId || workspace.role_rank < 3) {
-      throw denied("Workspace creation authority was denied")
     }
-    return { workspace_doc_id: workspaceId, workspace_id: workspaceId, project_id: workspace.project_id, org_id: orgId }
   }
 
   async createCloudWorkspace(
@@ -1256,27 +1292,25 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     })
   }
 
-  async registerLocalForSharing(
+  async registerLocalForSharing(auth: SignedControlPlaneAuth, args: D1LocalWorkspaceRegistrationArgs) {
+    return await this.createWorkspace(auth, await this.localWorkspaceArgs(auth, args))
+  }
+
+  /** `registerLocalForSharing` as statements for the host assignment's batch. */
+  async localWorkspaceRegistration(auth: SignedControlPlaneAuth, args: D1LocalWorkspaceRegistrationArgs) {
+    return await this.workspaceCreation(auth, await this.localWorkspaceArgs(auth, args))
+  }
+
+  private async localWorkspaceArgs(
     auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      displayName: string
-      projectId?: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-      orgId?: string
-      orgMemberVisible?: boolean
-    },
-  ) {
-    return await this.createWorkspace(auth, {
+    args: D1LocalWorkspaceRegistrationArgs,
+  ): Promise<D1WorkspaceCreateArgs> {
+    return {
       ...args,
       orgId: args.orgId ?? await this.creationOrgId(auth, args.projectId),
       backing: "local-worktree",
       access: "user-hosted",
-    })
+    }
   }
 
   async deleteWorkspace(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {

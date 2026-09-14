@@ -36,7 +36,12 @@ const MIGRATIONS = [
   "0026_workspace_org_member_visible.sql",
   "0027_host_connect.sql",
   "0028_workspace_host_assignment_revision.sql",
-].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
+  "0029_normalize_user_hosted_directories.sql",
+].map(migrationPath)
+
+function migrationPath(name: string) {
+  return fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url))
+}
 
 const active: Miniflare[] = []
 
@@ -79,7 +84,7 @@ async function setup() {
     now,
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
     randomNonce: () => `nonce_${String(++sequence).padStart(4, "0")}`,
-    registerLocalForSharing: (auth, input) => workspace.registerLocalForSharing(auth, input),
+    localWorkspaceRegistration: (auth, input) => workspace.localWorkspaceRegistration(auth, input),
     resolveOrgId: (auth) => workspace.resolveOrgId(auth),
   })
   // No deployment pin: the fixture's organizations are team orgs, which carry
@@ -91,6 +96,7 @@ async function setup() {
     hostAccess,
     relayTarget,
     now,
+    applyMigration: (name: string) => applyMigration(raw, migrationPath(name)),
     advance(milliseconds: number) {
       clock += milliseconds
     },
@@ -1656,9 +1662,123 @@ describe("host-connect: machine heartbeat, readiness, invitations, scope", () =>
       await patch("/srv/elsewhere")
     })
     const root = winner.allowed_roots[0] ?? ""
+    const projectsBefore = await input.database.prepare("select count(*) as n from projects").first()
     await expect(input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_x", hostId: enrollment.host_id, remoteDirectory: `${root}/x` }))
       .rejects.toMatchObject({ code: "resource_conflict" })
     expect(await input.database.prepare("select count(*) as n from host_workspace_assignments where workspace_id = 'ws_x'").first())
       .toEqual({ n: 0 })
+    // The cold registration rode in the same batch: no workspace row — which
+    // `visibility: "org"` would have shown to every member — and no project.
+    expect(await input.database.prepare("select count(*) as n from workspaces where workspace_id = 'ws_x'").first())
+      .toEqual({ n: 0 })
+    expect(await input.database.prepare("select count(*) as n from projects").first()).toEqual(projectsBefore)
+  })
+
+  test("a legacy row stored with .. or a trailing slash is retired or kept by what it resolves to once migration 0029 has normalized it", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"], "org"), "vps-l", await hostKey())
+    const assign = (workspaceId: string, remoteDirectory: string) =>
+      input.hostAccess.assignWorkspaceHost(owner, { workspaceId, hostId: enrollment.host_id, remoteDirectory })
+    await assign("ws_escape", "/srv/allowed/api")
+    await assign("ws_slash", "/srv/allowed/web")
+    await assign("ws_dot", "/srv/allowed/dot")
+    await assign("ws_sibling", "/srv/allowedx")
+    await assign("ws_root", "/srv/allowed")
+    // What the desktop's registration and the pre-normalization writers left behind.
+    const legacy: Record<string, string> = {
+      ws_escape: "/srv/allowed/../secret",
+      ws_slash: "/srv/allowed/web/",
+      ws_dot: "/srv/./allowed//dot/./",
+      ws_sibling: "/srv/allowedx/",
+      ws_root: "/srv/allowed/",
+    }
+    for (const [workspaceId, directory] of Object.entries(legacy)) {
+      await input.database.prepare("update workspaces set remote_directory = ? where workspace_id = ?").bind(directory, workspaceId).run()
+    }
+    await input.applyMigration("0029_normalize_user_hosted_directories.sql")
+    const stored = await input.database.prepare(
+      "select workspace_id, remote_directory from workspaces where workspace_id in (select workspace_id from host_workspace_assignments) order by workspace_id",
+    ).all<{ workspace_id: string; remote_directory: string }>()
+    expect(stored.results).toEqual([
+      { workspace_id: "ws_dot", remote_directory: "/srv/allowed/dot" },
+      { workspace_id: "ws_escape", remote_directory: "/srv/secret" },
+      { workspace_id: "ws_root", remote_directory: "/srv/allowed" },
+      { workspace_id: "ws_sibling", remote_directory: "/srv/allowedx" },
+      { workspace_id: "ws_slash", remote_directory: "/srv/allowed/web" },
+    ])
+
+    const updated = await input.hostAccess.updateHostEnrollmentScope(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: ["/srv/allowed"], visibility: "org" },
+    })
+    expect(updated.retired_workspace_ids).toEqual(["ws_escape", "ws_sibling"])
+    expect((await input.database.prepare("select workspace_id from host_workspace_assignments order by workspace_id").all()).results)
+      .toEqual([{ workspace_id: "ws_dot" }, { workspace_id: "ws_root" }, { workspace_id: "ws_slash" }])
+  })
+
+  test("a trailing slash an un-normalized writer leaves behind is still classified by the prefix clause", async () => {
+    const input = await setup()
+    await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"], "org"), "vps-ts", await hostKey())
+    const assign = (workspaceId: string, remoteDirectory: string) =>
+      input.hostAccess.assignWorkspaceHost(owner, { workspaceId, hostId: enrollment.host_id, remoteDirectory })
+    await assign("ws_in", "/srv/allowed/web")
+    await assign("ws_exact", "/srv/allowed")
+    await assign("ws_out", "/srv/allowedx")
+    for (const workspaceId of ["ws_in", "ws_exact", "ws_out"]) {
+      await input.database.prepare("update workspaces set remote_directory = remote_directory || '/' where workspace_id = ?").bind(workspaceId).run()
+    }
+    const updated = await input.hostAccess.updateHostEnrollmentScope(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: ["/srv/allowed"], visibility: "org" },
+    })
+    expect(updated.retired_workspace_ids).toEqual(["ws_out"])
+  })
+
+  test("every write of a directory records it normalized, and a re-point without one repairs the stored value", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const { enrollment } = await redeem(input, await invite(input, owner, ["/srv"], "org"), "vps-n", await hostKey())
+    const directory = async (workspaceId: string) =>
+      (await input.database.prepare("select remote_directory from workspaces where workspace_id = ?").bind(workspaceId).first<{ remote_directory: string }>())?.remote_directory
+    // Cold registration through the assignment.
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_cold", hostId: enrollment.host_id, remoteDirectory: "/srv/./api/../api/" })
+    expect(await directory("ws_cold")).toBe("/srv/api")
+    // Generic registration, which the desktop and the self-hosted node use.
+    await input.workspace.registerLocalForSharing(alice, { workspaceId: "ws_reg", displayName: "reg", orgId: "org_acme", remoteDirectory: "/srv/reg//" })
+    expect(await directory("ws_reg")).toBe("/srv/reg")
+    // Re-assignment of an existing row with a directory.
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_reg", hostId: enrollment.host_id, remoteDirectory: "/srv/reg/../reg2/" })
+    expect(await directory("ws_reg")).toBe("/srv/reg2")
+    // Re-assignment without one: the stale stored value is written back normalized, not kept.
+    await input.database.prepare("update workspaces set remote_directory = '/srv/reg2/../reg3/' where workspace_id = 'ws_reg'").run()
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_reg", hostId: enrollment.host_id })
+    expect(await directory("ws_reg")).toBe("/srv/reg3")
+    // A Windows path on an account machine is recorded as given.
+    await enrollAccountMachine(input, alice, "laptop-n")
+    await input.hostAccess.assignWorkspaceHost(owner, { workspaceId: "ws_win", hostId: "laptop-n", orgId: "org_acme", remoteDirectory: "C:\\Users\\dev\\app\\" })
+    expect(await directory("ws_win")).toBe("C:\\Users\\dev\\app\\")
+  })
+
+  test("hostEnrollmentByHost answers the caller's live machine by host id and nothing for a revoked, foreign or unknown one", async () => {
+    const input = await setup()
+    const { alice, bob } = await fixture(input)
+    const owner = await signed(input.workspace, "alice", "org_acme")
+    const laptop = await enrollAccountMachine(input, alice, "laptop")
+    const vps = await redeem(input, await invite(input, owner, ["/srv"]), "vps", await hostKey())
+    await enrollAccountMachine(input, alice, "gone")
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "gone" })
+    await enrollAccountMachine(input, bob, "bobs")
+    expect(await input.hostAccess.hostEnrollmentByHost(alice, { hostId: "laptop" }))
+      .toEqual({ enrollment_id: laptop.enrollmentId, host_id: "laptop", enrolled_via: "account" })
+    expect(await input.hostAccess.hostEnrollmentByHost(alice, { hostId: "vps" }))
+      .toEqual({ enrollment_id: vps.enrollment.enrollment_id, host_id: "vps", enrolled_via: "invitation" })
+    for (const hostId of ["gone", "bobs", "nope"]) {
+      expect(await input.hostAccess.hostEnrollmentByHost(alice, { hostId })).toBeUndefined()
+    }
   })
 })

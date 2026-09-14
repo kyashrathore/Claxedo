@@ -89,8 +89,8 @@ function regionalHostTunnel(
 }
 
 async function accountEnrolled(authority: WorkspaceAuthority, auth: SignedControlPlaneAuth, hostId: string) {
-  const machines = await authority.listHostEnrollments?.(auth)
-  return machines?.some((row) => row.host_id === hostId && row.enrolled_via === "account") ?? false
+  const machine = await authority.hostEnrollmentByHost?.(auth, { hostId })
+  return machine?.enrolled_via === "account"
 }
 
 export type HostAssignmentHandlers = {

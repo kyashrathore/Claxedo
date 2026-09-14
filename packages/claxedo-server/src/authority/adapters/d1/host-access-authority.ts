@@ -29,13 +29,14 @@ import {
   invitationRedeemPayload,
   invitationToken,
   normalizePosixDirectory,
+  normalizeStoredDirectory,
   publicKeyFingerprint,
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import type { MachineAuthRefusal } from "@claxedo/server-core/platform/auth/machine-auth"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
 import { sha256Hex } from "@claxedo/helpers/crypto"
 import { asRecord, parseJson } from "@claxedo/server-core/platform/json/index"
-import { batchAssertionFailed } from "./workspace-authority"
+import { batchAssertionFailed, type D1WorkspaceAuthority } from "./workspace-authority"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "createHostEnrollmentRequest",
@@ -46,6 +47,7 @@ export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "pauseHostEnrollment",
   "activeHostEnrollment",
   "listHostEnrollments",
+  "hostEnrollmentByHost",
   "updateHostEnrollmentScope",
   "createHostInvitation",
   "listHostInvitations",
@@ -64,17 +66,13 @@ export type D1HostAccessAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_HOST
   machineAuth: MachineAuthAdapter
 }
 
-type RegisterLocalForSharing = (
-  auth: SignedControlPlaneAuth,
-  args: Parameters<WorkspaceAuthority["registerLocalForSharing"]>[1] & { orgMemberVisible?: boolean },
-) => ReturnType<WorkspaceAuthority["registerLocalForSharing"]>
-
 export type D1HostAccessAuthorityOptions = {
   deploymentId: string
   now?: () => number
   randomId?: (prefix: "request" | "enrollment" | "grant" | "assert" | "invitation" | "audit") => string
   randomNonce?: () => string
-  registerLocalForSharing?: RegisterLocalForSharing
+  /** The statements that cold-register a user-hosted workspace, run inside the assignment's own batch. */
+  localWorkspaceRegistration?: D1WorkspaceAuthority["localWorkspaceRegistration"]
   /** The caller's current organization, recorded on an invitation when it is created. */
   resolveOrgId?: WorkspaceAuthority["resolveOrgId"]
 }
@@ -378,11 +376,15 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
    *
    * The owner's rank is decided against the record as it stands — a retired
    * user-hosted row included, since assigning it is what revives it — so a
-   * refused request writes nothing. The revival, the directory and the next
-   * assignment revision then land in one batch guarded on the workspace
-   * counter and the enrollment's scope revision this call validated; the
-   * enrollment's scope decides both whether the directory is allowed and
-   * whether ordinary org members see the workspace.
+   * refused request writes nothing. The cold registration, the revival, the
+   * directory and the next assignment revision then land in one batch guarded
+   * on the workspace counter and the enrollment's scope revision this call
+   * validated, so a scope that moved in between leaves neither an assignment
+   * nor a workspace behind; the enrollment's scope decides both whether the
+   * directory is allowed and whether ordinary org members see the workspace.
+   * A stored directory is written back in its normalized form even when the
+   * request omits one, so a row an older writer left un-normalized is
+   * repaired by the next assignment.
    */
   async assignWorkspaceHost(
     auth: SignedControlPlaneAuth,
@@ -403,7 +405,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const hostId = requireText(args.hostId, "hostId")
     const displayName = optionalText(args.displayName, "displayName", 200)
-    const remoteDirectory = storedDirectory(optionalText(args.remoteDirectory, "remoteDirectory", MAX_SCOPE_ROOT_LENGTH))
+    const requestedDirectory = optionalText(args.remoteDirectory, "remoteDirectory", MAX_SCOPE_ROOT_LENGTH)
     const enrollment = await this.enrollment(who.actorId, hostId)
     if (!enrollment || enrollment.revoked_at !== null) {
       throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
@@ -424,18 +426,21 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         throw new D1HostAccessAuthorityError("host_assignment_outside_scope", "Workspace organization differs from the invitation's")
       }
     }
-    if (scope && !directoryWithinRoots(remoteDirectory ?? workspace?.remote_directory ?? "", scope.allowed_roots)) {
+    const directory = requestedDirectory ?? workspace?.remote_directory ?? undefined
+    const remoteDirectory = directory === undefined ? undefined : normalizeStoredDirectory(directory)
+    if (scope && !directoryWithinRoots(remoteDirectory ?? "", scope.allowed_roots)) {
       throw new D1HostAccessAuthorityError(
         "host_assignment_outside_scope",
         "Workspace directory is outside the roots this machine may serve",
       )
     }
+    let registration: D1PreparedStatement[] = []
     if (!workspace) {
-      if (!this.options.registerLocalForSharing) {
+      if (!this.options.localWorkspaceRegistration) {
         throw new D1HostAccessAuthorityError("host_attestation_denied", "Cold local workspace registration is unavailable")
       }
       const orgId = args.orgId ?? invitationOrgId
-      await this.options.registerLocalForSharing(auth, {
+      registration = (await this.options.localWorkspaceRegistration(auth, {
         workspaceId,
         displayName: displayName ?? workspaceId,
         ...(orgId ? { orgId } : {}),
@@ -446,9 +451,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         ...(remoteDirectory ? { remoteDirectory } : {}),
         ...(args.homeRegion ? { homeRegion: args.homeRegion } : {}),
         orgMemberVisible,
-      })
-      workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
-      requireLocalWorkspace(workspace)
+      })).statements
     }
     // The assigning owner describes the workspace the machine serves — name,
     // repository, branch, directory — and that description is the record.
@@ -460,10 +463,12 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       ...(remoteDirectory ? [["remote_directory", remoteDirectory] as [string, string]] : []),
       ["org_member_visible", orgMemberVisible ? 1 : 0],
     ]
-    const revision = workspace.host_assignment_revision + 1
+    const counter = workspace?.host_assignment_revision ?? 0
+    const revision = counter + 1
     const now = this.now()
     const assertionId = this.randomId("assert")
     await this.guardedBatch([
+      ...registration,
       this.database.prepare(`
         update workspaces set deleted_at = null, host_assignment_revision = ?,
           ${description.map(([column]) => `${column} = ?`).join(", ")}, updated_at = ?
@@ -477,7 +482,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         ...description.map(([, value]) => value),
         now,
         workspaceId,
-        workspace.host_assignment_revision,
+        counter,
         who.actorId,
         hostId,
         enrollment.scope_revision,
@@ -498,7 +503,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           revision = excluded.revision
       `).bind(hostId, who.userId, who.actorId, now, now, workspaceId),
       this.deleteAssertion(assertionId),
-    ], "Host assignment raced with a scope or assignment change")
+    ], "Host assignment raced with a scope, assignment or workspace identity change")
     return { assigned: true as const, workspace_id: workspaceId, host_id: hostId }
   }
 
@@ -781,7 +786,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     // The owner's assignment view rides back on every ack so the machine can
     // reconcile its persisted set — without this, machine consent and owner
     // intent drift apart silently forever.
-    const assigned = await this.assignmentDescriptions(hostId, who.actorId)
+    const assigned = await this.assignmentDescriptions(who.actorId, hostId)
     return {
       expires_at: expiresAt,
       last_seen_at: now,
@@ -848,7 +853,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     }
     const row = await this.enrollmentById(machine.enrollmentId)
     if (!row) throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
-    const assigned = await this.assignmentDescriptions(row.host_id, row.owner_actor_id)
+    const assigned = await this.assignmentDescriptions(row.owner_actor_id, row.host_id)
     return {
       expires_at: expiresAt,
       last_seen_at: now,
@@ -935,6 +940,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       list.push({ workspaceId: row.workspace_id, revision: row.revision })
       acked.set(row.enrollment_id, list)
     }
+    const descriptions = new Map<string, HostAssignmentDescription[]>()
+    for (const entry of await this.assignmentDescriptions(who.actorId)) {
+      if (!entry.description) continue
+      const list = descriptions.get(entry.host_id) ?? []
+      list.push(entry.description)
+      descriptions.set(entry.host_id, list)
+    }
     return await Promise.all((rows.results ?? []).map(async (row) => ({
       enrollment_id: row.enrollment_id,
       ...(row.display_name ? { display_name: row.display_name } : {}),
@@ -947,11 +959,19 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       serving_generation: row.serving_generation,
       ...(row.generation_acquired_at !== null ? { generation_acquired_at: row.generation_acquired_at } : {}),
       ...(row.paused_at !== null ? { paused_at: row.paused_at } : {}),
-      assignments: (await this.assignmentDescriptions(row.host_id, row.owner_actor_id))
-        .flatMap((entry) => entry.description ? [entry.description] : []),
+      assignments: descriptions.get(row.host_id) ?? [],
       acked: acked.get(row.enrollment_id) ?? [],
       scope: hostEnrollmentScope(row.scope_json, row.scope_revision),
     })))
+  }
+
+  async hostEnrollmentByHost(auth: SignedControlPlaneAuth, args: { hostId: string }) {
+    const who = await this.requirePrincipal(auth)
+    const row = await this.database.prepare(`
+      select enrollment_id, host_id, enrolled_via from host_enrollments
+      where owner_actor_id = ? and host_id = ? and revoked_at is null
+    `).bind(who.actorId, requireText(args.hostId, "hostId")).first<Pick<EnrollmentRow, "enrollment_id" | "host_id" | "enrolled_via">>()
+    return row ?? undefined
   }
 
   async updateHostEnrollmentScope(
@@ -974,6 +994,9 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     // roots nor under one, read inside the batch against the rows it deletes;
     // binds host_id, owner_actor_id and the roots JSON, in that order. A row
     // with no directory is outside every root, as in `directoryWithinRoots`.
+    // The prefix clause also admits a row left with a trailing separator
+    // (`/srv/app/` under `/srv/app`); `.` and `..` segments it cannot see are
+    // what every writer normalizes away and migration 0029 removed.
     const outsideRootsSql = `
       select assignment.workspace_id from host_workspace_assignments assignment
       left join workspaces workspace on workspace.workspace_id = assignment.workspace_id
@@ -1613,26 +1636,30 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   }
 
   /**
-   * The assignments of one host with the description each carries. An
-   * assignment whose workspace has no directory yields no description: a
-   * machine caller can only serve a path, so `assignments` omits it while
+   * The assignments of an owner's hosts — one host, or every host when no
+   * id is given — with the description each carries. An assignment whose
+   * workspace has no directory yields no description: a machine caller can
+   * only serve a path, so `assignments` omits it while
    * `assigned_workspace_ids` still lists it for the desktop's reconciliation.
    */
-  private async assignmentDescriptions(hostId: string, ownerActorId: string) {
+  private async assignmentDescriptions(ownerActorId: string, hostId?: string) {
     const rows = await this.database.prepare(`
-      select assignment.workspace_id, assignment.revision, workspace.remote_directory, workspace.display_name
+      select assignment.workspace_id, assignment.host_id, assignment.revision,
+        workspace.remote_directory, workspace.display_name
       from host_workspace_assignments assignment
       join workspaces workspace on workspace.workspace_id = assignment.workspace_id and workspace.deleted_at is null
-      where assignment.host_id = ? and assignment.owner_actor_id = ?
-      order by assignment.workspace_id
-    `).bind(hostId, ownerActorId).all<{
+      where assignment.owner_actor_id = ? and (? is null or assignment.host_id = ?)
+      order by assignment.host_id, assignment.workspace_id
+    `).bind(ownerActorId, hostId ?? null, hostId ?? null).all<{
       workspace_id: string
+      host_id: string
       revision: number
       remote_directory: string | null
       display_name: string | null
     }>()
     return (rows.results ?? []).map((row) => ({
       workspace_id: row.workspace_id,
+      host_id: row.host_id,
       remote_directory: row.remote_directory,
       description: row.remote_directory === null
         ? undefined
@@ -2059,17 +2086,6 @@ export function retireUserHostedWorkspaceSql(where: string) {
     update workspaces set deleted_at = ?, updated_at = ?
     where access = 'user-hosted' and deleted_at is null and ${where}
   `
-}
-
-/**
- * An absolute POSIX directory is recorded in its normalized form (no `.`,
- * `..`, repeated or trailing separators) so the scope root check the scope
- * PATCH runs in SQL, a prefix comparison, agrees with `directoryWithinRoots`.
- * Anything else — a Windows path on an account machine — is recorded as given.
- */
-function storedDirectory(input: string | undefined) {
-  if (input === undefined) return undefined
-  return normalizePosixDirectory(input) ?? input
 }
 
 function requireLocalWorkspace(workspace: WorkspaceRow) {

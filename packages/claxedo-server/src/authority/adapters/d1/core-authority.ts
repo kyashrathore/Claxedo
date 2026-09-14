@@ -99,7 +99,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
   const sessions = new D1SessionAuthority(database, shared)
   const hosts = new D1HostAccessAuthority(database, {
     ...shared,
-    registerLocalForSharing: (auth, input) => workspace.registerLocalForSharing(auth, input),
+    localWorkspaceRegistration: (auth, input) => workspace.localWorkspaceRegistration(auth, input),
     resolveOrgId: (auth) => workspace.resolveOrgId(auth),
   })
   const audit = new D1AuditAuthority(database, shared)

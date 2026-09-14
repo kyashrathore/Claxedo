@@ -40,18 +40,7 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
 })
 
 function machineRow(hostId: string, enrolledVia: "account" | "invitation") {
-  return {
-    enrollment_id: `enr_${hostId}`,
-    host_id: hostId,
-    public_key_fingerprint: "fp",
-    key_version: 1,
-    enrolled_via: enrolledVia,
-    last_seen_at: 1,
-    expires_at: 9_999,
-    serving_generation: 0,
-    acked: [],
-    scope: undefined,
-  }
+  return { enrollment_id: `enr_${hostId}`, host_id: hostId, enrolled_via: enrolledVia }
 }
 
 function fakeAuthority(overrides: Record<string, unknown> = {}) {
@@ -84,7 +73,7 @@ function fakeAuthority(overrides: Record<string, unknown> = {}) {
     ]),
     assignWorkspaceHost: vi.fn(async () => ({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })),
     unassignWorkspaceHost: vi.fn(async () => ({ unassigned: true })),
-    listHostEnrollments: vi.fn(async () => [machineRow("host_1", "account")]),
+    hostEnrollmentByHost: vi.fn(async () => machineRow("host_1", "account")),
     auditAllow: vi.fn(async () => ({})),
     auditDeny: vi.fn(async () => ({})),
     ...overrides,
@@ -204,7 +193,9 @@ describe("host assignment (POST /:id/host-assignment)", () => {
       hostId: "host_1",
     })
     // The desktop (account enrollment) opens its relay tunnel from this
-    // credential before its first beat.
+    // credential before its first beat; one enrollment row is read for it,
+    // not the fleet.
+    expect(authority!.hostEnrollmentByHost).toHaveBeenCalledWith(expect.anything(), { hostId: "host_1" })
     expect(json.assignment).toMatchObject({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })
     expect(json.hostTunnel).toMatchObject({
       hostTunnelToken: "htt-for-host_1",
@@ -214,10 +205,10 @@ describe("host assignment (POST /:id/host-assignment)", () => {
   })
 
   test("mints no credential for a machine that is not account-enrolled: its heartbeat ack carries the fenced one", async () => {
-    for (const machines of [[machineRow("host_1", "invitation")], [], undefined]) {
+    for (const machine of [machineRow("host_1", "invitation"), undefined, "absent"] as const) {
       const signer = vi.fn(httSigner)
       const authority = fakeAuthority(
-        machines === undefined ? { listHostEnrollments: undefined } : { listHostEnrollments: vi.fn(async () => machines) },
+        machine === "absent" ? { hostEnrollmentByHost: undefined } : { hostEnrollmentByHost: vi.fn(async () => machine) },
       )
       const { app } = buildApp({ authority, options: { hostTunnelTokenSigner: signer } })
       const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
