@@ -78,7 +78,7 @@ export type SandboxBindings = {
 }
 
 /** Whether the caller stated an authority that has to reach the driver. */
-export function sandboxBindingsRequested(bindings: SandboxBindings | undefined) {
+function sandboxBindingsRequested(bindings: SandboxBindings | undefined) {
   return bindings?.secrets !== undefined || bindings?.net !== undefined
 }
 

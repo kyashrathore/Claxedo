@@ -9,7 +9,7 @@ describe("groupHarnessModels", () => {
       { id: "sonnet", name: "Sonnet" },
     ])
     expect(groups.map((group) => [group.providerId, group.providerName, group.items.map((item) => item.id)])).toEqual([
-      ["claude", "Claude", ["opus", "sonnet"]],
+      ["claude", "Claude Code", ["opus", "sonnet"]],
     ])
   })
 

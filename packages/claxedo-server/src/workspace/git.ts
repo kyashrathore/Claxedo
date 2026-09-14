@@ -12,11 +12,6 @@ export function repoNameFromUrl(repoUrl: string | undefined) {
   return last && last.length > 0 ? last : undefined
 }
 
-export async function cloneRepo(repo: string, dir: string) {
-  await fs.mkdir(path.dirname(dir), { recursive: true })
-  await execFileAsync("git", ["clone", repo, dir])
-}
-
 export async function addWorktree(base: string, dir: string) {
   await fs.mkdir(path.dirname(dir), { recursive: true })
   await execFileAsync("git", ["-C", base, "worktree", "add", dir])

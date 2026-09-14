@@ -141,20 +141,38 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
       url: "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id",
       headers: { Authorization: "dtn_secret_reference" },
     })
-    expect(JSON.stringify(config)).not.toContain("upstream-oauth-token")
-    const substituted = config.mcpServers.docs.headers.Authorization.replace("dtn_secret_reference", "Bearer gateway-token")
-    expect(substituted).toBe("Bearer gateway-token")
   })
 
-  test("materializes native Cloudflare placeholders at the original gateway URL", async () => {
-    const secretName = "CLAXEDO_MCP_ABC"
+  test("refuses a gateway row whose transport or secret name is malformed", async () => {
+    const { artifact, app, applyHarnessLaunch } = await fixture({ mcp: true, env: { CLAXEDO_MCP_ABC: "dtn_secret_reference" } })
+    const docs = { pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessId: "claude", serverName: "docs" }
     const target = "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id"
-    const { artifact, app } = await fixture({
-      mcp: true,
-      env: {
-        [secretName]: `claxedo-broker:${secretName}`,
-      },
-    })
+    for (const server of [
+      { ...docs, state: "gateway", url: "http://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id", brokeredSecretName: "CLAXEDO_MCP_ABC" },
+      { ...docs, state: "gateway", url: target, brokeredSecretName: "claxedo-mcp-abc" },
+      { ...docs, state: "gateway", url: target },
+      { ...docs, state: "unavailable" },
+    ]) {
+      const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          version: 1,
+          identity: { mode: "signed", userId: "user_1", projectId: "project_1" },
+          revision: 1,
+          selections: [{ pluginInstanceId: "claxedo/review", artifactDigest: artifact.digest, harnessIds: ["claude"] }],
+          artifacts: [{ digest: artifact.digest, tree: encodePluginTreeBase64(artifact.tree) }],
+          mcpServers: [server],
+        }),
+      })
+      expect(response.status, JSON.stringify(server)).toBe(400)
+      expect((await response.json() as { error: { code: string } }).error.code).toBe("agent_plugins_runtime_request_invalid")
+    }
+    expect(applyHarnessLaunch).not.toHaveBeenCalled()
+  })
+
+  test("withholds a server the control plane marked unavailable rather than projecting its upstream", async () => {
+    const { artifact, app } = await fixture({ mcp: true })
     const response = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -169,18 +187,19 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
           artifactDigest: artifact.digest,
           harnessId: "claude",
           serverName: "docs",
-          state: "gateway",
-          url: target,
-          brokeredSecretName: secretName,
+          state: "unavailable",
+          reason: "gateway_unbound",
         }],
       }),
     })
+    expect(response.status).toBe(200)
     const body = await response.json() as { harnessLaunch: { claude: { pluginRoots: string[] } } }
-    const config = JSON.parse(await fs.readFile(path.join(body.harnessLaunch.claude.pluginRoots[0], ".mcp.json"), "utf8"))
-    expect(config.mcpServers.docs).toMatchObject({
-      url: target,
-      headers: { Authorization: `claxedo-broker:${secretName}` },
+    const config = await fs.readFile(path.join(body.harnessLaunch.claude.pluginRoots[0], ".mcp.json"), "utf8").catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return ""
+      throw error
     })
+    expect(config).not.toContain("docs")
+    expect(config).not.toContain("upstream.example")
   })
 
   test("the same revision under a different selection is a different generation, and the receipt names it", async () => {

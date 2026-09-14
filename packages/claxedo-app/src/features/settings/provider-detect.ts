@@ -1,7 +1,8 @@
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { loadMachineLogins, useMachineLogin, type MachineLogin } from "@/features/settings/app-ports"
-import type { AIUsageWindow } from "@/features/onboarding/ai-connect-state"
+import type { QuotaWindow } from "@claxedo/usage-contract"
 import { readArray, readBoolean, readField, readFiniteNumber, readString } from "@/lib/record"
+import { readAccountDelivery, readUsageWindows, type AccountDelivery } from "@/ui/controls/account-status"
 
 /** What the server would hand a harness for a provider: the row, without its secret. */
 export type EffectiveCredential = {
@@ -14,21 +15,10 @@ export type EffectiveCredential = {
   health?: string
   lastValidatedAt?: number
   /** The plan windows the server stored for the row, and when it read them. */
-  usage?: AIUsageWindow[]
+  usage?: QuotaWindow[]
   usageAt?: number
-}
-
-/** The windows of one stored usage read, dropping any entry that names none. */
-function readUsageWindows(row: unknown): AIUsageWindow[] | undefined {
-  const entries = readArray(row, "usage_windows")
-  if (entries === undefined) return undefined
-  const windows = entries.flatMap((entry): AIUsageWindow[] => {
-    const window = readString(entry, "window")
-    const usedPercent = readFiniteNumber(entry, "usedPercent")
-    if (window === undefined || usedPercent === undefined) return []
-    return [{ window, usedPercent, resetsAt: readFiniteNumber(entry, "resetsAt") ?? null }]
-  })
-  return windows.length > 0 ? windows : undefined
+  /** Where the authority says this account's secret can be delivered. */
+  delivery?: AccountDelivery
 }
 
 /**
@@ -44,8 +34,9 @@ function credentialRow(row: unknown): EffectiveCredential | undefined {
   const accountId = readString(row, "account_id")
   const health = readString(row, "health")
   const lastValidatedAt = readFiniteNumber(row, "last_validated_at")
-  const usage = readUsageWindows(row)
+  const usage = readUsageWindows(readField(row, "usage_windows"))
   const usageAt = usage === undefined ? undefined : readFiniteNumber(row, "usage_at")
+  const delivery = readAccountDelivery(row)
   return {
     id,
     providerId,
@@ -56,6 +47,7 @@ function credentialRow(row: unknown): EffectiveCredential | undefined {
     ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
     ...(usage === undefined ? {} : { usage }),
     ...(usageAt === undefined ? {} : { usageAt }),
+    ...(delivery === undefined ? {} : { delivery }),
   }
 }
 
@@ -174,6 +166,7 @@ export function harnessAccounts(
     const lastValidatedAt = ordered.find((row) => row.lastValidatedAt !== undefined)?.lastValidatedAt
     const expiresAt = ordered.find((row) => row.expiresAt !== undefined)?.expiresAt
     const usageRead = ordered.find((row) => row.usage !== undefined)
+    const delivery = ordered.find((row) => row.delivery !== undefined)?.delivery
     return [{
       ...first,
       ids: ordered.map((row) => row.id),
@@ -185,6 +178,7 @@ export function harnessAccounts(
         usage: usageRead.usage,
         ...(usageRead.usageAt === undefined ? {} : { usageAt: usageRead.usageAt }),
       }),
+      ...(delivery === undefined ? {} : { delivery }),
     }]
   })
   return [...accounts.filter((account) => account.isActive), ...accounts.filter((account) => !account.isActive)]

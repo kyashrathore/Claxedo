@@ -13,15 +13,6 @@ import {
 export const CODEX_BROKER_PROVIDER = "broker"
 
 /**
- * The projections this harness consumes. Every other provider in the map belongs
- * to a different harness and is ignored, so one account bound for Claude does
- * not decide anything about a Codex turn.
- */
-export function codexAuthValue(auth: Record<string, ProviderProjection> | undefined) {
-  return auth?.["codex-app-server"] ?? auth?.openai
-}
-
-/**
  * The app-server config a brokered turn runs under.
  *
  * `requires_openai_auth = false` is what lets the app-server talk to a provider

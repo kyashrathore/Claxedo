@@ -54,7 +54,9 @@ describe("a workspace sandbox's egress policy", () => {
     const net = await resolveWorkspaceSandboxNetworkPolicy({ workspaceId: "ws-sends", org: "org-sends" })
 
     expect(net?.mode).toBe("restricted")
-    expect(net?.hosts).toEqual(expect.arrayContaining(["api.internal.test", "*.anthropic.com", "claude.ai"]))
+    // The exact set: a policy that quietly opened one more host than the
+    // workspace's own rules and its providers' is the failure this resolves.
+    expect(net?.hosts?.toSorted()).toEqual(["*.anthropic.com", "127.0.0.1", "api.internal.test", "claude.ai", "localhost", "platform.claude.com"])
   })
 
   test("leaves a provider's hosts closed when the org stores no credential for it", async () => {

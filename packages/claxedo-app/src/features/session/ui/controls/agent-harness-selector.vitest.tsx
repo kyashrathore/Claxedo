@@ -386,7 +386,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
     const options = [...container.querySelectorAll('[data-testid^="select-option-"]')]
     expect(options.map((option) => ({ label: option.textContent, group: option.getAttribute("data-group") }))).toEqual([
-      { label: "Claude", group: "Native SDK" },
+      { label: "Claude Code", group: "Native SDK" },
       { label: "Codex", group: "Native SDK" },
       { label: "Cursor", group: "Native SDK" },
       { label: "Pi", group: "Native SDK" },
@@ -478,7 +478,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(row).not.toBeNull()
     expect(row!.getAttribute("data-notice")).toBe("models-failed")
     expect(row!.getAttribute("data-tone")).toBe("critical")
-    expect(row!.textContent).toContain("Couldn't load Claude models")
+    expect(row!.textContent).toContain("Couldn't load Claude Code models")
     expect(row!.textContent).toContain("Authentication required. Please run 'agent login' first.")
     // The reason is readable without hovering anything — the old unlabeled dot
     // was the only place it existed.
@@ -497,7 +497,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
 
     expect(row).not.toBeNull()
     expect(row!.getAttribute("data-notice")).toBe("models-failed")
-    expect(row!.textContent).toContain("Couldn't load Claude models")
+    expect(row!.textContent).toContain("Couldn't load Claude Code models")
     expect(row!.textContent).toContain("No model options available")
     expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toContain("Select model")
   })
@@ -575,7 +575,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(selector!.getAttribute("data-disabled")).toBe("true")
     const row = noticeRow(container)
     expect(row!.getAttribute("data-notice")).toBe("runtime-unavailable")
-    expect(row!.textContent).toContain("Claude runtime is unavailable")
+    expect(row!.textContent).toContain("Claude Code runtime is unavailable")
     // The harness e2e specs locate this state by title.
     expect(row!.getAttribute("title")).toBe("Agent runtime unreachable after timeout")
     // One notice, not one per surface.
@@ -595,7 +595,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(selector).not.toBeNull()
     expect(selector!.getAttribute("data-disabled")).toBe("true")
     expect(container.textContent).toContain("Default (recommended)")
-    expect(noticeRow(container)!.textContent).toContain("Claude runtime is unavailable")
+    expect(noticeRow(container)!.textContent).toContain("Claude Code runtime is unavailable")
   })
 
   test("a healthy harness publishes no notice at all", () => {

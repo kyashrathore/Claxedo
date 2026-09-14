@@ -1,10 +1,37 @@
 import { describe, expect, test } from "bun:test"
+import { NATIVE_HARNESS_IDS } from "@/platform/identity/harness-selection"
 import {
+  bindingIdsForHarness,
   connectContextFor,
   engineConnectContext,
   harnessConnectContext,
+  harnessDisplayLabel,
   harnessForConnectProvider,
+  harnessIcon,
+  harnessLabelForProviderId,
 } from "./harness-catalog"
+
+describe("HARNESS_CATALOG", () => {
+  test("an engine a reader picks is not a login anything is stored against", () => {
+    expect(bindingIdsForHarness("pi")).toEqual([])
+    expect(bindingIdsForHarness("opencode")).toEqual([])
+  })
+
+  test("every harness a reader can pick has a name and a mark of its own", () => {
+    expect(NATIVE_HARNESS_IDS.map(harnessDisplayLabel))
+      .toEqual(["Claude Code", "Codex", "Cursor", "Pi", "OpenCode"])
+    expect(NATIVE_HARNESS_IDS.map(harnessIcon))
+      .toEqual(["anthropic", "openai", "cursor", "pi", "opencode"])
+  })
+
+  test("a binding's registry id is read as the harness it stores a login for", () => {
+    expect(harnessLabelForProviderId("claude-sdk")).toBe("Claude Code")
+    expect(harnessLabelForProviderId("codex-app-server")).toBe("Codex")
+    expect(harnessLabelForProviderId("cursor-acp")).toBe("Cursor")
+    // A provider id no harness stores a login under names nothing here.
+    expect(harnessLabelForProviderId("openrouter")).toBeUndefined()
+  })
+})
 
 describe("harnessConnectContext", () => {
   test("names the harness and the vendor behind its login", () => {

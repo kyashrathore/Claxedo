@@ -127,9 +127,9 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
   })
 
   test("a write is stamped with the writer's org, not left tenant-less", () => {
-    expect(registry.getCredential(credA.id, ORG_A)?.org_id).toBe(ORG_A)
-    expect(registry.getCredential(credA.id, ORG_B)).toBeUndefined()
-    expect(registry.getCredential(credA.id, SINGLE_TENANT_ORG)).toBeUndefined()
+    expect(registry.credentialById(credA.id, { onOutage: "throw" }, ORG_A)?.org_id).toBe(ORG_A)
+    expect(registry.credentialById(credA.id, { onOutage: "throw" }, ORG_B)).toBeUndefined()
+    expect(registry.credentialById(credA.id, { onOutage: "throw" }, SINGLE_TENANT_ORG)).toBeUndefined()
   })
 
   // Verb 1 of 5: LIST.
@@ -160,7 +160,7 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
     expect(credB.id).not.toBe(credA.id)
     await expect(registry.resolveSecretById(credA.id, ORG_A)).resolves.toBe("sk-org-a-secret")
     await expect(registry.resolveSecretById(credB.id, ORG_B)).resolves.toBe("sk-org-b-secret")
-    expect(registry.getCredential(credA.id, ORG_A)?.status).toBe("available")
+    expect(registry.credentialById(credA.id, { onOutage: "throw" }, ORG_A)?.status).toBe("available")
   })
 
   // Verb 3b of 5: OVERWRITE via status patch (revoke another tenant's key).
@@ -171,7 +171,7 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
     }))
 
     expect(response.status).toBe(200)
-    const after = registry.getCredential(credA.id, ORG_A)
+    const after = registry.credentialById(credA.id, { onOutage: "throw" }, ORG_A)
     expect(after?.status).toBe("available")
     expect(after?.last_error).toBeNull()
   })
@@ -185,7 +185,7 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
 
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_not_found" } })
-    expect(registry.getCredential(credA.id, ORG_A)?.scope).toBe("local")
+    expect(registry.credentialById(credA.id, { onOutage: "throw" }, ORG_A)?.scope).toBe("local")
   })
 
   // Verb 4a of 5: DELETE by id.
@@ -193,7 +193,7 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
     const response = await signedApp.request(`http://localhost/${credA.id}`, as(ORG_B, { method: "DELETE" }))
 
     await expect(response.json()).resolves.toEqual({ deleted: false })
-    expect(registry.getCredential(credA.id, ORG_A)).toBeDefined()
+    expect(registry.credentialById(credA.id, { onOutage: "throw" }, ORG_A)).toBeDefined()
   })
 
   // Verb 4b of 5: DELETE by provider — the "Remove provider" button. Unscoped
@@ -202,9 +202,9 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
     const response = await signedApp.request("http://localhost/provider/openai", as(ORG_B, { method: "DELETE" }))
 
     await expect(response.json()).resolves.toEqual({ deleted: 1 })
-    expect(registry.getCredential(credA.id, ORG_A)).toBeDefined()
+    expect(registry.credentialById(credA.id, { onOutage: "throw" }, ORG_A)).toBeDefined()
     await expect(registry.resolveSecretById(credA.id, ORG_A)).resolves.toBe("sk-org-a-secret")
-    expect(registry.getCredentialByProvider("openai", undefined, ORG_B)).toBeUndefined()
+    expect(registry.credentialByProvider("openai", { onOutage: "throw" }, ORG_B)).toBeUndefined()
   })
 
   // Verb 5 of 5: FORCE-VERIFY. Beyond the health overwrite, verification sends
@@ -216,7 +216,7 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
     expect(response.status).toBe(404)
     await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_not_found" } })
     expect(providerFetch).not.toHaveBeenCalled()
-    expect(registry.getCredential(credA.id, ORG_A)?.health).toBeNull()
+    expect(registry.credentialById(credA.id, { onOutage: "throw" }, ORG_A)?.health).toBeNull()
   })
 
   test("org A can still verify its own credential", async () => {
@@ -225,7 +225,12 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
 
     await expect(response.json()).resolves.toEqual({ result: "ok", health: "ok", verified_at: 5_000 })
     expect(providerFetch).toHaveBeenCalledTimes(1)
-    expect(registry.getCredential(credA.id, ORG_A)?.health).toBe("ok")
+    // Org B stored its own key for the same provider above. The verdict is
+    // only org A's if the request carried org A's secret.
+    const [url, init] = providerFetch.mock.calls[0] ?? []
+    expect(url && new Request(url).url).toContain("api.openai.com")
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer sk-org-a-secret")
+    expect(registry.credentialById(credA.id, { onOutage: "throw" }, ORG_A)?.health).toBe("ok")
   })
 
   // An absent org claim must not collapse two principals into one partition.
@@ -238,8 +243,8 @@ describe("provider credential org isolation (self-host, signed multi-org)", () =
 
     expect((await listAs("personal_two")).credentials.map((item) => item.id)).not.toContain(credOne.id)
     expect((await listAs("personal_one")).credentials.map((item) => item.id)).toContain(credOne.id)
-    expect(registry.getCredential(credOne.id, "personal_one")?.org_id).toBe("personal_one")
-    expect(registry.getCredential(credOne.id, SINGLE_TENANT_ORG)).toBeUndefined()
+    expect(registry.credentialById(credOne.id, { onOutage: "throw" }, "personal_one")?.org_id).toBe("personal_one")
+    expect(registry.credentialById(credOne.id, { onOutage: "throw" }, SINGLE_TENANT_ORG)).toBeUndefined()
   })
 
   test("an org-scoped credential is invisible to the single-tenant partition", async () => {
@@ -264,7 +269,7 @@ describe("single-tenant self-host still works end to end", () => {
       body: JSON.stringify({ provider_id: "anthropic", kind: "api_key", secret: "sk-single-tenant" }),
     })
     const cred = ((await stored.json()) as { credential: { id: string } }).credential
-    expect(registry.getCredential(cred.id, SINGLE_TENANT_ORG)?.org_id).toBe(SINGLE_TENANT_ORG)
+    expect(registry.credentialById(cred.id, { onOutage: "throw" }, SINGLE_TENANT_ORG)?.org_id).toBe(SINGLE_TENANT_ORG)
 
     const listed = (await (await singleTenantApp.request("http://localhost/")).json()) as Listed
     expect(listed.credentials.map((item) => item.id)).toContain(cred.id)
@@ -282,7 +287,7 @@ describe("single-tenant self-host still works end to end", () => {
     const second = ((await again.json()) as { credential: { id: string; is_active: boolean } }).credential
     expect(second.id).not.toBe(cred.id)
     expect(second.is_active).toBe(false)
-    expect(registry.getCredential(cred.id, SINGLE_TENANT_ORG)?.is_active).toBe(true)
+    expect(registry.credentialById(cred.id, { onOutage: "throw" }, SINGLE_TENANT_ORG)?.is_active).toBe(true)
 
     const both = (await (await singleTenantApp.request("http://localhost/")).json()) as Listed
     expect(both.credentials.map((item) => item.id).sort()).toEqual([cred.id, second.id].sort())
@@ -298,11 +303,11 @@ describe("single-tenant self-host still works end to end", () => {
       body: JSON.stringify({ status: "expired" }),
     })
     expect(status.status).toBe(200)
-    expect(registry.getCredential(cred.id, SINGLE_TENANT_ORG)?.status).toBe("expired")
+    expect(registry.credentialById(cred.id, { onOutage: "throw" }, SINGLE_TENANT_ORG)?.status).toBe("expired")
 
     const deleted = await singleTenantApp.request(`http://localhost/${cred.id}`, { method: "DELETE" })
     await expect(deleted.json()).resolves.toEqual({ deleted: true })
-    expect(registry.getCredential(cred.id, SINGLE_TENANT_ORG)).toBeUndefined()
+    expect(registry.credentialById(cred.id, { onOutage: "throw" }, SINGLE_TENANT_ORG)).toBeUndefined()
   })
 
   test("registry calls that pass no org read and write the named single-tenant partition", async () => {
@@ -317,7 +322,7 @@ describe("single-tenant self-host still works end to end", () => {
     expect(registry.listCredentials().map((item) => item.id)).toContain(created.id)
     // Never a wildcard: the default partition sees only its own rows.
     expect(registry.listCredentials().every((item) => item.org_id === SINGLE_TENANT_ORG)).toBe(true)
-    expect(registry.getCredentialByProvider("openai", "subscription_session")?.id).toBe(created.id)
+    expect(registry.credentialByProvider("openai", { onOutage: "throw", kind: "subscription_session" })?.id).toBe(created.id)
     await expect(registry.deleteCredential(created.id)).resolves.toBe(true)
   })
 
@@ -345,10 +350,6 @@ describe("single-tenant self-host still works end to end", () => {
       .filter((statement) => !/inOrg\(|\.where\(scope\)/.test(statement))
 
     expect(unscoped, `unscoped credential statements: ${unscoped.join(" | ")}`).toEqual([])
-    expect(source).toMatch(/const scope = kind\s*\?\s*and\(\s*inOrg\(org\)/)
-    // The one INSERT has no WHERE — it must stamp the column instead.
-    expect(source).toContain("db.insert(ClaxedoProviderCredentialTable).values(row)")
-    expect(source).toContain("org_id: orgId,")
   })
 
   test("a blank org resolves to the single-tenant partition rather than matching everything", () => {

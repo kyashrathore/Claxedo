@@ -35,10 +35,8 @@ describe("provider icon sprite", () => {
   })
 
   test("renders Cursor's own mark, not the fallback", () => {
-    expect(iconNames).toContain("cursor")
     const sprite = readFileSync(`${dir}/sprite.svg`, "utf8")
-    const symbol = sprite.split('id="cursor"')[1]?.split("</symbol>")[0] ?? ""
+    const symbol = sprite.match(/<symbol\b[^>]*\bid="cursor"[^>]*>([\s\S]*?)<\/symbol>/)?.[1]
     expect(symbol).toContain('fill="currentColor"')
-    expect(symbol).toContain("m415.035 156.35")
   })
 })

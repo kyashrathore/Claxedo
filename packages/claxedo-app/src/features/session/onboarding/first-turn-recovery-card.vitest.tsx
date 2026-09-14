@@ -101,7 +101,7 @@ describe("FirstTurnRecoveryCard", () => {
       />
     ))
 
-    expect(view.container.textContent).toContain("Claude usage limit reached")
+    expect(view.container.textContent).toContain("Claude Code usage limit reached")
     expect(view.container.textContent).toContain("You've reached your Fable 5 limit. Choose another model to continue.")
     expect(view.container.textContent).not.toContain("Infrastructure")
     expect(view.container.querySelectorAll("button")).toHaveLength(0)

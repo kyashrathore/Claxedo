@@ -6,9 +6,11 @@ import {
   destinationStoresCredentials,
   discoveryRows,
   initialAIConnectState,
+  localHarnessChecks,
   localHarnessStatuses,
   isUsableResult,
 } from "./ai-connect-state"
+import { HARNESS_TABLE } from "@claxedo/agent-runtime-contract"
 
 const claudeToken = [
   {
@@ -153,6 +155,15 @@ describe("AI connect state", () => {
     expect(rows[0].selected).toBe(false)
   })
 
+
+  test("a row lists every binding the server stores a login for, never a subset of its own", () => {
+    // The Cursor row once named `cursor-acp` alone while the server stored its
+    // sign-in under `cursor-sdk`, so a stored Cursor account had no row.
+    expect(localHarnessChecks.map((check) => [check.id, check.providerIds, check.connectProvider])).toEqual(
+      (["claude", "codex", "cursor"] as const).map((harness) =>
+        [harness, HARNESS_TABLE[harness].providerIds, HARNESS_TABLE[harness].connectProvider]),
+    )
+  })
 
   test("every harness the local checks name gets a row, whatever the reports contain", () => {
     const statuses = localHarnessStatuses([

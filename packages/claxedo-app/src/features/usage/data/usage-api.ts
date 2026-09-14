@@ -131,6 +131,7 @@ const UnifiedUsageResponseSchema: z.ZodType<UnifiedUsageResponse> = z.object({
     status: z.enum(["available", "unavailable"]),
     snapshot: QuotaSnapshotSchema.optional(),
     error: z.string().optional(),
+    throttledUntil: z.number().optional(),
   }),
   claxedo: z.object({
     ...UsageSeriesShape,

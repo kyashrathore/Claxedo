@@ -44,12 +44,11 @@ import {
 } from "../../provider-projection"
 import {
   applyCursorBackendUrl,
-  cursorAuthValue,
   CursorBackendUrlFrozenError,
   freezeCursorBackendUrl,
-  isCursorBindingBackendUrl,
   frozenCursorBackendUrl,
 } from "./auth"
+import { harnessProjection } from "../../harness-projection"
 import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   deliverPromptAttachments,
@@ -200,11 +199,11 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   }
 
   applyConfig(config: Record<string, unknown>) {
-    const auth = providerProjectionRecord(config.auth)
+    const auth = providerProjectionRecord(config.auth, {}, { onInvalid: "reject" })
     if (config.auth !== undefined && !auth) {
       throw new Error("cursor harness received an auth map that is not provider projections")
     }
-    this.replaceAuth(cursorAuthValue(auth))
+    this.replaceAuth(harnessProjection(auth, "cursor"))
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.firstPartyMcp = firstPartyMcpProvider(config)
     // Plugin roots are read by `Agent.create`, so a changed set only reaches
@@ -257,13 +256,14 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   async createAgentSession(input: { directory: string; title?: string; model: string }) {
     const { Agent } = await this.loadAgent()
     const model = cursorSdkModel(input.model)
+    const apiKey = this.cursorApiKey()
     const observation = this.observeAgent(input.directory)
     try {
       const agent = await Agent.create({
         ...(model ? { model } : {}),
         ...(input.title ? { name: input.title } : {}),
         ...(Object.keys(this.currentMcp).length ? { mcpServers: cursorMcpServers(this.currentMcp) } : {}),
-        ...(this.cursorApiKey() ? { apiKey: this.cursorApiKey() } : {}),
+        ...(apiKey ? { apiKey } : {}),
         local: {
           cwd: input.directory,
           ...cursorPluginLocalOptions(this.currentPluginRoots),
@@ -462,7 +462,8 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     observation.update({ lifecycle: "ready" })
     try {
       const { Cursor } = await this.loadSdk()
-      const listed = await Cursor.models.list(this.cursorApiKey() ? { apiKey: this.cursorApiKey() } : undefined)
+      const apiKey = this.cursorApiKey()
+      const listed = await Cursor.models.list(apiKey ? { apiKey } : undefined)
       const models: SdkModelEntry[] = listed.map((model) => ({
         id: model.id,
         name: model.displayName,
@@ -483,19 +484,20 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     existing?.observation.exit({ reason: "disposed" })
     existing?.agent.close()
     const { Agent } = await this.loadAgent()
+    const apiKey = this.cursorApiKey()
     const observation = this.observeAgent(directory, sessionId)
     let agent: CursorSDKAgent
     try {
       agent = agentSessionId.startsWith(CURSOR_PENDING_PREFIX)
         ? await Agent.create({
-            ...(this.cursorApiKey() ? { apiKey: this.cursorApiKey() } : {}),
+            ...(apiKey ? { apiKey } : {}),
             local: {
               cwd: directory,
               ...cursorPluginLocalOptions(this.currentPluginRoots),
             },
           })
         : await Agent.resume(agentSessionId, {
-            ...(this.cursorApiKey() ? { apiKey: this.cursorApiKey() } : {}),
+            ...(apiKey ? { apiKey } : {}),
             local: {
               cwd: directory,
               ...cursorPluginLocalOptions(this.currentPluginRoots),
@@ -522,13 +524,17 @@ class CursorSdkDriver implements SdkRuntimeDriver {
    * through this process again.
    */
   private async loadAgent() {
+    // Before the injection branch: the freeze is what the SDK's module scope
+    // does as it loads, so a driver handed a loaded module has to record it
+    // too or the mismatch guard reads an empty freeze and passes everything.
+    freezeCursorBackendUrl()
     const loaded = await (this.driverOptions.loadAgent?.() ?? this.loadSdk())
     const required = providerBinding("cursor", this.auth)?.baseUrl
     const frozen = frozenCursorBackendUrl()
     // Both directions of one mismatch: a binding the frozen value cannot reach,
     // and a frozen binding this workspace no longer selects — which would send
     // the machine's own key to the broker.
-    if (frozen && frozen.value !== required && (required || isCursorBindingBackendUrl(frozen.value))) {
+    if (frozen && frozen.value !== required && (required || frozen.binding)) {
       throw new CursorBackendUrlFrozenError(frozen.value, required)
     }
     return loaded

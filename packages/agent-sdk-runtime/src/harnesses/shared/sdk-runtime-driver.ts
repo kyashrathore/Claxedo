@@ -78,11 +78,13 @@ export type ActiveTurn = {
   steer?: (input: PromptInput) => Promise<void>
 }
 
-/** A driver's own view of the projections it consumes, resolved from `applyConfig`. */
+/**
+ * A driver's own view of the projections it consumes, resolved from
+ * `applyConfig`. Only the Claude driver holds its projection in this shape;
+ * the Codex and Cursor drivers hold the single projection they resolved.
+ */
 export type SdkRuntimeAuth = {
   anthropic?: ProviderProjection
-  openai?: ProviderProjection
-  cursor?: ProviderProjection
 }
 
 export type SdkRuntimeDriverHost = {

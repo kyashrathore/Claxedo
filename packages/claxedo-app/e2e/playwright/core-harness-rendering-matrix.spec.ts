@@ -973,6 +973,84 @@ test.describe("core harness rendering matrix @core", () => {
     expect(sawRunning, "the stored interrupted command returned to Running after its start frames replayed").toBe(false)
   })
 
+  test("a settled reply does not re-render its streamed text when the turn's deltas replay", async ({ page }, testInfo) => {
+    test.fixme(true, "a replayed runtime text-delta re-appends the stored reply under a fresh part id once the message announcement un-settles it")
+    const dir = "/tmp/e2e-dup-replay"
+    const sessionId = "ses_dup_replay"
+    const otherId = "ses_dup_replay_other"
+    const userId = "msg_dup_replay"
+    const assistantId = `${userId}_r`
+    const text = "QA_DUP_REPLAY the two-item exit list renders once"
+    // The stored part carries the server's own part id (`prt_…`), not the
+    // client projection's `000000_<msg>-text` mint — a replayed delta cannot
+    // find it, so the projected part is appended as a SECOND copy.
+    const messages = [
+      {
+        info: {
+          id: userId, sessionID: sessionId, role: "user",
+          time: { created: Date.now() - 10_000 },
+          agent: "build", model: { providerID: "codex", modelID: "gpt-5.6-sol" },
+        },
+        parts: [{ id: `prt_${userId}`, sessionID: sessionId, messageID: userId, type: "text", text: "Show the exit list" }],
+      },
+      {
+        info: {
+          id: assistantId, sessionID: sessionId, role: "assistant", parentID: userId,
+          time: { created: Date.now() - 9_000, completed: Date.now() - 8_000 },
+          modelID: "gpt-5.6-sol", providerID: "codex", mode: "auto", agent: "build",
+          path: { cwd: dir, root: dir }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ id: "prt_dup_stored", sessionID: sessionId, messageID: assistantId, type: "text", text }],
+      },
+    ] as unknown as MockMessageRow[]
+    const mock = await installMockRuntime(page, {
+      dir, sessionId, projectId: PROJECT_ID, workspaceId: PROJECT_ID, harness: "codex-app-server",
+      existingSession: { messages },
+      otherSessions: [{ id: otherId, title: "Other session", prompt: "Other prompt", reply: "Other reply" }],
+    })
+    await seedOneProject(page, dir)
+    await page.goto(`/${slug(dir)}/session/${sessionId}`)
+    await expectAssistantReplyVisible(page, text, { spec: "core-harness-rendering-matrix", scenario: `dup-before-${testInfo.repeatEachIndex}` })
+    await (await expectRailRowVisible({ page, sessionId: otherId })).click()
+    await expectAssistantReplyVisible(page, "Other reply", { spec: "core-harness-rendering-matrix", scenario: `dup-away-${testInfo.repeatEachIndex}` })
+    await (await expectRailRowVisible({ page, sessionId })).click()
+    // The runtime stream replays the finished turn's deltas on reattach while
+    // the canonical messages fetch is still in flight: the projection cache was
+    // evicted at finish, so each frame is fresh state — the first announces
+    // message.updated (dropping time.completed off the stored envelope) and
+    // mints a fresh text part (`000000_<msg>-text`) that the REST merge then
+    // keeps alongside the stored part (`prt_…`). Emitting before reload lands
+    // the frames in the bus log; the delayed fetch keeps the store empty while
+    // the reattaching consumer drains them.
+    await page.route("**/session/*/message**", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      await route.fallback()
+    })
+    for (const delta of ["QA_DUP_REPLAY the two-item ", "exit list renders once"]) {
+      mock.emitRuntime({ directory: dir, sessionId, agentSessionId: sessionId, assistantMessageId: assistantId, payload: { harness: "codex", threadId: sessionId, type: "text-delta", delta } as never })
+    }
+    const refetched = page.waitForResponse(response =>
+      response.request().method() === "GET"
+      && /\/session\/[^/]+\/message/.test(new URL(response.url()).pathname)
+      && response.status() === 200)
+    await page.reload()
+    await refetched
+    await expectAssistantReplyVisible(page, text, { spec: "core-harness-rendering-matrix", scenario: `dup-restored-${testInfo.repeatEachIndex}` })
+    // The merge order may flip with the fetch landing mid-replay — sample the
+    // count across a window rather than once at the end.
+    let maxCopies = 0
+    await expect
+      .poll(async () => {
+        const n = await page.getByText("QA_DUP_REPLAY", { exact: false }).count()
+        maxCopies = Math.max(maxCopies, n)
+        return n
+      }, { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(1)
+    await page.screenshot({ path: testInfo.outputPath("dup-after-replay.png") })
+    expect(maxCopies, "the settled reply's streamed text rendered more than once after its deltas replayed").toBe(1)
+  })
+
   test("renderer-only canonical fixture — session.diff routes to the diff cache, never a phantom message row", async ({ page }) => {
     const { mock, dir, assistantId } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())

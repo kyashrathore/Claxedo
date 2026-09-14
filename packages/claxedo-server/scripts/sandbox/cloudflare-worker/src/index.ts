@@ -336,8 +336,6 @@ export default {
       )
     }
 
-
-
     const denied = auth(request, env)
     if (denied) return denied
 
@@ -424,7 +422,16 @@ export default {
             return json({ error: "ensure-runtime restore requires one absolute directory and a backupId" }, 400)
           }
 
-          const previous = await readRegistrations(env, sandboxId)
+          let previous: EgressRegistration[]
+          try {
+            previous = await readRegistrations(env, sandboxId)
+          } catch {
+            // Never read as "none": the previous set decides whether the
+            // placeholder names changed and, when this request states no
+            // egress, what stays registered — so an unreadable store would
+            // silently clear a live sandbox's brokering.
+            return json({ error: "egress registrations unreadable (EGRESS_SECRETS)" }, 503)
+          }
           let registrations: EgressRegistration[]
           if (body.egress !== undefined) {
             try {

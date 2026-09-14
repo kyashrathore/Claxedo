@@ -17,38 +17,76 @@ import type { CredentialHealth, CredentialMetadata, CredentialUsageWindow } from
 const log = Log.create({ service: "credentials-check" })
 
 export type CredentialCheckOutcome =
-  | { status: "checked"; health: CredentialHealth; at: number; usage?: CredentialUsageWindow[] }
+  | {
+    status: "checked"
+    health: CredentialHealth
+    at: number
+    usage?: CredentialUsageWindow[]
+    /** Whether a `replace` check kept the secret it was given. Absent on an ordinary check. */
+    stored?: boolean
+  }
   /** This host cannot verify at all: no secret reader, or nowhere to keep a verdict. */
   | { status: "unsupported" }
   /** The row is there and its secret is not, so there is nothing to ask with. */
   | { status: "no_secret" }
   | { status: "failed"; detail: { name: string; message: string }; provider: boolean }
 
+/** The verdicts that say the provider took the material, rather than refused it. */
+const ACCEPTED = new Set<CredentialHealth>(["ok", "rate_capped", "no_billing"])
+
 export async function checkCredential(
   credentials: ControlPlaneCredentials,
   credential: CredentialMetadata,
-  options: { org: string; secret?: string; fetch?: typeof fetch; now?: () => number },
+  options: {
+    org: string
+    secret?: string
+    /**
+     * `secret` is a replacement for this row's stored material. It is written
+     * only once the provider has taken it, and nothing at all is written when
+     * the provider refuses: a replacement written first deletes the backend
+     * reference the working secret lives behind, so a typo leaves a good
+     * account with nothing, and a verdict written first marks a working account
+     * broken on the strength of the typo.
+     */
+    replace?: boolean
+    fetch?: typeof fetch
+    now?: () => number
+  },
 ): Promise<CredentialCheckOutcome> {
-  if (!credentials.updateCredentialHealth) return { status: "unsupported" }
-  if (options.secret === undefined && !credentials.resolveCredentialSecretById) return { status: "unsupported" }
-  const secret = options.secret ?? (await credentials.resolveCredentialSecretById!(credential.id, options.org))
-  if (!secret) return { status: "no_secret" }
+  const { updateCredentialHealth, resolveCredentialSecretById, updateCredentialSecret } = credentials
+  if (!updateCredentialHealth) return { status: "unsupported" }
+  if (options.secret === undefined && !resolveCredentialSecretById) return { status: "unsupported" }
+  if (options.replace && !updateCredentialSecret) return { status: "unsupported" }
   const verifyOptions = {
     ...(options.fetch ? { fetch: options.fetch } : {}),
     ...(options.now ? { now: options.now } : {}),
   }
+  let secret: string | undefined
   try {
-    const { health, refreshed, usage, accountEmail } = await verifyCredential(credential, secret, verifyOptions)
+    // Inside the boundary: a secret backend that refuses is this account's
+    // failure, and a caller checking several accounts must reach the next one.
+    secret = options.secret ?? (await resolveCredentialSecretById?.(credential.id, options.org)) ?? undefined
+    if (!secret) return { status: "no_secret" }
+    // The stored expiry describes the material being replaced. Left in place it
+    // makes the verifier read a freshly pasted secret as stale, which for an
+    // API key — nothing to refresh with — answers "expired".
+    const subject = options.replace ? { ...credential, expires_at: null } : credential
+    const { health, refreshed, usage, accountEmail } = await verifyCredential(subject, secret, verifyOptions)
     const at = (options.now ?? Date.now)()
+    if (options.replace && !ACCEPTED.has(health)) return { status: "checked", health, at, stored: false }
     // Persist first: a renewed access token that is verified but not stored
     // would make every later read fall back to the stale one.
-    if (refreshed) {
-      await credentials.updateCredentialSecret?.(credential.id, refreshed.secret, refreshed.expiresAt, options.org)
+    if (options.replace) {
+      // `null` rather than nothing: the replacement's own expiry is whatever the
+      // provider just said, and keeping the old one would expire a live secret.
+      await updateCredentialSecret?.(credential.id, refreshed?.secret ?? secret, refreshed?.expiresAt ?? null, options.org)
+    } else if (refreshed) {
+      await updateCredentialSecret?.(credential.id, refreshed.secret, refreshed.expiresAt, options.org)
     }
-    await credentials.updateCredentialHealth(credential.id, health, at, options.org)
+    await updateCredentialHealth(credential.id, health, at, options.org)
     if (usage?.length) await credentials.updateCredentialUsage?.(credential.id, usage, at, options.org)
     await nameAccount(credentials, credential, accountEmail, options.org)
-    return { status: "checked", health, at, ...(usage ? { usage } : {}) }
+    return { status: "checked", health, at, ...(usage ? { usage } : {}), ...(options.replace ? { stored: true } : {}) }
   } catch (error: unknown) {
     return {
       status: "failed",

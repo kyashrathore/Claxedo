@@ -83,6 +83,12 @@ async function subject(input: {
           ...(input.multipleIssuers ? { issuer: "https://login-two.example" } : {}),
         },
       })
+  const oauthFetchSpy = oauthFetch(input.publicServer, input.multipleIssuers)
+  // Only the issuer the Connection froze. Registering both let the preparer
+  // pick either one and still resolve, so a wrong pick passed.
+  const preRegistered: Record<string, { clientId: string }> = input.multipleIssuers
+    ? { "https://login-two.example": { clientId: "claxedo-two" } }
+    : { "https://login.example": { clientId: "claxedo" } }
   const preparerInput = {
     activations: { runtimeSnapshot: async () => snapshot() },
     artifacts: {
@@ -100,13 +106,8 @@ async function subject(input: {
     },
     resolveConnection,
     oauth: {
-      fetch: oauthFetch(input.publicServer, input.multipleIssuers),
-      preRegistered: {
-        "https://login.example": { clientId: "claxedo" },
-        ...(input.multipleIssuers
-          ? { "https://login-two.example": { clientId: "claxedo-two" } }
-          : {}),
-      },
+      fetch: oauthFetchSpy,
+      preRegistered,
     },
     gatewayUrl: "https://mcp-gateway.example/",
     signingEnv: env,
@@ -114,7 +115,7 @@ async function subject(input: {
   } satisfies Parameters<typeof createHostedMcpRuntimePreparation>[0]
   const prepare = createHostedMcpRuntimePreparation(preparerInput)
   const preparer = createHostedMcpRuntimePreparer(preparerInput)
-  return { env, resolveConnection, preparation: await prepare("workspace-1"), preparer, snapshot }
+  return { env, resolveConnection, oauthFetch: oauthFetchSpy, preparation: await prepare("workspace-1"), preparer, snapshot }
 }
 
 describe("hosted MCP runtime preparation", () => {
@@ -138,11 +139,9 @@ describe("hosted MCP runtime preparation", () => {
   })
 
   test("the runtime credential's subject is the activation owner, not the signed caller", async () => {
-    // `WorkspaceRuntimeContext` carries the signed user through to the hosted
-    // prepare hook, but the only consumer of that hook looks the identity up by
-    // workspace id: `runtimeSnapshot` reads `workspaces.owner_user_id`. Two
-    // different signed callers therefore mint the same credential. Per-user
-    // identity is the lease-key change, not this threading.
+    // The identity is looked up by workspace id — `runtimeSnapshot` reads
+    // `workspaces.owner_user_id` — so two different signed callers mint the
+    // same credential. Per-user identity is a change to the lease key.
     const env = await signingEnv()
     const runtimeSnapshot = vi.fn(async (workspaceId: string) => ({
       ...snapshot(),
@@ -269,6 +268,11 @@ describe("hosted MCP runtime preparation", () => {
     expect(agentPluginMcpRuntimePlan(value.preparation).mcpServers).toEqual(expect.arrayContaining([
       expect.objectContaining({ state: "gateway", serverName: "docs" }),
     ]))
+    // Both are discovered, because compatibility is what the resource
+    // advertises; only the frozen one is registered, so a preparation that
+    // picked the other has no client to present.
+    const reached = value.oauthFetch.mock.calls.map(([url]) => url)
+    expect(reached).toContain("https://login-two.example/.well-known/oauth-authorization-server")
   })
   test("mints a credential only for a selected plugin's own server, scoped to that workspace", async () => {
     const env = await signingEnv()

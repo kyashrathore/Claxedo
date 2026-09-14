@@ -3,18 +3,29 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { createAgentRuntime } from "../../runtime"
-import { pi } from "../../harnesses"
+import { harnessFactory } from "../../harness-factories/factory"
 import { PiRpcProcess } from "./rpc-process"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { GOAL_PROMPT_TEXT } from "../shared/goal-protocol"
+import { pinnedPiExecutable } from "../../test-utils/pinned-pi"
+import { PiHarnessAdapter } from "./index"
+import { piProviderOverrides, retainPiAuth } from "./auth"
 
-/** A real pinned Pi process and native tools; only the provider HTTP response is deterministic. */
-test.skipIf(!process.env.PI_EXECUTABLE)(
+const binary = pinnedPiExecutable()
+/** A groq model Pi 0.85.1 defines with image input over chat completions. */
+const PROOF_MODEL = "qwen/qwen3.6-27b"
+
+/**
+ * A real pinned Pi process and native tools on a bound account; only the
+ * provider HTTP response is deterministic. The account reaches Pi the way the
+ * adapter delivers one — a `models.json` overlay onto Pi's own `groq` — so
+ * every request here carries the placeholder on the binding's own path.
+ */
+test(
   "real Pi public runtime executes a native file tool, records usage, and resumes its own session",
   async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pi-native-proof-"))
     const agentDir = path.join(directory, "agent")
-    await fs.mkdir(agentDir)
     const requests: Array<{ messages: Array<Record<string, unknown>> }> = []
     const providerRequests: Array<{ pathname: string; authorization: string | null }> = []
     const server = Bun.serve({
@@ -57,32 +68,35 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
           ]
             .map(
               (chunk) =>
-                `data: ${JSON.stringify({ id: `proof-${requests.length}`, object: "chat.completion.chunk", created: 1, model: "proof", ...chunk })}\n\n`,
+                `data: ${JSON.stringify({ id: `proof-${requests.length}`, object: "chat.completion.chunk", created: 1, model: PROOF_MODEL, ...chunk })}\n\n`,
             )
             .join("") + "data: [DONE]\n\n"
         return new Response(chunks, { headers: { "content-type": "text/event-stream" } })
       },
     })
-    await fs.writeFile(
-      path.join(agentDir, "models.json"),
-      JSON.stringify({
-        providers: {
-          proof: {
-            baseUrl: `http://127.0.0.1:${server.port}/v1`,
-            api: "openai-completions",
-            apiKey: "local-test",
-            models: [
-              { id: "proof", input: ["text", "image"], reasoning: false, contextWindow: 32000, maxTokens: 4096 },
-            ],
-          },
-        },
-      }),
-    )
+    const projection = {
+      baseUrl: `http://127.0.0.1:${server.port}/bindings/7c2d`,
+      placeholder: "signed-placeholder",
+      authMode: "bearer" as const,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+      apiPath: "/openai/v1",
+    }
+    const model = { providerID: "pi", modelID: `groq/${PROOF_MODEL}` }
     const store = createMemoryRuntimeStore()
     const rows = store
-    const create = () =>
-      createAgentRuntime({ store, harnesses: [pi({ binary: process.env.PI_EXECUTABLE!, agentDir })] })
-    let runtime = create()
+    const create = async () => {
+      let adapter: PiHarnessAdapter | undefined
+      const runtime = createAgentRuntime({
+        store,
+        harnesses: [harnessFactory("pi", "native", (context) => {
+          adapter = new PiHarnessAdapter({ store: context.store, agentDir, eventHub: context.eventHub, binary })
+          return adapter
+        })],
+      })
+      await adapter!.applyConfig({ auth: { groq: projection } })
+      return runtime
+    }
+    let runtime = await create()
     const usage: Array<{ messageID: string; observation: { tokens: { input: number; output: number } } }> = []
     const turn = async (sessionId: string, messageId: string) => {
       const events = runtime.events.subscribe({ sessionId })
@@ -116,14 +130,15 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
         workspaceId: "proof-workspace",
         directory,
         harness: { id: "pi", access: "native" },
+        model,
       })
-      expect(rows.getSessionConfig(session.id)?.model).toEqual({ providerID: "pi", modelID: "proof/proof" })
+      expect(rows.getSessionConfig(session.id)?.model).toEqual(model)
       const nativeId = rows.getAgentSessionId(session.id)
       expect(nativeId).not.toBe(session.id)
       await turn(session.id, "first")
       expect(providerRequests).toHaveLength(2)
-      expect(providerRequests.every((request) => request.pathname === "/v1/chat/completions"
-        && request.authorization === "Bearer local-test")).toBe(true)
+      expect(providerRequests.every((request) => request.pathname === "/bindings/7c2d/openai/v1/chat/completions"
+        && request.authorization === "Bearer signed-placeholder")).toBe(true)
       expect(await fs.readFile(path.join(directory, "proof.txt"), "utf8")).toBe("written by native Pi")
       expect(JSON.stringify(requests[0].messages)).toContain("data:image/png;base64,")
       expect(requests[1].messages.some((message) => message.role === "tool")).toBe(true)
@@ -139,7 +154,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       const files = await fs.readdir(path.join(agentDir, "sessions"))
       expect(files.some((file) => file.endsWith(`_${nativeId}.jsonl`))).toBe(true)
       await runtime.dispose()
-      runtime = create()
+      runtime = await create()
       await turn(session.id, "second")
       expect(rows.getAgentSessionId(session.id)).toBe(nativeId)
       expect(requests.at(-1)!.messages.filter((message) => message.role === "user")).toHaveLength(2)
@@ -153,10 +168,14 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
         "sessions",
         files.find((file) => file.endsWith(`_${nativeId}.jsonl`))!,
       )
+      // The last adapter's disposal scrubbed the overlay; a bare Pi on the
+      // session file needs the bound account back for the summary turn.
+      const profile = retainPiAuth(agentDir)
+      await profile.write(piProviderOverrides({ groq: projection }))
       const rpc = new PiRpcProcess({
-        binary: process.env.PI_EXECUTABLE!,
+        binary,
         directory,
-        args: ["--mode", "rpc", "--session", nativeFile, "--provider", "proof", "--model", "proof"],
+        args: ["--mode", "rpc", "--session", nativeFile, "--provider", "groq", "--model", PROOF_MODEL],
         env: { ...process.env, PI_CODING_AGENT_DIR: agentDir },
       })
       try {
@@ -165,8 +184,9 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
         expect(await fs.readFile(nativeFile, "utf8")).toContain('"type":"compaction"')
       } finally {
         rpc.dispose()
+        await profile.release()
       }
-      runtime = create()
+      runtime = await create()
       expect(
         (await runtime.goals.start({ sessionId: session.id, objective: "Verify proof.txt contains the native edit" }))
           .ok,
@@ -189,7 +209,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
   30_000,
 )
 
-test.skipIf(!process.env.PI_EXECUTABLE)(
+test(
   "real Pi loads a workspace extension and exposes its input request before the provider runs",
   async () => {
     const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pi-extension-proof-"))
@@ -214,9 +234,8 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       }),
     )
     await fs.writeFile(path.join(agentDir, "settings.json"), JSON.stringify({ defaultProjectTrust: "always" }))
-    const { PiHarnessAdapter } = await import("./index")
     const store = createMemoryRuntimeStore()
-    const adapter = new PiHarnessAdapter({ store, binary: process.env.PI_EXECUTABLE!, agentDir })
+    const adapter = new PiHarnessAdapter({ store, binary, agentDir })
     try {
       const session = await adapter.createSession(directory)
       const binding = {
@@ -275,4 +294,77 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
     }
   },
   15_000,
+)
+
+/**
+ * The broker contract a bound turn honours, on the real pinned Pi: the
+ * `models.json` overlay the adapter writes is what Pi 0.85.1 reads, so the
+ * placeholder goes out as the bearer token on the binding's own path and no
+ * other credential goes out at all.
+ */
+test(
+  "a bound account reaches the provider as the placeholder on the binding's own path",
+  async () => {
+    const directory = await fs.mkdtemp(path.join(os.tmpdir(), "pi-binding-proof-"))
+    const agentDir = path.join(directory, "agent")
+    const requests: Array<{ pathname: string; authorization: string | null }> = []
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch(request) {
+        requests.push({ pathname: new URL(request.url).pathname, authorization: request.headers.get("authorization") })
+        const chunks = [
+          { choices: [{ index: 0, delta: { role: "assistant", content: "Bound turn complete" }, finish_reason: null }] },
+          {
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            usage: { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 },
+          },
+        ]
+          .map((chunk) => `data: ${JSON.stringify({ id: "bound-1", object: "chat.completion.chunk", created: 1, model: "llama-3.1-8b-instant", ...chunk })}\n\n`)
+          .join("") + "data: [DONE]\n\n"
+        return new Response(chunks, { headers: { "content-type": "text/event-stream" } })
+      },
+    })
+    const previousKey = process.env.GROQ_API_KEY
+    process.env.GROQ_API_KEY = "operator-own-groq-key"
+    const store = createMemoryRuntimeStore()
+    const adapter = new PiHarnessAdapter({ store, binary, agentDir })
+    try {
+      await adapter.applyConfig({ auth: { groq: {
+        baseUrl: `http://127.0.0.1:${server.port}/bindings/7c2d`,
+        placeholder: "signed-placeholder",
+        authMode: "bearer",
+        expiresAt: Date.now() + 60 * 60 * 1000,
+        apiPath: "/openai/v1",
+      } } })
+      adapter.setModel("groq/llama-3.1-8b-instant")
+      const session = await adapter.createSession(directory)
+      const binding = {
+        workspaceId: "proof-workspace",
+        directory,
+        sessionId: session.id,
+        upstreamSessionId: store.getAgentSessionId(session.id)!,
+        connectionId: "native:pi",
+      }
+      const events: unknown[] = []
+      for await (const event of adapter.executeTurn(binding, {
+        parts: [{ type: "text", text: "Reply with exactly OK." }],
+        model: { providerID: "pi", modelID: "groq/llama-3.1-8b-instant" },
+        agent: "build",
+        assistantMessageId: "bound-turn",
+      })) {
+        events.push(event)
+      }
+      expect(requests).toEqual([{ pathname: "/bindings/7c2d/openai/v1/chat/completions", authorization: "Bearer signed-placeholder" }])
+      expect(JSON.stringify(events)).toContain("Bound turn complete")
+      expect(JSON.stringify(events)).not.toContain("operator-own-groq-key")
+    } finally {
+      if (previousKey === undefined) delete process.env.GROQ_API_KEY
+      else process.env.GROQ_API_KEY = previousKey
+      await adapter.dispose()
+      await server.stop(true)
+      await fs.rm(directory, { recursive: true, force: true })
+    }
+  },
+  30_000,
 )

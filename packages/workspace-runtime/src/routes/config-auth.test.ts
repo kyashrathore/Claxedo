@@ -48,11 +48,12 @@ async function mintManagementToken(privateKey: CryptoKey, opts: {
 
 async function setupApp(opts: {
   publicKey?: CryptoKey
+  applied?: unknown[]
 }) {
   const app = new Hono()
   app.route(
     "/",
-    ConfigRoutes(async () => {}, {
+    ConfigRoutes(async (snapshot) => { opts.applied?.push(snapshot) }, {
       managementAuth: opts.publicKey
         ? createWorkspaceRuntimeJwtManagementAuth({
             key: opts.publicKey,
@@ -72,7 +73,8 @@ async function setupApp(opts: {
 describe("ConfigRoutes management auth", () => {
   test("succeeds with an action-scoped workspace runtime management token", async () => {
     const pair = await generateKeyPair("EdDSA", { extractable: true })
-    const app = await setupApp({ publicKey: pair.publicKey })
+    const applied: unknown[] = []
+    const app = await setupApp({ publicKey: pair.publicKey, applied })
     const token = await mintManagementToken(pair.privateKey)
     const res = await app.request("http://localhost/api/wr/config", {
       method: "POST",
@@ -84,6 +86,7 @@ describe("ConfigRoutes management auth", () => {
     })
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ ok: true })
+    expect(applied).toEqual([validSnapshot])
   })
 
   test("rejects legacy Authorization bearer tokens", async () => {

@@ -1,4 +1,9 @@
-import { canonicalToolName, isSubagentSpawnToolName, reconstructQuestionAnswers } from "@claxedo/agent-runtime-contract"
+import {
+  canonicalToolName,
+  isSubagentSpawnToolName,
+  reconstructQuestionAnswers,
+  USAGE_WINDOW_NAMES,
+} from "@claxedo/agent-runtime-contract"
 import { asFiniteNumber, asRecord } from "@claxedo/helpers/guards"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type {
@@ -770,12 +775,6 @@ function permissionFromToolUse(message: Record<string, unknown>, context: Harnes
   }] satisfies AgentRuntimeEvent[]
 }
 
-const CLAUDE_RATE_LIMIT_WINDOWS: Record<string, string> = {
-  five_hour: "session",
-  seven_day: "weekly",
-  seven_day_opus: "weekly_opus",
-}
-
 /**
  * `resetsAt` arrives as Unix seconds. 1e12 ms is 2001, which no reset expressed
  * in seconds reaches and no reset expressed in milliseconds falls below.
@@ -794,7 +793,7 @@ function claudeRateLimitEvent(info: Record<string, unknown>) {
     status: text(info.status) === "rejected" ? "limited" : "ok",
     ...(utilization === undefined ? {} : { usedPercent: Math.min(100, Math.max(0, Math.round(utilization))) }),
     resetsAt: rateLimitResetMs(info.resetsAt),
-    ...(limitId ? { limitId, limitName: CLAUDE_RATE_LIMIT_WINDOWS[limitId] ?? limitId } : {}),
+    ...(limitId ? { limitId, limitName: USAGE_WINDOW_NAMES.claude?.[limitId] ?? limitId } : {}),
   } satisfies AgentRuntimeEvent
 }
 

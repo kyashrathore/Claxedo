@@ -191,10 +191,10 @@
       "ProviderProjectionExpiredError",
       "liveProviderBinding",
       "projectionRenewalDueAt",
-      "accountIdFromClaims",
       "resolveTurnSystem",
       "sessionInstructionsByteLength",
-      "sessionModelGroupJson"
+      "sessionModelGroupJson",
+      "projectionRenewalDue"
     ],
     "@claxedo/agent-sdk-runtime/harnesses": [
       "ProcessLifecycleDisposedError",
@@ -347,10 +347,10 @@
       "kind": "function",
       "purpose": "When a projection map's earliest placeholder must be replaced, read from its own lifetime rather than a fixed interval."
     },
-    "accountIdFromClaims": {
+    "projectionRenewalDue": {
       "import": "@claxedo/agent-sdk-runtime",
       "kind": "function",
-      "purpose": "The ChatGPT account id a stored OpenAI login names, including the one carried only inside its id_token claims."
+      "purpose": "Whether a held projection is due for replacement, or the caller says the process lost track of time."
     }
   }
 }

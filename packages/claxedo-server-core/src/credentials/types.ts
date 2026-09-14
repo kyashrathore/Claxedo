@@ -63,6 +63,8 @@ export interface CredentialMetadata {
    * construction; the SQLite registry always populates it.
    */
   is_active?: boolean
+  /** When `is_active` was last set, for a reader that resolves between two marked accounts. */
+  activated_at?: number | null
   provider_id: string
   kind: CredentialKind
   source: CredentialSource

@@ -1,7 +1,7 @@
 import { loadUserConfig, sandboxDriverConfig } from "../../agent-config"
-import { isSandboxDriverID, type SandboxDriverID } from "@claxedo/sandbox-contract"
+import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { getCredentialByProvider, putCredential } from "@claxedo/server-core/credentials/registry"
+import { credentialByProvider, putCredential } from "@claxedo/server-core/credentials/registry"
 import type { CredentialKind, CredentialSource } from "@claxedo/server-core/credentials/types"
 import { trimToUndefined } from "@claxedo/helpers/string"
 
@@ -12,9 +12,7 @@ export type LocalCredentialItem = {
   kind: CredentialKind
   source: CredentialSource
   label: string
-  account_id?: string
   origin: string
-  fresh_until?: number
   secret: string
 }
 
@@ -27,10 +25,6 @@ const nativeHarnessEnv = {
   "cursor-sdk": "CURSOR_API_KEY",
 } as const
 
-function kind(providerId: string): CredentialKind {
-  return isSandboxDriverID(providerId) ? "sandbox_driver" : "api_key"
-}
-
 function itemOrigin(item: Item) {
   if (item.origin) return item.origin
   if (item.label.includes("local config")) return "Claxedo local config"
@@ -38,10 +32,20 @@ function itemOrigin(item: Item) {
   return env ?? item.source
 }
 
+/**
+ * What makes two collected candidates the same credential. A provider can be
+ * handed to us twice in different shapes — a pasted `claude-sdk` key in the
+ * agent config and a `CLAUDE_CODE_OAUTH_TOKEN` subscription in the environment
+ * — and those are two accounts to choose between, not one row read twice.
+ */
+export function localCredentialKey(item: { provider_id: string; kind: CredentialKind }) {
+  return `${item.provider_id}\u0000${item.kind}`
+}
+
 function put(map: Map<string, LocalCredentialItem>, item: Item | undefined) {
   if (!item) return
   const normalized = { ...item, origin: itemOrigin(item) }
-  map.set(`${item.provider_id}\u0000${item.kind}\u0000${item.account_id ?? ""}`, normalized)
+  map.set(localCredentialKey(item), normalized)
 }
 
 /**
@@ -141,18 +145,6 @@ export async function collectLocalCredentials() {
   const sandboxDriverConfigValue = sandboxDriverConfig(cfg)
   const map = new Map<string, LocalCredentialItem>()
   put(map, claudeEnvOAuthItem())
-
-  for (const [providerId, secret] of Object.entries(cfg?.auth ?? {})) {
-    const txt = trimToUndefined(secret)
-    if (!txt) continue
-    put(map, {
-      provider_id: providerId,
-      kind: kind(providerId),
-      source: "local_only",
-      label: "Synced from local config",
-      secret: txt,
-    })
-  }
 
   put(
     map,
@@ -290,7 +282,7 @@ export async function syncLocalCredentials(ids?: string[], org?: string) {
   const failed: Array<{ provider_id: string; error: string }> = []
 
   for (const providerId of list) {
-    const current = getCredentialByProvider(providerId, undefined, org)
+    const current = credentialByProvider(providerId, { onOutage: "empty" }, org)
     if (current?.source === "managed") {
       existing.push(providerId)
       continue
@@ -305,14 +297,7 @@ export async function syncLocalCredentials(ids?: string[], org?: string) {
       continue
     }
     try {
-      // Carry the collected token expiry through, the same way the discovery
-      // path does. Without it an imported OAuth login is stored with no
-      // `expires_at`, so nothing downstream can tell a fresh account from a
-      // months-old one when a provider has several.
-      await Promise.all(items.map((item) => putCredential({
-        ...item,
-        ...(item.fresh_until ? { expires_at: item.fresh_until } : {}),
-      }, org)))
+      await Promise.all(items.map((item) => putCredential(item, org)))
       synced.push(providerId)
     } catch (err) {
       failed.push({

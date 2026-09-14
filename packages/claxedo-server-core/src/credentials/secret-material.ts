@@ -1,4 +1,4 @@
-import { accountIdFromClaims } from "@claxedo/agent-sdk-runtime"
+import { accountIdFromClaims, emailFromClaims } from "@claxedo/agent-runtime-contract"
 import { jsonRecord, jsonString, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
 import type { CredentialKind } from "@claxedo/server-core/credentials/types"
 
@@ -23,41 +23,6 @@ export type CredentialSecretMaterial = {
   /** The signed-in user's address, when the login's own claims carry it. */
   email?: string
   form: "api-key" | "subscription"
-}
-
-/**
- * The account's email address out of a login document's JWT claims.
- *
- * Which claim holds it depends on the issuer and on which token is present: a
- * ChatGPT `id_token` carries `email`, an access token often carries only
- * `preferred_username`, and the `https://api.openai.com/auth` namespace keeps
- * its own copy. The `@` test is what separates an address from a bare
- * username, which `preferred_username` is free to be.
- *
- * A secret that is not a JWT, or a payload that is not base64url JSON, names no
- * account — never an error, because a credential without an email is ordinary.
- */
-export function emailFromClaims(input: Record<string, unknown> | undefined): string | undefined {
-  const tokens = jsonRecord(input?.tokens)
-  return emailFromJwt(jsonString(input?.id_token) ?? jsonString(tokens?.id_token))
-    ?? emailFromJwt(
-      jsonString(input?.access_token) ?? jsonString(input?.access) ?? jsonString(tokens?.access_token),
-    )
-}
-
-function emailFromJwt(token: string | undefined): string | undefined {
-  if (!token) return undefined
-  const payload = token.split(".")[1]
-  if (!payload) return undefined
-  try {
-    const claims = jsonRecord(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")))
-    const openai = jsonRecord(claims?.["https://api.openai.com/auth"])
-    return [claims?.email, claims?.preferred_username, openai?.email]
-      .map(jsonString)
-      .find((item) => item !== undefined && item.includes("@"))
-  } catch {
-    return undefined
-  }
 }
 
 /** Anthropic's OAuth access token; every other secret on that provider is a key. */

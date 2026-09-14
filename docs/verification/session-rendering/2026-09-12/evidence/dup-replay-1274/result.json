@@ -1,0 +1,17 @@
+{
+  "auth_mode": "local-unsigned",
+  "passed": 0,
+  "failed": 1,
+  "retries": 0,
+  "failed_assertion": "the settled reply's streamed text rendered more than once after its deltas replayed (sampled copy count reached 2)",
+  "passed_assertions": [
+    "stored reply text renders once on first load",
+    "reply restored after rail return and reload",
+    "replayed text-delta frames reached the session's conversation (both copies visible)"
+  ],
+  "mechanism": "Emitted while the canonical GET /session/:id/message was still in flight (delayed 800ms route): the reattaching /api/wr/runtime-events consumer drained the replayed text-delta frames; a fresh client-presentation projection announced message.updated (dropping the stored envelope's time.completed via preserveMessageFields) and minted a fresh part id (seqId = 000000_<msg>-text) unlike the stored prt_ id, so appendPartDelta/upsertPart appended a second text part; the landing REST merge (mergeChatParts) kept both parts, and the reply text rendered twice — the state-17 symptom.",
+  "visual_verified": true,
+  "visual_scope": "Post-replay screenshot shows the identical reply text painted twice under one turn; sustained past the canonical refetch (both copies remained in the sampled window).",
+  "command": "CLAXEDO_E2E_AUTH_MODE=local-unsigned CLAXEDO_E2E_SERVE_MODE=build-preview CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-harness-rendering-matrix.spec.ts --grep 'settled reply does not re-render' --workers=1 --retries=0",
+  "note": "The emit must land while the canonical fetch is in flight — replay drained after REST lands is dropped by the settled-message guard on the unknown part id."
+}

@@ -55,6 +55,14 @@ export const ClaxedoProviderCredentialTable = sqliteTable(
     consent_json: text(),
     /** The account a harness runs on; at most one per (org_id, owner, provider_id). */
     is_active: integer({ mode: "boolean" }).notNull().default(false),
+    /**
+     * When that mark was last set. Its own column because `updated_at` moves on
+     * a health check and a rename too, and delivery resolves a vendor host two
+     * marked accounts both answer on by taking the one stated most recently —
+     * so reading `updated_at` let a Check move the host to the account nobody
+     * chose.
+     */
+    activated_at: integer(),
     last_used_at: integer(),
     last_error: text(),
     created_at: integer().notNull(),

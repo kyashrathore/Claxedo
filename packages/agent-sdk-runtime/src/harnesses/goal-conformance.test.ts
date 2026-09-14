@@ -99,6 +99,9 @@ async function claudeHarness(): Promise<ConformanceHarness> {
 
 async function cursorHarness(): Promise<ConformanceHarness> {
   // Claxedo projects no Cursor credential; the driver reads the machine's own.
+  // Restored on dispose, because every later test in this process reads the
+  // same variable and one left set is a machine login the suite invented.
+  const previousCursorKey = process.env.CURSOR_API_KEY
   process.env.CURSOR_API_KEY = "cursor-conformance-key"
   const makeRun = () => {
     let release = () => {}
@@ -133,7 +136,11 @@ async function cursorHarness(): Promise<ConformanceHarness> {
     goals: adapter.goals!,
     sessionId: session.id,
     directory: "/repo",
-    dispose: () => adapter.dispose(),
+    dispose: () => {
+      if (previousCursorKey === undefined) delete process.env.CURSOR_API_KEY
+      else process.env.CURSOR_API_KEY = previousCursorKey
+      return adapter.dispose()
+    },
   }
 }
 

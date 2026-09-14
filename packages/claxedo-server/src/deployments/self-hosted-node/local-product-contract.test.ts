@@ -194,7 +194,7 @@ describe("desktop-local product contract", () => {
     ])
   })
 
-  test("records the hosted-only route families the desktop-local product does not serve", () => {
+  test("records the hosted-owned route families the desktop-local product mounts but does not own", () => {
     expect(pathsByOwner(localApp().routes, "server")).toEqual([
       "/.well-known/jwks.json",
       "/api/channels/discord",
@@ -304,6 +304,12 @@ describe("desktop-local product contract", () => {
     // The card signs in with the position, so the position is the contract.
     expect(methods[0]).toMatchObject({ type: "oauth" })
     expect(methods.map((method: { type: string }) => method.type)).toEqual(["oauth", "api"])
+  })
+
+  test("refuses a harness the card cannot sign in to rather than answering an empty card", async () => {
+    const response = await localApp().request("/api/claxedo/agent-config/providers/auth?nativeHarness=unknown")
+
+    expect(response.status).toBe(400)
   })
 
   test("answers the workspace list in one envelope, signed or not, so the MCP client can read it", async () => {

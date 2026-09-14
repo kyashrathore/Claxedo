@@ -1,14 +1,19 @@
 import { Button } from "@opencode-ai/ui/button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { RadioList, RadioListItem } from "@opencode-ai/ui/radio-group"
+import { RadioList, RadioListItem } from "@opencode-ai/ui/radio-list"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { createSignal, For, Show, type Component, type JSX } from "solid-js"
 import { ProviderConnectCard } from "@/features/settings/ui/provider-connect-card"
 import { ClaxedoIcon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton } from "@/ui/controls/claxedo-icon-button"
-import { accountReach, ACCOUNT_REACH_KEYS, harnessConnectContext } from "@/platform/identity/harness-catalog"
+import {
+  AccountReachMarks,
+  ACCOUNT_REACH_KEYS,
+  CheckedAge,
+  type AccountReach,
+} from "@/ui/controls/account-status"
+import { harnessConnectContext } from "@/platform/identity/harness-catalog"
 import { useLanguage } from "@/platform/i18n/provider"
-import { formatCompactAge, formatRelativeTime } from "@/lib/relative-time"
 
 /** One entry of the harness's account list, resolved down to what a row draws. */
 export type AgentAccount = {
@@ -35,6 +40,8 @@ export type AgentAccount = {
   refused?: string
   /** An identity worth having on the row but not worth reading. */
   identity?: string
+  /** Where the authority says a turn on this account can run, where anywhere. */
+  reach?: AccountReach
   selected: boolean
   /** This computer's own login for the harness, which is never a stored row. */
   machine?: boolean
@@ -57,7 +64,10 @@ export const AgentHarnessRow: Component<{
   providerId: string
   harness: string
   accounts: readonly AgentAccount[]
-  /** Marks the account the harness runs on; a machine login is stored first. */
+  /**
+   * Marks the account the harness runs on. Choosing this computer's own login
+   * stores nothing: it withdraws the mark from every stored row of the harness.
+   */
   onSelect: (account: AgentAccount) => void | Promise<void>
   /** The entry whose switch is in flight. */
   selecting?: string
@@ -74,15 +84,6 @@ export const AgentHarnessRow: Component<{
   const [confirmingRemove, setConfirmingRemove] = createSignal<string>()
   const group = () => `agent-account-${props.harness}`
   const selectedKey = () => props.accounts.find((account) => account.selected)?.key
-
-  /**
-   * The whole sentence behind the age. The column shows "5h"; a reader who
-   * cannot see the column — or who is asking what five hours ago refers to —
-   * gets the sentence from the accessible name rather than from a tooltip the
-   * hover cannot reach, because that same hover swaps the age for the actions.
-   */
-  const lastChecked = (at: number) =>
-    language.t("common.lastChecked", { ago: formatRelativeTime(at, language.locale()) })
 
   const remove = async (account: AgentAccount) => {
     try {
@@ -110,27 +111,17 @@ export const AgentHarnessRow: Component<{
   )
 
   /** Whether a workspace in a cloud sandbox can run on this account at all. */
-  const Reach: Component<{ account: AgentAccount }> = (self) => {
-    const reach = () => accountReach(self.account.machine === true)
-    return (
-      <LabelHint value={language.t(ACCOUNT_REACH_KEYS[reach()].note)} component="agent-account-reach">
-        <span class="flex items-center gap-1" data-reach={reach()}>
-          <For each={ACCOUNT_REACH_KEYS[reach()].places}>
-            {(place) => (
-              <ClaxedoIcon
-                name={place.icon}
-                size="small"
-                class="icon-weak-base"
-                role="img"
-                aria-hidden="false"
-                aria-label={language.t(place.label)}
-              />
-            )}
-          </For>
-        </span>
-      </LabelHint>
-    )
-  }
+  const Reach: Component<{ reach: AccountReach }> = (self) => (
+    <LabelHint value={language.t(ACCOUNT_REACH_KEYS[self.reach].note)} component="agent-account-reach">
+      <AccountReachMarks
+        reach={self.reach}
+        component="agent-account-reach-marks"
+        t={language.t}
+        class="flex items-center gap-1"
+        iconClass="icon-weak-base"
+      />
+    </LabelHint>
+  )
 
   /**
    * At rest a row is its label alone. Every action arrives on hover or with
@@ -257,7 +248,7 @@ export const AgentHarnessRow: Component<{
                   data-component="agent-account"
                   data-account={account.key}
                   data-selected={account.selected ? "true" : "false"}
-                  title={[account.refused, account.identity].filter(Boolean).join(" · ") || undefined}
+                  title={account.identity}
                   label={(
                     <span class="flex flex-wrap items-center gap-1.5">
                       <span class="text-13-regular text-text-strong">{account.label}</span>
@@ -275,10 +266,12 @@ export const AgentHarnessRow: Component<{
                           </LabelHint>
                         )}
                       </Show>
-                      <Reach account={account} />
+                      <Show when={account.reach}>
+                        {(reach) => <Reach reach={reach()} />}
+                      </Show>
                     </span>
                   )}
-                  description={account.detail ?? account.refused
+                  description={(account.detail ?? account.refused) !== undefined
                     ? (
                       <>
                         <Show when={account.detail}>
@@ -294,13 +287,13 @@ export const AgentHarnessRow: Component<{
                   <span class="relative flex shrink-0 items-center justify-end">
                     <Show when={account.checkedAt}>
                       {(at) => (
-                        <span
+                        <CheckedAge
+                          at={at()}
+                          component="agent-account-checked"
+                          t={language.t}
+                          locale={language.locale()}
                           class="pointer-events-none absolute right-0 whitespace-nowrap text-13-regular text-text-weak transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
-                          data-component="agent-account-checked"
-                          aria-label={lastChecked(at())}
-                        >
-                          {formatCompactAge(at()) ?? language.t("common.justNow")}
-                        </span>
+                        />
                       )}
                     </Show>
                     <AccountActions account={account} />

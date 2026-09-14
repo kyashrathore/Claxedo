@@ -13,10 +13,14 @@ process.env.CLAXEDO_DATA_DIR = dataDir
 const [
   { opencodeProviderCatalog, OpenCodeCatalogUnavailableError, resolveModelsDevCatalog },
   { putCustomProvider },
+  { deleteCredential, listCredentials, putCredential },
+  { createTestBackend, setBackendOverride },
   { ClaxedoDB },
 ] = await Promise.all([
   import("./opencode-provider-catalog"),
   import("./custom-provider"),
+  import("./registry"),
+  import("./backend-registry"),
   import("../platform/db/index"),
 ])
 const dirs: string[] = []
@@ -93,6 +97,37 @@ describe("opencodeProviderCatalog", () => {
       fetchImpl: fetchOk(),
     })
     expect(with_.connected).toContain("anthropic")
+  })
+
+  test("a stored sandbox driver token does not connect the model provider that shares its id", async () => {
+    // `putCredential` upserts on (org, provider_id, kind, account_id), so one
+    // id legitimately holds a deploy token and a model key at once. Reading
+    // whichever row sorts first answered the catalog with the deploy token.
+    setBackendOverride(createTestBackend())
+    const driver = await putCredential({
+      provider_id: "vercel",
+      kind: "sandbox_driver",
+      source: "managed",
+      secret: JSON.stringify({ access_token: "vc", team_id: "t", project_id: "p" }),
+    })
+    try {
+      const catalog = await opencodeProviderCatalog({
+        env: env(cacheFile()),
+        fetchImpl: fetchOk({
+          vercel: {
+            id: "vercel",
+            name: "Vercel",
+            env: ["VERCEL_API_KEY"],
+            models: { "v0-md": { id: "v0-md", name: "v0" } },
+          },
+        }),
+      })
+      expect(catalog.connected).not.toContain("vercel")
+    } finally {
+      await deleteCredential(driver.id)
+      for (const row of listCredentials()) await deleteCredential(row.id)
+      setBackendOverride(undefined)
+    }
   })
 
   test("OpenCode Zen and providers with no env requirement are connected without credentials", async () => {

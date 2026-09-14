@@ -19,7 +19,7 @@ const base = {
 describe("harness selection", () => {
   test("resolves display names from structured identities, not binaries", () => {
     expect(harnessDisplayName({ harness: { kind: "native", harnessId: "codex" } })).toBe("Codex")
-    expect(harnessDisplayName({ harness: { kind: "native", harnessId: "claude" } })).toBe("Claude")
+    expect(harnessDisplayName({ harness: { kind: "native", harnessId: "claude" } })).toBe("Claude Code")
     expect(harnessDisplayName({ harness: { kind: "connection", connectionId: "team-agent" } })).toBe("Team Agent")
     expect(harnessDisplayName({})).toBe("Select agent")
   })

@@ -17,5 +17,8 @@
   "devDependencies": {
     "@tsconfig/node-lts": "22.0.4",
     "typescript": "catalog:"
+  },
+  "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*"
   }
 }

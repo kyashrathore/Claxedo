@@ -289,15 +289,12 @@ export function groupUsageFacts(facts: readonly TurnUsageRevision[], dimension: 
 }
 
 /**
- * ── The control-plane usage payload, parsed once ────────────────────────────
- *
  * `UsageLedger.usageDashboard` and `UsageLedger.usageBreakdown` return the
- * remote control plane's JSON, so their declared type is `unknown`. Every
- * consumer used to re-describe the slice it wanted with an inline cast
- * (`(value as { breakdown?: unknown; models?: ... } | null)`), which meant the
- * payload's shape lived in a dozen places and none of them checked anything.
- * This section is the single boundary: `readCentralUsage` turns the `unknown`
- * into a typed projection, and the row accessors read the individual fields.
+ * remote control plane's JSON, so their declared type is `unknown`. This is the
+ * one boundary it crosses: `readCentralUsage` turns that `unknown` into a typed
+ * projection and the row accessors read the individual fields, so the payload's
+ * shape is stated once and checked rather than re-described by an inline cast
+ * at every consumer.
  *
  * It lives beside `centralProjectionSeries` because that is what consumes it:
  * the central payload's only job here is to become a `UsageSeries`.

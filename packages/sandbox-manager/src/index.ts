@@ -1,5 +1,7 @@
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "./constants"
-import type { SandboxDriverID } from "@claxedo/sandbox-contract"
+import type { SandboxDriverID, SandboxSecretBrokering } from "@claxedo/sandbox-contract"
+
+export type { SandboxSecretBrokering } from "@claxedo/sandbox-contract"
 import {
   captureSandboxCheckpoint,
   restoreSandboxCheckpoint,
@@ -98,13 +100,8 @@ export type SandboxDriverMetadata = {
    *   provider may still have an encrypted secret STORE (e.g. Modal secrets),
    *   but it is exposed as a readable env var, which cannot satisfy the
    *   never-readable contract.
-   *
-   * There is no third state. A driver that would need a broker we operate is
-   * `"none"` until it has one, because the manager fails closed on anything
-   * that is not `"native"` and an "achievable but unwired" value read as
-   * provisionable in every caller that did not consult this comment.
    */
-  secretBrokering: "native" | "none"
+  secretBrokering: SandboxSecretBrokering
   /**
    * How the driver can enforce a RESTRICTED `SandboxNetworkPolicy` — i.e.
    * whether the sandbox's outbound network can actually be contained.
@@ -282,6 +279,21 @@ export type SandboxBrokeredSecret = {
    * ignores it, because the scheme is in the request before the value is.
    */
   scheme?: string
+  /**
+   * The methods and path prefixes the credential may be attached to, on top of
+   * `hosts`. A vendor host serves far more than the routes a turn needs —
+   * api.anthropic.com also answers the organization-admin API — and everything
+   * sharing the sandbox reaches the same host.
+   *
+   * Optional so a producer that has not been taught to state a policy still
+   * type-checks, and fails closed instead: a driver that can express them
+   * attaches the credential only within them, so an absent or empty policy
+   * names a host and nothing else, and nothing is spendable at a host alone. A
+   * driver whose provider cannot express them documents that it drops them,
+   * and the host allowlist is all the containment there is.
+   */
+  methods?: readonly string[]
+  pathPrefixes?: readonly string[]
 }
 
 /**
@@ -290,8 +302,10 @@ export type SandboxBrokeredSecret = {
  *
  * Carries no authority: the value is attached at the edge, keyed by the host
  * and this string, and the string itself is never accepted by a vendor. The
- * prefix must stay equal to `PLACEHOLDER_PREFIX` in the Cloudflare sandbox
- * Worker's `outbound-credentials.ts`, which matches on it.
+ * Cloudflare sandbox Worker is deployed on its own and cannot depend on this
+ * package, so it matches on its own copy of the prefix; a driver minting
+ * anything else sends every brokered request upstream bare, which is what
+ * `brokered-placeholder.test.ts` exists to catch.
  */
 export function brokeredSecretPlaceholder(name: string) {
   return `claxedo-broker:${name}`

@@ -1,7 +1,6 @@
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import {
   DEFAULT_HARNESS_MODEL,
-  HARNESS_DISPLAY_NAMES,
   harnessDisplayLabel,
   harnessSelectionId,
   isCatalogHarness,
@@ -31,10 +30,7 @@ export function harnessMode(type?: HarnessType) {
 
 export function harnessDisplayName(state: Pick<HarnessSelectionState, "harness">) {
   if (!state.harness) return "Select agent"
-  const key = harnessSelectionId(state.harness)
-  if (HARNESS_DISPLAY_NAMES[key]) return HARNESS_DISPLAY_NAMES[key]
-  if (state.harness.kind === "connection") return harnessDisplayLabel(state.harness.connectionId)
-  return key
+  return harnessDisplayLabel(harnessSelectionId(state.harness))
 }
 
 export type HarnessModelChoice = HarnessModelOption & { providerID?: string }

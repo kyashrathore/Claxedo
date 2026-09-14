@@ -1,68 +1,66 @@
+import {
+  harnessBindingIds as tableBindingIds,
+  harnessForProviderId,
+  isHarnessId,
+  HARNESS_TABLE,
+} from "@claxedo/agent-runtime-contract"
 import type { NativeHarnessId } from "@/platform/identity/harness-selection"
 
+/** One harness as this app draws it: the shared record, plus its brand mark. */
+type HarnessEntry = {
+  label: string
+  vendor: string
+  /** The brand mark the harness is recognised by; its login is the vendor's. */
+  icon: string
+  /** Every registry provider id the harness resolves auth through. */
+  providerIds?: readonly string[]
+  /** The provider id a sign-in for this harness is stored against. */
+  connectProvider?: string
+  /** The vendor-level id under this harness: models it can run, not its login. */
+  vendorProvider?: string
+}
+
 /**
- * How each harness and the vendor behind its login are named to a reader.
+ * How each harness is named and marked to a reader, and which provider ids its
+ * login is stored under.
  *
- * The single owner of these words. A provider id — `claude-sdk`,
- * `codex-app-server`, `cursor-sdk` — is a registry key and means nothing to
- * anyone reading a connect card, so every user-facing surface resolves through
- * here rather than falling back to the id when the model catalog has never
- * heard of it.
+ * Ids, names and provider ids are `HARNESS_TABLE`'s: the server stores a login
+ * against those ids and the machine scan reports them, so a second list here
+ * loses an account the moment the two disagree. `pi` and `opencode` are engines
+ * a reader picks rather than logins anything is stored against, so they carry a
+ * name and a mark and nothing else.
  */
 export const HARNESS_CATALOG = {
-  claude: { label: "Claude Code", vendor: "Anthropic" },
-  codex: { label: "Codex", vendor: "OpenAI" },
-  cursor: { label: "Cursor", vendor: "Cursor" },
-  pi: { label: "Pi", vendor: "Pi" },
-  opencode: { label: "OpenCode", vendor: "OpenCode" },
-} as const satisfies Record<NativeHarnessId, { label: string; vendor: string }>
+  claude: { ...HARNESS_TABLE.claude, icon: "anthropic" },
+  codex: { ...HARNESS_TABLE.codex, icon: "openai" },
+  cursor: { ...HARNESS_TABLE.cursor, icon: "cursor" },
+  pi: { label: "Pi", vendor: "Pi", icon: "pi" },
+  opencode: { label: "OpenCode", vendor: "OpenCode", icon: "opencode" },
+} as const satisfies Record<NativeHarnessId, HarnessEntry>
+
+function entry(id: string): HarnessEntry | undefined {
+  return (HARNESS_CATALOG as Record<string, HarnessEntry | undefined>)[id]
+}
 
 export function harnessLabel(id: string): string | undefined {
-  return (HARNESS_CATALOG as Record<string, { label: string } | undefined>)[id]?.label
-}
-
-export function harnessVendor(id: string): string | undefined {
-  return (HARNESS_CATALOG as Record<string, { vendor: string } | undefined>)[id]?.vendor
-}
-
-/** Where a turn on one account can run. */
-export type AccountReach = "local-and-cloud" | "local-only"
-
-/**
- * A stored account is a token Claxedo holds, so the loopback broker hands it to
- * a turn on this computer and `sandboxBrokeredSecrets` hands it to each
- * driver's native brokering for a turn in a cloud sandbox. This computer's own
- * login is a file the harness wrote on this machine and nothing carries it off
- * the machine, so a workspace on a sandbox has no such login to run on.
- */
-export function accountReach(machineLogin: boolean): AccountReach {
-  return machineLogin ? "local-only" : "local-and-cloud"
+  return entry(id)?.label
 }
 
 /**
- * Which places a reach draws, and what the pair of them means, as dictionary
- * keys. A reach is two facts about one account and the icons say them one each,
- * so `local-and-cloud` is `local-only` plus the cloud rather than a third mark
- * a reader has to learn. The names are catalog entries; `as const` keeps them
- * narrow enough for `ClaxedoIcon` to reject a typo without this module
- * depending on the icon layer.
+ * The name to put on a key no catalog entry answers to — a historical session's
+ * harness, an operator's ACP connection id. The server-supplied label is
+ * preferred wherever discovery data is at hand; this is the label of last
+ * resort, and it beats printing `team-agent`.
  */
-export const ACCOUNT_REACH_KEYS = {
-  "local-and-cloud": {
-    places: [
-      { icon: "monitor", label: "settings.providers.agents.reachLocal" },
-      { icon: "cloud", label: "settings.providers.agents.reachCloud" },
-    ],
-    note: "settings.providers.agents.reachLocalCloudNote",
-  },
-  "local-only": {
-    places: [{ icon: "monitor", label: "settings.providers.agents.reachLocal" }],
-    note: "settings.providers.agents.reachLocalOnlyNote",
-  },
-} as const satisfies Record<AccountReach, {
-  places: ReadonlyArray<{ icon: string; label: string }>
-  note: string
-}>
+export function harnessDisplayLabel(key: string): string {
+  const known = harnessLabel(key)
+  if (known) return known
+  return key
+    .split(/[-_]/g)
+    .filter(Boolean)
+    .map((item) => item[0]?.toUpperCase() + item.slice(1))
+    .join(" ")
+}
 
 /**
  * What the connect card is setting up, in the words it will use.
@@ -76,9 +74,41 @@ export type ConnectContext =
   | { kind: "harness"; harness: string; vendor: string }
   | { kind: "engine"; engine: string; vendor: string }
 
+/**
+ * The copy written twice, once per context kind. Both halves are read through
+ * `connectContextKey`, so a locale carrying one and not the other is a missing
+ * string rather than a quiet fallback to the other sentence.
+ */
+export const CONNECT_CONTEXT_COPY: Readonly<Record<
+  "title" | "context" | "autoVisitSuffix" | "codeVisitSuffix" | "connected",
+  string
+>> = {
+  title: "provider.connect.title",
+  context: "provider.connect.context",
+  autoVisitSuffix: "provider.connect.oauth.auto.visit.suffix",
+  codeVisitSuffix: "provider.connect.oauth.code.visit.suffix",
+  connected: "provider.connect.toast.connected.description",
+}
+
+export function connectContextKey(base: string, context: ConnectContext): string {
+  return `${base}.${context.kind}`
+}
+
+/** The words each connect sentence interpolates, whichever of the two it is. */
+export function connectVars(context: ConnectContext): Record<string, string> {
+  return context.kind === "harness"
+    ? { harness: context.harness, vendor: context.vendor }
+    : { engine: context.engine, vendor: context.vendor }
+}
+
+/** Who the card is about: the harness that runs on the login, or the vendor behind it. */
+export function connectSubject(context: ConnectContext): string {
+  return context.kind === "harness" ? context.harness : context.vendor
+}
+
 /** The connect card's context for a harness that runs on one account's login. */
 export function harnessConnectContext(harness: string, fallbackLabel?: string): ConnectContext {
-  const known = (HARNESS_CATALOG as Record<string, { label: string; vendor: string } | undefined>)[harness]
+  const known = entry(harness)
   const label = known?.label ?? fallbackLabel ?? harness
   return { kind: "harness", harness: label, vendor: known?.vendor ?? label }
 }
@@ -88,30 +118,46 @@ export function engineConnectContext(engine: string, vendor: string): ConnectCon
   return { kind: "engine", engine: harnessLabel(engine) ?? engine, vendor }
 }
 
-/** The brand mark each harness is recognised by; its login is the vendor's. */
-const HARNESS_ICON: Record<string, string> = {
-  claude: "anthropic",
-  codex: "openai",
-  cursor: "cursor",
-}
-
 export function harnessIcon(id: string): string {
-  return HARNESS_ICON[id] ?? id
+  return entry(id)?.icon ?? id
 }
 
 /**
- * The provider id a harness's own login is stored under, and the id its connect
- * card writes. Every other provider id names a vendor an engine can run, which
- * is a different sentence on the card.
+ * How a key that may be either a harness id or one of its provider ids is
+ * named to a reader. A registry key — `claude-sdk`, `codex-app-server` — names
+ * the binding a login is stored against and nothing a reader would recognise.
  */
-export const HARNESS_CONNECT_PROVIDER = {
-  claude: "claude-sdk",
-  codex: "codex-app-server",
-  cursor: "cursor-sdk",
-} as const satisfies Partial<Record<NativeHarnessId, string>>
+export function harnessLabelForProviderId(providerId: string): string | undefined {
+  return harnessLabel(harnessForProviderId(providerId) ?? providerId)
+}
 
+/** The provider ids a harness's accounts are stored under, its connect id first. */
+function harnessProviderIds(id: string): readonly string[] {
+  return entry(id)?.providerIds ?? []
+}
+
+/**
+ * Those of them the harness resolves its own auth through, for a key of any
+ * shape — the server's report names its harness as a string — where the
+ * table's own reader takes only the ids it knows. A key it has never heard of
+ * has no vendor row to subtract, so its whole list is its bindings.
+ *
+ * A harness's vendor id — `anthropic` under Claude Code — is that vendor's
+ * models routed through the harness, never something signing its CLI in
+ * answers for. Comparing a login's reach against the full list therefore reads
+ * every complete login as partial.
+ */
+export function bindingIdsForHarness(id: string): readonly string[] {
+  return isHarnessId(id) ? tableBindingIds(id) : harnessProviderIds(id)
+}
+
+/**
+ * The harness whose own login is stored under this provider id, for the id its
+ * connect card writes. Every other provider id — `openai` under Codex, say —
+ * names a vendor an engine can run, which is a different sentence on the card.
+ */
 export function harnessForConnectProvider(providerId: string): string | undefined {
-  return Object.entries(HARNESS_CONNECT_PROVIDER).find(([, id]) => id === providerId)?.[0]
+  return Object.keys(HARNESS_CATALOG).find((id) => entry(id)?.connectProvider === providerId)
 }
 
 /**

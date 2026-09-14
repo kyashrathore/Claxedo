@@ -929,6 +929,18 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **C**: keep the denial semantics but relabel the stored error so it no longer claims a user decision that never happened.
 - **Decision**:
 
+### 80. core-harness-rendering-matrix — a settled reply must not re-render its streamed text when the turn's deltas replay (state 17)
+
+- **Status**: fixme; fails in both auth modes (runs 1274/1275, zero retries) — the settled reply's text renders twice.
+- **Tests**: `a settled reply does not re-render its streamed text when the turn's deltas replay`.
+- **Expected**: replayed `text-delta` frames for a completed turn cannot add a second copy of already-stored reply text — the rendered transcript shows the text exactly once.
+- **Why**: this qualifies the numbered-inventory issue state 17 (the two-item exit list rendered twice around failed tool rows while the stored text carried it once). The chain is the same replay family as register 77: a reattached `/api/wr/runtime-events` stream delivers the finished turn's `text-delta` frames; a fresh client-presentation projection announces `message.updated` whose `preserveMessageFields` merge drops `time.completed` (un-settling the stored envelope), then mints a fresh part id `000000_<msg>-text` that cannot collide with the stored `prt_…` part — so the settled-message guard passes and the delta appends a SECOND text part. When the delayed canonical fetch lands, `mergeChatParts` keeps both parts and the reply paints twice. Timing matters: deltas drained AFTER the canonical load are dropped by the settled guard on the unknown part id, which is why earlier idle-session rechecks never reproduced it.
+- **Options**:
+  - **A (recommended)**: keep `time.completed` through the `message.updated` merge (fix `preserveMessageFields` to carry the settled stamp) so the settled guard keeps dropping replayed parts — one fix covers this family and register 77's un-settling half.
+  - **B**: dedupe on content identity at the merge — when a live part's accumulated text equals an already-stored part's text, prefer the stored one.
+  - **C**: drop `text-delta` replays for sessions whose messages are still loading instead of applying then merging.
+- **Decision**:
+
 ## 3. Live-suite skips (not in core CI)
 
 These four `*.spec.ts` suites are gated behind `CLAXEDO_E2E_LIVE=1` (Tier L: real claxedo-server, real relay/tunnel, real MCP subprocess, real harness binaries) and do **not** run in core CI. Within them, the following bodies are `test.fixme` (real app bug/gap) or `test.skip` (missing prereq). Listed for triage; not blocking core CI.

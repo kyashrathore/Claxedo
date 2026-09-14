@@ -11,7 +11,6 @@ import {
   resolveSandboxBindings,
   restoreSupervisorSandboxCheckpoint,
   sandboxAuthoritySatisfied,
-  sandboxBindingsRequested,
   startSandbox,
   stopSandbox,
   touchSandbox,
@@ -446,20 +445,16 @@ function recordSupervisorRuntimeSnapshot(workspaceId: string, input: SandboxRegi
 
 async function startRuntime(state: WorkspaceRuntimeState, stated?: SandboxBindings) {
   if (state.ws.kind !== "cloud") {
-    if (state.status === "ready" && state.url && !sandboxBindingsRequested(stated)) {
+    // Only a stated SECRET has to reach a driver. Every hosted connection route
+    // states an egress policy, so reading "the caller stated something" here
+    // sent a warm local runtime back through a path that has no driver at all
+    // and answered the operator "unavailable".
+    if (state.status === "ready" && state.url && stated?.secrets === undefined) {
       state.used_at = now()
       scheduleStop(state)
       return state
     }
-    if (state.start) return state.start
-    state.start = (async () => {
-      try {
-        throw new Error("local workspaces use embedded workspace-runtime hosts")
-      } finally {
-        state.start = undefined
-      }
-    })()
-    return state.start
+    throw new Error("local workspaces use embedded workspace-runtime hosts")
   }
   const authority = await resolveSandboxBindings(state, stated)
   // A warm runtime is served from memory only while it already holds the

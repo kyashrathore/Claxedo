@@ -3,7 +3,8 @@
   "private": true,
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "test": "node ../../../node_modules/vitest/vitest.mjs run src"
   },
   "dependencies": {
     "@cloudflare/sandbox": "0.12.9"

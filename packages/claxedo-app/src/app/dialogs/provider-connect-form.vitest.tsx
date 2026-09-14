@@ -9,6 +9,16 @@ const state = vi.hoisted(() => ({
   opened: [] as string[],
 }))
 
+/** The methods the server lists for a vendor, in the order it lists them. */
+const ANTHROPIC_METHODS = [
+  { type: "token" as const, label: "Claude subscription token", command: "claude setup-token" },
+  { type: "api" as const, label: "API Key" },
+]
+const OPENAI_METHODS = [
+  { type: "api" as const, label: "API Key" },
+  { type: "oauth" as const, label: "ChatGPT Pro/Plus (headless)" },
+]
+
 vi.mock("@/app/providers/global-sdk/provider", () => ({
   useGlobalSDK: () => ({
     url: "http://127.0.0.1:2593",
@@ -82,10 +92,7 @@ function option(type: string) {
 
 describe("ProviderConnectForm method chooser", () => {
   test("Anthropic offers the subscription token first and the console key second, each explained", async () => {
-    state.methods = [
-      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
-      { type: "api", label: "API Key" },
-    ]
+    state.methods = [...ANTHROPIC_METHODS]
     render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
 
     await waitFor(() => expect(optionTitles()).toHaveLength(2))
@@ -103,10 +110,7 @@ describe("ProviderConnectForm method chooser", () => {
   })
 
   test("picking the subscription token shows the command that mints it and keeps the explanation on screen", async () => {
-    state.methods = [
-      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
-      { type: "api", label: "API Key" },
-    ]
+    state.methods = [...ANTHROPIC_METHODS]
     render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
     await waitFor(() => expect(optionTitles()).toHaveLength(2))
 
@@ -123,10 +127,7 @@ describe("ProviderConnectForm method chooser", () => {
   })
 
   test("picking the API key shows the vendor's key page, opened outside the app", async () => {
-    state.methods = [
-      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
-      { type: "api", label: "API Key" },
-    ]
+    state.methods = [...ANTHROPIC_METHODS]
     render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
     await waitFor(() => expect(optionTitles()).toHaveLength(2))
 
@@ -141,10 +142,7 @@ describe("ProviderConnectForm method chooser", () => {
   test("OpenAI offers the ChatGPT plan first, and signing in authorizes the method the server indexed", async () => {
     // The server lists the key first; the card leads with the plan, so the
     // index the plan card signs in with is not the index it is drawn at.
-    state.methods = [
-      { type: "api", label: "API Key" },
-      { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
-    ]
+    state.methods = [...OPENAI_METHODS]
     render(() => <ProviderConnectForm provider="codex-app-server" context={harnessConnectContext("codex")} harness="codex" hideHeading />)
     await waitFor(() => expect(optionTitles()).toHaveLength(2))
 
@@ -205,12 +203,9 @@ describe("ProviderConnectForm method chooser", () => {
   })
 
   test("a segmented picker opens on the first method rather than asking twice", async () => {
-    state.methods = [
-      { type: "api", label: "API Key" },
-      { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
-    ]
+    state.methods = [...OPENAI_METHODS]
     render(() => (
-      <ProviderConnectForm provider="codex-app-server" context={harnessConnectContext("codex")} harness="codex" hideHeading methodPicker="segmented" />
+      <ProviderConnectForm provider="codex-app-server" context={harnessConnectContext("codex")} harness="codex" hideHeading preselectFirstMethod />
     ))
 
     await waitFor(() => expect(document.querySelector('[data-action="provider-connect-oauth-start"]')).not.toBeNull())
@@ -227,10 +222,7 @@ describe("ProviderConnectForm method chooser", () => {
 
 describe("ProviderConnectForm storage", () => {
   test("a pasted subscription token is stored under the name the user gave it", async () => {
-    state.methods = [
-      { type: "token", label: "Claude subscription token", command: "claude setup-token" },
-      { type: "api", label: "API Key" },
-    ]
+    state.methods = [...ANTHROPIC_METHODS]
     render(() => <ProviderConnectForm provider="claude-sdk" context={harnessConnectContext("claude")} harness="claude" hideHeading />)
     await waitFor(() => expect(optionTitles()).toHaveLength(2))
     fireEvent.click(option("token"))

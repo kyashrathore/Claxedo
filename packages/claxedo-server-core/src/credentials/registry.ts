@@ -86,14 +86,29 @@ function safeRead<T>(label: string, fallback: T, read: () => T): T {
 }
 
 /**
+ * What a read answers when the registry itself cannot be read. `"empty"` is
+ * for a caller that can carry on without the row — a mutator that then reports
+ * not-found, a sync that then imports afresh. `"throw"` is for a caller whose
+ * empty answer already means something the outage does not: a catalog serving
+ * "not connected", an authority withdrawing a binding, a fanout sending
+ * nothing so the harness runs on the machine's own login.
+ */
+export type RegistryOutage = "throw" | "empty"
+
+export type CredentialRead = { onOutage: RegistryOutage }
+
+function readWithPolicy<T>(label: string, onOutage: RegistryOutage, empty: T, read: () => T): T {
+  return onOutage === "throw" ? read() : safeRead(label, empty, read)
+}
+
+/**
  * The identity a pasted key carries when the provider gives none.
  *
- * The upsert key includes `account_id`, so an API key saved without one
- * overwrote whatever was stored for that provider and kind: a user could hold
- * exactly one, and a second paste silently destroyed the first. Hashing the
- * secret makes two keys two rows and the same key idempotent. The trailing
- * characters are the ones the provider's own dashboard shows, so the row is
- * recognisable in the accounts list without ever revealing the key.
+ * The upsert key includes `account_id`, so two keys saved without one are the
+ * same row: hashing the secret makes them two rows, and the same key saved
+ * twice idempotent. The trailing characters are the ones the provider's own
+ * dashboard shows, so the row is recognisable in the accounts list without ever
+ * revealing the key.
  *
  * OAuth and subscription rows carry the provider's account id already, and
  * everything that is not harness auth (sandbox drivers, `integration:` and
@@ -238,10 +253,11 @@ export async function putCredential(
       .all()
       .filter((other) => other.id !== id)
     const usable = holders.some((other) => other.status === "available")
-    const row = { ...fields, is_active: fanoutEligibleAuth(input.kind, input.provider_id) && !usable }
+    const active = fanoutEligibleAuth(input.kind, input.provider_id) && !usable
+    const row = { ...fields, is_active: active, activated_at: active ? ts : null }
     if (row.is_active && holders.length > 0) {
       db.update(ClaxedoProviderCredentialTable)
-        .set({ is_active: false, updated_at: ts })
+        .set({ is_active: false, activated_at: null, updated_at: ts })
         .where(and(inOrg(orgId), inArray(ClaxedoProviderCredentialTable.id, holders.map((other) => other.id))))
         .run()
     }
@@ -296,13 +312,15 @@ export function listCredentials(org: CredentialOrgScope = SINGLE_TENANT_ORG): Cr
  * exists — a user with two ChatGPT accounts has two native Codex credentials.
  *
  * The account the user marked active answers that question; it is the only
- * choice a surface can show and the only one they can change. Below the mark
- * the most recent write wins, which decides only between rows that never carry
- * one: sandbox driver tokens and `integration:`/`channel:` secrets, of which a
- * provider holds a single row per kind.
+ * choice a surface can show and the only one they can change, and the most
+ * recent mark leads. Below the mark the most recent write wins, which decides
+ * only between rows that never carry one: sandbox driver tokens and
+ * `integration:`/`channel:` secrets, of which a provider holds a single row per
+ * kind.
  */
 const activeFirst = [
   desc(ClaxedoProviderCredentialTable.is_active),
+  desc(ClaxedoProviderCredentialTable.activated_at),
   desc(ClaxedoProviderCredentialTable.updated_at),
 ]
 
@@ -348,7 +366,7 @@ export function setActiveCredentials(
     const ts = now()
     for (const row of rows) {
       db.update(ClaxedoProviderCredentialTable)
-        .set({ is_active: false, updated_at: ts })
+        .set({ is_active: false, activated_at: null, updated_at: ts })
         .where(
           and(
             inOrg(orgId),
@@ -361,11 +379,14 @@ export function setActiveCredentials(
     }
     for (const row of rows) {
       db.update(ClaxedoProviderCredentialTable)
-        .set({ is_active: true, updated_at: ts })
+        .set({ is_active: true, activated_at: ts, updated_at: ts })
         .where(and(inOrg(orgId), eq(ClaxedoProviderCredentialTable.id, row.id)))
         .run()
     }
-    return { ok: true, credentials: rows.map((row) => toMetadata({ ...row, is_active: true, updated_at: ts })) }
+    return {
+      ok: true,
+      credentials: rows.map((row) => toMetadata({ ...row, is_active: true, activated_at: ts, updated_at: ts })),
+    }
   })
 }
 
@@ -400,7 +421,7 @@ export function clearActiveCredentials(
         .all()
       if (rows.length === 0) continue
       db.update(ClaxedoProviderCredentialTable)
-        .set({ is_active: false, updated_at: now() })
+        .set({ is_active: false, activated_at: null, updated_at: now() })
         .where(
           and(
             inOrg(orgId),
@@ -416,82 +437,53 @@ export function clearActiveCredentials(
 }
 
 /**
- * Get credential metadata by provider ID, optionally scoped to one `kind`.
- *
  * `provider_id` is NOT unique — `putCredential` upserts on (org, provider_id,
- * kind, account_id), so one id can legitimately hold several rows. Several
- * sandbox driver ids collide with model-provider ids (`vercel` is both), and
- * without `kind` this returns whichever row sorts first, which for a sandbox
- * lookup can be the user's model-provider API key. Callers that mean one kind
- * should say so; omitting it keeps the historical any-kind behaviour.
+ * kind, account_id) — and several sandbox driver ids collide with
+ * model-provider ids (`vercel` is both). Without `kind` the read answers
+ * whichever row sorts first, which for a sandbox lookup can be the user's
+ * model-provider API key and for a model lookup a stored deploy token.
  */
-export function getCredentialByProvider(
+export type ProviderCredentialRead = CredentialRead & {
+  kind?: CredentialKind | readonly CredentialKind[] | undefined
+}
+
+function readRow(label: string, onOutage: RegistryOutage, read: () => CredentialRow | undefined) {
+  const row = readWithPolicy(label, onOutage, undefined, read)
+  return row ? toMetadata(row) : undefined
+}
+
+/** One provider's credential in one org, the marked account first. */
+export function credentialByProvider(
   providerId: string,
-  kind?: CredentialKind,
+  { onOutage, kind }: ProviderCredentialRead,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): CredentialMetadata | undefined {
-  const row = safeRead<CredentialRow | undefined>("credential lookup", undefined, () =>
+  const kinds = kind === undefined ? undefined : typeof kind === "string" ? [kind] : [...kind]
+  return readRow("credential lookup", onOutage, () =>
     ClaxedoDB.use((db) =>
       db
         .select()
         .from(ClaxedoProviderCredentialTable)
         .where(
-          kind
-            ? and(
-                inOrg(org),
-                eq(ClaxedoProviderCredentialTable.provider_id, providerId),
-                eq(ClaxedoProviderCredentialTable.kind, kind),
-              )
-            : and(inOrg(org), eq(ClaxedoProviderCredentialTable.provider_id, providerId)),
+          and(
+            inOrg(org),
+            eq(ClaxedoProviderCredentialTable.provider_id, providerId),
+            kinds && inArray(ClaxedoProviderCredentialTable.kind, kinds),
+          ),
         )
         .orderBy(...activeFirst)
         .get(),
     ),
   )
-  return row ? toMetadata(row) : undefined
 }
 
-/** Credential lookup for request paths where a registry outage must remain distinguishable from an absent credential. */
-export function requireCredentialRegistryLookup(
-  providerId: string,
-  org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): CredentialMetadata | undefined {
-  const row = ClaxedoDB.use((db) =>
-    db
-      .select()
-        .from(ClaxedoProviderCredentialTable)
-        .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.provider_id, providerId)))
-        .orderBy(...activeFirst)
-        .get(),
-  )
-  return row ? toMetadata(row) : undefined
-}
-
-/**
- * Credential metadata by id for a caller that must not read an outage as an
- * absent row. `getCredential` answers `undefined` for both, which a credential
- * authority would serve as "this binding was withdrawn".
- */
-export function requireCredential(
+/** Credential metadata by id, within one org. */
+export function credentialById(
   id: string,
+  { onOutage }: CredentialRead,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): CredentialMetadata | undefined {
-  const row = ClaxedoDB.use((db) =>
-    db
-      .select()
-      .from(ClaxedoProviderCredentialTable)
-      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
-      .get(),
-  )
-  return row ? toMetadata(row) : undefined
-}
-
-/** Get credential metadata by ID, within one org. */
-export function getCredential(
-  id: string,
-  org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): CredentialMetadata | undefined {
-  const row = safeRead<CredentialRow | undefined>("credential read", undefined, () =>
+  return readRow("credential read", onOutage, () =>
     ClaxedoDB.use((db) =>
       db
         .select()
@@ -500,7 +492,6 @@ export function getCredential(
         .get(),
     ),
   )
-  return row ? toMetadata(row) : undefined
 }
 
 /** Resolve a credential's raw secret material — only call at trusted fanout points. */
@@ -509,7 +500,7 @@ export async function resolveSecret(
   kind?: CredentialKind,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<string | null> {
-  const cred = getCredentialByProvider(providerId, kind, org)
+  const cred = credentialByProvider(providerId, { onOutage: "empty", kind }, org)
   if (!cred?.secure_ref) return null
   if (cred.status !== "available") return null
 
@@ -523,7 +514,7 @@ export async function resolveSecretById(
   id: string,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<string | null> {
-  const cred = getCredential(id, org)
+  const cred = credentialById(id, { onOutage: "empty" }, org)
   if (!cred?.secure_ref) return null
   const secret = await getBackend().get(cred.secure_ref)
   if (secret) touchCredential(cred.id, org)
@@ -541,7 +532,7 @@ export async function readSecretById(
   id: string,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<string | null> {
-  const cred = requireCredential(id, org)
+  const cred = credentialById(id, { onOutage: "throw" }, org)
   if (!cred?.secure_ref) return null
   return await getBackend().get(cred.secure_ref)
 }
@@ -562,8 +553,9 @@ function touchCredential(id: string, org?: CredentialOrgScope) {
 /**
  * Replace stored secret material in place, keeping the credential's identity,
  * scope, and consent. Used when an OAuth credential is renewed during
- * verification — `putCredential` would be the wrong tool: it re-runs the
- * exclusive-kind replacement logic for what is the same login.
+ * verification, and when a user reconnects an account by hand — `putCredential`
+ * would be the wrong tool: it re-runs the exclusive-kind replacement logic for
+ * what is the same login.
  *
  * The stored verdict was reached against the secret being replaced, so it
  * cannot survive the swap: the row is unchecked until something checks the new
@@ -573,10 +565,10 @@ function touchCredential(id: string, org?: CredentialOrgScope) {
 export async function updateCredentialSecret(
   id: string,
   secret: string,
-  expiresAt?: number,
+  expiresAt?: number | null,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<boolean> {
-  const credential = getCredential(id, org)
+  const credential = credentialById(id, { onOutage: "empty" }, org)
   if (!credential) return false
   const backend = getBackend()
   const ref = await backend.put(id, secret)
@@ -589,7 +581,10 @@ export async function updateCredentialSecret(
     .update(ClaxedoProviderCredentialTable)
     .set({
       secure_ref: ref,
-      expires_at: expiresAt ?? credential.expires_at ?? null,
+      // `null` is a caller saying the replacement has no expiry, which is a
+      // different fact from not knowing one: the stored expiry described the
+      // material being replaced, so carrying it over expires a live secret.
+      expires_at: expiresAt === undefined ? credential.expires_at ?? null : expiresAt,
       updated_at: now(),
       revision: credential.revision + 1,
       health: null,
@@ -608,7 +603,7 @@ export function updateCredentialScope(
   consentAt: number,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ) {
-  const credential = getCredential(id, org)
+  const credential = credentialById(id, { onOutage: "empty" }, org)
   if (!credential) return false
   ClaxedoDB.use((db) => db
     .update(ClaxedoProviderCredentialTable)
@@ -634,7 +629,7 @@ export function updateCredentialLabel(
   label: string,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): boolean {
-  const credential = getCredential(id, org)
+  const credential = credentialById(id, { onOutage: "empty" }, org)
   if (!credential) return false
   ClaxedoDB.use((db) => db
     .update(ClaxedoProviderCredentialTable)
@@ -716,7 +711,7 @@ export function updateCredentialHealth(
     const heir = oldestAvailable(db, org, partition)
     if (!heir) return
     db.update(ClaxedoProviderCredentialTable)
-      .set({ is_active: false, updated_at: now() })
+      .set({ is_active: false, activated_at: null, updated_at: now() })
       .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
       .run()
     markActive(db, org, heir.id)
@@ -788,7 +783,7 @@ function oldestAvailable(
 
 function markActive(db: ClaxedoDB.Client, org: CredentialOrgScope, id: string) {
   db.update(ClaxedoProviderCredentialTable)
-    .set({ is_active: true, updated_at: now() })
+    .set({ is_active: true, activated_at: now(), updated_at: now() })
     .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id)))
     .run()
 }
@@ -809,7 +804,7 @@ export async function deleteCredential(
   id: string,
   org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): Promise<boolean> {
-  const cred = getCredential(id, org)
+  const cred = credentialById(id, { onOutage: "empty" }, org)
   if (!cred) return false
 
   if (cred.secure_ref) {
@@ -836,16 +831,14 @@ export async function deleteCredential(
   return true
 }
 
-/** Delete all credentials for a provider. */
 /**
  * Delete every credential for a provider in one org, optionally scoped to one
  * `kind`.
  *
- * Unscoped by kind this is genuinely destructive across features: `vercel` is
- * both a sandbox driver id and a model-provider id, so an unscoped delete
- * triggered by "Remove" in Sandbox settings also destroyed the user's Vercel
- * model API key. Pass `kind` whenever the caller owns only one kind of
- * credential. The ORG scope is not optional — it is what keeps one tenant's
+ * Unscoped by kind this is destructive across features: `vercel` is both a
+ * sandbox driver id and a model-provider id, so "Remove" in Sandbox settings
+ * takes the user's Vercel model API key with it. Pass `kind` whenever the
+ * caller owns only one kind of credential. The ORG scope is not optional — it is what keeps one tenant's
  * "remove provider" from wiping every other tenant's key for that provider.
  */
 export async function deleteCredentialsByProvider(
@@ -907,11 +900,8 @@ export async function deleteCredentialsByProvider(
  * fenced by the kind check, and a future namespaced id by the id check, so a
  * new credential type cannot silently start leaking into sandboxes.
  */
-const FANOUT_ELIGIBLE_KINDS = new Set<CredentialMetadata["kind"]>([
-  "api_key",
-  "oauth_token",
-  "subscription_session",
-])
+export const PROVIDER_AUTH_KINDS = ["api_key", "oauth_token", "subscription_session"] as const satisfies readonly CredentialKind[]
+const FANOUT_ELIGIBLE_KINDS = new Set<CredentialKind>(PROVIDER_AUTH_KINDS)
 
 function fanoutEligibleAuth(kind: CredentialKind, providerId: string): boolean {
   return FANOUT_ELIGIBLE_KINDS.has(kind) && !providerId.includes(":")
@@ -938,28 +928,6 @@ function readActiveCredentials(org: CredentialOrgScope): CredentialMetadata[] {
   )
 }
 
-function activeCredentials(org: CredentialOrgScope): CredentialMetadata[] {
-  return safeRead("active credential list", [], () => readActiveCredentials(org))
-}
-
-/**
- * The rows the fanout sends for a scope, one per provider, without their
- * secrets. This is the only place the "which credential runs" question is
- * answered, so a surface that shows it reads the same selection.
- *
- * The scope filter runs after the mark, not instead of it: a user whose active
- * account is not shared sends nothing into a sandbox even when another of their
- * accounts would qualify, because silently running a sandbox on an account the
- * user did not choose is the thing the mark exists to stop.
- */
-export function selectCredentialsForScope(
-  scope: CredentialSecretScope = "local",
-  org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): CredentialMetadata[] {
-  return selectActiveCredentialsForScope(scope, org)
-    .flatMap((row) => row.unavailable ? [] : [row.credential])
-}
-
 export type ScopedCredentialSelection = {
   credential: CredentialMetadata
   /** Absent when the account can be used; otherwise why it cannot. */
@@ -968,39 +936,26 @@ export type ScopedCredentialSelection = {
 
 /**
  * Every account the operator marked for a provider in this scope, usable or
- * not.
+ * not, without secrets. This is the only place "which credential runs" is
+ * answered, so a surface that shows it reads the same selection.
  *
- * A caller that can only consume a working credential reads
- * `selectCredentialsForScope`. A caller that must distinguish "no account
- * chosen" from "the chosen account is unusable" reads this instead: dropping a
- * withdrawn row makes the two indistinguishable, and the harness then runs on
- * whatever login its machine holds.
+ * The scope filter runs after the mark, not instead of it: a user whose active
+ * account is not shared sends nothing into a sandbox even when another of their
+ * accounts would qualify, because silently running a sandbox on an account the
+ * user did not choose is the thing the mark exists to stop.
+ *
+ * A withdrawn row stays in the answer with its reason. Dropping it would make
+ * "no account chosen" and "the chosen account is unusable" indistinguishable,
+ * and the harness then runs on whatever login its machine holds. A caller that
+ * can only consume a working credential passes the answer through
+ * `usableCredentials`.
  */
-export function selectActiveCredentialsForScope(
-  scope: CredentialSecretScope = "local",
-  org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): ScopedCredentialSelection[] {
-  return scopedSelection(activeCredentials(org), scope)
-}
-
-/**
- * The same selection for a caller that must not read an outage as "no account
- * marked". An empty answer tells a credential authority to project nothing,
- * and the harness then runs on whatever login its machine holds — so the
- * authority needs the failure, not the fallback.
- */
-export function requireActiveCredentialsForScope(
-  scope: CredentialSecretScope = "local",
-  org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): ScopedCredentialSelection[] {
-  return scopedSelection(readActiveCredentials(org), scope)
-}
-
-function scopedSelection(
-  rows: CredentialMetadata[],
+export function activeCredentialsForScope(
   scope: CredentialSecretScope,
+  { onOutage }: CredentialRead,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
 ): ScopedCredentialSelection[] {
-  return rows
+  return readWithPolicy("active credential list", onOutage, [], () => readActiveCredentials(org))
     .filter((credential) => fanoutEligible(credential) && credentialSecretInScope(credential, scope))
     .map((credential) => {
       const unavailable = credentialUnavailableForScope(credential, scope)
@@ -1008,8 +963,9 @@ function scopedSelection(
     })
 }
 
-function credentialAvailableForScope(credential: CredentialMetadata, scope: CredentialSecretScope) {
-  return credentialSecretInScope(credential, scope) && !credentialUnavailableForScope(credential, scope)
+/** The rows of a selection the fanout can send, one per provider. */
+export function usableCredentials(rows: readonly ScopedCredentialSelection[]): CredentialMetadata[] {
+  return rows.flatMap((row) => (row.unavailable ? [] : [row.credential]))
 }
 
 /**
@@ -1030,21 +986,3 @@ export function credentialUnavailableForScope(
   return undefined
 }
 
-/** Resolve explicitly referenced connection credentials without provider preference/deduplication. */
-export async function resolveCredentialReferencesForScope(
-  references: Iterable<string>,
-  scope: CredentialSecretScope,
-  org: CredentialOrgScope = SINGLE_TENANT_ORG,
-): Promise<Record<string, string>> {
-  const result: Record<string, string> = {}
-  for (const id of new Set(references)) {
-    const row = ClaxedoDB.use((db) => db.select().from(ClaxedoProviderCredentialTable)
-      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id))).get())
-    if (!row) continue
-    const credential = toMetadata(row)
-    if (!FANOUT_ELIGIBLE_KINDS.has(credential.kind) || !credentialAvailableForScope(credential, scope)) continue
-    const secret = await getBackend().get(credential.secure_ref!)
-    if (secret) result[id] = secret
-  }
-  return result
-}

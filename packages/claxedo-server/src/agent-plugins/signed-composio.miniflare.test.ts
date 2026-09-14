@@ -228,18 +228,19 @@ async function runtimeVm(workspaceId: string, env: NodeJS.ProcessEnv) {
 
 async function subject(connected: boolean) {
   const artifacts = hostedAgentPluginArtifactStore(await miniflareR2())
+  const connectionLookups: Array<{ ownerUserId: string; orgId: string; integrationId: string; capability: string }> = []
   const resolveConnection = vi.fn(async (input: {
     ownerUserId: string
     orgId: string
     integrationId: string
     capability: "mcp"
   }) => {
+    // Recorded, not asserted here: an `expect` inside a fake that a refusal
+    // path returns before reaching is a check that silently never runs.
+    connectionLookups.push({ ...input })
     if (!connected || input.ownerUserId !== USER.userId) {
       return { ok: false as const, status: 404, code: "connection_not_found" }
     }
-    expect(input.integrationId).toBe(integrationId)
-    expect(input.orgId).toBe(USER.organizationId)
-    expect(input.capability).toBe("mcp")
     return {
       ok: true as const,
       connectionId: "connection_composio_gmail",
@@ -250,11 +251,13 @@ async function subject(connected: boolean) {
   })
   const activations = {
     async runtimeSnapshot(workspaceId: string) {
-      const identity = workspaceId.startsWith("ws_other") ? OTHER_USER : USER
+      // Enabled for both owners: the isolation under test is the preparer's,
+      // and a fixture that disabled the other user's activation produced the
+      // empty plan itself.
       return snapshot({
         workspaceId,
-        identity,
-        enabled: identity.userId === USER.userId,
+        identity: workspaceId.startsWith("ws_other") ? OTHER_USER : USER,
+        enabled: true,
       })
     },
   }
@@ -296,7 +299,7 @@ async function subject(connected: boolean) {
     const receipt = await provisionForMint(workspaceId, preparation)
     return { preparation, receipt }
   }
-  return { resolveConnection, prepareRuntime, provisionForMint, connect, receipts }
+  return { resolveConnection, connectionLookups, prepareRuntime, provisionForMint, connect, receipts }
 }
 
 describe("signed Composio Gmail on Miniflare", () => {
@@ -367,11 +370,16 @@ describe("signed Composio Gmail on Miniflare", () => {
   })
 
   test("another signed-in user does not inherit Composio enablement or Gmail auth", async () => {
-    const { resolveConnection, prepareRuntime } = await subject(true)
+    const { connectionLookups, prepareRuntime } = await subject(true)
     const preparation = await prepareRuntime("ws_other_cloud")
-    expect(agentPluginMcpRuntimePlan(preparation).mcpServers).toEqual([])
     expect(preparation.secrets).toEqual([])
-    expect(resolveConnection).not.toHaveBeenCalled()
+    expect(agentPluginMcpRuntimePlan(preparation).mcpServers)
+      .not.toEqual(expect.arrayContaining([expect.objectContaining({ state: "gateway" })]))
+    // The other user's own connection is what was looked up and refused; the
+    // owner's is never consulted on their behalf.
+    expect(connectionLookups).toEqual([
+      { ownerUserId: OTHER_USER.userId, orgId: OTHER_USER.organizationId, integrationId, capability: "mcp" },
+    ])
   })
 
   test("signed connection mint applies the retained plugin before handing out a local or cloud token", async () => {

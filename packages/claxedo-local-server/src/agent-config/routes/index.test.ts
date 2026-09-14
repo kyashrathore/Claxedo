@@ -1,4 +1,4 @@
-import { afterAll, afterEach, expect, test } from "vitest"
+import { afterAll, afterEach, expect, test, vi } from "vitest"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -29,22 +29,25 @@ afterAll(() => {
  * over its own management channel; this route is the config surface a page
  * reads, and it has no reason to hand them to anything that can call it.
  */
-test("the agent-config snapshot route never carries the auth map", async () => {
-  configureAgentConfig({
-    projectAuth: async () => ({
-      "claude-sdk": {
-        baseUrl: "http://127.0.0.1:2595/bindings/b1",
-        placeholder: "placeholder-that-must-not-travel",
-        authMode: "bearer" as const,
-        expiresAt: Date.now() + 60 * 60 * 1000,
-      },
-    }),
-  })
+test("the agent-config snapshot route serves the snapshot with its auth map removed", async () => {
+  // The composition's broker projects nothing for a call that names no
+  // workspace, and this route names none; only a fake can put a placeholder
+  // into the snapshot this route strips.
+  const projectAuth = vi.fn(async () => ({
+    "claude-sdk": {
+      baseUrl: "http://127.0.0.1:2595/bindings/b1",
+      placeholder: "placeholder-that-must-not-travel",
+      authMode: "bearer" as const,
+      expiresAt: Date.now() + 60 * 60 * 1000,
+    },
+  }))
+  configureAgentConfig({ projectAuth })
 
   const response = await createAgentConfigRoutes().request("http://localhost/")
   const body = await response.text()
 
   expect(response.status).toBe(200)
-  expect(JSON.parse(body)).not.toHaveProperty("auth")
+  expect(projectAuth).toHaveBeenCalledTimes(1)
+  expect(JSON.parse(body)).toEqual({ version: 4, mcp: {}, connections: [] })
   expect(body).not.toContain("placeholder-that-must-not-travel")
 })

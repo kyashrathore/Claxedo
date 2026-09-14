@@ -128,13 +128,11 @@ describe("credential routes", () => {
           provider_id: "openai",
           kind: "oauth_token" as const,
           label: "Codex subscription",
-          account_id: "account…1234567890",
           origin: "~/.codex/auth.json",
-          fresh_until: 123,
         }],
       })),
       saveDiscoveredCredentials: vi.fn(async () => ({
-        saved: [{ credential_id: "cred_1", provider_id: "openai", account_id: "account…1234567890" }],
+        saved: [{ credential_id: "cred_1", provider_id: "openai", kind: "oauth_token" as const }],
       })),
     })
     const app = CredentialRoutes(registry)
@@ -145,7 +143,7 @@ describe("credential routes", () => {
       method: "POST",
       body: JSON.stringify({
         discovery_id: "discovery-1",
-        items: [{ provider_id: "openai", account_id: "account…1234567890", scope: "shared" }],
+        items: [{ provider_id: "openai", kind: "oauth_token", scope: "shared" }],
       }),
     })
     const saved = await save.json()
@@ -154,7 +152,7 @@ describe("credential routes", () => {
     expect(save.status).toBe(200)
     expect(registry.saveDiscoveredCredentials).toHaveBeenCalledWith({
       discovery_id: "discovery-1",
-      items: [{ provider_id: "openai", account_id: "account…1234567890", scope: "shared" }],
+      items: [{ provider_id: "openai", kind: "oauth_token", scope: "shared" }],
     }, SINGLE_TENANT_ORG)
     expect({ preview, saved }).toMatchInlineSnapshot(`
       {
@@ -162,8 +160,6 @@ describe("credential routes", () => {
           "discovery_id": "discovery-1",
           "items": [
             {
-              "account_id": "account…1234567890",
-              "fresh_until": 123,
               "kind": "oauth_token",
               "label": "Codex subscription",
               "origin": "~/.codex/auth.json",
@@ -174,8 +170,8 @@ describe("credential routes", () => {
         "saved": {
           "saved": [
             {
-              "account_id": "account…1234567890",
               "credential_id": "cred_1",
+              "kind": "oauth_token",
               "provider_id": "openai",
             },
           ],
@@ -183,6 +179,24 @@ describe("credential routes", () => {
       }
     `)
     expect(JSON.stringify({ preview, saved })).not.toContain("secret")
+  })
+
+  test("a selection that does not name the candidate's shape is refused", async () => {
+    // Two candidates can share a provider id and differ only by kind, so a
+    // selection without one names neither of them.
+    const registry = Object.assign(credentials(), { saveDiscoveredCredentials: vi.fn() })
+    const app = CredentialRoutes(registry)
+
+    const save = await app.request("http://localhost/save-discovered", {
+      method: "POST",
+      body: JSON.stringify({
+        discovery_id: "discovery-1",
+        items: [{ provider_id: "openai", scope: "shared" }],
+      }),
+    })
+
+    expect(save.status).toBe(400)
+    expect(registry.saveDiscoveredCredentials).not.toHaveBeenCalled()
   })
 
   test("a discovery that throws names its cause in the body and in a warn log", async () => {
@@ -284,7 +298,7 @@ describe("credential routes", () => {
       health: null,
     }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => JSON.stringify({ tokens: { access_token: "access_1", account_id: "acct_1" } })),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -308,7 +322,7 @@ describe("credential routes", () => {
   test("timestamps health when provider verification completes", async () => {
     const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => "sk-timestamp-secret"),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -330,7 +344,7 @@ describe("credential routes", () => {
   test("classifies provider authentication failures without returning provider or secret text", async () => {
     const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => "sk-auth-secret"),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -352,7 +366,7 @@ describe("credential routes", () => {
   test("classifies forbidden provider credentials as authentication failures", async () => {
     const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => "sk-forbidden-secret"),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -370,7 +384,7 @@ describe("credential routes", () => {
   test("classifies a provider quota response caused by missing billing", async () => {
     const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => "sk-billing-secret"),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -393,7 +407,7 @@ describe("credential routes", () => {
   test("classifies a temporary provider rate cap", async () => {
     const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => "sk-rate-secret"),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -412,7 +426,7 @@ describe("credential routes", () => {
   test("classifies an expired provider token", async () => {
     const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => "sk-expired-secret"),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -431,7 +445,7 @@ describe("credential routes", () => {
   test("does not contact a provider for metadata that is already expired", async () => {
     const row = { ...(await credentials().listCredentials())[0], expires_at: 0, health: null }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => "sk-expired-metadata-secret"),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -453,7 +467,7 @@ describe("credential routes", () => {
       health: null,
     }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => "sk-ant-route-secret"),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -480,7 +494,7 @@ describe("credential routes", () => {
     }
     const registry = Object.assign(credentials(), {
       listCredentials: vi.fn(async () => [row]),
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => secret),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -503,6 +517,11 @@ describe("credential routes", () => {
               "account_id": null,
               "consent": null,
               "created_at": 1,
+              "deliverable": {
+                "cloud": false,
+                "local": true,
+                "reason": "no_destination",
+              },
               "expires_at": null,
               "has_secret": true,
               "health": null,
@@ -544,7 +563,7 @@ describe("credential routes", () => {
     const secret = "network-failure-secret"
     const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => secret),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -571,7 +590,7 @@ describe("credential routes", () => {
   test("a verification failure names its cause in the body and in a warn log", async () => {
     const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => "sk-live-1"),
       updateCredentialHealth: vi.fn(async () => {
         throw new TypeError("credential store is closed")
@@ -602,7 +621,7 @@ describe("credential routes", () => {
     const secret = "sk-live-do-not-log"
     const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       resolveCredentialSecretById: vi.fn(async () => secret),
       updateCredentialHealth: vi.fn(async () => {
         throw new Error(`store rejected ${secret}`)
@@ -667,8 +686,32 @@ describe("credential routes", () => {
         updated_at: 1,
         usage_windows: null,
         usage_at: null,
+        deliverable: { local: true, cloud: true },
       }],
     })
+  })
+
+  test("a row says where it can be spent, from the delivery rules rather than from being stored", async () => {
+    // A ChatGPT subscription answers on a backend that reads a companion
+    // account header, and a provider edge attaches one header per secret, so
+    // no amount of having it saved makes it reach a cloud sandbox.
+    const row = (await credentials().listCredentials())[0]
+    const registry = Object.assign(credentials(), {
+      listCredentials: async () => [
+        { ...row, id: "cred_key", provider_id: "openai", kind: "api_key" as const },
+        { ...row, id: "cred_sub", provider_id: "openai", kind: "oauth_token" as const },
+      ],
+    })
+    const app = CredentialRoutes(registry)
+
+    const list = await (await app.request("http://localhost/")).json() as {
+      credentials: Array<{ id: string; deliverable: unknown }>
+    }
+
+    expect(list.credentials.map((row) => [row.id, row.deliverable])).toEqual([
+      ["cred_key", { local: true, cloud: true }],
+      ["cred_sub", { local: true, cloud: false, reason: "native_delivery_needs_companion_header" }],
+    ])
   })
 
   /**
@@ -828,7 +871,7 @@ describe("credential routes", () => {
 })
 
 describe("replacing the token on a stored account", () => {
-  test("writes the new secret onto the same row, then verifies it", async () => {
+  test("verifies the new secret first, then writes it onto the same row", async () => {
     const row: CredentialMetadata = {
       ...(await credentials().listCredentials())[0],
       health: "auth_failed",
@@ -851,8 +894,10 @@ describe("replacing the token on a stored account", () => {
     })
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ result: "ok", health: "ok", verified_at: 42 })
-    expect(registry.updateCredentialSecret).toHaveBeenCalledWith("cred_1", "sk-fresh", undefined, SINGLE_TENANT_ORG)
+    await expect(response.json()).resolves.toEqual({ result: "ok", health: "ok", verified_at: 42, stored: true })
+    // `null`, not `undefined`: the stored expiry described the material that
+    // was just replaced, and carrying it over expires a live secret.
+    expect(registry.updateCredentialSecret).toHaveBeenCalledWith("cred_1", "sk-fresh", null, SINGLE_TENANT_ORG)
     expect(registry.updateCredentialHealth).toHaveBeenCalledWith("cred_1", "ok", 42, SINGLE_TENANT_ORG)
     // The new material is what the provider was asked about, not the one the
     // row was rejected for.
@@ -866,7 +911,7 @@ describe("replacing the token on a stored account", () => {
       health: "expired",
     }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       updateCredentialSecret: vi.fn(async () => true),
       updateCredentialHealth: vi.fn(async () => {}),
     })
@@ -892,7 +937,7 @@ describe("replacing the token on a stored account", () => {
       label: "codex-app-server",
     }
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => unnamed),
+      getCredential: vi.fn(async (id: string) => id === unnamed.id ? unnamed : undefined),
       updateCredentialSecret: vi.fn(async () => true),
       updateCredentialHealth: vi.fn(async () => {}),
       updateCredentialLabel: vi.fn(async () => true),
@@ -908,7 +953,7 @@ describe("replacing the token on a stored account", () => {
 
     const named = { ...unnamed, label: "My work ChatGPT" }
     const second = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => named),
+      getCredential: vi.fn(async (id: string) => id === named.id ? named : undefined),
       updateCredentialSecret: vi.fn(async () => true),
       updateCredentialHealth: vi.fn(async () => {}),
       updateCredentialLabel: vi.fn(async () => true),
@@ -921,6 +966,39 @@ describe("replacing the token on a stored account", () => {
     await secondApp.request("http://localhost/cred_1/reconnect", { method: "POST", body: JSON.stringify({ secret }) })
 
     expect(second.updateCredentialLabel).not.toHaveBeenCalled()
+  })
+
+  test("a secret the provider refuses replaces nothing and marks nothing", async () => {
+    // Writing first deletes the backend reference the working secret lives
+    // behind, so a typo leaves a good account with nothing; writing the verdict first
+    // marks that account broken on the strength of the typo.
+    const row: CredentialMetadata = { ...(await credentials().listCredentials())[0], health: "ok" }
+    const registry = Object.assign(credentials(), {
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
+      updateCredentialSecret: vi.fn(async () => true),
+      updateCredentialHealth: vi.fn(async () => {}),
+      updateCredentialLabel: vi.fn(async () => true),
+    })
+    const app = CredentialRoutes(registry, {
+      fetch: providerFetch(() => new Response("nope", { status: 401 })) as unknown as typeof fetch,
+      now: () => 42,
+    })
+
+    const response = await app.request("http://localhost/cred_1/reconnect", {
+      method: "POST",
+      body: JSON.stringify({ secret: "sk-typo" }),
+    })
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      result: "auth_failed",
+      health: "auth_failed",
+      verified_at: 42,
+      stored: false,
+    })
+    expect(registry.updateCredentialSecret).not.toHaveBeenCalled()
+    expect(registry.updateCredentialHealth).not.toHaveBeenCalled()
+    expect(registry.updateCredentialLabel).not.toHaveBeenCalled()
   })
 
   test("refuses a row outside the caller's org before any secret is written", async () => {
@@ -943,7 +1021,7 @@ describe("replacing the token on a stored account", () => {
   test("rejects a request that carries no secret", async () => {
     const row = (await credentials().listCredentials())[0]
     const registry = Object.assign(credentials(), {
-      getCredential: vi.fn(async () => row),
+      getCredential: vi.fn(async (id: string) => id === row.id ? row : undefined),
       updateCredentialSecret: vi.fn(async () => true),
     })
     const app = CredentialRoutes(registry, { now: () => 42 })
@@ -1091,7 +1169,7 @@ describe("choosing which account a provider runs on", () => {
     await expect(response.json()).resolves.toMatchObject({
       credentials: [{ id: second.id, is_active: true, owner: null, label: "acc_second" }],
     })
-    expect(registry.getCredential(first.id)?.is_active).toBe(false)
+    expect(registry.credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(false)
     const effective = await (await app.request("http://localhost/effective")).json() as {
       credentials: Array<{ id: string; provider_id: string }>
     }
@@ -1109,8 +1187,8 @@ describe("choosing which account a provider runs on", () => {
     const body = await response.json() as { credentials: Array<{ id: string; is_active: boolean }> }
     expect(body.credentials.map((row) => row.id)).toEqual([sdk.id, acp.id])
     expect(body.credentials.every((row) => row.is_active)).toBe(true)
-    expect(registry.getCredential(acp.id)?.is_active).toBe(true)
-    expect(registry.getCredential(sdk.id)?.is_active).toBe(true)
+    expect(registry.credentialById(acp.id, { onOutage: "throw" })?.is_active).toBe(true)
+    expect(registry.credentialById(sdk.id, { onOutage: "throw" })?.is_active).toBe(true)
   })
 
   test("an unknown id is 404, a credential no harness runs on is 409, and neither writes", async () => {
@@ -1129,13 +1207,13 @@ describe("choosing which account a provider runs on", () => {
     const ineligible = await activate([waiting.id, driver.id])
     expect(ineligible.status).toBe(409)
     await expect(ineligible.json()).resolves.toMatchObject({ error: { code: "credential_not_activatable" } })
-    expect(registry.getCredential(driver.id)?.is_active).toBe(false)
+    expect(registry.credentialById(driver.id, { onOutage: "throw" })?.is_active).toBe(false)
   })
 
   test("choosing this computer's login leaves the provider with no marked account", async () => {
     const first = await account("machine-choice", "acc_first")
     const second = await account("machine-choice", "acc_second")
-    expect(registry.getCredential(first.id)?.is_active).toBe(true)
+    expect(registry.credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(true)
 
     const response = await app.request("http://localhost/activate", {
       method: "POST",
@@ -1145,8 +1223,8 @@ describe("choosing which account a provider runs on", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toEqual({ credentials: [], cleared: [first.id] })
-    expect(registry.getCredential(first.id)?.is_active).toBe(false)
-    expect(registry.getCredential(second.id)?.is_active).toBe(false)
+    expect(registry.credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(false)
+    expect(registry.credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(false)
     const effective = await (await app.request("http://localhost/effective")).json() as {
       credentials: Array<{ provider_id: string }>
     }
@@ -1164,7 +1242,7 @@ describe("choosing which account a provider runs on", () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_invalid_body" } })
-    expect(registry.getCredential(first.id)?.is_active).toBe(true)
+    expect(registry.credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(true)
   })
 
   test("a host that is not the machine the harnesses live on says so rather than answering", async () => {
@@ -1183,7 +1261,7 @@ describe("choosing which account a provider runs on", () => {
       body: JSON.stringify({ machine_login: { provider_ids: ["machine-hosted"] } }),
     })
     expect(chosen.status).toBe(501)
-    expect(registry.getCredential(seen.id)?.is_active).toBe(true)
+    expect(registry.credentialById(seen.id, { onOutage: "throw" })?.is_active).toBe(true)
 
     // The same two calls against the machine's own composition are answered.
     expect((await app.request("http://localhost/machine-logins")).status).toBe(200)
@@ -1192,7 +1270,7 @@ describe("choosing which account a provider runs on", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ machine_login: { provider_ids: ["machine-hosted"] } }),
     })).status).toBe(200)
-    expect(registry.getCredential(seen.id)?.is_active).toBe(false)
+    expect(registry.credentialById(seen.id, { onOutage: "throw" })?.is_active).toBe(false)
   })
 
   test("two ids competing for one provider are refused as a bad request", async () => {
@@ -1203,8 +1281,8 @@ describe("choosing which account a provider runs on", () => {
 
     expect(response.status).toBe(400)
     await expect(response.json()).resolves.toMatchObject({ error: { code: "credential_activate_ambiguous" } })
-    expect(registry.getCredential(first.id)?.is_active).toBe(true)
-    expect(registry.getCredential(second.id)?.is_active).toBe(false)
+    expect(registry.credentialById(first.id, { onOutage: "throw" })?.is_active).toBe(true)
+    expect(registry.credentialById(second.id, { onOutage: "throw" })?.is_active).toBe(false)
   })
 
   test("a body naming no account, or more bindings than a harness has, is refused before the store is touched", async () => {

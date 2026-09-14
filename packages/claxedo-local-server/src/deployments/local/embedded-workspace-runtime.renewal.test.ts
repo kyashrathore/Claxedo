@@ -12,8 +12,10 @@ import {
   renewEmbeddedWorkspaceRuntimeConfigs,
   shutdownEmbeddedWorkspaceRuntimes,
   startEmbeddedWorkspaceRuntimeConfigRenewal,
-  RENEWAL_CHECK_INTERVAL_MS,
 } from "./embedded-workspace-runtime"
+
+/** The renewal timer's own period, which this test drives from outside it. */
+const TICK_MS = 30_000
 
 /**
  * Renewal is what stands between a one-hour placeholder and a turn that fails
@@ -95,19 +97,19 @@ test("a process that slept re-pushes every runtime on the next check", async () 
   const { projections } = await runtimeProjecting({ lifetimeMs: HOUR })
   const stop = startEmbeddedWorkspaceRuntimeConfigRenewal()
   try {
-    await vi.advanceTimersByTimeAsync(RENEWAL_CHECK_INTERVAL_MS)
+    await vi.advanceTimersByTimeAsync(TICK_MS)
     // Nothing is due yet, and an ordinary tick must not re-push.
     expect(projections).toHaveLength(1)
 
     // The laptop was closed: the next tick arrives long after it was scheduled,
     // and every placeholder is older than any tick the timer saw.
-    vi.setSystemTime(Date.now() + 6 * RENEWAL_CHECK_INTERVAL_MS)
-    await vi.advanceTimersByTimeAsync(RENEWAL_CHECK_INTERVAL_MS)
+    vi.setSystemTime(Date.now() + 6 * TICK_MS)
+    await vi.advanceTimersByTimeAsync(TICK_MS)
     // The tick's own work is not awaited by the timer, and the renewal pass
-    // asks the OpenCode engine first, so the re-push lands a few microtasks in.
-    for (let flush = 0; flush < 50 && projections.length < 2; flush++) await Promise.resolve()
-
-    expect(projections).toHaveLength(2)
+    // reads the workspace config from disk before it projects, so the re-push
+    // lands after real I/O: a wait that only drains microtasks misses it once
+    // the machine is busy.
+    await vi.waitFor(() => expect(projections).toHaveLength(2))
   } finally {
     stop()
   }
@@ -117,14 +119,15 @@ test("a failed renewal is retried with backoff instead of being settled away", a
   vi.useFakeTimers({ now: Date.parse("2026-09-13T00:00:00.000Z") })
   let broken = false
   const { projections } = await runtimeProjecting({ lifetimeMs: HOUR, fail: () => broken })
-  const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
+  const warn = vi.spyOn(process.stderr, "write").mockImplementation(() => true)
   try {
     broken = true
     vi.setSystemTime(Date.parse("2026-09-13T00:31:00.000Z"))
     const failedAt = Date.now()
     await renewEmbeddedWorkspaceRuntimeConfigs({ at: failedAt })
     expect(projections).toHaveLength(1)
-    expect(warn).toHaveBeenCalled()
+    expect(warn.mock.calls.some(([line]) =>
+      String(line).includes("renewing a workspace runtime's credentials failed"))).toBe(true)
 
     // Retried, not abandoned — and not hammered either.
     await renewEmbeddedWorkspaceRuntimeConfigs({ at: failedAt + 1_000 })

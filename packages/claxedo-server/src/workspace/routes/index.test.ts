@@ -1133,6 +1133,10 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
     expect(mocks.ensureHostForRepo).not.toHaveBeenCalled()
     expect(getCredentialByProvider).toHaveBeenCalledTimes(3)
+    // Scoped to the sandbox_driver kind: `vercel` is both a sandbox driver and
+    // a model provider, so an unscoped lookup lets a model API key satisfy this
+    // gate and creation passes here to fail later at launch.
+    expect(getCredentialByProvider).toHaveBeenCalledWith("daytona", "sandbox_driver")
   })
 
   test("docker cloud create can start from a project without a remote URL", async () => {

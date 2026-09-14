@@ -4,11 +4,16 @@ import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
 
 const authConfig = { enabled: true as const, issuer: "https://auth.test", jwksUrl: "custom:test" }
-const verifier: ControlPlaneTokenVerifier = async (token) => ({
-  mode: "signed",
-  token,
-  user: { subject: "user_from_token", orgId: "org_from_token", tokenIdentifier: "token_1", issuer: authConfig.issuer },
-})
+// Only "valid" verifies. A fake that answers for every token cannot tell a
+// route that authenticates from one that reads the bearer and trusts it.
+const verifier: ControlPlaneTokenVerifier = async (token) => {
+  if (token !== "valid") throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token is invalid")
+  return {
+    mode: "signed",
+    token,
+    user: { subject: "user_from_token", orgId: "org_from_token", tokenIdentifier: "token_1", issuer: authConfig.issuer },
+  }
+}
 
 describe("usage routes", () => {
   test("acknowledges hosted sync wakeups from a signed org with the central empty-outbox state", async () => {
@@ -74,6 +79,25 @@ describe("usage routes", () => {
     expect(
       (await app.request("/?since=1&until=2&metric=turns", { headers: { authorization: "Bearer valid" } })).status,
     ).toBe(400)
+  })
+
+  test("refuses a bearer the verifier rejects, on both the read and the sync wakeup", async () => {
+    const usageDashboard = vi.fn(async () => ({ totals: {}, daily: [] }))
+    const app = UsageRoutes({
+      authConfig,
+      verifier,
+      ledger: { recordLlmTurn: async () => ({ activated: false }), usageDashboard },
+    })
+    const headers = { authorization: "Bearer forged" }
+
+    for (const request of [app.request("/?since=1&until=2", { headers }), app.request("/sync", { method: "POST", headers })]) {
+      const response = await request
+      expect(response.status).toBe(401)
+      await expect(response.json()).resolves.toEqual({
+        error: { code: "invalid_bearer_token", message: "Bearer token is invalid" },
+      })
+    }
+    expect(usageDashboard).not.toHaveBeenCalled()
   })
 
   test("returns hosted quota capability without running usage projection or pricing", async () => {
@@ -581,7 +605,7 @@ describe("local unified usage route", () => {
     expect(shifted.filterOptions.total.app ?? []).not.toContain("codex")
   })
 
-  test("answers the quota view with what the reader composed, and says why when it throws", async () => {
+  test("keeps the last valid quota snapshot when a refresh fails", async () => {
     const snapshot = {
       accounts: [{ harness: "codex", credentialId: "cred_1", label: "a@b.c", inUse: true, windows: [], usageAt: 5 }],
     }
@@ -598,13 +622,31 @@ describe("local unified usage route", () => {
     const request = "/?since=0&until=20&timezone=UTC&view=quota"
     expect(((await (await app.request(request)).json())).quota).toEqual({ status: "available", snapshot })
     expect(quota.mock.calls[0]?.[0]).toMatchObject({ refresh: false })
-    // A read that threw has nothing to draw, and the view's empty state is
-    // where the reason belongs — there is no half-answer to report.
+    // The history and Claxedo halves of this same response answer a failed
+    // refresh with their last figures plus the error. Blanking every plan card
+    // because a refresh the reader was already holding an answer for threw is
+    // the asymmetry a reader sees as the numbers vanishing on Refresh. The
+    // quota status has only two values, so the error is what marks it stale.
     expect(((await (await app.request(`${request}&refresh_nonce=3`)).json())).quota).toEqual({
-      status: "unavailable",
+      status: "available",
+      snapshot,
       error: "registry offline",
     })
     expect(quota.mock.calls[1]?.[0]).toMatchObject({ refresh: true })
+  })
+
+  test("a quota read that fails before any snapshot draws nothing and says why", async () => {
+    const app = LocalUsageRoutes({
+      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      identity: async () => undefined,
+      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
+      quota: async () => {
+        throw new Error("registry offline")
+      },
+    })
+
+    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=quota")).json())
+    expect(body.quota).toEqual({ status: "unavailable", error: "registry offline" })
   })
 
   test("consumes a refresh nonce once across pagination and refetches", async () => {

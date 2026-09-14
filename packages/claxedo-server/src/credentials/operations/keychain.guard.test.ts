@@ -28,9 +28,21 @@ import path from "path"
  * that coming back under another name.
  */
 const PACKAGES = path.resolve(__dirname, "../../../..")
-const CREDENTIAL_ROOTS = ["claxedo-server", "claxedo-server-core", "claxedo-local-server"]
-  .map((pkg) => path.join(PACKAGES, pkg, "src", "credentials"))
+/**
+ * The local server's usage tree is in here because its machine-wide plan probe
+ * is the one module that reaches the harnesses' own stores from outside a
+ * `credentials` directory: it hands `tokentracker-cli` the home directory, and
+ * that library reads the Keychain and `~/.codex/auth.json` on this process's
+ * behalf.
+ */
+const CREDENTIAL_ROOTS = [
+  ...["claxedo-server", "claxedo-server-core", "claxedo-local-server"]
+    .map((pkg) => path.join(PACKAGES, pkg, "src", "credentials")),
+  path.join(PACKAGES, "claxedo-local-server", "src", "usage"),
+]
 const CLI_ROOT = path.join(PACKAGES, "cli", "src")
+/** The library that reads the harnesses' stores for the plan probe. */
+const STORE_READING_LIBRARY = "tokentracker-cli/src/lib/usage-limits"
 
 /**
  * The self-reports, exactly. Each asks a harness about the login it already
@@ -90,18 +102,30 @@ describe("harness login access guard", () => {
     }
   })
 
-  test("exactly one module reaches a command line", () => {
-    const spawners = sources.filter((file) => /\b(execFileSync|execSync|execFile|spawnSync|spawn)\(/.test(code(file)))
+  test("exactly one module can reach a command line", () => {
+    // The import, not the call: `const exec = promisify(execFile)` spawns
+    // through a name this scan has never heard of, and a module that holds a
+    // spawner is already past the line whether or not it has called one yet.
+    const spawners = sources.filter((file) =>
+      /from "(node:)?child_process"/.test(code(file))
+      || /\b(execFileSync|execSync|execFile|spawnSync|spawn)\(/.test(code(file)))
 
     expect(spawners.map((file) => path.basename(file))).toEqual(["machine-login.ts"])
   })
 
-  test("the commands that module runs are the harnesses' own self-reports", () => {
-    const text = code(sources.find((file) => path.basename(file) === "machine-login.ts") ?? "")
-    const invocations = [...text.replace(/\s+/g, " ").matchAll(/(?:run|spawn)\( ?"([^"]+)", ?(\[[^\]]*\])/g)]
-      .map((match) => [match[1], ...JSON.parse(match[2]) as string[]])
+  test("the commands that module runs are the harnesses' own self-reports", async () => {
+    // The value the module runs from, not a regex over its source: an argv
+    // assembled from a variable reads as no invocation at all to a scan.
+    const { MACHINE_LOGIN_COMMANDS } = await import("@claxedo/server-core/credentials/machine-login")
 
-    expect(invocations.toSorted((a, b) => a.join(" ").localeCompare(b.join(" ")))).toEqual(SELF_REPORTS)
+    expect(Object.values(MACHINE_LOGIN_COMMANDS).map((command) => [...command])
+      .toSorted((a, b) => a.join(" ").localeCompare(b.join(" ")))).toEqual(SELF_REPORTS)
+  })
+
+  test("exactly one module hands the harnesses' stores to the plan-reading library", () => {
+    const readers = sources.filter((file) => code(file).includes(STORE_READING_LIBRARY))
+
+    expect(readers.map((file) => path.basename(file))).toEqual(["token-tracker-usage-limits.ts"])
   })
 
   test("no credentials module opens the store a harness keeps its login in", () => {

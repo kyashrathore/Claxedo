@@ -1,4 +1,4 @@
-import { getCredentialByProvider, resolveSecret } from "@claxedo/server-core/credentials/registry"
+import { credentialByProvider, resolveSecret } from "@claxedo/server-core/credentials/registry"
 import {
   sandboxDriverAuth,
 } from "@claxedo/sandbox-manager/driver-catalog"
@@ -14,7 +14,7 @@ import { trimToUndefined } from "@claxedo/helpers/string"
 
 
 export function hasManagedSandboxDriverAuth(id: SandboxDriverID) {
-  return !!getCredentialByProvider(id, "sandbox_driver")
+  return !!credentialByProvider(id, { onOutage: "empty", kind: "sandbox_driver" })
 }
 
 export function sandboxDriverAuthSync<T extends SandboxDriverID>(

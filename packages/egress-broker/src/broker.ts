@@ -1,5 +1,6 @@
+import type { CredentialBrokerErrorCode } from "@claxedo/agent-runtime-contract"
 import { sameRuntime, type BindingAuthority } from "./binding.js"
-import { brokerErrorBody, type BrokerErrorCode } from "./errors.js"
+import { brokerErrorBody } from "./errors.js"
 import type { RuntimeTokenClaims } from "./token.js"
 
 export type BrokerOptions = {
@@ -16,7 +17,7 @@ export type BrokerOptions = {
  */
 const API_KEY_HEADERS = ["x-api-key", "x-goog-api-key"] as const
 
-function brokerErrorResponse(status: number, code: BrokerErrorCode) {
+function brokerErrorResponse(status: number, code: CredentialBrokerErrorCode) {
   return Response.json(brokerErrorBody(code), { status })
 }
 
@@ -71,7 +72,7 @@ export function createEgressBroker(options: BrokerOptions) {
       // Every name this binding owns, stripped before anything is set: a
       // companion the row declares but has no value for must not survive from
       // the client either.
-      for (const name of ["authorization", ...API_KEY_HEADERS, "cookie", "x-claxedo-egress-target", ...injected]) {
+      for (const name of ["authorization", ...API_KEY_HEADERS, "cookie", ...injected]) {
         headers.delete(name)
       }
       if (injected.some((name) => ["host", "connection", "content-length", "transfer-encoding", "cookie"].includes(name.toLowerCase()))) {
@@ -82,6 +83,7 @@ export function createEgressBroker(options: BrokerOptions) {
         if (name.toLowerCase() === injection.header.toLowerCase()) return brokerErrorResponse(503, "binding_injection_invalid")
         if (companion !== null) headers.set(name, companion)
       }
+      await options.authority.markUsed(bindingId)
       let upstream: Response
       try {
         upstream = await (options.fetch ?? fetch)(target, {

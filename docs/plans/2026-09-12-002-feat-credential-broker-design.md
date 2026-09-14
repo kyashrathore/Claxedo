@@ -4,14 +4,14 @@ Status: implemented for the local deployment on `feat/credentials-integration`. 
 the binding authority over the local registry, the projection into every harness and the OpenCode
 engine, and the refusal of a selected-but-unusable account all run and are tested. Outstanding: the
 hosted credential store, lease identity, and delivery into a cloud sandbox — sections 4 and 6 remain
-a proposal. Code checked at `47931bd727`; see the Open findings appendix for what a third review
-left standing.
+a proposal. Code checked at `5c7bd5e1f6` (2026-09-14); see the Open findings appendix for what a
+third review left standing.
 
-Native delivery into a cloud sandbox is built on `feat/sandbox-credential-delivery` for the
-supervisor rail — Daytona, Vercel and Cloudflare — and Appendix C describes it as code rather than
-as a draft. Not built there: the hosted rail's own credential store, and attribution of a vendor 401
-seen from inside a natively brokered sandbox. No live vendor turn has run through it, and two
-Daytona acceptance criteria named at the end of Appendix C remain unmet.
+Native delivery into a cloud sandbox is built on this branch for the supervisor rail — Daytona,
+Vercel and Cloudflare (`fe285a4cd5`, `e5b854b06d`, `954d848555`) — and Appendix C describes it as
+code rather than as a draft. Not built: the hosted rail's own credential store, and attribution of
+a vendor 401 seen from inside a natively brokered sandbox. No live vendor turn has run through it,
+and two Daytona acceptance criteria named at the end of Appendix C remain unmet.
 Owner: Yash Rathore. Date: 2026-09-12.
 No backward compatibility anywhere in this design: old snapshot versions, existing hosted credential rows, and the consent flag are removed, not migrated (owner decision, 2026-09-12).
 Provenance: rewritten by Codex (`gpt-6-astra`) from the committed draft after its review of that draft; product rules and decisions taken by the owner the same night; the draft's tables are kept as appendices.
@@ -49,6 +49,10 @@ When you open a workspace and send a prompt, these components cooperate:
 A **workspace** is the logical project location; a **lease** identifies one user's running environment for it, keyed by `(workspace, user)`; a **session** is a conversation inside that environment and belongs to that user. Several of one user's sessions and background processes share one runtime; two users never do.
 
 ## 2. How credentials reach an agent today
+
+This section is the 2026-09-12 picture the proposal was written against. The plaintext paths it
+names are gone from the local deployment; Appendix B records which, and design 001's Background
+describes the delivery that replaced them.
 
 ### A. You save an account
 
@@ -276,6 +280,10 @@ Each is a fact about the code above, not a preference.
    self-hosted supervisor sends no secrets; resume on Daytona does not
    re-attach; the Cloudflare JWT dies at 15 minutes with no refresh.
    (section 2.D)
+   FIXED: the self-hosted supervisor carries `SandboxEnsureInput.secrets`
+   through `startRuntime` and `startSandbox`; Daytona reconciles brokered
+   secrets on reuse and resume; the Cloudflare JWT and its `/egress` route are
+   replaced by native outbound handlers (Appendix E, Cloudflare entries).
 
    On the clone token, what remains after the 2026-09-13 repair: the runtime
    host installs the placeholder as a github.com-only `http.extraheader` at
@@ -288,23 +296,31 @@ Each is a fact about the code above, not a preference.
    every sandbox, and a repository-wide search finds no reader of either on any
    driver: the authenticated clone URL that `authenticatedGitHubCloneSource`
    produces reaches the sandbox and nothing acts on it. `workspace/git.ts`'s
-   `cloneRepo` has no callers at all. Cloning the workspace repository at boot
-   is therefore unimplemented rather than mis-brokered, and belongs with the
-   runtime host that would perform it.
-6. **A defect in the one working consumer.** The MCP producer stores
-   `Bearer <token>` and the consumer prefixes `Bearer ` again, so a Daytona
-   sandbox sends `Bearer Bearer …`. (`runtime-preparation.ts:301`,
-   `runtime-contribution.ts:174`)
+   `cloneRepo` has no callers (dead code; its removal is landing in this
+   pass). Cloning the workspace repository at boot is therefore unimplemented
+   rather than mis-brokered, and belongs with the runtime host that would
+   perform it.
+6. **A defect in the one working consumer.** The MCP producer stored
+   `Bearer <token>` and the consumer prefixed `Bearer ` again, so a Daytona
+   sandbox sent `Bearer Bearer …`. FIXED: the producer
+   (`agent-plugins/mcp/runtime-preparation.ts`) emits the complete
+   `Authorization` value and the consumer
+   (`agent-plugins/runtime/runtime-contribution.ts`) uses the placeholder as
+   the whole header, so literal substitution inserts exactly one scheme.
 7. **The catalog is stale.** exe.dev and Cloudflare are marked `none` or
    `proxy` while both broker natively; Modal's sidecar and domain allowlist
    are unmodelled; every SDK pin is behind. (Appendix A)
+   FIXED for Cloudflare (`native`, no egress control) and for the pins
+   (Daytona 0.211.2, Vercel 3.3.0, Modal 0.10.1, Cloudflare 0.12.9). exe.dev
+   and Modal stay `none`: their adapters are unbuilt (Appendix C), and the
+   catalog declares what a driver does, not what its provider could.
 8. **Two paths exist only because of 7.** The Cloudflare proxy Worker and
    the Docker auth copy are workarounds for capabilities the providers now
    have or for a problem (local containers) the generic broker below solves
    once.
 9. **Egress auto-allow is org-wide.** Storing any credential adds a network
    policy row with no workspace id, opening that provider's host group for
-   every workspace. (`claxedo-server-core/src/sandbox/network/policy.ts:279`)
+   every workspace. (`claxedo-server-core/src/sandbox/network/policy.ts`)
    FIXED: the save-time grant and its helpers are gone, a migration deletes
    the rows it wrote, and a restricted sandbox now derives the provider hosts
    at ensure time from the credentials the fanout sends it
@@ -314,8 +330,8 @@ Each is a fact about the code above, not a preference.
 
 ## Appendix C. Delivery adapter per driver
 
-Built for the supervisor rail on `feat/sandbox-credential-delivery`. One module
-answers both halves of the decision —
+Built for the supervisor rail on this branch (`fe285a4cd5` and the two fixes
+after it). One module answers both halves of the decision —
 `claxedo-server-core/src/credentials/native-delivery.ts` — reading the same
 active-account selection and the same destination table the loopback broker
 reads, and producing per provider a secret for the driver and a projection for
@@ -541,6 +557,8 @@ The initial test model `gpt-5.3-codex` was rejected by this account. A read-only
 
 The authority and lease identities in this probe are explicit test fixtures. Production account selection, signed-user propagation, renewal, and hosted binding persistence are not exercised or implemented by this result. The alternative `chatgpt_base_url` form was unnecessary and was not tested.
 
+`scripts/codex-subscription-feasibility.ts` and the in-memory delivery adapter it drove have since been deleted: the binding lifecycle has one owner, `claxedo-local-server`'s `credentials/broker.ts`, and the script's copy had already diverged from it on auth mode. The result above stands as a record of that run and is not repeatable from the tree.
+
 ### Access checks — 2026-09-13, items 7–9
 
 - exe.dev: `ssh -oBatchMode=yes -oConnectTimeout=10 -oStrictHostKeyChecking=yes exe.dev help` failed because no trusted host key was configured. Item 7 is **not run: trusted SSH access is not established in this environment**. No host-trust setting or integration was changed.
@@ -595,6 +613,9 @@ The upstream returned only a verdict/revision, and no fixture credential appeare
 in the captured responses. The check destroyed the sandbox and cleared KV.
 `npx wrangler delete --config feasibility/upstream/wrangler.toml --force`
 succeeded; the local dev process was stopped after verified cleanup.
+
+The `cloudflare-worker/feasibility/` harness has since been deleted; the result
+above stands as a record of that run and is not repeatable from the tree.
 
 This supersedes the pending local production-handler acceptance item. It does
 not establish deployed Container interception or deployed KV propagation delay;
@@ -728,11 +749,13 @@ form Appendix E item 4 proved. The app-server is spawned with `CODEX_HOME`
 pointing at `~/.claxedo/codex/home`, rebuilt on every launch and holding only
 that `config.toml`; `thread/start` selects `modelProvider: "broker"`.
 
-The `account/login/start` path is **deleted**, not kept for the implicit tier.
-It could never serve that tier: the app-server reads its own home's `auth.json`,
-and the driver's only caller passed `undefined`, so no login params were ever
-sent. The ChatGPT token refresh the app-server requests is still served, from
-`harnesses/codex/operator-login.ts`, against the operator's own home.
+The driver no longer sends `account/login/start`; the generated protocol types
+in `agent-event-runtime` still declare the method, as they declare every
+app-server method. It could never serve the implicit tier: the app-server reads
+its own home's `auth.json`, and the driver's only caller passed `undefined`, so
+no login params were ever sent. The ChatGPT token refresh the app-server
+requests is still served, from `harnesses/codex/operator-login.ts`, against the
+operator's own home.
 
 Tests (`harnesses/codex/workspace-behavior.test.ts`): a `claude-sdk` projection
 leaves Codex on the operator home and builds no brokered home; a
@@ -784,9 +807,10 @@ credential variables are withheld from the launch environment, and the managed
 profile scrubs `models.json` alongside `auth.json`.
 
 The OpenCode engine receives `provider.<id>` routing through a catalog transform
-(`workspace-runtime/src/opencode/provider-binding.ts`), and the bridge's
-`connectKey` path is deleted along with the ledger it kept — that store held a
-plaintext copy of the user's key.
+(`workspace-runtime/src/opencode/provider-binding.ts`). The bridge no longer
+calls the configuration port's `connectKey`, and the ledger it kept — a
+plaintext copy of the user's key — is gone; the port method itself is dead
+code whose removal is landing in this pass.
 
 Command from `packages/workspace-runtime`: `node
 scripts/node-provider-binding-feasibility.mjs`.
@@ -860,11 +884,9 @@ claxedo-server-core, claxedo-local-server and egress-broker — all pass.
 claxedo-server-core `src/opencode src/credentials src/agent-config`: 216 pass.
 `bunx oxlint` on every touched file: 0 warnings, 0 errors.
 `bun run test:architecture-ratchets` from the root: passes, after raising the
-local-server closure to the re-measured 59 modules / 25 packages (and the
-package's own published ceiling to 86) for `credentials/destinations.ts`.
-Pre-existing red, untouched by this change: `workspace-runtime
-src/server.test.ts` has two cases posting a `version: 3` runtime snapshot that
-the route has required to be `4` since before this branch.
+local-server closure ceiling by one module for `credentials/destinations.ts`
+(`script/product-boundary/policies/local-server.ts`; the ceiling now stands at
+60 modules / 26 packages after the later `agent-runtime-contract` edge).
 
 ### Live Daytona run — 2026-09-13
 
@@ -922,48 +944,22 @@ Blocker: the org holds no snapshot named `claxedo-workspace-runtime-0-5-2-v8`
 build plus a push, and pointing `CLAXEDO_DAYTONA_SNAPSHOT` at an existing
 snapshot needs a listing this session could not make.
 
-#### 2. The v4 projection never reaches a sandbox — by construction
+#### 2. The v4 projection did not reach a sandbox at `2fe61ea1d3` — superseded
 
-This is the blocker that survives a working snapshot.
+At that commit a shared-scope snapshot carried `auth: {}` and nothing turned a
+provider credential into a `SandboxBrokeredSecret`; the only producers were the
+clone token and the MCP runtime token, so a Claude turn inside the sandbox
+would have run on the image's own login.
 
-`runtimeConfigSnapshot` picks the scope by workspace kind
-(`workspace/supervisor/config-sync.ts`):
-
-```ts
-secretScope: state.remote || state.ws.kind === "cloud" ? "shared" : "local"
-```
-
-and `getRuntimeConfigSnapshot` answers `shared` with nothing
-(`claxedo-server-core/src/agent-config/index.ts`):
-
-```ts
-const auth = scope === "shared" ? {} : await agentConfigOptions.projectAuth?.({ ... }) ?? {}
-```
-
-with the in-code reason: *"A shared-scope sandbox reaches its credentials
-through its own provider's edge, which no authority here can mint; that adapter
-is the next slice."* The branch's own test pins it —
-`claxedo-server-core src/agent-config/index.test.ts`, "shared cloud snapshot
-keeps the v4 contract without implicit selection", `expect(snap.auth).toEqual({})`;
-run here: 1 passed, 34 skipped.
-
-The other half is missing too: **nothing turns a provider credential into a
-`SandboxBrokeredSecret`.** A repository-wide search finds exactly two producers
-— `authenticatedGitHubCloneSource` (a clone token) and the Agent Plugins
-`mcp/runtime-preparation.ts` (an MCP runtime token). The self-hosted create route
-forwards only `provisionSecrets`, and `startSandbox` forwards only
-`bindings?.secrets`, so `input.secrets` at the Daytona driver is `undefined` for
-an ordinary workspace and the only secret mounted is the valueless sentinel.
-
-Consumer side confirms the outcome: `claudeAuthEnv(binding)` in
-`agent-sdk-runtime/src/harnesses/claude/auth.ts` returns `{}` when there is no
-binding, so a Claude turn inside the sandbox would run on whatever login the
-image carries — which is the implicit tier, not the operator's account.
-
-**Unmet acceptance criterion:** "the workspace runtime inside the sandbox
-received the v4 provider projection for `claude-sdk`". It cannot, on this
-branch, for any driver. Owner decision, not a bug: the delivery adapter of
-section 3 / Appendix C is unbuilt.
+Superseded by the delivery adapter of Appendix C (`fe285a4cd5`): for a shared
+scope the broker's `projectAuth` answers through `projectNativeProviderAuth`
+with a `placeholderEnv` projection per marked account, and
+`sandboxBrokeredSecrets` (`claxedo-server/src/credentials/sandbox-delivery.ts`)
+hands the supervisor the active accounts as brokered secrets beside whatever
+the request stated. The self-hosted supervisor forwards them to the driver. The
+acceptance criterion "the runtime inside the sandbox received the v4 projection
+for `claude-sdk`" is now reachable and still unrun live, for the reason in
+item 1 above.
 
 #### 3. Claude turn: not reachable
 
@@ -1054,16 +1050,14 @@ are here so the next person does not re-derive them.
   resolves those from the working directory and the canonical git root, which
   this process must not rewrite. A repository that names `apiKeyHelper` or an
   `env` credential there still reaches the vendor on it.
-- **A third account-id claims reader lives in `provider-auth/service.ts`.** The
-  branch reduced two readers to one shared implementation and left that one,
-  which decodes the same ChatGPT `id_token` claims independently.
 - **The broker's header denylist is a list, not a rule.** `OpenAI-Organization`
   and any other vendor header a binding does not declare travel from the harness
   to the vendor untouched.
 - **The generation counter is not monotonic across a backwards clock step with a
-  lost file.** `nextLeaseGeneration` falls back to `Date.now()` when the counter
-  is missing; a machine whose clock moved backwards after losing that file can
-  issue a generation a live placeholder already names.
+  lost file.** `openGenerationCounter` starts from the wall clock when the
+  counter file is missing or unreadable; a machine whose clock moved backwards
+  after losing that file can issue a generation a live placeholder already
+  names.
 
 ### Live Cloudflare deployed run — 2026-09-13
 
@@ -1079,8 +1073,8 @@ npx tsx build-sandbox-image.ts --bundle-only --out=cloudflare-worker/.build
 ```
 
 First run failed: `@claxedo/agent-sdk-runtime`'s `build` runs
-`check:source-shape`, which rejected `src/first-turn-error.ts:10` and
-`src/provider-projection.ts:82` as corrective-history comments, so no sandbox
+`check:source-shape`, which rejected a comment each in `src/first-turn-error.ts`
+and `src/provider-projection.ts` as corrective history, so no sandbox
 image bundle could be produced at all. Both comments were restated from the code
 (commit `466090ee59`); `bun run check:source-shape` then passed and the package's
 own `npm test` ran 752 pass / 9 skip / 0 fail. The bundle emitted build id
@@ -1130,8 +1124,11 @@ transport errors.
 - Evidence: the buildkit error above; host volume at 100%.
 - Owner: the repository owner (free disk, or build and push the image from a
   machine with headroom).
-- Follow-up: free space, rerun `wrangler deploy` from this directory; the Worker
-  script is already current, so only the container application changes.
+- Follow-up: rerun `wrangler deploy` from this directory; the Worker script is
+  already current, so only the container application changes. The volume has
+  since returned to 101Gi free, so the build has room; buildkit's own store may
+  still hold the corrupt blob that made `docker system df` fail, and a second
+  failure there wants `docker buildx prune` before a third attempt.
 
 #### Blocker 2 — the registry's Cloudflare API token is not the deployed Worker's
 
@@ -1176,39 +1173,15 @@ and no lease row remain).
   was not permitted to do, and the registry row was left untouched.
 - Follow-up: reconcile the two, then rerun the create above.
 
-#### Blocker 3 — nothing produces an AI-provider registration for a sandbox
+#### Blocker 3 — no AI-provider registration for a sandbox at the time of this run — superseded
 
-Independent of the two above, and the reason steps 3–5 could not have passed
-even with a working token. This is a design gap the branch states in its own
-code, not a bug:
-
-- `agent-config/index.ts` (`getRuntimeConfigSnapshot`, commit `9f7d6e0f22`):
-  `const auth = scope === "shared" ? {} : await agentConfigOptions.projectAuth?.(…)`,
-  above the comment "A shared-scope sandbox reaches its credentials through its
-  own provider's edge, which no authority here can mint; that adapter is the
-  next slice."
-- `supervisor/config-sync.ts` gives every cloud or remote workspace
-  `secretScope: "shared"`. So a Cloudflare sandbox receives `auth: {}` — no v4
-  provider projection for `claude-sdk` or any other provider.
-- The only producers of `SandboxBrokeredSecret` are
-  `workspace/repository-clone.ts` (a GitHub clone header) and
-  `agent-plugins/mcp/runtime-preparation.ts` (the MCP gateway token). Neither is
-  a model provider, and `api.anthropic.com` appears in
-  `sandbox-manager/src/hosted-network-policy.ts` only as an allowed host.
-- The driver sends `egress` only when `input.secrets !== undefined`
-  (`drivers/cloudflare.ts`), so a plain create writes no KV registration at all.
-
-- Unmet criterion: the sandbox holds a v4 projection for `claude-sdk`, and the
-  Worker's binding table holds its registration.
-- Evidence: the four source facts above.
-- Owner: the repository owner — this is the shared-scope adapter named in
-  section 5, not a defect to fix in passing.
-- Follow-up: a producer that turns the active registry row into a
-  `SandboxBrokeredSecret` (`ANTHROPIC_API_KEY`, host `api.anthropic.com`, header
-  `x-api-key` or `Authorization` per the account's form) and a shared-scope
-  projection whose `baseUrl` is the vendor and whose placeholder is
-  `claxedo-broker:<name>`. Until it exists, the deployed handler has no product
-  path that reaches it.
+At the time of this run nothing produced a `SandboxBrokeredSecret` for a model
+provider and a shared-scope snapshot carried `auth: {}`, so steps 3–5 could not
+have passed even with a working token. Superseded by Appendix C
+(`fe285a4cd5`): `nativeProviderSecrets` turns each marked account into the
+secret the driver registers, and the shared-scope projection names the variable
+the Worker fills. What remains unmet for Cloudflare is Blockers 1 and 2 above,
+and the deployed acceptance those gate.
 
 #### Unchanged and unverified
 

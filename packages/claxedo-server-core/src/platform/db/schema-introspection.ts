@@ -50,3 +50,7 @@ export function columnInfo(db: SqliteSchemaReader, table: string, column: string
 export function hasColumn(db: SqliteSchemaReader, table: string, column: string) {
   return tableColumns(db, table).some((row) => row.name === column)
 }
+
+export function hasIndex(db: SqliteSchemaReader, index: string) {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?").get(index)
+}

@@ -61,19 +61,21 @@ import {
 } from "@claxedo/mcp"
 import { TASKS_OPERATIONS } from "@claxedo/server-core/tasks-host/capability"
 import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
+import { BROKER_ROUTE_PATTERN, isBrokerPath, loopbackBrokerRoutes } from "@claxedo/egress-broker"
 import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
 import { raw, record } from "../platform/json"
 import { localDocumentsRoutes } from "./local-documents"
 
 /**
- * Paths whose responses carry credential material.
+ * Paths whose responses carry credential material: the registry routers, and
+ * the broker mount that spends a stored key at the vendor.
  *
  * They are same-origin by definition — the loopback control plane talking to
  * itself — so they must never get an ACAO header. The defense is the browser
  * refusing the cross-origin READ, which it only does when none comes back.
  */
 export function isLocalCredentialPath(path: string): boolean {
-  return /^\/api\/claxedo\/(credentials|integrations)\b/.test(path)
+  return /^\/api\/claxedo\/(credentials|integrations)\b/.test(path) || isBrokerPath(path)
 }
 
 /**
@@ -91,8 +93,6 @@ export function localCorsOrigin(origin: string): string | undefined {
 export type LocalAppOptions = {
   egressBroker?: (request: Request) => Promise<Response>
   services: ControlPlaneServicesContract
-  /** Same-origin credential paths that must never receive an ACAO header. */
-  isCredentialPath?: (path: string) => boolean
   corsOrigin?: (origin: string, path: string) => string | undefined
   runtimeProxyOptions?: RuntimeProxyOptions
   /** Answers `/workspaces/:workspaceId`; registered ahead of the runtime proxy. */
@@ -180,11 +180,10 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
         // talking to itself. Never reflect an ACAO for them — the header
         // defense relies on the browser blocking the cross-origin READ, which
         // it only does when no ACAO comes back.
-        if ((options.isCredentialPath ?? isLocalCredentialPath)(c.req.path)) return undefined
+        if (isLocalCredentialPath(c.req.path)) return undefined
         // The MCP route is reached by harness processes, never by a page; a
         // loopback page granted an ACAO here could drive it from a browser.
         if (c.req.path === CLAXEDO_MCP_PATH) return undefined
-        if (c.req.path.startsWith("/bindings/")) return undefined
         return (options.corsOrigin ?? localCorsOrigin)(origin, c.req.path)
       },
       maxAge: 86400,
@@ -197,10 +196,8 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.use(unsignedLocalRequestGuard({ mode: deploymentMode(env), authConfig: services.auth.config }))
 
   if (options.egressBroker) {
-    const broker = options.egressBroker
-    app.all("/bindings/*", async (c) => isLoopbackLocalRequest(c.req.raw)
-      ? broker(c.req.raw)
-      : c.json({ error: { code: "loopback_required", message: "The credential broker answers loopback callers only" } }, 403))
+    const routes = loopbackBrokerRoutes({ broker: options.egressBroker, isLoopback: isLoopbackLocalRequest })
+    app.all(BROKER_ROUTE_PATTERN, (c) => routes(c.req.raw))
   }
 
   app.post("/api/claxedo/track", async (c) => {
@@ -278,6 +275,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   app.route("/api/claxedo/credentials", CredentialRoutes(services.credentials, {
     agentUsage: readMachineAgentUsage,
+    ...authRouteOptions(services),
     ...(env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
     // Derived from the environment, matching the self-hosted composition —
     // never caller-supplied, since an omitted hook would leave credential

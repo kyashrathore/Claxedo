@@ -19,15 +19,15 @@ const auth = {
   user: { subject: "user_1", tokenIdentifier: "user_1", issuer: "https://issuer.test" },
 } as unknown as SignedControlPlaneAuth
 
-function services(ensure: ReturnType<typeof vi.fn>) {
+function services(
+  ensure: ReturnType<typeof vi.fn>,
+  workspace: Record<string, unknown> = { backing: "cloud-vm", access: "cloud", home_region: "us-east" },
+) {
   return {
     authority: {
       usersMe: vi.fn(async () => ({ subject: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" })),
-      openWorkspace: vi.fn(async () => ({
-        allowed: true,
-        role: "owner",
-        workspace: { backing: "cloud-vm", access: "cloud", home_region: "us-east" },
-      })),
+      openWorkspace: vi.fn(async () => ({ allowed: true, role: "owner", workspace })),
+      activeWorkspaceHost: vi.fn(async () => ({ active: false })),
       auditDeny: vi.fn(async () => ({})),
     },
     sandbox: { sandboxManager: { ensure } },
@@ -91,6 +91,28 @@ describe("Cloud-workspace entitlement at wake/resume", () => {
     expect(requireCloudWorkspaceEntitlement).toHaveBeenCalledTimes(1)
     expect(ensure).toHaveBeenCalledTimes(1)
     expect(result).toMatchObject({ connection: { status: "provisioning" } })
+  })
+
+  test("a user-hosted local worktree is never billed for a cloud sandbox it does not use", async () => {
+    // The hook is composed for the whole hosted product, so the guard on which
+    // workspaces reach it is in this function, not in the composition.
+    const ensure = vi.fn()
+    const requireCloudWorkspaceEntitlement = vi.fn(async () => ({
+      status: 402 as const,
+      body: { error: { code: "billing_entitlement_required", message: "subscription required" } },
+    }))
+
+    const result = await hostedConnectionInfo(
+      services(ensure, { backing: "local-worktree", access: "user-hosted" }),
+      { ...options, requireCloudWorkspaceEntitlement },
+      auth,
+      "ws_local",
+      "https://control.test",
+    )
+
+    expect(requireCloudWorkspaceEntitlement).not.toHaveBeenCalled()
+    expect(result).not.toMatchObject({ status: 402 })
+    expect(ensure).not.toHaveBeenCalled()
   })
 
   test("no hook composed (self-host / local) → wake proceeds ungated", async () => {

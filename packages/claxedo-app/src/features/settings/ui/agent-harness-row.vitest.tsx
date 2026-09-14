@@ -24,6 +24,7 @@ const account = (over: Partial<AgentAccount> = {}): AgentAccount => ({
   key: "cred_1",
   ids: ["cred_1"],
   label: "work@acme.com",
+  reach: "local-and-cloud",
   selected: true,
   ...over,
 })
@@ -34,6 +35,7 @@ const machineLogin = (over: Partial<AgentAccount> = {}): AgentAccount =>
     ids: [],
     label: "machine@acme.com",
     detail: "Weekly 64% used",
+    reach: "local-only",
     selected: false,
     machine: true,
     ...over,
@@ -133,7 +135,7 @@ describe("AgentHarnessRow accounts", () => {
   test("what the label does not say goes on a second line, and nothing goes there otherwise", () => {
     row({
       accounts: [
-        account({ detail: "settings.providers.live.window:Weekly|58 · settings.providers.live.checkedAt:2 h ago" }),
+        account({ detail: "settings.providers.live.window:Weekly|58 · settings.providers.live.ok" }),
         account({ key: "cred_2", ids: ["cred_2"], label: "home@acme.com", selected: false }),
       ],
     })
@@ -164,14 +166,14 @@ describe("AgentHarnessRow accounts", () => {
       .toBe("Weekly 64% used")
     const checked = entry("cred_1").querySelector('[data-component="agent-account-checked"]')!
     expect(checked.textContent).toBe("5m")
-    // The time is pinned to the column's right edge and the actions hold their
-    // width under it, so the cluster arrives over the time rather than beside
-    // it and no row moves when the pointer does.
-    expect(checked.className).toContain("absolute right-0")
-    expect(checked.className).toContain("group-hover:opacity-0")
+    // The age and the actions share one cell, so the cluster arrives over the
+    // time rather than beside it and no row moves when the pointer does.
     expect(checked.nextElementSibling?.getAttribute("data-component")).toBe("agent-account-actions")
-    expect(entry("cred_1").querySelector('[data-component="agent-account-actions"]')!.className)
-      .toContain("min-w-11")
+    // Both are revealed by hovering the row, so the `group` they answer to has
+    // to be the row itself and not some span between them.
+    expect(checked.closest(".group")).toBe(entry("cred_1"))
+    expect(entry("cred_1").querySelector('[data-component="agent-account-actions"]')!.closest(".group"))
+      .toBe(entry("cred_1"))
   })
 
   test("the read time is an age in one unit, and the whole sentence is its accessible name", () => {
@@ -268,7 +270,9 @@ describe("AgentHarnessRow accounts", () => {
     expect(entry("cred_1").hasAttribute("data-invalid")).toBe(true)
     expect(entry("cred_1").querySelector('[data-component="agent-account-refusal"]')?.textContent)
       .toBe("settings.providers.live.authFailed")
-    expect(entry("cred_1").getAttribute("title")).toBe("settings.providers.live.authFailed")
+    // Said once: a title repeating it reads the verdict twice to a screen
+    // reader and is unreachable by anyone who cannot hover.
+    expect(entry("cred_1").getAttribute("title")).toBeNull()
   })
 
   test("a refused row rests as a ring alone: Reconnect waits with the other two for the pointer", () => {
@@ -278,8 +282,6 @@ describe("AgentHarnessRow accounts", () => {
     expect([...actions.querySelectorAll("button")].map((node) => node.dataset.action))
       .toEqual(["agent-reconnect", "agent-account-check", "agent-account-remove"])
     expect(actions.className).toContain("opacity-0")
-    expect(actions.className).toContain("group-hover:opacity-100")
-    expect(actions.className).toContain("group-focus-within:opacity-100")
   })
 
   test("the two actions are hidden at rest and arrive with the pointer or the keyboard", () => {
@@ -288,8 +290,7 @@ describe("AgentHarnessRow accounts", () => {
 
     const actions = entry("cred_1").querySelector('[data-component="agent-account-actions"]')!
     expect(actions.className).toContain("opacity-0")
-    expect(actions.className).toContain("group-hover:opacity-100")
-    expect(actions.className).toContain("group-focus-within:opacity-100")
+    expect(actions.closest(".group")).toBe(entry("cred_1"))
     expect([...actions.querySelectorAll("button")].map((node) => node.getAttribute("aria-label")))
       .toEqual(["settings.providers.agents.checkAccount", "settings.providers.agents.removeAccount"])
 

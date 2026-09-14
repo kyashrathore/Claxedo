@@ -1,4 +1,4 @@
-import { columnInfo, hasColumn, hasTable, type SqliteSchemaReader } from "./schema-introspection"
+import { columnInfo, hasColumn, hasIndex, hasTable, type SqliteSchemaReader } from "./schema-introspection"
 
 /**
  * Bump when repair() learns a new fix. The boot gate in db.ts hashes this
@@ -6,7 +6,7 @@ import { columnInfo, hasColumn, hasTable, type SqliteSchemaReader } from "./sche
  * stored fingerprint and forces one full repair pass per database even when
  * the schema itself has not changed.
  */
-export const REPAIR_VERSION = 2
+export const REPAIR_VERSION = 4
 
 type SqliteInstance = SqliteSchemaReader & {
   exec(sql: string): unknown
@@ -127,6 +127,11 @@ const sqls = [
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_outbox_state_created_idx` ON `claxedo_usage_outbox` (`state`, `created_at`)",
   "CREATE INDEX IF NOT EXISTS `claxedo_usage_outbox_tenant_state_created_idx` ON `claxedo_usage_outbox` (`org_id`, `user_id`, `state`, `created_at`)",
   "CREATE TABLE IF NOT EXISTS `claxedo_usage_source_coverage` (`source` text PRIMARY KEY NOT NULL, `started_at` integer NOT NULL)",
+  `CREATE TABLE IF NOT EXISTS \`claxedo_machine_login_usage\` (
+    \`harness\` text NOT NULL, \`account\` text NOT NULL,
+    \`usage_windows\` text NOT NULL, \`usage_at\` integer NOT NULL,
+    PRIMARY KEY (\`harness\`, \`account\`)
+  )`,
 ] as const
 
 const tabs = [
@@ -141,6 +146,7 @@ const tabs = [
   "claxedo_usage_turn_current",
   "claxedo_usage_outbox",
   "claxedo_usage_source_coverage",
+  "claxedo_machine_login_usage",
 ] as const
 
 function rebuildSessionMeta(
@@ -388,11 +394,58 @@ function ensureProviderCredentialColumns(db: SqliteInstance, out: string[]) {
     db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `usage_at` integer")
     out.push("claxedo_provider_credential.usage_at")
   }
+  if (!hasColumn(db, "claxedo_provider_credential", "owner")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `owner` text")
+    out.push("claxedo_provider_credential.owner")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "is_active")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `is_active` integer NOT NULL DEFAULT 0")
+    out.push("claxedo_provider_credential.is_active")
+  }
+  if (!hasColumn(db, "claxedo_provider_credential", "activated_at")) {
+    db.exec("ALTER TABLE `claxedo_provider_credential` ADD COLUMN `activated_at` integer")
+    db.exec("UPDATE `claxedo_provider_credential` SET `activated_at` = `updated_at` WHERE `is_active` = 1")
+    out.push("claxedo_provider_credential.activated_at")
+  }
   db.exec("UPDATE `claxedo_provider_credential` SET `org_id` = '__local__' WHERE `org_id` IS NULL OR trim(`org_id`) = ''")
   db.exec("CREATE INDEX IF NOT EXISTS `claxedo_provider_credential_org_idx` ON `claxedo_provider_credential` (`org_id`)")
   db.exec(
     "CREATE INDEX IF NOT EXISTS `claxedo_provider_credential_org_provider_idx` ON `claxedo_provider_credential` (`org_id`, `provider_id`)",
   )
+  ensureProviderCredentialActiveIndex(db, out)
+}
+
+/**
+ * The partial unique index that holds "one active account per (org, owner,
+ * provider)".
+ *
+ * Created last and on its own, because it is the one repair statement that can
+ * be refused: a database that drifted while rows were being marked can hold two
+ * actives for a provider, and `CREATE UNIQUE INDEX` on that throws and takes
+ * the whole boot with it. The extra marks are dropped first, keeping the row
+ * marked most recently, which is the order `nativeProviderDeliveries` resolves
+ * a contested destination by; `updated_at` stands in only for a row marked
+ * before the column recording the mark existed.
+ */
+function ensureProviderCredentialActiveIndex(db: SqliteInstance, out: string[]) {
+  if (hasIndex(db, "claxedo_provider_credential_active_idx")) return
+  db.exec(`
+    UPDATE \`claxedo_provider_credential\` SET \`is_active\` = 0
+    WHERE \`is_active\` = 1 AND \`id\` NOT IN (
+      SELECT \`id\` FROM (
+        SELECT \`id\`, row_number() OVER (
+          PARTITION BY \`org_id\`, coalesce(\`owner\`, ''), \`provider_id\`
+          ORDER BY coalesce(\`activated_at\`, \`updated_at\`) DESC, \`created_at\` DESC, \`id\` ASC
+        ) AS \`rank\`
+        FROM \`claxedo_provider_credential\` WHERE \`is_active\` = 1
+      ) WHERE \`rank\` = 1
+    )
+  `)
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS `claxedo_provider_credential_active_idx`"
+    + " ON `claxedo_provider_credential` (`org_id`, coalesce(`owner`, ''), `provider_id`) WHERE `is_active` = 1",
+  )
+  out.push("claxedo_provider_credential.active_idx")
 }
 
 function renameColumn(db: SqliteInstance, table: string, from: string, to: string, out: string[]) {

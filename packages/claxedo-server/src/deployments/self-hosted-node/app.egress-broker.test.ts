@@ -10,9 +10,6 @@ import { createSelfHostedApp } from "./app"
  * does, and a container binds `0.0.0.0`: without the peer check here the
  * broker answers the whole network, and the runtime token is the only thing
  * between that network and the operator's stored keys.
- *
- * Mirrors `claxedo-local-server/src/app/local-app.behaviour.test.ts`'s
- * "local egress broker hosting" block, request for request.
  */
 function createTestApp(options: Parameters<typeof createSelfHostedApp>[1] = {}, signed = false) {
   const centralStore = createSqliteCentralStore({ mode: () => "workspace_replicated" })

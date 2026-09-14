@@ -1,48 +1,69 @@
-import { describe, expect, test, vi } from "vitest"
+import { afterAll, describe, expect, test, vi } from "vitest"
+import os from "os"
+import path from "path"
+import { randomUUID } from "crypto"
 import { createCredentialDiscovery, type CredentialDiscoveryProbe } from "./discovery"
-import type { LocalCredentialItem } from "./sync"
+import { collectLocalCredentialItems, type LocalCredentialItem } from "./sync"
 import type { CredentialHealth, CredentialWrite } from "@claxedo/server-core/credentials/types"
 
-const items: LocalCredentialItem[] = [
-  {
-    provider_id: "openai",
-    kind: "oauth_token",
-    source: "local_only",
-    label: "Codex subscription",
-    account_id: "account-one@example.com",
-    origin: "~/.codex/accounts/account-one.auth.json",
-    fresh_until: 500,
-    secret: "first-secret",
-  },
-  {
-    provider_id: "openai",
-    kind: "oauth_token",
-    source: "local_only",
-    label: "Codex subscription",
-    account_id: "account-two@example.com",
-    origin: "~/.codex/accounts/account-two.auth.json",
-    secret: "second-secret",
-  },
-  {
-    provider_id: "anthropic",
-    kind: "api_key",
-    source: "env",
-    label: "Anthropic API key",
-    origin: "ANTHROPIC_API_KEY",
-    secret: "third-secret",
-  },
-]
+// The candidates come from the real collector, run against an environment
+// holding one provider in two shapes — a Claude subscription token beside an
+// Anthropic API key — plus a second provider. Every other variable the
+// collector reads is blanked so the host machine's own keys cannot leak in,
+// and the data dir points at nothing so no user config on this machine does.
+vi.stubEnv("CLAXEDO_DATA_DIR", path.join(os.tmpdir(), `credential-discovery-${randomUUID().slice(0, 8)}`))
+for (const name of [
+  "ANTHROPIC_AUTH_TOKEN", "OPENAI_API_KEY", "DAYTONA_API_KEY", "MODAL_TOKEN_ID", "MODAL_TOKEN_SECRET",
+  "VERCEL_TOKEN", "VERCEL_OIDC_TOKEN", "VERCEL_TEAM_ID", "VERCEL_PROJECT_ID",
+  "CLOUDFLARE_API_TOKEN", "CLOUDFLARE_SANDBOX_WORKER_URL",
+]) vi.stubEnv(name, "")
+vi.stubEnv("CLAUDE_CODE_OAUTH_TOKEN", "first-secret")
+vi.stubEnv("ANTHROPIC_API_KEY", "second-secret")
+vi.stubEnv("CURSOR_API_KEY", "third-secret")
+const items = await collectLocalCredentialItems()
+afterAll(() => vi.unstubAllEnvs())
+
+test("the collector hands discovery one provider in two shapes and a second provider", () => {
+  expect(items).toEqual([
+    {
+      provider_id: "claude-sdk",
+      kind: "oauth_token",
+      source: "env",
+      label: "Synced from CLAUDE_CODE_OAUTH_TOKEN",
+      origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
+      secret: JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "first-secret" } }),
+    },
+    {
+      provider_id: "claude-sdk",
+      kind: "api_key",
+      source: "env",
+      label: "Synced from ANTHROPIC_API_KEY",
+      origin: "ANTHROPIC_API_KEY",
+      secret: "second-secret",
+    },
+    {
+      provider_id: "cursor-sdk",
+      kind: "api_key",
+      source: "env",
+      label: "Synced from CURSOR_API_KEY",
+      origin: "CURSOR_API_KEY",
+      secret: "third-secret",
+    },
+  ])
+})
 
 function setup(input?: {
   now?: () => number
   collected?: LocalCredentialItem[]
+  connected?: Array<{ provider_id: string; kind: LocalCredentialItem["kind"] }>
   probe?: (item: LocalCredentialItem) => Promise<CredentialDiscoveryProbe>
 }) {
-  const save = vi.fn(async (item: CredentialWrite) => ({ id: `saved-${item.account_id ?? item.provider_id}` }))
+  const save = vi.fn(async (item: CredentialWrite) => ({ id: `saved-${item.provider_id}-${item.kind}` }))
   const recorded: Array<{ id: string; health: CredentialHealth; validatedAt: number }> = []
   const service = createCredentialDiscovery({
     collect: async () => input?.collected ?? items,
     save,
+    ...(input?.connected ? { connected: () => input.connected! } : {}),
     recordHealth: (id, health, validatedAt) => void recorded.push({ id, health, validatedAt }),
     ...(input?.probe ? { probe: input.probe } : {}),
     now: input?.now ?? (() => 100),
@@ -61,15 +82,12 @@ describe("credential discovery", () => {
     expect(result.discovery_id).toBe("discovery-id")
     expect(result.items).toHaveLength(3)
     expect(result.items[0]).toMatchObject({
-      provider_id: "openai",
+      provider_id: "claude-sdk",
       kind: "oauth_token",
-      label: "Codex subscription",
-      account_id: expect.stringMatching(/^account…[a-f0-9]{10}$/),
-      origin: "~/.codex/accounts/account-one.auth.json",
-      fresh_until: 500,
+      label: "Synced from CLAUDE_CODE_OAUTH_TOKEN",
+      origin: "Environment variable CLAUDE_CODE_OAUTH_TOKEN",
     })
     expect(JSON.stringify(result)).not.toContain("first-secret")
-    expect(JSON.stringify(result)).not.toContain("account-one@example.com")
   })
 
   test("returns an explicit empty preview", async () => {
@@ -78,33 +96,55 @@ describe("credential discovery", () => {
     await expect(service.discover()).resolves.toEqual({ discovery_id: "discovery-id", items: [] })
   })
 
-  test("saves exactly the selected account with explicit scope and consent", async () => {
+  test("marks a candidate already connected when the store holds that provider in that shape", async () => {
+    const { service } = setup({ connected: [{ provider_id: "claude-sdk", kind: "api_key" }] })
+
+    const result = await service.discover()
+
+    expect(result.items.map((item) => [item.provider_id, item.kind, item.already_connected === true])).toEqual([
+      ["claude-sdk", "oauth_token", false],
+      ["claude-sdk", "api_key", true],
+      ["cursor-sdk", "api_key", false],
+    ])
+  })
+
+  test("saves exactly the selected candidate with explicit scope and consent", async () => {
     const { save, service } = setup()
     const discovery = await service.discover()
 
     const result = await service.save({
       discovery_id: discovery.discovery_id,
-      items: [{
-        provider_id: "openai",
-        account_id: discovery.items[1].account_id,
-        scope: "shared",
-      }],
+      items: [{ provider_id: "claude-sdk", kind: "api_key", scope: "shared" }],
     })
 
     expect(result).toEqual({ saved: [{
-      credential_id: "saved-account-two@example.com",
-      provider_id: "openai",
-      account_id: discovery.items[1].account_id,
+      credential_id: "saved-claude-sdk-api_key",
+      provider_id: "claude-sdk",
+      kind: "api_key",
     }] })
     expect(save).toHaveBeenCalledOnce()
     expect(save).toHaveBeenCalledWith(expect.objectContaining({
-      provider_id: "openai",
-      account_id: "account-two@example.com",
+      provider_id: "claude-sdk",
+      kind: "api_key",
       secret: "second-secret",
       scope: "shared",
       consent: { at: 100, surface: "desktop_discovery" },
     }), undefined)
-    expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ secret: "first-secret" }), undefined)
+    expect(save).not.toHaveBeenCalledWith(expect.objectContaining({ secret: items[0].secret }), undefined)
+  })
+
+  test("two candidates for one provider stay distinct, so a selection saves the secret it named", async () => {
+    // Keyed by provider alone the two collide in the stash, and picking the
+    // pasted key silently stores the environment's subscription token instead.
+    const { save, service } = setup()
+    const discovery = await service.discover()
+
+    await service.save({
+      discovery_id: discovery.discovery_id,
+      items: [{ provider_id: "claude-sdk", kind: "oauth_token", scope: "local" }],
+    })
+
+    expect(save.mock.calls.map(([item]) => [item.kind, item.secret])).toEqual([["oauth_token", items[0].secret]])
   })
 
   test("forwards the caller's org so a discovered credential lands in the right tenant", async () => {
@@ -113,10 +153,10 @@ describe("credential discovery", () => {
 
     await service.save({
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "openai", account_id: discovery.items[1].account_id, scope: "local" }],
+      items: [{ provider_id: "claude-sdk", kind: "oauth_token", scope: "local" }],
     }, "org_a")
 
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ provider_id: "openai" }), "org_a")
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ provider_id: "claude-sdk" }), "org_a")
   })
 
   test("cannot save a discovery into a different organization", async () => {
@@ -125,12 +165,12 @@ describe("credential discovery", () => {
 
     await expect(service.save({
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "openai", account_id: discovery.items[1].account_id, scope: "local" }],
+      items: [{ provider_id: "claude-sdk", kind: "oauth_token", scope: "local" }],
     }, "org_b")).rejects.toMatchObject({ code: "discovery_org_mismatch" })
     expect(save).not.toHaveBeenCalled()
   })
 
-  test("supports selecting multiple accounts for the same provider independently", async () => {
+  test("supports selecting several candidates independently", async () => {
     const { save, service } = setup()
     const discovery = await service.discover()
 
@@ -138,31 +178,42 @@ describe("credential discovery", () => {
       discovery_id: discovery.discovery_id,
       items: discovery.items.slice(0, 2).map((item) => ({
         provider_id: item.provider_id,
-        account_id: item.account_id,
+        kind: item.kind,
         scope: "local" as const,
       })),
     })
 
     expect(save).toHaveBeenCalledTimes(2)
-    expect(save.mock.calls.map(([item]) => item.account_id)).toEqual([
-      "account-one@example.com",
-      "account-two@example.com",
-    ])
+    expect(save.mock.calls.map(([item]) => item.secret)).toEqual([items[0].secret, items[1].secret])
   })
 
-  test("fails closed for unknown, stale, tampered, and replayed discoveries", async () => {
+  test("refuses the same candidate named twice in one save", async () => {
+    const { save, service } = setup()
+    const discovery = await service.discover()
+
+    await expect(service.save({
+      discovery_id: discovery.discovery_id,
+      items: [
+        { provider_id: "cursor-sdk", kind: "api_key", scope: "local" },
+        { provider_id: "cursor-sdk", kind: "api_key", scope: "shared" },
+      ],
+    })).rejects.toMatchObject({ code: "discovery_duplicate_item" })
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  test("fails closed for unknown, unoffered, stale, and replayed discoveries", async () => {
     let now = 100
     const { save, service } = setup({ now: () => now })
     const discovery = await service.discover()
     const selection = {
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "openai", account_id: discovery.items[0].account_id, scope: "local" as const }],
+      items: [{ provider_id: "claude-sdk", kind: "oauth_token" as const, scope: "local" as const }],
     }
 
     await expect(service.save({ ...selection, discovery_id: "unknown" })).rejects.toMatchObject({ code: "discovery_not_found" })
     await expect(service.save({
       ...selection,
-      items: [{ provider_id: "openai", account_id: "account…tampered0000", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "oauth_token", scope: "local" }],
     })).rejects.toMatchObject({ code: "discovery_item_not_found" })
     expect(save).not.toHaveBeenCalled()
 
@@ -170,18 +221,18 @@ describe("credential discovery", () => {
     now = 100 + 5 * 60 * 1000 + 1
     await expect(service.save({
       discovery_id: next.discovery_id,
-      items: [{ provider_id: "anthropic", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })).rejects.toMatchObject({ code: "discovery_expired" })
 
     now = 100
     const singleUse = await service.discover()
     await service.save({
       discovery_id: singleUse.discovery_id,
-      items: [{ provider_id: "anthropic", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })
     await expect(service.save({
       discovery_id: singleUse.discovery_id,
-      items: [{ provider_id: "anthropic", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })).rejects.toMatchObject({ code: "discovery_not_found" })
   })
 })
@@ -191,7 +242,7 @@ describe("live probing during discovery", () => {
     // Reading a token off disk says nothing about whether the provider will
     // accept it. Without this the user commits first and finds out later.
     const { service } = setup({
-      probe: async (item) => item.account_id === "account-two@example.com"
+      probe: async (item) => item.secret === "second-secret"
         ? { state: "broken", reason: "The provider rejected this credential." }
         : { state: "working" },
     })
@@ -250,10 +301,10 @@ describe("live probing during discovery", () => {
 
     await service.save({
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "anthropic", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })
 
-    expect(recorded).toEqual([{ id: "saved-anthropic", health: "ok", validatedAt: 100 }])
+    expect(recorded).toEqual([{ id: "saved-cursor-sdk-api_key", health: "ok", validatedAt: 100 }])
   })
 
   test("a verdict the probe could not reach writes no health at all", async () => {
@@ -262,7 +313,7 @@ describe("live probing during discovery", () => {
 
     await service.save({
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "anthropic", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })
 
     expect(recorded).toEqual([])
@@ -277,7 +328,7 @@ describe("live probing during discovery", () => {
 
     await service.save({
       discovery_id: discovery.discovery_id,
-      items: [{ provider_id: "anthropic", scope: "local" }],
+      items: [{ provider_id: "cursor-sdk", kind: "api_key", scope: "local" }],
     })
 
     expect(save).toHaveBeenCalledTimes(1)

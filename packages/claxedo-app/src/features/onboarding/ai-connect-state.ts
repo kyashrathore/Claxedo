@@ -1,3 +1,4 @@
+import type { QuotaWindow } from "@claxedo/usage-contract"
 import { HARNESS_CATALOG } from "@/platform/identity/harness-catalog"
 export type AICredentialVerification = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired"
 
@@ -10,12 +11,9 @@ export function isUsableResult(result: AICredentialVerification) {
   return result === "ok" || result === "rate_capped"
 }
 
-/** One quota window a subscription reports: `session`, `weekly`, `weekly_opus`, or a vendor slot. */
-export type AIUsageWindow = { window: string; usedPercent: number; resetsAt: number | null }
-
 /** What a live probe said about a candidate, before anything is saved. */
 export type AIDiscoveryProbe =
-  | { state: "working"; usage?: AIUsageWindow[] }
+  | { state: "working"; usage?: QuotaWindow[] }
   | { state: "broken"; reason: string }
   | { state: "unknown"; reason: string }
 
@@ -46,13 +44,6 @@ export function destinationStoresCredentials(destination: OnboardingDestination)
   return destination !== "local"
 }
 
-/**
- * The harness bindings one Claude Code login is discovered under. Both are the
- * same credential; the registry keeps an entry per binding because each harness
- * resolves auth by its own provider id.
- */
-export const claudeHarnessBindings = ["claude-acp", "claude-sdk"] as const
-
 const connectionNames: Record<string, string> = {
   "claude-acp": "Claude Code login",
   "claude-sdk": "Claude Code login",
@@ -69,12 +60,14 @@ export function connectionDisplayName(providerId: string) {
  * Fixed rather than derived from what discovery returned: the local screen
  * answers "can I start working?", and a harness that is absent is exactly the
  * case the user needs told. Deriving the list would silently drop the row whose
- * absence is the answer.
+ * absence is the answer. The bindings are the catalog's, so a row lists every
+ * account the server holds for the harness rather than the subset this file
+ * happened to spell.
  */
 export const localHarnessChecks = [
-  { id: "claude", label: HARNESS_CATALOG.claude.label, providerIds: claudeHarnessBindings, signIn: "claude" },
-  { id: "codex", label: HARNESS_CATALOG.codex.label, providerIds: ["codex-app-server", "openai"], signIn: "codex login" },
-  { id: "cursor", label: HARNESS_CATALOG.cursor.label, providerIds: ["cursor-acp"], signIn: "cursor-agent login" },
+  { ...HARNESS_CATALOG.claude, id: "claude", signIn: "claude" },
+  { ...HARNESS_CATALOG.codex, id: "codex", signIn: "codex login" },
+  { ...HARNESS_CATALOG.cursor, id: "cursor", signIn: "cursor-agent login" },
 ] as const
 
 /**
@@ -96,7 +89,7 @@ export type MachineLogin = {
   plan?: string
   org?: string
   /** Quota windows, for the harnesses that report them. Claude Code does not. */
-  usage?: AIUsageWindow[]
+  usage?: QuotaWindow[]
   /** When `usage` was read, on the rows the server answered from stored state. */
   usageAt?: number
   /** Why the harness could not be asked, when `state` is `unknown`. */

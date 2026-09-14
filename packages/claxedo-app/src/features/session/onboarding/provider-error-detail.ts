@@ -8,7 +8,7 @@
 // This module splits that error in two, matching the §5 rule of the retired
 // error proposal: `summary` is a sentence a human reads,
 // `detail` is the provider's own bytes, verbatim, for the collapsed disclosure.
-import { harnessDisplayLabel } from "@/ui/harness-display"
+import { harnessDisplayLabel, harnessLabelForProviderId } from "@/platform/identity/harness-catalog"
 import { asRecord } from "@claxedo/helpers/guards"
 
 export type ProviderErrorDetail = {
@@ -100,7 +100,11 @@ export function providerLabel(input: { providerID?: string; modelID?: string; re
   // Operator ACP connections dispatch with their `acp:<slug>` key as the
   // provider id; derive their product label the same way the harness selector
   // does instead of echoing the raw key.
-  if (id) return PROVIDER_NAMES[id] ?? (id.startsWith("acp:") ? harnessDisplayLabel(id.slice("acp:".length)) : id)
+  if (id) {
+    const named = PROVIDER_NAMES[id] ?? harnessLabelForProviderId(id)
+    if (named) return named
+    return id.startsWith("acp:") ? harnessDisplayLabel(id.slice("acp:".length)) : id
+  }
   const relay = input.relayLabel?.trim()
   if (relay) return relay
   return undefined
@@ -140,12 +144,6 @@ const PROVIDER_NAMES: Record<string, string> = {
   groq: "Groq",
   mistral: "Mistral",
   xai: "xAI",
-  "claude-sdk": "Claude",
-  "codex-app-server": "Codex",
-  "cursor-sdk": "Cursor",
-  claude: "Claude",
-  codex: "Codex",
-  cursor: "Cursor",
 }
 
 function text(value: unknown) {

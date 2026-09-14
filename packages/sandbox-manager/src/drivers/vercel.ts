@@ -184,11 +184,29 @@ export function vercelBrokeredNetworkPolicy(
         `vercel brokered secret "${secret.name}" requires a header — the firewall injects the value as an HTTP header on egress`,
       )
     }
+    // No host means no rule, and a policy with no rule for it is one the
+    // firewall enforces by attaching the credential nowhere: the placeholder
+    // then reaches the vendor as the harness's own bad token.
+    if (secret.hosts.length === 0) {
+      throw new Error(`vercel brokered secret "${secret.name}" requires at least one host in its egress allowlist`)
+    }
     // The transform writes the whole header value, so the scheme the harness
     // wrote in front of the placeholder has to be composed back in.
     const value = secret.scheme ? `${secret.scheme} ${secret.value}` : secret.value
+    const methods = [...secret.methods ?? []]
+    const pathPrefixes = [...secret.pathPrefixes ?? []]
     for (const host of secret.hosts) {
-      ;(allow[host] ??= []).push({ transform: [{ headers: { [secret.header]: value } }] })
+      // The host stays reachable either way — an empty rule list is "allow with
+      // nothing added" — and only the transform is withheld. A rule per prefix
+      // because `match.path` takes one matcher; a secret naming no policy gets
+      // no rule at all, so the firewall attaches the credential nowhere.
+      const rules = (allow[host] ??= [])
+      for (const prefix of methods.length ? pathPrefixes : []) {
+        rules.push({
+          match: { path: { startsWith: prefix }, method: methods },
+          transform: [{ headers: { [secret.header]: value } }],
+        })
+      }
     }
   }
   const subnets = typeof base === "object" && base?.subnets ? { subnets: base.subnets } : {}

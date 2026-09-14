@@ -134,6 +134,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     })
     expect(resolvedSecrets).toEqual({ token: "runtime-only" })
     expect(host.detail().harness).toEqual({ kind: "connection", connectionId: "fixture-primary" })
+    expect(JSON.stringify(host.detail())).not.toContain("runtime-only")
     await host.dispose()
   })
 

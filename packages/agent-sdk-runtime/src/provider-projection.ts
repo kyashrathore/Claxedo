@@ -60,8 +60,16 @@ const AUTH_MODES = ["api-key", "bearer"] as const
 const BINDING_KEYS = new Set(["baseUrl", "placeholder", "placeholderEnv", "authMode", "expiresAt", "apiPath"])
 const UNAVAILABLE_KEYS = new Set(["unavailable", "reason"])
 
-export function isProviderUnavailable(projection: ProviderProjection): projection is ProviderUnavailable {
-  return "unavailable" in projection
+/**
+ * Whether a row is the refusal rather than a binding.
+ *
+ * Takes any object rather than a `ProviderProjection`, because the same
+ * refusal travels alongside binding shapes this module does not own — the
+ * engine's provider overlay carries `baseURL`/`apiKey` — and a second copy of
+ * the predicate beside each of them is how two of them came to disagree.
+ */
+export function isProviderUnavailable(row: object): row is ProviderUnavailable {
+  return "unavailable" in row
 }
 
 export function providerProjection(
@@ -106,15 +114,36 @@ export function providerProjection(
   return { ...rest, placeholder }
 }
 
+/**
+ * What a row this validator cannot read does to the whole record.
+ *
+ * `reject` is for a map that crossed a process boundary: a producer that sent a
+ * row this runtime cannot read has said nothing trustworthy about the rest, so
+ * the snapshot is refused whole and the one already applied stays. Only a
+ * process projecting its own authority passes `unavailable`, where refusing
+ * everything would disable every working account over one malformed row; that
+ * row alone becomes an unavailable projection, which disables its provider and
+ * refuses a turn on it rather than letting the harness fall back to a login the
+ * operator did not choose.
+ */
+type ProviderProjectionRowPolicy = "reject" | "unavailable"
+
+const UNRESOLVED_PROJECTION_REASON = "unresolved_projection"
+
 export function providerProjectionRecord(
   input: unknown,
-  env: PlaceholderEnvironment = {},
+  env: PlaceholderEnvironment,
+  options: { onInvalid: ProviderProjectionRowPolicy },
 ): Record<string, ProviderProjection> | undefined {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
   const rows: Record<string, ProviderProjection> = {}
   for (const [providerId, value] of Object.entries(input)) {
     const projection = providerProjection(value, env)
-    if (!projection) return undefined
+    if (!projection) {
+      if (options.onInvalid !== "unavailable") return undefined
+      rows[providerId] = { unavailable: true, reason: UNRESOLVED_PROJECTION_REASON }
+      continue
+    }
     rows[providerId] = projection
   }
   return rows
@@ -130,6 +159,15 @@ export function providerProjectionRecord(
  * any interval chosen here. A map carrying no row that expires never needs
  * renewing.
  */
+/**
+ * Whether a held projection is due for replacement. `all` is the caller saying
+ * the process lost track of time — a laptop resumed from sleep reads a clock
+ * later than any tick the timer saw — so nothing that expires may be trusted.
+ */
+export function projectionRenewalDue(input: { at: number; all?: boolean }, renewAt: number | undefined): boolean {
+  return input.all === true || (renewAt !== undefined && renewAt <= input.at)
+}
+
 export function projectionRenewalDueAt(
   auth: Record<string, ProviderProjection>,
   appliedAt: number,

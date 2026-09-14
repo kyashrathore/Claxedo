@@ -15,12 +15,13 @@ const registryModule = await import("./registry")
 const { putCredential, setActiveCredentials, updateCredentialHealth, deleteCredential, listCredentials } =
   await import("./registry")
 const {
+  credentialReach,
   nativeDeliveryDigest,
+  nativeDeliveryDigestEntries,
   nativeProviderAuth,
   nativeProviderDeliveries,
   nativeProviderSecrets,
   projectNativeProviderAuth,
-  providerPlaceholderEnv,
 } = await import("./native-delivery")
 const { configureAgentConfig, disposeAgentConfig } = await import("../agent-config/index")
 const { createClaxedoRuntimeConfig } = await import("../hosts/workspace-runtime/runtime-config")
@@ -60,11 +61,6 @@ describe("native provider delivery", () => {
     process.env.CLAXEDO_DATA_DIR = previousDataDir
   })
 
-  test("the placeholder variable is one name per provider", () => {
-    expect(providerPlaceholderEnv("claude-sdk")).toBe("CLAXEDO_PROVIDER_CLAUDE_SDK")
-    expect(providerPlaceholderEnv("openai")).toBe("CLAXEDO_PROVIDER_OPENAI")
-  })
-
   test("an active API key becomes one secret for the vendor host and a projection naming its variable", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
     setActiveCredentials([credential.id])
@@ -75,6 +71,8 @@ describe("native provider delivery", () => {
       value: API_KEY,
       hosts: ["api.anthropic.com"],
       header: "x-api-key",
+      methods: ["POST", "GET"],
+      pathPrefixes: ["/v1/messages", "/v1/models"],
     }])
     expect(nativeProviderAuth(deliveries)).toEqual({
       "claude-sdk": {
@@ -105,6 +103,8 @@ describe("native provider delivery", () => {
       hosts: ["api.anthropic.com"],
       header: "Authorization",
       scheme: "Bearer",
+      methods: ["POST", "GET"],
+      pathPrefixes: ["/v1/messages", "/v1/models"],
     }])
     expect(nativeProviderAuth(deliveries)["claude-sdk"]).toMatchObject({ authMode: "bearer" })
   })
@@ -233,6 +233,24 @@ describe("native provider delivery", () => {
     expect(nativeProviderAuth(second).anthropic).toMatchObject({ unavailable: true })
   })
 
+  test("checking or renaming an account does not hand it a host another account claimed", async () => {
+    // `updated_at` moves on a Check and on a rename, so reading it here let a
+    // Check press the host away from the account the operator chose.
+    const key = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
+    const subscription = await shared({ provider_id: "anthropic", kind: "oauth_token", secret: SUBSCRIPTION })
+    setActiveCredentials([key.id])
+    await tick()
+    setActiveCredentials([subscription.id])
+
+    await tick()
+    updateCredentialHealth(key.id, "ok", Date.now())
+    await registryModule.updateCredentialLabel(key.id, "work key")
+
+    expect(nativeProviderSecrets(await nativeProviderDeliveries())).toEqual([expect.objectContaining({
+      name: "CLAXEDO_PROVIDER_ANTHROPIC",
+    })])
+  })
+
   test("the digest moves with a rotation and not with a re-read", async () => {
     const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
     setActiveCredentials([credential.id])
@@ -243,6 +261,71 @@ describe("native provider delivery", () => {
     await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-rotated")
 
     expect(nativeDeliveryDigest(await nativeProviderDeliveries())).not.toBe(before)
+  })
+
+  test("the digest moves when the operator switches to another account at the same revision", async () => {
+    // Two accounts for one provider are both at revision 1, so a digest built
+    // from the destination and the revision alone reads the switch as no
+    // change and leaves the sandbox spending the account the operator left.
+    const first = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY, label: "one" })
+    setActiveCredentials([first.id])
+    const before = nativeDeliveryDigest(await nativeProviderDeliveries())
+    await tick()
+    const second = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: "sk-ant-api03-second", label: "two" })
+    setActiveCredentials([second.id])
+
+    const after = nativeDeliveryDigest(await nativeProviderDeliveries())
+
+    expect(first.revision).toBe(second.revision)
+    expect(after).not.toBe(before)
+    expect(nativeDeliveryDigestEntries(after).map((row) => row.providerId)).toEqual(["claude-sdk"])
+  })
+
+  test("a digest names the providers it installed a secret for, and nothing at all when empty", () => {
+    expect(nativeDeliveryDigestEntries("")).toEqual([])
+    expect(nativeDeliveryDigestEntries(nativeDeliveryDigest([]))).toEqual([])
+  })
+
+  test("every delivery names the account it resolved to", async () => {
+    const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
+    setActiveCredentials([credential.id])
+
+    const deliveries = await nativeProviderDeliveries()
+
+    expect(deliveries.map((row) => [row.providerId, row.credentialId]))
+      .toEqual([["claude-sdk", credential.id]])
+  })
+
+  test("reach is read from the delivery rules rather than from the row being stored", () => {
+    // A ChatGPT subscription answers on a backend that reads a companion
+    // account header, and a provider edge attaches one header per secret.
+    expect(credentialReach({ provider_id: "openai", kind: "oauth_token" }))
+      .toEqual({ local: true, cloud: false, reason: "native_delivery_needs_companion_header" })
+    expect(credentialReach({ provider_id: "openai", kind: "api_key" })).toEqual({ local: true, cloud: true })
+    expect(credentialReach({ provider_id: "claude-sdk", kind: "oauth_token" })).toEqual({ local: true, cloud: true })
+    expect(credentialReach({ provider_id: "daytona", kind: "sandbox_driver" }))
+      .toEqual({ local: true, cloud: false, reason: "no_destination" })
+  })
+
+  test("a replacement with no expiry of its own clears the one the replaced material carried", async () => {
+    // The verifier reads a stored expiry as the material's own, so an expiry
+    // carried over from the replaced secret answers "expired" for a key that
+    // has nothing to refresh with, and the reconnect never takes effect.
+    const credential = await shared({ provider_id: "claude-sdk", kind: "api_key", secret: API_KEY })
+    await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-first", 1_000)
+    expect(registryModule.credentialById(credential.id, { onOutage: "throw" })?.expires_at).toBe(1_000)
+
+    await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-second", null)
+
+    const stored = registryModule.credentialById(credential.id, { onOutage: "throw" })
+    expect(stored?.expires_at).toBeNull()
+    expect(await registryModule.readSecretById(credential.id)).toBe("sk-ant-api03-second")
+
+    // Omitted still means "keep what is stored", which is what an OAuth refresh
+    // that reports no new expiry needs.
+    await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-third", 2_000)
+    await registryModule.updateCredentialSecret(credential.id, "sk-ant-api03-fourth")
+    expect(registryModule.credentialById(credential.id, { onOutage: "throw" })?.expires_at).toBe(2_000)
   })
 
   test("a none-driver snapshot reaches the runtime saying the credential cannot be delivered", async () => {

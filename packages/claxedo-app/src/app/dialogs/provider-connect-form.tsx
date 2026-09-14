@@ -22,7 +22,13 @@ import { useProviderAuth, useProviders } from "@/app/providers/use-providers"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
 import { errorMessage } from "@/lib/server-errors"
-import type { ConnectContext } from "@/platform/identity/harness-catalog"
+import {
+  connectContextKey,
+  connectSubject,
+  connectVars,
+  CONNECT_CONTEXT_COPY,
+  type ConnectContext,
+} from "@/platform/identity/harness-catalog"
 import { connectMethodOptions, fallbackConnectMethods, type ConnectMethodOption } from "@/platform/identity/connect-methods"
 
 export type ProviderConnectFormProps = {
@@ -55,11 +61,10 @@ export type ProviderConnectFormProps = {
   /** Hides the provider name row when the surface already shows a title. */
   hideHeading?: boolean
   /**
-   * Whether one of several methods is preselected. `segmented` opens on the
-   * first so the card is never a dead end; the default waits for a pick, which
-   * is what a dialog opened on "connect something" wants.
+   * Opens on the first method so the card is never a dead end. Off by default:
+   * a dialog opened on "connect something" waits for a pick.
    */
-  methodPicker?: "list" | "segmented"
+  preselectFirstMethod?: boolean
 }
 
 function useProviderConnectForm(props: ProviderConnectFormProps) {
@@ -70,30 +75,23 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   // `useProviderAuth` reads it under the same (server, scope, harness) key the
   // catalog above uses, so a cloud workspace never shows the daemon's methods.
   const providerAuthQuery = useProviderAuth(() => props.harness, () => props.workspaceScope)
-  // The catalog holds model providers; callers may pass an id it does not carry
-  // (an auth-only harness id, or a provider list that hasn't loaded yet).
-  // Every consumer below reads `.name`, so this falls back to the id rather
-  // than crash.
   /** The subject of every sentence on this card, and the name on its heading. */
-  const subject = () => props.context.kind === "harness" ? props.context.harness : props.context.vendor
-  const contextKey = (base: string) => `${base}.${props.context.kind}`
-  const contextVars = (): Record<string, string> => props.context.kind === "harness"
-    ? { harness: props.context.harness, vendor: props.context.vendor }
-    : { engine: props.context.engine, vendor: props.context.vendor }
+  const subject = () => connectSubject(props.context)
+  const contextKey = (base: string) => connectContextKey(base, props.context)
+  const contextVars = () => connectVars(props.context)
 
-  const provider = createMemo(() =>
-    providers.all().get(props.provider)
-      ?? { id: props.provider, name: props.provider, source: "custom" as const, env: [], options: {}, models: {} },
-  )
   const codexBundleRequired = () => props.harness === "pi" && props.provider === "openai-codex"
   const authProviderID = () => codexBundleRequired() ? "codex-app-server" : props.provider
   const fallback = createMemo<ProviderAuthMethod[]>(() => codexBundleRequired()
-    ? [{ type: "oauth", label: "ChatGPT Plus or Pro" }]
+    ? [{ type: "oauth", label: language.t("provider.connect.method.openai.plan.title") }]
     : fallbackConnectMethods(props.provider))
   // An empty list is as unusable as no answer at all: the card would offer
   // nothing to fill in, so both fall back to what the catalog knows is pasted.
   const served = () => providerAuthQuery.data?.[props.provider]
-  const methods = createMemo(() => codexBundleRequired() || !served()?.length ? fallback() : served()!)
+  const methods = createMemo(() => {
+    const answered = served()
+    return codexBundleRequired() || !answered?.length ? fallback() : answered
+  })
   const options = createMemo(() => connectMethodOptions(props.provider, methods()))
   const [store, setStore] = createStore({
     methodIndex: undefined as number | undefined,
@@ -109,7 +107,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   const selected = createMemo(() => {
     const list = options()
     if (store.methodIndex !== undefined) return list.find((option) => option.index === store.methodIndex)
-    if (list.length === 1 || props.methodPicker === "segmented") return list.at(0)
+    if (list.length === 1 || props.preselectFirstMethod === true) return list.at(0)
     return undefined
   })
   const pickMethod = (index: number) => {
@@ -134,7 +132,7 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
     await markConnected()
     showToast({
       title: language.t("provider.connect.toast.connected.title", { vendor: contextVars().vendor }),
-      description: language.t(contextKey("provider.connect.toast.connected.description"), contextVars()),
+      description: language.t(contextKey(CONNECT_CONTEXT_COPY.connected), contextVars()),
     })
     await props.onConnected?.()
     props.onDone?.()
@@ -237,7 +235,6 @@ function useProviderConnectForm(props: ProviderConnectFormProps) {
   }
 
   return {
-    provider,
     subject,
     contextKey,
     contextVars,
@@ -273,14 +270,14 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
     <div class="flex flex-col gap-6">
       <Show when={!props.hideHeading}>
         <div class="flex items-center gap-3">
-          <ProviderIcon id={form.provider().id} class="size-5 shrink-0 icon-strong-base" />
+          <ProviderIcon id={props.provider} class="size-5 shrink-0 icon-strong-base" />
           <span class="text-14-medium text-text-strong">{form.subject()}</span>
         </div>
       </Show>
 
       <div class="flex flex-col gap-3">
         <div class="text-13-regular text-text-weak">
-          {language.t(form.contextKey("provider.connect.context"), form.contextVars())}
+          {language.t(form.contextKey(CONNECT_CONTEXT_COPY.context), form.contextVars())}
         </div>
         <Show when={choosing()}>
           <div class="text-14-regular text-text-base">
@@ -377,7 +374,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
             <div>
               {language.t("provider.connect.oauth.auto.visit.prefix")}
               <Link href={store.authorization!.url}>{language.t("provider.connect.oauth.auto.visit.link")}</Link>
-              {language.t(form.contextKey("provider.connect.oauth.auto.visit.suffix"), form.contextVars())}
+              {language.t(form.contextKey(CONNECT_CONTEXT_COPY.autoVisitSuffix), form.contextVars())}
             </div>
             <TextField
               label={language.t("provider.connect.oauth.auto.confirmationCode")}
@@ -407,7 +404,7 @@ export function ProviderConnectForm(props: ProviderConnectFormProps) {
             <div class="text-14-regular text-text-base">
               {language.t("provider.connect.oauth.code.visit.prefix")}
               <Link href={store.authorization!.url}>{language.t("provider.connect.oauth.code.visit.link")}</Link>
-              {language.t(form.contextKey("provider.connect.oauth.code.visit.suffix"), form.contextVars())}
+              {language.t(form.contextKey(CONNECT_CONTEXT_COPY.codeVisitSuffix), form.contextVars())}
             </div>
             <TextField
               autofocus

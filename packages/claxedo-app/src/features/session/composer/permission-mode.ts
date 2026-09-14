@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { BuiltinHarnessId, HarnessId } from "@/platform/identity/session-ref"
-import { harnessDisplayLabel } from "@/ui/harness-display"
+import { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
 import {
   defaultPermissionSelection,
   findPermissionModeOption,

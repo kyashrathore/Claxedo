@@ -1,0 +1,16 @@
+{
+  "auth_mode": "local-unsigned",
+  "passed": 0,
+  "failed": 1,
+  "retries": 0,
+  "failed_assertion": "the stored interrupted command returned to Running after its start frames replayed",
+  "passed_assertions": [
+    "stored error part renders Failed/Interrupted on first load",
+    "terminal row still present after rail return and reload",
+    "QA_REPLAY_PROBE text-delta rendered, proving the replayed frames reached this session's conversation"
+  ],
+  "mechanism": "Reattached /api/wr/runtime-events stream replays tool-start/tool-input; a fresh client-presentation projection has no terminal memory and re-mints the stored part id (seqId = 000000_<callID>) with status running; upsertChatParts replaces the stored error part unconditionally — no state-rank guard like mergeChatPart — so the row renders Running with an increasing timer until a later canonical refetch reverts it.",
+  "visual_verified": true,
+  "visual_scope": "Post-replay screenshot and 131-frame-style DOM sampling: row text 'RunningRunningsleep 60; printf interrupted-command' with the elapsed timer advancing 0s→7s over an 8s window.",
+  "command": "CLAXEDO_E2E_AUTH_MODE=local-unsigned CLAXEDO_E2E_SERVE_MODE=build-preview CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-harness-rendering-matrix.spec.ts --grep 'stays interrupted when rail-return' --workers=1 --retries=0 --trace on"
+}

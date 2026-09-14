@@ -16,7 +16,6 @@
  * rather than a runtime flag.
  */
 
-// ── Embedded Workspace Runtime lifecycle ────────────────────────────────────
 export {
   configureEmbeddedWorkspaceRuntime,
   embeddedWorkspaceRuntimeSessionAuthority,
@@ -30,11 +29,9 @@ export {
   verifyEmbeddedRuntimeCredential,
 } from "./deployments/local/embedded-workspace-runtime"
 
-// ── Local credential authority ──────────────────────────────────────────────
 export { createLocalCredentialBroker } from "./credentials/broker"
 export type { LocalCredentialBroker } from "./credentials/broker"
 
-// ── Local route surface ─────────────────────────────────────────────────────
 export { AgentConfigRoutes } from "./agent-config/routes/index"
 export { SessionMetaRoutes } from "./session/routes/meta-routes"
 export { LocalWorkspaceRoutes } from "./workspace/routes/resolve-route"
@@ -56,7 +53,6 @@ export { createUsageOutboxSync, type UsageOutboxSync } from "./usage/outbox-sync
 export { LocalUsageRoutes, UsageRoutes, type UsageLedger } from "@claxedo/server-core/usage/routes"
 export { createUsageQuotaReader } from "@claxedo/server-core/usage/quota"
 
-// ── Local execution services ────────────────────────────────────────────────
 export {
   provisionRegisteredWorktree,
   releaseRegisteredWorktree,

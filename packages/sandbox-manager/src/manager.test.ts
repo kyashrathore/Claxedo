@@ -1063,12 +1063,10 @@ describe("sandbox manager", () => {
   test("brokered secrets are passed through for a native driver", async () => {
     const driver = fakeDriver({ metadata: { secretBrokering: "native" } as never })
     const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
-    const result = await manager.ensure("ws_1", {
-      homeRegion: "us-east",
-      secrets: [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"], header: "Authorization" }],
-    })
+    const secrets = [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"], header: "Authorization" }]
+    const result = await manager.ensure("ws_1", { homeRegion: "us-east", secrets })
     expect(result.status).toBe("ready")
-    expect(driver.ensureHost).toHaveBeenCalled()
+    expect(driver.ensureHost).toHaveBeenCalledWith(expect.objectContaining({ secrets }))
   })
 
   test("the placeholder a header-injecting driver puts in the sandbox is named, not valued", () => {

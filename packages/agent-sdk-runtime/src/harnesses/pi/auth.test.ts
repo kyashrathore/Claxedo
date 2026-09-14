@@ -1,7 +1,7 @@
 import { expect, spyOn, test } from "bun:test"
 import fs from "node:fs/promises"
 import path from "node:path"
-import { retainPiAuth, writePiAuth } from "./auth"
+import { retainPiAuth } from "./auth"
 import { installFakePiRpc } from "../../test-utils/fake-pi-rpc.mjs"
 import { PiHarnessAdapter } from "./index"
 import { createMemoryRuntimeStore } from "../../stores/memory"
@@ -9,7 +9,7 @@ import { createMemoryRuntimeStore } from "../../stores/memory"
 test("a profile reacquired during cleanup serializes its new credential write after removal", async () => {
   const f = await installFakePiRpc()
   const a = retainPiAuth(f.agentDir)
-  const file = path.join(f.agentDir, "auth.json")
+  const file = path.join(f.agentDir, "models.json")
   const removing = Promise.withResolvers<void>()
   const gate = Promise.withResolvers<void>()
   const rm = fs.rm
@@ -22,14 +22,16 @@ test("a profile reacquired during cleanup serializes its new credential write af
   })
   let b: ReturnType<typeof retainPiAuth> | undefined
   try {
-    await a.write({ openai: { type: "api_key", key: "old" } })
+    await a.write({ openai: { baseUrl: "http://127.0.0.1:2595/bindings/old", apiKey: "old" } })
     const released = a.release()
     await removing.promise
     b = retainPiAuth(path.join(f.agentDir, "."))
-    const written = b.write({ openai: { type: "api_key", key: "new" } })
+    const written = b.write({ openai: { baseUrl: "http://127.0.0.1:2595/bindings/new", apiKey: "new" } })
     gate.resolve()
     await Promise.all([released, written])
-    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({ openai: { type: "api_key", key: "new" } })
+    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({
+      providers: { openai: { baseUrl: "http://127.0.0.1:2595/bindings/new", apiKey: "new" } },
+    })
     await b.release()
     expect(
       await fs.access(file).then(
@@ -53,13 +55,13 @@ test("a shared managed profile survives until its final adapter is disposed", as
   const a = create()
   const b = create()
   const config = { auth: {} }
-  const file = path.join(f.agentDir, "auth.json")
+  const file = path.join(f.agentDir, "models.json")
   try {
     await Promise.all([a.applyConfig(config), b.applyConfig(config)])
     await a.dispose()
     await a.dispose()
     await b.applyConfig(config)
-    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({})
+    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({ providers: {} })
     await b.dispose()
     expect(
       await fs.access(file).then(
@@ -75,7 +77,11 @@ test("a shared managed profile survives until its final adapter is disposed", as
 
 test("the first sync revokes a stale profile left on disk", async () => {
   const f = await installFakePiRpc()
-  await writePiAuth(f.agentDir, { openai: { type: "api_key", key: "stale" } })
+  await fs.mkdir(f.agentDir, { recursive: true })
+  await fs.writeFile(
+    path.join(f.agentDir, "auth.json"),
+    JSON.stringify({ openai: { type: "api_key", key: "stale" } }),
+  )
   const adapter = new PiHarnessAdapter({
     binary: f.binary,
     agentDir: f.agentDir,
@@ -119,6 +125,9 @@ test("a bound account reaches Pi as a models.json overlay and never as a key", a
       },
     })
     expect((await fs.stat(models)).mode & 0o777).toBe(0o600)
+    // A login Pi stored for itself resolves ahead of the overlay, so the
+    // profile's own credential file has to be empty for the placeholder to be
+    // the only credential the process can send.
     expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "auth.json"), "utf8"))).toEqual({})
 
     await adapter.createSession(f.agentDir)
@@ -186,7 +195,7 @@ test("every provider the broker binds reaches Pi at Pi's own base path", async (
 
     expect(JSON.parse(await fs.readFile(path.join(f.agentDir, "models.json"), "utf8"))).toEqual({
       providers: {
-        // Pi 0.85.0's own base URLs: `openrouter` speaks the Anthropic wire
+        // Pi 0.85.1's own base URLs: `openrouter` speaks the Anthropic wire
         // protocol under `/api` and appends `/v1/messages` itself, so the
         // binding's own API root would send it to `/api/v1/v1/messages`.
         openrouter: { baseUrl: "http://127.0.0.1:2595/bindings/7c2d/api", apiKey: "signed-placeholder" },
@@ -246,10 +255,10 @@ test("PI_CODING_AGENT_DIR names the profile when nothing scopes one, and it is s
     if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR
     else process.env.PI_CODING_AGENT_DIR = previous
   }
-  const file = path.join(f.agentDir, "auth.json")
+  const file = path.join(f.agentDir, "models.json")
   try {
     await adapter.applyConfig({ auth: {} })
-    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({})
+    expect(JSON.parse(await fs.readFile(file, "utf8"))).toEqual({ providers: {} })
     await adapter.dispose()
     expect(
       await fs.access(file).then(

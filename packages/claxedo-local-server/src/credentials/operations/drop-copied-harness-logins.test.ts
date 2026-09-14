@@ -13,7 +13,7 @@ process.env.CLAXEDO_DATA_DIR = root
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const {
   deleteCredential,
-  getCredential,
+  credentialById,
   listCredentials,
   putCredential,
   readSecretById,
@@ -38,15 +38,16 @@ afterAll(async () => {
   else process.env.CLAXEDO_DATA_DIR = previousDataDir
 })
 
-function scanned(providerId: string, extra: { account_id?: string } = {}) {
+function scanned(providerId: string, kind: "oauth_token" | "api_key" = "oauth_token") {
   return putCredential({
     provider_id: providerId,
-    kind: "oauth_token",
+    kind,
     source: "local_only",
     label: "Claude Code login · agent SDK",
-    secret: JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-copied" } }),
+    secret: kind === "oauth_token"
+      ? JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-copied" } })
+      : "sk-ant-scanned-key",
     consent: { at: 1, surface: "desktop_discovery" },
-    ...extra,
   })
 }
 
@@ -57,12 +58,27 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
 
     expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 1 })
 
-    expect(getCredential(copied.id)).toBeUndefined()
+    expect(credentialById(copied.id, { onOutage: "throw" })).toBeUndefined()
     expect(await readSecretById(copied.id)).toBeNull()
   })
 
-  test("an account the provider did name, and a key the user typed, are left alone", async () => {
-    const codex = await scanned("codex-app-server", { account_id: "acc_chatgpt" })
+  test("every harness binding a subscription token was copied into is reaped", async () => {
+    const claude = await scanned("claude-sdk")
+    const codex = await scanned("codex-app-server")
+
+    expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 2 })
+
+    expect(credentialById(claude.id, { onOutage: "throw" })).toBeUndefined()
+    expect(credentialById(codex.id, { onOutage: "throw" })).toBeUndefined()
+  })
+
+  test("a scanned API key, a scanned vendor token, and a key the user typed are left alone", async () => {
+    // The reaper takes harness logins. A key is material the user handed us on
+    // purpose, and a vendor binding is an engine's provider rather than a
+    // harness's own login — neither is a token a CLI rotates behind us.
+    const scannedKey = await scanned("claude-sdk", "api_key")
+    const vendorToken = await scanned("openrouter")
+    const harnessVendorToken = await scanned("anthropic")
     const typed = await putCredential({
       provider_id: "anthropic",
       kind: "api_key",
@@ -74,8 +90,10 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
 
     expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 0 })
 
-    expect(getCredential(codex.id)).toBeDefined()
-    expect(getCredential(typed.id)).toBeDefined()
+    expect(credentialById(scannedKey.id, { onOutage: "throw" })).toBeDefined()
+    expect(credentialById(vendorToken.id, { onOutage: "throw" })).toBeDefined()
+    expect(credentialById(harnessVendorToken.id, { onOutage: "throw" })).toBeDefined()
+    expect(credentialById(typed.id, { onOutage: "throw" })).toBeDefined()
   })
 
   test("the mark moves to an account the user chose rather than being left nowhere", async () => {
@@ -87,11 +105,11 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
       label: "work key",
       secret: "sk-ant-typed",
     })
-    expect(getCredential(copied.id)?.is_active).toBe(true)
+    expect(credentialById(copied.id, { onOutage: "throw" })?.is_active).toBe(true)
 
     await dropCopiedHarnessLogins()
 
-    expect(getCredential(typed.id)?.is_active).toBe(true)
+    expect(credentialById(typed.id, { onOutage: "throw" })?.is_active).toBe(true)
   })
 
   test("it runs once, so a login imported again on purpose is not reaped on the next boot", async () => {
@@ -101,6 +119,18 @@ describe("forgetting the harness logins an older Claxedo copied", () => {
     const reimported = await scanned("claude-sdk")
 
     expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 0 })
-    expect(getCredential(reimported.id)).toBeDefined()
+    expect(credentialById(reimported.id, { onOutage: "throw" })).toBeDefined()
+  })
+
+  test("a marker that cannot be written costs this boot's deletes rather than the next boot's rows", async () => {
+    const copied = await scanned("claude-sdk")
+    await fs.chmod(path.dirname(MARKER), 0o500)
+
+    try {
+      expect(await dropCopiedHarnessLogins()).toEqual({ dropped: 0 })
+      expect(credentialById(copied.id, { onOutage: "throw" })).toBeDefined()
+    } finally {
+      await fs.chmod(path.dirname(MARKER), 0o700)
+    }
   })
 })

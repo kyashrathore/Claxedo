@@ -96,7 +96,6 @@ describe.skipIf(!existsSync(realBinary))("real claude ACP boot", () => {
     await agent.saveUserConfig({
       version: 3,
       mcp: {},
-      auth: {},
       connections: {
         "real-claude-acp": {
           connectionId: "real-claude-acp",

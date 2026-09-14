@@ -18,7 +18,7 @@ import * as path from "node:path"
 import { isJsonRecord, jsonRecord, parseJsonRecord } from "../platform/runtime/lib/json"
 import { dataDir } from "../platform/runtime/lib/paths"
 import { listCustomProviders } from "./custom-provider"
-import { credentialOrg, requireCredentialRegistryLookup, type CredentialOrgScope } from "./registry"
+import { credentialByProvider, credentialOrg, PROVIDER_AUTH_KINDS, type CredentialOrgScope } from "./registry"
 
 const MODELS_DEV_URL = "https://models.dev/api.json"
 
@@ -189,7 +189,7 @@ function providerConnected(
   // OpenCode Zen is the house catalog: its models must be pickable without a
   // stored key. A provider that declares no env vars has the same bar.
   if (id === "opencode" || !(provider.env ?? []).length) return true
-  if (requireCredentialRegistryLookup(id, org)?.status === "available") return true
+  if (credentialByProvider(id, { onOutage: "throw", kind: PROVIDER_AUTH_KINDS }, org)?.status === "available") return true
   // models.dev names the environment variables a provider authenticates with;
   // an operator-supplied key counts as connected exactly as it does for the
   // harness-binding catalog.

@@ -17,8 +17,9 @@ import {
   type CredentialCheckOutcome,
 } from "@claxedo/server-core/credentials/operations/check"
 import { CredentialDiscoveryError } from "@claxedo/server-core/credentials/operations/discovery"
-import { MACHINE_LOGIN_HARNESSES } from "@claxedo/server-core/credentials/machine-login"
+import { HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import { machineLoginsWithUsage } from "@claxedo/server-core/credentials/machine-login-report"
+import { credentialReach } from "@claxedo/server-core/credentials/native-delivery"
 import type { MachineAgentUsageReader } from "@claxedo/server-core/credentials/machine-agent-usage"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
@@ -58,7 +59,7 @@ const saveDiscoveredBody = z.object({
   discovery_id: z.string().min(1),
   items: z.array(z.object({
     provider_id: z.string().min(1),
-    account_id: z.string().min(1).optional(),
+    kind: z.enum(["api_key", "oauth_token", "subscription_session", "sandbox_driver"]),
     scope: z.enum(["local", "shared"]),
   })),
 })
@@ -80,7 +81,7 @@ const activateBody = z.union([
   }).strict(),
 ])
 
-const machineLoginQuery = z.enum(MACHINE_LOGIN_HARNESSES)
+const machineLoginQuery = z.enum(HARNESS_IDS)
 
 function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialByProvider"]>>) {
   if (!cred) return null
@@ -108,6 +109,11 @@ function redact(cred: Awaited<ReturnType<ControlPlaneCredentials["getCredentialB
     updated_at: cred.updated_at,
     usage_windows: cred.usage_windows ?? null,
     usage_at: cred.usage_at ?? null,
+    // Where this account can actually be spent, from the delivery rules
+    // themselves. "Stored" is not the same fact: a ChatGPT subscription needs a
+    // companion header no provider edge can attach, so it is local-only however
+    // it was saved.
+    deliverable: credentialReach(cred),
   }
 }
 
@@ -188,6 +194,16 @@ export function CredentialRoutes(
   // so no handler can accidentally run unscoped.
   const orgs = new WeakMap<Request, string>()
   const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
+  /**
+   * One row, in the caller's org. Scoped before anything else runs: an
+   * out-of-org id must 404 before a secret is resolved or a provider is called
+   * on another org's key. A store with no id lookup answers from the list it
+   * can scope.
+   */
+  const findCredential = async (id: string, scope: string) =>
+    credentials.getCredential
+      ? await credentials.getCredential(id, scope)
+      : (await credentials.listCredentials(scope)).find((item) => item.id === id)
   const checkOptions = {
     ...(options.fetch ? { fetch: options.fetch } : {}),
     ...(options.now ? { now: options.now } : {}),
@@ -198,7 +214,10 @@ export function CredentialRoutes(
    * three different repairs, so they are three different status codes rather
    * than one failure.
    */
-  const checkAnswer = (id: string, outcome: CredentialCheckOutcome): readonly [unknown, 200 | 409 | 500 | 501 | 502] => {
+  const checkAnswer = (
+    id: string,
+    outcome: CredentialCheckOutcome,
+  ): readonly [Record<string, unknown>, 200 | 409 | 500 | 501 | 502] => {
     if (outcome.status === "unsupported") {
       return [errorBody("credential_verification_unavailable", "Credential verification is unavailable"), 501]
     }
@@ -366,11 +385,7 @@ export function CredentialRoutes(
     .post("/:id/verify", async (c) => {
       const id = c.req.param("id")
       const scope = org(c.req.raw)
-      // Scoped lookup FIRST: an out-of-org id must 404 here, before the secret
-      // is resolved or any provider round-trip is made on another org's key.
-      const credential = credentials.getCredential
-        ? await credentials.getCredential(id, scope)
-        : (await credentials.listCredentials(scope)).find((item) => item.id === id)
+      const credential = await findCredential(id, scope)
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
@@ -382,30 +397,30 @@ export function CredentialRoutes(
       if (!body.success) return c.json(invalidBody(body.error), 400)
       const id = c.req.param("id")
       const scope = org(c.req.raw)
-      const credential = credentials.getCredential
-        ? await credentials.getCredential(id, scope)
-        : (await credentials.listCredentials(scope)).find((item) => item.id === id)
+      const credential = await findCredential(id, scope)
       if (!credential) {
         return c.json(errorBody("credential_not_found", "Credential not found"), 404)
       }
       if (!credentials.updateCredentialSecret || !credentials.updateCredentialHealth) {
         return c.json(errorBody("credential_reconnect_unavailable", "This host cannot replace stored credential material"), 501)
       }
-      if (!await credentials.updateCredentialSecret(id, body.data.secret, undefined, scope)) {
-        return c.json(errorBody("credential_not_found", "Credential not found"), 404)
+      const outcome = await checkCredential(credentials, credential, {
+        org: scope,
+        secret: body.data.secret,
+        replace: true,
+        ...checkOptions,
+      })
+      const [answer, status] = checkAnswer(id, outcome)
+      if (outcome.status === "checked" && outcome.stored === false) {
+        log.warn("Reconnect rejected by the provider; the stored account is unchanged", {
+          credential_id: id,
+          health: outcome.health,
+        })
       }
-      // The stored expiry described the material that was just replaced. Left
-      // in place it makes the verifier read a freshly pasted secret as stale,
-      // which for an API key — nothing to refresh with — answers "expired".
-      const [answer, status] = checkAnswer(
-        id,
-        await checkCredential(credentials, { ...credential, expires_at: null }, {
-          org: scope,
-          secret: body.data.secret,
-          ...checkOptions,
-        }),
+      return c.json(
+        outcome.status === "checked" ? { ...answer, stored: outcome.stored === true } : answer,
+        status,
       )
-      return c.json(answer, status)
     })
     .post("/activate", async (c) => {
       const body = activateBody.safeParse(await c.req.json().catch(() => null))

@@ -1,5 +1,6 @@
 import fs from "fs"
 import path from "path"
+import { accountIdFromClaims } from "@claxedo/agent-runtime-contract"
 import type { FetchLike } from "../../adapter-contract"
 import { asRecord } from "@claxedo/helpers/guards"
 import { text, type JsonRecord } from "../shared/sdk-runtime-adapter"
@@ -156,23 +157,5 @@ export async function refreshCodexChatgptAuth(input: {
       chatgptAccountId: tokens.accountId,
       chatgptPlanType: tokens.planType ?? null,
     },
-  }
-}
-
-export function accountIdFromClaims(input: JsonRecord | undefined) {
-  return accountIdFromJwt(text(input?.id_token) ?? text(asRecord(input?.tokens)?.id_token))
-    ?? accountIdFromJwt(text(input?.access_token) ?? text(input?.access) ?? text(asRecord(input?.tokens)?.access_token))
-}
-
-function accountIdFromJwt(token: string | undefined): string | undefined {
-  if (!token) return undefined
-  const payload = token.split(".")[1]
-  if (!payload) return undefined
-  try {
-    const claims = asRecord(JSON.parse(Buffer.from(payload, "base64url").toString("utf8")))
-    const openai = asRecord(claims?.["https://api.openai.com/auth"])
-    return text(claims?.chatgpt_account_id) ?? text(openai?.chatgpt_account_id)
-  } catch {
-    return undefined
   }
 }

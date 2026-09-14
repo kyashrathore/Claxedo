@@ -30,12 +30,8 @@ export async function probeDiscoveredCredential(
     kind: item.kind,
     source: item.source,
     label: item.label,
-    account_id: item.account_id ?? null,
     status: "available",
-    // A discovered item carries no saved expiry; `fresh_until` is what the
-    // collector believes. Passing it lets a stale-but-refreshable Codex token
-    // renew during the probe exactly as it would after saving.
-    expires_at: item.fresh_until ?? null,
+    expires_at: null,
     created_at: at,
     updated_at: at,
     revision: 1,

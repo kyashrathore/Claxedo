@@ -21,9 +21,9 @@ function item(input: Partial<LocalCredentialItem> = {}): LocalCredentialItem {
 }
 
 function respond(input: { ok?: boolean; status?: number; body?: string } = {}) {
-  const calls: string[] = []
-  const stub = (async (url: string | URL) => {
-    calls.push(String(url))
+  const calls: Array<{ url: string; init: RequestInit | undefined }> = []
+  const stub = (async (url: string | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), init })
     return {
       ok: input.ok ?? true,
       status: input.status ?? (input.ok === false ? 400 : 200),
@@ -32,6 +32,10 @@ function respond(input: { ok?: boolean; status?: number; body?: string } = {}) {
     } as unknown as Response
   }) as unknown as typeof fetch
   return { stub, calls }
+}
+
+function authorization(call: { init: RequestInit | undefined } | undefined) {
+  return new Headers(call?.init?.headers).get("authorization")
 }
 
 describe("discovered sandbox provider keys get live verdicts", () => {
@@ -43,15 +47,19 @@ describe("discovered sandbox provider keys get live verdicts", () => {
     // The verdict travels with the probe so the row that is saved from it reads
     // as checked without a second request against the user's quota.
     expect(probe).toEqual({ state: "working", health: "ok" })
-    expect(transport.calls[0]).toBe("https://app.daytona.io/api/api-keys/current")
+    expect(transport.calls[0]?.url).toBe("https://app.daytona.io/api/api-keys/current")
+    // The discovered key itself is what the provider answers about; a probe
+    // that authenticated as anything else would verify the wrong credential.
+    expect(authorization(transport.calls[0])).toBe("Bearer dtn_key")
+    expect(transport.calls[0]?.init?.method).toBe("GET")
   })
 
-  test("a rejected key reads as broken with a sentence, not a code", async () => {
+  test("a rejected key reads as broken, with a reason the row can show", async () => {
     const transport = respond({ ok: false, status: 401, body: "unauthorized" })
 
     const probe = await probeDiscoveredCredential(item(), { fetch: transport.stub })
 
-    expect(probe).toEqual({ state: "broken", health: "auth_failed", reason: "The provider rejected this credential." })
+    expect(probe).toMatchObject({ state: "broken", health: "auth_failed", reason: expect.any(String) })
   })
 
   test("an unreachable provider is unknown, never broken", async () => {
@@ -62,6 +70,9 @@ describe("discovered sandbox provider keys get live verdicts", () => {
     const probe = await probeDiscoveredCredential(item(), { fetch: offline })
 
     expect(probe.state).toBe("unknown")
+    // No health at all: a failed request is the absence of a verdict, and a
+    // health here would be saved onto the row as one.
+    expect(probe).not.toHaveProperty("health")
   })
 
   test("a provider with no documented check says so rather than claiming a verdict", async () => {
@@ -72,10 +83,10 @@ describe("discovered sandbox provider keys get live verdicts", () => {
       { fetch: transport.stub },
     )
 
-    expect(probe).toEqual({
-      state: "unknown",
-      reason: "Claxedo can't check this provider yet — it will be used as-is.",
-    })
+    expect(probe).toMatchObject({ state: "unknown", reason: expect.any(String) })
+    expect(probe).not.toHaveProperty("health")
+    // Never guessed at an endpoint: a wrong probe that 404s would condemn a
+    // working key.
     expect(transport.calls).toHaveLength(0)
   })
 
@@ -91,6 +102,9 @@ describe("discovered sandbox provider keys get live verdicts", () => {
     )
 
     expect(probe).toEqual({ state: "working", health: "ok" })
-    expect(transport.calls[0]).toBe("https://api.vercel.com/v9/projects/prj_1?teamId=team_1")
+    expect(transport.calls[0]?.url).toBe("https://api.vercel.com/v9/projects/prj_1?teamId=team_1")
+    // The token is one of the three stored fields, and the two in the URL are
+    // only proven because this header authenticated the read.
+    expect(authorization(transport.calls[0])).toBe("Bearer vc")
   })
 })

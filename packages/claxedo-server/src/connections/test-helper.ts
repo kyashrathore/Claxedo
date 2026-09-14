@@ -14,7 +14,7 @@ type CredentialRegistry = typeof import("@claxedo/server-core/credentials/regist
 export function registryCredentialsPort(registry: CredentialRegistry): ControlPlaneCredentials {
   return {
     listCredentials: async () => registry.listCredentials(),
-    getCredentialByProvider: async (providerId) => registry.getCredentialByProvider(providerId),
+    getCredentialByProvider: async (providerId) => registry.credentialByProvider(providerId, { onOutage: "empty" }),
     resolveCredentialSecret: (providerId) => registry.resolveSecret(providerId),
     // The status-independent re-verify seam. Omitting it used to be invisible:
     // the SQLite adapter implemented `readSecret` by repairing status instead,

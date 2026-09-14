@@ -410,6 +410,36 @@ describe("CodexHarnessAdapter", () => {
     expect(requests.find((request) => request.method === "thread/start")?.params?.modelProvider).toBe("broker")
   })
 
+  test("a renewed placeholder relaunches the app-server on it; the same one keeps the running process", async () => {
+    const fake = await makeFakeCodex({})
+    const brokeredHome = path.join(fake.dir, "brokered-home")
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+      codexHome: path.join(fake.dir, "operator-home"),
+      brokeredHome,
+    })
+
+    await adapter.applyConfig({ auth: { "codex-app-server": brokerProjection } })
+    await adapter.createSession(fake.dir)
+    expect(launchedHomes(fake.log)).toEqual([brokeredHome])
+
+    await adapter.applyConfig({ auth: { "codex-app-server": { ...brokerProjection } } })
+    await adapter.createSession(fake.dir)
+    expect(launchedHomes(fake.log)).toEqual([brokeredHome])
+
+    // A live process holds the placeholder it started with, and the broker
+    // stops answering that one when it is renewed.
+    await adapter.applyConfig({ auth: { "codex-app-server": { ...brokerProjection, placeholder: "renewed-placeholder" } } })
+    await adapter.createSession(fake.dir)
+    await adapter.dispose()
+
+    expect(launchedHomes(fake.log)).toEqual([brokeredHome, brokeredHome])
+    expect(fs.readFileSync(path.join(brokeredHome, "config.toml"), "utf8"))
+      .toContain('http_headers = { Authorization = "Bearer renewed-placeholder" }')
+  })
+
   test("an unavailable account fails the launch instead of falling back to the machine login", async () => {
     const fake = await makeFakeCodex({})
     const adapter = new CodexHarnessAdapter({

@@ -333,6 +333,7 @@ export function UsageDashboard() {
         >
           <QuotaLimitsView
             snapshot={data()?.quota.snapshot}
+            throttledUntil={data()?.quota.throttledUntil}
             error={data()?.quota.error}
             onCheck={refresh}
             busy={query.isFetching}

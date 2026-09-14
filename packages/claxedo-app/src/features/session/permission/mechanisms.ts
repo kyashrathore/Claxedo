@@ -1,5 +1,5 @@
 import type { BuiltinHarnessId, HarnessId } from "@/platform/identity/session-ref"
-import { harnessDisplayLabel } from "@/ui/harness-display"
+import { harnessDisplayLabel } from "@/platform/identity/harness-catalog"
 
 /**
  * How each harness is told about permissions.

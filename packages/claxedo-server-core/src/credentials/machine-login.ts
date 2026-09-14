@@ -1,7 +1,10 @@
 import { execFile, spawn } from "child_process"
+import { HARNESS_IDS, HARNESS_TABLE, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { jsonNumber, jsonRecord, jsonString, jsonText, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { createFreshCache } from "@claxedo/server-core/platform/runtime/lib/fresh-cache"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import type { CredentialUsageWindow } from "./operations/verify"
+import { clampPercent, codexWindowName, usageResetMs } from "./usage-windows"
+import type { CredentialUsageWindow } from "./types"
 
 const log = Log.create({ service: "credentials-machine-login" })
 
@@ -15,7 +18,7 @@ const log = Log.create({ service: "credentials-machine-login" })
  * use when we invoke it.
  */
 export type MachineLogin = {
-  harness: MachineLoginHarness
+  harness: HarnessId
   /** The registry provider ids this harness resolves its auth through. */
   providerIds: readonly string[]
   /** Those of `providerIds` this login drives, where it does not drive them all. */
@@ -41,41 +44,6 @@ export type MachineLogin = {
  */
 export type MachineLoginState = "signed_in" | "signed_out" | "absent" | "unknown"
 
-export const MACHINE_LOGIN_HARNESSES = ["claude", "codex", "cursor"] as const
-export type MachineLoginHarness = (typeof MACHINE_LOGIN_HARNESSES)[number]
-
-export function isMachineLoginHarness(value: string): value is MachineLoginHarness {
-  return (MACHINE_LOGIN_HARNESSES as readonly string[]).includes(value)
-}
-
-export const MACHINE_LOGIN_PROVIDER_IDS: Record<MachineLoginHarness, readonly string[]> = {
-  claude: ["claude-acp", "claude-sdk"],
-  codex: ["codex-app-server", "openai"],
-  cursor: ["cursor-acp", "cursor-sdk"],
-}
-
-/**
- * The harness a stored row's provider belongs to, where one does. Every other
- * provider id names a vendor an engine can run rather than a harness's own
- * login, and has no harness to be listed under.
- */
-export function machineLoginHarnessFor(providerId: string): MachineLoginHarness | undefined {
-  return MACHINE_LOGIN_HARNESSES.find((harness) => MACHINE_LOGIN_PROVIDER_IDS[harness].includes(providerId))
-}
-
-/**
- * The bindings a machine login actually drives, for the harnesses where that is
- * narrower than the set they resolve auth through.
- *
- * `cursor-agent login` signs the CLI in, and Cursor ACP runs on it. The Cursor
- * SDK takes its key as an `Agent.create` argument and reads nothing from that
- * login, so it refuses a turn with `Cursor SDK requires an explicit cursor-sdk
- * API key` however signed in the CLI is.
- */
-const SERVED_PROVIDER_IDS: Partial<Record<MachineLoginHarness, readonly string[]>> = {
-  cursor: ["cursor-acp"],
-}
-
 /**
  * One command run, reduced to what a self-report needs.
  *
@@ -91,6 +59,28 @@ export type MachineLoginProbes = {
   codexAccount?: () => Promise<{ account: unknown; rateLimits: unknown }>
 }
 
+/**
+ * Every command this module runs, and there are no others.
+ *
+ * Each one asks a harness about the login it already holds: `claude auth
+ * status` and `cursor-agent status` print it, `codex login status` says whether
+ * there is one, and the Codex app-server answers `account/read` over its own
+ * protocol. Named here rather than inline at four call sites because the guard
+ * that keeps Claxedo out of the harnesses' own credential stores reads this
+ * value; a fifth command added inline would not be in it.
+ */
+export const MACHINE_LOGIN_COMMANDS = {
+  claudeStatus: ["claude", "auth", "status"],
+  codexStatus: ["codex", "login", "status"],
+  codexAppServer: ["codex", "app-server", "--listen", "stdio://"],
+  cursorStatus: ["cursor-agent", "status", "--format", "json"],
+} as const satisfies Record<string, readonly [string, ...string[]]>
+
+/** `[file, ...args]` as the runners take them. */
+function argv(command: readonly [string, ...string[]]) {
+  return [command[0], command.slice(1)] as const
+}
+
 const TIMEOUT_MS = 10_000
 
 const runCommand = (file: string, args: readonly string[]): Promise<MachineLoginRun> =>
@@ -100,9 +90,6 @@ const runCommand = (file: string, args: readonly string[]): Promise<MachineLogin
       resolve({ found: code !== "ENOENT", ok: !error, stdout, stderr })
     })
   })
-
-/** How long a harness's answer stands before it is asked again. */
-const FRESH_FOR_MS = 10_000
 
 export type MachineLoginRead = MachineLoginProbes & {
   /**
@@ -114,53 +101,18 @@ export type MachineLoginRead = MachineLoginProbes & {
 }
 
 /**
- * One read per harness at a time, and its answer for a short while after.
- *
  * Reading a harness costs a process — the Codex app-server takes about a
- * second — and the Settings section, the onboarding check and a row's Check can
- * all ask at once. Callers that arrive together share one read; a caller that
- * arrives just after one gets its answer rather than spawning the same binary
- * again. Its own clock and reader so the behaviour can be exercised without
- * spawning anything.
+ * second — and the Settings section, the onboarding check and a row's Check
+ * can all ask at once, so one read per harness serves every caller inside
+ * 10 seconds of it.
  */
-export function createMachineLoginCache(input: {
-  read: (harness: MachineLoginHarness) => Promise<MachineLogin>
-  now?: () => number
-  freshForMs?: number
-}) {
-  const now = input.now ?? Date.now
-  const freshForMs = input.freshForMs ?? FRESH_FOR_MS
-  const answers = new Map<MachineLoginHarness, { at: number; login: MachineLogin }>()
-  const asking = new Map<MachineLoginHarness, Promise<MachineLogin>>()
-  return {
-    read(harness: MachineLoginHarness, options: { fresh?: boolean } = {}): Promise<MachineLogin> {
-      const held = answers.get(harness)
-      if (!options.fresh && held && now() - held.at < freshForMs) return Promise.resolve(held.login)
-      // A read already in flight is joined even by a `fresh` caller: it was
-      // started no earlier than this call, so its answer is as new as one
-      // started now, and a second spawn of the same binary buys nothing.
-      const inFlight = asking.get(harness)
-      if (inFlight) return inFlight
-      const started = input.read(harness)
-        .then((login) => {
-          answers.set(harness, { at: now(), login })
-          return login
-        })
-        .finally(() => asking.delete(harness))
-      asking.set(harness, started)
-      return started
-    },
-    forget() {
-      answers.clear()
-      asking.clear()
-    },
-  }
-}
-
-const machineLogins = createMachineLoginCache({ read: (harness) => askHarness(harness, {}) })
+const machineLogins = createFreshCache<HarnessId, MachineLogin>({
+  read: (harness) => askHarness(harness, {}),
+  freshForMs: 10_000,
+})
 
 export async function readMachineLogins(
-  harnesses: readonly MachineLoginHarness[] = MACHINE_LOGIN_HARNESSES,
+  harnesses: readonly HarnessId[] = HARNESS_IDS,
   options: MachineLoginRead = {},
 ): Promise<MachineLogin[]> {
   // A caller with probes of its own is asking a question about those probes,
@@ -169,7 +121,7 @@ export async function readMachineLogins(
   return Promise.all(harnesses.map((harness) => machineLogins.read(harness, { fresh: options.fresh === true })))
 }
 
-function askHarness(harness: MachineLoginHarness, probes: MachineLoginProbes): Promise<MachineLogin> {
+function askHarness(harness: HarnessId, probes: MachineLoginProbes): Promise<MachineLogin> {
   const run = probes.run ?? runCommand
   if (harness === "claude") return claudeMachineLogin(run)
   if (harness === "codex") return codexMachineLogin(run, probes.codexAccount ?? codexAccountRead)
@@ -177,11 +129,12 @@ function askHarness(harness: MachineLoginHarness, probes: MachineLoginProbes): P
 }
 
 function report(
-  harness: MachineLoginHarness,
+  harness: HarnessId,
   rest: Omit<MachineLogin, "harness" | "providerIds" | "serves">,
 ): MachineLogin {
-  const serves = SERVED_PROVIDER_IDS[harness]
-  return { harness, providerIds: MACHINE_LOGIN_PROVIDER_IDS[harness], ...(serves ? { serves } : {}), ...rest }
+  const { providerIds, machineLoginServes } = HARNESS_TABLE[harness]
+  const narrowed = machineLoginServes.length < providerIds.length
+  return { harness, providerIds, ...(narrowed ? { serves: machineLoginServes } : {}), ...rest }
 }
 
 /**
@@ -190,7 +143,7 @@ function report(
  * never a quota window.
  */
 async function claudeMachineLogin(run: NonNullable<MachineLoginProbes["run"]>): Promise<MachineLogin> {
-  const result = await run("claude", ["auth", "status"])
+  const result = await run(...argv(MACHINE_LOGIN_COMMANDS.claudeStatus))
   if (!result.found) return report("claude", { state: "absent" })
   const status = parseJsonRecord(result.stdout)
   if (!status) {
@@ -226,7 +179,7 @@ async function codexMachineLogin(
   run: NonNullable<MachineLoginProbes["run"]>,
   account: NonNullable<MachineLoginProbes["codexAccount"]>,
 ): Promise<MachineLogin> {
-  const presence = await run("codex", ["login", "status"])
+  const presence = await run(...argv(MACHINE_LOGIN_COMMANDS.codexStatus))
   if (!presence.found) return report("codex", { state: "absent" })
   if (!presence.ok) {
     const said = `${presence.stdout}\n${presence.stderr ?? ""}`
@@ -254,7 +207,7 @@ async function codexMachineLogin(
 
 /** `cursor-agent status --format json` answers from the CLI's own store. */
 async function cursorMachineLogin(run: NonNullable<MachineLoginProbes["run"]>): Promise<MachineLogin> {
-  const result = await run("cursor-agent", ["status", "--format", "json"])
+  const result = await run(...argv(MACHINE_LOGIN_COMMANDS.cursorStatus))
   if (!result.found) return report("cursor", { state: "absent" })
   const status = parseJsonRecord(result.stdout)
   if (!status) {
@@ -263,15 +216,11 @@ async function cursorMachineLogin(run: NonNullable<MachineLoginProbes["run"]>): 
   return report("cursor", { state: status.isAuthenticated === true ? "signed_in" : "signed_out" })
 }
 
-const CODEX_SESSION_WINDOW_MINUTES = 300
-const CODEX_WEEKLY_WINDOW_MINUTES = 10_080
-
 /**
  * `rateLimits.primary` / `secondary` as the Codex app-server spells them, which
  * is not how the ChatGPT HTTP usage read spells the same quota: camelCase keys,
- * `windowDurationMins` rather than `limit_window_seconds`. A window is
- * named by `windowDurationMins`, not by its slot: a plan that has only a weekly
- * limit delivers it in the primary slot. `resetsAt` is Unix seconds.
+ * `windowDurationMins` rather than `limit_window_seconds`, and a slot named
+ * `primary` rather than `primary_window`.
  */
 function appServerUsageWindows(input: unknown): CredentialUsageWindow[] {
   const limits = jsonRecord(jsonRecord(input)?.rateLimits)
@@ -280,16 +229,10 @@ function appServerUsageWindows(input: unknown): CredentialUsageWindow[] {
     const used = jsonNumber(window?.usedPercent)
     if (!window || used === undefined) return []
     const minutes = jsonNumber(window.windowDurationMins)
-    const name = minutes === CODEX_SESSION_WINDOW_MINUTES
-      ? "session"
-      : minutes === CODEX_WEEKLY_WINDOW_MINUTES
-        ? "weekly"
-        : slot
-    const resetsAt = jsonNumber(window.resetsAt)
     return [{
-      window: name,
-      usedPercent: Math.min(100, Math.max(0, Math.round(used))),
-      resetsAt: resetsAt === undefined ? null : resetsAt * 1000,
+      window: codexWindowName(`${slot}_window`, minutes === undefined ? undefined : minutes * 60),
+      usedPercent: clampPercent(used),
+      resetsAt: usageResetMs(jsonNumber(window.resetsAt)),
     }]
   })
 }
@@ -303,7 +246,8 @@ function appServerUsageWindows(input: unknown): CredentialUsageWindow[] {
  * is the protocol's own — one JSON object per line on stdin and stdout.
  */
 async function codexAccountRead(): Promise<{ account: unknown; rateLimits: unknown }> {
-  const child = spawn("codex", ["app-server", "--listen", "stdio://"], { stdio: ["pipe", "pipe", "ignore"] })
+  const [file, args] = argv(MACHINE_LOGIN_COMMANDS.codexAppServer)
+  const child = spawn(file, [...args], { stdio: ["pipe", "pipe", "ignore"] })
   const pending = new Map<number, (message: Record<string, unknown>) => void>()
   let sequence = 0
   let buffer = ""

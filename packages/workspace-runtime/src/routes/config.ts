@@ -201,7 +201,7 @@ export function normalizeRuntimeSnapshot(
     || !isRecord(input.mcp)
     || !Array.isArray(input.connections)
   ) return undefined
-  const auth = providerProjectionRecord(input.auth, env)
+  const auth = providerProjectionRecord(input.auth, env, { onInvalid: "reject" })
   if (!auth) return undefined
   // Unknown fields are rejected rather than silently dropped: a producer that
   // sends a field this runtime does not model would otherwise believe it took.

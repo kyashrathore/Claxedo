@@ -11,7 +11,6 @@ export type IntegrationEntry = Readonly<{
 
 export type OpenCodeConfigurationPort = Readonly<{
   integrations(): Promise<readonly IntegrationEntry[]>
-  connectKey(input: { integrationID: string; key: string; label?: string }): Promise<void>
   removeCredential(credentialID: string): Promise<void>
 }>
 
@@ -46,13 +45,6 @@ export function createConfigurationPort(host: OpenCodeHost): OpenCodeConfigurati
           methods: arr(row.methods) ?? [],
           connections: projected,
         }
-      })
-    },
-    async connectKey(input) {
-      await (await host.client()).integration.connect.key({
-        integrationID: input.integrationID,
-        key: input.key,
-        ...(input.label ? { label: input.label } : {}),
       })
     },
     async removeCredential(credentialID) {

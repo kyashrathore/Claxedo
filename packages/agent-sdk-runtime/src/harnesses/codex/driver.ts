@@ -31,7 +31,6 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { providerProjectionRecord } from "../../provider-projection"
 import {
   CODEX_PERMISSION_MODES,
   CODEX_SETTINGS,
@@ -41,7 +40,9 @@ import {
 } from "../shared/permission-modes"
 import { requireCodexExecutable } from "./executable"
 import { CodexAppServerProcess } from "./app-server-process"
-import { CODEX_BROKER_PROVIDER, CodexBrokerProvider, codexAuthFailure, codexAuthValue } from "./broker"
+import { CODEX_BROKER_PROVIDER, CodexBrokerProvider, codexAuthFailure } from "./broker"
+import { harnessProjection } from "../../harness-projection"
+import { providerProjectionRecord } from "../../provider-projection"
 import { CodexOperatorLogin } from "./operator-login"
 import { codexPluginLaunch, type CodexPluginLaunch } from "./plugin-launch"
 import { codexConfigOptions, fetchCodexModels } from "./model-options"
@@ -140,11 +141,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   async applyConfig(config: Record<string, unknown>) {
     const nextPluginLaunch = codexPluginLaunch(config.launch)
     await this.applyPluginLaunch(nextPluginLaunch)
-    const auth = providerProjectionRecord(config.auth)
+    const auth = providerProjectionRecord(config.auth, {}, { onInvalid: "reject" })
     if (config.auth !== undefined && !auth) {
       throw new Error("codex harness received an auth map that is not provider projections")
     }
-    if (this.replaceAuth(codexAuthValue(auth))) await this.restartProcess()
+    if (this.replaceAuth(harnessProjection(auth, "codex"))) await this.restartProcess()
     this.currentMcp = resolvedMcpServers(config.mcp) ?? {}
     this.firstPartyMcp = firstPartyMcpProvider(config)
   }
@@ -210,8 +211,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       dynamicTools: CODEX_DYNAMIC_TOOLS,
       ...(input.system ? { developerInstructions: input.system } : {}),
       ...(model ? { model } : {}),
-      // The config already selects it; naming it here too is what the
-      // feasibility run proved a brokered thread starts under.
+      // Named here as well as in the config: the app-server starts a thread on
+      // its own default provider unless the start request says otherwise.
       ...(this.broker.selected ? { modelProvider: CODEX_BROKER_PROVIDER } : {}),
       ...this.threadConfig(input.sessionId),
     }).then((response) => asRecord(response) ?? {})

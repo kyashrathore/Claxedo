@@ -3,10 +3,14 @@
  * into bindings, mints the runtime identity those bindings belong to, and hands
  * the loopback broker its handler.
  *
- * A binding is derived, never stored. Its id is a hash of the runtime identity
- * and the credential id, so the same row under the same runtime always names the
- * same binding, and `resolve` reads the row's current secret at request time —
- * which makes a rotation an ordinary registry write with nothing else to notify.
+ * A binding names a provider under a workspace, never an account: its id is a
+ * hash of (org, workspace, provider), so its URL survives every account switch
+ * and every rotation, and `resolve` reads whichever row carries the mark at
+ * request time. The Cursor SDK freezes the URL at first import, so a URL that
+ * moved with the account would send every later turn to a binding the
+ * placeholder does not name. What moves instead is the lease generation: a
+ * switch bumps it, refusing the placeholder minted for the previous account
+ * until the next projection mints one for the new one.
  * The local server process holds the value; the harness process never does.
  */
 
@@ -25,11 +29,10 @@ import {
 } from "@claxedo/egress-broker"
 import type { ProviderProjectionSource } from "@claxedo/workspace-runtime/config"
 import {
-  credentialUnavailableForScope,
   markCredentialUsed,
   readSecretById,
-  requireActiveCredentialsForScope,
-  requireCredential,
+  activeCredentialsForScope,
+  credentialById,
   updateCredentialHealth,
   SINGLE_TENANT_ORG,
 } from "@claxedo/server-core/credentials/registry"
@@ -49,7 +52,7 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 
 const log = Log.create({ service: "credentials-broker" })
 
-export const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
+const BROKER_TOKEN_TTL_MS = 60 * 60 * 1000
 
 /**
  * How long one vendor refusal counts towards the next.
@@ -96,21 +99,24 @@ function loadSigningKey(dir: string): Uint8Array {
 }
 
 /**
- * A local workspace has no lease, so the boot counter is what makes one runtime
- * generation newer than the last: every placeholder a previous process minted
- * names a generation this one no longer answers for.
+ * The counter every lease generation this machine issues comes from: one on
+ * boot, one per account switch. Its stored value is the last one issued, so a
+ * new process starts past every placeholder an earlier one minted.
  *
  * A missing or unreadable counter is an unknown generation, not the first one.
  * Restarting at 1 re-issues generations that placeholders minted before the
  * loss already name, and those validate again; a wall-clock start is past every
  * generation this machine can have reached by counting.
  */
-function nextLeaseGeneration(dir: string): number {
+function openGenerationCounter(dir: string, now: () => number) {
   const file = path.join(dir, "broker-generation")
   const stored = fs.existsSync(file) ? Number.parseInt(fs.readFileSync(file, "utf8").trim(), 10) : Number.NaN
-  const next = Number.isSafeInteger(stored) && stored > 0 ? stored + 1 : Date.now()
-  fs.writeFileSync(file, String(next), { mode: 0o600 })
-  return next
+  let last = Number.isSafeInteger(stored) && stored > 0 ? stored : now() - 1
+  return function issue(): number {
+    last += 1
+    fs.writeFileSync(file, String(last), { mode: 0o600 })
+    return last
+  }
 }
 
 export type ProjectAuthInput = {
@@ -131,12 +137,14 @@ export type LocalCredentialBroker = {
   runtimeIdentity: (workspaceId: string, orgId?: string) => RuntimeIdentity
 }
 
-/** What a binding was minted against, so a request resolves from its id alone. */
+/** What a binding names, so a request resolves from its id alone. */
 type MintedBinding = {
-  credentialId: string
+  providerId: string
   workspaceId: string
   orgId: string
   scope: SecretScope
+  /** The row the placeholder now in the harness was minted for. */
+  credentialId: string
 }
 
 export function createLocalCredentialBroker(input: {
@@ -152,28 +160,28 @@ export function createLocalCredentialBroker(input: {
   const minted = new Map<string, MintedBinding>()
   const projected = new Set<string>()
   const usedAt = new Map<string, number>()
+  /** Leases moved past the boot generation by an account switch, by org and workspace. */
+  const leaseGenerations = new Map<string, number>()
 
   /**
-   * The key and generation, opened on first projection.
+   * The key and generation counter, opened on first projection.
    *
    * A data directory this process cannot write is a fault on the operator's
    * machine, and opening it at construction would take the whole server down
    * with the credential authority. Opened here, the same fault reaches them as
    * a provider that says it is unavailable and why.
    */
-  let opened: { signingKey: Uint8Array; leaseGeneration: number } | undefined
+  let opened: { signingKey: Uint8Array; bootGeneration: number; issueGeneration: () => number } | undefined
   function brokerState() {
     if (opened) return opened
-    try {
-      const dir = credentialsDir(input.dataDir)
-      opened = { signingKey: loadSigningKey(dir), leaseGeneration: nextLeaseGeneration(dir) }
-      return opened
-    } catch (error) {
-      // Not remembered: the fault is the operator's to fix, and a broker that
-      // holds the first failure for the life of the process leaves every
-      // account unavailable until the server is restarted.
-      throw error instanceof Error ? error : new Error(String(error))
-    }
+    const dir = credentialsDir(input.dataDir)
+    const issueGeneration = openGenerationCounter(dir, now)
+    opened = { signingKey: loadSigningKey(dir), bootGeneration: issueGeneration(), issueGeneration }
+    return opened
+  }
+
+  function leaseKey(orgId: string, workspaceId: string) {
+    return `${orgId}\n${workspaceId}`
   }
 
   /**
@@ -183,26 +191,33 @@ export function createLocalCredentialBroker(input: {
    * resolves a real tenant does not mint bindings in another one's name.
    */
   function runtimeIdentity(workspaceId: string, orgId = defaultOrg): RuntimeIdentity {
+    const state = brokerState()
     return {
       userId: "operator",
       orgId,
       workspaceId,
       leaseId: `local:${workspaceId}`,
-      leaseGeneration: brokerState().leaseGeneration,
+      leaseGeneration: leaseGenerations.get(leaseKey(orgId, workspaceId)) ?? state.bootGeneration,
       runtimeId: `embedded:${workspaceId}`,
     }
   }
 
-  function bindingId(identity: RuntimeIdentity, credentialId: string) {
-    return createHash("sha256").update([
-      identity.userId,
-      identity.orgId,
-      identity.workspaceId,
-      identity.leaseId,
-      String(identity.leaseGeneration),
-      identity.runtimeId,
-      credentialId,
-    ].join(" ")).digest("hex").slice(0, 32)
+  function bindingId(orgId: string, workspaceId: string, providerId: string) {
+    return createHash("sha256").update(["operator", orgId, workspaceId, providerId].join(" ")).digest("hex").slice(0, 32)
+  }
+
+  /**
+   * A placeholder is minted for one account and must not spend the next. The
+   * binding's URL cannot change, so the lease moves on instead: every
+   * placeholder the workspace holds names the old generation and is refused
+   * until the next projection re-mints them.
+   */
+  function bindCurrentAccount(id: string, entry: MintedBinding, credential: CredentialMetadata) {
+    if (entry.credentialId === credential.id) return false
+    entry.credentialId = credential.id
+    usedAt.delete(id)
+    leaseGenerations.set(leaseKey(entry.orgId, entry.workspaceId), brokerState().issueGeneration())
+    return true
   }
 
   /**
@@ -212,7 +227,7 @@ export function createLocalCredentialBroker(input: {
    * running on the machine's own login.
    */
   function selectedCredentials(scope: SecretScope, org: string) {
-    return requireActiveCredentialsForScope(scope, org)
+    return activeCredentialsForScope(scope, { onOutage: "throw" }, org)
       .map((row) => hasProviderDestination(row.credential.provider_id)
         ? row
         : { credential: row.credential, unavailable: row.unavailable ?? "no_destination" })
@@ -229,13 +244,14 @@ export function createLocalCredentialBroker(input: {
   }
 
   function binding(
+    id: string,
     identity: RuntimeIdentity,
     credential: CredentialMetadata,
     destination: ProviderDestination,
   ): Binding {
     return {
       ...identity,
-      id: bindingId(identity, credential.id),
+      id,
       credentialId: credential.id,
       revision: credential.revision,
       status: "active",
@@ -248,38 +264,43 @@ export function createLocalCredentialBroker(input: {
     }
   }
 
-  /**
-   * A turn outlives the operator's choice of account. Re-marking one account
-   * while another is mid-turn must not kill that turn, so a request resolves
-   * against the credential its own binding names rather than against whichever
-   * row currently carries the mark; the next projection is what moves the
-   * harness onto the new account. Withdrawal still stops the running turn — a
-   * revoked, expired or deleted account is one the operator wants unspent now.
-   */
   /** Consecutive vendor refusals per credential, by the org its binding names. */
   const refusals = new Map<string, { revision: number; count: number; at: number }>()
 
   const authority: BindingAuthority = {
+    /**
+     * Resolves against whichever row carries the mark now, so a switch the
+     * harness has not been re-projected for is caught here: the binding comes
+     * back under the moved-on generation and the old placeholder is refused
+     * rather than spending the account the operator just chose. Withdrawal
+     * stops the running turn the same way — a revoked, expired or deleted
+     * account is one the operator wants unspent now.
+     */
     async resolve(id) {
       const entry = minted.get(id)
       if (!entry) return undefined
-      const credential = requireCredential(entry.credentialId, entry.orgId)
-      if (!credential || credentialUnavailableForScope(credential, entry.scope)) return undefined
-      const destination = await destinationFor(credential, entry.orgId)
+      const row = selectedCredentials(entry.scope, entry.orgId)
+        .find((candidate) => candidate.credential.provider_id === entry.providerId)
+      if (!row || row.unavailable) return undefined
+      const destination = await destinationFor(row.credential, entry.orgId)
       if (!destination) return undefined
-      const at = now()
-      if (at - (usedAt.get(id) ?? 0) >= USE_MARK_INTERVAL_MS) {
-        usedAt.set(id, at)
-        markCredentialUsed(credential.id, at, entry.orgId)
-      }
+      bindCurrentAccount(id, entry, row.credential)
       return {
-        binding: binding(runtimeIdentity(entry.workspaceId, entry.orgId), credential, destination),
+        binding: binding(id, runtimeIdentity(entry.workspaceId, entry.orgId), row.credential, destination),
         value: destination.value,
       }
     },
     async currentRuntime(identity) {
-      return projected.has(`${identity.orgId}\n${identity.workspaceId}`)
+      return projected.has(leaseKey(identity.orgId, identity.workspaceId))
         && sameRuntime(runtimeIdentity(identity.workspaceId, identity.orgId), identity)
+    },
+    async markUsed(id) {
+      const entry = minted.get(id)
+      if (!entry) return
+      const at = now()
+      if (at - (usedAt.get(id) ?? 0) < USE_MARK_INTERVAL_MS) return
+      usedAt.set(id, at)
+      markCredentialUsed(entry.credentialId, at, entry.orgId)
     },
     /**
      * One vendor 401 does not take an account off its provider.
@@ -298,7 +319,7 @@ export function createLocalCredentialBroker(input: {
       // The org the binding was minted in. Read in the default one instead,
       // another tenant's row is never found and its 401 marks nothing.
       const org = minted.get(bindingId)?.orgId ?? defaultOrg
-      const credential = requireCredential(credentialId, org)
+      const credential = credentialById(credentialId, { onOutage: "throw" }, org)
       // The revision the request used. A 401 for a value that has since been
       // rotated says nothing about the one stored now.
       if (!credential || credential.revision !== revision) return
@@ -364,7 +385,7 @@ export function createLocalCredentialBroker(input: {
       }
       const selection = selectedCredentials(scope, org)
       const rows: Record<string, ProviderProjectionSource> = {}
-      let state: { signingKey: Uint8Array; leaseGeneration: number }
+      let state: { signingKey: Uint8Array }
       try {
         state = brokerState()
       } catch (error) {
@@ -373,9 +394,8 @@ export function createLocalCredentialBroker(input: {
         }
         return rows
       }
-      projected.add(`${org}\n${workspaceId}`)
-      const identity = runtimeIdentity(workspaceId, org)
-      const expiresAt = now() + BROKER_TOKEN_TTL_MS
+      projected.add(leaseKey(org, workspaceId))
+      const bindable: { id: string; credential: CredentialMetadata; destination: ProviderDestination }[] = []
       for (const { credential, unavailable } of selection) {
         // A marked account that cannot be bound is reported, never dropped: the
         // harness has to refuse the turn rather than run on the machine's login.
@@ -388,8 +408,17 @@ export function createLocalCredentialBroker(input: {
           rows[credential.provider_id] = { unavailable: true, reason: "unreadable_secret" }
           continue
         }
-        const id = bindingId(identity, credential.id)
-        minted.set(id, { credentialId: credential.id, workspaceId, orgId: org, scope })
+        const id = bindingId(org, workspaceId, credential.provider_id)
+        const entry = minted.get(id)
+        if (entry) bindCurrentAccount(id, entry, credential)
+        else minted.set(id, { providerId: credential.provider_id, workspaceId, orgId: org, scope, credentialId: credential.id })
+        bindable.push({ id, credential, destination })
+      }
+      // Read after every switch above has moved the lease on, so one projection
+      // mints every placeholder under the same generation.
+      const identity = runtimeIdentity(workspaceId, org)
+      const expiresAt = now() + BROKER_TOKEN_TTL_MS
+      for (const { id, credential, destination } of bindable) {
         rows[credential.provider_id] = {
           baseUrl: bindingBaseUrl(input.brokerOrigin, id),
           placeholder: await mintRuntimeToken({ ...identity, bindingIds: [id], expiresAt }, state.signingKey, now()),

@@ -113,10 +113,10 @@ export const localServer: Policy = {
   // +1 module / +1 package: `credentials/broker.ts` and @claxedo/egress-broker,
   // the loopback credential broker this composition mounts at `/bindings/*` and
   // the authority behind it. The package is the broker's request policy,
-  // injection and runtime-token verification; it reaches only `jose` and
-  // `@hono/node-server`, both already in this closure. It belongs to this
-  // product because the desktop-local server is the process that holds the
-  // credential value and the harness never does.
+  // injection, mount gate and runtime-token verification; it reaches `jose`,
+  // `@hono/node-server` and @claxedo/agent-runtime-contract, all already in
+  // this closure. It belongs to this product because the desktop-local server
+  // is the process that holds the credential value and the harness never does.
   // The table naming each provider's vendor host, allowed methods and paths
   // and header shape is a fact about the vendor rather than about this
   // machine, so it is owned by server-core, where the cloud delivery adapter
@@ -143,8 +143,14 @@ export const localServer: Policy = {
   // written by the activation routes in this same package — a second
   // resolution on the server side would be a second answer to the same
   // question. No new package edge.
-  // Full closure measured at 62 modules / 25 packages.
-  ceilings: { modules: 62, packages: 25 },
+  // +1 package: @claxedo/agent-runtime-contract, reviewed owner of the harness
+  // table (which provider ids each harness answers to, and which one a connect
+  // card signs in with) and of the credential-broker error vocabulary. The
+  // desktop server reads both — it serves the connect card and mounts the
+  // broker — and the package is data and pure functions with no dependencies
+  // of its own.
+  // Full closure measured at 62 modules / 26 packages.
+  ceilings: { modules: 62, packages: 26 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
@@ -177,7 +183,8 @@ export const localServer: Policy = {
       { packageDir: "packages/agent-sdk-runtime" },
       { packageDir: "packages/opencode-server-adapter" },
       // The loopback credential broker the desktop composition mounts; its
-      // published entry is dist-only and it has no @claxedo/* dependencies.
+      // published entry is dist-only and it bundles against
+      // @claxedo/agent-runtime-contract, built above it.
       { packageDir: "packages/egress-broker" },
       { packageDir: "packages/workspace-relay-protocol" },
       { packageDir: "packages/workspace-relay" },

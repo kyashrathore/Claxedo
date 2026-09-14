@@ -105,13 +105,6 @@ export interface UserAgentConfig {
   defaultConnectionId?: string
   /** Explicit native default; mutually exclusive with defaultConnectionId. */
   defaultHarness?: Extract<RuntimeHarnessSelection, { kind: "native" }>
-  /**
-   * Native provider id → credential material, in plaintext on disk. Retired as
-   * a delivery path — nothing reads it to run a harness — and kept only so
-   * `collectLocalCredentials` can still offer what an older install left here
-   * for import into the registry.
-   */
-  auth?: Record<string, string>
   sandbox_driver?: SandboxDriverConfig
 }
 
@@ -234,6 +227,23 @@ export function harnessConnectionRows(
 
 // ── User config (MCP servers) ──────────────────────────────────────────────
 
+/**
+ * The plaintext `auth` map an older config file still holds.
+ *
+ * Not part of `UserAgentConfig`: nothing runs a harness on it, and the loader
+ * drops the key. It is readable here for the one boot pass that drains it into
+ * the secret backend, after which `saveUserConfig` writes the file without it.
+ */
+export async function legacyPlaintextAuth(): Promise<Record<string, string>> {
+  const raw = await fs.promises.readFile(userConfigFile(), "utf-8").catch(() => undefined)
+  if (raw === undefined) return {}
+  try {
+    return stringRecord(asRecord(JSON.parse(raw))?.auth) ?? {}
+  } catch {
+    return {}
+  }
+}
+
 export async function loadUserConfig(): Promise<UserAgentConfig> {
   const raw = await fs.promises.readFile(userConfigFile(), "utf-8").catch((error: unknown) => {
     if (isNodeError(error, "ENOENT")) return undefined
@@ -314,10 +324,9 @@ async function migrateLegacyUserConfig(
     mcp: row.mcp ?? {},
     connections: {},
     ...(defaultHarness ? { defaultHarness } : {}),
-    auth: row.auth ?? {},
     sandbox_driver: row.sandbox_driver,
   })
-  const carried = new Set(["version", "mcp", "auth", "sandbox_driver", ...(defaultHarness ? ["harness"] : [])])
+  const carried = new Set(["version", "mcp", "sandbox_driver", ...(defaultHarness ? ["harness"] : [])])
   const dropped = Object.keys(row).filter((key) => !carried.has(key))
 
   const backup = path.join(claxedoDir(), `user-agent-config.legacy-v${legacyVersion}.json`)
@@ -353,7 +362,7 @@ function legacyNativeDefault(input: unknown): Extract<RuntimeHarnessSelection, {
 }
 
 function emptyUserAgentConfig(): UserAgentConfig {
-  return { version: 3, mcp: {}, connections: {}, auth: {}, sandbox_driver: {} }
+  return { version: 3, mcp: {}, connections: {}, sandbox_driver: {} }
 }
 
 function validateUserAgentConfig(input: unknown): UserAgentConfig {
@@ -365,6 +374,9 @@ function validateUserAgentConfig(input: unknown): UserAgentConfig {
     "connections",
     "defaultConnectionId",
     "defaultHarness",
+    // Accepted and dropped. Nothing reads plaintext `auth` any more, but an
+    // existing file on disk still carries it, and refusing the field takes the
+    // user's MCP servers and connections down with it.
     "auth",
     "sandbox_driver",
   ])
@@ -377,8 +389,6 @@ function validateUserAgentConfig(input: unknown): UserAgentConfig {
     throw invalidSchema(connections.problems.map((problem) =>
       `${problem.connectionId || "connections"}: ${problem.problem}`).join("; "))
   }
-  const auth = row.auth === undefined ? {} : stringRecord(row.auth)
-  if (!auth) throw invalidSchema("auth must be a string map")
   const defaultConnectionId = row.defaultConnectionId
   if (defaultConnectionId !== undefined && (typeof defaultConnectionId !== "string" || !isConnectionId(defaultConnectionId))) {
     throw invalidSchema("defaultConnectionId must be a valid connection id")
@@ -401,7 +411,6 @@ function validateUserAgentConfig(input: unknown): UserAgentConfig {
     connections: connections.accepted,
     ...(defaultConnectionId ? { defaultConnectionId } : {}),
     ...(defaultHarness ? { defaultHarness } : {}),
-    auth,
     sandbox_driver: sandboxDriverConfig({ sandbox_driver: row.sandbox_driver }),
   }
 }

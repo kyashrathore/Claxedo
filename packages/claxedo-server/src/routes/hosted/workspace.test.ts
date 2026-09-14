@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
@@ -102,13 +102,14 @@ function buildApp(opts: {
   authority?: ReturnType<typeof fakeAuthority>
   options?: Partial<HostedWorkspaceRouteOptions>
   sandboxManager?: SandboxManager
+  verifier?: ControlPlaneTokenVerifier
 }) {
   const authority = "authority" in opts ? opts.authority : fakeAuthority()
   const { services, capture } = fakeServices(authority)
   services.sandbox.sandboxManager = opts.sandboxManager
   const app = HostedWorkspaceRoutes(services, {
     authConfig,
-    verifier,
+    verifier: opts.verifier ?? verifier,
     relayUrl: "https://relay.test",
     runtimeAccessTokenSigner: ratSigner,
     hostTunnelTokenSigner: httSigner,
@@ -799,8 +800,8 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(waitUntil).toHaveBeenCalledTimes(1)
     await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
     expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ homeRegion: "us-east" }))
-    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId, userId: "user_1" })
-    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId, userId: "user_1" }, preparation)
+    expect(prepareRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId })
+    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId }, preparation)
     expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ secrets: [] }))
   })
 
@@ -827,7 +828,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
     const body = (await res.json()) as { workspaceId: string }
     await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
     expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ env: preparation.env }))
-    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId, userId: "user_1" }, preparation)
+    expect(provisionRuntime).toHaveBeenCalledWith({ workspaceId: body.workspaceId }, preparation)
   })
 
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {
@@ -969,5 +970,26 @@ describe("workspace shares (POST/DELETE /:id/shares)", () => {
     const targetless = await app.request(post("/ws_user/shares", { role: "viewer" }))
     expect(targetless.status).toBe(400)
     expect(grantWorkspaceShare).not.toHaveBeenCalled()
+  })
+})
+
+describe("bearer verification", () => {
+  test("a bearer the verifier rejects reaches no authority call", async () => {
+    // The shared fixture verifier accepts any token as its own subject, so
+    // every other test here proves routing under a caller that is always
+    // authentic. This is the one that proves the gate.
+    const authority = fakeAuthority()
+    const { app } = buildApp({
+      authority,
+      verifier: async (token, config) => {
+        if (token !== "user_1") throw new ControlPlaneAuthError(401, "invalid_bearer_token", "invalid")
+        return { mode: "signed" as const, user: { subject: token, tokenIdentifier: token, issuer: config.issuer } }
+      },
+    })
+
+    const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }, "forged"))
+
+    expect(res.status).toBe(401)
+    expect(authority.openWorkspace).not.toHaveBeenCalled()
   })
 })

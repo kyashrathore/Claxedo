@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import {
   activeHarness,
   desiredHarness,
-  HARNESS_DISPLAY_NAMES,
   decodeHarnessState,
   decodeSessionConfig,
   extractModelsFromConfigOptions,
@@ -14,6 +13,7 @@ import {
   optionsResponse,
   pickHarness,
 } from "./profile"
+import { NATIVE_HARNESS_IDS } from "@/platform/identity/harness-selection"
 
 describe("harness profile", () => {
   test("decodes explicit native and opaque connection identities", () => {
@@ -51,8 +51,9 @@ describe("harness profile", () => {
     })
   })
 
-  test("covers exactly the native display names without vendor-specific connection aliases", () => {
-    expect(HARNESS_DISPLAY_NAMES).toEqual({ claude: "Claude", codex: "Codex", cursor: "Cursor", pi: "Pi", opencode: "OpenCode" })
+  test("names every native harness as the product does, and title-cases an operator's own key", () => {
+    expect(NATIVE_HARNESS_IDS.map(harnessDisplayLabel))
+      .toEqual(["Claude Code", "Codex", "Cursor", "Pi", "OpenCode"])
     expect(harnessDisplayLabel("my-agent")).toBe("My Agent")
     expect(harnessDisplayLabel("acp:literal-id")).toBe("Acp:literal Id")
   })

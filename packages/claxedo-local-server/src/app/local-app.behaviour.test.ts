@@ -1,10 +1,10 @@
 import { CLAXEDO_MCP_TOOL_GROUP_IDS } from "@claxedo/mcp"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node:fs"
+import { mkdtempSync, mkdirSync, realpathSync, rmSync } from "node:fs"
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { Hono } from "hono"
+import { Hono, type Context, type Next } from "hono"
 import { customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { claxedoBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
@@ -20,6 +20,23 @@ import { createLocalCredentialBroker } from "../credentials/broker"
 import { providerProjection } from "@claxedo/agent-sdk-runtime"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
+
+/**
+ * What the workspace runtime proxy answers in place of a runtime, for the one
+ * test that needs it to answer at all. Creating a session in the embedded
+ * runtime resolves a harness adapter, which this fixture does not stand up.
+ */
+const runtimeAnswer = vi.hoisted(() => ({ current: undefined as ((request: Request) => Response | undefined) | undefined }))
+vi.mock("../workspace/runtime-dispatch/middleware", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../workspace/runtime-dispatch/middleware")>()
+  return {
+    ...actual,
+    createWorkspaceRuntimeProxy: (options?: Parameters<typeof actual.createWorkspaceRuntimeProxy>[0]) => {
+      const proxy = actual.createWorkspaceRuntimeProxy(options)
+      return (c: Context, next: Next) => runtimeAnswer.current?.(c.req.raw) ?? proxy(c, next)
+    },
+  }
+})
 
 /**
  * Request-level, because the route-inventory contract cannot see any of this.
@@ -86,7 +103,6 @@ function services(overrides: Record<string, unknown> = {}) {
 function app(overrides: Partial<LocalAppOptions> = {}) {
   return createLocalApp({
     services: services(),
-    isCredentialPath: (p) => p.startsWith("/api/claxedo/credentials"),
     corsOrigin: (origin) => origin,
     ...overrides,
   }).app
@@ -114,6 +130,17 @@ describe("local composition — CORS", () => {
 
     expect(response.headers.get("access-control-allow-origin")).toBeNull()
   })
+
+  test("withholds it from the broker's binding paths under the same rule", async () => {
+    // The broker spends the operator's stored key at the vendor, so an ACAO
+    // here would let a loopback page do the spending.
+    const response = await app({ egressBroker: async () => new Response(null, { status: 401 }) })
+      .request("http://127.0.0.1/bindings/b1/v1/messages", {
+        headers: { Origin: "http://localhost:4444" },
+      })
+
+    expect(response.headers.get("access-control-allow-origin")).toBeNull()
+  })
 })
 
 describe("local composition — credential routes", () => {
@@ -134,6 +161,38 @@ describe("local composition — credential routes", () => {
     const response = await app().request("http://localhost/api/claxedo/credentials", { method: "GET" })
 
     expect(response.status).toBe(200)
+  })
+
+  test("read the signed caller's own org, not the single-tenant partition", async () => {
+    // The composition's auth adapter is what resolves the tenant. Mounted
+    // without it, every signed caller is answered in `__local__` and sees
+    // another org's accounts.
+    process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
+    const listCredentials = vi.fn(async (_org: string) => [])
+    const instance = createLocalApp({
+      services: services({
+        auth: customVerifierAuthAdapter({
+          issuer: "https://idp.example.test",
+          verifier: async (token, config) => ({
+            mode: "signed" as const,
+            user: {
+              subject: token,
+              tokenIdentifier: `${config.issuer}|${token}`,
+              issuer: config.issuer,
+              orgId: "org-alpha",
+            },
+          }),
+        }),
+        credentials: { listCredentials },
+      }),
+    }).app
+
+    const response = await instance.request("http://localhost/api/claxedo/credentials", {
+      headers: { Authorization: "Bearer alpha-user" },
+    })
+
+    expect(response.status).toBe(200)
+    expect(listCredentials).toHaveBeenCalledWith("org-alpha")
   })
 })
 
@@ -405,25 +464,30 @@ describe("local composition — session inventory", () => {
 })
 
 describe("local composition — session metadata recording", () => {
-  test("wires the projection tap, ahead of the runtime proxy", () => {
-    // STRUCTURAL, not behavioural, and that is a compromise worth naming: the
-    // tap only fires on a 2xx from the proxied `/session`, which needs a live
-    // workspace and a harness transport this harness does not stand up. Its own
-    // behaviour is covered request-level in `session/session-meta-tap.test.ts`.
-    //
-    // What is checked here is the thing that actually broke: the first version
-    // of this composition omitted the tap entirely, and every request-level
-    // test above still passed, because the tap adds no route and answers
-    // nothing. Position matters equally — the runtime proxy ANSWERS `/session`,
-    // so a tap registered after it never sees the call and the session list
-    // silently stops filling.
-    const source = readFileSync(new URL("./local-app.ts", import.meta.url), "utf8")
-    const tap = source.indexOf("app.use(sessionMetaProjectionTap(")
-    const proxy = source.indexOf("app.use(createWorkspaceRuntimeProxy(")
+  afterEach(() => {
+    runtimeAnswer.current = undefined
+  })
 
-    expect(tap, "the composition must record local session metadata").toBeGreaterThan(-1)
-    expect(proxy, "the composition must mount the workspace runtime proxy").toBeGreaterThan(-1)
-    expect(tap, "the tap must be registered BEFORE the runtime proxy").toBeLessThan(proxy)
+  test("records the session the runtime proxy answers with", async () => {
+    // The proxy answers `POST /session` itself, so a tap registered after it
+    // never sees the response and the session list silently stops filling.
+    runtimeAnswer.current = (request) =>
+      request.method === "POST" && new URL(request.url).pathname === "/session"
+        ? Response.json({ id: "ses_1", title: "First", directory: "/work" })
+        : undefined
+    const composed = services()
+    const response = await app({ services: composed }).request("http://localhost/session?directory=%2Fwork", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    })
+
+    expect(response.status).toBe(200)
+    expect(composed.projectionStore.put_session_meta).toHaveBeenCalledTimes(1)
+    expect(composed.projectionStore.put_session_meta).toHaveBeenCalledWith("ses_1", expect.objectContaining({
+      title: "First",
+      directory: "/work",
+    }))
   })
 })
 

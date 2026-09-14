@@ -1,0 +1,332 @@
+{
+  "config": {
+    "argv": [
+      "/opt/homebrew/Cellar/node/26.8.1/bin/node",
+      "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/node_modules/.bin/playwright",
+      "test",
+      "--config",
+      "playwright.config.ts",
+      "e2e/playwright/real-harness-local.spec.ts",
+      "--grep",
+      "workspace Pi executes a provider-issued bash tool|Pi reports unsupported subagents",
+      "--project=chromium",
+      "--workers=1",
+      "--retries=0",
+      "--output=/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts",
+      "--reporter=line,json"
+    ],
+    "configFile": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/playwright.config.ts",
+    "rootDir": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e",
+        "testIgnore": [
+          "**/mobile-*.spec.ts",
+          "**/desktop-*.spec.ts",
+          "**/real-desktop-*.spec.ts"
+        ],
+        "testMatch": [
+          "**/*.spec.ts"
+        ],
+        "timeout": 60000
+      },
+      {
+        "outputDir": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "mobile",
+        "name": "mobile",
+        "testDir": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e",
+        "testIgnore": [
+          "**/desktop-*.spec.ts",
+          "**/real-desktop-*.spec.ts"
+        ],
+        "testMatch": [
+          "**/mobile-*.spec.ts"
+        ],
+        "timeout": 60000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "line"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.61.1",
+    "workers": 1,
+    "webServer": {
+      "command": "VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:14343 bun run serve:e2e -- build-preview 4471",
+      "url": "http://localhost:4471",
+      "reuseExistingServer": false,
+      "timeout": 600000
+    }
+  },
+  "suites": [
+    {
+      "title": "playwright/real-harness-local.spec.ts",
+      "file": "playwright/real-harness-local.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "real harness journeys @core @tier-real",
+          "file": "playwright/real-harness-local.spec.ts",
+          "line": 892,
+          "column": 6,
+          "specs": [
+            {
+              "title": "workspace Pi executes a provider-issued bash tool and persists its output",
+              "ok": false,
+              "tags": [
+                "core",
+                "tier-real"
+              ],
+              "tests": [
+                {
+                  "timeout": 240000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 24135,
+                      "error": {
+                        "message": "Error: assistant reply \"PI-BASH-1789365856706\" never appeared in a visible assistant-content slot\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-BASH-1789365856706' }).last()\nExpected: visible\nTimeout: 20000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - assistant reply \"PI-BASH-1789365856706\" never appeared in a visible assistant-content slot with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-BASH-1789365856706' }).last()\u001b[22m\n",
+                        "stack": "Error: assistant reply \"PI-BASH-1789365856706\" never appeared in a visible assistant-content slot\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-BASH-1789365856706' }).last()\nExpected: visible\nTimeout: 20000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - assistant reply \"PI-BASH-1789365856706\" never appeared in a visible assistant-content slot with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-BASH-1789365856706' }).last()\u001b[22m\n\n    at domTruth (/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts:77:112)\n    at expectAssistantReplyVisible (/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts:301:25)\n    at /Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/playwright/real-harness-local.spec.ts:1658:11",
+                        "location": {
+                          "file": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts",
+                          "column": 112,
+                          "line": 77
+                        },
+                        "snippet": "\u001b[90m   at \u001b[39mhelpers/turn-oracle.ts:77\n\n  75 | async function domTruth(page: Page, text: string | RegExp, timeout = 20_000): Promise<Locator> {\n  76 |   const visible = page.locator(SELECTORS.assistantContentVisible).filter({ hasText: text })\n> 77 |   await expect(visible.last(), `assistant reply \"${text}\" never appeared in a visible assistant-content slot`).toBeVisible({\n     |                                                                                                                ^\n  78 |     timeout,\n  79 |   })\n  80 |   return visible.last()"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts",
+                            "column": 112,
+                            "line": 77
+                          },
+                          "message": "Error: assistant reply \"PI-BASH-1789365856706\" never appeared in a visible assistant-content slot\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-BASH-1789365856706' }).last()\nExpected: visible\nTimeout: 20000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - assistant reply \"PI-BASH-1789365856706\" never appeared in a visible assistant-content slot with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-BASH-1789365856706' }).last()\u001b[22m\n\n\n   at helpers/turn-oracle.ts:77\n\n  75 | async function domTruth(page: Page, text: string | RegExp, timeout = 20_000): Promise<Locator> {\n  76 |   const visible = page.locator(SELECTORS.assistantContentVisible).filter({ hasText: text })\n> 77 |   await expect(visible.last(), `assistant reply \"${text}\" never appeared in a visible assistant-content slot`).toBeVisible({\n     |                                                                                                                ^\n  78 |     timeout,\n  79 |   })\n  80 |   return visible.last()\n    at domTruth (/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts:77:112)\n    at expectAssistantReplyVisible (/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts:301:25)\n    at /Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/playwright/real-harness-local.spec.ts:1658:11"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-09-14T06:04:12.465Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts/playwright-real-harness-lo-13b20-ool-and-persists-its-output-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "claxedo-server.log",
+                          "contentType": "text/plain",
+                          "body": "MjAyNi0wOS0xNFQwNjowNDoxNCBJTkZPICBvcGVuaW5nIGNsYXhlZG8gZGF0YWJhc2Ugc2VydmljZT1jbGF4ZWRvLWRiIHBhdGg9L3Zhci9mb2xkZXJzL3QyLzIzaG1xeTZqNDNqN2YzZmczbTcwZ3poaDAwMDBnbi9UL2NsYXhlZG8tdGllci1yZWFsLWhhcm5lc3MtbG9jYWwtblpkYTVBL2NsYXhlZG8uZGIKMjAyNi0wOS0xNFQwNjowNDoxNCBJTkZPICBhcHBsaWVkIGNsYXhlZG8gbWlncmF0aW9ucyBzZXJ2aWNlPWNsYXhlZG8tZGIgY291bnQ9NDQgbW9kZT1kZXYKKG5vZGU6NTgwMjcpIFtERVAwMjA1XSBEZXByZWNhdGlvbldhcm5pbmc6IGBtb2R1bGUucmVnaXN0ZXIoKWAgaXMgZGVwcmVjYXRlZC4gVXNlIGBtb2R1bGUucmVnaXN0ZXJIb29rcygpYCBpbnN0ZWFkLgooVXNlIGBub2RlIC0tdHJhY2UtZGVwcmVjYXRpb24gLi4uYCB0byBzaG93IHdoZXJlIHRoZSB3YXJuaW5nIHdhcyBjcmVhdGVkKQoyMDI2LTA5LTE0VDA2OjA0OjE0IElORk8gIFVzaW5nIGxvY2FsIGVuY3J5cHRlZCBzZWNyZXQgYmFja2VuZCBzZXJ2aWNlPWNyZWRlbnRpYWxzLXN0b3JlCjIwMjYtMDktMTRUMDY6MDQ6MTQgSU5GTyAgU2V0dGluZyB1cCBhZ2VudCBob29rcyBzZXJ2aWNlPWFnZW50LWhvb2tzIHBvcnQ9MTQzNDMgZm9yY2U9ZmFsc2UKMjAyNi0wOS0xNFQwNjowNDoxNCBJTkZPICBTZXR0aW5nIHVwIHN0YXR1cyBob29rcyBzZXJ2aWNlPWFnZW50LWhvb2tzLWNvcmUgcG9ydD0xNDM0MyBmb3JjZT1mYWxzZQpbY2xheGVkby1zZXJ2ZXJdIGxpc3RlbmluZyBvbiBodHRwOi8vMTI3LjAuMC4xOjE0MzQzCjIwMjYtMDktMTRUMDY6MDQ6MTQgSU5GTyAgQ3JlZGVudGlhbCBtaWdyYXRpb24gY29tcGxldGUgc2VydmljZT1jcmVkZW50aWFscy1taWdyYXRlIG1pZ3JhdGVkPVtdIGVycm9ycz1bXQoyMDI2LTA5LTE0VDA2OjA0OjE0IElORk8gIEFnZW50IGhvb2tzIHNldHVwIGNvbXBsZXRlIHNlcnZpY2U9YWdlbnQtaG9va3MgYmluRGlyPS92YXIvZm9sZGVycy90Mi8yM2htcXk2ajQzajdmM2ZnM203MGd6aGgwMDAwZ24vVC9jbGF4ZWRvLXRpZXItcmVhbC1oYXJuZXNzLWxvY2FsLW5aZGE1QS8ud29ya3NwYWNlLXJ1bnRpbWUvYmluCjIwMjYtMDktMTRUMDY6MDQ6MTQgSU5GTyAgQ3JlZGVudGlhbCBzdG9yZWQgc2VydmljZT1jcmVkZW50aWFscy1yZWdpc3RyeSBpZD05Yzc2MTU0NC1lZTNhLTQ0ZDItOTk0NC1jYjUxYmZmZTM4NzEgb3JnX2lkPV9fbG9jYWxfXyBwcm92aWRlcl9pZD1vcGVuYWkga2luZD1hcGlfa2V5CjIwMjYtMDktMTRUMDY6MDQ6MTQgSU5GTyAgU2F2ZWQgdXNlciBhZ2VudCBjb25maWcgc2VydmljZT1hZ2VudC1jb25maWcgbWNwU2VydmVycz1bXSBjb25uZWN0aW9ucz1bXQoyMDI2LTA5LTE0VDA2OjA0OjE0IElORk8gIFdvcmtzcGFjZSBzdG9yZWQgc2VydmljZT13b3Jrc3BhY2Utc3RvcmUgd29ya3NwYWNlSWQ9MjU0MTc5NWEtYjBkMy00NTkxLThiMzgtYWZhYzVjZWEwZTdkIGRpcmVjdG9yeT0vcHJpdmF0ZS92YXIvZm9sZGVycy90Mi8yM2htcXk2ajQzajdmM2ZnM203MGd6aGgwMDAwZ24vVC9jbGF4ZWRvLXRpZXItcmVhbC1waS1iYXNoLVFPd3RyNgoyMDI2LTA5LTE0VDA2OjA0OjE0IElORk8gIFNhdmVkIHVzZXIgYWdlbnQgY29uZmlnIHNlcnZpY2U9YWdlbnQtY29uZmlnIG1jcFNlcnZlcnM9W10gY29ubmVjdGlvbnM9W10KMjAyNi0wOS0xNFQwNjowNDoxOSBJTkZPICBubyBwcm9jZXNzIGNvbmZpZyBmaWxlIGZvdW5kIHNlcnZpY2U9cHJvY2VzcyBwYXRoPS9wcml2YXRlL3Zhci9mb2xkZXJzL3QyLzIzaG1xeTZqNDNqN2YzZmczbTcwZ3poaDAwMDBnbi9UL2NsYXhlZG8tdGllci1yZWFsLXBpLWJhc2gtUU93dHI2Ly53b3Jrc3BhY2UtcnVudGltZS9wcm9jZXNzZXMuanNvbmMKMjAyNi0wOS0xNFQwNjowNDoxOSBJTkZPICBjb25maWcgZGlyZWN0b3J5IGRvZXMgbm90IGV4aXN0LCBza2lwcGluZyB3YXRjaGVyIHNlcnZpY2U9cHJvY2VzcyBkaXI9L3ByaXZhdGUvdmFyL2ZvbGRlcnMvdDIvMjNobXF5Nmo0M2o3ZjNmZzNtNzBnemhoMDAwMGduL1QvY2xheGVkby10aWVyLXJlYWwtcGktYmFzaC1RT3d0cjYvLndvcmtzcGFjZS1ydW50aW1lCjIwMjYtMDktMTRUMDY6MDQ6MjAgSU5GTyAgVmVuZG9yIHJlZnVzZWQgYSBicm9rZXJlZCBjcmVkZW50aWFsIG9uY2U7IHdhaXRpbmcgZm9yIGEgc2Vjb25kIGJlZm9yZSBhY3Rpbmcgc2VydmljZT1jcmVkZW50aWFscy1icm9rZXIgY3JlZGVudGlhbF9pZD05Yzc2MTU0NC1lZTNhLTQ0ZDItOTk0NC1jYjUxYmZmZTM4NzEgcHJvdmlkZXJfaWQ9b3BlbmFpCg=="
+                        },
+                        {
+                          "name": "stored-session-messages.json",
+                          "contentType": "application/json",
+                          "body": "W3siaW5mbyI6eyJpZCI6Im1zZ18wOWU4NDMwZDYwMDEzdTJWUE84a2RwbkY0ZiIsInNlc3Npb25JRCI6IjFlMWQ0NWNkLTBhZDMtNGRjYi1hNmM0LTk5ZTQ5Zjk3MDFlNSIsInJvbGUiOiJ1c2VyIiwidGltZSI6eyJjcmVhdGVkIjoxNzg5MzY1ODYwMDQ0fSwiYWdlbnQiOiJidWlsZCIsIm1vZGVsIjp7InByb3ZpZGVySUQiOiJwaSIsIm1vZGVsSUQiOiJvcGVuYWkvZ3B0LTQifSwidmFyaWFudCI6Im1lZGl1bSJ9LCJwYXJ0cyI6W3siaWQiOiJwcnRfMDllODQzMGQ3MDAxTTZOWHE5MG9xVDVpanYiLCJzZXNzaW9uSUQiOiIxZTFkNDVjZC0wYWQzLTRkY2ItYTZjNC05OWU0OWY5NzAxZTUiLCJtZXNzYWdlSUQiOiJtc2dfMDllODQzMGQ2MDAxM3UyVlBPOGtkcG5GNGYiLCJ0eXBlIjoidGV4dCIsInRleHQiOiJSdW4gdGhlIGNvbW1hbmQsIHRoZW4gcmVwbHkgd2l0aCBleGFjdGx5IHRoaXMgb25lIHRva2VuIGFuZCBub3RoaW5nIGVsc2U6IFBJLUJBU0gtMTc4OTM2NTg1NjcwNiJ9XX0seyJpbmZvIjp7ImlkIjoibXNnXzA5ZTg0MzBkNjAwMTN1MlZQTzhrZHBuRjRmX3IiLCJzZXNzaW9uSUQiOiIxZTFkNDVjZC0wYWQzLTRkY2ItYTZjNC05OWU0OWY5NzAxZTUiLCJyb2xlIjoiYXNzaXN0YW50IiwidGltZSI6eyJjcmVhdGVkIjoxNzg5MzY1ODYwMDQ0LCJjb21wbGV0ZWQiOjE3ODkzNjU4NjA4OTB9LCJwYXJlbnRJRCI6Im1zZ18wOWU4NDMwZDYwMDEzdTJWUE84a2RwbkY0ZiIsIm1vZGVsSUQiOiJvcGVuYWkvZ3B0LTQiLCJwcm92aWRlcklEIjoicGkiLCJtb2RlIjoiYXV0byIsImFnZW50IjoiYnVpbGQiLCJwYXRoIjp7ImN3ZCI6Ii9wcml2YXRlL3Zhci9mb2xkZXJzL3QyLzIzaG1xeTZqNDNqN2YzZmczbTcwZ3poaDAwMDBnbi9UL2NsYXhlZG8tdGllci1yZWFsLXBpLWJhc2gtUU93dHI2Iiwicm9vdCI6Ii9wcml2YXRlL3Zhci9mb2xkZXJzL3QyLzIzaG1xeTZqNDNqN2YzZmczbTcwZ3poaDAwMDBnbi9UL2NsYXhlZG8tdGllci1yZWFsLXBpLWJhc2gtUU93dHI2In0sImNvc3QiOjAsInRva2VucyI6eyJpbnB1dCI6MCwib3V0cHV0IjowLCJyZWFzb25pbmciOjAsImNhY2hlIjp7InJlYWQiOjAsIndyaXRlIjowfX0sImVycm9yIjp7Im5hbWUiOiJVbmtub3duRXJyb3IiLCJkYXRhIjp7Im1lc3NhZ2UiOiJPcGVuQUkgQVBJIGVycm9yICg0MDEpOiB7XCJtZXNzYWdlXCI6XCJJbmNvcnJlY3QgQVBJIGtleSBwcm92aWRlZDogdGVzdC1rZXkuIFlvdSBjYW4gZmluZCB5b3VyIEFQSSBrZXkgYXQgaHR0cHM6Ly9wbGF0Zm9ybS5vcGVuYWkuY29tL2FjY291bnQvYXBpLWtleXMuXCIsXCJ0eXBlXCI6XCJpbnZhbGlkX3JlcXVlc3RfZXJyb3JcIixcInBhcmFtXCI6bnVsbCxcImNvZGVcIjpcImludmFsaWRfYXBpX2tleVwifSIsImZpcnN0VHVybkVycm9yQ2xhc3MiOiJjcmVkZW50aWFsIn19LCJ2YXJpYW50IjoibWVkaXVtIn0sInBhcnRzIjpbXX1d"
+                        },
+                        {
+                          "name": "scripted-model-requests.json",
+                          "contentType": "application/json",
+                          "body": "W10="
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts/playwright-real-harness-lo-13b20-ool-and-persists-its-output-chromium/video.webm"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts/playwright-real-harness-lo-13b20-ool-and-persists-its-output-chromium/error-context.md"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts/playwright-real-harness-lo-13b20-ool-and-persists-its-output-chromium/error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts/playwright-real-harness-lo-13b20-ool-and-persists-its-output-chromium/trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts",
+                        "column": 112,
+                        "line": 77
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "1d5687004a5649b3f419-12ea63497170d004bec2",
+              "file": "playwright/real-harness-local.spec.ts",
+              "line": 1647,
+              "column": 3
+            },
+            {
+              "title": "Pi reports unsupported subagents and rejects an unadvertised delegation tool",
+              "ok": false,
+              "tags": [
+                "core",
+                "tier-real"
+              ],
+              "tests": [
+                {
+                  "timeout": 240000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 23523,
+                      "error": {
+                        "message": "Error: assistant reply \"PI-UNSUPPORTED-1789365882247\" never appeared in a visible assistant-content slot\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-UNSUPPORTED-1789365882247' }).last()\nExpected: visible\nTimeout: 20000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - assistant reply \"PI-UNSUPPORTED-1789365882247\" never appeared in a visible assistant-content slot with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-UNSUPPORTED-1789365882247' }).last()\u001b[22m\n",
+                        "stack": "Error: assistant reply \"PI-UNSUPPORTED-1789365882247\" never appeared in a visible assistant-content slot\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-UNSUPPORTED-1789365882247' }).last()\nExpected: visible\nTimeout: 20000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - assistant reply \"PI-UNSUPPORTED-1789365882247\" never appeared in a visible assistant-content slot with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-UNSUPPORTED-1789365882247' }).last()\u001b[22m\n\n    at domTruth (/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts:77:112)\n    at expectAssistantReplyVisible (/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts:301:25)\n    at /Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/playwright/real-harness-local.spec.ts:1685:11",
+                        "location": {
+                          "file": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts",
+                          "column": 112,
+                          "line": 77
+                        },
+                        "snippet": "\u001b[90m   at \u001b[39mhelpers/turn-oracle.ts:77\n\n  75 | async function domTruth(page: Page, text: string | RegExp, timeout = 20_000): Promise<Locator> {\n  76 |   const visible = page.locator(SELECTORS.assistantContentVisible).filter({ hasText: text })\n> 77 |   await expect(visible.last(), `assistant reply \"${text}\" never appeared in a visible assistant-content slot`).toBeVisible({\n     |                                                                                                                ^\n  78 |     timeout,\n  79 |   })\n  80 |   return visible.last()"
+                      },
+                      "errors": [
+                        {
+                          "location": {
+                            "file": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts",
+                            "column": 112,
+                            "line": 77
+                          },
+                          "message": "Error: assistant reply \"PI-UNSUPPORTED-1789365882247\" never appeared in a visible assistant-content slot\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-UNSUPPORTED-1789365882247' }).last()\nExpected: visible\nTimeout: 20000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - assistant reply \"PI-UNSUPPORTED-1789365882247\" never appeared in a visible assistant-content slot with timeout 20000ms\u001b[22m\n\u001b[2m  - waiting for locator('[data-slot=\"session-turn-assistant-content\"]:not([aria-hidden=\"true\"])').filter({ hasText: 'PI-UNSUPPORTED-1789365882247' }).last()\u001b[22m\n\n\n   at helpers/turn-oracle.ts:77\n\n  75 | async function domTruth(page: Page, text: string | RegExp, timeout = 20_000): Promise<Locator> {\n  76 |   const visible = page.locator(SELECTORS.assistantContentVisible).filter({ hasText: text })\n> 77 |   await expect(visible.last(), `assistant reply \"${text}\" never appeared in a visible assistant-content slot`).toBeVisible({\n     |                                                                                                                ^\n  78 |     timeout,\n  79 |   })\n  80 |   return visible.last()\n    at domTruth (/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts:77:112)\n    at expectAssistantReplyVisible (/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts:301:25)\n    at /Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/playwright/real-harness-local.spec.ts:1685:11"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-09-14T06:04:39.267Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "screenshot",
+                          "contentType": "image/png",
+                          "path": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts/playwright-real-harness-lo-8465c-nadvertised-delegation-tool-chromium/test-failed-1.png"
+                        },
+                        {
+                          "name": "claxedo-server.log",
+                          "contentType": "text/plain",
+                          "body": "MjAyNi0wOS0xNFQwNjowNDo0MCBJTkZPICBvcGVuaW5nIGNsYXhlZG8gZGF0YWJhc2Ugc2VydmljZT1jbGF4ZWRvLWRiIHBhdGg9L3Zhci9mb2xkZXJzL3QyLzIzaG1xeTZqNDNqN2YzZmczbTcwZ3poaDAwMDBnbi9UL2NsYXhlZG8tdGllci1yZWFsLWhhcm5lc3MtbG9jYWwtUElvWHQ3L2NsYXhlZG8uZGIKMjAyNi0wOS0xNFQwNjowNDo0MCBJTkZPICBhcHBsaWVkIGNsYXhlZG8gbWlncmF0aW9ucyBzZXJ2aWNlPWNsYXhlZG8tZGIgY291bnQ9NDQgbW9kZT1kZXYKKG5vZGU6NTg2NDcpIFtERVAwMjA1XSBEZXByZWNhdGlvbldhcm5pbmc6IGBtb2R1bGUucmVnaXN0ZXIoKWAgaXMgZGVwcmVjYXRlZC4gVXNlIGBtb2R1bGUucmVnaXN0ZXJIb29rcygpYCBpbnN0ZWFkLgooVXNlIGBub2RlIC0tdHJhY2UtZGVwcmVjYXRpb24gLi4uYCB0byBzaG93IHdoZXJlIHRoZSB3YXJuaW5nIHdhcyBjcmVhdGVkKQoyMDI2LTA5LTE0VDA2OjA0OjQwIElORk8gIFVzaW5nIGxvY2FsIGVuY3J5cHRlZCBzZWNyZXQgYmFja2VuZCBzZXJ2aWNlPWNyZWRlbnRpYWxzLXN0b3JlCjIwMjYtMDktMTRUMDY6MDQ6NDAgSU5GTyAgU2V0dGluZyB1cCBhZ2VudCBob29rcyBzZXJ2aWNlPWFnZW50LWhvb2tzIHBvcnQ9MTQzNDMgZm9yY2U9ZmFsc2UKMjAyNi0wOS0xNFQwNjowNDo0MCBJTkZPICBTZXR0aW5nIHVwIHN0YXR1cyBob29rcyBzZXJ2aWNlPWFnZW50LWhvb2tzLWNvcmUgcG9ydD0xNDM0MyBmb3JjZT1mYWxzZQpbY2xheGVkby1zZXJ2ZXJdIGxpc3RlbmluZyBvbiBodHRwOi8vMTI3LjAuMC4xOjE0MzQzCjIwMjYtMDktMTRUMDY6MDQ6NDAgSU5GTyAgQ3JlZGVudGlhbCBtaWdyYXRpb24gY29tcGxldGUgc2VydmljZT1jcmVkZW50aWFscy1taWdyYXRlIG1pZ3JhdGVkPVtdIGVycm9ycz1bXQoyMDI2LTA5LTE0VDA2OjA0OjQwIElORk8gIEFnZW50IGhvb2tzIHNldHVwIGNvbXBsZXRlIHNlcnZpY2U9YWdlbnQtaG9va3MgYmluRGlyPS92YXIvZm9sZGVycy90Mi8yM2htcXk2ajQzajdmM2ZnM203MGd6aGgwMDAwZ24vVC9jbGF4ZWRvLXRpZXItcmVhbC1oYXJuZXNzLWxvY2FsLVBJb1h0Ny8ud29ya3NwYWNlLXJ1bnRpbWUvYmluCjIwMjYtMDktMTRUMDY6MDQ6NDAgSU5GTyAgQ3JlZGVudGlhbCBzdG9yZWQgc2VydmljZT1jcmVkZW50aWFscy1yZWdpc3RyeSBpZD0zMjQ2YTE1ZC1lMzljLTQ5NzMtOGNlNC1mNTQ2ZGFjMDdjYTkgb3JnX2lkPV9fbG9jYWxfXyBwcm92aWRlcl9pZD1vcGVuYWkga2luZD1hcGlfa2V5CjIwMjYtMDktMTRUMDY6MDQ6NDAgSU5GTyAgU2F2ZWQgdXNlciBhZ2VudCBjb25maWcgc2VydmljZT1hZ2VudC1jb25maWcgbWNwU2VydmVycz1bXSBjb25uZWN0aW9ucz1bXQoyMDI2LTA5LTE0VDA2OjA0OjQxIElORk8gIFdvcmtzcGFjZSBzdG9yZWQgc2VydmljZT13b3Jrc3BhY2Utc3RvcmUgd29ya3NwYWNlSWQ9YzllOWVmNGQtNTRhYi00MmI1LThiNmQtNGZhN2YxMDY1NDA2IGRpcmVjdG9yeT0vcHJpdmF0ZS92YXIvZm9sZGVycy90Mi8yM2htcXk2ajQzajdmM2ZnM203MGd6aGgwMDAwZ24vVC9jbGF4ZWRvLXRpZXItcmVhbC1waS1zdWJhZ2VudC1NakdVU3QKMjAyNi0wOS0xNFQwNjowNDo0MSBJTkZPICBTYXZlZCB1c2VyIGFnZW50IGNvbmZpZyBzZXJ2aWNlPWFnZW50LWNvbmZpZyBtY3BTZXJ2ZXJzPVtdIGNvbm5lY3Rpb25zPVtdCjIwMjYtMDktMTRUMDY6MDQ6NDQgSU5GTyAgbm8gcHJvY2VzcyBjb25maWcgZmlsZSBmb3VuZCBzZXJ2aWNlPXByb2Nlc3MgcGF0aD0vcHJpdmF0ZS92YXIvZm9sZGVycy90Mi8yM2htcXk2ajQzajdmM2ZnM203MGd6aGgwMDAwZ24vVC9jbGF4ZWRvLXRpZXItcmVhbC1waS1zdWJhZ2VudC1NakdVU3QvLndvcmtzcGFjZS1ydW50aW1lL3Byb2Nlc3Nlcy5qc29uYwoyMDI2LTA5LTE0VDA2OjA0OjQ0IElORk8gIGNvbmZpZyBkaXJlY3RvcnkgZG9lcyBub3QgZXhpc3QsIHNraXBwaW5nIHdhdGNoZXIgc2VydmljZT1wcm9jZXNzIGRpcj0vcHJpdmF0ZS92YXIvZm9sZGVycy90Mi8yM2htcXk2ajQzajdmM2ZnM203MGd6aGgwMDAwZ24vVC9jbGF4ZWRvLXRpZXItcmVhbC1waS1zdWJhZ2VudC1NakdVU3QvLndvcmtzcGFjZS1ydW50aW1lCjIwMjYtMDktMTRUMDY6MDQ6NDYgSU5GTyAgVmVuZG9yIHJlZnVzZWQgYSBicm9rZXJlZCBjcmVkZW50aWFsIG9uY2U7IHdhaXRpbmcgZm9yIGEgc2Vjb25kIGJlZm9yZSBhY3Rpbmcgc2VydmljZT1jcmVkZW50aWFscy1icm9rZXIgY3JlZGVudGlhbF9pZD0zMjQ2YTE1ZC1lMzljLTQ5NzMtOGNlNC1mNTQ2ZGFjMDdjYTkgcHJvdmlkZXJfaWQ9b3BlbmFpCg=="
+                        },
+                        {
+                          "name": "stored-session-messages.json",
+                          "contentType": "application/json",
+                          "body": "W3siaW5mbyI6eyJpZCI6Im1zZ18wOWU4NDk0NzcwMDF2Q3ZmaGR1MllxZFd6diIsInNlc3Npb25JRCI6ImQ3YWRlYTIwLTFhMTEtNGVmZC04YjEyLWVmZDFlYTJkNjQ2YiIsInJvbGUiOiJ1c2VyIiwidGltZSI6eyJjcmVhdGVkIjoxNzg5MzY1ODg1NTQ4fSwiYWdlbnQiOiJidWlsZCIsIm1vZGVsIjp7InByb3ZpZGVySUQiOiJwaSIsIm1vZGVsSUQiOiJvcGVuYWkvZ3B0LTQifSwidmFyaWFudCI6Im1lZGl1bSJ9LCJwYXJ0cyI6W3siaWQiOiJwcnRfMDllODQ5NDc4MDAxVE1UR1EyZEk4R1BNMlgiLCJzZXNzaW9uSUQiOiJkN2FkZWEyMC0xYTExLTRlZmQtOGIxMi1lZmQxZWEyZDY0NmIiLCJtZXNzYWdlSUQiOiJtc2dfMDllODQ5NDc3MDAxdkN2ZmhkdTJZcWRXenYiLCJ0eXBlIjoidGV4dCIsInRleHQiOiJSZXBseSB3aXRoIGV4YWN0bHkgdGhpcyBvbmUgdG9rZW46IFBJLVVOU1VQUE9SVEVELTE3ODkzNjU4ODIyNDcifV19LHsiaW5mbyI6eyJpZCI6Im1zZ18wOWU4NDk0NzcwMDF2Q3ZmaGR1MllxZFd6dl9yIiwic2Vzc2lvbklEIjoiZDdhZGVhMjAtMWExMS00ZWZkLThiMTItZWZkMWVhMmQ2NDZiIiwicm9sZSI6ImFzc2lzdGFudCIsInRpbWUiOnsiY3JlYXRlZCI6MTc4OTM2NTg4NTU0OCwiY29tcGxldGVkIjoxNzg5MzY1ODg2NjU0fSwicGFyZW50SUQiOiJtc2dfMDllODQ5NDc3MDAxdkN2ZmhkdTJZcWRXenYiLCJtb2RlbElEIjoib3BlbmFpL2dwdC00IiwicHJvdmlkZXJJRCI6InBpIiwibW9kZSI6ImF1dG8iLCJhZ2VudCI6ImJ1aWxkIiwicGF0aCI6eyJjd2QiOiIvcHJpdmF0ZS92YXIvZm9sZGVycy90Mi8yM2htcXk2ajQzajdmM2ZnM203MGd6aGgwMDAwZ24vVC9jbGF4ZWRvLXRpZXItcmVhbC1waS1zdWJhZ2VudC1NakdVU3QiLCJyb290IjoiL3ByaXZhdGUvdmFyL2ZvbGRlcnMvdDIvMjNobXF5Nmo0M2o3ZjNmZzNtNzBnemhoMDAwMGduL1QvY2xheGVkby10aWVyLXJlYWwtcGktc3ViYWdlbnQtTWpHVVN0In0sImNvc3QiOjAsInRva2VucyI6eyJpbnB1dCI6MCwib3V0cHV0IjowLCJyZWFzb25pbmciOjAsImNhY2hlIjp7InJlYWQiOjAsIndyaXRlIjowfX0sImVycm9yIjp7Im5hbWUiOiJVbmtub3duRXJyb3IiLCJkYXRhIjp7Im1lc3NhZ2UiOiJPcGVuQUkgQVBJIGVycm9yICg0MDEpOiB7XCJtZXNzYWdlXCI6XCJJbmNvcnJlY3QgQVBJIGtleSBwcm92aWRlZDogdGVzdC1rZXkuIFlvdSBjYW4gZmluZCB5b3VyIEFQSSBrZXkgYXQgaHR0cHM6Ly9wbGF0Zm9ybS5vcGVuYWkuY29tL2FjY291bnQvYXBpLWtleXMuXCIsXCJ0eXBlXCI6XCJpbnZhbGlkX3JlcXVlc3RfZXJyb3JcIixcInBhcmFtXCI6bnVsbCxcImNvZGVcIjpcImludmFsaWRfYXBpX2tleVwifSIsImZpcnN0VHVybkVycm9yQ2xhc3MiOiJjcmVkZW50aWFsIn19LCJ2YXJpYW50IjoibWVkaXVtIn0sInBhcnRzIjpbXX1d"
+                        },
+                        {
+                          "name": "scripted-model-requests.json",
+                          "contentType": "application/json",
+                          "body": "W10="
+                        },
+                        {
+                          "name": "video",
+                          "contentType": "video/webm",
+                          "path": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts/playwright-real-harness-lo-8465c-nadvertised-delegation-tool-chromium/video.webm"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts/playwright-real-harness-lo-8465c-nadvertised-delegation-tool-chromium/error-context.md"
+                        },
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts/playwright-real-harness-lo-8465c-nadvertised-delegation-tool-chromium/error-context.md"
+                        },
+                        {
+                          "name": "trace",
+                          "contentType": "application/zip",
+                          "path": "/Users/yashvardhansingh/test/opencode/docs/verification/session-rendering/2026-09-12/evidence/pi-session-fix/pi-test-user-artifacts/playwright-real-harness-lo-8465c-nadvertised-delegation-tool-chromium/trace.zip"
+                        }
+                      ],
+                      "errorLocation": {
+                        "file": "/Users/yashvardhansingh/test/opencode/packages/claxedo-app/e2e/helpers/turn-oracle.ts",
+                        "column": 112,
+                        "line": 77
+                      }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "1d5687004a5649b3f419-005626a6a816984d0c93",
+              "file": "playwright/real-harness-local.spec.ts",
+              "line": 1672,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-14T06:03:58.061Z",
+    "duration": 66558.313,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 2,
+    "flaky": 0
+  }
+}

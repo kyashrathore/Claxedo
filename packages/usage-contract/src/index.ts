@@ -66,6 +66,11 @@ export type QuotaWindow = {
   resetsAt: number | null
 }
 
+export {
+  CODEX_WINDOW_NAME_BY_SECONDS,
+  USAGE_WINDOW_NAMES,
+} from "@claxedo/agent-runtime-contract"
+
 /**
  * One account a harness can run on, and what its plan has left.
  *
@@ -107,6 +112,14 @@ export type QuotaAccount = {
   /** When those windows were read; absent on an account nothing has read yet. */
   usageAt?: number
   /**
+   * Where this account can be spent. `cloud` is the narrower question and the
+   * only one worth asking: a destination that also needs a fixed companion
+   * header cannot go through a sandbox provider's edge, which attaches one
+   * header per secret, and a machine login has no value to hand one at all.
+   * Absent where the reader could not resolve it.
+   */
+  deliverable?: { local: boolean; cloud: boolean; reason?: string }
+  /**
    * Why this account carries no windows, where the reader was told. Distinct
    * from `health`, which is the provider's verdict on the credential itself: a
    * usable login can still have a plan read that was throttled or expired.
@@ -126,7 +139,18 @@ export type UnifiedUsageResponse = {
    * `unavailable` means only that there is nothing to draw, and it carries the
    * `error` when a failure is why.
    */
-  quota: { status: "available" | "unavailable"; snapshot?: QuotaSnapshot; error?: string }
+  quota: {
+    status: "available" | "unavailable"
+    snapshot?: QuotaSnapshot
+    error?: string
+    /**
+     * Epoch ms of the earliest moment a refresh will run the checks again.
+     * Present only on a refresh the reader answered from its last one because
+     * the spacing had not elapsed: without it, figures that did not move are
+     * indistinguishable from a refresh that ran and found nothing changed.
+     */
+    throttledUntil?: number
+  }
   claxedo: UsageSeries & {
     cost: UsageCost
     locationShare: { localTokens: number; cloudTokens: number }

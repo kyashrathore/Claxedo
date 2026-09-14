@@ -58,7 +58,6 @@ export async function startLiveFirstPartyMcp() {
   const server: LocalServer = startLocalServer({
     port,
     services: createLocalControlPlaneServices(),
-    isCredentialPath: (candidate: string) => candidate.startsWith("/api/claxedo/credentials"),
     corsOrigin: (origin: string) => origin,
     // The Marketplace the desktop entry mounts. Without it a session's tool
     // surface would be whatever the defaults say and nothing could change it,

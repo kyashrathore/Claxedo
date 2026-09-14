@@ -39,7 +39,7 @@ export const serverSelfHosted: Policy = {
     requiredPackages: ["@claxedo/local-server", "better-sqlite3", "better-auth"],
   },
   /**
-   * Measured 121 modules / 39 packages, with no headroom.
+   * Measured 121 modules / 40 packages, with no headroom.
    *
    * The reviewed owners this entry is allowed to reach beyond the single
    * binary's own usage pipeline: `@claxedo/local-server`'s Agent Plugins and
@@ -72,8 +72,16 @@ export const serverSelfHosted: Policy = {
    * `src/workspace/supervisor/driver-id.ts`, the sandbox driver a workspace
    * runs on, a leaf of its own because the provisioning path and the config
    * push both need it and importing it from either puts the two in a cycle.
+   *
+   * `@claxedo/egress-broker` is the reviewed owner of the credential broker's
+   * mount policy — the `/bindings/*` pattern, the loopback gate in front of it
+   * and the CORS carve-out that keeps a browser off it. This deployment holds
+   * the credential values (`createLocalCredentialBroker` in app.ts) and binds
+   * 0.0.0.0, so it is a broker host, and the gate it mounts must be the one
+   * the desktop composition mounts rather than a copy. The package reaches
+   * only jose, @hono/node-server and the runtime contract, all already here.
    */
-  ceilings: { modules: 121, packages: 39 },
+  ceilings: { modules: 121, packages: 40 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -108,6 +116,9 @@ export const serverSelfHosted: Policy = {
       { packageDir: "packages/claxedo-channels" },
       { packageDir: "packages/wakes" },
       { packageDir: "packages/workspace-runtime" },
+      // The credential broker this deployment mounts; its published entry is
+      // dist-only and claxedo-local-server bundles against it.
+      { packageDir: "packages/egress-broker" },
       { packageDir: "packages/claxedo-local-server" },
     ],
     packageExports: [{
@@ -117,6 +128,15 @@ export const serverSelfHosted: Policy = {
         // `deployments/self-hosted-node/start.ts` mounts the local Agent
         // Plugins module, the same composition the desktop server entry uses.
         "./agent-plugins/local-composition",
+        // `start.ts` mounts the loopback Tasks composition the desktop server
+        // entry mounts, and `src/tasks/self-hosted-composition.ts` binds the
+        // same session bridge to this deployment's own identity.
+        "./tasks/local-composition",
+        "./tasks/session-bridge",
+        // `self-hosted-node/app.ts` serves the first-party MCP endpoint only
+        // the tool groups this machine consented to, read from the
+        // Marketplace's own activation rows.
+        "./agent-plugins/builtin-groups",
       ],
     }],
     native: ["better-sqlite3", "node-pty"],

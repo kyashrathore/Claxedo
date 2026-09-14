@@ -178,7 +178,6 @@ export {
   parseStoredSessionModelGroup,
   sessionModelGroupJson,
 } from "@claxedo/agent-runtime-contract"
-export { accountIdFromClaims } from "./harnesses/codex/auth-file"
 export {
   isProviderUnavailable,
   liveProviderBinding,
@@ -186,6 +185,7 @@ export {
   providerProjection,
   providerProjectionKey,
   providerProjectionRecord,
+  projectionRenewalDue,
   projectionRenewalDueAt,
   ProviderCredentialUnavailableError,
   ProviderProjectionExpiredError,

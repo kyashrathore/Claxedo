@@ -21,12 +21,26 @@
       "import": "./src/agent-plugins/local-composition.ts",
       "default": "./src/agent-plugins/local-composition.ts"
     },
+    "./agent-plugins/builtin-groups": {
+      "types": "./src/agent-plugins/builtin-groups.ts",
+      "bun": "./src/agent-plugins/builtin-groups.ts",
+      "development": "./src/agent-plugins/builtin-groups.ts",
+      "import": "./src/agent-plugins/builtin-groups.ts",
+      "default": "./src/agent-plugins/builtin-groups.ts"
+    },
     "./tasks/local-composition": {
       "types": "./src/tasks/local-composition.ts",
       "bun": "./src/tasks/local-composition.ts",
       "development": "./src/tasks/local-composition.ts",
       "import": "./src/tasks/local-composition.ts",
       "default": "./src/tasks/local-composition.ts"
+    },
+    "./tasks/session-bridge": {
+      "types": "./src/tasks/session-bridge.ts",
+      "bun": "./src/tasks/session-bridge.ts",
+      "development": "./src/tasks/session-bridge.ts",
+      "import": "./src/tasks/session-bridge.ts",
+      "default": "./src/tasks/session-bridge.ts"
     },
     "./self-hosted-execution": {
       "types": "./src/self-hosted-execution.ts",
@@ -51,6 +65,7 @@
     "verify:closure": "bun ../../script/product-boundary/verify.ts"
   },
   "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/egress-broker": "workspace:*",
     "@claxedo/helpers": "workspace:*",

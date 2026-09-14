@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test"
+import { afterEach, beforeEach, expect, test } from "bun:test"
 import {
   applyCursorBackendUrl,
   CursorBackendUrlFrozenError,
@@ -19,6 +19,12 @@ import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
  */
 const BACKEND_URL = "CURSOR_BACKEND_URL"
 const previous = process.env[BACKEND_URL]
+
+// The freeze is process state every cursor driver in this run shares, so each
+// test starts it over rather than inheriting whatever the last file left.
+beforeEach(() => {
+  forgetCursorBackendUrl()
+})
 
 afterEach(() => {
   forgetCursorBackendUrl()
@@ -53,7 +59,7 @@ test("the value in force at the import is what the SDK keeps", () => {
   process.env[BACKEND_URL] = "http://127.0.0.1:2595/bindings/second"
   freezeCursorBackendUrl()
 
-  expect(frozenCursorBackendUrl()).toEqual({ value: "http://127.0.0.1:2595/bindings/first" })
+  expect(frozenCursorBackendUrl()).toEqual({ value: "http://127.0.0.1:2595/bindings/first", binding: false })
 })
 
 test("a binding applied after the SDK loaded refuses the turn instead of spending it elsewhere", async () => {
@@ -71,7 +77,6 @@ test("a binding applied after the SDK loaded refuses the turn instead of spendin
 
 test("a binding the SDK was loaded under is used", async () => {
   applyCursorBackendUrl(projection("http://127.0.0.1:2595/bindings/ok")["cursor-sdk"])
-  freezeCursorBackendUrl()
 
   const created: unknown[] = []
   const driver = createCursorSdkDriver(host(), {
@@ -93,7 +98,7 @@ test("a process that never imported the SDK freezes nothing and refuses nothing"
 })
 
 test("the driver's own load is what freezes the value, with nobody calling the freeze", async () => {
-  // The production call lives inside the driver's module load. A test that
+  // The production call lives inside the driver's agent load. A test that
   // calls the freeze by hand proves the function, never the call.
   applyCursorBackendUrl(projection("http://127.0.0.1:2595/bindings/loaded")["cursor-sdk"])
   const driver = createCursorSdkDriver(host(), {
@@ -104,7 +109,7 @@ test("the driver's own load is what freezes the value, with nobody calling the f
 
   await driver.createAgentSession({ directory: "/repo", model: "auto", sessionId: "s1" }).catch(() => {})
 
-  expect(frozenCursorBackendUrl()).toEqual({ value: "http://127.0.0.1:2595/bindings/loaded" })
+  expect(frozenCursorBackendUrl()).toEqual({ value: "http://127.0.0.1:2595/bindings/loaded", binding: true })
 })
 
 test("a binding the SDK froze refuses a turn the operator has since unbound", async () => {
@@ -119,6 +124,43 @@ test("a binding the SDK froze refuses a turn the operator has since unbound", as
 
   await expect(driver.createAgentSession({ directory: "/repo", model: "auto", sessionId: "s1" }))
     .rejects.toBeInstanceOf(CursorBackendUrlFrozenError)
+})
+
+test("an injected agent module freezes the value exactly as the real import does", async () => {
+  // Five test files hand the driver a loaded module. A freeze that only ran on
+  // the real import would leave every one of them running with the guard off.
+  applyCursorBackendUrl(projection("http://127.0.0.1:2595/bindings/injected")["cursor-sdk"])
+  const driver = createCursorSdkDriver(host(), {
+    loadAgent: async () => ({ Agent: { create: async () => ({ id: "agent-1" }) } }) as never,
+    loadSdk: async () => ({}) as never,
+  })
+  await driver.applyConfig({ auth: projection("http://127.0.0.1:2595/bindings/injected") })
+  await driver.createAgentSession({ directory: "/repo", model: "auto", sessionId: "s1" })
+
+  await driver.applyConfig({ auth: projection("http://127.0.0.1:2595/bindings/switched") })
+
+  expect(frozenCursorBackendUrl()).toEqual({ value: "http://127.0.0.1:2595/bindings/injected", binding: true })
+  await expect(driver.createAgentSession({ directory: "/repo", model: "auto", sessionId: "s2" }))
+    .rejects.toBeInstanceOf(CursorBackendUrlFrozenError)
+})
+
+test("a second workspace's binding on the same broker is refused, not misrouted", async () => {
+  // Two workspaces in one host mint two bindings on one loopback origin, and
+  // the path is the binding id. The frozen value carries that path into every
+  // request `@cursor/sdk@1.0.24` makes, so the second workspace's placeholder
+  // would reach the first workspace's binding — which the broker answers with
+  // `binding_not_permitted`. Refusing by name is what names the cause.
+  applyCursorBackendUrl(projection("http://127.0.0.1:2595/bindings/workspace-a")["cursor-sdk"])
+  const agentModule = { Agent: { create: async () => ({ id: "agent-1" }) } } as never
+  const workspaceA = createCursorSdkDriver(host(), { loadAgent: async () => agentModule, loadSdk: async () => ({}) as never })
+  await workspaceA.applyConfig({ auth: projection("http://127.0.0.1:2595/bindings/workspace-a") })
+  await workspaceA.createAgentSession({ directory: "/a", model: "auto", sessionId: "a1" })
+
+  const workspaceB = createCursorSdkDriver(host(), { loadAgent: async () => agentModule, loadSdk: async () => ({}) as never })
+  await workspaceB.applyConfig({ auth: projection("http://127.0.0.1:2595/bindings/workspace-b") })
+
+  await expect(workspaceB.createAgentSession({ directory: "/b", model: "auto", sessionId: "b1" }))
+    .rejects.toThrow("http://127.0.0.1:2595/bindings/workspace-b")
 })
 
 test("a backend URL the operator set themselves is not a binding and refuses nothing", async () => {

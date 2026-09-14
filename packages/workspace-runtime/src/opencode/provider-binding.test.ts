@@ -50,7 +50,9 @@ test("an unavailable account disables its provider in the engine's own catalog",
   }
 }, 20_000)
 
-test("a bound account routes that provider at the broker and leaves it selectable", async () => {
+// Where a bound provider's requests actually go, and what they carry, is in
+// `provider-binding.request.test.ts` — catalog membership alone cannot say.
+test("a bound account leaves its provider selectable in the catalog", async () => {
   const { runtime, scope, close } = engine()
   try {
     await runtime.bindProviders({
@@ -64,7 +66,7 @@ test("a bound account routes that provider at the broker and leaves it selectabl
   }
 }, 20_000)
 
-test("a provider nobody bound keeps the engine's own auth", async () => {
+test("a provider nobody bound stays selectable and names no refusal", async () => {
   const { runtime, scope, close } = engine()
   try {
     await runtime.bindProviders({})

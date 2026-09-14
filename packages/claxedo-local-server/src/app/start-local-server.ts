@@ -233,6 +233,13 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       }
     }).catch((error) => log.warn("local runtime event projection degraded", { error: String(error) }))
   }
+  // One statement of the signed-auth configuration for both readers below. A
+  // quota resolved from an empty one answers the single-tenant partition on a
+  // signed box, so it reported another org's accounts than `identity` named.
+  const authOptions = {
+    authConfig: services.auth.config,
+    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+  }
   // The same tenant the credential routes resolve, because the accounts this
   // reads are the rows those routes list.
   const readQuota = createUsageQuotaReader({ credentials: services.credentials, agentUsage: readMachineAgentUsage })
@@ -241,15 +248,15 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     outbox: usageOutbox,
     identity: async (request: Request) => {
       const auth = await controlPlaneAuthContext(request, {
-        config: services.auth.config,
-        ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+        config: authOptions.authConfig,
+        ...(authOptions.verifier ? { verifier: authOptions.verifier } : {}),
       })
       return auth.mode === "signed" && auth.user.orgId
         ? { org_id: auth.user.orgId, user_id: auth.user.subject }
         : undefined
     },
     quota: async ({ request, refresh }: { request: Request; refresh: boolean }) =>
-      await readQuota({ org: await requestOrg(request, {}), refresh }),
+      await readQuota({ org: await requestOrg(request, authOptions), refresh }),
     history: async ({ since, until, refresh }: { since: number; until: number; refresh: boolean }) => {
       await usageSourceCoverageReady
       const facts = await usageRevisionStore.current()

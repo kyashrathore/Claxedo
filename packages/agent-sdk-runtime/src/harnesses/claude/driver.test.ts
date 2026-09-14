@@ -627,6 +627,22 @@ describe("Claude spawns against the broker, never a credential", () => {
     expect(() => driver.applyConfig({ auth: { "claude-sdk": "sk-ant-api03-plaintext" }, mcp: {} }))
       .toThrow("not provider projections")
   })
+
+  test("a selected account that cannot be bound fails the turn by name instead of running on the machine login", async () => {
+    const calls: Parameters<NonNullable<ClaudeSdkDriverOptions["query"]>>[0][] = []
+    const driver = createClaudeSdkDriver(turnHost(), { query: probeQuery(calls), executable: () => "/fake/claude" })
+    void driver.applyConfig({ auth: { "claude-sdk": { unavailable: true, reason: "account_withdrawn" } }, mcp: {} })
+
+    await expect(driver.runTurn({
+      sessionId: "session-unavailable",
+      getAgentSessionId: () => "claude-sdk:session-unavailable",
+      input: { parts: [{ type: "text", text: "hi" }], assistantMessageId: "assistant-unavailable", model: { providerID: "claude", modelID: "auto" } },
+      directory: "/repo", abort: new AbortController(), ingest() {}, associateChild() {},
+      observeSubagent: async () => ({ event: {} }), rebindAgentSession() {}, model: "",
+    } as unknown as SdkRuntimeTurnInput))
+      .rejects.toThrow("the claude credential selected for this workspace cannot be used: account_withdrawn")
+    expect(calls).toEqual([])
+  })
 })
 
 /**
@@ -732,6 +748,24 @@ describe("a brokered turn withholds the operator's Claude account", () => {
       expect(fs.lstatSync(path.join(root, "settings.local.json")).isSymbolicLink()).toBe(false)
       expect(JSON.parse(fs.readFileSync(path.join(root, "settings.local.json"), "utf8")))
         .toEqual({ env: { PAGER: "less" } })
+    } finally {
+      fs.rmSync(dirs.base, { recursive: true, force: true })
+    }
+  })
+
+  test("an entry Claxedo does not name stays out of the brokered dir", () => {
+    const dirs = configDirs()
+    try {
+      // The next Claude Code release can add an account file under any name; a
+      // list of the ones known today would mirror it the day it ships.
+      fs.writeFileSync(path.join(dirs.source, "oauth-account.json"), '{"accessToken":"operator-own-token"}')
+      fs.mkdirSync(path.join(dirs.source, "sessions"))
+
+      const root = brokeredClaudeConfigDir({ root: dirs.root, source: dirs.source })
+
+      expect(fs.existsSync(path.join(root, "oauth-account.json"))).toBe(false)
+      expect(fs.existsSync(path.join(root, "sessions"))).toBe(false)
+      expect(fs.existsSync(path.join(root, "CLAUDE.md"))).toBe(true)
     } finally {
       fs.rmSync(dirs.base, { recursive: true, force: true })
     }

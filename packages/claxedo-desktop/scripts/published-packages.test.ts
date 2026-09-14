@@ -15,4 +15,9 @@ describe("published packages the server bundle consumes from dist", () => {
     expect(names).not.toContain("@claxedo/local-server")
     expect(names).not.toContain("@claxedo/desktop")
   })
+
+  test("a public package with a build outside the @claxedo scope is not one of them", () => {
+    // `@opencode-ai/cli` is public and builds, so only the scope filter keeps it out.
+    expect(publishedPackageNames(REPO_ROOT)).not.toContain("@opencode-ai/cli")
+  })
 })

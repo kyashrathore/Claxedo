@@ -171,55 +171,50 @@ describe("@claxedo/local-server closure", () => {
   })
 
   it("stays within its measured size", () => {
-    // Measured 2026-08-09 from the derived producer set, with `runtimeOnly`:
-    // the edges that survive compilation, i.e. what this build can execute.
+    // `runtimeOnly`: the edges that survive compilation, i.e. what this build
+    // can execute. Every published module is a producer, so the module number
+    // is this package's own production module count. A rise means the desktop
+    // product gained surface; a fall should lower the ceiling with it, and
+    // neither number may be summed from increments — re-run and read what the
+    // walk measures.
     //
-    // These replace 41 modules / 18 packages, which were measured from the
-    // thirteen hand-listed producers. Nothing grew — the old numbers were a
-    // walk of part of the package. The producer set is now all 47 published
-    // modules, which pulls in the six no listed producer reached (the app
-    // composition, the extension and credential services, the session meta
-    // tap) and with them `@hono/node-server`, `@claxedo/agent-sdk-runtime` and
-    // `tokentracker-cli`.
+    // Why the modules the desktop owns are owned here:
+    //  - `platform/json.ts` — the one leaf every module reading untrusted JSON
+    //    narrows through instead of writing its own `record`/`text` pair.
+    //  - `agent-config/hosted-mcp-install.ts` — the one-click write of the
+    //    hosted `claxedo` entry into the Claude Code, Cursor and Codex configs
+    //    on this machine; the desktop's own agent-config routes are what a user
+    //    clicks.
+    //  - `shell/event-stream-response.ts` — the central event transport owner.
+    //  - `app/local-documents.ts` — the desktop composition of shared Documents.
+    //  - `credentials/broker.ts` — the credential authority that derives a
+    //    binding per active registry row and hands the loopback broker its
+    //    handler. The table naming each provider's vendor host, methods, paths
+    //    and header shape is a fact about the vendor rather than about this
+    //    machine, so server-core owns it and the cloud delivery adapter reads
+    //    the same rows.
+    //  - `credentials/machine-credentials.ts` — asking a CLI what it is signed
+    //    in as, and withdrawing the stored mark so a harness runs on that
+    //    login, have no referent on a host where no harness is installed.
+    //  - `credentials/operations/drop-copied-harness-logins.ts` — the one-time
+    //    delete of the harness logins an older Claxedo copied off this machine;
+    //    this is the process that ran that scan.
+    //  - `usage/adapters/token-tracker-usage-limits.ts` — the plan probe for
+    //    every agent installed on this machine, which only a server running on
+    //    that machine can ask.
     //
-    // Because every published module is a producer, the module number is this
-    // package's own production module count: the eight-module increase is the
-    // local usage route, durable ledger and provenance ports, scanner, pricing
-    // port, outbox, stable ledger identity, and their desktop composition.
-    // Shared implementations live in server-core, so no hosted product edge is
-    // introduced; the package count fell back to 21 after that ownership move.
-    // The tenant-aware runtime principal composer adds one local module while
-    // keeping the package closure unchanged and gives every runtime proxy the
-    // same fail-closed identity path. A further rise means the desktop product
-    // gained surface, and a fall should lower the ceiling with it.
-    // The explicit external OpenCode server provider adds the reviewed 22nd
-    // package at the desktop composition root; it contains only the isolated
-    // HTTP/SSE adapter and no embedded engine or generated client. The package
-    // number is the reach that matters — a rise is a new dependency the
-    // unsigned desktop now carries and is worth reading before it is bumped.
-    // AgentConfigRoutes owns the authenticated Pi catalog in provider-routes.ts;
-    // shell project-routes owns authorized metadata edits and catalog replay.
-    //
-    // Agent Plugins adds its feature-owned modules — activation routes/store,
-    // retained artifact storage, composition, generation, materialization,
-    // plugin data, and the harness projections — reaching this package through
-    // the composition's route contributions and the agent-config launch
-    // projection. They use packages already present in this closure. The
-    // `platform/json.ts` is the 80th module: one dependency-free leaf owned by
-    // this package that every module reading untrusted JSON narrows through
-    // instead of writing its own `record`/`text` pair. It adds no package edge,
-    // and importing it from more modules cannot grow this set — it is already
-    // in it. The 23rd package is `@claxedo/mcp`, the first-party MCP endpoint
-    // the desktop composition mounts at `/api/claxedo/mcp` for the sessions it
-    // launches; it reaches only the MCP SDK, hono, zod, helpers and the runtime
-    // contract, all already present here. The 81st module is
-    // `agent-config/hosted-mcp-install.ts`, the one-click write of the hosted
-    // `claxedo` entry into the Claude Code, Cursor and Codex configs on this
-    // machine — the desktop's own agent-config routes are what a user clicks,
-    // so this is where it belongs; it reads node builtins only and adds no
-    // package edge. The numbers below are the last MEASURED values
-    // (81 modules, 23 packages) and must be re-run, never summed from
-    // increments.
+    // And the packages: `@claxedo/opencode-server-adapter` is the isolated
+    // HTTP/SSE provider, with no embedded engine or generated client;
+    // `@claxedo/mcp` is the first-party endpoint mounted at
+    // `/api/claxedo/mcp`; `@claxedo/egress-broker` is the request policy,
+    // header injection and runtime-token verification behind the broker
+    // handler; `smol-toml` is the hosted MCP installer's configuration
+    // validator; `@claxedo/agent-runtime-contract` is the dependency-free data
+    // this product reads rather than restating — the harness/provider-id table
+    // the credential routes, the reaper and the agent-config auth route all
+    // key on, and the login-document claim readers the provider-auth exchange
+    // uses. It was already in this closure through `@claxedo/egress-broker`;
+    // the edge is direct now because the copies it replaced had drifted.
     const { modules, packages } = closure({ runtimeOnly: true })
     // The merged dev tree also publishes agent-plugins/discovery/skills.ts,
     // the restored machine-installed skill reader (82 modules at HEAD).
@@ -257,9 +252,12 @@ describe("@claxedo/local-server closure", () => {
     // of `@claxedo/tasks` is a type, so it adds no package edge here. Nothing
     // outside `src/tasks/` imports either module, so a product entry that does
     // not mount the composition carries neither.
-    // Measured: 90 modules, 25 packages.
+    // @claxedo/agent-runtime-contract is the dependency-free data owner of the
+    // harness table and the credential-broker error vocabulary; the desktop
+    // server reads both, so it is a package of this closure in its own right.
+    // Measured: 90 modules, 26 packages.
     expect(modules.size).toBeLessThanOrEqual(90)
     // smol-toml is the hosted MCP installer's configuration validator.
-    expect(packages.size).toBeLessThanOrEqual(25)
+    expect(packages.size).toBeLessThanOrEqual(26)
   })
 })

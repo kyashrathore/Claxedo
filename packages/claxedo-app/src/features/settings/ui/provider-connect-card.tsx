@@ -2,7 +2,13 @@ import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-butt
 import { Suspense, type Component } from "solid-js"
 import { ProviderConnectForm } from "@/features/settings/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
-import type { ConnectContext } from "@/platform/identity/harness-catalog"
+import {
+  connectContextKey,
+  connectSubject,
+  connectVars,
+  CONNECT_CONTEXT_COPY,
+  type ConnectContext,
+} from "@/platform/identity/harness-catalog"
 
 /**
  * The connect form, inset in the row that opened it.
@@ -22,13 +28,11 @@ export const ProviderConnectCard: Component<{
   onClose: () => void
 }> = (props) => {
   const language = useLanguage()
-  const subject = () => props.context.kind === "harness" ? props.context.harness : props.context.vendor
-  const vars = (): Record<string, string> => props.context.kind === "harness"
-    ? { harness: props.context.harness, vendor: props.context.vendor }
-    : { engine: props.context.engine, vendor: props.context.vendor }
+  const subject = () => connectSubject(props.context)
+  const vars = () => connectVars(props.context)
   const title = () => props.credentialId
     ? language.t("settings.providers.connect.reconnectTitle", { provider: subject() })
-    : language.t(`provider.connect.title.${props.context.kind}`, vars())
+    : language.t(connectContextKey(CONNECT_CONTEXT_COPY.title, props.context), vars())
   const subtitle = () => props.credentialId
     ? language.t("settings.providers.connect.reconnectSubtitle")
     : language.t("settings.providers.connect.subtitle", { provider: subject() })
@@ -72,7 +76,7 @@ export const ProviderConnectCard: Component<{
             workspaceScope={props.scope}
             credentialId={props.credentialId}
             hideHeading
-            methodPicker="segmented"
+            preselectFirstMethod
             onConnected={props.onConnected}
             onDone={() => props.onClose()}
           />

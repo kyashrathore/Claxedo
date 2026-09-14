@@ -42,7 +42,13 @@ function plane(): HostedControlPlane {
       listOrgs: vi.fn(async () => [{ org_id: "org-1", name: "Test organization" }]),
       listSessionShares: vi.fn(async () => [{ grant_id: "share-1", granted_to_user_id: "user-2" }]),
       listWorkspaces: vi.fn(async () => []),
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "owner",
+        workspace: { backing: "cloud-vm", access: "cloud", home_region: "us-east" },
+      })),
       auditAllow: vi.fn(async () => ({})),
+      auditDeny: vi.fn(async () => ({})),
     },
     telemetry: { capture: vi.fn() },
     localExecution: { enabled: false },
@@ -90,6 +96,33 @@ const options = {
     })),
   },
 }
+
+describe("cloud-workspace admission", () => {
+  test("the core app puts the composed admission hook in front of every hosted wake", async () => {
+    // The gate is enforced at wake, not at create, and it only reaches that
+    // choke point if this composition passes it through to the workspace
+    // routes. A hosted core that dropped it wakes a cancelled subscription.
+    const admitted: string[] = []
+    const app = createHostedCoreApp(plane(), {
+      ...options,
+      cloudWorkspaceAdmission: async (admittedAuth) => {
+        admitted.push(admittedAuth.user.subject)
+        return {
+          status: 402 as const,
+          body: { error: { code: "billing_entitlement_required", message: "subscription required" } },
+        }
+      },
+    }) as unknown as Hono
+
+    const response = await app.request("/api/workspace/ws_1/connection", {
+      headers: { authorization: "Bearer alice", "content-type": "application/json" },
+    })
+
+    expect(response.status).toBe(402)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "billing_entitlement_required" } })
+    expect(admitted).toEqual(["alice"])
+  })
+})
 
 describe("hosted production Pi and connection discovery", () => {
   const catalogPath = "/api/claxedo/agent-config/providers?nativeHarness=pi"

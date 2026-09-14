@@ -9,7 +9,7 @@
  * survives; it never adds a method the server did not offer.
  */
 
-export type ConnectMethodType = "oauth" | "token" | "api"
+type ConnectMethodType = "oauth" | "token" | "api"
 
 export type ConnectMethodSpec = {
   type: ConnectMethodType
@@ -93,7 +93,7 @@ export type ConnectMethodOption = {
   command?: string
 }
 
-export type ServerAuthMethod = { type?: string; label?: string; command?: string }
+type ServerAuthMethod = { type?: string; label?: string; command?: string }
 
 /**
  * The server's methods in the table's display order, each carrying its words.

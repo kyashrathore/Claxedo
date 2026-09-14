@@ -13,7 +13,7 @@ process.env.CLAXEDO_DATA_DIR = root
 const { createTestBackend, setBackendOverride } = await import("@claxedo/server-core/credentials/backend-registry")
 const {
   deleteCredential,
-  getCredential,
+  credentialById,
   listCredentials,
   putCredential,
   setActiveCredentials,
@@ -126,7 +126,7 @@ describe("local binding authority", () => {
     expect(resolved?.binding).toMatchObject({
       credentialId: credential.id,
       status: "active",
-      revision: getCredential(credential.id)!.revision,
+      revision: credentialById(credential.id, { onOutage: "throw" })!.revision,
       destination: {
         origin: "https://api.anthropic.com",
         methods: ["POST", "GET"],
@@ -135,6 +135,20 @@ describe("local binding authority", () => {
       injection: { header: "x-api-key" },
     })
     expect(await local.authority.currentRuntime(local.runtimeIdentity(workspaceId))).toBe(true)
+  })
+
+  test("a renewal re-projects onto the binding this broker already minted", async () => {
+    // The renewal timer re-projects every workspace every 30s for the life of
+    // the process. A binding id derived from anything that moves between
+    // projections would strand one entry per tick in the map `resolve` reads,
+    // and none of them is ever evicted.
+    const credential = await activeRow("sk-ant-api03-renewed")
+    const local = broker()
+    const first = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+    const second = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+
+    expect(second).toBe(first)
+    expect((await local.authority.resolve(first))?.binding.credentialId).toBe(credential.id)
   })
 
   test("a subscription token binds as a bearer, a key as x-api-key", async () => {
@@ -385,26 +399,35 @@ describe("local binding authority", () => {
       secret: "sk-ant-api03-heir",
     })
     const local = broker()
-    const refusal = {
-      bindingId: "unused",
-      credentialId: rejected.id,
-      revision: getCredential(rejected.id)!.revision,
-      status: 401,
-    }
-
-    await local.authority.reportFailure(refusal)
-
-    // A single mid-turn hiccup takes nothing away: the account is still the one
-    // the provider runs on, and still usable.
-    expect(getCredential(rejected.id)).toMatchObject({ is_active: true, health: null })
-    expect(getCredential(heir.id)?.is_active).toBe(false)
-
-    await local.authority.reportFailure(refusal)
-
-    expect(getCredential(rejected.id)).toMatchObject({ is_active: false, health: "auth_failed" })
-    expect(getCredential(heir.id)?.is_active).toBe(true)
     const projection = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
-    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.value).toBe("sk-ant-api03-heir")
+    const realFetch = globalThis.fetch
+    const spent: string[] = []
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      spent.push(new Headers(init?.headers).get("x-api-key") ?? "")
+      return new Response('{"type":"error"}', { status: 401 })
+    }) as typeof fetch
+    const turn = () => local.handler(new Request(`${projection.baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": projection.placeholder },
+    }))
+    try {
+      expect((await turn()).status).toBe(401)
+
+      // A single mid-turn hiccup takes nothing away: the account is still the one
+      // the provider runs on, and still usable.
+      expect(credentialById(rejected.id, { onOutage: "throw" })).toMatchObject({ is_active: true, health: null })
+      expect(credentialById(heir.id, { onOutage: "throw" })?.is_active).toBe(false)
+
+      expect((await turn()).status).toBe(401)
+
+      expect(spent).toEqual(["sk-ant-api03-rejected-first", "sk-ant-api03-rejected-first"])
+      expect(credentialById(rejected.id, { onOutage: "throw" })).toMatchObject({ is_active: false, health: "auth_failed" })
+      expect(credentialById(heir.id, { onOutage: "throw" })?.is_active).toBe(true)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    const next = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    expect((await local.authority.resolve(bindingIdOf(next.baseUrl)))?.value).toBe("sk-ant-api03-heir")
   })
 
   test("the operator's own Check needs no second opinion", async () => {
@@ -420,8 +443,8 @@ describe("local binding authority", () => {
     // What `POST /:id/verify` writes when the provider rejects the account.
     updateCredentialHealth(rejected.id, "auth_failed", Date.now())
 
-    expect(getCredential(rejected.id)).toMatchObject({ is_active: false, health: "auth_failed" })
-    expect(getCredential(heir.id)?.is_active).toBe(true)
+    expect(credentialById(rejected.id, { onOutage: "throw" })).toMatchObject({ is_active: false, health: "auth_failed" })
+    expect(credentialById(heir.id, { onOutage: "throw" })?.is_active).toBe(true)
   })
 
   test("a Check that finds the account working resets the run of refusals", async () => {
@@ -437,7 +460,7 @@ describe("local binding authority", () => {
     const refusal = {
       bindingId: "unused",
       credentialId: account.id,
-      revision: getCredential(account.id)!.revision,
+      revision: credentialById(account.id, { onOutage: "throw" })!.revision,
       status: 401,
     }
 
@@ -447,7 +470,7 @@ describe("local binding authority", () => {
 
     // The provider's newer word stands between the two refusals, so the second
     // one starts a run rather than finishing the first.
-    expect(getCredential(account.id)).toMatchObject({ is_active: true, health: "ok" })
+    expect(credentialById(account.id, { onOutage: "throw" })).toMatchObject({ is_active: true, health: "ok" })
   })
 
   test("a refusal for a value that has since been replaced starts over", async () => {
@@ -460,32 +483,32 @@ describe("local binding authority", () => {
       secret: "sk-ant-api03-rotated-heir",
     })
     const local = broker()
-    const first = getCredential(account.id)!.revision
+    const first = credentialById(account.id, { onOutage: "throw" })!.revision
 
     await local.authority.reportFailure({ bindingId: "unused", credentialId: account.id, revision: first, status: 401 })
     await updateCredentialSecret(account.id, "sk-ant-api03-rotated-again")
-    const second = getCredential(account.id)!.revision
+    const second = credentialById(account.id, { onOutage: "throw" })!.revision
     await local.authority.reportFailure({ bindingId: "unused", credentialId: account.id, revision: second, status: 401 })
 
     expect(second).not.toBe(first)
-    expect(getCredential(account.id)).toMatchObject({ is_active: true })
+    expect(credentialById(account.id, { onOutage: "throw" })).toMatchObject({ is_active: true })
   })
 
   test("reportFailure marks the row only for the revision the request used", async () => {
     const credential = await activeRow("sk-ant-api03-reported")
     const local = broker()
     const failure = { bindingId: "unused", credentialId: credential.id, status: 401 }
-    const stale = { ...failure, revision: getCredential(credential.id)!.revision - 1 }
-    const current = { ...failure, revision: getCredential(credential.id)!.revision }
+    const stale = { ...failure, revision: credentialById(credential.id, { onOutage: "throw" })!.revision - 1 }
+    const current = { ...failure, revision: credentialById(credential.id, { onOutage: "throw" })!.revision }
 
     await local.authority.reportFailure(stale)
     await local.authority.reportFailure(stale)
-    expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).not.toBe("auth_failed")
 
     await local.authority.reportFailure(current)
     await local.authority.reportFailure(current)
-    expect(getCredential(credential.id)?.health).toBe("auth_failed")
-    expect(getCredential(credential.id)?.status).toBe("error")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.status).toBe("error")
   })
 
   test("a vendor 403 does not withdraw a working credential", async () => {
@@ -495,11 +518,11 @@ describe("local binding authority", () => {
     await local.authority.reportFailure({
       bindingId: "unused",
       credentialId: credential.id,
-      revision: getCredential(credential.id)!.revision,
+      revision: credentialById(credential.id, { onOutage: "throw" })!.revision,
       status: 403,
     })
 
-    expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).not.toBe("auth_failed")
   })
 
   test("a registry outage is an outage, never an empty selection", async () => {
@@ -562,7 +585,7 @@ describe("local binding authority", () => {
     const refusal = {
       bindingId: id,
       credentialId: credential.id,
-      revision: getCredential(credential.id, org)!.revision,
+      revision: credentialById(credential.id, { onOutage: "throw" }, org)!.revision,
       status: 401,
     }
     await local.authority.reportFailure(refusal)
@@ -570,7 +593,7 @@ describe("local binding authority", () => {
 
     // Read in the single-tenant org the row is not in, the revision never
     // matches and a vendor's 401 silently marks nothing at all.
-    expect(getCredential(credential.id, org)?.health).toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" }, org)?.health).toBe("auth_failed")
   })
 
   test("a provider id that names an Object prototype member binds nothing", async () => {
@@ -613,29 +636,133 @@ describe("local binding authority", () => {
 
     await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401 })
     await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: first, status: 401 })
-    expect(getCredential(credential.id)?.health).not.toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).not.toBe("auth_failed")
 
     await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401 })
     await local.authority.reportFailure({ bindingId: id, credentialId: credential.id, revision: second, status: 401 })
-    expect(getCredential(credential.id)?.health).toBe("auth_failed")
+    expect(credentialById(credential.id, { onOutage: "throw" })?.health).toBe("auth_failed")
   })
 
-  test("moving the active mark leaves a running turn's binding resolvable", async () => {
-    const first = await activeRow("sk-ant-api03-mark-first")
+  /**
+   * `@cursor/sdk` freezes `CURSOR_BACKEND_URL`, which carries the binding id,
+   * at first import. A URL that moved with the account would leave every Cursor
+   * turn after a switch answered `binding_not_permitted` until the process
+   * restarted.
+   */
+  test("switching accounts keeps the binding URL, refuses the old placeholder and forwards the new one", async () => {
+    await activeRow("key_cursor_first", "cursor-sdk")
+    const local = broker()
+    const first = bound((await local.projectAuth({ workspaceId }))["cursor-sdk"])
+    const realFetch = globalThis.fetch
+    const upstream: Request[] = []
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      upstream.push(new Request(url, init))
+      return new Response("{}")
+    }) as typeof fetch
+    const turn = (projection: { baseUrl: string; placeholder: string }) => local.handler(new Request(
+      `${projection.baseUrl}/agent.v1.AgentService/Run`,
+      { method: "POST", headers: { Authorization: `Bearer ${projection.placeholder}` } },
+    ))
+    try {
+      expect((await turn(first)).status).toBe(200)
+      expect(upstream[0]?.headers.get("authorization")).toBe("Bearer key_cursor_first")
+
+      await activeRow("key_cursor_second", "cursor-sdk")
+
+      // The switch reaches a turn still holding the first placeholder before any
+      // projection does: it is refused rather than spent on the new account.
+      const refused = await turn(first)
+      expect(refused.status).toBe(403)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "binding_unavailable" } })
+      expect(upstream).toHaveLength(1)
+
+      const second = bound((await local.projectAuth({ workspaceId }))["cursor-sdk"])
+      expect(second.baseUrl).toBe(first.baseUrl)
+      expect(second.placeholder).not.toBe(first.placeholder)
+      expect((await turn(second)).status).toBe(200)
+      expect(upstream[1]?.headers.get("authorization")).toBe("Bearer key_cursor_second")
+      expect((await turn(first)).status).toBe(403)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("a switch detected at projection also refuses the placeholder minted before it", async () => {
+    await activeRow("sk-ant-api03-switch-first")
+    const local = broker()
+    const first = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    const before = local.runtimeIdentity(workspaceId).leaseGeneration
+
+    await activeRow("sk-ant-api03-switch-second")
+    const second = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+
+    expect(second.baseUrl).toBe(first.baseUrl)
+    expect(local.runtimeIdentity(workspaceId).leaseGeneration).toBeGreaterThan(before)
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
+    try {
+      const turn = (placeholder: string) => local.handler(new Request(`${first.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": placeholder },
+      }))
+      expect((await turn(first.placeholder)).status).toBe(403)
+      expect((await turn(second.placeholder)).status).toBe(200)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("each workspace's lease moves on once per switch, so re-projecting one leaves another's new placeholder valid", async () => {
+    await activeRow("sk-ant-api03-lease-first")
+    const local = broker()
+    const other = "ws-other"
+    await local.projectAuth({ workspaceId })
+    await local.projectAuth({ workspaceId: other })
+
+    await activeRow("sk-ant-api03-lease-second")
+    const renewed = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    const generation = local.runtimeIdentity(workspaceId).leaseGeneration
+    // One generation for the whole process would move this workspace on a
+    // second time here, refusing the placeholder it was just handed.
+    await local.projectAuth({ workspaceId: other })
+    await local.authority.resolve(bindingIdOf(renewed.baseUrl))
+
+    expect(local.runtimeIdentity(workspaceId).leaseGeneration).toBe(generation)
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
+    try {
+      const response = await local.handler(new Request(`${renewed.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": renewed.placeholder },
+      }))
+      expect(response.status).toBe(200)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("a generation issued by a switch is one the next boot starts past", async () => {
+    const dataDir = path.join(root, `switch-boot-${randomUUID().slice(0, 8)}`)
+    await activeRow("sk-ant-api03-boot-first")
+    const local = broker(dataDir)
+    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+    await activeRow("sk-ant-api03-boot-second")
+    await local.authority.resolve(id)
+    const switched = local.runtimeIdentity(workspaceId).leaseGeneration
+
+    // A boot that counted only boots would hand out the switched generation
+    // again, and the placeholder that generation refused would validate.
+    expect(broker(dataDir).runtimeIdentity(workspaceId).leaseGeneration).toBeGreaterThan(switched)
+  })
+
+  test("a withdrawn account stops the running turn on its binding", async () => {
+    const first = await activeRow("sk-ant-api03-withdrawn-turn")
     const local = broker()
     const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
-
-    const second = await activeRow("sk-ant-api03-mark-second")
-    expect(getCredential(second.id)?.is_active).toBe(true)
-    expect(getCredential(first.id)?.is_active).toBe(false)
-
-    // The turn already running keeps spending the account it started on.
-    expect((await local.authority.resolve(id))?.value).toBe("sk-ant-api03-mark-first")
-    // The next projection is what moves the harness onto the new account.
-    const next = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
-    expect((await local.authority.resolve(bindingIdOf(next.baseUrl)))?.value).toBe("sk-ant-api03-mark-second")
+    expect((await local.authority.resolve(id))?.value).toBe("sk-ant-api03-withdrawn-turn")
 
     updateCredentialStatus(first.id, "revoked")
+
     expect(await local.authority.resolve(id)).toBeUndefined()
   })
 
@@ -678,24 +805,59 @@ describe("local binding authority", () => {
 
   test("a brokered request marks the row used at most once a minute", async () => {
     const credential = await activeRow("sk-ant-api03-used")
-    let clock = Date.parse("2026-09-13T00:00:00.000Z")
+    // The placeholder's own expiry is verified against the wall clock.
+    let clock = Date.now()
     const local = createLocalCredentialBroker({ dataDir: root, brokerOrigin, now: () => clock })
-    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+    const projection = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
+    try {
+      const turn = () => local.handler(new Request(`${projection.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": projection.placeholder },
+      }))
+      expect((await turn()).status).toBe(200)
+      const marked = credentialById(credential.id, { onOutage: "throw" })!.last_used_at
+      expect(marked).toBe(clock)
 
-    await local.authority.resolve(id)
-    const marked = getCredential(credential.id)!.last_used_at
-    expect(marked).toBe(clock)
+      // A streaming turn resolves once per request; a write each time turns it
+      // into a stream of registry writes.
+      clock += 30_000
+      await turn()
+      await turn()
+      expect(credentialById(credential.id, { onOutage: "throw" })?.last_used_at).toBe(marked)
 
-    // A streaming turn resolves once per request; a write each time turns it
-    // into a stream of registry writes.
-    clock += 30_000
-    await local.authority.resolve(id)
-    await local.authority.resolve(id)
-    expect(getCredential(credential.id)?.last_used_at).toBe(marked)
+      clock += 31_000
+      await turn()
+      expect(credentialById(credential.id, { onOutage: "throw" })?.last_used_at).toBe(clock)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
 
-    clock += 31_000
-    await local.authority.resolve(id)
-    expect(getCredential(credential.id)?.last_used_at).toBe(clock)
+  test("a placeholder refused after a switch leaves the account it resolved to unmarked", async () => {
+    await activeRow("sk-ant-api03-mark-first")
+    let clock = Date.now()
+    const local = createLocalCredentialBroker({ dataDir: root, brokerOrigin, now: () => clock })
+    const first = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    const second = await activeRow("sk-ant-api03-mark-second")
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
+    try {
+      const turn = (placeholder: string) => local.handler(new Request(`${first.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": placeholder },
+      }))
+      expect((await turn(first.placeholder)).status).toBe(403)
+      expect(credentialById(second.id, { onOutage: "throw" })?.last_used_at).toBeNull()
+
+      const renewed = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+      clock += 1
+      expect((await turn(renewed.placeholder)).status).toBe(200)
+      expect(credentialById(second.id, { onOutage: "throw" })?.last_used_at).toBe(clock)
+    } finally {
+      globalThis.fetch = realFetch
+    }
   })
 
   test("a key file shorter than the signing key is repaired by hand, never overwritten", async () => {
@@ -742,16 +904,18 @@ describe("local binding authority", () => {
 
   test("a lost generation counter starts past every generation this machine minted", async () => {
     const dataDir = path.join(root, `generation-${randomUUID().slice(0, 8)}`)
-    const before = Date.now()
+    const booted = Date.parse("2026-09-13T00:00:00.000Z")
     const counter = path.join(dataDir, "credentials", "broker-generation")
-    const first = broker(dataDir).runtimeIdentity(workspaceId).leaseGeneration
-    expect(first).toBeGreaterThanOrEqual(before)
+    const first = createLocalCredentialBroker({ dataDir, brokerOrigin, now: () => booted })
+      .runtimeIdentity(workspaceId).leaseGeneration
+    expect(first).toBe(booted)
 
     await fs.rm(counter)
-    const relaunched = broker(dataDir).runtimeIdentity(workspaceId).leaseGeneration
+    const relaunched = createLocalCredentialBroker({ dataDir, brokerOrigin, now: () => booted + 5_000 })
+      .runtimeIdentity(workspaceId).leaseGeneration
 
     // Counting from 1 again would re-issue a generation an old placeholder
     // already names, and that placeholder would validate a second time.
-    expect(relaunched).toBeGreaterThanOrEqual(first)
+    expect(relaunched).toBeGreaterThan(first)
   })
 })

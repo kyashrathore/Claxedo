@@ -6,7 +6,7 @@ import { type PickerItem, type PickerState } from "@/features/session/ui/model/s
 import { HarnessModelPicker } from "@/features/session/composer/ui/harness-model-picker"
 import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
 import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
-import { HARNESS_DISPLAY_NAMES, catalogHarnessId, harnessDisplayLabel, harnessModelPickerProvider, harnessSelectionId, isCatalogHarness, isNativeHarness, type HarnessType } from "@/features/session/harness/profile"
+import { catalogHarnessId, harnessDisplayLabel, harnessModelPickerProvider, harnessSelectionId, isCatalogHarness, isNativeHarness, type HarnessType } from "@/features/session/harness/profile"
 import { harnessUsesManagedDefaultModel } from "@/features/session/harness/selection"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
@@ -28,10 +28,6 @@ import {
 import { createHarnessConnectionsCatalog } from "@/platform/query/connection-catalog"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 const BUILTIN_HARNESS_OPTIONS: HarnessType[] = NATIVE_HARNESS_IDS.map(nativeHarness)
-
-function label(input: string) {
-  return HARNESS_DISPLAY_NAMES[input] ?? harnessDisplayLabel(input)
-}
 
 function harnessOptionGroup(input: HarnessType) {
   return input.kind === "native" ? "Native SDK" : "Connections"
@@ -130,7 +126,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         connectionRows().find((row) => row.connectionId === input.connectionId)?.label ??
         harnessDisplayLabel(input.connectionId)
       )
-    return label(input.harnessId)
+    return harnessDisplayLabel(input.harnessId)
   }
   const sessionId = createMemo(() => {
     const next = props.sessionId

@@ -103,6 +103,21 @@ describe("runtime config v4", () => {
     expect(normalizeRuntimeSnapshot({ ...snapshot(), auth: undefined })).toBeUndefined()
   })
 
+  test("one unreadable row refuses the whole pushed snapshot", () => {
+    const projection = {
+      baseUrl: "http://127.0.0.1:2595/bindings/ab12",
+      placeholder: "signed-placeholder",
+      authMode: "api-key",
+    }
+    // A producer that sent a row this runtime cannot read has said nothing
+    // trustworthy about the rest, so the snapshot already applied is a better
+    // answer than half of this one.
+    expect(normalizeRuntimeSnapshot({
+      ...snapshot(),
+      auth: { anthropic: projection, openai: { ...projection, authMode: "basic" } },
+    })).toBeUndefined()
+  })
+
   test("a sandbox-issued placeholder is resolved from this runtime's own environment", () => {
     const projection = {
       baseUrl: "https://api.anthropic.com",

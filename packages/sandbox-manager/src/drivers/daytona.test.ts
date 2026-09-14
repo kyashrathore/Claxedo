@@ -86,6 +86,7 @@ function client(input: Partial<DaytonaClientLike> = {}) {
 
 const SENTINEL_ENV = "CLAXEDO_BROKERED_SECRET_SLOT"
 const sentinelSecret = "claxedo-ws_5F1-CLAXEDO_5FBROKERED_5FSECRET_5FSLOT"
+const workspacePrefix = "claxedo-ws_5F1-"
 const notionSecret = "claxedo-ws_5F1-NOTION_5FTOKEN"
 const mcpSecret = "claxedo-ws_5F1-MCP_5FAUTH"
 
@@ -329,21 +330,69 @@ describe("DaytonaSandboxDriver", () => {
     await driver.destroy!({ workspaceId: "ws_1", sandboxId: "sb_1", url: "sb_1", hostId: "claxedo-ws_1" })
 
     expect(destroyed.delete).toHaveBeenCalled()
-    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked" })
+    // Emptied as well as deleted: a live sandbox still referencing the name
+    // substitutes whatever the row holds, and the delete has no documented
+    // propagation window.
+    expect(secret.update).toHaveBeenCalledWith("sec_notion", { value: "claxedo-revoked", hosts: [] })
     expect(secret.delete).toHaveBeenCalledWith("sec_notion")
     expect(secret.delete).toHaveBeenCalledWith("sec_slot")
     expect(secret.delete).not.toHaveBeenCalledWith("sec_other")
   })
 
-  test("destroy refuses a target that cannot name the workspace whose secrets it must withdraw", async () => {
+  test("destroy deletes the sandbox before refusing a target that cannot name its workspace", async () => {
     const secret = secretService([{ id: "sec_notion", name: notionSecret }])
-    const daytona = client({ secret })
+    const destroyed = sandbox()
+    const daytona = client({ secret, get: vi.fn(async () => destroyed) })
     const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
 
     await expect(driver.destroy!({ sandboxId: "sb_1", url: "sb_1", hostId: "claxedo-ws_1" })).rejects.toThrow(
       /names no workspace/,
     )
+    expect(destroyed.delete).toHaveBeenCalled()
     expect(secret.delete).not.toHaveBeenCalled()
+  })
+
+  test("a secret client that never ends its pages costs a bounded sweep", async () => {
+    const list = vi.fn(async () => ({
+      items: [{ id: "sec_notion", name: notionSecret }],
+      nextCursor: "always-more",
+    }))
+    const daytona = client({ secret: { ...secretService([{ id: "sec_notion", name: notionSecret }]), list } })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona })
+
+    await driver.destroy!({ workspaceId: "ws_1", sandboxId: "sb_1", url: "sb_1", hostId: "claxedo-ws_1" })
+
+    expect(list).toHaveBeenCalledTimes(100)
+  })
+
+  test("the restart a changed secret set forces is reported to the driver's own sink", async () => {
+    const warn = vi.fn()
+    const secret = secretService([{ id: "sec_slot", name: sentinelSecret }])
+    const existing = sandbox()
+    const daytona = client({ secret, list: vi.fn(async () => ({ items: [existing] })) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona, warn })
+
+    await driver.ensureHost({
+      ...input,
+      secrets: [{ name: "NOTION_TOKEN", value: "ntn-secret", hosts: ["api.notion.com"] }],
+    })
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("restarting daytona sandbox sb_1"))
+  })
+
+  test("an org secret this driver did not mint is reported to the driver's own sink", async () => {
+    const warn = vi.fn()
+    const secret = secretService([
+      { id: "sec_slot", name: sentinelSecret },
+      { id: "sec_handmade", name: `${workspacePrefix}not%an%encoding` },
+    ])
+    const existing = sandbox()
+    const daytona = client({ secret, list: vi.fn(async () => ({ items: [existing] })) })
+    const driver = createDaytonaSandboxDriver({ ...baseOptions, client: daytona, warn })
+
+    await driver.ensureHost({ ...input, secrets: [] })
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("was not minted by this driver"))
   })
 
   test("secret names encode rather than collapse the characters Daytona forbids", async () => {
@@ -613,8 +662,10 @@ describe("DaytonaSandboxDriver", () => {
   test("a transient failure reapplying the policy is provisioning, never a target", async () => {
     const flaky = sandbox({
       id: "sb_flaky",
+      // A 5xx alone: the text names no marker, so what is proven is the
+      // status path rather than whichever of the two happened to match.
       updateNetworkSettings: vi.fn(async () => {
-        throw { response: { status: 503 }, message: "unavailable" }
+        throw { response: { status: 503 }, message: "upstream error" }
       }),
     })
     const daytona = client({ list: vi.fn(async () => ({ items: [flaky] })) })

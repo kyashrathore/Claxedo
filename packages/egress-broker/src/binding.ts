@@ -7,6 +7,23 @@ export type RuntimeIdentity = Readonly<{
   runtimeId: string
 }>
 
+/**
+ * `header` carries the credential value; `headers` are the fixed companions the
+ * vendor requires alongside it (ChatGPT's account id), which the broker sets so
+ * the harness never has to be told them.
+ *
+ * A `null` value names a companion this binding owns and has no value for. The
+ * broker strips every name here either way: a row whose account carries no id
+ * would otherwise let the harness's own `ChatGPT-Account-Id` travel to the
+ * vendor beside the operator's real token, spending one account's credential
+ * against another's plan.
+ */
+export type BindingInjection = Readonly<{
+  header: string
+  scheme?: string
+  headers?: Readonly<Record<string, string | null>>
+}>
+
 export type Binding = Readonly<RuntimeIdentity & {
   id: string
   credentialId: string
@@ -17,18 +34,7 @@ export type Binding = Readonly<RuntimeIdentity & {
     methods: readonly string[]
     pathPrefixes: readonly string[]
   }>
-  /**
-   * `header` carries the credential value; `headers` are the fixed companions
-   * the vendor requires alongside it (ChatGPT's account id), which the broker
-   * sets so the harness never has to be told them.
-   *
-   * A `null` value names a companion this binding owns and has no value for.
-   * The broker strips every name here either way: a row whose account carries
-   * no id would otherwise let the harness's own `ChatGPT-Account-Id` travel to
-   * the vendor beside the operator's real token, spending one account's
-   * credential against another's plan.
-   */
-  injection: Readonly<{ header: string; scheme?: string; headers?: Readonly<Record<string, string | null>> }>
+  injection: BindingInjection
 }>
 
 export type BindingFailure = Readonly<{
@@ -41,6 +47,13 @@ export type BindingFailure = Readonly<{
 export interface BindingAuthority {
   resolve(bindingId: string): Promise<{ binding: Binding; value: string } | undefined>
   currentRuntime(identity: RuntimeIdentity): Promise<boolean>
+  /**
+   * Called for a request the broker is about to forward, never from `resolve`:
+   * a placeholder minted before an account switch resolves to the account that
+   * replaced it and is then refused, so a use recorded at resolution would
+   * stamp the new account for a request that spent nothing.
+   */
+  markUsed(bindingId: string): Promise<void>
   reportFailure(failure: BindingFailure): Promise<void>
 }
 

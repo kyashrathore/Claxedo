@@ -9,7 +9,7 @@ import {
   type LocalHarnessCheck,
   type MachineLogin,
 } from "@/features/settings/app-ports"
-import type { AIUsageWindow } from "@/features/onboarding/ai-connect-state"
+import type { QuotaWindow } from "@claxedo/usage-contract"
 import {
   accountIdentity,
   activateCredential,
@@ -29,7 +29,16 @@ import {
   AgentHarnessRow,
   type AgentAccount,
 } from "@/features/settings/ui/agent-harness-row"
-import { HARNESS_CONNECT_PROVIDER, harnessIcon } from "@/platform/identity/harness-catalog"
+import { bindingIdsForHarness, harnessIcon } from "@/platform/identity/harness-catalog"
+import {
+  accountReach,
+  isRefusal,
+  isStoredVerdict,
+  readAccountDelivery,
+  VERDICT_KEY,
+  WINDOW_KEY,
+  type ProviderVerdict,
+} from "@/ui/controls/account-status"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { readPercent } from "@/lib/percent"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -46,12 +55,18 @@ const MACHINE_REACH: Record<string, readonly string[]> = {
   cursor: ["settings.providers.agents.machineCursorAcp", "settings.providers.agents.machineCursorSdkKey"],
 }
 
-/** Whether the harness runs on bindings this login cannot drive. */
+/**
+ * Whether the harness runs on bindings this login cannot drive.
+ *
+ * Measured against the harness's own bindings rather than every provider id it
+ * resolves auth through: a vendor key stored under the harness is that vendor's
+ * models, and counting it read Claude Code's complete login — which drives both
+ * of its bindings — as partial.
+ */
 function partialMachineLogin(login: MachineLogin) {
-  return login.serves !== undefined && login.serves.length < login.providerIds.length
+  const serves = login.serves
+  return serves !== undefined && bindingIdsForHarness(login.harness).some((id) => !serves.includes(id))
 }
-
-type LiveVerdict = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expired" | "unknown"
 
 /**
  * What the provider said about one stored account, and when. `unknown` carries
@@ -60,33 +75,9 @@ type LiveVerdict = "ok" | "auth_failed" | "no_billing" | "rate_capped" | "expire
  */
 type LiveCheck = {
   at: number
-  verdict?: LiveVerdict
-  usage?: AIUsageWindow[]
+  verdict?: ProviderVerdict
+  usage?: QuotaWindow[]
   reason?: string
-}
-
-const VERDICT_KEY: Record<LiveVerdict, string> = {
-  ok: "settings.providers.live.ok",
-  auth_failed: "settings.providers.live.authFailed",
-  no_billing: "settings.providers.live.noBilling",
-  rate_capped: "settings.providers.live.rateCapped",
-  expired: "settings.providers.live.expired",
-  unknown: "settings.providers.live.unknown",
-}
-
-const WINDOW_KEY: Record<string, string> = {
-  session: "settings.providers.window.session",
-  weekly: "settings.providers.window.weekly",
-  weekly_opus: "settings.providers.window.weeklyOpus",
-}
-
-/** The verdicts only a different credential, or a fresh login, can answer. */
-function unusable(verdict: LiveVerdict) {
-  return verdict === "auth_failed" || verdict === "no_billing" || verdict === "expired"
-}
-
-function isHealth(value: string): value is Exclude<LiveVerdict, "unknown"> {
-  return value === "ok" || value === "auth_failed" || value === "no_billing" || value === "rate_capped" || value === "expired"
 }
 
 /**
@@ -119,19 +110,8 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     })
   }
 
-  /** A harness's bound provider ids plus the one its connect card stores under. */
-  const providerIds = (check: LocalHarnessCheck): readonly string[] => {
-    const connect = HARNESS_CONNECT_PROVIDER[check.id]
-    return connect && !(check.providerIds as readonly string[]).includes(connect) ? [...check.providerIds, connect] : check.providerIds
-  }
-
-  const accounts = (check: LocalHarnessCheck) => {
-    const connect = HARNESS_CONNECT_PROVIDER[check.id]
-    return harnessAccounts(
-      { providerIds: providerIds(check), ...(connect === undefined ? {} : { connectProviderId: connect }) },
-      stored(),
-    )
-  }
+  const accounts = (check: LocalHarnessCheck) =>
+    harnessAccounts({ providerIds: check.providerIds, connectProviderId: check.connectProvider }, stored())
 
   /** What this harness said about its own login, in whichever of the four states. */
   const machineLogin = (check: LocalHarnessCheck): MachineLogin | undefined =>
@@ -149,7 +129,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const accountCheck = (row: HarnessAccount): LiveCheck | undefined => {
     const live = accountChecks()[row.id]
     if (live) return live
-    const verdict = row.health !== undefined && isHealth(row.health) ? row.health : undefined
+    const verdict = row.health !== undefined && isStoredVerdict(row.health) ? row.health : undefined
     if (verdict === undefined && row.usage === undefined) return undefined
     const at = row.usage === undefined ? row.lastValidatedAt : row.usageAt ?? row.lastValidatedAt
     if (at === undefined) return undefined
@@ -171,7 +151,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const selectedKey = (check: LocalHarnessCheck): string | undefined => {
     const rows = accounts(check)
     const known = effective()
-    const inUse = known ? agentInUse({ providerIds: providerIds(check) }, known) : undefined
+    const inUse = known ? agentInUse({ providerIds: check.providerIds }, known) : undefined
     const match = inUse ? rows.find((row) => row.ids.includes(inUse.id)) : undefined
     if (match) return match.id
     const active = rows.find((row) => row.isActive)
@@ -190,7 +170,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     return identity?.readable ? identity.text : row.kind ?? row.providerId
   }
 
-  const windowWords = (windows: readonly AIUsageWindow[] | undefined) =>
+  const windowWords = (windows: readonly QuotaWindow[] | undefined) =>
     (windows ?? []).map((window) => {
       const name = WINDOW_KEY[window.window]
       return language.t("settings.providers.live.window", {
@@ -198,6 +178,18 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
         used: String(readPercent(window.usedPercent)),
       })
     })
+
+  /**
+   * The provider's answer, where the row does not already carry it. A refusal
+   * is the ring on the radio and the Reconnect beside it; every other answer —
+   * a check that never reached the provider included — has nowhere else to be
+   * read, and a fresh read time beside nothing else reads as a check that
+   * succeeded.
+   */
+  const verdictWords = (live: LiveCheck | undefined) => {
+    if (live?.verdict === undefined || isRefusal(live.verdict)) return []
+    return [language.t(VERDICT_KEY[live.verdict]), ...(live.reason === undefined ? [] : [live.reason])]
+  }
 
   /**
    * The second line of one entry, or nothing when the label already said it
@@ -208,6 +200,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   const detailWords = (live: LiveCheck | undefined, origin?: string) => {
     const words = [
       ...(origin === undefined ? [] : [origin]),
+      ...verdictWords(live),
       ...windowWords(live?.usage),
     ]
     return words.length > 0 ? words.join(" · ") : undefined
@@ -245,7 +238,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
   /** The provider's refusal, which the row draws as a ring rather than as text. */
   const refusedWord = (live: LiveCheck | undefined) => {
     const verdict = live?.verdict
-    return verdict !== undefined && unusable(verdict) ? language.t(VERDICT_KEY[verdict]) : undefined
+    return verdict !== undefined && isRefusal(verdict) ? language.t(VERDICT_KEY[verdict]) : undefined
   }
 
   const listedAccounts = (check: LocalHarnessCheck): AgentAccount[] => {
@@ -267,6 +260,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
         // An id the reader cannot match to an account is worth having and not
         // worth a line, so the row carries it where a full value belongs.
         ...(identity === undefined || identity.readable ? {} : { identity: identity.text }),
+        reach: accountReach(row.delivery),
         selected: selected === row.id,
       }
     })
@@ -295,6 +289,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
       ...(detail === undefined ? {} : { detail }),
       ...(machine.usageAt === undefined ? {} : { checkedAt: machine.usageAt }),
       ...(note === "" ? {} : { note }),
+      reach: accountReach(readAccountDelivery(machine)),
       selected: selected === MACHINE,
       machine: true,
       ...(machine.state === "absent" || stranded ? { disabled: true } : {}),
@@ -313,15 +308,20 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
     const serves = login.serves
     if (serves === undefined) return false
     const known = effective()
-    const inUse = known ? agentInUse({ providerIds: providerIds(check) }, known) : undefined
-    return inUse !== undefined && !serves.includes(inUse.providerId)
+    const inUse = known ? agentInUse({ providerIds: check.providerIds }, known) : undefined
+    if (inUse === undefined) return false
+    // A vendor key was never this login's to replace: withdrawing its mark hands
+    // the harness back to the CLI login, which is the whole point of the row.
+    return bindingIdsForHarness(login.harness).includes(inUse.providerId) && !serves.includes(inUse.providerId)
   }
 
   /**
    * One round of asking every harness on this machine what it is signed in as,
    * plus a fresh read of the store. Everything that changes what is stored ends
    * here, so the machine-login entry appears and disappears from the same read
-   * the header is derived from. Local and cheap: no provider is called.
+   * the header is derived from. Asking a harness is not free — Codex answers
+   * through its app-server, which reads the plan windows from the vendor — so
+   * this runs on mount, on Rescan, and after a write, never on a render.
    */
   const scan = async () => {
     setScanning(true)
@@ -474,7 +474,7 @@ export const SettingsAgentsSection: Component<{ onConnected?: () => void | Promi
             <AgentHarnessRow
               id={harnessIcon(harness.id)}
               name={harness.label}
-              providerId={HARNESS_CONNECT_PROVIDER[harness.id] ?? harness.providerIds[0]}
+              providerId={harness.connectProvider}
               harness={harness.id}
               accounts={listedAccounts(harness)}
               onSelect={(account) => select(harness, account)}

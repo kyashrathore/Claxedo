@@ -1,4 +1,4 @@
-import type { ProviderBinding, ProviderProjection } from "../../provider-projection"
+import type { ProviderBinding } from "../../provider-projection"
 
 export type ClaudeAuthEnv = {
   ANTHROPIC_BASE_URL?: string
@@ -25,8 +25,4 @@ export function claudeAuthEnv(binding: ProviderBinding | undefined): ClaudeAuthE
     CLAUDE_CODE_OAUTH_TOKEN: undefined,
     CLAUDE_CODE_OAUTH_SCOPES: undefined,
   }
-}
-
-export function claudeAuthValue(auth: Record<string, ProviderProjection> | undefined) {
-  return auth?.["claude-sdk"] ?? auth?.anthropic ?? auth?.claude
 }

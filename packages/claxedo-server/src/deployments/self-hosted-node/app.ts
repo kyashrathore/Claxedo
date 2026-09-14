@@ -38,6 +38,7 @@ import {
   mountControlPlaneRouteContributions,
   type ControlPlaneRouteContribution,
 } from "@claxedo/server-core/platform/http/route-contribution"
+import { BROKER_ROUTE_PATTERN, isBrokerPath, loopbackBrokerRoutes } from "@claxedo/egress-broker"
 import { isLoopbackLocalRequest, peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { CLAXEDO_MCP_TOOL_GROUPS, fullUserCredential, inProcessFetch, type FirstPartyMcpOptions } from "@claxedo/mcp"
@@ -890,9 +891,7 @@ export function createSelfHostedApp(
         // does when no ACAO is returned. Reflecting any http://localhost:*
         // origin here would let a page on any local port read the tokens.
         if (isConnectionsCredentialPath(c.req.path)) return undefined
-        // The broker turns a runtime token into the operator's stored key. A
-        // loopback page granted an ACAO here could spend it from a browser.
-        if (c.req.path.startsWith("/bindings/")) return undefined
+        if (isBrokerPath(c.req.path)) return undefined
         if (origin.startsWith("http://localhost:")) return origin
         if (origin.startsWith("http://127.0.0.1:")) return origin
         return undefined
@@ -916,15 +915,8 @@ export function createSelfHostedApp(
   )
 
   if (options.egressBroker) {
-    const broker = options.egressBroker
-    // A signed deployment's guard steps aside, and this server may bind
-    // 0.0.0.0, so the peer check is the gate that keeps the credential proxy
-    // off the network. Serving a remote runtime waits on a signed runtime
-    // token that proves which lease is calling; a bearer the broker itself
-    // minted for a loopback harness does not.
-    app.all("/bindings/*", async (c) => isLoopbackLocalRequest(c.req.raw)
-      ? broker(c.req.raw)
-      : c.json({ error: { code: "loopback_required", message: "The credential broker answers loopback callers only" } }, 403))
+    const bindings = loopbackBrokerRoutes({ broker: options.egressBroker, isLoopback: isLoopbackLocalRequest })
+    app.all(BROKER_ROUTE_PATTERN, (c) => bindings(c.req.raw))
   }
 
   app.post("/api/claxedo/track", async (c) => {
@@ -1408,7 +1400,7 @@ export type ControlPlaneStackOptions = {
  */
 export function selfHostedCredentialAuthority(
   broker?: Pick<LocalCredentialBroker, "projectAuth">,
-): NonNullable<Parameters<typeof configureAgentConfig>[0]>["projectAuth"] {
+): NonNullable<NonNullable<Parameters<typeof configureAgentConfig>[0]>["projectAuth"]> {
   return (input) => broker ? broker.projectAuth(input) : projectNativeProviderAuth(input)
 }
 

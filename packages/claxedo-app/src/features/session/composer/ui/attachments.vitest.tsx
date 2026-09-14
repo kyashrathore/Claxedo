@@ -120,8 +120,8 @@ describe("prompt attachments", () => {
 
     expect(attachmentsIn({ dir: "/repo", id: "ses-hosted-video" })).toHaveLength(0)
     expect(showToast).toHaveBeenCalledWith({
-      title: "prompt.toast.attachmentHarnessUnsupported.title Claude",
-      description: "prompt.toast.attachmentHarnessUnsupported.description Claude video/mp4",
+      title: "prompt.toast.attachmentHarnessUnsupported.title Claude Code",
+      description: "prompt.toast.attachmentHarnessUnsupported.description Claude Code video/mp4",
     })
   })
 
