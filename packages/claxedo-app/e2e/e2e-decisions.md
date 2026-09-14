@@ -917,6 +917,18 @@ Ordered by user impact: confirmed real app bugs first, then dead/unreachable UI,
   - **C**: leave the anchor and document the transitory wrong-owner window — rejected: the original defect was reported as a fail and the observed window exceeded half a second.
 - **Decision**:
 
+### 79. real-harness-local — a Codex child session's escalated command must surface an approval dock (state 75)
+
+- **Status**: fixme; the scenario cannot currently reach the child turn — the parent's first send dies with "no rollout found for thread id" (the codex missing-rollout defect, same churn class as the Pi session-file defect fixed in `20fdb18874`: per-request config apply rotates the brokered placeholder, `replaceAuth` restarts the app-server, and a thread created-but-never-persisted is gone; `startTurnWithThreadRecovery` cannot help because its matcher (`/thread not found/i`) does not match "no rollout found" and `thread/resume` cannot recover a thread with no rollout file). The test detects that blocker and `test.skip`s explicitly so it can only go red on the actual defect once the parent turn works.
+- **Tests**: `codex child session's escalated command surfaces an approval dock, not a silent denial`.
+- **Expected**: a `spawn_agent` child whose `exec_command` carries `require_escalated` surfaces a permission dock on the parent (the child's own tab is read-only), so no command reports "User declined" without a user-visible decision.
+- **Why**: this qualifies the numbered-inventory issue Codex #75 (child command reports denial without a visible decision). The Tier M control `a child session's permission request reaches a decision dock on the parent` (core-docks.spec) PASSES in both auth modes: `sessionTreeRequest` walks `parentID`-linked child sessions, so a `permission.asked` on the child mounts the dock on the parent's composer and Deny posts `reject` to the child's route. The UI path is therefore not the defect — the runtime must have auto-denied without ever asking. Only the real producer can prove that, which is why the repro lives at Tier R.
+- **Options**:
+  - **A (recommended)**: fix the upstream missing-rollout churn (driver-side recovery for created-but-unpersisted threads, as Pi got in `20fdb18874`, or stop rotating the brokered placeholder within its TTL), then this test reaches the child ask; if the dock still never mounts, the defect is the runtime auto-denying approvals for sessions without an active-thread entry.
+  - **B**: route child-session approval asks to the parent's decision surface explicitly in the runtime, so a child can never be denied without a visible decision.
+  - **C**: keep the denial semantics but relabel the stored error so it no longer claims a user decision that never happened.
+- **Decision**:
+
 ## 3. Live-suite skips (not in core CI)
 
 These four `*.spec.ts` suites are gated behind `CLAXEDO_E2E_LIVE=1` (Tier L: real claxedo-server, real relay/tunnel, real MCP subprocess, real harness binaries) and do **not** run in core CI. Within them, the following bodies are `test.fixme` (real app bug/gap) or `test.skip` (missing prereq). Listed for triage; not blocking core CI.

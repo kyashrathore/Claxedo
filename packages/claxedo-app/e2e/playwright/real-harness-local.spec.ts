@@ -2838,6 +2838,65 @@ setTimeout(() => process.exit(2), 90000).unref();
     })
   })
 
+  test("codex child session's escalated command surfaces an approval dock, not a silent denial", async ({ page }, testInfo) => {
+    test.fixme(true, "a child session's approval request is auto-denied without surfacing a decision dock")
+    const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
+    requireBinary(binary, "codex", "install the Codex CLI to exercise a real child-session approval boundary.")
+    const dir = await makeWorkspace("codex-child-permission", "codex")
+    const outputDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-child-permission-"))
+    const output = path.join(outputDir, "result.txt")
+    try {
+      await seedOneProject(page, dir)
+      const input = await openDraftPrompt(page, dir)
+      await switchDraftHarness(page, "codex")
+      await waitForHarnessReady(page)
+      const permission = page.locator('[data-action="prompt-permission-mode"]').last()
+      await permission.click()
+      await page.locator('[data-permission-mode-row][data-mode="workspace-write"]').click()
+      await expect(permission).toHaveAttribute("data-mode", "workspace-write")
+
+      const marker = `CHILDSPAWN-${Date.now()}`
+      scripted!.scriptTool({
+        name: "spawn_agent",
+        input: { task_name: "approval_child", message: "Run the requested command, then reply with exactly CHILD-DONE" },
+        whenPromptIncludes: marker,
+      })
+      await composePrompt(page, input, `Delegate one child task, then reply with exactly this token: ${marker}`)
+      await page.locator(SELECTORS.submitControl).last().click()
+      await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+
+      // Arm the child's escalated command only after the spawn call fired. The
+      // child's first model request is a fresh conversation with no
+      // function_call_output; every parent continuation after the spawn carries
+      // one, so an unmarked tool lands on the child's turn only.
+      //
+      // The codex app-server drops the just-created thread when its process
+      // restarts between session create and first send ("no rollout found for
+      // thread id"). While that upstream defect holds, the scenario cannot
+      // reach the child turn — skip there rather than fail at the wrong step.
+      const spawned = await expect
+        .poll(() => scripted!.requests.some((request) => request.reply.kind === "tool"), { timeout: 30_000 })
+        .toBe(true)
+        .then(() => true, () => false)
+      if (!spawned) {
+        test.skip(true, "blocked upstream: the codex parent turn dies with 'no rollout found for thread id' before the spawn call")
+      }
+      scripted!.scriptTool({
+        name: "exec_command",
+        input: { cmd: `printf child-denied > '${output}'`, sandbox_permissions: "require_escalated", justification: "child approval boundary" },
+      })
+
+      // QA state 75: the child command reported "User declined the command"
+      // while no approval surface ever appeared. The expected behavior is that
+      // the child's ask reaches a decision dock on the parent.
+      const dock = page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
+      await expect(dock, "the child session's escalated command never surfaced a decision dock").toBeVisible({ timeout: 120_000 })
+      await page.screenshot({ path: testInfo.outputPath("child-permission-dock.png") })
+    } finally {
+      await fs.rm(outputDir, { recursive: true, force: true })
+    }
+  })
+
   test("cursor harness materializes without silently routing through another provider", async ({
     page,
   }) => {
