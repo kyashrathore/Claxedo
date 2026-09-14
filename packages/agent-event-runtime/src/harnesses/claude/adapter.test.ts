@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { USAGE_WINDOW_NAMES } from "@claxedo/agent-runtime-contract"
 import { createAgentEventRuntime } from "../../core/runtime"
 import type { RuntimeSnapshot } from "../../core/state"
 import { createClientPresentationProjection } from "../../projections/client-presentation/projection"
@@ -1479,6 +1480,9 @@ describe("claudeSdkAdapter rate limits", () => {
       .toMatchObject({ status: "ok", limitId: "seven_day", limitName: "weekly" })
     expect(emitted({ status: "allowed", rateLimitType: "seven_day_opus", utilization: 5 })[0])
       .toMatchObject({ limitId: "seven_day_opus", limitName: "weekly_opus" })
+    for (const [slot, name] of Object.entries(USAGE_WINDOW_NAMES.claude ?? {})) {
+      expect(emitted({ status: "allowed", rateLimitType: slot, utilization: 1 })[0]).toMatchObject({ limitName: name })
+    }
   })
 
   test("passes a window the vendor added since through under its own name", () => {
