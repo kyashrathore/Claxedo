@@ -1,6 +1,7 @@
 import type { D1Database } from "@cloudflare/workers-types"
 
 import type { UserHostedTargetResolver } from "../../sandbox-relay-target"
+import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
 
 type ActiveHostRow = {
   host_id: string
@@ -12,9 +13,9 @@ type ActiveHostRow = {
  *
  * The internal resolver has machine authority, not an end-user principal, so
  * it cannot call `WorkspaceAuthority.activeWorkspaceHost`. It reads only the
- * minimum routing fact — owner assignment AND the machine's heartbeat-acked
- * served set AND a live enrollment lease — and rechecks authoritative
- * workspace posture in the same query.
+ * minimum routing fact — owner assignment AND the serving predicate every other
+ * routability reader uses (`HOST_SERVING_WORKSPACE_SQL`) — and rechecks
+ * authoritative workspace posture in the same query.
  */
 export function createD1UserHostedTargetResolver(
   database: D1Database,
@@ -35,13 +36,7 @@ export function createD1UserHostedTargetResolver(
       inner join workspaces as workspace on workspace.workspace_id = assignment.workspace_id
       inner join orgs as organization on organization.org_id = workspace.org_id
       where assignment.workspace_id = ?
-        and enrollment.revoked_at is null
-        and enrollment.paused_at is null
-        and enrollment.expires_at > ?
-        and exists (
-          select 1 from json_each(coalesce(enrollment.acked_workspace_ids, '[]'))
-          where json_each.value = assignment.workspace_id
-        )
+        and ${HOST_SERVING_WORKSPACE_SQL}
         and workspace.deleted_at is null
         and organization.deleted_at is null
         ${deploymentId ? "and organization.deployment_id = ?" : ""}

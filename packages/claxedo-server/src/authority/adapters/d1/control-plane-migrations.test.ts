@@ -33,6 +33,8 @@ const CONTROL_PLANE_MIGRATIONS = [
   "0023_agent_plugin_sources.sql",
   "0024_session_last_human_turn.sql",
   "0025_claxedo_tasks.sql",
+  "0026_workspace_org_member_visible.sql",
+  "0027_host_connect.sql",
 ]
 
 const BEFORE_ADAPTER_REBUILD = CONTROL_PLANE_MIGRATIONS.slice(

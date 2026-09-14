@@ -21,6 +21,7 @@ import {
 } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { asRecord, numberField, parseJson } from "@claxedo/server-core/platform/json/index"
+import { organizationRoleRankSql } from "./host-access-authority"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -1887,9 +1888,12 @@ function actorWorkspaceRoleRankSql(actorExpression: string, workspaceAlias: stri
     coalesce((select case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end
       from project_memberships pm
       where pm.project_id = ${workspaceAlias}.project_id and pm.user_id = a.user_id and pm.revoked_at is null), 0),
-    case when o.owner_user_id = a.user_id then 3
-      when om.role in ('owner', 'admin') then 3
-      when om.role = 'member' then 1 else 0 end
+    ${organizationRoleRankSql({
+      orgOwnerUserId: "o.owner_user_id",
+      userId: "a.user_id",
+      orgMemberRole: "om.role",
+      workspaceAlias: workspaceAlias,
+    })}
   )`
     .replaceAll("a.user_id", `(select user_id from actors where actor_id = ${actorExpression})`)
     .replaceAll(

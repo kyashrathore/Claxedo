@@ -111,6 +111,7 @@ import { JwksRoutes } from "../../authority/routes/jwks"
 import { OAuthProtectedResourceRoutes } from "../../mcp/oauth-protected-resource"
 import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
+import { hostConnectEndpointOptions } from "../../workspace/route-support"
 import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-node"
 import { BootstrapRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -443,6 +444,7 @@ function workspaceRouteOptions(
       ? { runtimeAccessTokenSigner: services.relay.runtimeAccessTokenSigner }
       : {}),
     ...(services.relay.hostTunnelTokenSigner ? { hostTunnelTokenSigner: services.relay.hostTunnelTokenSigner } : {}),
+    ...hostConnectEndpointOptions(process.env),
     ...(connectionRateLimiter ? { connectionRateLimiter } : {}),
   }
 }

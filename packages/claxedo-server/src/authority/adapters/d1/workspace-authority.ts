@@ -12,7 +12,7 @@ import type {
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
-import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
+import { HOST_SERVING_WORKSPACE_SQL, organizationRoleRankSql } from "./host-access-authority"
 import { asOrgId, type OrgId } from "@claxedo/server-core/platform/auth/branded-id"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
@@ -78,6 +78,8 @@ export type D1WorkspaceCreateArgs = {
   homeRegion?: string
   backing: "local-worktree" | "cloud-vm"
   access: "user-hosted" | "cloud"
+  /** Whether ordinary org members get the implicit viewer rank; the serving host's scope decides it. */
+  orgMemberVisible?: boolean
 }
 
 type Principal = {
@@ -1157,9 +1159,10 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             `
         insert into workspaces (
           workspace_id, org_id, project_id, owner_user_id, backing, access, display_name,
-          home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at, deleted_at
+          home_region, repo_url, repo_name, git_branch, remote_directory, created_at, updated_at, deleted_at,
+          org_member_visible
         )
-        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null
+        select ?, ?, p.project_id, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, null, ?
         from projects p
         where p.org_id = ? and p.repo_key = ? and p.deleted_at is null
           and (? is null or p.project_id = ?)
@@ -1181,6 +1184,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
             input.remoteDirectory ?? null,
             now,
             now,
+            input.orgMemberVisible === false ? 0 : 1,
             orgId,
             repoKey,
             input.projectId ?? null,
@@ -1263,11 +1267,13 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       gitBranch?: string
       remoteDirectory?: string
       homeRegion?: string
+      orgId?: string
+      orgMemberVisible?: boolean
     },
   ) {
     return await this.createWorkspace(auth, {
       ...args,
-      orgId: await this.creationOrgId(auth, args.projectId),
+      orgId: args.orgId ?? await this.creationOrgId(auth, args.projectId),
       backing: "local-worktree",
       access: "user-hosted",
     })
@@ -1596,9 +1602,12 @@ function workspaceAccessSql(predicate: string) {
           join teams t on t.team_id = tg.team_id and t.org_id = w.org_id and t.deleted_at is null
           where tg.project_id = w.project_id and tg.revoked_at is null
         ), 0),
-        case when o.owner_user_id = ? then 3
-          when om.role in ('owner', 'admin') then 3
-          when om.role = 'member' then 1 else 0 end
+        ${organizationRoleRankSql({
+          orgOwnerUserId: "o.owner_user_id",
+          userId: "?",
+          orgMemberRole: "om.role",
+          workspaceAlias: "w",
+        })}
       ) as role_rank
     from workspaces w
     join projects p on p.project_id = w.project_id and p.org_id = w.org_id and p.deleted_at is null
@@ -1728,7 +1737,8 @@ function denied(message = "Workspace authority denied access") {
   return new ControlPlaneAuthError(403, "workspace_authorization_denied", message)
 }
 
-function batchAssertionFailed(error: unknown): boolean {
+/** A guarded batch aborted on its `authority_batch_assertions` row; the cause chain is searched because D1 wraps the SQLite error. */
+export function batchAssertionFailed(error: unknown): boolean {
   if (!(error instanceof Error)) return false
   if (error.message.includes("passed = 1")) return true
   return batchAssertionFailed(error.cause)

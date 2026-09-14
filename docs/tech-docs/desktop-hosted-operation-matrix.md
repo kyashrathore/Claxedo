@@ -60,6 +60,22 @@ Also excluded from AccountPort (intentional non-rows):
   remote access section.
 - **Retired** `GET /documents/events` — editors now use the central
   `session.events` doorbell.
+- **Machine-signed and invitation routes** — a `claxedo connect` host has no
+  account on the box, so nothing below is an AccountPort operation. Listed here
+  so the closed set stays complete; `hosted-operation-inventory.test.ts`
+  requires every one of these paths to be recorded in this section.
+
+  | Method + path | Caller | Auth | Budget | Notes |
+  |---|---|---|---|---|
+  | `POST /api/claxedo/host/enrollments/redeem` | `packages/claxedo-host-connector/src/bootstrap.ts` | none: the single-use invitation secret is the credential | body 8 KiB; 120/min per client address; 5/min per `invitation_id` | Creates the enrollment from `chx_inv_1.<invitation_id>.<secret>`. Idempotent for the same key AND host id (`resumed: true`); `invitation_invalid` never says whether the id or the secret was wrong. Answers `relay { url, jwks_url }` and `authority { session_authority_url }`. |
+  | `POST /api/claxedo/host/enrollments/acquire` | `packages/claxedo-host-connector/src/machine-transport.ts` | machine-signed (`x-claxedo-enrollment-id`, `-host-ts`, `-host-nonce`, `-host-signature`) | body 16 KiB; 120/min per client address; 120/min per `machine:<enrollment_id>` after verification | A starting instance claims the next serving generation; every earlier generation's beats and tunnels are refused from then on. |
+  | `POST /api/claxedo/host/enrollments/heartbeat` (v3, no account credential) | `packages/claxedo-host-connector/src/machine-transport.ts` | machine-signed | body 16 KiB; 120/min per client address; 120/min per `machine:<enrollment_id>` | Renews the lease as the row's owner, records readiness from `acks[{workspaceId, revision}]`, returns `assignments` with revisions, the versioned `scope`, the endpoints and ONE Host Tunnel credential for the ready set, carrying `enrollment_id` + `generation`. A lower generation is 409 `enrollment_generation_superseded`. The account v2 beat (`host.enrollmentHeartbeat` above) is unchanged and takes precedence whenever an account credential is present. |
+  | `PATCH /api/claxedo/host/enrollments/:id/scope` | owner account (panel, `claxedo host scope`) | signed | 120/min per account | Writes `{ allowed_roots, visibility }`, bumps `scope_revision`, and in the same batch deletes every assignment now outside the roots with its readiness row and retires its workspace. AccountPort rows for the panel land with the remote access panel (P4). |
+  | `GET /api/claxedo/host/enrollments` | owner account | signed | 120/min per account | The existing `active` row plus `machines` (P1.6). |
+  | `POST /api/claxedo/host/invitations` | owner account | signed | 10/min per account (writes a row and mints a secret) | `{ scope, displayName?, expiresInMs? }` → `{ invitation_id, token, expires_at }`; expiry clamped to [5 min, 24 h]; the org is the caller's current one. |
+  | `GET /api/claxedo/host/invitations` | owner account | signed | 120/min per account | `{ invitations }`; never the secret. |
+  | `DELETE /api/claxedo/host/invitations/:id` | owner account | signed | 120/min per account | Revokes an unredeemed invitation. |
+  | `GET /internal/relay/host-generation?enrollmentId=` | the relay | resolver bearer or loopback, like the other `/internal/relay/*` routes | — | `{ enrollmentId, generation, revoked }` or 404; the relay's admission fence. |
 
 ## Transport kinds
 
@@ -277,3 +293,6 @@ which blocks Unit 9 until it gets a typed broker contract. One remains flagged:
 3. Every path in this file is a route the hosted app actually mounts, or is
    explicitly recorded as local-only.
 4. No row claims a `directRuntimeUrl` or a laptop address.
+5. Every machine-signed, invitation and relay-fence route is recorded in the
+   "not an account operation" section, and none of them appears as an
+   AccountPort row.

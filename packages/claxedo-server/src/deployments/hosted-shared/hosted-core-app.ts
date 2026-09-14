@@ -20,11 +20,11 @@ import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/host
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
-import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
+import { HostEnrollmentRoutes, HostInvitationRoutes } from "../../routes/hosted/host-enrollment"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
 import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
-import { signedOrError } from "../../workspace/route-support"
+import { hostConnectEndpointOptions, signedOrError } from "../../workspace/route-support"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
@@ -244,6 +244,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ? { runtimeAccessTokenSigner: services.relay.runtimeAccessTokenSigner }
       : {}),
     ...(services.relay.hostTunnelTokenSigner ? { hostTunnelTokenSigner: services.relay.hostTunnelTokenSigner } : {}),
+    ...hostConnectEndpointOptions(plane.env),
     cliTokenEnv: plane.env,
     connectionRateLimiter: createFixedWindowConnectionRateLimiter({
       limit: plane.safetyLimits.connectionRateLimit,
@@ -322,6 +323,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   }
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
+  app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
     deviceLoginConfigured: true,
     relayConfigured: !!services.relay.provider,

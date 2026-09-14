@@ -26,6 +26,8 @@ import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/backgr
 import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { asRecord } from "@claxedo/helpers/guards"
+import { isClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { contentfulStatus } from "../../platform/http/status"
 import { workspaceShareRoutes } from "../../workspace/routes/share-routes"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
@@ -663,6 +665,12 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           if (isWorkspaceBackingConflict(err)) return c.json(workspaceBackingConflictBody(), 409)
           if (err instanceof ControlPlaneAuthError)
             return c.json(controlPlaneAuthErrorBody(err), err.status)
+          // The authority's own refusals — a directory outside the machine's
+          // roots, a workspace in another organization than the invitation's —
+          // are the owner's answer, not a server fault.
+          if (isClaxedoError(err)) {
+            return c.json({ error: apiError(err.code, err.message) }, contentfulStatus(err.status))
+          }
           throw err
         }
       })
