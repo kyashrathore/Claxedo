@@ -529,12 +529,14 @@ function renewLease(db: SqliteAuthorityDb, input: {
   return {
     expires_at: expiresAt,
     last_seen_at: now,
-    assignments: assignments.map((assignment) => ({
+    // A workspace with no directory is assigned but not describable; it stays
+    // in the id set for reconciliation and out of the descriptions.
+    assignments: assignments.flatMap((assignment) => assignment.remote_directory === null ? [] : [{
       workspace_id: assignment.workspace_id,
-      remote_directory: assignment.remote_directory ?? "",
+      remote_directory: assignment.remote_directory,
       ...(assignment.display_name ? { display_name: assignment.display_name } : {}),
       revision: assignment.revision,
-    })),
+    }]),
     scope: enrollmentScope(row),
     assigned_workspace_ids: assignments.map((assignment) => assignment.workspace_id),
   }
@@ -1806,7 +1808,7 @@ export function createSqliteWorkspaceAuthority(
       return {
         expires_at: renewed.expires_at,
         last_seen_at: renewed.last_seen_at,
-        assigned_workspace_ids: renewed.assignments.map((assignment) => assignment.workspace_id),
+        assigned_workspace_ids: renewed.assigned_workspace_ids,
       }
     },
     async heartbeatHostEnrollmentByMachine(machine: MachinePrincipal, args) {
@@ -1848,12 +1850,14 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       return db.transaction(() => {
         const now = Date.now()
+        // A compare-and-set on the generation the verifier read: a principal
+        // from before another instance's acquire is superseded, not a taker.
         const changed = db.prepare(`
           UPDATE host_enrollments SET
             serving_generation = serving_generation + 1, generation_acquired_at = ?, updated_at = ?
-          WHERE ${machineMutationGuardSql("host_enrollments")}
-        `).run(now, now, machine.enrollmentId, machine.keyVersion).changes
-        if (changed !== 1) throw machineMutationRefusal(db, machine, {})
+          WHERE ${machineMutationGuardSql("host_enrollments")} AND host_enrollments.serving_generation = ?
+        `).run(now, now, machine.enrollmentId, machine.keyVersion, machine.generation).changes
+        if (changed !== 1) throw machineMutationRefusal(db, machine, { generation: machine.generation })
         const row = db.prepare<unknown[], Pick<HostEnrollmentRow, "serving_generation" | "owner_token_identifier">>(`
           SELECT serving_generation, owner_token_identifier FROM host_enrollments WHERE enrollment_id = ?
         `).get(machine.enrollmentId)
@@ -2162,7 +2166,11 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       const scope = validatedScope(args.scope)
+      // The invitation's org is the caller's current org, recorded now and
+      // never inferred later — so a named org the caller is not in is a
+      // refusal, not a fall-through to the personal org.
       const orgId = await workspaceAuthority.resolveOrgId(auth)
+      if (auth.user.orgId && auth.user.orgId !== orgId) denied()
       const now = Date.now()
       const expiresIn = Number.isFinite(args.expiresInMs) && args.expiresInMs !== undefined
         ? Math.max(INVITATION_MIN_TTL_MS, Math.min(args.expiresInMs, INVITATION_MAX_TTL_MS))
