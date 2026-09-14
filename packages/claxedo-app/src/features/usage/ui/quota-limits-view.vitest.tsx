@@ -14,10 +14,7 @@ vi.mock("@/platform/i18n/provider", () => ({
 
 const { QuotaLimitsView, accountCards, quotaSummary } = await import("./quota-limits-view")
 
-afterEach(() => {
-  cleanup()
-  vi.useRealTimers()
-})
+afterEach(cleanup)
 
 const snapshot: QuotaSnapshot = {
   accounts: [
