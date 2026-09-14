@@ -371,7 +371,7 @@ export function createFakeConnectControlPlane(options: { now?: () => number; url
     if (!enrollment) throw new Refusal(404, "host_enrollment_not_found")
     enrollment.revoked_at = now()
     for (const [workspaceId, assignment] of assignments) if (assignment.enrollment_id === enrollment.enrollment_id) unassign(workspaceId)
-    return { paused: true, host_id: hostId }
+    return true
   }
 
   const machines = () =>
@@ -416,10 +416,8 @@ export function createFakeConnectControlPlane(options: { now?: () => number; url
         visibility: body.visibility === "org" ? "org" : "owner",
       })
     }
-    if (method === "POST" && pathname === "/api/claxedo/host/enrollments/pause") {
-      if (body.paused !== true) throw new Refusal(400, "only_pause_is_faked")
-      return revoke(asString(body.hostId) ?? "")
-    }
+    const deviceMatch = /^\/api\/claxedo\/remote-access\/devices\/([^/]+)$/.exec(pathname)
+    if (method === "DELETE" && deviceMatch) return { revoked: revoke(decodeURIComponent(deviceMatch[1])) }
     if (method === "GET" && pathname === "/api/workspace") {
       return {
         workspaces: [...assignments.values()].map((assignment) => ({

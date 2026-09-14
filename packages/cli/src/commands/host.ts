@@ -40,7 +40,7 @@ Owner commands, run from a signed-in laptop (\`claxedo login\`), never on the ho
   assign    have a machine serve <dir> (absolute, under its roots); creates the workspace row when new
   unassign  stop serving <dir>; the workspace is retired
   scope     replace a machine's allowed roots; assignments outside them are retired
-  revoke    stop a machine: its next beat is refused and \`claxedo connect\` exits 78
+  revoke    revoke a machine for good (assignments, readiness and tokens cascade); its next beat is refused and \`claxedo connect\` exits 78
 --machine matches an enrollment id, else a display name exactly (case-sensitive); an ambiguous name is refused.
 --org-visible lets ordinary org members open the machine's workspaces; default is owner, direct and project members, and org admins only.`
 
@@ -309,11 +309,13 @@ async function revokeMachine(deps: HostDeps, parsed: Parsed) {
   const token = await deps.token()
   const machine = await selectMachine(deps, token, selector)
   await deps.request({
-    url: url(deps.controlPlaneUrl, "/api/claxedo/host/enrollments/pause"),
+    url: url(deps.controlPlaneUrl, `/api/claxedo/remote-access/devices/${encodeURIComponent(machine.host_id)}`),
+    method: "DELETE",
     token,
-    body: { hostId: machine.host_id, paused: true },
   })
-  deps.log(`${machine.display_name || machine.enrollment_id} revoked; its next beat is refused and \`claxedo connect\` there exits 78`)
+  deps.log(
+    `${machine.display_name || machine.enrollment_id} revoked: its assignments and runtime tokens are gone, its next beat is refused and \`claxedo connect\` there exits 78; the host id is never reusable`,
+  )
 }
 
 export async function hostCommand(args: string[], deps: HostDeps = defaultHostCommandDeps()) {

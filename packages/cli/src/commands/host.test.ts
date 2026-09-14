@@ -151,7 +151,7 @@ describe("claxedo host", () => {
     await expect(host(["unassign", "--machine", "build-box", "/srv/api"], deps)).rejects.toThrow("No user-hosted workspace is registered for /srv/api")
   })
 
-  test("scope patches the roots and visibility; revoke pauses the machine's enrollment", async () => {
+  test("scope patches the roots and visibility; revoke deletes the machine through the devices route", async () => {
     const machine = await enrolledMachine(cp, "build-box")
     const { deps, lines } = owner(cp)
     await host(["assign", "--machine", "build-box", "/srv/api"], deps)
@@ -164,8 +164,8 @@ describe("claxedo host", () => {
     await expect(host(["scope", "--machine", "build-box"], deps)).rejects.toThrow("at least one --root")
 
     await host(["revoke", "--machine", "build-box"], deps)
-    const paused = cp.log.find((entry) => entry.path === "/api/claxedo/host/enrollments/pause")
-    expect(paused?.body).toEqual({ hostId: machine.hostId, paused: true })
+    const revoked = cp.log.find((entry) => entry.method === "DELETE" && entry.path.startsWith("/api/claxedo/remote-access/devices/"))
+    expect(revoked?.path).toBe(`/api/claxedo/remote-access/devices/${machine.hostId}`)
     expect(cp.enrollments.get(machine.enrollmentId)?.revoked_at).toBeDefined()
     await expect(host(["revoke", "--machine", "build-box"], deps)).rejects.toThrow("No machine named build-box")
   })
