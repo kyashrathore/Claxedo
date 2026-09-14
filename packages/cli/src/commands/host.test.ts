@@ -195,6 +195,42 @@ describe("claxedo host", () => {
     expect(lines.at(-1)).toBe(`sleeper no longer serves /srv/api (${workspaceId} retired)`)
   })
 
+  test("a trailing slash or a `..` names the same folder: assign re-points the existing workspace and unassign finds it", async () => {
+    const machine = await enrolledMachine(cp, "build-box")
+    const { deps, lines } = owner(cp)
+    await host(["assign", "--machine", "build-box", "/srv/app"], deps)
+    const [workspaceId] = [...cp.assignments.keys()]
+
+    await host(["assign", "--machine", "build-box", "/srv/app/"], deps)
+    await host(["assign", "--machine", "build-box", "/srv/./tmp/../app"], deps)
+
+    expect(cp.assignments.size, "one folder, one workspace").toBe(1)
+    expect(cp.assignments.get(workspaceId)).toMatchObject({ remote_directory: "/srv/app", revision: 3 })
+    const sent = cp.log.filter((entry) => entry.method === "POST" && entry.path.endsWith("/host-assignment")).map((entry) => entry.body)
+    expect(sent.map((body) => body.remoteDirectory), "the control plane is sent the normalized form").toEqual(["/srv/app", "/srv/app", "/srv/app"])
+    expect(sent.map((body) => body.repoName)).toEqual(["app", "app", "app"])
+    expect(lines.at(-1)).toBe(`build-box will serve /srv/app as ${workspaceId} (app); it acks on its next beat`)
+
+    await machine.ackAll()
+    await host(["unassign", "--machine", "build-box", "/srv/app/"], deps)
+    expect(cp.assignments.size).toBe(0)
+    expect(lines.at(-1)).toBe(`build-box no longer serves /srv/app (${workspaceId} retired)`)
+    await expect(host(["assign", "--machine", "build-box", "/srv/../etc"], deps)).rejects.toThrow("host_assignment_outside_scope")
+  })
+
+  test("two assignments already at one folder are refused with their ids rather than one being picked", async () => {
+    const machine = await enrolledMachine(cp, "build-box")
+    const { deps } = owner(cp)
+    cp.assign({ hostId: machine.hostId, workspaceId: "ws_a", remoteDirectory: "/srv/app" })
+    cp.assign({ hostId: machine.hostId, workspaceId: "ws_b", remoteDirectory: "/srv/app/" })
+
+    await expect(host(["assign", "--machine", "build-box", "/srv/app"], deps)).rejects.toThrow(
+      "build-box has 2 workspaces at /srv/app (ws_a, ws_b); this command cannot tell which is meant — retire one at the control plane first",
+    )
+    await expect(host(["unassign", "--machine", "build-box", "/srv/app/"], deps)).rejects.toThrow("ws_a, ws_b")
+    expect(cp.assignments.size, "nothing was written").toBe(2)
+  })
+
   test("the same directory string on two machines is two workspaces; unassign on one leaves the other's", async () => {
     const box1 = await enrolledMachine(cp, "box1")
     const box2 = await enrolledMachine(cp, "box2")

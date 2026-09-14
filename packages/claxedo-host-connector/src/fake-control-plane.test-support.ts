@@ -32,7 +32,7 @@ import {
   newHostId,
   publicKeyJwk,
 } from "./host-identity"
-import { createHostStateStore, isPlainRecord, newHostState, pathWithinRoots, type HostStateFs } from "./host-state"
+import { createHostStateStore, isPlainRecord, newHostState, normalizeAbsolutePath, pathWithinRoots, type HostStateFs } from "./host-state"
 import type { FetchLike } from "./machine-transport"
 
 const SKEW_MS = 60_000
@@ -441,15 +441,18 @@ export function createFakeControlPlane(
     /**
      * The owner's assignment, by enrollment or host id. The lexical scope
      * check is the control plane's; a test that wants the host's resolved
-     * check to be the one refusing widens `enrollment.scope` directly.
+     * check to be the one refusing widens `enrollment.scope` directly. The
+     * directory is recorded normalized (`normalizeStoredDirectory` at the
+     * control plane), so `/srv/app/` and `/srv/app` are one row.
      */
     assign: (
       input: ({ enrollmentId: string } | { hostId: string }) & { workspaceId: string; remoteDirectory: string; displayName?: string },
     ) => {
       const enrollment = "hostId" in input ? enrollmentByHostId(input.hostId) : enrollments.get(input.enrollmentId)
       if (!enrollment || enrollment.revoked_at !== undefined) throw new FakeRefusal(404, "host_enrollment_not_found")
-      if (!input.remoteDirectory.startsWith("/")) throw new FakeRefusal(400, "invalid_input")
-      if (!pathWithinRoots(input.remoteDirectory, enrollment.scope.allowed_roots)) {
+      const remoteDirectory = normalizeAbsolutePath(input.remoteDirectory)
+      if (remoteDirectory === undefined) throw new FakeRefusal(400, "invalid_input")
+      if (!pathWithinRoots(remoteDirectory, enrollment.scope.allowed_roots)) {
         throw new FakeRefusal(400, "host_assignment_outside_scope")
       }
       const existing = assignments.get(input.workspaceId)
@@ -457,7 +460,7 @@ export function createFakeControlPlane(
         workspace_id: input.workspaceId,
         enrollment_id: enrollment.enrollment_id,
         host_id: enrollment.host_id,
-        remote_directory: input.remoteDirectory,
+        remote_directory: remoteDirectory,
         ...(input.displayName ? { display_name: input.displayName } : {}),
         revision: (existing?.revision ?? 0) + 1,
       }

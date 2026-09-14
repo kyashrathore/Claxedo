@@ -2,6 +2,7 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { asFiniteNumber, asRecordOrEmpty } from "@claxedo/helpers/guards"
 import { trimToUndefined } from "@claxedo/helpers/string"
+import { normalizeAbsolutePath } from "@claxedo/host-connector/host-state"
 import { requireAccessToken } from "../auth/token-store"
 import { config, url } from "../config"
 import { takeValue } from "../connect/args"
@@ -168,11 +169,18 @@ function requireMachineSelector(parsed: Parsed) {
   return parsed.machine
 }
 
+/**
+ * The directory in the form the control plane records it (`normalizeStoredDirectory`
+ * there, the same rule as `normalizeAbsolutePath`): `/srv/app/` and `/srv/app`
+ * are one folder, so the match against the machine's assignments and the
+ * value sent are both the normalized one.
+ */
 function requireMachineDirectory(parsed: Parsed) {
   const directory = parsed.positional[0]
   if (!directory) throw new Error(`a directory on the machine is required\n${hostUsage}`)
-  if (!directory.startsWith("/")) throw new Error(`the directory must be an absolute path on the machine: ${directory}`)
-  return directory
+  const normalized = normalizeAbsolutePath(directory)
+  if (normalized === undefined) throw new Error(`the directory must be an absolute path on the machine: ${directory}`)
+  return normalized
 }
 
 async function listMachines(deps: HostDeps, token: string) {
@@ -187,9 +195,20 @@ async function selectMachine(deps: HostDeps, token: string, selector: string) {
   return resolveMachine(await listMachines(deps, token), selector)
 }
 
-/** The workspace the owner has assigned to THIS machine at `directory`, acked or not; another machine's at the same string is never it. */
+/**
+ * The workspace the owner has assigned to THIS machine at `directory`, acked
+ * or not; another machine's at the same string is never it. Two of them is a
+ * control-plane state this command cannot disambiguate, so it names both
+ * and writes nothing.
+ */
 function machineWorkspaceAt(machine: Machine, directory: string) {
-  return machine.assignments.find((assignment) => assignment.remote_directory === directory)
+  const matches = machine.assignments.filter((assignment) => normalizeAbsolutePath(assignment.remote_directory) === directory)
+  if (matches.length > 1) {
+    throw new Error(
+      `${machine.display_name || machine.enrollment_id} has ${matches.length} workspaces at ${directory} (${matches.map((match) => match.workspace_id).join(", ")}); this command cannot tell which is meant — retire one at the control plane first`,
+    )
+  }
+  return matches[0]
 }
 
 function fixedWidth(rows: string[][]) {
