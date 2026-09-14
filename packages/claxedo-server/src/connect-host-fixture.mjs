@@ -2,24 +2,17 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
-import { Hono } from "hono"
 import { deriveRelayHostKid, mintRelayHostToken, mintRuntimeAccessToken, workspaceRelayForwardHeaders } from "@claxedo/workspace-relay"
 import { importJWK } from "jose"
 import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 import { userHostedSurface } from "../../claxedo-host-serving/src/surface.ts"
-import { HostEnrollmentRoutes, HostInvitationRoutes } from "./routes/hosted/host-enrollment.ts"
-import { HostedWorkspaceRoutes } from "./routes/hosted/workspace.ts"
-import { RemoteAccessOwnerRoutes } from "./routes/remote-access.ts"
-import { hostedRemoteAccessService } from "./deployments/hosted-shared/hosted-remote-access-service.ts"
-import { InternalRelayResolverRoutes } from "./deployments/shared-routes/internal-relay.ts"
-import { sandboxRelayTargetLookup } from "./authority/sandbox-relay-target.ts"
-import { signedOrError } from "./workspace/route-support.ts"
 
-// The `claxedo connect` half of `signed-browser-relay-fixture.mjs`: the owner
-// routes a `claxedo host …` command targets, the relay resolver the relay
-// child asks, and the machine-side process lifecycle a spec drives through
-// `/__fixture/connect/*`. The control plane it composes over is the fixture's
-// own; nothing here reaches the authority except through its port.
+// The `claxedo connect` half of `signed-browser-relay-fixture.mjs`: the
+// machine-side process lifecycle a spec drives through `/__fixture/connect/*`,
+// the fault barriers, and the token mints a spec probes the relay and the
+// host runtime with. The owner routes `claxedo host …` targets and the relay
+// resolver the relay child asks are the self-host composition's own; nothing
+// here reaches the authority except through its port.
 
 const execFileAsync = promisify(execFile)
 
@@ -60,61 +53,6 @@ export async function provisionConnectRoots(root) {
     api: await fs.realpath(directories.api),
     web: await fs.realpath(directories.web),
     docs: await fs.realpath(directories.docs),
-  }
-}
-
-/**
- * The relay's target for a user-hosted workspace, read off the same serving
- * predicate `host_online` and the connection mint read. The SQLite authority
- * answers `activeWorkspaceHost` for a principal, so the fixture asks as the
- * owner; a retired workspace throws on the read and resolves to "no target".
- */
-export function userHostedTargetResolver(authority, ownerAuth) {
-  return async (workspaceId) => {
-    const active = await authority.activeWorkspaceHost(ownerAuth, { workspaceId }).catch(() => ({ active: false }))
-    if (!active.active) return { active: false }
-    return { active: true, hostId: active.host_id, backing: "local-worktree" }
-  }
-}
-
-/**
- * The hosted control plane's owner surface, mounted over the self-host app
- * for the paths `claxedo host …` calls. The self-host composition's own
- * `/api/workspace/:id/host-assignment` assigns THIS process as the machine
- * and refuses a `hostId` in the body, and its remote-access revoke pauses
- * rather than revokes; both are the desktop shape, not the owner-of-a-fleet
- * shape the CLI drives, so the hosted handlers answer these paths here.
- */
-export function ownerControlPlane(services, options) {
-  const app = new Hono()
-  app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, options))
-  app.route("/api/claxedo/host/invitations", HostInvitationRoutes(services, options))
-  app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
-    deviceLoginConfigured: true,
-    relayConfigured: true,
-    authenticate: async (request) => {
-      const result = await signedOrError(request, { ...options, requireSigned: true }, services)
-      if ("error" in result) return Response.json(result.error, { status: result.status })
-      if (!result.auth) return Response.json({ error: { code: "unauthorized", message: "Signed auth is required" } }, { status: 401 })
-      return result.auth
-    },
-    service: hostedRemoteAccessService(services.authority),
-  }))
-  app.route("/api/workspace", HostedWorkspaceRoutes(services, options))
-  app.route("/", InternalRelayResolverRoutes({
-    resolverToken: options.resolverToken,
-    authority: services.authority,
-    targetLookup: sandboxRelayTargetLookup({ userHostedResolver: options.userHostedResolver }),
-  }))
-  const HOST_ASSIGNMENT = /^\/api\/workspace\/[^/]+\/host-assignment$/
-  return {
-    app,
-    owns(url) {
-      return url.pathname.startsWith("/api/claxedo/host/")
-        || url.pathname.startsWith("/api/claxedo/remote-access")
-        || url.pathname.startsWith("/internal/relay/")
-        || HOST_ASSIGNMENT.test(url.pathname)
-    },
   }
 }
 

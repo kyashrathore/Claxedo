@@ -5,7 +5,6 @@ import { execFile, spawn } from "node:child_process"
 import { promisify } from "node:util"
 import { once } from "node:events"
 import { serve } from "@hono/node-server"
-import { Hono } from "hono"
 import { createRemoteJWKSet, errors as joseErrors, exportJWK, exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
 import { mintHostTunnelToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
@@ -37,7 +36,6 @@ import {
   stopAllUserHostedWorkspaceTunnels,
   stopUserHostedWorkspaceTunnel,
 } from "./user-hosted-tunnel.ts"
-import { HostEnrollmentRoutes } from "./routes/hosted/host-enrollment.ts"
 import {
   hostEnrollmentHeartbeatPayloadV2,
   hostEnrollmentPayload,
@@ -45,16 +43,14 @@ import {
   signHostPayload,
 } from "./workspace/local-host.ts"
 import { createFixedWindowConnectionRateLimiter } from "./platform/auth/rate-limit.ts"
-import { hostConnectEndpointOptions } from "./workspace/route-support.ts"
 import { hostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
+import { createSqliteUserHostedTargetResolver } from "@claxedo/server-core/authority/adapters/sqlite/user-hosted-relay-target"
 import {
   connectFixtureRoutes,
   createConnectInstances,
   createFaults,
-  ownerControlPlane,
   provisionConnectRoots,
   relayHostPublicKeyFrom,
-  userHostedTargetResolver,
 } from "./connect-host-fixture.mjs"
 
 const execFileAsync = promisify(execFile)
@@ -739,6 +735,7 @@ const services = createControlPlaneServices(
       relayUrl: publicRelayUrl,
       runtimeAccessTokenSigner,
       ...(hostMode === "connect" ? { resolverToken, hostTunnelTokenSigner: hostTunnelTokenSigner(process.env) } : {}),
+      userHostedResolver: createSqliteUserHostedTargetResolver(),
       // `proxy.ts`'s `localWorkspaceRelayProxy` is the path the
       // app actually takes for a relay-backed workspace on a LOOPBACK server URL
       // (`workspace-runtime-request.ts:223` — the relay is used directly only
@@ -956,34 +953,8 @@ if (access === "user-hosted" && hostMode === "embedded") {
     ),
   })
 }
-// This fixture predates the machine-wide Host Connector and deliberately uses
-// the self-host composition for its embedded execution + relay paths. That
-// composition must not own hosted machine-enrollment routes, so compose the
-// canonical hosted route module beside it for the signed desktop lane. This is
-// the production handler against the real SQLite authority, not a fixture
-// response; the fixture wrapper below only observes/delays requests.
-const hostedRouteOptions = {
-  authConfig: services.auth.config,
-  ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-}
-// Connect mode widens the hosted surface to everything `claxedo host …` and
-// the relay child call, with the machine-facing endpoints the redeem and
-// heartbeat responses carry (`connect-host-fixture.mjs`).
-const ownerPlane = hostMode === "connect"
-  ? ownerControlPlane(services, {
-      ...hostedRouteOptions,
-      relayUrl: publicRelayUrl,
-      runtimeAccessTokenSigner,
-      hostTunnelTokenSigner: services.relay.hostTunnelTokenSigner,
-      ...hostConnectEndpointOptions(process.env),
-      resolverToken,
-      userHostedResolver: userHostedTargetResolver(authority, browserAuth),
-    })
-  : undefined
-const desktopHostedRoutes = ownerPlane?.app ?? new Hono().route(
-  "/api/claxedo/host/enrollments",
-  HostEnrollmentRoutes(services, hostedRouteOptions),
-)
+// The request wrapper below observes and delays machine-facing requests; every
+// route is answered by the self-host composition itself.
 const faults = createFaults()
 const connectInstances = createConnectInstances({
   homesRoot: path.join(root, "connect-homes"),
@@ -1184,9 +1155,6 @@ const server = serve({
     const url = new URL(request.url)
     const outage = faults.outage(url)
     if (outage) return withConnectionClose(outage)
-    if (ownerPlane?.owns(url) && !url.pathname.startsWith("/api/claxedo/host/enrollments")) {
-      return withConnectionClose(await ownerPlane.app.fetch(request, ...rest))
-    }
     if (url.pathname.startsWith("/api/claxedo/host/enrollments")) {
       const body =
         request.method === "POST"
@@ -1205,7 +1173,7 @@ const server = serve({
       if (url.pathname.endsWith("/heartbeat") && hostHeartbeatDelayMs > 0) {
         await new Promise((resolve) => setTimeout(resolve, hostHeartbeatDelayMs))
       }
-      const response = await faults.holdRedeem(url, await desktopHostedRoutes.fetch(request, ...rest))
+      const response = await faults.holdRedeem(url, await built.app.fetch(request, ...rest))
       desktopHostRequests.push({
         method: request.method,
         path: url.pathname,
