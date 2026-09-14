@@ -124,6 +124,23 @@ describe("claxedoToolView", () => {
     })
   })
 
+  test("task_start reads the task's number and title from its answer, and falls back to the input id before one arrives", () => {
+    const output = JSON.stringify({
+      task: { id: "tsk_206f", number: 1, title: "MCP smoke: created from a session" },
+      session: { sessionId: "ses_new" },
+      slot: "primary",
+      attempt: 1,
+      preset: { name: "Alt voice" },
+      created: true,
+    })
+    expect(view("task_start", { task: "tsk_206f", preset: "Alt voice" }, output).link).toEqual({
+      kind: "task",
+      id: "tsk_206f",
+      label: "#1 MCP smoke: created from a session",
+    })
+    expect(view("task_start", { task: "tsk_206f", preset: "Alt voice" }).link).toEqual({ kind: "task", id: "tsk_206f", label: "tsk_206f" })
+  })
+
   test("task_start says when the slot was already live", () => {
     const output = JSON.stringify({ session: { sessionId: "ses_old" }, slot: "primary", attempt: 2, preset: { name: "Alt voice" }, created: false })
     expect(view("task_start", { task: "7" }, output)).toMatchObject({ link: { label: "#7" }, note: "already running" })

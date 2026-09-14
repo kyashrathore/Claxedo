@@ -84,6 +84,7 @@ describe("a first-party Claxedo tool renders as its own card", () => {
     const view = mount(toolPart("mcp__claxedo__task_start", completed(
       { task: TASK_ID, preset: "Alt voice", intent: "mcp" },
       {
+        task: { id: TASK_ID, number: 1, title: "MCP smoke: created from a session" },
         session: { sessionId: "ses_tasks_1", workspaceId: "w" },
         slot: "primary",
         attempt: 1,
@@ -94,7 +95,9 @@ describe("a first-party Claxedo tool renders as its own card", () => {
       },
     )))
     expect(view.container.querySelector('[data-slot="basic-tool-tool-title"]')?.textContent).toBe("Start task")
-    expect(view.container.querySelector<HTMLAnchorElement>('a[data-link-kind="task"]')?.getAttribute("href")).toBe(`/tasks/${encodeURIComponent(TASK_ID)}`)
+    const task = view.container.querySelector<HTMLAnchorElement>('a[data-link-kind="task"]')
+    expect(task?.getAttribute("href")).toBe(`/tasks/${encodeURIComponent(TASK_ID)}`)
+    expect(task?.textContent).toBe("#1 MCP smoke: created from a session")
     expect(view.container.querySelector('[data-slot="basic-tool-tool-arg"]')?.textContent).toBe("Alt voice")
     open(view)
     const facts = [...view.container.querySelectorAll('[data-slot="claxedo-tool-fact"]')].map((row) => [
