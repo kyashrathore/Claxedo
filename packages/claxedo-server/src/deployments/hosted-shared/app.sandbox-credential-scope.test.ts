@@ -18,6 +18,9 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 import { createHostedTasksComposition } from "../../tasks/hosted-composition"
+import { accountAgentSettingsRouteContribution } from "../../routes/account-agent-settings"
+import { d1AgentSettings } from "../../authority/adapters/d1/agent-settings"
+import { signedOrError } from "../../workspace/route-support"
 import { mintTasksCapability } from "../../tasks/capability"
 import { mintMcpGatewayToken } from "../../agent-plugins/mcp/runtime-token"
 
@@ -58,7 +61,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql"])
+  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql"])
   active.push(instance)
   return instance.database
 }
@@ -195,12 +198,20 @@ async function hostedApp(
 ): Promise<ProbeApp> {
   const base = plane(env)
   const authentication = knownUsersAuthentication()
+  const controlPlane = await database()
   const tasks = createHostedTasksComposition({
     services: base.services,
-    database: await database(),
+    database: controlPlane,
     authentication,
     bridge: reportingBridge,
     signingEnv: env,
+  })
+  // The account's agent setting is the one signed family a sandbox has a
+  // reason to want — it is what puts `start` in the next grant — so it is
+  // composed here and held to admitting none of the credentials.
+  const agentSettings = accountAgentSettingsRouteContribution({
+    signed: (request) => signedOrError(request, { authentication, requireSigned: true }, base.services),
+    service: d1AgentSettings(controlPlane),
   })
   return createHostedCoreApp(base, {
     authentication,
@@ -223,7 +234,7 @@ async function hostedApp(
         actorId: `actor:${input.identity.subject}`,
       })),
     },
-    routeContributions: [...tasks.routeContributions, ...extraContributions],
+    routeContributions: [...tasks.routeContributions, agentSettings, ...extraContributions],
   } as unknown as Parameters<typeof createHostedCoreApp>[1]) as unknown as ProbeApp
 }
 

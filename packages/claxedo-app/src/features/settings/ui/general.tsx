@@ -26,6 +26,7 @@ import { playSoundById, SOUND_OPTIONS } from "@/platform/notifications/sound"
 import { requestNotificationPermission } from "@/platform/notifications/notification-permission"
 import { capture as phCapture, captureException, identityProps } from "@/platform/telemetry/analytics"
 import { AccountSettingsSection } from "@/features/settings/ui/account-section"
+import { agentSettingsApi } from "@/features/settings/data/agent-settings-api"
 import { ConnectedAppsSettingsSection } from "@/features/settings/ui/connected-apps-section"
 import { Can } from "@/platform/auth/role"
 import { Link } from "@/features/settings/app-ports"
@@ -691,7 +692,7 @@ export const SettingsGeneral: Component = () => {
         </div>
 
         <Can do="view.account">
-          <AccountSettingsSection t={language.t as (key: string) => string} />
+          <AccountSettingsSection t={language.t as (key: string) => string} agentSettings={agentSettingsApi} />
           <ConnectedAppsSettingsSection t={language.t as (key: string) => string} />
         </Can>
       </div>
