@@ -243,9 +243,9 @@ function byMostRecentMark<T extends { credential: CredentialMetadata }>(rows: re
     || left.credential.id.localeCompare(right.credential.id))
 }
 
-/** The providers whose account exists but could not be read this time. */
+/** The marked accounts whose secret could not be read this time. */
 export function unreadableDeliveries(deliveries: readonly NativeProviderDelivery[]): string[] {
-  return deliveries.flatMap((row) => row.unreadable ? [row.providerId] : [])
+  return deliveries.flatMap((row) => row.unreadable ? [row.credentialId] : [])
 }
 
 /**
@@ -299,14 +299,16 @@ export function nativeDeliveryDigest(deliveries: readonly NativeProviderDelivery
 }
 
 /**
- * The (provider, entry) pairs a digest names, so a caller holding one can tell
- * which providers it installed a secret for and which entries have changed.
+ * The entries a digest names, each with the provider and account it installed
+ * a secret for, so a caller holding one can tell which entries have changed.
  */
-export function nativeDeliveryDigestEntries(digest: string): Array<{ providerId: string; entry: string }> {
+export function nativeDeliveryDigestEntries(
+  digest: string,
+): Array<{ providerId: string; credentialId: string; entry: string }> {
   if (!digest) return []
   return digest.split(DIGEST_SEPARATOR).flatMap((entry) => {
-    const providerId = entry.split(FIELD_SEPARATOR)[0]
-    return providerId ? [{ providerId, entry }] : []
+    const [providerId, credentialId] = entry.split(FIELD_SEPARATOR)
+    return providerId && credentialId ? [{ providerId, credentialId, entry }] : []
   })
 }
 

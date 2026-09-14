@@ -69,7 +69,7 @@ export async function sandboxBrokeredSecrets(input: {
   if (unreadable.size > 0 && input.installed !== undefined && !input.stated) {
     const current = new Set(nativeDeliveryDigestEntries(nativeDeliveryDigest(deliveries)).map((row) => row.entry))
     const stranded = nativeDeliveryDigestEntries(nativePart(input.installed))
-      .filter((row) => !current.has(row.entry) && !unreadable.has(row.providerId))
+      .filter((row) => !current.has(row.entry) && !unreadable.has(row.credentialId))
     if (stranded.length === 0) return { digest: input.installed }
   }
   const delivered = nativeProviderSecrets(deliveries)

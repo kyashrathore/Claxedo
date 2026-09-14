@@ -116,6 +116,23 @@ describe("the brokered secret set a cloud sandbox must hold", () => {
     expect(plan.digest).not.toBe(installed)
   })
 
+  test("an account replaced on its own provider is withdrawn even while its replacement is unreadable", async () => {
+    // Keyed by account rather than by provider: a hold keyed by provider reads
+    // the old account's entry as the unreadable one and keeps it installed.
+    const first = await shared({ provider_id: "openai", secret: "sk-openai-one" })
+    setActiveCredentials([first.id])
+    const installed = (await sandboxBrokeredSecrets({})).digest
+    expect(installed).toBeDefined()
+
+    const replacement = await shared({ provider_id: "openai", secret: "sk-openai-two" })
+    setActiveCredentials([replacement.id])
+    refused.add(readRef(replacement.id))
+    const plan = await sandboxBrokeredSecrets({ installed })
+
+    expect(plan.secrets).toEqual([])
+    expect(plan.digest).not.toBe(installed)
+  })
+
   test("a delivered secret carries the methods and paths its provider edge is configured from", async () => {
     // The Cloudflare Worker answers 403 and Vercel writes no transform when a
     // registration arrives with neither, so an omitted list is a refusal rather
