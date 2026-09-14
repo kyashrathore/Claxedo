@@ -1,6 +1,10 @@
 # Credential broker implementation report
 
-Date: 2026-09-12. Status: incomplete; independent work resumed on user instruction. The registry edit remains deferred to the accounts lane.
+Status (2026-09-14): a dated log of the broker lane's slices on 2026-09-12 and 2026-09-13, kept as
+the record of each run. Where the code has moved on since an entry, a "Superseded" line under it
+says how; `docs/plans/2026-09-12-002-feat-credential-broker-design.md` describes the code as it is.
+
+Date: 2026-09-12. Status at the time: incomplete; independent work resumed on user instruction. The registry edit remains deferred to the accounts lane.
 Worktree: `/Users/yashvardhansingh/test/opencode-broker`.
 Branch: `feat/credential-broker`, created from `dev` at `67e155dd35` with user authorization.
 No push or PR. No accounts-lane files changed.
@@ -15,11 +19,15 @@ The SDK pins are Daytona 0.211.2, Vercel 3.3.0, Modal 0.10.1, and Cloudflare 0.1
 
 The catalog retains native brokering for Daytona/Vercel, proxy brokering for Cloudflare, and none for the other drivers. Egress remains hosts-and-cidrs for Daytona, hosts for Vercel, and none elsewhere. These describe the implemented drivers: provider features listed in Appendix A are not automatically implemented by installing newer SDKs. Documentation now states the unwired capabilities and checks the brokering matrix as well as egress.
 
+Superseded: Cloudflare is `native` since the native credential delivery slice below; its egress control is `none`.
+
 MCP's authoritative producer already emits a complete Authorization value, required by the header-transform drivers. The runtime now uses its placeholder as the entire header. Daytona's literal substitution therefore inserts exactly one Bearer scheme. The signed desktop passes the same complete value through without stripping and re-adding its scheme.
 
 ## Accounts-lane boundary requiring coordination
 
-`packages/claxedo-server-core/src/credentials/registry.ts:190` calls `ensurePresetForProvider(input.provider_id)` when saving a credential. The call carries no workspace identity. `packages/claxedo-server-core/src/sandbox/network/policy.ts:307` maps the provider to a group, and `upsertAutoPolicy` inserts a row with `workspace_id: null`.
+Superseded: the save-time grant is gone. `ensurePresetForProvider` and `upsertAutoPolicy` no longer exist, a migration deleted the rows they wrote, and a restricted sandbox derives its provider hosts at ensure time from the credentials it is sent (design 002, Appendix B, item 9).
+
+`packages/claxedo-server-core/src/credentials/registry.ts` called `ensurePresetForProvider(input.provider_id)` when saving a credential. The call carried no workspace identity. `packages/claxedo-server-core/src/sandbox/network/policy.ts` mapped the provider to a group, and `upsertAutoPolicy` inserted a row with `workspace_id: null`.
 
 Saving an account is not workspace authorization. Fixing this at its authoritative source requires removing the save-time grant in `registry.ts`, then removing its obsolete policy helper and handling the existing credential-generated policy rows. If automatic workspace grants are retained, they instead need an actual workspace-scoped attachment caller; fabricating a workspace or leaving a no-op compatibility helper would violate the objective.
 
@@ -73,7 +81,9 @@ The failing MCP assertion exercised the real apply route and generated `.mcp.jso
 
 ## Appendix E status
 
-No Appendix E experiment has run. Provider credentials and live environments have not been assessed. The following are unexecuted, not negative feasibility results. Date for all entries: 2026-09-12. Command for all entries: none; implementation stopped at the accounts-lane boundary before experiment preparation.
+Superseded: the experiments have since run where access allowed; design 002's Appendix E holds each command and result, and the sections below record the runs in order.
+
+At the time of this entry no Appendix E experiment had run. Provider credentials and live environments had not been assessed. The following were unexecuted, not negative feasibility results. Date for all entries: 2026-09-12. Command for all entries: none; implementation stopped at the accounts-lane boundary before experiment preparation.
 
 | Item | Provider | Result |
 | --- | --- | --- |
@@ -91,7 +101,7 @@ The authoritative design's Appendix E has not been filled with acceptance claims
 
 ## Remaining implementation (updated 2026-09-13)
 
-- The workspace-less credential network grant is blocked by the explicit accounts-lane ownership restriction documented above.
+- The workspace-less credential network grant is blocked by the explicit accounts-lane ownership restriction documented above. (Superseded: the grant is gone; see that section.)
 - Deployed Cloudflare Container acceptance is blocked by image upload. Native injection, rotation and withdrawal are now verified through local workerd/Docker against an isolated HTTPS upstream.
 - Daytona needs working authentication; Vercel awaits the intended project/team; exe.dev integration behavior remains unverified after the host-trust gate; Modal lacks configured authentication/allowlisting. Appendix E records exact evidence, not inferred provider outcomes.
 - Signed subject now reaches the three hosted lifecycle hooks. It does not yet reach per-user provider selection or per-user leases in every deployment mode.
@@ -474,7 +484,8 @@ wrote it despite the frozen flag). The subsequent actual
 Only `bun.lock` and this report changed in this validation slice.
 
 The full-design authorization blocker is unchanged: the objective still excludes
-hosted store and per-user lease changes and reserves credential contracts. The
-current registry still calls `ensurePresetForProvider` without workspace scope.
-No renewed live-provider or full-design completion claim follows from these
-focused validation results. The scope decision remains pending.
+hosted store and per-user lease changes and reserves credential contracts. At
+this entry the registry still called `ensurePresetForProvider` without
+workspace scope (superseded: removed, see the accounts-lane section). No renewed
+live-provider or full-design completion claim follows from these focused
+validation results. The scope decision remains pending.

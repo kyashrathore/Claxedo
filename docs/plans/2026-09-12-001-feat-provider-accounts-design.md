@@ -1,9 +1,11 @@
 # Provider accounts: one provider, many logins, one active
 
-Status: proposed; slice 1 not started
+Status: slice 1 shipped locally on `feat/credentials-integration`; slices 2–4 proposed.
 Date: 2026-09-12
 Owner: Yash Rathore
-Revision 5, 2026-09-13. A harness's own login is now asked for, never
+Revision 6, 2026-09-14: every rule, the Background and the Settings section
+checked against the code at `5c7bd5e1f6`.
+Revision 5, 2026-09-13. A harness's own login is asked for, never
 copied: rules 5 and 9 and the Settings section below record what shipped.
 Delivery of a chosen account to a harness is decided by
 `2026-09-12-002-feat-credential-broker-design.md`; this document keeps the
@@ -63,60 +65,74 @@ keychain-backed store referenced by `secure_ref`.
 The flow when a session starts a turn:
 
 - A. The server builds a **runtime config snapshot**
-  (`getRuntimeConfigSnapshot`, `packages/claxedo-server-core/src/agent-config/index.ts:507`).
-  - A.1 It calls `resolveSecretsForScope` (`credentials/registry.ts:602`),
-    which lists every credential in preference order and then runs
-    `preferredCredentialPerProvider` (`registry.ts:564`), keeping **the first
-    row per provider and discarding the rest**. The order is
-    `providerPreference` (`registry.ts:228`): available first, then not
-    expired, then latest expiry, then most recently written. The user cannot
-    see or change it.
-  - A.2 The result is a flat map `auth: { openai: "<secret>", anthropic: "<secret>", … }`
-    inside a `version: 3` snapshot.
+  (`getRuntimeConfigSnapshot` in `claxedo-server-core/src/agent-config`).
+  - A.1 It asks the deployment's credential authority for one projection per
+    provider (`projectAuth`; on the desktop-local server that is the loopback
+    broker in `claxedo-local-server/src/credentials/broker.ts`). The broker
+    takes **the marked row per provider** (`requireActiveCredentialsForScope`)
+    and mints a binding for each: a base URL on this server's own loopback
+    origin and a signed placeholder. A marked row that cannot be bound —
+    refused, expired, unreadable secret, no destination — is projected as
+    `{ unavailable: true, reason }` rather than dropped; a provider with no
+    marked row is absent from the map. There is no preference order: the
+    active mark is the only choice, and the user makes it.
+  - A.2 The result is `auth: { "claude-sdk": { baseUrl, placeholder, authMode, expiresAt }, … }`
+    inside a `version: 4` snapshot. No secret value is in it.
 - B. The workspace runtime (`packages/workspace-runtime/src/workspace/runtime.ts`)
   receives the snapshot.
   - B.1 It keeps one adapter per harness kind, keyed `native:<harness id>`
-    (`adapterKey`, line 744). All sessions in the workspace that use Codex
-    share one Codex app-server process.
-  - B.2 It pushes the `auth` map into that adapter with `applyConfig`
-    (lines 780 and 1334). For ACP connections it first waits for active
-    turns to finish (line 1318); for native harnesses it applies at once.
-- C. The driver logs its process in.
-  - C.1 Codex (`harnesses/codex/driver.ts:175`) reads `auth["codex-app-server"] ?? auth.openai`,
-    bumps `authRevision`, and `syncProcessAuth` sends `account/login/start`
-    to the running app-server. Login is per process.
-  - C.2 Claude (`harnesses/claude/driver.ts:233`) reads `auth["claude-sdk"] ?? auth.anthropic`
-    and turns it into an environment variable for the CLI it spawns per
-    query (`claudeAuthEnv`, `harnesses/claude/auth.ts:9`): an API key becomes
-    `ANTHROPIC_API_KEY`, an OAuth token becomes `CLAUDE_CODE_OAUTH_TOKEN`.
-- D. When Codex's token expires, the app-server asks the driver to refresh
-  (`refreshTokens`, `driver.ts:700`). The driver calls OpenAI's token endpoint
-  and **writes the new tokens to `CODEX_HOME/auth.json`** (`auth-file.ts:151`),
-  the user's own `~/.codex/auth.json`. The registry is not updated.
+    (`adapterKey`). All sessions in the workspace that use Codex share one
+    Codex app-server process.
+  - B.2 It pushes the `auth` map into that adapter with `applyConfig`. For
+    ACP connections it first waits for active turns to finish; for native
+    harnesses it applies at once.
+- C. The driver launches its process on the projection, and refuses to launch
+  on an `unavailable` one (`ProviderCredentialUnavailableError`), so an
+  unusable account fails the turn rather than running on the machine login.
+  - C.1 Codex spawns the app-server with a Claxedo-owned `CODEX_HOME`
+    (`~/.claxedo/codex/home`, rebuilt on every launch) whose `config.toml`
+    declares `model_providers.broker` — the binding as `base_url`, the
+    placeholder in `http_headers.Authorization`, `requires_openai_auth = false`
+    — and starts threads on that provider. No login RPC is sent. With no
+    projection it runs on the operator's own `~/.codex`, untouched.
+  - C.2 Claude turns the projection into the environment of the CLI it spawns
+    per query (`claudeAuthEnv`): `ANTHROPIC_BASE_URL` is the binding, and the
+    placeholder goes in `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` by the
+    destination's auth mode, with `CLAUDE_CODE_OAUTH_TOKEN` and the operator's
+    own key variables cleared so nothing inherited outranks it. The turn runs
+    under a mirrored, account-free `CLAUDE_CONFIG_DIR`, because Claude Code
+    prefers an account configured in its config dir over both variables.
+- D. When the operator's own Codex login expires — a turn with no binding —
+  the app-server asks the driver to refresh (`CodexOperatorLogin.refresh`).
+  The driver calls OpenAI's token endpoint and writes the renewed pair to the
+  operator's `~/.codex/auth.json`, which is where that login lives. A stored
+  account is renewed by the registry (`authority/default-credentials.ts`) and
+  never written to a harness file, except the write-back in rule 9.
 
-What the storage layer already supports and the fanout throws away:
+What the storage layer supports:
 
-- `putCredential` upserts on `(org, provider_id, kind, account_id)`
-  (`registry.ts:95-104`). Two Codex accounts are two rows.
+- `putCredential` upserts on `(org, provider_id, kind, account_id)`. Two
+  Codex accounts are two rows.
 - The local collector (`credentials/operations/sync.ts`) reads only what this
   machine handed Claxedo on purpose: keys in the agent config, sandbox driver
-  settings, and provider secrets in the environment. It used to import
-  `~/.codex/accounts/*.auth.json` with its `account_id`, and the Claude
-  Keychain token with **no `account_id`** — so two Claude Code logins collapsed
-  into one row at write time, before the fanout ran. Rule 9 ended both: a
-  harness's own login is asked for rather than imported.
+  settings, and provider secrets in the environment. A harness's own login is
+  not a source (rule 9; findings 2 and 13 below record why).
 
-Two defects exist independently of multi-account and get worse with it:
+Two hazards that exist independently of multi-account, and what holds them:
 
-- **Refresh writes to the wrong place** (step D).
-- **Ambient environment beats the chosen account.** `harnessSpawnEnv`
+- **Refresh.** The operator's own login is renewed into the operator's own
+  file (step D); a stored account is renewed in the registry.
+- **Ambient environment.** `harnessSpawnEnv`
   (`harnesses/shared/spawn-env.ts`) strips nine Claxedo-internal variables
-  and passes everything else through. The Claude CLI's documented precedence
-  ranks `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` from the environment
-  **above** `CLAUDE_CODE_OAUTH_TOKEN`
-  (https://code.claude.com/docs/en/authentication#authentication-precedence),
-  so a stray API key in the server's environment wins over the subscription
-  account the user chose.
+  and passes everything else through, and the Claude CLI's documented
+  precedence ranks `ANTHROPIC_AUTH_TOKEN` and `ANTHROPIC_API_KEY` from the
+  environment **above** `CLAUDE_CODE_OAUTH_TOKEN`
+  (https://code.claude.com/docs/en/authentication#authentication-precedence).
+  So a bound Claude turn writes every one of those variables itself — the
+  placeholder in one, `undefined` in the rest — and `harnessSpawnEnv` drops
+  the `undefined` entries, which is what removes a stray key in the server's
+  environment from the child. A test that spawns from a populated parent
+  environment and asserts the three are gone is landing in this pass.
 
 ## Prior art
 
@@ -170,7 +186,8 @@ model needs.
 
 ### Claxedo today
 
-Multiple rows, one winner, chosen by an invisible sort order.
+Many rows per provider, one marked active per `(owner, provider)`, and the
+mark is the only choice.
 
 ## Proposed design
 
@@ -178,10 +195,11 @@ Multiple rows, one winner, chosen by an invisible sort order.
 
 1. **Personal accounts are global.** A row belongs to a user (`owner`), and
    the user marks one row **active per provider**. The mark is on the
-   `ControlPlaneCredentials` contract (`setActiveCredential`), unique per
-   `(owner, provider)`: SQLite gets `is_active` with a partial unique index
-   on `(org_id, owner, provider_id) WHERE is_active = 1`; the replaced
-   hosted store enforces the same in its one write.
+   `ControlPlaneCredentials` contract (`setActiveCredentials`), unique per
+   `(owner, provider)`: SQLite has `is_active` with a partial unique index
+   on `(org_id, coalesce(owner, ''), provider_id) WHERE is_active = 1`, the
+   `coalesce` so team rows collide too. The hosted store is still the
+   one-row-per-provider KV adapter and carries no mark (slice 2).
 2. **Team accounts are bound to a project by an admin.** A team row has an
    empty owner. The project binding names one team row per provider.
 3. **Resolution at sandbox creation, per provider:** the creating user's
@@ -190,9 +208,11 @@ Multiple rows, one winner, chosen by an invisible sort order.
    not change for that sandbox's life (broker doc, section 5).
 4. **Marking another account active applies to new sandboxes.** A running
    sandbox keeps its account until destroyed. A local workspace's next turn
-   uses the new account, because local runtimes are rebound through the
-   loopback broker at the turn boundary and the operator is the only
-   identity on the laptop.
+   uses the new account: a loopback binding is keyed by `(org, workspace,
+   provider)`, so the switch advances that workspace's lease generation, every
+   placeholder a running harness holds is refused, and the next projection
+   re-mints them against the new row. The operator is the only identity on
+   the laptop, so there is no one else's sandbox to keep the old one.
 5. **Losing the active row hands the mark to the oldest account the
    provider can still run on**, in the losing write's own transaction; only an
    `available` row qualifies, the same test the save-time yield applies. Two
@@ -220,7 +240,7 @@ Multiple rows, one winner, chosen by an invisible sort order.
    `GET /api/oauth/profile` beside the usage read — a refusal there names no
    account and is not a verdict on the token. A pasted key, whose provider
    never names it, keeps the fingerprint the registry mints (hash prefix plus
-   the last four characters) and a label the connect card requires, because a
+   the last four characters) and whatever label the user gave it, because a
    row stored under its provider id names the harness binding rather than the
    account. The derived address is written only over a row that has no name of
    the user's own. A second paste is a second row, never an overwrite.
@@ -233,16 +253,28 @@ Multiple rows, one winner, chosen by an invisible sort order.
    replaced secret carried — left in place that reads a fresh API key as
    expired. Rule 6's yield is untouched and still governs the Add path.
 
-9. **A harness's own login is asked for, never copied.** Claxedo reads nothing
-   out of the store a CLI keeps its login in — not the `Claude Code-credentials`
-   Keychain item, not `~/.claude/.credentials.json`, not `~/.codex/auth.json`.
-   There is exactly ONE write to any of them, and it is a write-back rather than
-   a read: `credentials/operations/codex-auth-file.ts` puts a token Claxedo has
-   just renewed back into `~/.codex/auth.json` for a row imported before this
-   rule, so renewing such a row does not leave the user's own `codex` CLI
-   holding a superseded refresh token. `keychain.guard.test.ts` pins that module
-   as the only one naming the file, and pins it handing the caller back nothing
-   it read there. The server asks each harness instead: `claude auth status` prints
+9. **A harness's own login is asked for, never imported as a row.** No
+   credential module reads the store a CLI keeps its login in — not the
+   `Claude Code-credentials` Keychain item, not `~/.claude/.credentials.json`,
+   not `~/.codex/auth.json` — and nothing turns what a harness reports into a
+   stored account. `keychain.guard.test.ts` pins the `credentials` trees of the
+   three server packages and the CLI's source to that: exactly one module may
+   reach a command line (`machine-login.ts`), the commands it runs are the
+   self-reports below and nothing else, no source names the Keychain item or
+   the Claude directory, and the one module naming `auth.json` —
+   `credentials/operations/codex-auth-file.ts` — writes to it and hands its
+   caller back nothing it read. That write is a write-back: a token Claxedo has
+   just renewed for a row imported before this rule goes back into
+   `~/.codex/auth.json`, so renewing such a row does not leave the user's own
+   `codex` CLI holding a superseded refresh token.
+
+   Two other writers touch those files, both outside the guard's roots: the
+   Codex driver renews the operator's own login into the operator's home when
+   a turn with no binding asks for it (Background, step D), and
+   tokentracker-cli's limits probe under `usage/adapters` rewrites the stores
+   it reads (rule 10). Neither turns a login into a row.
+
+   The server asks each harness instead: `claude auth status` prints
    `{loggedIn, email, orgName, subscriptionType}`, the Codex app-server answers
    `account/read` and `account/rateLimits/read` (with `codex login status` as
    the presence fallback when the app-server cannot be started), and
@@ -274,7 +306,7 @@ Multiple rows, one winner, chosen by an invisible sort order.
    third writer: a turn is not a usage source, so no figure is ever derived from
    what a turn happened to mention.
 
-   The third source writes nothing. tokentracker-cli's limits probe
+   The third source writes no Claxedo table. tokentracker-cli's limits probe
    (`token-tracker-usage-limits.ts`, one cached read shared by every surface)
    answers for every agent installed on this machine, which is how a Claude or
    Cursor machine login gets windows at all and how the Usage-limits view can
@@ -333,9 +365,9 @@ miniature — it read as a second account — so there is none.
   per account including the single-account case. The checked radio is the
   account in use, read from the server's effective credentials — the row a
   session will actually be handed — falling back to the stored mark where the
-  host cannot enumerate its store. Choosing a radio activates that account, for
-  every harness whose registry provider is fanout-eligible, which today is all
-  three. The radio is the kit's themed control (`RadioList` in `packages/ui`),
+  host cannot enumerate its store. Choosing a radio activates every row the
+  account is stored under — Claude's two binding ids in one write. The radio
+  is the kit's themed control (`RadioList` in `packages/ui`),
   so the checked state carries the app's tokens rather than the browser's
   accent, and it sits on the label's first text line rather than in the middle
   of a row that wrapped.
@@ -399,8 +431,8 @@ miniature — it read as a second account — so there is none.
 
 Known gap: a row imported before the fingerprint mint landed has neither a label
 of its own nor an `account_id`, so it lists by its kind ("api_key") until it is
-renamed. New rows cannot reach that state — the connect card requires a label
-and discovery carries the account id.
+renamed. New rows cannot reach that state — a pasted key is named by the
+fingerprint minted at save, and discovery carries the account id.
 
 ## Sequencing
 
@@ -485,22 +517,23 @@ Acceptance:
 ### Definition of done
 
 All four slices' boxes ticked with the command and its output recorded next
-to each; `preferredCredentialPerProvider` and `providerPreference` deleted;
-this document rewritten in the present tense as the architecture note.
+to each; this document rewritten in the present tense as the architecture
+note.
 
 ## Stress test (2026-09-12, evening)
 
-Every flow the sections above lean on was traced in the code. What held,
-what did not, and what each miss changes.
+Every flow the sections above lean on was traced in the code as it stood that
+evening. What held, what did not, and what each miss changes. The rules above
+carry the outcome; this section is the record.
 
 ### Held
 
 - A Claude turn is one `query()` with the auth in its spawn environment
-  (`harnesses/claude/driver.ts:509`), so a switch applies at the next turn.
+  (`harnesses/claude/driver.ts`), so a switch applies at the next turn.
 - A Codex login is per app-server process and `syncProcessAuth` re-logs a
-  live process (`driver.ts:640`).
-- Native turns are already tracked in `activeTurns` (`workspace/runtime.ts:1119`);
-  only the wait is gated to ACP connections (`:770`). Pi throws "Cannot
+  live process (`harnesses/codex/driver.ts`).
+- Native turns are already tracked in `activeTurns` (`workspace/runtime.ts`);
+  only the wait is gated to ACP connections. Pi throws "Cannot
   rotate Pi credentials during an active turn" on a mid-turn apply, so the
   gate removal fixes Pi as well.
 - `putCredential` upserts on `(org, provider, kind, account_id)`; the Codex
@@ -522,7 +555,7 @@ what did not, and what each miss changes.
    account returns the harness to it, visibly, rather than failing closed.
 2. **Importing the Claude machine login makes it worse, not better.** The
    sync stores only the access token, with no refresh token and no expiry
-   (`sync.ts:295`), nothing re-syncs it (the only callers are the explicit
+   (`sync.ts`), nothing re-syncs it (the only callers are the explicit
    sync route), and `isRefreshableCredential` covers Codex only. Once
    imported, the explicit copy is sent as `CLAUDE_CODE_OAUTH_TOKEN`, outranks
    the CLI's own login, and dies when the access token expires while the
@@ -531,12 +564,12 @@ what did not, and what each miss changes.
    login. Claude's stored accounts are pasted tokens and keys.
 3. **A second ChatGPT login deletes the first.** The OAuth callback runs
    `deleteCredentialsByProvider` before `putCredential`
-   (`provider-auth/service.ts:233`). Change: upsert by `account_id`.
+   (`provider-auth/service.ts`). Change: upsert by `account_id`.
 4. **There are three winner rules, not one.** The fanout's
    `preferredCredentialPerProvider`, `getCredentialByProvider` (first row by
    its own order; behind `GET /credentials/:providerId` and the Pi
    projection), and the embedded OpenCode bridge's own choice in
-   `reconcileCredentialsIntoSdk` (`opencode/sdk-credential-bridge.ts:81`).
+   `reconcileCredentialsIntoSdk` (`opencode/sdk-credential-bridge.ts`).
    Change: all three read the active mark; none keeps a private order.
 5. **The hosted control plane has its own store.** Worker hosts compose an
    envelope-encrypted KV adapter and must never load the SQLite registry.
@@ -558,7 +591,7 @@ what did not, and what each miss changes.
    and `claude-sdk` (`claudeHarnessBindings`). The list groups them as
    discovery does, and Make active marks both bindings in one write.
 10. **`config.auth` is a fourth source.** The user config's `auth` block is
-    merged under registry rows for local scope (`agent-config/index.ts:527`).
+    merged under registry rows for local scope (`agent-config/index.ts`).
     It belongs to the implicit machine tier and is documented as such; it
     never competes with an active row.
 11. **Sandbox consent changes behaviour.** Today the collapse takes the
