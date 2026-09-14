@@ -1,6 +1,6 @@
 # Session-originated actions on the hosted control plane: identity, renewal, and gated starts
 
-Status: proposed; not started. Written against `merge/tasks-presets` at
+Status: steps 1–5 built on `dev` 2026-09-14 (pass family `acef61ec1f`; renewal/revocation `32188572f8`+`f42cefe963`; gates `3d1b09c9e7`/`e693b345c0`/`ed317d3dc7`/`997afb8268`; owner pass + hosted subagents `46c4d3907a`…`e692499224`; cloud start as owner `559750f1ed`/`540d21859d`/`9db8a117e4`). Staging live journeys not yet run. Written against `merge/tasks-presets` at
 `0901a478c3` (Tasks/Presets merged over dev). Follows
 [`2026-09-14-001-feat-tasks-mcp-tools.md`](./2026-09-14-001-feat-tasks-mcp-tools.md)
 and closes its follow-ups F1, F2 and F3.
@@ -966,3 +966,30 @@ another lane's numbers.
    subagents are their own tool group, so S1 mints on the subagents group.
 6. `hosts/workspace-runtime/**` reaches the control plane only through
    `tasks-grant.ts`; there is no registration or checkpoint code there.
+
+## Decisions at build (2026-09-14)
+
+- The pass family landed first (`platform/auth/sandbox-pass.ts`); the Tasks
+  capability and the gateway token are adapters over it. The egress broker's
+  token stays outside the family: it is minted by the local broker with its
+  own key and is never presented to the control plane.
+- Renewal does not re-issue the gateway token: that token reaches a sandbox
+  only through the brokered-secret channel, and a renewal body the agent's
+  tools read would move it into the readable channel. Re-issuing it through
+  the sandbox manager's secret channel is a later item.
+- A cloud root's Tasks grant names no session, so provenance and an agent's
+  `startedFrom` are admitted when the control plane places the named session
+  in the grant's workspace (asked as the resolved owner), and links carry
+  `startedBy: "person" | "agent"` so the per-project cap counts by who
+  started, not by which session.
+- The preset flag `agentStartable` applies to every placement, local
+  included, and defaults to off. (User decision pending: limit it to cloud.)
+- The owner grant carries `project_id` so switch-off reconciliation can
+  re-read the root's consent, and the route takes an injected proof so the
+  pass family stays out of the self-hosted binary's closure.
+- Open follow-ups: a root with subagents on but Tasks off has no renewal
+  channel, so its owner grant ends at expiry (let `/grant/renew` accept the
+  owner grant as bearer); a Pi parent can never spawn a child (the adapter's
+  empty mode list reads as "ask" under the ceiling rule; pre-existing); the
+  child's first prompt names its author "workspace owner"; staging journeys
+  for all three slices.
