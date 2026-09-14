@@ -1,10 +1,14 @@
 /**
- * Local (Node/desktop) relay-resolver lookups backed by SandboxManager.
- * These are injected into `InternalRelayResolverRoutes` from the local Node
- * server (`server.ts`). The hosted Worker injects hosted-state lookups instead.
+ * The self-hosted node's relay-resolver lookups, injected into
+ * `InternalRelayResolverRoutes` and the relay provider: cloud workspaces
+ * resolve through the SandboxManager lease, user-hosted ones through the
+ * authority's service-side target resolver (the SQLite twin of the hosted
+ * Worker's D1 lookup), which is what lets this node route to a `claxedo
+ * connect` machine.
  */
 
 import type { SandboxManager } from "@claxedo/sandbox-manager"
+import type { UserHostedTargetResolver } from "@claxedo/server-core/adapters/relay-port"
 import type { ControlPlaneTelemetry } from "../../authority/services"
 import { sandboxRelayTargetLookup } from "../../authority/sandbox-relay-target"
 import type { LocalRelayTargetExists, RelayTargetLookup } from "../shared-routes/internal-relay"
@@ -12,17 +16,15 @@ import type { LocalRelayTargetExists, RelayTargetLookup } from "../shared-routes
 export function localRelayTargetLookup(
   options: {
     sandboxManager?: SandboxManager
+    userHostedResolver?: UserHostedTargetResolver
     telemetry?: ControlPlaneTelemetry
   } = {},
 ): RelayTargetLookup {
-  const sandboxTargetLookup = sandboxRelayTargetLookup({
+  return sandboxRelayTargetLookup({
     ...(options.sandboxManager ? { sandboxManager: options.sandboxManager } : {}),
+    ...(options.userHostedResolver ? { userHostedResolver: options.userHostedResolver } : {}),
     ...(options.telemetry ? { telemetry: options.telemetry } : {}),
   })
-  return async (args) => {
-    if (options.sandboxManager) return sandboxTargetLookup(args)
-    return { found: false as const, code: "relay_resolver_workspace_target_unavailable" as const }
-  }
 }
 
 export function localRelayTargetExists(

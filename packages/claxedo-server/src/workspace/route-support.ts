@@ -52,6 +52,8 @@ export type LocalWorkspaceShare = {
  * means routable.
  */
 export type LocalHostAssignments = {
+  /** This machine's persisted host identity: the one host id a caller may not address by body. */
+  hostId(): Promise<string>
   assignWorkspace(
     auth: SignedControlPlaneAuth,
     share: LocalWorkspaceShare,
@@ -292,6 +294,13 @@ export function configuredRuntimeAccessTokenSigner(options: WorkspaceRouteOption
     503,
     "runtime_access_token_signer_unavailable",
     "Runtime Access Token signer is not configured",
+  )
+}
+
+/** The 401 body a signed-only route answers when `signedOrError` admitted no bearer. */
+export function missingBearerBody() {
+  return controlPlaneAuthErrorBody(
+    new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required"),
   )
 }
 

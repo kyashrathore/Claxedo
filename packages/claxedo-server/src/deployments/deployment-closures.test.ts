@@ -56,11 +56,11 @@ const ENTRIES = [
   // answers `/api/control/sessions` for workspaces it routes to a remote
   // host, not only ones it runs locally, and shares the `authority/
   // relay-token-record.ts` dedup with the hosted entries (self-hosted mints
-  // relay runtime tokens through the same owner). It does not reach
-  // hosted-shared's `hosted-remote-access-service.ts`: self-hosted-node keeps
-  // its own full `RemoteAccessService`
-  // (`self-hosted-node/remote-access-service.ts`, which also enrolls this
-  // machine) and its own usage ledger.
+  // relay runtime tokens through the same owner). It keeps its own full
+  // `RemoteAccessService` (`self-hosted-node/remote-access-service.ts`, which
+  // also enrolls this machine) and its own usage ledger; that service composes
+  // hosted-shared's `hosted-remote-access-service.ts` for the owner's revoke,
+  // so a `claxedo connect` machine is revoked the same way on both planes.
   //
   // The workspace `SessionEnv` is split into focused factory, protocol,
   // runtime-env, and admission modules. `@claxedo/opencode-server-adapter` is
@@ -96,8 +96,14 @@ const ENTRIES = [
   // binary shares with the desktop composition rather than hand-typing. It
   // holds the credential values and may bind 0.0.0.0, so it is a broker host;
   // the package reaches only jose, @hono/node-server and the runtime contract.
-  // 121/40.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 121, packages: 40 },
+  // +4 modules: the host-connect control plane this node serves for a
+  // `claxedo connect` fleet — `routes/hosted/host-enrollment.ts` (invitations,
+  // machine beats, acquire, scope), `routes/hosted/host-assignment.ts` (the
+  // owner assigning a directory on an enrolled machine, dispatched from the
+  // self-host workspace routes on a `hostId` body), hosted-shared's
+  // `hosted-remote-access-service.ts` (revoke), and `platform/http/status.ts`
+  // that the first two answer authority refusals through. 125/40.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 125, packages: 40 },
 ] as const
 
 /** The remaining cloud compositions. */

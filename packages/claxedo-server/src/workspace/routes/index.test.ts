@@ -2858,6 +2858,7 @@ describe("workspace routes signed control plane authority", () => {
 
   function hostAssignments() {
     return {
+      hostId: vi.fn(async () => "host_machine"),
       assignWorkspace: vi.fn(async (_auth: unknown, share: { workspaceId: string }) => ({
         assignment: { assigned: true as const, workspace_id: share.workspaceId, host_id: "host_machine" },
         hostTunnel: {
@@ -2982,8 +2983,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(assignments.assignWorkspace).not.toHaveBeenCalled()
   })
 
-  test("signed local workspace share rejects caller-supplied host identity", async () => {
-    mocks.resolveWorkspace.mockResolvedValueOnce(localWorkspaceRow())
+  test("signed local workspace share rejects this machine's own host identity in the body", async () => {
     const svc = services()
     const assignments = hostAssignments()
     const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments })
@@ -2995,7 +2995,7 @@ describe("workspace routes signed control plane authority", () => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        hostId: "host_local",
+        hostId: "host_machine",
       }),
     })
 
@@ -3007,6 +3007,68 @@ describe("workspace routes signed control plane authority", () => {
       },
     })
     expect(assignments.assignWorkspace).not.toHaveBeenCalled()
+    expect(svc.authority?.assignWorkspaceHost).not.toHaveBeenCalled()
+  })
+
+  test("a hostId naming an enrolled machine assigns a directory on it through the authority, not this machine", async () => {
+    const svc = services()
+    const assignments = hostAssignments()
+    const app = WorkspaceRoutes(svc, {
+      authConfig,
+      verifier,
+      hostAssignments: assignments,
+      hostTunnelTokenSigner: vi.fn(async () => ({ hostTunnelToken: "htt_box", tokenExpiresAt: 456_000, jti: "htt_jti_box" })),
+      relayUrl: "http://relay.test",
+    })
+
+    const res = await app.request("http://localhost/ws_box/host-assignment", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer user_1",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        hostId: "host_box",
+        displayName: "api",
+        repoName: "api",
+        remoteDirectory: "/srv/api",
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({
+      assignment: { assigned: true, workspace_id: "ws_box", host_id: "host_box" },
+      hostTunnel: {
+        hostTunnelToken: "htt_box",
+        tokenExpiresAt: 456_000,
+        jti: "htt_jti_box",
+        homeRegion: "us-east",
+        relayUrl: "http://relay.test",
+      },
+    })
+    // Cold-registered by the authority: the workspace need not exist in this
+    // node's own store, and this machine's served set is untouched.
+    expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
+    expect(svc.authority?.assignWorkspaceHost).toHaveBeenCalledWith(
+      expect.objectContaining({ user: expect.objectContaining({ subject: "user_1" }) }),
+      { workspaceId: "ws_box", hostId: "host_box", displayName: "api", repoName: "api", remoteDirectory: "/srv/api" },
+    )
+    expect(assignments.assignWorkspace).not.toHaveBeenCalled()
+    expect(assignments.hostId).toHaveBeenCalled()
+  })
+
+  test("a hostId body still needs a signed caller before the authority is asked", async () => {
+    const svc = services()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: hostAssignments() })
+
+    const res = await app.request("http://localhost/ws_box/host-assignment", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hostId: "host_box", remoteDirectory: "/srv/api" }),
+    })
+
+    expect(res.status).toBe(401)
+    expect(svc.authority?.assignWorkspaceHost).not.toHaveBeenCalled()
   })
 
   test("signed local workspace share requires a local workspace", async () => {

@@ -71,6 +71,8 @@ const SELF_HOSTED_MOUNTS = [
   { prefix: "/api/channels", owner: "self-hosted-node" },
   { prefix: "/api/claxedo/agent-config", owner: "self-hosted-node" },
   { prefix: "/api/claxedo/credentials", owner: "self-hosted-node" },
+  { prefix: "/api/claxedo/host/enrollments", owner: "self-hosted-node" },
+  { prefix: "/api/claxedo/host/invitations", owner: "self-hosted-node" },
   { prefix: "/api/claxedo/integrations", owner: "self-hosted-node" },
   { prefix: "/api/claxedo/network-policy", owner: "self-hosted-node" },
   { prefix: "/api/claxedo/project", owner: "self-hosted-node" },

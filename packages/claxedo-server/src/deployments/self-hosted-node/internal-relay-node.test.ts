@@ -55,6 +55,39 @@ describe("local relay target lookup", () => {
     await expect(localRelayTargetExists()({ workspaceId: "ws_1", hostId: "host_1" })).resolves.toBe(false)
   })
 
+  test("a user-hosted workspace resolves to the serving host over the tunnel, and only to that host", async () => {
+    const lookup = localRelayTargetLookup({
+      userHostedResolver: async (workspaceId) =>
+        workspaceId === "ws_api" ? { active: true, hostId: "host_box", backing: "local-worktree" } : { active: false },
+    })
+
+    await expect(lookup({ workspaceId: "ws_api", hostId: "host_box" })).resolves.toEqual({
+      found: true,
+      baseUrl: "",
+      access: "user-hosted",
+      backing: "local-worktree",
+    })
+    await expect(lookup({ workspaceId: "ws_api", hostId: "host_other" })).resolves.toEqual({
+      found: false,
+      code: "relay_resolver_workspace_target_unavailable",
+    })
+    await expect(lookup({ workspaceId: "ws_web", hostId: "host_box" })).resolves.toEqual({
+      found: false,
+      code: "relay_resolver_workspace_target_unavailable",
+    })
+  })
+
+  test("a cloud lease that is not ready falls through to the user-hosted resolver", async () => {
+    const lookup = localRelayTargetLookup({
+      sandboxManager: {
+        target: vi.fn(async () => ({ status: "unavailable", reason: "runtime_lease_not_ready" })),
+      } as never,
+      userHostedResolver: async () => ({ active: true, hostId: "host_box", backing: "local-worktree" }),
+    })
+
+    await expect(lookup({ workspaceId: "ws_api", hostId: "host_box" })).resolves.toMatchObject({ found: true, access: "user-hosted" })
+  })
+
   test("local target existence uses SandboxManager host id when available", async () => {
     const exists = localRelayTargetExists({
       sandboxManager: {

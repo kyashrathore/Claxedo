@@ -40,6 +40,7 @@ import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/san
 import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
 import { workspaceResponse } from "../workspace-response"
+import { hostAssignmentHandlers } from "../../routes/hosted/host-assignment"
 
 const createBody = z
   .object({
@@ -154,6 +155,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
       limit: 120,
       windowMs: 60_000,
     })
+  const enrolledHostAssignment = hostAssignmentHandlers(services, options, controlPlaneRateLimiter)
   return (
     new Hono()
       .route("/", sandboxDriverRoutes(services, options))
@@ -281,11 +283,24 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
       })
       .route("/", workspaceConnectionRoutes(services, options))
       .post("/:id/host-assignment", async (c) => {
-        // Sharing under machine-wide enrollment: the OWNER assigns this local
-        // workspace to THIS machine (`localHostIdentity()` inside the service —
-        // host identity is server-owned). The service adds the workspace to
-        // its served set and forces one signed heartbeat; the route answers
-        // only after that beat acked the workspace, so success means routable.
+        // Two shares meet on this path. A `hostId` body is the owner assigning
+        // a directory on one of their ENROLLED machines (a `claxedo connect`
+        // host): the authority records it and that machine acks on its beat.
+        // No `hostId` is the owner sharing this local workspace from THIS
+        // machine: the service adds it to the served set and forces one
+        // signed heartbeat, and the route answers only after that beat acked
+        // the workspace, so success means routable. This machine's own host id
+        // is never addressed by body — the node is the host, not a fleet member.
+        const rawBody = await c.req.json().catch(() => ({}))
+        const bodyHostId = asRecord(rawBody)?.hostId
+        if (bodyHostId) {
+          if (options.hostAssignments && bodyHostId === await options.hostAssignments.hostId()) {
+            return c.json({
+              error: apiError("host_assignment_identity_server_owned", "Host assignment machine identity is server-owned"),
+            }, 400)
+          }
+          return enrolledHostAssignment.assign(c)
+        }
         const authResult = await signedOrError(c.req.raw, { ...options, requireSigned: true }, services)
         if ("error" in authResult) return c.json(authResult.error, authResult.status)
         const auth = authResult.auth
@@ -302,12 +317,6 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         if (ws.kind !== "local") {
           return c.json({
             error: apiError("host_assignment_local_workspace_required", "Only local workspaces can be assigned for user-hosted sharing"),
-          }, 400)
-        }
-        const rawBody = await c.req.json().catch(() => ({}))
-        if (asRecord(rawBody)?.hostId) {
-          return c.json({
-            error: apiError("host_assignment_identity_server_owned", "Host assignment machine identity is server-owned"),
           }, 400)
         }
         const parsed = parsedBody(hostAssignmentBody, rawBody)

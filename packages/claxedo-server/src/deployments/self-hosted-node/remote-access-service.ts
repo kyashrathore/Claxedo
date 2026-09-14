@@ -3,6 +3,7 @@ import type { HostSessionAuthority, WorkspaceAuthority } from "@claxedo/server-c
 import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { RemoteAccessService } from "../../routes/remote-access"
+import { hostedRemoteAccessService } from "../hosted-shared/hosted-remote-access-service"
 import type { LocalHostAssignments, LocalWorkspaceShare } from "../../workspace/route-support"
 import {
   hostEnrollmentHeartbeatPayloadV2,
@@ -44,6 +45,11 @@ const DEFAULT_HEARTBEAT_TTL_MS = 60_000
  *      serveable set feeds the machine relay tunnel.
  *
  * Routing requires all three: owner-assigned AND machine-acked AND live lease.
+ *
+ * The owner's fleet (machines enrolled through invitations, `claxedo connect`)
+ * lives in the same authority: revoking one of them is the hosted owner
+ * service's revoke; revoking THIS machine is the same revoke plus closing its
+ * tunnel and heartbeat loop.
  */
 export function createRemoteAccessService(input: {
   authority: WorkspaceAuthority
@@ -72,6 +78,7 @@ export function createRemoteAccessService(input: {
   capture(distinctId: string, event: string, properties?: Record<string, unknown>): void
 }): RemoteAccessService & LocalHostAssignments {
   const authority = input.authority
+  const owner = hostedRemoteAccessService(authority)
   const heartbeatTtlMs = input.heartbeatTtlMs ?? DEFAULT_HEARTBEAT_TTL_MS
   const heartbeatIntervalMs = input.heartbeatIntervalMs ?? Math.floor(heartbeatTtlMs / 3)
 
@@ -319,21 +326,23 @@ export function createRemoteAccessService(input: {
     },
     devices,
     async revoke(auth, hostId) {
-      const assignments = await requireMethod(authority.listHostAssignments, "host assignments")(auth)
-      if (!assignments.some((assignment) => assignment.host_id === hostId)) return { revoked: false }
-      await requireMethod(authority.pauseHostEnrollment, "machine enrollment")(auth, { hostId, paused: true })
+      const result = await owner.revoke(auth, hostId)
+      if (!result.revoked) return result
       input.stopMachineTunnel(hostId)
       if (state?.identity.hostId === hostId) {
         stopLoop()
         state = undefined
       }
-      return { revoked: true }
+      return result
     },
     async markSecondDeviceOpen(auth, workspaceId) {
       const result = await input.authority.markSecondDeviceOpen?.(auth, { workspaceId })
       if (!result) throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Second-device completion storage is unavailable")
       if (result.recorded) input.capture(auth.user.subject, "second_device_open", { workspaceId })
       return { recorded: result.recorded }
+    },
+    async hostId() {
+      return (await input.localHostIdentity()).hostId
     },
     async assignWorkspace(auth, share) {
       return await run(async () => {
@@ -382,6 +391,7 @@ export function unavailableRemoteAccessService(): RemoteAccessService & LocalHos
     devices: unavailable,
     revoke: unavailable,
     markSecondDeviceOpen: unavailable,
+    hostId: unavailable,
     assignWorkspace: unavailable,
     unassignWorkspace: unavailable,
   }

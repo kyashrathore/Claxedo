@@ -2,6 +2,11 @@ import { generateKeyPairSync } from "node:crypto"
 import { describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import {
+  invitationRedeemPayload,
+  invitationTokenParts,
+  publicKeyFingerprint,
+} from "@claxedo/server-core/platform/auth/host-connect-contract"
 import { signHostPayload, type LocalHostIdentity } from "../../workspace/local-host"
 import { createRemoteAccessService } from "./remote-access-service"
 
@@ -245,7 +250,7 @@ describe("remote access service", () => {
     await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: true, secondDeviceOpen: true })
   })
 
-  test("revoke pauses the machine enrollment, stops the tunnel, and empties the devices surface", async () => {
+  test("revoke revokes the machine enrollment, stops the tunnel, and empties the devices surface", async () => {
     const { authority, service, stopMachineTunnel } = setup()
     await service.enable(auth, { displayName: "Mac", startAtLogin: false })
 
@@ -254,9 +259,47 @@ describe("remote access service", () => {
 
     await expect(service.revoke(auth, "host_machine")).resolves.toEqual({ revoked: true })
     expect(stopMachineTunnel).toHaveBeenCalledWith("host_machine")
-    await expect(authority.activeHostEnrollment(auth)).resolves.toEqual({ active: false, reason: "paused" })
+    await expect(authority.activeHostEnrollment(auth)).resolves.toEqual({ active: false, reason: "revoked" })
     await expect(service.devices(auth)).resolves.toEqual([])
-    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toEqual({ active: false })
+    // Revoke retires the shared workspaces with the machine: nothing routable,
+    // and nothing left to read.
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).rejects.toThrow("Workspace not found")
+    await expect(service.status(auth)).resolves.toEqual({ enrolled: false, enabled: false, secondDeviceOpen: false })
+
+    // Enabling again re-proves the key and shares this machine's projects
+    // afresh, reviving the retired rows.
+    const again = await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    expect(again.workspaceIds).toEqual(["ws_1", "ws_2"])
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({ active: true, host_id: "host_machine" })
+  })
+
+  test("revoke reaches a machine enrolled through an invitation the same way, without touching this machine", async () => {
+    const { authority, service, stopMachineTunnel } = setup()
+    await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+    const box = machineIdentity("host_box")
+    const invitation = await authority.createHostInvitation!(auth, { scope: { allowed_roots: ["/srv"], visibility: "owner" } })
+    const parts = invitationTokenParts(invitation.token)!
+    await authority.redeemHostInvitation!({
+      invitationId: parts.invitationId,
+      secret: parts.secret,
+      hostId: box.hostId,
+      publicKey: box.publicKey,
+      signature: signHostPayload(box, invitationRedeemPayload({
+        invitationId: parts.invitationId,
+        hostId: box.hostId,
+        publicKeySha256: await publicKeyFingerprint(JSON.parse(box.publicKey)),
+      })),
+    })
+    await authority.assignWorkspaceHost(auth, { workspaceId: "ws_box", hostId: box.hostId, remoteDirectory: "/srv/api" })
+
+    await expect(service.revoke(auth, box.hostId)).resolves.toEqual({ revoked: true })
+    expect(stopMachineTunnel).toHaveBeenCalledWith(box.hostId)
+    await expect(authority.listHostEnrollments!(auth)).resolves.toEqual([
+      expect.objectContaining({ host_id: "host_machine", enrolled_via: "account" }),
+    ])
+    await expect(authority.activeWorkspaceHost(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({ active: true, host_id: "host_machine" })
+    await expect(service.status(auth)).resolves.toEqual({ enrolled: true, enabled: true, secondDeviceOpen: false })
+    await expect(service.hostId()).resolves.toBe("host_machine")
   })
 
   test("a signature over the wrong served set is refused by the authority, not papered over", async () => {
