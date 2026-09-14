@@ -1,6 +1,6 @@
 # Credential broker: the system and the proposed change
 
-Status: implemented for the local deployment on `feat/credentials-integration`. The loopback broker,
+Status: implemented for the local deployment, merged to `dev` (2026-09-14). The loopback broker,
 the binding authority over the local registry, the projection into every harness and the OpenCode
 engine, and the refusal of a selected-but-unusable account all run and are tested. Outstanding: the
 hosted credential store, lease identity, and delivery into a cloud sandbox — sections 4 and 6 remain
