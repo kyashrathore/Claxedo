@@ -116,6 +116,8 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
   })
   const messages: unknown[] = []
   child.on("message", (message) => messages.push(message))
+  let socket: ReturnType<typeof openPtySocket> | undefined
+  let failure: unknown
 
   try {
     const base = `http://127.0.0.1:${port}`
@@ -194,7 +196,7 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
     expect((await fetch(`${base}/api/claxedo/health`)).status).toBe(200)
     expect((await fetch(`${base}/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`)).status).toBe(200)
 
-    const socket = openPtySocket(
+    socket = openPtySocket(
       `ws://127.0.0.1:${port}/api/wr/pty/${encodeURIComponent(pty.id)}/connect?directory=${directory}`,
     )
     await socket.opened
@@ -213,9 +215,17 @@ test("bundled claxedo-server boots and serves Claxedo-owned routes", async () =>
       throw new Error(`claxedo-server stopped answering after reconnect: ${String(error)}\n${stderr.slice(-4000)}`)
     })
     expect(removePty.status).toBe(200)
+  } catch (error) {
+    failure = error
+    throw error
   } finally {
+    // A socket the test left open on a live PTY would hold the server's
+    // listener past SIGTERM, and a teardown assertion thrown from here would
+    // replace the error that left it open.
+    socket?.ws.close()
     child.kill()
-    expect(await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true)
+    const exitedInTime = await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])
+    if (failure === undefined) expect(exitedInTime).toBe(true)
   }
 }, 90_000)
 
@@ -301,6 +311,7 @@ async function waitForMessage(messages: unknown[], match: (message: unknown) => 
 
 function openPtySocket(url: string) {
   const ws = new WebSocket(url)
+  ws.binaryType = "arraybuffer"
   let text = ""
   const opened = new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error("PTY WebSocket did not open in time")), 5_000)
@@ -314,7 +325,17 @@ function openPtySocket(url: string) {
     }, { once: true })
   })
   ws.addEventListener("message", (event) => {
-    if (typeof event.data === "string") text += event.data
+    if (typeof event.data === "string") {
+      text += event.data
+      return
+    }
+    // A fresh attach opens with one control frame, 0x00 + JSON, whose
+    // checkpoint carries the screen as it stood before this client connected;
+    // output from before the attach is in there, not in a text replay.
+    const bytes = new Uint8Array(event.data as ArrayBuffer)
+    if (bytes[0] !== 0) return
+    const control = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as { checkpoint?: { screen?: string } }
+    text += control.checkpoint?.screen ?? ""
   })
   return {
     ws,

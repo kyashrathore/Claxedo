@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { customVerifierAuthAdapter, localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
@@ -226,6 +226,25 @@ describe("startLocalServer", () => {
     const disconnected = reader.read().then(() => "ended", () => "disconnected")
     await local.stop()
     expect(await disconnected).toBe("disconnected")
+    await expect(fetch(`http://127.0.0.1:${local.port}/api/claxedo/health`)).rejects.toThrow()
+  }, 15_000)
+
+  test("stopping bounds the drain of an open event WebSocket", async () => {
+    const port = await freePort()
+    // The shell's event route is gated by the control-plane route auth, which
+    // passes unsigned callers only under the real local-only configuration.
+    const local = server = startLocalServer({ port, services: services({ auth: localOnlyAuthAdapter() }) })
+    await local.ready
+    const socket = new WebSocket(`ws://127.0.0.1:${local.port}/api/claxedo/events`)
+    await new Promise<void>((resolve, reject) => {
+      socket.addEventListener("open", () => resolve(), { once: true })
+      socket.addEventListener("error", () => reject(new Error("event WebSocket did not open")), { once: true })
+    })
+    const closed = new Promise<void>((resolve) => socket.addEventListener("close", () => resolve(), { once: true }))
+    // The client never closes: an upgraded socket is outside the HTTP server's
+    // own connection list, so only the drain deadline can end it.
+    await local.stop()
+    await closed
     await expect(fetch(`http://127.0.0.1:${local.port}/api/claxedo/health`)).rejects.toThrow()
   }, 15_000)
 
