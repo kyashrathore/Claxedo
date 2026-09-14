@@ -936,7 +936,7 @@ describe("Agent Plugin Directory built-in server", () => {
     )).toBeTruthy()
   })
 
-  test("a built-in that is off is never offered for install, and is restored rather than enabled", async () => {
+  test("a built-in that is off is never offered for install, only enabled", async () => {
     // A sourced candidate in this state — no retained bytes, no reachable
     // source — earns a disabled "Add" on its card. The built-in earns nothing.
     await renderDirectory({ catalog: withBuiltIn({ installed: false }) })
@@ -947,28 +947,24 @@ describe("Agent Plugin Directory built-in server", () => {
 
     const pane = await openPane("claxedo")
     expect(within(pane).queryByRole("button", { name: "Add" })).toBeNull()
-    // Never "Enable": restoring leaves Tasks off, which an Enable label would
-    // promise it had turned on.
-    expect(within(pane).queryByRole("button", { name: "Enable" })).toBeNull()
-    expect(within(pane).getByRole("button", { name: "Restore defaults" })).not.toBeDisabled()
+    expect(within(pane).getByRole("button", { name: "Enable" })).not.toBeDisabled()
     // `sourceAvailable: false` is how the built-in says it has no source at
     // all, not that the source it has went missing.
     expect(within(pane).queryByText(/Source unavailable/)).toBeNull()
     expect(within(pane).getByText("Built in")).toBeTruthy()
   })
 
-  test("the built-in's overflow menu offers only the item that follows the default", async () => {
-    // The two conditions that add items to a sourced plugin's menu: Claxedo
-    // ownership makes the organization defaults eligible, and an available
-    // update earns its own row. The built-in has neither an organization to
-    // hand itself to nor an artifact to take.
+  test("the built-in's overflow menu offers nothing beyond Enable and Disable", async () => {
+    // The conditions that add items to a sourced plugin's menu: an override to
+    // clear, Claxedo ownership making the organization defaults eligible, and
+    // an available update earning its own row. The built-in's groups are its
+    // only per-project state, it has no organization to hand itself to and no
+    // artifact to take.
     await renderDirectory({ catalog: withBuiltIn({ sourceKind: "claxedo", updateAvailable: true }) })
     const pane = await openPane("claxedo")
 
     expect(within(pane).getByRole("button", { name: "Disable" })).toBeTruthy()
-    expect(within(pane).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-      expect.stringContaining("Restore defaults"),
-    ])
+    expect(within(pane).queryAllByRole("menuitem")).toEqual([])
   })
 
   test("the pane's server list is one row per tool group, with a switch and the group's tool names", async () => {
@@ -1064,11 +1060,11 @@ describe("Agent Plugin Directory built-in server", () => {
       .toEqual([4, 5, 6, 7, 8, 9, 10, 11])
   })
 
-  test("Restore defaults clears every group rather than granting Tasks the user never consented to", async () => {
+  test("Enable on the built-in returns every group to its default rather than granting Tasks the user never consented to", async () => {
     const { recorded } = await renderDirectory({ catalog: withBuiltIn({ installed: false }) })
     const pane = await openPane("claxedo")
 
-    await fireEvent.click(within(pane).getByRole("button", { name: "Restore defaults" }))
+    await fireEvent.click(within(pane).getByRole("button", { name: "Enable" }))
 
     const posts = () => posted(recorded, "/api/claxedo/plugins/activation")
     await waitFor(() => expect(posts()).toHaveLength(8))
@@ -1076,11 +1072,11 @@ describe("Agent Plugin Directory built-in server", () => {
     expect(posts().some((post) => (post.body as { choice: unknown }).choice === true)).toBe(false)
   })
 
-  test("Clear my override hands every group back to the default", async () => {
-    const { recorded } = await renderDirectory({ catalog: withBuiltIn() })
+  test("Enable on a disabled built-in hands every group back to the default", async () => {
+    const { recorded } = await renderDirectory({ catalog: withBuiltIn({ installed: false }) })
     const pane = await openPane("claxedo")
 
-    await fireEvent.click(within(pane).getAllByRole("menuitem")[0])
+    await fireEvent.click(within(pane).getByRole("button", { name: "Enable" }))
 
     const posts = () => posted(recorded, "/api/claxedo/plugins/activation")
     await waitFor(() => expect(posts()).toHaveLength(8))

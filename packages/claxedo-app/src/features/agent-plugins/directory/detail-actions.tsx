@@ -65,7 +65,7 @@ export function PluginActions(props: {
             }
           >
             <Button size="small" variant="primary" disabled={props.pending || !mutable()} onClick={() => props.onActivate(true)}>
-              {props.pending ? "Applying…" : builtIn() ? "Restore defaults" : "Enable"}
+              {props.pending ? "Applying…" : "Enable"}
             </Button>
           </Show>
         }
@@ -76,24 +76,13 @@ export function PluginActions(props: {
       </Show>
 
       <OverflowMenu label={`More actions for ${pluginLabel(props.plugin)}`}>
-        <Show
-          when={builtIn()}
-          fallback={
-            <OverflowItem
-              disabled={props.pending}
-              onSelect={() => props.onActivate(null)}
-              hint={`Follow the ${outcome().authority} default — it would be ${outcome().enabled ? "enabled" : "disabled"}`}
-            >
-              Clear my override
-            </OverflowItem>
-          }
-        >
+        <Show when={!builtIn()}>
           <OverflowItem
             disabled={props.pending}
             onSelect={() => props.onActivate(null)}
-            hint="Every group goes back to its default"
+            hint={`Follow the ${outcome().authority} default — it would be ${outcome().enabled ? "enabled" : "disabled"}`}
           >
-            Restore defaults
+            Clear my override
           </OverflowItem>
         </Show>
         <Show when={canManageOrganization()}>
