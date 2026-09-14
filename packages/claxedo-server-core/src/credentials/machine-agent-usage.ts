@@ -3,9 +3,8 @@
  * it, including the agents Claxedo cannot run a turn on.
  *
  * The probe itself is not here: it is a Node-only vendor library the local
- * server owns. What is here is the shape both readers of it share — the machine
- * login report and the quota view — and the one read they share, so opening
- * Settings and opening the usage tab do not each call every vendor.
+ * server owns, and so is the one read of it both consumers share. What is here
+ * is the shape the machine login report and the quota view both read.
  */
 
 import { Log } from "../platform/runtime/lib/log"
@@ -52,44 +51,5 @@ export async function agentUsageOrNone(
       detail: error instanceof Error ? error.message : String(error),
     })
     return []
-  }
-}
-
-/** How long one probe's answer stands before every vendor is asked again. */
-const FRESH_FOR_MS = 60_000
-
-/**
- * One probe at a time, and its answer for a while after.
- *
- * A probe reaches every vendor's usage endpoint at once and several of them
- * ration those reads — Anthropic's answers a 429 with a cool-down measured in
- * tens of minutes — so the Settings list and the usage tab opening together
- * must not be two sweeps. A caller that arrives while one is running takes its
- * answer, `fresh` or not: a second sweep started now would reach the same
- * endpoints the running one is already waiting on.
- */
-export function createMachineAgentUsageCache(input: {
-  read: (fresh: boolean) => Promise<readonly MachineAgentUsage[]>
-  now?: () => number
-  freshForMs?: number
-}): MachineAgentUsageReader {
-  const now = input.now ?? Date.now
-  const freshForMs = input.freshForMs ?? FRESH_FOR_MS
-  let held: { at: number; agents: readonly MachineAgentUsage[] } | undefined
-  let asking: Promise<readonly MachineAgentUsage[]> | undefined
-  return ({ fresh }) => {
-    if (!fresh && held && now() - held.at < freshForMs) return Promise.resolve(held.agents)
-    if (asking) return asking
-    const started = input
-      .read(fresh)
-      .then((agents) => {
-        held = { at: now(), agents }
-        return agents
-      })
-      .finally(() => {
-        asking = undefined
-      })
-    asking = started
-    return started
   }
 }

@@ -1,11 +1,9 @@
-import { describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { spawn } from "child_process"
-import type { HarnessId } from "@claxedo/agent-runtime-contract"
+import { HARNESS_IDS } from "@claxedo/agent-runtime-contract"
 import {
-  createMachineLoginCache,
   readMachineLogins,
   stopAppServer,
-  type MachineLogin,
   type MachineLoginProbes,
   type MachineLoginRun,
 } from "./machine-login"
@@ -177,90 +175,85 @@ describe("readMachineLogins", () => {
     expect(codex.serves).toBeUndefined()
   })
 
-  test("every harness is reported, in the order asked for", async () => {
-    const logins = await readMachineLogins(undefined, { run: runner({}) })
+  test("the harnesses asked for are reported in that order, and every harness by default", async () => {
+    const run = runner({ claude: { found: true, ok: true, stdout: JSON.stringify({ loggedIn: true }) } })
 
-    expect(logins.map((login) => login.harness)).toEqual(["claude", "codex", "cursor"])
+    const asked = await readMachineLogins(["cursor", "claude"], { run })
+    const all = await readMachineLogins(undefined, { run })
+
+    expect(asked.map((login) => [login.harness, login.state])).toEqual([["cursor", "absent"], ["claude", "signed_in"]])
+    expect(all.map((login) => login.harness)).toEqual([...HARNESS_IDS])
   })
 })
 
+const { execFile } = vi.hoisted(() => ({ execFile: vi.fn() }))
+vi.mock("child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("child_process")>()),
+  execFile,
+}))
+
+type ExecFileCallback = (error: Error | null, stdout: string, stderr: string) => void
+
+/**
+ * Through `readMachineLogins` with no probes of its own, which is the only
+ * path that reads or writes the remembered answers. The module's clock is the
+ * real one, so each test starts a day after the last and finds every answer
+ * expired.
+ */
 describe("the harnesses are not asked twice at once, nor again straight away", () => {
-  function counting() {
-    const reads: string[] = []
-    let release: (login: MachineLogin) => void = () => {}
-    const read = (harness: HarnessId) => {
-      reads.push(harness)
-      return new Promise<MachineLogin>((resolve) => { release = resolve })
-    }
-    return { reads, read, answer: (login: Partial<MachineLogin> = {}) => release({
-      harness: "codex", providerIds: ["codex-app-server"], state: "signed_in", ...login,
-    } as MachineLogin) }
+  let pending: ExecFileCallback[] = []
+  let clock = Date.parse("2026-09-14T00:00:00.000Z")
+
+  beforeEach(() => {
+    pending = []
+    clock += 86_400_000
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(clock)
+    execFile.mockReset()
+    execFile.mockImplementation((_file: string, _args: string[], _options: unknown, callback: ExecFileCallback) => {
+      pending.push(callback)
+    })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  const answer = (stdout: string) => {
+    const callback = pending.shift()
+    if (!callback) throw new Error("no status command is waiting")
+    callback(null, stdout, "")
   }
 
-  test("callers that arrive together share one read", async () => {
-    const probe = counting()
-    const cache = createMachineLoginCache({ read: probe.read })
+  test("callers that arrive together share one status command", async () => {
+    const both = Promise.all([readMachineLogins(["cursor"]), readMachineLogins(["cursor"])])
+    expect(execFile).toHaveBeenCalledTimes(1)
+    expect(execFile.mock.calls[0]?.slice(0, 2)).toEqual(["cursor-agent", ["status", "--format", "json"]])
 
-    const both = Promise.all([cache.read("codex"), cache.read("codex")])
-    probe.answer({ email: "shared@example.com" })
+    answer(JSON.stringify({ isAuthenticated: true }))
 
-    expect((await both).map((login) => login.email)).toEqual(["shared@example.com", "shared@example.com"])
-    expect(probe.reads).toEqual(["codex"])
+    expect((await both).map(([cursor]) => cursor?.state)).toEqual(["signed_in", "signed_in"])
   })
 
-  test("the answer stands for its window and is asked again after it", async () => {
-    const probe = counting()
-    let clock = 1_000
-    const cache = createMachineLoginCache({ read: probe.read, now: () => clock, freshForMs: 10_000 })
+  test("an answer stands for ten seconds, a Check asks again inside them", async () => {
+    const first = readMachineLogins(["claude"])
+    answer(JSON.stringify({ loggedIn: true, email: "first@example.com" }))
+    expect((await first)[0]?.email).toBe("first@example.com")
 
-    const first = cache.read("codex")
-    probe.answer({ email: "first@example.com" })
-    await first
+    vi.setSystemTime(clock + 9_999)
+    expect((await readMachineLogins(["claude"]))[0]?.email).toBe("first@example.com")
+    expect(execFile).toHaveBeenCalledTimes(1)
 
-    clock += 9_999
-    expect((await cache.read("codex")).email).toBe("first@example.com")
-    expect(probe.reads).toEqual(["codex"])
+    const checked = readMachineLogins(["claude"], { fresh: true })
+    answer(JSON.stringify({ loggedIn: true, email: "checked@example.com" }))
+    expect((await checked)[0]?.email).toBe("checked@example.com")
+    expect(execFile).toHaveBeenCalledTimes(2)
 
-    clock += 2
-    const later = cache.read("codex")
-    probe.answer({ email: "second@example.com" })
-
-    expect((await later).email).toBe("second@example.com")
-    expect(probe.reads).toEqual(["codex", "codex"])
-  })
-
-  test("a Check asks again inside the window, and forgetting does the same", async () => {
-    const probe = counting()
-    const clock = 1_000
-    const cache = createMachineLoginCache({ read: probe.read, now: () => clock })
-
-    const first = cache.read("codex")
-    probe.answer({ email: "first@example.com" })
-    await first
-
-    const checked = cache.read("codex", { fresh: true })
-    probe.answer({ email: "checked@example.com" })
-    expect((await checked).email).toBe("checked@example.com")
-
-    cache.forget()
-    const after = cache.read("codex")
-    probe.answer({ email: "third@example.com" })
-    expect((await after).email).toBe("third@example.com")
-    expect(probe.reads).toEqual(["codex", "codex", "codex"])
-  })
-
-  test("each harness is remembered on its own", async () => {
-    const probe = counting()
-    const cache = createMachineLoginCache({ read: probe.read })
-
-    const claude = cache.read("claude")
-    probe.answer({ harness: "claude" })
-    await claude
-    const codex = cache.read("codex")
-    probe.answer({ harness: "codex" })
-    await codex
-
-    expect(probe.reads).toEqual(["claude", "codex"])
+    vi.setSystemTime(clock + 9_999 + 10_000)
+    const later = readMachineLogins(["claude"])
+    expect(execFile).toHaveBeenCalledTimes(3)
+    answer(JSON.stringify({ loggedIn: false }))
+    expect((await later)[0]?.state).toBe("signed_out")
   })
 })
 

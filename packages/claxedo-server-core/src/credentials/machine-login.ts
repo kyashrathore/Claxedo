@@ -1,6 +1,7 @@
 import { execFile, spawn } from "child_process"
 import { HARNESS_IDS, HARNESS_TABLE, type HarnessId } from "@claxedo/agent-runtime-contract"
 import { jsonNumber, jsonRecord, jsonString, jsonText, parseJsonRecord } from "@claxedo/server-core/platform/runtime/lib/json"
+import { createFreshCache } from "@claxedo/server-core/platform/runtime/lib/fresh-cache"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { clampPercent, codexWindowName, usageResetMs } from "./usage-windows"
 import type { CredentialUsageWindow } from "./types"
@@ -90,9 +91,6 @@ const runCommand = (file: string, args: readonly string[]): Promise<MachineLogin
     })
   })
 
-/** How long a harness's answer stands before it is asked again. */
-const FRESH_FOR_MS = 10_000
-
 export type MachineLoginRead = MachineLoginProbes & {
   /**
    * Ask the harness again rather than reusing its last answer. What a row's
@@ -103,50 +101,15 @@ export type MachineLoginRead = MachineLoginProbes & {
 }
 
 /**
- * One read per harness at a time, and its answer for a short while after.
- *
  * Reading a harness costs a process — the Codex app-server takes about a
- * second — and the Settings section, the onboarding check and a row's Check can
- * all ask at once. Callers that arrive together share one read; a caller that
- * arrives just after one gets its answer rather than spawning the same binary
- * again. Its own clock and reader so the behaviour can be exercised without
- * spawning anything.
+ * second — and the Settings section, the onboarding check and a row's Check
+ * can all ask at once, so one read per harness serves every caller inside
+ * 10 seconds of it.
  */
-export function createMachineLoginCache(input: {
-  read: (harness: HarnessId) => Promise<MachineLogin>
-  now?: () => number
-  freshForMs?: number
-}) {
-  const now = input.now ?? Date.now
-  const freshForMs = input.freshForMs ?? FRESH_FOR_MS
-  const answers = new Map<HarnessId, { at: number; login: MachineLogin }>()
-  const asking = new Map<HarnessId, Promise<MachineLogin>>()
-  return {
-    read(harness: HarnessId, options: { fresh?: boolean } = {}): Promise<MachineLogin> {
-      const held = answers.get(harness)
-      if (!options.fresh && held && now() - held.at < freshForMs) return Promise.resolve(held.login)
-      // A read already in flight is joined even by a `fresh` caller: it was
-      // started no earlier than this call, so its answer is as new as one
-      // started now, and a second spawn of the same binary buys nothing.
-      const inFlight = asking.get(harness)
-      if (inFlight) return inFlight
-      const started = input.read(harness)
-        .then((login) => {
-          answers.set(harness, { at: now(), login })
-          return login
-        })
-        .finally(() => asking.delete(harness))
-      asking.set(harness, started)
-      return started
-    },
-    forget() {
-      answers.clear()
-      asking.clear()
-    },
-  }
-}
-
-const machineLogins = createMachineLoginCache({ read: (harness) => askHarness(harness, {}) })
+const machineLogins = createFreshCache<HarnessId, MachineLogin>({
+  read: (harness) => askHarness(harness, {}),
+  freshForMs: 10_000,
+})
 
 export async function readMachineLogins(
   harnesses: readonly HarnessId[] = HARNESS_IDS,

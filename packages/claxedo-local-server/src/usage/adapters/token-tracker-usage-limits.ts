@@ -22,10 +22,10 @@
  */
 
 import os from "node:os"
-import { createMachineAgentUsageCache } from "@claxedo/server-core/credentials/machine-agent-usage"
 import { isHarnessId } from "@claxedo/agent-runtime-contract"
 import { clampPercent, usageResetMs, usageWindowName } from "@claxedo/server-core/credentials/usage-windows"
-import type { MachineAgentUsage } from "@claxedo/server-core/credentials/machine-agent-usage"
+import { createFreshCache } from "@claxedo/server-core/platform/runtime/lib/fresh-cache"
+import type { MachineAgentUsage, MachineAgentUsageReader } from "@claxedo/server-core/credentials/machine-agent-usage"
 import type { CredentialUsageWindow } from "@claxedo/server-core/credentials/types"
 import { num, record, text } from "../../platform/json"
 
@@ -142,5 +142,17 @@ async function probe(fresh: boolean): Promise<MachineAgentUsage[]> {
   return machineAgentUsage(await module.getUsageLimits({ home: os.homedir(), env: process.env }), Date.now())
 }
 
-/** The single read both the machine login report and the quota view share. */
-export const readMachineAgentUsage = createMachineAgentUsageCache({ read: probe })
+/**
+ * The single read both the machine login report and the quota view share.
+ *
+ * A probe reaches every vendor's usage endpoint at once and several of them
+ * ration those reads — Anthropic's answers a 429 with a cool-down measured in
+ * tens of minutes — so the Settings list and the usage tab opening together
+ * must not be two sweeps, and one sweep's figures stand for a minute.
+ */
+const sweep = createFreshCache<void, readonly MachineAgentUsage[]>({
+  read: (_machine, { fresh }) => probe(fresh),
+  freshForMs: 60_000,
+})
+
+export const readMachineAgentUsage: MachineAgentUsageReader = ({ fresh }) => sweep.read(undefined, { fresh })
