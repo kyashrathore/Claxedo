@@ -77,6 +77,27 @@ describe("parseCommandRequest", () => {
     expect(withNull.ok).toBe(true)
   })
 
+  test("a preset draft says whether agents may start it, as a boolean and nothing else", () => {
+    const { agentStartable: _agentStartable, ...unsaid } = presetDraft()
+    expect(parsedReasons(parseCommandRequest({ clientRequestId: "r", command: { type: "preset.create", input: unsaid } }))).toEqual({
+      "command.input.agentStartable": "required",
+    })
+    expect(
+      parsedReasons(
+        parseCommandRequest({
+          clientRequestId: "r",
+          command: { type: "preset.edit", input: { presetId: "preset-1", revision: 1, ...presetDraft(), agentStartable: "yes" } },
+        }),
+      ),
+    ).toEqual({ "command.input.agentStartable": "type" })
+
+    const marked = parseCommandRequest({
+      clientRequestId: "r",
+      command: { type: "preset.create", input: presetDraft({ agentStartable: true }) },
+    })
+    expect(marked.ok && marked.value.command.type === "preset.create" && marked.value.command.input.agentStartable).toBe(true)
+  })
+
   test("a number where a string belongs is a typed field, never a coerced one", () => {
     const result = parseCommandRequest({
       clientRequestId: "r",

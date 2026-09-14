@@ -17,7 +17,7 @@
 import { describe, expect, test } from "bun:test"
 import { CONFORMANCE_SCOPES, TASKS_STORE_CONFORMANCE_SCOPE, tasksStoreConformance } from "./index"
 import { createMemoryTasksStore } from "../stores/memory"
-import type { Page, Task, TaskSummary } from "../contracts"
+import type { Page, Preset, Task, TaskSummary } from "../contracts"
 import type { TasksStoreOperations, TasksStorePort } from "../ports/store"
 
 type Mutant = Readonly<{
@@ -211,6 +211,25 @@ const FORGETS_THE_CREATING_SESSION = everywhere((operations) => {
   }
 })
 
+/** The column an adapter never added: every preset read back as one no person marked. */
+const FORGETS_THE_AGENT_MARK = everywhere((operations) => {
+  const forget = (preset: Preset): Preset => ({ ...preset, agentStartable: false })
+  return {
+    ...operations,
+    presets: {
+      ...operations.presets,
+      get: async (scopeId, presetId) => {
+        const preset = await operations.presets.get(scopeId, presetId)
+        return preset === undefined ? undefined : forget(preset)
+      },
+      list: async (scopeId, ownerId, query) => {
+        const page = await operations.presets.list(scopeId, ownerId, query)
+        return { ...page, items: page.items.map(forget) }
+      },
+    },
+  }
+})
+
 const MUTANTS: readonly Mutant[] = [
   {
     breaks: "commits the work of a transaction that threw",
@@ -342,6 +361,10 @@ const MUTANTS: readonly Mutant[] = [
   {
     breaks: "reads every task back as created by nobody",
     apply: FORGETS_THE_CREATING_SESSION,
+  },
+  {
+    breaks: "reads every preset back as one nobody marked for agents",
+    apply: FORGETS_THE_AGENT_MARK,
   },
 ]
 

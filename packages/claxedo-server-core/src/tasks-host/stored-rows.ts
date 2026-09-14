@@ -33,6 +33,7 @@ export type StoredPresetColumns = {
   instructions: string
   execution: string
   configurations: string
+  agent_startable: number
   archived_at: number | null
   created_at: number
   updated_at: number
@@ -93,6 +94,7 @@ export function presetColumns(preset: Preset): StoredPresetColumns {
     instructions: preset.instructions,
     execution: JSON.stringify(preset.execution),
     configurations: JSON.stringify(preset.configurations),
+    agent_startable: preset.agentStartable ? 1 : 0,
     archived_at: preset.archivedAt,
     created_at: preset.createdAt,
     updated_at: preset.updatedAt,
@@ -109,6 +111,7 @@ export function presetOfColumns(row: StoredPresetColumns): Preset {
     instructions: row.instructions,
     execution: parseJson(row.execution),
     configurations: parseJson(row.configurations),
+    agentStartable: row.agent_startable === 1,
     archivedAt: row.archived_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

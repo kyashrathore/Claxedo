@@ -10,3 +10,8 @@ create table user_agent_settings (
   cross_machine_writes integer not null default 0 check (cross_machine_writes in (0, 1)),
   updated_at integer not null
 );
+
+-- Whether an agent inside a session may start this preset. Off for every
+-- preset that exists, because no person has marked one yet.
+
+alter table task_presets add column agent_startable integer not null default 0;

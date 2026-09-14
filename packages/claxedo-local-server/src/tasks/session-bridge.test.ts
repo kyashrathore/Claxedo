@@ -98,6 +98,7 @@ function preset(): Preset {
     name: "Careful review",
     instructions: "Read before you write.",
     execution: { placement: "local", capabilities: { mode: "inherit-local" } },
+    agentStartable: false,
     configurations: { primary: { harness: { id: CONNECTION_ID, access: "connection" }, model: MODEL, effort: "high" } },
     archivedAt: null,
     createdAt: 1,

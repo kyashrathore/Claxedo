@@ -62,7 +62,7 @@ import {
 export type D1TasksStoreInput = Readonly<{ database: D1Database }>
 
 const PRESET_COLUMNS =
-  "scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations, archived_at, created_at, updated_at"
+  "scope_id, preset_id, revision, owner_id, name, instructions, execution, configurations, agent_startable, archived_at, created_at, updated_at"
 const TASK_COLUMNS =
   "scope_id, task_id, revision, project_id, number, workspace_id, parent_task_id, created_from_session_id, created_from_workspace_id, title, description, status, child_set_revision, archived_at, created_at, updated_at"
 const LINK_COLUMNS =
@@ -80,6 +80,7 @@ function presetValues(preset: Preset): unknown[] {
     row.instructions,
     row.execution,
     row.configurations,
+    row.agent_startable,
     row.archived_at,
     row.created_at,
     row.updated_at,

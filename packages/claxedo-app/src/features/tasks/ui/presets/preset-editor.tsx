@@ -2,6 +2,7 @@ import { For, Show, createSignal, untrack } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { Button } from "@opencode-ai/ui/button"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
+import { Switch } from "@opencode-ai/ui/switch"
 import { TextField } from "@opencode-ai/ui/text-field"
 import {
   CONFIGURATION_SLOTS,
@@ -136,6 +137,19 @@ export function PresetEditor(props: PresetEditorProps) {
             </p>
           </Show>
         </fieldset>
+
+        <div class="tsk-field" data-testid="preset-editor-agent-startable">
+          <Switch
+            checked={props.draft.agentStartable}
+            onChange={(agentStartable: boolean) => patch({ agentStartable })}
+          >
+            Startable by agents
+          </Switch>
+          <p class="tsk-hint">
+            An agent working in a session may start this preset on a task, once your account lets agents act on your
+            other machines. Off, only you can start it.
+          </p>
+        </div>
 
         <div class="tsk-divider" />
 

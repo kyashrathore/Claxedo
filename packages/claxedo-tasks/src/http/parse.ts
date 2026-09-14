@@ -29,6 +29,7 @@ function presetDraft(ctx: DecodeContext, row: Record<string, unknown> | undefine
     instructions: ctx.read.string(row?.instructions, `${path}instructions`) ?? "",
     execution: decodeExecution(ctx, row?.execution, `${path}execution`),
     configurations: decodeConfigurations(ctx, row?.configurations, `${path}configurations`),
+    agentStartable: ctx.read.boolean(row?.agentStartable, `${path}agentStartable`) ?? false,
   }
 }
 

@@ -82,6 +82,7 @@ const PRESET = {
     name: "Review the diff",
     instructions: "Read the change before proposing one.",
     execution: { placement: "local", capabilities: { mode: "inherit-local" } },
+    agentStartable: false,
     configurations: {
       primary: {
         harness: { id: "claude", access: "native" },

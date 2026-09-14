@@ -108,6 +108,13 @@ export type Preset = {
   instructions: string
   execution: PresetExecution
   configurations: PresetConfigurations
+  /**
+   * Whether an agent inside a session may start this preset. False until a
+   * person marks it in Settings: a session's Tasks grant reaches Start, and
+   * without this a preset saved for the person's own use would be one every
+   * agent in the project could put on a machine.
+   */
+  agentStartable: boolean
   archivedAt: number | null
   createdAt: number
   updatedAt: number
@@ -255,6 +262,7 @@ export type PresetDraft = {
   instructions: string
   execution: PresetExecution
   configurations: PresetConfigurations
+  agentStartable: boolean
 }
 
 export type TaskDraft = {

@@ -34,7 +34,7 @@ afterEach(async () => {
 })
 
 async function database(): Promise<D1Database> {
-  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql"])
+  const instance = await miniflareControlPlaneDatabase(["0025_claxedo_tasks.sql", "0026_agent_cross_machine_writes.sql"])
   active.push(instance)
   return instance.database
 }
@@ -186,6 +186,7 @@ const PRESET = {
     name: "Review the diff",
     instructions: "Read the change before proposing one.",
     execution: { placement: "local", capabilities: { mode: "inherit-local" } },
+    agentStartable: false,
     configurations: {
       primary: {
         harness: { id: "claude", access: "native" },

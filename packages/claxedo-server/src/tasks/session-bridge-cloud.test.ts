@@ -221,6 +221,7 @@ function cloudPreset(): Preset {
     name: "Isolated review",
     instructions: "Read before you write.",
     execution: { placement: "cloud", capabilities: { mode: "selected", plugins: [], skills: [] } },
+    agentStartable: false,
     configurations: { primary: { harness: HARNESS, model: MODEL, effort: "high" } },
     archivedAt: null,
     createdAt: 1,

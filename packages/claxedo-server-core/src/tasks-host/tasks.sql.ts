@@ -18,6 +18,7 @@ export const ClaxedoTaskPresetTable = sqliteTable(
     instructions: text().notNull(),
     execution: text().notNull(),
     configurations: text().notNull(),
+    agent_startable: integer().notNull().default(0),
     archived_at: integer(),
     created_at: integer().notNull(),
     updated_at: integer().notNull(),

@@ -15,7 +15,7 @@ import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
 import { gate, settle } from "../test-support/concurrency"
 import { OWNER, SCOPES, linkRow, presetRow, receiptRow, taskRow } from "../test-support/rows"
 
-export const TASKS_STORE_CONFORMANCE_VERSION = 7 as const
+export const TASKS_STORE_CONFORMANCE_VERSION = 8 as const
 
 export const TASKS_STORE_CONFORMANCE_SCOPE = {
   cases: [
@@ -36,6 +36,7 @@ export const TASKS_STORE_CONFORMANCE_SCOPE = {
     "task_numbers_are_minted_per_project_and_carried_on_reads",
     "an_archived_task_keeps_its_number_and_the_next_one_does_not_reuse_it",
     "a_task_created_from_a_session_reads_that_session_back_on_get_list_and_children",
+    "a_preset_marked_startable_by_agents_reads_the_mark_back_on_get_and_list",
   ],
   // NOT pinned:
   //
@@ -570,6 +571,32 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
         children.items.find((row) => row.id === "child-from-session")?.createdFrom?.sessionId,
         "session-author",
         "a child row dropped the session the task was created from",
+      )
+    }),
+
+    conformanceCase("a preset marked startable by agents reads the mark back on get and list", async () => {
+      const store = await start()
+      await store.presets.insert(presetRow({ id: "preset-marked", agentStartable: true, createdAt: 2_000 }))
+      await store.presets.insert(presetRow({ id: "preset-unmarked", agentStartable: false, createdAt: 1_000 }))
+
+      assertEqual((await store.presets.get(CONFORMANCE_SCOPES.first, "preset-marked"))?.agentStartable, true, "a read dropped the mark")
+      assertEqual(
+        (await store.presets.get(CONFORMANCE_SCOPES.first, "preset-unmarked"))?.agentStartable,
+        false,
+        "a preset nobody marked was read as startable by agents",
+      )
+      const page = await store.presets.list(CONFORMANCE_SCOPES.first, OWNER, LIST)
+      assertEqual(page.items.find((row) => row.id === "preset-marked")?.agentStartable, true, "a list row dropped the mark")
+
+      assertEqual(
+        await store.presets.update(presetRow({ id: "preset-marked", revision: 2, agentStartable: false }), 1),
+        true,
+        "the update that clears the mark was refused",
+      )
+      assertEqual(
+        (await store.presets.get(CONFORMANCE_SCOPES.first, "preset-marked"))?.agentStartable,
+        false,
+        "an update did not clear the mark",
       )
     }),
   ]

@@ -99,6 +99,24 @@ describe("presets service", () => {
     expect((await presets.get(ACTOR, preset.id)).name).toBe("Renamed")
   })
 
+  test("a preset is not startable by agents until a person marks it, and an edit can unmark it", async () => {
+    const unmarked = await presets.create(ACTOR, presetDraft())
+    expect(unmarked.agentStartable).toBe(false)
+    expect((await presets.get(ACTOR, unmarked.id)).agentStartable).toBe(false)
+
+    const marked = await presets.create(ACTOR, presetDraft({ agentStartable: true }))
+    expect(marked.agentStartable).toBe(true)
+    expect((await presets.get(ACTOR, marked.id)).agentStartable).toBe(true)
+
+    const edited = await presets.edit(ACTOR, {
+      presetId: marked.id,
+      revision: marked.revision,
+      ...presetDraft({ agentStartable: false }),
+    })
+    expect(edited.agentStartable).toBe(false)
+    expect((await presets.get(ACTOR, marked.id)).agentStartable).toBe(false)
+  })
+
   test("archive and restore are one-way each and keep the revision moving", async () => {
     const preset = await presets.create(ACTOR, presetDraft())
     const archived = await presets.archive(ACTOR, { presetId: preset.id, revision: 1 })

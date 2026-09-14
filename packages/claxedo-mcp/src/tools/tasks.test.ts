@@ -48,6 +48,7 @@ const PRESET = {
   name: "Default",
   instructions: "work carefully",
   execution: { placement: "local", capabilities: { mode: "inherit-local" } },
+  agentStartable: false,
   configurations: { primary: CONFIGURATION },
   archivedAt: null,
   createdAt: 1,
