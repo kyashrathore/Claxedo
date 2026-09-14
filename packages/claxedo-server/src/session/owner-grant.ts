@@ -78,15 +78,30 @@ export async function verifyOwnerGrant(
 /** One cloud root as the workspace authority records it. */
 export type OwnerRootIdentity = Readonly<{ userId: string; orgId: string; projectId: string; workspaceId: string }>
 
-export type OwnerRootGrantInput = Readonly<{
+export type OwnerGrantMinterInput = Readonly<{
   /** Where the runtime signing key lives; the same one the Tasks capability is signed with. */
   signingEnv: Record<string, string | undefined>
-  /** The workspace's owner as the authority records them now; the grant names that actor and nobody the caller chose. */
-  workspaceOwner: TasksCapabilityPort["workspaceOwner"]
   /** Where each minted grant is written down, so the switch and the workspace's deletion can take it back. */
   passes?: SandboxPassRegister
   ttlSeconds?: number
   now?: () => number
+}>
+
+/** The one minting path a launch and a renewal share, over the deployment's key and register. */
+export function createOwnerGrantMinter(input: OwnerGrantMinterInput) {
+  return async (scope: OwnerGrantScope): Promise<{ token: string; expiresAt: number }> => {
+    const minted = await mintOwnerGrant(scope, input.signingEnv, {
+      ...(input.ttlSeconds === undefined ? {} : { ttlSeconds: input.ttlSeconds }),
+      ...(input.passes ? { register: input.passes } : {}),
+      ...(input.now ? { now: input.now } : {}),
+    })
+    return { token: minted.token, expiresAt: minted.expiresAt }
+  }
+}
+
+export type OwnerRootGrantInput = OwnerGrantMinterInput & Readonly<{
+  /** The workspace's owner as the authority records them now; the grant names that actor and nobody the caller chose. */
+  workspaceOwner: TasksCapabilityPort["workspaceOwner"]
 }>
 
 /**
@@ -98,17 +113,13 @@ export type OwnerRootGrantInput = Readonly<{
  * row is a root this control plane cannot launch as anyone.
  */
 export function createOwnerRootGrant(input: OwnerRootGrantInput) {
+  const mint = createOwnerGrantMinter(input)
   return async (root: OwnerRootIdentity): Promise<{ token: string; expiresAt: number }> => {
     const owner = await input.workspaceOwner(root.workspaceId)
     if (!owner || owner.userId !== root.userId || owner.orgId !== root.orgId || owner.projectId !== root.projectId) {
       throw new Error(`Workspace ${root.workspaceId} has no owner this control plane can launch it as`)
     }
-    const minted = await mintOwnerGrant({ ...root, actorId: owner.actorId }, input.signingEnv, {
-      ...(input.ttlSeconds === undefined ? {} : { ttlSeconds: input.ttlSeconds }),
-      ...(input.passes ? { register: input.passes } : {}),
-      ...(input.now ? { now: input.now } : {}),
-    })
-    return { token: minted.token, expiresAt: minted.expiresAt }
+    return await mint({ ...root, actorId: owner.actorId })
   }
 }
 

@@ -5,6 +5,7 @@ import { TASKS_ROUTE_PATH } from "@claxedo/tasks/http"
 import type { TasksCapabilityOwner } from "@claxedo/server-core/tasks-host/capability"
 import { mintMcpGatewayToken } from "../agent-plugins/mcp/runtime-token"
 import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import { OWNER_GRANT_AUDIENCE, createOwnerGrantMinter, verifyOwnerGrant } from "../session/owner-grant"
 import { mintTasksCapability, TASKS_CAPABILITY_AUDIENCE, verifyTasksCapability } from "./capability"
 import { tasksGrantRenewalContribution, type TasksGrantRenewalAudit } from "./grant-renewal"
 import { createTasksRootGrant, type TasksRootIdentity } from "./root-capability"
@@ -24,6 +25,7 @@ async function signingEnv() {
 async function fixture(options: {
   owner?: TasksCapabilityOwner | undefined
   tasksEnabled?: boolean
+  subagentsEnabled?: boolean
   crossMachineWrites?: boolean
   now?: () => number
 } = {}) {
@@ -34,11 +36,13 @@ async function fixture(options: {
     workspaceId === root.workspaceId ? ("owner" in options ? options.owner : owner) : undefined,
   )
   const tasksGroupEnabled = vi.fn(async () => options.tasksEnabled ?? true)
+  const subagentsGroupEnabled = vi.fn(async () => options.subagentsEnabled ?? false)
   const contribution = tasksGrantRenewalContribution({
     signingEnv: env,
     passes,
     workspaceOwner,
     tasksGroupEnabled,
+    ownerGrant: { enabled: subagentsGroupEnabled, mint: createOwnerGrantMinter({ signingEnv: env, passes, ...(options.now ? { now: options.now } : {}) }) },
     grant: createTasksRootGrant({
       signingEnv: env,
       passes,
@@ -56,7 +60,7 @@ async function fixture(options: {
       method: "POST",
       headers: token ? { authorization: `Bearer ${token}` } : {},
     })
-  return { env, passes, app, audit, workspaceOwner, tasksGroupEnabled, capability, renew }
+  return { env, passes, app, audit, workspaceOwner, tasksGroupEnabled, subagentsGroupEnabled, capability, renew }
 }
 
 describe("the Tasks grant renewal route", () => {
@@ -80,6 +84,43 @@ describe("the Tasks grant renewal route", () => {
       operations: ["read", "create"],
       jti: decodeJwt(body.token).jti,
     })
+  })
+
+  test("carries a fresh owner grant beside the Tasks grant while the subagents group is on, from the one owner it resolved", async () => {
+    const { env, passes, capability, renew, workspaceOwner, subagentsGroupEnabled, audit } = await fixture({ subagentsEnabled: true })
+    const response = await renew((await capability()).token)
+    expect(response.status).toBe(200)
+    const body = (await response.json()) as { token: string; ownerGrant?: { token: string; expiresAt: number } }
+    expect(body.ownerGrant).toBeDefined()
+    expect(body.ownerGrant!.expiresAt).toBe(decodeJwt(body.ownerGrant!.token).exp! * 1_000)
+    await expect(verifyOwnerGrant(body.ownerGrant!.token, env, { revoked: passes.revoked })).resolves.toEqual({
+      userId: owner.userId, actorId: owner.actorId, orgId: owner.orgId, projectId: owner.projectId, workspaceId: root.workspaceId,
+    })
+    expect(await passes.outstanding({ orgId: root.orgId, audience: OWNER_GRANT_AUDIENCE })).toMatchObject([{ jti: decodeJwt(body.ownerGrant!.token).jti }])
+    expect(workspaceOwner).toHaveBeenCalledTimes(1)
+    expect(subagentsGroupEnabled).toHaveBeenCalledWith(root)
+    expect(audit).toHaveBeenCalledWith(expect.objectContaining({ ownerGrantJti: decodeJwt(body.ownerGrant!.token).jti }))
+  })
+
+  test("carries no owner grant while the subagents group is off, and none where the deployment mints none", async () => {
+    const off = await fixture({ subagentsEnabled: false })
+    const withoutSubagents = (await (await off.renew((await off.capability()).token)).json()) as Record<string, unknown>
+    expect(withoutSubagents).not.toHaveProperty("ownerGrant")
+    expect(await off.passes.outstanding({ orgId: root.orgId, audience: OWNER_GRANT_AUDIENCE })).toEqual([])
+    expect(off.audit).toHaveBeenCalledWith(expect.not.objectContaining({ ownerGrantJti: expect.anything() }))
+
+    const env = await signingEnv()
+    const contribution = tasksGrantRenewalContribution({
+      signingEnv: env,
+      workspaceOwner: async () => owner,
+      tasksGroupEnabled: async () => true,
+      grant: createTasksRootGrant({ signingEnv: env }),
+    })
+    const app = new Hono().route(contribution.path, contribution.routes)
+    const token = (await mintTasksCapability({ ...root, operations: ["read"] }, env)).token
+    const renewed = await app.request(`https://core.test${RENEW}`, { method: "POST", headers: { authorization: `Bearer ${token}` } })
+    expect(renewed.status).toBe(200)
+    expect(await renewed.json()).not.toHaveProperty("ownerGrant")
   })
 
   test("the renewed token is written to the register and is refused once the workspace's passes are revoked", async () => {

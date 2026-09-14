@@ -46,9 +46,11 @@ import { hostedMcpCatalogAuthentication } from "./mcp/catalog-auth"
 import { hostedMcpClientMetadata } from "./mcp/client-metadata"
 import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
 import { asRecord, isRecord, parseJson, stringField } from "@claxedo/server-core/platform/json/index"
-import { BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { BUILTIN_SUBAGENTS_TOOL_GROUP, BUILTIN_TASKS_TOOL_GROUP } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
-import { createTasksGrantWithdrawal } from "../tasks/grant-withdrawal"
+import { OWNER_GRANT_AUDIENCE } from "../session/owner-grant"
+import { TASKS_CAPABILITY_AUDIENCE } from "../tasks/capability"
+import { createGrantWithdrawal } from "../tasks/grant-withdrawal"
 
 /**
  * The credential partition a deployment-wide secret belongs to. Not an org id:
@@ -79,6 +81,8 @@ export type HostedAgentPluginsComposition = {
   rootEnvironment: (root: CloudRootIdentity) => Promise<Record<string, string>>
   /** Whether the root's project has Tasks on now, read as the launch environment reads it. */
   tasksGroupEnabled: (root: CloudRootIdentity) => Promise<boolean>
+  /** Whether the root's project has subagents on now, read the same way; what the owner grant's renewal asks. */
+  subagentsGroupEnabled: (root: CloudRootIdentity) => Promise<boolean>
   /**
    * One root's own capability set, for a caller that allocates its own
    * workspace: the same preparation and apply the workspace routes run, over
@@ -328,7 +332,21 @@ export function createHostedAgentPluginsComposition(input: {
   }
   const rootEnvironment = createCloudRootEnvironment({ activations, builtIn, tasksGrant: input.tasksGrant, ownerGrant: input.ownerGrant })
   const tasksGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_TASKS_TOOL_GROUP)
-  const withdrawal = createTasksGrantWithdrawal({ passes: input.passes, tasksGroupEnabled })
+  const subagentsGroupEnabled = createBuiltinGroupReader({ activations, builtIn }, BUILTIN_SUBAGENTS_TOOL_GROUP)
+  const withdrawals = {
+    [BUILTIN_TASKS_TOOL_GROUP]: createGrantWithdrawal({
+      passes: input.passes,
+      audience: TASKS_CAPABILITY_AUDIENCE,
+      reason: "tasks_group_disabled",
+      groupEnabled: tasksGroupEnabled,
+    }),
+    [BUILTIN_SUBAGENTS_TOOL_GROUP]: createGrantWithdrawal({
+      passes: input.passes,
+      audience: OWNER_GRANT_AUDIENCE,
+      reason: "subagents_group_disabled",
+      groupEnabled: subagentsGroupEnabled,
+    }),
+  }
   const prepareRuntime = async ({ workspaceId }: WorkspaceRuntimeContext): Promise<WorkspaceRuntimePreparation> => {
     if (!(await cloudWorkspace(workspaceId))) return {}
     const snapshot = await activations.runtimeSnapshot(workspaceId)
@@ -407,8 +425,10 @@ export function createHostedAgentPluginsComposition(input: {
     mcpGatewayRoutes: gateway,
     selfRuntime: createHostedAgentPluginSelfRuntime({ activations, artifacts, preparer }),
     builtInConsentChanged: async (auth, groupId) => {
-      if (groupId !== BUILTIN_TASKS_TOOL_GROUP) return
-      await withdrawal.reconcile(await authority.resolveOrgId(auth))
+      const withdrawal = groupId === BUILTIN_TASKS_TOOL_GROUP || groupId === BUILTIN_SUBAGENTS_TOOL_GROUP
+        ? withdrawals[groupId]
+        : undefined
+      if (withdrawal) await withdrawal.reconcile(await authority.resolveOrgId(auth))
     },
   })
   return {
@@ -428,9 +448,11 @@ export function createHostedAgentPluginsComposition(input: {
     integrationRoutes,
     prepareRuntime,
     provisionRuntime,
-    releaseRuntime: ({ workspaceId }) => withdrawal.release(workspaceId),
+    // A workspace that is gone takes every pass minted for it, whatever the audience.
+    releaseRuntime: async ({ workspaceId }) => { await input.passes.revoke({ workspaceId, reason: "workspace_deleted" }) },
     rootEnvironment,
     tasksGroupEnabled,
+    subagentsGroupEnabled,
     selectedCapabilities,
   }
 }

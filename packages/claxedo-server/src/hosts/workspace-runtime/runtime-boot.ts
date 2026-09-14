@@ -158,7 +158,7 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   const enabledToolGroups = workspaceRuntimeMcpToolGroups(env) ?? []
   // Renewed for as long as the control plane will renew it; the host has no
   // later moment to start this at, and the timer holds nothing open.
-  const tasks = workspaceRuntimeTasksGrant(env)
+  const tasks = workspaceRuntimeTasksGrant(env, ownerGrant ? { ownerGrant } : {})
   tasks?.start()
   const options: WorkspaceRuntimeServerOptions = {
     target: { workspaceId: workspaceId(env), directory: targetDirectory },

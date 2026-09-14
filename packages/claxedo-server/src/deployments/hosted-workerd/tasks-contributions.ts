@@ -33,7 +33,7 @@ export function hostedTasksRouteContributions(
     rootEnvironment?: NonNullable<HostedTasksSessionBridgeInput["capability"]>
     releaseRuntime?: HostedTasksSessionBridgeInput["releaseRuntime"]
     sandboxEgress: HostedTasksSessionBridgeInput["sandboxEgress"]
-    renewal?: Pick<TasksGrantRenewalInput, "tasksGroupEnabled" | "grant">
+    renewal?: Pick<TasksGrantRenewalInput, "tasksGroupEnabled" | "grant" | "ownerGrant">
   },
 ): readonly ControlPlaneRouteContribution[] {
   const composition = createHostedTasksComposition({

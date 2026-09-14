@@ -6,6 +6,7 @@ import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platfor
 import type { TasksCapabilityPort, TasksOperation } from "@claxedo/server-core/tasks-host/capability"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
+import type { OwnerGrantScope } from "../session/owner-grant"
 import { TasksCapabilityConfigurationError, verifyTasksCapability } from "./capability"
 import type { TasksRootGrant, TasksRootIdentity } from "./root-capability"
 
@@ -19,6 +20,8 @@ export type TasksGrantRenewalAudit = Readonly<{
   sessionId?: string
   operations: readonly TasksOperation[]
   jti: string | undefined
+  /** Present when an owner grant was renewed beside the Tasks grant. */
+  ownerGrantJti?: string
 }>
 
 export type TasksGrantRenewalInput = Readonly<{
@@ -28,6 +31,15 @@ export type TasksGrantRenewalInput = Readonly<{
   tasksGroupEnabled: (root: TasksRootIdentity) => Promise<boolean>
   /** The launch minter, so a renewed grant holds exactly what a fresh one would. */
   grant: (root: TasksRootIdentity) => Promise<TasksRootGrant>
+  /**
+   * The owner grant renewed beside the Tasks grant, for the owner this route
+   * already resolved, while the root's project has subagents on. Absent on a
+   * deployment that mints none.
+   */
+  ownerGrant?: Readonly<{
+    enabled: (root: TasksRootIdentity) => Promise<boolean>
+    mint: (owner: OwnerGrantScope) => Promise<{ token: string; expiresAt: number }>
+  }>
   audit?: (record: TasksGrantRenewalAudit) => void
   now?: () => number
 }>
@@ -46,6 +58,11 @@ const GROUP_DISABLED = "Tasks was turned off for this project."
  * owner and the project's consent are re-resolved now, and a token whose
  * answers changed is refused rather than renewed. The window is the token's
  * own lifetime; an expired one is not a renewal request but a fresh launch.
+ *
+ * The owner grant rides on the same renewal, for the same re-resolved owner:
+ * a root has one channel back to the plane, and this is it. A root whose
+ * project has subagents on but Tasks off carries an owner grant that ends at
+ * its own expiry, since there is no Tasks capability to renew it with.
  */
 export function tasksGrantRenewalContribution(input: TasksGrantRenewalInput): ControlPlaneRouteContribution {
   const log = Log.create({ service: "claxedo-tasks" })
@@ -72,6 +89,9 @@ export function tasksGrantRenewalContribution(input: TasksGrantRenewalInput): Co
     const { operations: _operations, ...root } = scope
     if (!(await input.tasksGroupEnabled(root))) return c.json(refusal("tasks_group_disabled", GROUP_DISABLED), 403)
     const renewed = await input.grant(root)
+    const ownerGrant = input.ownerGrant && (await input.ownerGrant.enabled(root))
+      ? await input.ownerGrant.mint({ ...owner, workspaceId: root.workspaceId })
+      : undefined
     audit({
       workspaceId: root.workspaceId,
       owner: owner.actorId,
@@ -80,8 +100,14 @@ export function tasksGrantRenewalContribution(input: TasksGrantRenewalInput): Co
       ...(root.sessionId ? { sessionId: root.sessionId } : {}),
       operations: renewed.operations,
       jti: decodeJwt(renewed.token).jti,
+      ...(ownerGrant ? { ownerGrantJti: decodeJwt(ownerGrant.token).jti } : {}),
     })
-    return c.json({ token: renewed.token, operations: renewed.operations, expiresAt: renewed.expiresAt })
+    return c.json({
+      token: renewed.token,
+      operations: renewed.operations,
+      expiresAt: renewed.expiresAt,
+      ...(ownerGrant ? { ownerGrant } : {}),
+    })
   })
   return { id: TASKS_GRANT_RENEWAL_CONTRIBUTION_ID, path: `${TASKS_ROUTE_PATH}/grant`, routes }
 }

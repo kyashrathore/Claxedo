@@ -67,6 +67,8 @@ export type WorkspaceRuntimeTasksGrantOptions = Readonly<{
     clearTimeout(handle: number): void
   }
   log?: { info(message: string, extra?: Record<string, unknown>): void; warn(message: string, extra?: Record<string, unknown>): void }
+  /** Where a renewed owner grant, sent beside the renewed Tasks grant, is put. */
+  ownerGrant?: { swap(token: string): void }
 }>
 
 /** Node timers by number, unref'd so a pending renewal never holds the host process open. */
@@ -115,7 +117,9 @@ const WITHDRAWN_MESSAGE = "This machine's Tasks grant was withdrawn by the contr
  * the owner changed or the project turned Tasks off, and asking again would
  * only put the same answer in the audit trail. Once expired, a request is
  * refused here rather than sent, so the agent reads why instead of a 401
- * the tool can only call "not signed".
+ * the tool can only call "not signed". A renewal that carries an owner grant
+ * hands it to the grant's holder, so the root's own session calls keep
+ * acting as the owner for as long as its Tasks grant keeps renewing.
  */
 export function workspaceRuntimeTasksGrant(
   env: NodeJS.ProcessEnv = process.env,
@@ -181,7 +185,9 @@ export function workspaceRuntimeTasksGrant(
     operations = [...new Set(nextOperations)]
     expiresAt = nextExpiry
     retryMs = RETRY_INITIAL_MS
-    log.info("tasks.grant.renewed", { expiresAt, operations })
+    const ownerToken = stringField(asRecord(body?.ownerGrant), "token")
+    if (ownerToken) options.ownerGrant?.swap(ownerToken)
+    log.info("tasks.grant.renewed", { expiresAt, operations, ownerGrant: ownerToken !== undefined })
     return nextExpiry
   }
 

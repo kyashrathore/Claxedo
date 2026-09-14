@@ -12,7 +12,7 @@ import { settledCompositionCache } from "./settled-composition-cache"
 import { hostedTasksRouteContributions } from "./tasks-contributions"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createTasksRootCapability, createTasksRootGrant } from "../../tasks/root-capability"
-import { createOwnerRootCapability } from "../../session/owner-grant"
+import { createOwnerGrantMinter, createOwnerRootCapability } from "../../session/owner-grant"
 import { createD1SandboxPassRegister } from "../../platform/auth/d1-sandbox-pass-register"
 import { hostedControlPlaneOrigin } from "../../authority/adapters/worker/control-plane-origin"
 import { d1CrossMachineWrites } from "../../authority/adapters/d1/agent-settings"
@@ -85,7 +85,11 @@ export function composeBetterAuthD1AgentPluginsCandidate(
     sandboxEgress: { controlPlaneOrigin: hostedControlPlaneOrigin(signingEnv) },
     signingEnv,
     passes,
-    renewal: { tasksGroupEnabled: feature.tasksGroupEnabled, grant: createTasksRootGrant(tasksRoot) },
+    renewal: {
+      tasksGroupEnabled: feature.tasksGroupEnabled,
+      grant: createTasksRootGrant(tasksRoot),
+      ownerGrant: { enabled: feature.subagentsGroupEnabled, mint: createOwnerGrantMinter({ signingEnv, passes }) },
+    },
   })
   return {
     ...base,

@@ -1,7 +1,8 @@
 /**
  * Turning Tasks off ends the grants already in the sandboxes: the real
  * activation route commits the switch, and the real Tasks routes refuse the
- * capability on the next request.
+ * capability on the next request. Turning subagents off ends the owner grants
+ * the same way, through the same register.
  */
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
@@ -15,7 +16,7 @@ import type {
   SignedAgentPluginActivationStore,
 } from "@claxedo/server-core/agent-plugins/activation/store"
 import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
-import { BUILTIN_TASKS_TOOL_GROUP, builtinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
+import { BUILTIN_SUBAGENTS_TOOL_GROUP, BUILTIN_TASKS_TOOL_GROUP, builtinPluginInstanceId } from "@claxedo/server-core/agent-plugins/builtin/plugin"
 import { bearerToken, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
@@ -26,8 +27,9 @@ import { createBuiltinGroupReader } from "../agent-plugins/runtime/cloud-root-en
 import { memorySandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import { miniflareControlPlaneDatabase, type ControlPlaneDatabase } from "../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
+import { OWNER_GRANT_AUDIENCE, createOwnerRootGrant, verifyOwnerGrant } from "../session/owner-grant"
 import { TASKS_CAPABILITY_AUDIENCE } from "./capability"
-import { createTasksGrantWithdrawal } from "./grant-withdrawal"
+import { createGrantWithdrawal } from "./grant-withdrawal"
 import { createHostedTasksComposition } from "./hosted-composition"
 import { createTasksRootGrant, type TasksRootIdentity } from "./root-capability"
 
@@ -51,6 +53,7 @@ const OWNERS: Record<string, typeof OWNER> = {
   ws_other: { ...OWNER, projectId: "project-b" },
 }
 const TASKS_ID = builtinPluginInstanceId(BUILTIN_TASKS_TOOL_GROUP)
+const SUBAGENTS_ID = builtinPluginInstanceId(BUILTIN_SUBAGENTS_TOOL_GROUP)
 const HARNESSES: AgentPluginHarnessId[] = ["opencode", "claude", "codex", "cursor"]
 
 /** The one activation fact this test writes and reads: whether Tasks is on, per project, for alice. */
@@ -152,9 +155,17 @@ async function fixture() {
     localExecution: { enabled: false },
   } as unknown as ControlPlaneServices
   const authentication = aliceOnlyAuthentication()
-  const withdrawal = createTasksGrantWithdrawal({
+  const withdrawal = createGrantWithdrawal({
     passes,
-    tasksGroupEnabled: createBuiltinGroupReader({ activations, builtIn }, BUILTIN_TASKS_TOOL_GROUP),
+    audience: TASKS_CAPABILITY_AUDIENCE,
+    reason: "tasks_group_disabled",
+    groupEnabled: createBuiltinGroupReader({ activations, builtIn }, BUILTIN_TASKS_TOOL_GROUP),
+  })
+  const ownerWithdrawal = createGrantWithdrawal({
+    passes,
+    audience: OWNER_GRANT_AUDIENCE,
+    reason: "subagents_group_disabled",
+    groupEnabled: createBuiltinGroupReader({ activations, builtIn }, BUILTIN_SUBAGENTS_TOOL_GROUP),
   })
   const plugins = HostedAgentPluginRoutes({
     services,
@@ -165,8 +176,8 @@ async function fixture() {
     reconcile: { reconcile: async () => ({ state: "scheduled" as const }) },
     builtIn,
     builtInConsentChanged: async (auth, groupId) => {
-      if (groupId !== BUILTIN_TASKS_TOOL_GROUP) return
-      await withdrawal.reconcile(await services.authority!.resolveOrgId(auth))
+      if (groupId === BUILTIN_TASKS_TOOL_GROUP) await withdrawal.reconcile(await services.authority!.resolveOrgId(auth))
+      if (groupId === BUILTIN_SUBAGENTS_TOOL_GROUP) await ownerWithdrawal.reconcile(await services.authority!.resolveOrgId(auth))
     },
   })
   const tasks = createHostedTasksComposition({
@@ -181,6 +192,7 @@ async function fixture() {
   app.route("/api/claxedo/plugins", plugins)
   for (const contribution of tasks.routeContributions) app.route(contribution.path, contribution.routes)
   const grant = createTasksRootGrant({ signingEnv, passes })
+  const ownerGrant = createOwnerRootGrant({ signingEnv, passes, workspaceOwner: async (workspaceId) => OWNERS[workspaceId] })
   const listTasks = (token: string, projectId = "project-a") =>
     app.request(`https://core.test${TASKS_ROUTE_PATH}/tasks?projectId=${projectId}`, { headers: { authorization: `Bearer ${token}` } })
   const activation = (body: Record<string, unknown>, route = "/activation") =>
@@ -189,7 +201,7 @@ async function fixture() {
       headers: { authorization: "Bearer alice", "content-type": "application/json" },
       body: JSON.stringify(body),
     })
-  return { passes, activations, withdrawal, app, grant, listTasks, activation }
+  return { passes, activations, withdrawal, app, grant, ownerGrant, signingEnv, listTasks, activation }
 }
 
 describe("withdrawing the Tasks grants of a project that turned Tasks off", () => {
@@ -251,20 +263,52 @@ describe("withdrawing the Tasks grants of a project that turned Tasks off", () =
     expect((await listTasks(rootGrant.token)).status).toBe(401)
   })
 
+  test("turning subagents off ends the owner grants and leaves the Tasks grants standing; turning Tasks off does the reverse", async () => {
+    const { activations, passes, grant, ownerGrant, signingEnv, listTasks, activation } = await fixture()
+    activations.overrides.set(`project-a:${TASKS_ID}`, true)
+    const tasksGrant = await grant(ROOT)
+    const owner = await ownerGrant(ROOT)
+    const verifyOwner = () => verifyOwnerGrant(owner.token, signingEnv, { revoked: passes.revoked })
+    await expect(verifyOwner()).resolves.toMatchObject({ workspaceId: ROOT.workspaceId })
+
+    const subagentsOff = await activation({
+      pluginInstanceId: SUBAGENTS_ID, harnessIds: HARNESSES, choice: false, expectedRevision: activations.revisionValue,
+      target: { scope: "projects", projectIds: ["project-a"] },
+    })
+    expect(subagentsOff.status).toBe(200)
+    await expect(verifyOwner()).rejects.toThrow("was revoked")
+    expect((await listTasks(tasksGrant.token)).status).toBe(200)
+    expect(await passes.outstanding({ orgId: "org-1", audience: OWNER_GRANT_AUDIENCE })).toEqual([])
+
+    const nextOwner = await ownerGrant(SIBLING)
+    const tasksOff = await activation({
+      pluginInstanceId: TASKS_ID, harnessIds: HARNESSES, choice: false, expectedRevision: activations.revisionValue,
+      target: { scope: "projects", projectIds: ["project-a"] },
+    })
+    expect(tasksOff.status).toBe(200)
+    expect((await listTasks(tasksGrant.token)).status).toBe(401)
+    await expect(verifyOwnerGrant(nextOwner.token, signingEnv, { revoked: passes.revoked })).resolves.toMatchObject({ workspaceId: SIBLING.workspaceId })
+  })
+
   test("a deleted workspace takes every pass minted for it, whatever the audience", async () => {
-    const { activations, passes, withdrawal, grant, listTasks } = await fixture()
+    const { activations, passes, grant, ownerGrant, signingEnv, listTasks } = await fixture()
     activations.overrides.set(`project-a:${TASKS_ID}`, true)
     const rootGrant = await grant(ROOT)
-    await withdrawal.release(ROOT.workspaceId)
+    const owner = await ownerGrant(ROOT)
+    await passes.revoke({ workspaceId: ROOT.workspaceId, reason: "workspace_deleted" })
     expect((await listTasks(rootGrant.token)).status).toBe(401)
+    await expect(verifyOwnerGrant(owner.token, signingEnv, { revoked: passes.revoked })).rejects.toThrow("was revoked")
     expect(await passes.outstanding({ orgId: "org-1", audience: TASKS_CAPABILITY_AUDIENCE })).toEqual([])
+    expect(await passes.outstanding({ orgId: "org-1", audience: OWNER_GRANT_AUDIENCE })).toEqual([])
   })
 
   test("a root whose activation can no longer be read is treated as off", async () => {
     const passes = memorySandboxPassRegister()
-    const withdrawal = createTasksGrantWithdrawal({
+    const withdrawal = createGrantWithdrawal({
       passes,
-      tasksGroupEnabled: async () => { throw new Error("workspace not found") },
+      audience: TASKS_CAPABILITY_AUDIENCE,
+      reason: "tasks_group_disabled",
+      groupEnabled: async () => { throw new Error("workspace not found") },
     })
     await passes.record({ jti: "j1", audience: TASKS_CAPABILITY_AUDIENCE, scope: ROOT, issuedAt: 1, expiresAt: Date.now() + 60_000 })
     expect(await withdrawal.reconcile("org-1")).toEqual(["ws_root"])

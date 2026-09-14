@@ -73,9 +73,10 @@ async function renewingRuntime(answers: (request: Request, attempt: number) => P
     return new Response("{}")
   })
   const log = { info: vi.fn(), warn: vi.fn() }
+  const ownerGrant = { swap: vi.fn<(token: string) => void>() }
   const grant = workspaceRuntimeTasksGrant(
     env({ WORKSPACE_RUNTIME_TASKS_CAPABILITY: minted.token }),
-    { fetch: fetch as unknown as typeof globalThis.fetch, now: clock.now, timers: clock.timers, log },
+    { fetch: fetch as unknown as typeof globalThis.fetch, now: clock.now, timers: clock.timers, log, ownerGrant },
   )
   if (!grant) throw new Error("the grant did not build")
   const renewed = async (operations: readonly ("read" | "create" | "start")[]) => {
@@ -87,7 +88,7 @@ async function renewingRuntime(answers: (request: Request, attempt: number) => P
     const request = fetch.mock.calls.at(-1)?.[0] as Request
     return request.headers.get("authorization")
   }
-  return { grant, clock, fetch, log, minted, renewed, authorizationSent }
+  return { grant, clock, fetch, log, minted, renewed, authorizationSent, ownerGrant }
 }
 
 describe("the Tasks grant a cloud root is launched with", () => {
@@ -151,6 +152,21 @@ describe("renewing the grant while the root runs", () => {
     expect(runtime.clock.pending()).toEqual([TTL_MS / 2])
     expect(runtime.log.info).toHaveBeenCalledWith("tasks.grant.renewed", expect.objectContaining({ operations: ["read", "create", "start"] }))
     expect(runtime.grant.state).toEqual({ kind: "active" })
+  })
+
+  test("hands a renewed owner grant to its holder, and leaves the holder alone when the plane sent none", async () => {
+    let issued = 0
+    const runtime = await renewingRuntime(async () => {
+      issued += 1
+      const body = (await runtime.renewed(["read", "create"])).body
+      return Response.json(issued === 1 ? { ...body, ownerGrant: { token: "owner-grant-2", expiresAt: runtime.clock.now() + TTL_MS } } : body)
+    })
+    runtime.grant.start()
+    await runtime.clock.advance(TTL_MS / 2)
+    expect(runtime.ownerGrant.swap).toHaveBeenCalledWith("owner-grant-2")
+    await runtime.clock.advance(TTL_MS / 2)
+    expect(issued).toBe(2)
+    expect(runtime.ownerGrant.swap).toHaveBeenCalledTimes(1)
   })
 
   test("retries with doubling backoff, capped at a minute, until a renewal lands", async () => {
