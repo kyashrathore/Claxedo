@@ -197,7 +197,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   }
 
   applyConfig(config: Record<string, unknown>) {
-    const auth = providerProjectionRecord(config.auth)
+    const auth = providerProjectionRecord(config.auth, {}, { onInvalid: "reject" })
     if (config.auth !== undefined && !auth) {
       throw new Error("cursor harness received an auth map that is not provider projections")
     }

@@ -126,15 +126,14 @@ export function providerProjection(
  * refuses a turn on it rather than letting the harness fall back to a login the
  * operator did not choose.
  */
-export type ProviderProjectionRowPolicy = "reject" | "unavailable"
+type ProviderProjectionRowPolicy = "reject" | "unavailable"
 
-/** The reason a row carries when `unavailable` policy could not read it. */
-export const UNRESOLVED_PROJECTION_REASON = "unresolved_projection"
+const UNRESOLVED_PROJECTION_REASON = "unresolved_projection"
 
 export function providerProjectionRecord(
   input: unknown,
-  env: PlaceholderEnvironment = {},
-  options: { onInvalid?: ProviderProjectionRowPolicy } = {},
+  env: PlaceholderEnvironment,
+  options: { onInvalid: ProviderProjectionRowPolicy },
 ): Record<string, ProviderProjection> | undefined {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return undefined
   const rows: Record<string, ProviderProjection> = {}

@@ -138,7 +138,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   async applyConfig(config: Record<string, unknown>) {
     const nextPluginLaunch = codexPluginLaunch(config.launch)
     await this.applyPluginLaunch(nextPluginLaunch)
-    const auth = providerProjectionRecord(config.auth)
+    const auth = providerProjectionRecord(config.auth, {}, { onInvalid: "reject" })
     if (config.auth !== undefined && !auth) {
       throw new Error("codex harness received an auth map that is not provider projections")
     }

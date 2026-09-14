@@ -6,7 +6,6 @@ import {
   ProviderCredentialUnavailableError,
   providerProjection,
   providerProjectionRecord,
-  UNRESOLVED_PROJECTION_REASON,
 } from "./provider-projection"
 
 const minted = {
@@ -68,6 +67,7 @@ describe("provider projection", () => {
     expect(providerProjectionRecord(
       { "claude-sdk": native, openrouter: minted },
       { CLAXEDO_PROVIDER_CLAUDE_SDK: "dtn_secret_abc" },
+      { onInvalid: "reject" },
     )).toEqual({
       "claude-sdk": { baseUrl: "https://api.anthropic.com", placeholder: "dtn_secret_abc", authMode: "bearer", apiPath: "/v1" },
       openrouter: minted,
@@ -75,7 +75,7 @@ describe("provider projection", () => {
   })
 
   test("a record from another process refuses every row when one cannot be read", () => {
-    expect(providerProjectionRecord({ openrouter: minted, anthropic: { ...minted, authMode: "basic" } }))
+    expect(providerProjectionRecord({ openrouter: minted, anthropic: { ...minted, authMode: "basic" } }, {}, { onInvalid: "reject" }))
       .toBeUndefined()
   })
 
@@ -89,7 +89,7 @@ describe("provider projection", () => {
       // Unavailable rather than absent: an absent row is what a harness reads
       // as "no account chosen", and it answers that by running the turn on
       // whatever login the machine holds.
-      anthropic: { unavailable: true, reason: UNRESOLVED_PROJECTION_REASON },
+      anthropic: { unavailable: true, reason: "unresolved_projection" },
     })
   })
 

@@ -205,7 +205,7 @@ class PiRpcDriver implements SdkRuntimeDriver {
     this.authProfile = retainPiAuth(this.agentDir)
   }
   async applyConfig(config: Record<string, unknown>) {
-    const auth = providerProjectionRecord(config.auth)
+    const auth = providerProjectionRecord(config.auth, {}, { onInvalid: "reject" })
     if (config.auth !== undefined && !auth) {
       throw new Error("pi harness received an auth map that is not provider projections")
     }

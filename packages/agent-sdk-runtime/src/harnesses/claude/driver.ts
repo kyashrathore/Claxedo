@@ -303,7 +303,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
 
   applyConfig(config: Record<string, unknown>) {
     const previous = providerProjectionKey(this.auth.anthropic)
-    const auth = providerProjectionRecord(config.auth)
+    const auth = providerProjectionRecord(config.auth, {}, { onInvalid: "reject" })
     if (config.auth !== undefined && !auth) {
       throw new Error("claude harness received an auth map that is not provider projections")
     }
