@@ -116,6 +116,16 @@ export function normalizePosixDirectory(input: string): string | undefined {
 }
 
 /**
+ * The form a workspace's directory is recorded in by every authority backend:
+ * an absolute POSIX path normalized as above, so `/srv/app/` and `/srv/app`
+ * are one row and a stored value can be compared to a root by plain prefix.
+ * Anything else — a Windows path on an account machine — is recorded as given.
+ */
+export function normalizeStoredDirectory(input: string): string {
+  return normalizePosixDirectory(input) ?? input
+}
+
+/**
  * The P1.4 root rule: `directory` is one of `roots` or under one of them,
  * segment-aware (`/srv/api` is under `/srv`; `/srvx` is not). Empty roots
  * admit nothing; a root that is not an absolute path admits nothing.

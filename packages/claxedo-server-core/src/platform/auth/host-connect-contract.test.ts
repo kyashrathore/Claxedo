@@ -16,6 +16,7 @@ import {
   isMachineNonce,
   machineRequestPayload,
   normalizePosixDirectory,
+  normalizeStoredDirectory,
   publicKeyFingerprint,
 } from "./host-connect-contract"
 
@@ -141,6 +142,15 @@ describe("normalizePosixDirectory", () => {
     expect(normalizePosixDirectory("./srv")).toBeUndefined()
     expect(normalizePosixDirectory("~/srv")).toBeUndefined()
     expect(normalizePosixDirectory("C:\\srv")).toBeUndefined()
+  })
+})
+
+describe("normalizeStoredDirectory", () => {
+  test("stores the normalized POSIX form and any other shape verbatim", () => {
+    expect(normalizeStoredDirectory("/srv/app/")).toBe("/srv/app")
+    expect(normalizeStoredDirectory("/srv/app/./x/../y")).toBe("/srv/app/y")
+    expect(normalizeStoredDirectory("C:\\srv\\app")).toBe("C:\\srv\\app")
+    expect(normalizeStoredDirectory("")).toBe("")
   })
 })
 

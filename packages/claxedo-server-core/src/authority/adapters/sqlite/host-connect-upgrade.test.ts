@@ -187,6 +187,60 @@ describe("SQLite host-connect upgrade", () => {
     expect(upgraded.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_a'`).get()).toEqual({ revision: 5 })
   })
 
+  test("a boot interrupted between the counter column and its backfill is repaired on the next open, never lowering", async () => {
+    // The column exists (the ADD COLUMN committed) but every counter is 0
+    // while ws_a is served at revision 7; ws_b's counter of 5 outlives its
+    // unassigned row and must stay 5.
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-host-connect-upgrade-"))
+    roots.push(root)
+    const file = path.join(root, "authority.db")
+    const api = createSqliteWorkspaceAuthority({ path: file })
+    const request = await api.createHostEnrollmentRequest(ownerAuth, { hostId: "host_live" })
+    const payload = ["claxedo.host-enrollment.enroll.v1", "host_id=host_live", `request_id=${request.request_id}`, `nonce=${request.nonce}`].join("\n")
+    await api.enrollHost(ownerAuth, {
+      hostId: "host_live",
+      publicKey: LIVE_PUBLIC_KEY,
+      requestId: request.request_id,
+      signature: signData("sha256", Buffer.from(payload), { key: liveKeys.privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url"),
+    })
+    await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_a", hostId: "host_live", remoteDirectory: "/srv/a" })
+    await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_b", hostId: "host_live", remoteDirectory: "/srv/b" })
+    await api.unassignWorkspaceHost(ownerAuth, { workspaceId: "ws_b" })
+    const db = openAuthorityDb({ path: file })()
+    db.exec(`
+      UPDATE host_workspace_assignments SET revision = 7 WHERE workspace_id = 'ws_a';
+      UPDATE workspaces SET host_assignment_revision = 0 WHERE workspace_id = 'ws_a';
+      UPDATE workspaces SET host_assignment_revision = 5 WHERE workspace_id = 'ws_b';
+    `)
+    closeAuthorityDatabases()
+
+    const repaired = openAuthorityDb({ path: file })()
+    expect(repaired.prepare(`SELECT workspace_id, host_assignment_revision FROM workspaces ORDER BY workspace_id`).all())
+      .toEqual([{ workspace_id: "ws_a", host_assignment_revision: 7 }, { workspace_id: "ws_b", host_assignment_revision: 5 }])
+    await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_a", hostId: "host_live", remoteDirectory: "/srv/a-moved" })
+    expect(repaired.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_a'`).get()).toEqual({ revision: 8 })
+    await api.assignWorkspaceHost(ownerAuth, { workspaceId: "ws_b", hostId: "host_live", remoteDirectory: "/srv/b-again" })
+    expect(repaired.prepare(`SELECT revision FROM host_workspace_assignments WHERE workspace_id = 'ws_b'`).get()).toEqual({ revision: 6 })
+  })
+
+  test("a legacy user-hosted directory is stored normalized after the open; cloud rows are untouched", () => {
+    const file = preConnectDatabase()
+    const legacy = new Database(file)
+    legacy.exec(`
+      UPDATE workspaces SET remote_directory = '/srv/app/../app/./' WHERE workspace_id = 'ws_served';
+      INSERT INTO workspaces
+        (workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name, remote_directory, created_at, updated_at)
+      VALUES ('ws_cloud', 'org_personal', 'prj_one', '${OWNER}', 'cloud-vm', 'cloud', 'Cloud', '/workspace/', 1, 1);
+    `)
+    legacy.close()
+    const upgraded = openAuthorityDb({ path: file })()
+    expect(upgraded.prepare(`SELECT workspace_id, remote_directory FROM workspaces ORDER BY workspace_id`).all()).toEqual([
+      { workspace_id: "ws_cloud", remote_directory: "/workspace/" },
+      { workspace_id: "ws_idle", remote_directory: "/srv/idle" },
+      { workspace_id: "ws_served", remote_directory: "/srv/app" },
+    ])
+  })
+
   test("a pre-connect acked set no longer routes on its own; the next account beat re-establishes readiness", async () => {
     // The acked-set column was the routing fact before readiness rows
     // existed. An upgraded row keeps the column but has no readiness row, so

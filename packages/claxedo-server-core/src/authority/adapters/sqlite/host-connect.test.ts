@@ -843,6 +843,58 @@ describe("scope", () => {
       .toMatchObject({ code: "host_assignment_outside_scope" })
   })
 
+  test("the directory is stored normalized: /srv/app/ and /srv/app are one assignment", async () => {
+    const { api, db } = setup()
+    const { enrollment, keys, hostId } = await enrollByAccount(api)
+    const stored = () => db().prepare(`SELECT remote_directory, host_assignment_revision FROM workspaces WHERE workspace_id = 'ws_app'`).get()
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_app", hostId, remoteDirectory: "/srv/app/" })
+    expect(stored()).toEqual({ remote_directory: "/srv/app", host_assignment_revision: 1 })
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_app", hostId, remoteDirectory: "/srv/app" })
+    expect(stored()).toEqual({ remote_directory: "/srv/app", host_assignment_revision: 2 })
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_app", hostId, remoteDirectory: "/srv//app/./x/../" })
+    expect(stored()).toEqual({ remote_directory: "/srv/app", host_assignment_revision: 3 })
+    const beat = await machineBeat(api, keys, { enrollmentId: enrollment.enrollment_id, hostId, generation: 0, acks: [] })
+    expect(beat.assignments).toEqual([{ workspace_id: "ws_app", remote_directory: "/srv/app", display_name: "ws_app", revision: 3 }])
+    expect(db().prepare(`SELECT COUNT(*) AS count FROM host_workspace_assignments`).get()).toEqual({ count: 1 })
+
+    await api.registerLocalForSharing(owner, { workspaceId: "ws_reg", displayName: "Reg", remoteDirectory: "/home/me/./proj/../proj/" })
+    expect(db().prepare(`SELECT remote_directory FROM workspaces WHERE workspace_id = 'ws_reg'`).get()).toEqual({ remote_directory: "/home/me/proj" })
+    await api.registerLocalForSharing(owner, { workspaceId: "ws_reg", displayName: "Reg", remoteDirectory: "/home/me/proj/" })
+    expect(db().prepare(`SELECT remote_directory FROM workspaces WHERE workspace_id = 'ws_reg'`).get()).toEqual({ remote_directory: "/home/me/proj" })
+    await api.registerLocalForSharing(owner, { workspaceId: "ws_win", displayName: "Win", remoteDirectory: "C:\\Users\\me\\proj" })
+    expect(db().prepare(`SELECT remote_directory FROM workspaces WHERE workspace_id = 'ws_win'`).get()).toEqual({ remote_directory: "C:\\Users\\me\\proj" })
+  })
+
+  test("tightening the roots retires a legacy dotted row by its resolved directory and keeps /srvx apart from /srv", async () => {
+    const { api, db } = setup()
+    const created = await invite(api, { scope: { allowed_roots: ["/"], visibility: "owner" } })
+    const { enrollment } = await redeem(api, { token: created.token, hostId: "host_build", keys: hostKeyPair() })
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_dotted", hostId: "host_build", remoteDirectory: "/srv/app/inner" })
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_trailing", hostId: "host_build", remoteDirectory: "/srv/app/kept" })
+    await api.assignWorkspaceHost(owner, { workspaceId: "ws_srvx", hostId: "host_build", remoteDirectory: "/srvx/app" })
+    // Rows written before directories were normalized on the way in.
+    db().exec(`
+      UPDATE workspaces SET remote_directory = '/srv/app/../outside' WHERE workspace_id = 'ws_dotted';
+      UPDATE workspaces SET remote_directory = '/srv/app/kept/' WHERE workspace_id = 'ws_trailing';
+    `)
+
+    const updated = await api.updateHostEnrollmentScope!(owner, {
+      enrollmentId: enrollment.enrollment_id,
+      scope: { allowed_roots: ["/srv/app/"], visibility: "owner" },
+    })
+    expect(updated.retired_workspace_ids).toEqual(["ws_dotted", "ws_srvx"])
+    expect(db().prepare(`SELECT workspace_id FROM host_workspace_assignments ORDER BY workspace_id`).all()).toEqual([{ workspace_id: "ws_trailing" }])
+    expect(db().prepare(`SELECT workspace_id, deleted_at IS NOT NULL AS retired FROM workspaces ORDER BY workspace_id`).all()).toEqual([
+      { workspace_id: "ws_dotted", retired: 1 },
+      { workspace_id: "ws_srvx", retired: 1 },
+      { workspace_id: "ws_trailing", retired: 0 },
+    ])
+    expect(await failure(api.assignWorkspaceHost(owner, { workspaceId: "ws_srvx2", hostId: "host_build", remoteDirectory: "/srvx" })))
+      .toMatchObject({ code: "host_assignment_outside_scope" })
+    await expect(api.assignWorkspaceHost(owner, { workspaceId: "ws_root", hostId: "host_build", remoteDirectory: "/srv/app" }))
+      .resolves.toMatchObject({ assigned: true })
+  })
+
   test("the assignment revision keeps rising across unassign and re-share to another directory", async () => {
     const { api, db } = setup()
     const { enrollment, keys, hostId } = await enrollByAccount(api)
@@ -936,4 +988,5 @@ describe("scope", () => {
     }])
     expect(await api.listHostEnrollments!(other)).toEqual([])
   })
+
 })

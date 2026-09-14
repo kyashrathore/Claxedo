@@ -28,6 +28,7 @@ import {
   invitationRedeemPayload,
   invitationToken,
   normalizePosixDirectory,
+  normalizeStoredDirectory,
   publicKeyFingerprint,
 } from "@claxedo/server-core/platform/auth/host-connect-contract"
 import type { MachineAuthRefusal } from "@claxedo/server-core/platform/auth/machine-auth"
@@ -1451,6 +1452,7 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       const requestedHomeRegion = validatedHomeRegion(args.homeRegion)
+      const remoteDirectory = args.remoteDirectory === undefined ? undefined : normalizeStoredDirectory(args.remoteDirectory)
       const now = Date.now()
       const existing = workspaceByPublicId(db, args.workspaceId)
       if (existing) {
@@ -1463,7 +1465,7 @@ export function createSqliteWorkspaceAuthority(
           projectId: existing.project_id,
           orgId: existing.org_id,
           repoKey: sqliteRepoKey(
-            args.repoUrl ?? existing.repo_url ?? args.remoteDirectory ?? existing.remote_directory,
+            args.repoUrl ?? existing.repo_url ?? remoteDirectory ?? existing.remote_directory,
             args.workspaceId,
           ),
           owner: who,
@@ -1489,13 +1491,13 @@ export function createSqliteWorkspaceAuthority(
           args.repoUrl ?? null,
           args.repoName ?? null,
           args.gitBranch ?? null,
-          args.remoteDirectory ?? null,
+          remoteDirectory ?? null,
           now,
           args.workspaceId,
         )
         return { workspace_doc_id: args.workspaceId, workspace_id: args.workspaceId, home_region }
       }
-      const { orgId, projectId } = ownedProject(db, who, args)
+      const { orgId, projectId } = ownedProject(db, who, { ...args, remoteDirectory })
       db.prepare(`
         INSERT INTO workspaces (
           workspace_id, org_id, project_id, owner_token_identifier, backing, access,
@@ -1512,7 +1514,7 @@ export function createSqliteWorkspaceAuthority(
         args.repoUrl ?? null,
         args.repoName ?? null,
         args.gitBranch ?? null,
-        args.remoteDirectory ?? null,
+        remoteDirectory ?? null,
         now,
         now,
       )
@@ -2018,7 +2020,8 @@ export function createSqliteWorkspaceAuthority(
           }
           refuseCloudWorkspace(existing)
         }
-        const directory = args.remoteDirectory ?? existing?.remote_directory ?? undefined
+        const remoteDirectory = args.remoteDirectory === undefined ? undefined : normalizeStoredDirectory(args.remoteDirectory)
+        const directory = remoteDirectory ?? existing?.remote_directory ?? undefined
         if (scope && (directory === undefined || !directoryWithinRoots(directory, scope.allowed_roots))) {
           throw new SqliteHostConnectError(
             "host_assignment_outside_scope",
@@ -2051,13 +2054,13 @@ export function createSqliteWorkspaceAuthority(
             args.repoUrl ?? null,
             args.repoName ?? null,
             args.gitBranch ?? null,
-            args.remoteDirectory ?? null,
+            remoteDirectory ?? null,
             orgMemberVisible(scope),
             now,
             args.workspaceId,
           )
         } else {
-          const { orgId, projectId } = ownedProject(db, who, { ...args, orgId: args.orgId ?? invitationOrgId })
+          const { orgId, projectId } = ownedProject(db, who, { ...args, orgId: args.orgId ?? invitationOrgId, remoteDirectory })
           db.prepare(`
             INSERT INTO workspaces (
               workspace_id, org_id, project_id, owner_token_identifier, backing, access,
@@ -2074,7 +2077,7 @@ export function createSqliteWorkspaceAuthority(
             args.repoUrl ?? null,
             args.repoName ?? null,
             args.gitBranch ?? null,
-            args.remoteDirectory ?? null,
+            remoteDirectory ?? null,
             orgMemberVisible(scope),
             now,
             now,
