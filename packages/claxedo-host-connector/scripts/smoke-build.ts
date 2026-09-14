@@ -19,6 +19,7 @@ for (const [name, value] of Object.entries({
   parseInvitationToken: identity.parseInvitationToken,
   createHostStateStore: hostState.createHostStateStore,
   effectiveRoots: hostState.effectiveRoots,
+  resolveRoots: hostState.resolveRoots,
   nodeHostStateFs: hostStateNode.nodeHostStateFs,
   createMachineSignedTransport: machineTransport.createMachineSignedTransport,
   redeemInvitation: bootstrap.redeemInvitation,

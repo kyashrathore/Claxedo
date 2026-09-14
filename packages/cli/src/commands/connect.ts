@@ -48,6 +48,7 @@ export const connectHelp = `${connectUsage}
   --foreground          serve in this process (the default when no service flag is given)
   --alongside-desktop   serve even while the Claxedo desktop app's daemon is running on this machine; without it, connect refuses to start beside a live daemon (exit 78), since the desktop serves this machine under its own enrollment when its remote access is on
   --reset               delete the host state — key, enrollment and endpoints — after printing what goes; a fresh state is a fresh host id
+  --reset-roots         forget where each root resolved when first served, so a root that has since become a symlink is served at its new target; a running connect must be restarted to pick this up
 
 Exit codes: 0 after SIGTERM/SIGINT drained every runtime and tunnel; 78 when the
 control plane decided against this machine (invitation redeemed/expired/revoked,
@@ -63,6 +64,10 @@ until \`loginctl enable-linger <user>\` is on and XDG_RUNTIME_DIR reaches the
 user manager — the state a cloud-init run without a login session is in. A user service isolates this process from OTHER users
 only. An agent running as the same user can read the key file; what the key can
 do is serve the owner-assigned folders under the roots, nothing about the account.
+
+Each root's canonical path is recorded the first time it is resolved; a root
+that later resolves elsewhere (created as a symlink after the fact) serves
+nothing until --reset-roots or a new scope from the owner re-records it.
 
 State lives in ${connectPaths().stateFile} (CLAXEDO_HOME moves it).`
 
@@ -95,6 +100,26 @@ async function resetHostState(deps: ConnectDeps, log: (line: string) => void) {
   log(`  workspace state under ${deps.paths.storageRoot}`)
   await deps.removeDir(deps.paths.dir)
   log("Done. The next `claxedo connect --token-file` enrolls this machine under a new host id.")
+  return 0
+}
+
+async function resetRoots(deps: ConnectDeps, log: (line: string) => void) {
+  const state = await deps.store.load()
+  if (!state) {
+    log(`No connect host on this machine (${deps.paths.stateFile} absent); nothing to reset.`)
+    return 0
+  }
+  const recorded = Object.entries(state.roots_canonical ?? {})
+  if (recorded.length === 0) {
+    log("No root has been resolved yet; nothing to reset.")
+    return 0
+  }
+  const { roots_canonical: _cleared, ...rest } = state
+  await deps.store.save(rest)
+  log("Forgot where these roots first resolved:")
+  for (const [root, canonical] of recorded) log(`  ${root}${canonical === root ? "" : ` (was ${canonical})`}`)
+  log("Each is re-recorded as it resolves now, the next time an assignment under it is prepared.")
+  if (state.run) log(`A connect process (pid ${state.run.pid}) may still hold the old record: restart it${state.service ? ` (${state.service.kind} ${state.service.unit})` : ""}.`)
   return 0
 }
 
@@ -152,6 +177,7 @@ export async function connect(argv: string[], deps: ConnectDeps = defaultConnect
   }
   try {
     if (args.reset) return await resetHostState(deps, log)
+    if (args.resetRoots) return await resetRoots(deps, log)
     if (args.uninstallService) {
       const state = await deps.store.load()
       for (const line of await uninstallService(deps.service(), state?.service)) log(line)

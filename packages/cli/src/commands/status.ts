@@ -1,6 +1,6 @@
 import fs from "node:fs/promises"
 import { hostPublicKeyFingerprint } from "@claxedo/host-connector/host-identity"
-import { effectiveRoots, type HostState } from "@claxedo/host-connector/host-state"
+import { resolveRoots, type HostState } from "@claxedo/host-connector/host-state"
 import { connectPaths, connectStateStore } from "../connect/paths"
 
 export type StatusDeps = {
@@ -69,8 +69,11 @@ export async function statusLines(deps: StatusDeps): Promise<string[]> {
     `  status       ${online ? "online" : "offline"}${run && !online ? ` (pid ${run.pid} ${deps.pidAlive(run.pid) ? "alive, lease stale" : "gone"})` : ""}`,
   )
   if (run?.last_beat_error) lines.push(`  last error   ${run.last_beat_error}`)
-  const roots = await effectiveRoots(state, deps.resolvePath)
+  const { roots, drifted } = await resolveRoots(state, deps.resolvePath)
   lines.push(`  roots        ${roots.length ? roots.join(", ") : "none (nothing is servable)"}`)
+  for (const drift of drifted) {
+    lines.push(`  refused      ${drift.root} now resolves to ${drift.resolved}, not ${drift.recorded} as first recorded; \`claxedo connect --reset-roots\` re-records it`)
+  }
   if (state.service) lines.push(`  service      ${state.service.kind} ${state.service.unit}`)
   const served = run?.served ?? []
   lines.push(served.length ? "Served folders" : "Served folders: none")

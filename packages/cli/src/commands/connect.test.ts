@@ -655,6 +655,95 @@ describe("claxedo connect", () => {
     }
   })
 
+  test("a root created as a symlink after it was first resolved serves nothing until --reset-roots or a new scope re-records it", async () => {
+    // The owner scopes a folder that does not exist yet; the host pins it
+    // where it resolves lexically. Someone on the box then creates it as a
+    // symlink into a directory the owner never scoped.
+    const projects = path.join(h.root, "projects")
+    const victim = path.join(h.root, "victim")
+    await fs.mkdir(path.join(victim, "app"), { recursive: true })
+    const { file } = await invitationFile(h, [projects])
+    const running = connect(["--token-file", file], h.deps)
+    await until(() => h.cp.beats().length >= 1, "first beat")
+    const hostId = (await h.deps.store.load())!.host_id
+    h.cp.assign({ hostId, workspaceId: "ws_app", remoteDirectory: path.join(projects, "app") })
+    h.tick()
+    await until(() => h.lines.some((line) => line.startsWith("workspace ws_app: refused: ") && line.includes("cannot be resolved")), "the first refusal")
+    await until(async () => (await h.deps.store.load())?.roots_canonical !== undefined, "the pin to be recorded")
+    expect((await h.deps.store.load())?.roots_canonical).toEqual({ [projects]: projects })
+
+    await fs.symlink(victim, projects)
+    h.tick()
+    await until(() => h.lines.some((line) => line.startsWith(`root ${projects} now resolves to ${victim}, not ${projects}`)), "the drift to be reported")
+    await until(() => h.lines.filter((line) => line.startsWith("workspace ws_app: refused: ")).length >= 2, "the second refusal")
+    expect(h.lines.filter((line) => line.startsWith("workspace ws_app: refused: ")).at(-1)).toContain("outside this host's roots (none)")
+    expect(h.cp.routable(enrollmentIdOf(h))).toEqual([])
+    expect(h.listener()?.workspaceIds()).toEqual([])
+    expect((await h.deps.store.load())?.roots_canonical, "the pin stays as first recorded").toEqual({ [projects]: projects })
+    const status = await statusLines({
+      load: () => h.deps.store.load(),
+      stateFile: h.deps.paths.stateFile,
+      resolvePath: (target) => fs.realpath(target),
+      pidAlive: () => true,
+      now: () => Date.now(),
+      log: () => undefined,
+    })
+    expect(status).toContain("  roots        none (nothing is servable)")
+    expect(status.some((line) => line.startsWith(`  refused      ${projects} now resolves to ${victim}`))).toBe(true)
+
+    // The same scope revision on every boot's first beat keeps the pin.
+    h.stop()
+    expect(await running).toBe(0)
+    const rebooted = connect([], h.deps)
+    let beats = h.cp.beats().length
+    await until(() => h.cp.beats().length > beats, "the resumed beat")
+    h.tick()
+    await until(() => h.lines.filter((line) => line.startsWith("workspace ws_app: refused: ")).length >= 3, "the refusal after the restart")
+    expect((await h.deps.store.load())?.roots_canonical).toEqual({ [projects]: projects })
+    h.stop()
+    expect(await rebooted).toBe(0)
+
+    // The operator resets: the next resolution records the root where it resolves now.
+    expect(await connect(["--reset-roots"], h.deps)).toBe(0)
+    expect(h.lines.slice(-3)).toEqual([
+      "Forgot where these roots first resolved:",
+      `  ${projects}`,
+      "Each is re-recorded as it resolves now, the next time an assignment under it is prepared.",
+    ])
+    expect((await h.deps.store.load())?.roots_canonical).toBeUndefined()
+    const reset = connect([], h.deps)
+    beats = h.cp.beats().length
+    await until(() => h.cp.beats().length > beats, "the beat after the reset")
+    h.tick()
+    await until(() => h.cp.routable(enrollmentIdOf(h)).includes("ws_app"), "the folder to be served at the link's target")
+    expect((await h.deps.store.load())?.roots_canonical).toEqual({ [projects]: victim })
+    h.stop()
+    expect(await reset).toBe(0)
+
+    // A new scope revision from the owner re-records as well: the symlink is
+    // removed and the folder recreated in place, and the owner re-scopes.
+    await fs.unlink(projects)
+    await fs.mkdir(path.join(projects, "app"), { recursive: true })
+    const rescoped = connect([], h.deps)
+    beats = h.cp.beats().length
+    await until(() => h.cp.beats().length > beats, "the beat before the re-scope")
+    h.tick()
+    await until(() => h.lines.some((line) => line.startsWith(`root ${projects} now resolves to ${projects}, not ${victim}`)), "the drift back")
+    h.cp.setScope(enrollmentIdOf(h), { allowed_roots: [projects], visibility: "owner" })
+    h.cp.assign({ hostId, workspaceId: "ws_app", remoteDirectory: path.join(projects, "app") })
+    h.tick()
+    await until(() => h.cp.routable(enrollmentIdOf(h)).includes("ws_app"), "the folder to be served after the re-scope")
+    expect((await h.deps.store.load())?.roots_canonical).toEqual({ [projects]: projects })
+    expect((await h.deps.store.load())?.scope?.revision).toBe(2)
+    h.stop()
+    expect(await rescoped).toBe(0)
+  })
+
+  test("--reset-roots with nothing recorded says so", async () => {
+    expect(await connect(["--reset-roots"], h.deps)).toBe(0)
+    expect(h.lines.at(-1)).toContain("nothing to reset")
+  })
+
   test("--reset prints what goes and removes the state directory", async () => {
     const { file } = await invitationFile(h, [h.root])
     const running = connect(["--token-file", file], h.deps)
@@ -756,7 +845,9 @@ describe("connect argument parsing", () => {
       foreground: true,
       alongsideDesktop: true,
       reset: false,
+      resetRoots: false,
     })
+    expect(parseConnectArgs(["--reset-roots"]).resetRoots).toBe(true)
   })
 
   test("refuses unknown options, missing values, relative roots and contradictory flags", () => {
@@ -766,6 +857,8 @@ describe("connect argument parsing", () => {
     expect(() => parseConnectArgs(["--install-service", "--uninstall-service"])).toThrow("cannot be combined")
     expect(() => parseConnectArgs(["--reset", "--foreground"])).toThrow("--reset takes no other options")
     expect(() => parseConnectArgs(["--reset", "--alongside-desktop"])).toThrow("--reset takes no other options")
+    expect(() => parseConnectArgs(["--reset", "--reset-roots"])).toThrow("--reset takes no other options")
+    expect(() => parseConnectArgs(["--reset-roots", "--root", "/srv"])).toThrow("--reset-roots takes no other options")
   })
 })
 

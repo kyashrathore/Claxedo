@@ -9,9 +9,10 @@ export type ConnectArgs = {
   foreground: boolean
   alongsideDesktop: boolean
   reset: boolean
+  resetRoots: boolean
 }
 
-export const connectUsage = `claxedo connect [--token-file F] [--root DIR]... [--name N] [--install-service] [--uninstall-service] [--foreground] [--alongside-desktop] [--reset]`
+export const connectUsage = `claxedo connect [--token-file F] [--root DIR]... [--name N] [--install-service] [--uninstall-service] [--foreground] [--alongside-desktop] [--reset] [--reset-roots]`
 
 /** `--flag value` and `--flag=value` both read; a flag with no value is an error, not an empty string. */
 export function takeValue(args: string[], index: number, flag: string): { value: string; next: number } {
@@ -23,7 +24,15 @@ export function takeValue(args: string[], index: number, flag: string): { value:
 }
 
 export function parseConnectArgs(args: string[]): ConnectArgs {
-  const parsed: ConnectArgs = { roots: [], installService: false, uninstallService: false, foreground: false, alongsideDesktop: false, reset: false }
+  const parsed: ConnectArgs = {
+    roots: [],
+    installService: false,
+    uninstallService: false,
+    foreground: false,
+    alongsideDesktop: false,
+    reset: false,
+    resetRoots: false,
+  }
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i] ?? ""
     if (arg === "--token-file" || arg.startsWith("--token-file=")) {
@@ -65,13 +74,17 @@ export function parseConnectArgs(args: string[]): ConnectArgs {
       parsed.reset = true
       continue
     }
+    if (arg === "--reset-roots") {
+      parsed.resetRoots = true
+      continue
+    }
     throw new Error(`Unknown connect option: ${arg}\n${connectUsage}`)
   }
   if (parsed.installService && parsed.uninstallService) {
     throw new Error("--install-service and --uninstall-service cannot be combined")
   }
-  if (parsed.reset && (parsed.tokenFile || parsed.installService || parsed.uninstallService || parsed.foreground || parsed.alongsideDesktop)) {
-    throw new Error("--reset takes no other options")
-  }
+  const others = parsed.tokenFile || parsed.roots.length > 0 || parsed.installService || parsed.uninstallService || parsed.foreground || parsed.alongsideDesktop
+  if (parsed.reset && (others || parsed.resetRoots)) throw new Error("--reset takes no other options")
+  if (parsed.resetRoots && others) throw new Error("--reset-roots takes no other options")
   return parsed
 }

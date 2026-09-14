@@ -39,6 +39,12 @@ export type HostState = {
   scope?: HostScope
   /** `--root` values, kept apart from the control plane's scope. */
   cli_roots: string[]
+  /**
+   * Each declared root's canonical form as first resolved, keyed by the root
+   * as the scope or `--root` names it. A root that later resolves elsewhere
+   * is refused (`resolveRoots`) until the record is cleared.
+   */
+  roots_canonical?: Record<string, string>
   /** WORKSPACE_RUNTIME_WORKSPACES_DIR for this host's runtimes. */
   storage_root: string
   service?: { kind: "systemd-user" | "launchd"; unit: string; installed_at: number }
@@ -200,6 +206,12 @@ export function parseHostState(text: string): HostState {
     state.authority = { sessionAuthorityUrl: stateString(record.sessionAuthorityUrl, "authority.sessionAuthorityUrl") }
   }
   if (value.scope !== undefined) state.scope = scopeRecord(value.scope)
+  if (value.roots_canonical !== undefined) {
+    const record = stateRecord(value.roots_canonical, "roots_canonical")
+    state.roots_canonical = Object.fromEntries(
+      Object.entries(record).map(([root, canonical]) => [root, stateString(canonical, `roots_canonical[${root}]`)]),
+    )
+  }
   if (value.service !== undefined) {
     const record = stateRecord(value.service, "service")
     state.service = {
@@ -347,31 +359,75 @@ export async function canonicalRoot(root: string, resolve: ResolvePath): Promise
   }
 }
 
-async function canonicalRoots(roots: readonly string[], resolve: ResolvePath) {
-  const resolved = await Promise.all(roots.map((root) => canonicalRoot(root, resolve)))
-  return resolved.filter((root): root is string => root !== undefined)
+export type RootDrift = { root: string; recorded: string; resolved: string }
+
+export type ResolvedRoots = {
+  /** The effective roots, drifted ones excluded. */
+  roots: string[]
+  /** The record as it stands after this resolution: every declared root's first canonical form. */
+  canonical: Record<string, string>
+  /** Declared roots refused because they no longer resolve where they were first recorded. */
+  drifted: RootDrift[]
+}
+
+type RootRecord = { canonical: Record<string, string>; drifted: RootDrift[] }
+
+/**
+ * Resolve each root, pinning it to its first canonical form. A root that
+ * did not exist when first resolved was pinned lexically; if it is later
+ * created as a symlink, its canonical form moves and every directory under
+ * it would resolve inside the link's target — so a moved root serves
+ * nothing until the operator clears the record.
+ */
+async function canonicalRoots(roots: readonly string[], resolve: ResolvePath, recorded: Record<string, string>, record: RootRecord) {
+  const kept: string[] = []
+  for (const root of roots) {
+    const resolved = await canonicalRoot(root, resolve)
+    if (resolved === undefined) continue
+    const pinned = recorded[root]
+    if (pinned !== undefined && pinned !== resolved) {
+      record.canonical[root] = pinned
+      record.drifted.push({ root, recorded: pinned, resolved })
+      continue
+    }
+    record.canonical[root] = resolved
+    kept.push(resolved)
+  }
+  return kept
 }
 
 /**
- * CP `allowed_roots` ∩ `cli_roots` by containment, each side resolved first:
- * a cli root inside a CP root narrows to the cli root, a CP root inside a cli
- * root keeps the CP root, disjoint pairs contribute nothing. Resolving before
- * intersecting is what stops a cli root that is a symlink under a CP root
- * from carrying the CP root's authority to wherever the link points. No cli
- * roots ⇒ the CP roots. No scope yet, or an EMPTY `allowed_roots` ⇒ nothing
- * is servable — "unrestricted" is never an answer this function gives.
+ * CP `allowed_roots` ∩ `cli_roots` by containment, each side resolved and
+ * pinned first: a cli root inside a CP root narrows to the cli root, a CP
+ * root inside a cli root keeps the CP root, disjoint pairs contribute
+ * nothing. Resolving before intersecting is what stops a cli root that is a
+ * symlink under a CP root from carrying the CP root's authority to wherever
+ * the link points. No cli roots ⇒ the CP roots. No scope yet, or an EMPTY
+ * `allowed_roots` ⇒ nothing is servable — "unrestricted" is never an answer
+ * this function gives.
  */
-export async function effectiveRoots(state: Pick<HostState, "scope" | "cli_roots">, resolve: ResolvePath): Promise<string[]> {
-  const controlPlane = await canonicalRoots(state.scope?.allowed_roots ?? [], resolve)
-  if (controlPlane.length === 0) return []
-  if (state.cli_roots.length === 0) return [...new Set(controlPlane)].sort()
-  const cli = await canonicalRoots(state.cli_roots, resolve)
+export async function resolveRoots(
+  state: Pick<HostState, "scope" | "cli_roots" | "roots_canonical">,
+  resolve: ResolvePath,
+): Promise<ResolvedRoots> {
+  const recorded = state.roots_canonical ?? {}
+  const record: RootRecord = { canonical: {}, drifted: [] }
+  const controlPlane = await canonicalRoots(state.scope?.allowed_roots ?? [], resolve, recorded, record)
+  const cli = await canonicalRoots(state.cli_roots, resolve, recorded, record)
   const roots = new Set<string>()
-  for (const local of cli) {
-    for (const remote of controlPlane) {
-      if (pathWithin(local, remote)) roots.add(local)
-      else if (pathWithin(remote, local)) roots.add(remote)
+  if (controlPlane.length > 0 && state.cli_roots.length === 0) {
+    for (const root of controlPlane) roots.add(root)
+  } else {
+    for (const local of cli) {
+      for (const remote of controlPlane) {
+        if (pathWithin(local, remote)) roots.add(local)
+        else if (pathWithin(remote, local)) roots.add(remote)
+      }
     }
   }
-  return [...roots].sort()
+  return { roots: [...roots].sort(), ...record }
+}
+
+export async function effectiveRoots(state: Pick<HostState, "scope" | "cli_roots" | "roots_canonical">, resolve: ResolvePath): Promise<string[]> {
+  return (await resolveRoots(state, resolve)).roots
 }

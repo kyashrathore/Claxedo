@@ -3,7 +3,7 @@ import path from "node:path"
 import { createHostConnector, type AssignmentDescription, type HostEndpoints } from "@claxedo/host-connector/connector"
 import { DECISION_EXIT_CODE, HostConnectDecisionError } from "@claxedo/host-connector/bootstrap"
 import { hostKeyPairFromJwk } from "@claxedo/host-connector/host-identity"
-import { effectiveRoots, pathWithinRoots, type HostScope, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
+import { pathWithinRoots, resolveRoots, type HostScope, type HostState, type HostStateStore } from "@claxedo/host-connector/host-state"
 import {
   createMachineSignedTransport,
   decisionCode,
@@ -240,7 +240,25 @@ export async function runHost(input: HostRunInput): Promise<number> {
     })
   }
 
-  const canonicalRoots = () => effectiveRoots(state, deps.resolvePath)
+  // Each root's canonical form is recorded the first time it resolves and
+  // the record is compared on every later resolution; a drift is reported
+  // once per root and destination, not on every ack.
+  const reportedDrift = new Set<string>()
+  const canonicalRoots = async () => {
+    const resolved = await resolveRoots(state, deps.resolvePath)
+    for (const drift of resolved.drifted) {
+      const key = `${drift.root} -> ${drift.resolved}`
+      if (reportedDrift.has(key)) continue
+      reportedDrift.add(key)
+      deps.log(
+        `root ${drift.root} now resolves to ${drift.resolved}, not ${drift.recorded} as recorded when it was first resolved; nothing under it is served until \`claxedo connect --reset-roots\` or a new scope from the owner re-records it`,
+      )
+    }
+    if (JSON.stringify(resolved.canonical) !== JSON.stringify(state.roots_canonical ?? {})) {
+      void persist({ ...state, roots_canonical: resolved.canonical })
+    }
+    return resolved.roots
+  }
 
   const prepare = async (description: AssignmentDescription) => {
     const { workspaceId } = description
@@ -288,7 +306,14 @@ export async function runHost(input: HostRunInput): Promise<number> {
     roots: canonicalRoots,
     resolvePath: deps.resolvePath,
     setInterval: deps.setInterval,
-    onScope: (scope: HostScope) => persist({ ...state, scope }),
+    onScope: (scope: HostScope) => {
+      // A new scope revision is the owner re-declaring the roots, so the
+      // pins are re-recorded from what they resolve to now. The same
+      // revision delivered again — every boot's first beat — keeps them.
+      if (scope.revision === state.scope?.revision) return persist({ ...state, scope })
+      const { roots_canonical: _stale, ...rest } = state
+      return persist({ ...rest, scope })
+    },
     onEndpoints: (endpoints: HostEndpoints) =>
       persist({
         ...state,

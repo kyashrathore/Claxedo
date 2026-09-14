@@ -9,6 +9,7 @@ import {
   newHostState,
   parseHostState,
   pathWithin,
+  resolveRoots,
   type HostState,
 } from "./host-state"
 import { nodeHostStateFs } from "./host-state-node"
@@ -196,6 +197,66 @@ describe("roots", () => {
       "/srv/new",
     ])
     expect(await effectiveRoots({ cli_roots: ["/srv/link/new"], scope: scope(["/private"]) }, resolve)).toEqual(["/private/data/new"])
+  })
+})
+
+describe("root pinning", () => {
+  const scope = (allowed_roots: string[]) => ({ revision: 1, allowed_roots, visibility: "owner" as const })
+  /** A filesystem where `/srv/projects` does not exist yet and can later be made a symlink. */
+  const filesystem = (links: Record<string, string>) => async (path: string) => {
+    if (path in links) return links[path]
+    if (path === "/" || path === "/srv" || path === "/home" || path === "/home/victim") return path
+    throw Object.assign(new Error(`ENOENT: ${path}`), { code: "ENOENT" })
+  }
+
+  test("the first resolution of a root records its canonical form", async () => {
+    const resolved = await resolveRoots({ cli_roots: [], scope: scope(["/srv/projects", "/srv/link/"]) }, filesystem({ "/srv/link": "/home/victim" }))
+
+    expect(resolved).toEqual({
+      roots: ["/home/victim", "/srv/projects"],
+      canonical: { "/srv/projects": "/srv/projects", "/srv/link/": "/home/victim" },
+      drifted: [],
+    })
+  })
+
+  test("a root whose canonical form moved since it was recorded is refused, and stays recorded as it was", async () => {
+    const first = await resolveRoots({ cli_roots: [], scope: scope(["/srv/projects", "/srv/other"]) }, filesystem({}))
+    expect(first.roots).toEqual(["/srv/other", "/srv/projects"])
+
+    // `/srv/projects` is created as a symlink to a home directory the owner never scoped.
+    const later = await resolveRoots(
+      { cli_roots: [], scope: scope(["/srv/projects", "/srv/other"]), roots_canonical: first.canonical },
+      filesystem({ "/srv/projects": "/home/victim" }),
+    )
+
+    expect(later.roots, "only the root that still resolves where it did serves").toEqual(["/srv/other"])
+    expect(later.drifted).toEqual([{ root: "/srv/projects", recorded: "/srv/projects", resolved: "/home/victim" }])
+    expect(later.canonical, "the drifted root keeps its recorded form until reset").toEqual(first.canonical)
+    expect(await effectiveRoots({ cli_roots: [], scope: scope(["/srv/projects"]), roots_canonical: first.canonical }, filesystem({ "/srv/projects": "/home/victim" }))).toEqual([])
+  })
+
+  test("a cli root is pinned too, and a recorded root that is no longer declared is dropped from the record", async () => {
+    const first = await resolveRoots({ cli_roots: ["/srv/projects/app"], scope: scope(["/srv/projects"]) }, filesystem({}))
+    expect(first.canonical).toEqual({ "/srv/projects": "/srv/projects", "/srv/projects/app": "/srv/projects/app" })
+
+    const later = await resolveRoots(
+      { cli_roots: [], scope: scope(["/srv/projects"]), roots_canonical: first.canonical },
+      filesystem({ "/srv/projects/app": "/home/victim" }),
+    )
+
+    expect(later).toEqual({ roots: ["/srv/projects"], canonical: { "/srv/projects": "/srv/projects" }, drifted: [] })
+  })
+
+  test("without a record, the pins are what the roots resolve to now — a reset re-records", async () => {
+    const reset = await resolveRoots({ cli_roots: [], scope: scope(["/srv/projects"]) }, filesystem({ "/srv/projects": "/home/victim" }))
+
+    expect(reset).toEqual({ roots: ["/home/victim"], canonical: { "/srv/projects": "/home/victim" }, drifted: [] })
+  })
+
+  test("roots_canonical round-trips through the state file and refuses a non-string entry", () => {
+    const text = JSON.stringify({ ...state(), roots_canonical: { "/srv": "/private/srv" } })
+    expect(parseHostState(text).roots_canonical).toEqual({ "/srv": "/private/srv" })
+    expect(() => parseHostState(JSON.stringify({ ...state(), roots_canonical: { "/srv": 1 } }))).toThrow("roots_canonical")
   })
 })
 

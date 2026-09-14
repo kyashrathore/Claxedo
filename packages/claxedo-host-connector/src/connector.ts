@@ -172,7 +172,7 @@ export type MachineConnectorOptions = CommonConnectorOptions & {
   enrollmentId: string
   /**
    * The effective roots as the caller currently holds them, already resolved
-   * (`effectiveRoots` in `./host-state` with the same `resolvePath`). Read at
+   * (`resolveRoots` in `./host-state` with the same `resolvePath`). Read at
    * every `ack`, after `onScope` has delivered any newer scope, so a
    * description is always validated against the roots in force when it is
    * accepted. A description's resolved directory is compared against these as
