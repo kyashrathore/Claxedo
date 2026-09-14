@@ -1,3 +1,4 @@
+import { isRecord } from "@claxedo/helpers/guards"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
 import type { OrgId, ProjectId } from "./branded-id"
 import type {
@@ -661,8 +662,8 @@ export function hostEnrollmentScope(json: unknown, revision: number): HostEnroll
   } catch {
     return undefined
   }
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
-  const { allowed_roots, visibility } = value as Record<string, unknown>
+  if (!isRecord(value)) return undefined
+  const { allowed_roots, visibility } = value
   if (!Array.isArray(allowed_roots) || !allowed_roots.every((root) => typeof root === "string")) return undefined
   if (visibility !== "owner" && visibility !== "org") return undefined
   return { allowed_roots: [...allowed_roots], visibility, revision }
