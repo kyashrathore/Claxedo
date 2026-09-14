@@ -1,12 +1,20 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-09-12
+Last updated: 2026-09-14
 
 This directory keeps active plans and concise dated references that still help
 explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
+
+- [Onboarding v1: make setup yield to a working product](./2026-09-14-002-feat-onboarding-v1-repair.md) — proposed; not started.
+  - Setup shows only when it has something to ask: first turn becomes a
+    server-served inventory fact, harness logins are discovered at mount,
+    project → AI → first turn is the required path, cloud and remote access
+    become go-further cards, Skip setup writes the dismissal the mode already
+    reads, and the first-project canvas is the no-project screen. Six observed
+    defects listed with their owners.
 
 - [Provider accounts: one provider, many logins, one active](./2026-09-12-001-feat-provider-accounts-design.md) — proposed; not started.
   - One explicit active account per provider, set in Settings → Providers
