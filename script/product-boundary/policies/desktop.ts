@@ -428,6 +428,8 @@ export const desktopRendererUnsigned: Policy = {
   // No new package edge.
   // +1 module (2026-09-13): the same lib/percent.ts owner app-local reviews.
   // No new package edge.
+  // +1 module (2026-09-14): the same account agent-settings API owner
+  // app-local reviews. No new package edge.
   //
   // Tasks and Presets reach this renderer through the shell's secondary port
   // wiring, under exactly the owners `app-local` reviews — including the
@@ -436,8 +438,8 @@ export const desktopRendererUnsigned: Policy = {
   // edge they add; this renderer already carried the Tiptap edges through its
   // hosted half.
   //
-  // Measured 1112 modules / 58 packages, with no headroom.
-  ceilings: { modules: 1112, packages: 58 },
+  // Measured 1113 modules / 58 packages, with no headroom.
+  ceilings: { modules: 1113, packages: 58 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

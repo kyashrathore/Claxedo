@@ -102,6 +102,8 @@ export type SessionAbandonCommand = {
 export type StartedSession = {
   sessionRef: SessionReference
   continuedFrom: SessionReference | null
+  /** The session whose agent asked for this Start, from the grant the host admitted; null for a person. */
+  startedFrom: SessionReference | null
 }
 
 /**

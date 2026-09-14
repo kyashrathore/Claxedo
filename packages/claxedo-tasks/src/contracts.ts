@@ -195,6 +195,14 @@ export type TaskSessionLink = {
    * from, and sending the task without it would hand over a different message.
    */
   handoffText: string | null
+  /**
+   * The session whose agent started this attempt, recorded by the host from
+   * the grant it admitted and never from the request; null when a person
+   * started it from the app. With `placement`, it is what a per-project cap
+   * on agent-started cloud machines counts.
+   */
+  startedFrom: SessionReference | null
+  placement: PresetPlacement
   createdAt: number
 }
 

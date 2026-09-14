@@ -14,6 +14,7 @@ import type {
   TasksAuthorizationPort,
   TasksCapabilitiesPort,
   TasksSessionBridgePort,
+  TasksStoreOperations,
   TasksStorePort,
 } from "@claxedo/tasks"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -29,6 +30,7 @@ import {
   type TasksPrincipals,
   type TasksRuntimePrincipal,
 } from "./authorization"
+import { gateAgentStarts } from "./agent-start-gates"
 import type { TasksCapabilityPort } from "./capability"
 import { randomTasksIds, systemTasksClock } from "./host-ports"
 
@@ -55,11 +57,13 @@ export type SignedTasksIdentity = {
   /** The canonical human a session is reserved for, for a host whose authority records a creator. */
   runtimePrincipal: TasksRuntimePrincipal
   /**
-   * The composition's bridge behind the capability's Start door. A signed
-   * composition that mounts its bridge bare lets a grant start a task the
-   * owner pointed at another project's workspace.
+   * The composition's bridge behind the capability's Start doors: the scope
+   * confinement, then the agent-start gates, which read the store the
+   * composition mounts. A signed composition that mounts its bridge bare lets
+   * a grant start a task the owner pointed at another project's workspace,
+   * or start a cloud machine from a preset nobody marked for agents.
    */
-  bridge(bridge: TasksSessionBridgePort): TasksSessionBridgePort
+  bridge(bridge: TasksSessionBridgePort, store: Pick<TasksStoreOperations, "tasks" | "links">): TasksSessionBridgePort
 }
 
 export function signedTasksIdentity(input: {
@@ -80,6 +84,7 @@ export function signedTasksIdentity(input: {
     authorization: createTasksAuthorization({ authority: input.authority, principals, ...(capability ? { capability } : {}) }),
     authenticate: capability ? capabilityTasksAuthenticate({ capability, principals, signed }) : signed,
     runtimePrincipal: signedTasksRuntimePrincipal(principals),
-    bridge: (bridge) => (capability ? confineCapabilityBridge(principals, capability, bridge) : bridge),
+    bridge: (bridge, store) =>
+      capability ? confineCapabilityBridge(principals, capability, gateAgentStarts(principals, store, bridge)) : bridge,
   }
 }

@@ -139,6 +139,8 @@ function link(sessionRef: { sessionId: string; workspaceId: string | null }, con
     presetNameAtStart: "Careful review",
     configurationDigest,
     handoffText: null,
+    startedFrom: null,
+    placement: "local",
     createdAt: 1,
   }
 }

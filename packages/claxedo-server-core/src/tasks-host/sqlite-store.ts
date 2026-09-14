@@ -7,7 +7,7 @@
  * row outside the caller's scope is unreachable rather than filtered out
  * afterwards.
  */
-import { and, count, desc, eq, inArray, isNull, lt, ne, or, sql } from "drizzle-orm"
+import { and, count, desc, eq, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm"
 import type { SQLiteColumn } from "drizzle-orm/sqlite-core"
 import {
   serializedTransactions,
@@ -333,6 +333,45 @@ function tasksOperations(use: Reader): TasksStoreOperations {
             .all(),
         )
         return rows.map(linkOfColumns)
+      },
+
+      async bySession(scopeId, sessionId) {
+        const row = use((db) =>
+          db
+            .select()
+            .from(ClaxedoTaskSessionLinkTable)
+            .where(
+              and(eq(ClaxedoTaskSessionLinkTable.scope_id, scopeId), eq(ClaxedoTaskSessionLinkTable.session_id, sessionId)),
+            )
+            .get(),
+        )
+        return row ? linkOfColumns(row) : undefined
+      },
+
+      async listAgentStartedCloud(scopeId, projectId) {
+        const rows = use((db) =>
+          db
+            .select({ link: ClaxedoTaskSessionLinkTable })
+            .from(ClaxedoTaskSessionLinkTable)
+            .innerJoin(
+              ClaxedoTaskTable,
+              and(
+                eq(ClaxedoTaskTable.scope_id, ClaxedoTaskSessionLinkTable.scope_id),
+                eq(ClaxedoTaskTable.task_id, ClaxedoTaskSessionLinkTable.task_id),
+              ),
+            )
+            .where(
+              and(
+                eq(ClaxedoTaskSessionLinkTable.scope_id, scopeId),
+                eq(ClaxedoTaskTable.project_id, projectId),
+                isNotNull(ClaxedoTaskSessionLinkTable.started_from_session_id),
+                eq(ClaxedoTaskSessionLinkTable.placement, "cloud"),
+              ),
+            )
+            .orderBy(desc(ClaxedoTaskSessionLinkTable.created_at))
+            .all(),
+        )
+        return rows.map((row) => linkOfColumns(row.link))
       },
 
       async insert(link) {

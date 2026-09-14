@@ -10,6 +10,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 import type { TasksActor, TasksHostCapabilities, TasksSessionBridgePort } from "@claxedo/tasks"
 import type { TasksCapabilityPort } from "@claxedo/server-core/tasks-host/capability"
 import type { ControlPlaneServices } from "../authority/services"
+import type { SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import { signedOrError } from "../workspace/route-support"
 import { verifyTasksCapability } from "./capability"
 import { createD1TasksStore } from "./d1-store"
@@ -43,6 +44,8 @@ export type HostedTasksCompositionInput = {
    * serves Tasks to signed callers only.
    */
   signingEnv?: Record<string, string | undefined>
+  /** The register a minted capability is checked against, so a revoked one is refused before its expiry. */
+  passes?: SandboxPassRegister
 }
 
 /** The signed request a Tasks actor was minted from, for authority calls that act as the caller. */
@@ -84,7 +87,9 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
   // all.
   const capability: TasksCapabilityPort | undefined = signingEnv && owners
     ? {
-        verify: async (token) => await verifyTasksCapability(token, signingEnv).catch(() => undefined),
+        verify: async (token) =>
+          await verifyTasksCapability(token, signingEnv, input.passes ? { revoked: input.passes.revoked } : {})
+            .catch(() => undefined),
         workspaceOwner: owners,
       }
     : undefined
@@ -100,13 +105,14 @@ export function createHostedTasksComposition(input: HostedTasksCompositionInput)
   const placements: TasksHostCapabilities["placements"] = input.services.sandbox.sandboxManager
     ? ["local", "cloud"]
     : ["local"]
+  const store = createD1TasksStore({ database: input.database })
   return {
     routeContributions: [
       tasksRouteContribution({
-        store: createD1TasksStore({ database: input.database }),
+        store,
         authorization: identity.authorization,
         authenticate: identity.authenticate,
-        bridge: identity.bridge(input.bridge(identity.runtimePrincipal, (actor) => identity.principals.authOf(actor))),
+        bridge: identity.bridge(input.bridge(identity.runtimePrincipal, (actor) => identity.principals.authOf(actor)), store),
         capabilities: createTasksCapabilities({
           placements,
           // A root's own machine is half of the promise; the other half is the

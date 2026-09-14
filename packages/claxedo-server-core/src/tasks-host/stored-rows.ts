@@ -12,9 +12,11 @@ import {
   decodeCommandResponse,
   decodePreset,
   decodeTask,
+  PRESET_PLACEMENTS,
   isConfigurationSlot,
   isTasksCommandName,
   type Preset,
+  type PresetPlacement,
   type SessionReference,
   type Task,
   type TaskSessionLink,
@@ -72,6 +74,9 @@ export type StoredLinkColumns = {
   preset_name_at_start: string
   configuration_digest: string
   handoff_text: string | null
+  started_from_session_id: string | null
+  started_from_workspace_id: string | null
+  placement: string
   created_at: number
 }
 
@@ -185,13 +190,23 @@ export function linkColumns(link: TaskSessionLink): StoredLinkColumns {
     preset_name_at_start: link.presetNameAtStart,
     configuration_digest: link.configurationDigest,
     handoff_text: link.handoffText,
+    started_from_session_id: link.startedFrom?.sessionId ?? null,
+    started_from_workspace_id: link.startedFrom?.workspaceId ?? null,
+    placement: link.placement,
     created_at: link.createdAt,
   }
+}
+
+function isPresetPlacement(value: string): value is PresetPlacement {
+  return PRESET_PLACEMENTS.some((placement) => placement === value)
 }
 
 export function linkOfColumns(row: StoredLinkColumns): TaskSessionLink {
   if (!isConfigurationSlot(row.slot)) {
     throw new TasksStoredRowError(`Stored task session link ${row.task_id} names an unknown slot ${row.slot}`)
+  }
+  if (!isPresetPlacement(row.placement)) {
+    throw new TasksStoredRowError(`Stored task session link ${row.task_id} names an unknown placement ${row.placement}`)
   }
   // A continued-from workspace without its session is a half-written origin,
   // not "continued from the workspace": the pair is stored and read together.
@@ -199,6 +214,10 @@ export function linkOfColumns(row: StoredLinkColumns): TaskSessionLink {
     row.continued_from_session_id === null
       ? null
       : { sessionId: row.continued_from_session_id, workspaceId: row.continued_from_workspace_id }
+  const startedFrom: SessionReference | null =
+    row.started_from_session_id === null
+      ? null
+      : { sessionId: row.started_from_session_id, workspaceId: row.started_from_workspace_id }
   return {
     scopeId: row.scope_id,
     taskId: row.task_id,
@@ -211,6 +230,8 @@ export function linkOfColumns(row: StoredLinkColumns): TaskSessionLink {
     presetNameAtStart: row.preset_name_at_start,
     configurationDigest: row.configuration_digest,
     handoffText: row.handoff_text,
+    startedFrom,
+    placement: row.placement,
     createdAt: row.created_at,
   }
 }

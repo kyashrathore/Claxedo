@@ -17,7 +17,7 @@
 import { describe, expect, test } from "bun:test"
 import { CONFORMANCE_SCOPES, TASKS_STORE_CONFORMANCE_SCOPE, tasksStoreConformance } from "./index"
 import { createMemoryTasksStore } from "../stores/memory"
-import type { Page, Preset, Task, TaskSummary } from "../contracts"
+import type { Page, Preset, Task, TaskSessionLink, TaskSummary } from "../contracts"
 import type { TasksStoreOperations, TasksStorePort } from "../ports/store"
 
 type Mutant = Readonly<{
@@ -87,6 +87,8 @@ function snapshotRollback(): TasksStorePort {
     links: {
       getCurrent: (scopeId, taskId, slot) => live.links.getCurrent(scopeId, taskId, slot),
       listByTask: (scopeId, taskId) => live.links.listByTask(scopeId, taskId),
+      bySession: (scopeId, sessionId) => live.links.bySession(scopeId, sessionId),
+      listAgentStartedCloud: (scopeId, projectId) => live.links.listAgentStartedCloud(scopeId, projectId),
       insert: (link) => record((into) => into.links.insert(link), live.links.insert(link)),
     },
     receipts: {
@@ -230,6 +232,45 @@ const FORGETS_THE_AGENT_MARK = everywhere((operations) => {
   }
 })
 
+/** The two columns an adapter never added: every link read back as a person's, run locally. */
+const FORGETS_WHAT_STARTED_A_LINK = everywhere((operations) => {
+  const forget = (link: TaskSessionLink): TaskSessionLink => ({ ...link, startedFrom: null, placement: "local" })
+  const forgetOne = async (read: Promise<TaskSessionLink | undefined>) => {
+    const link = await read
+    return link === undefined ? undefined : forget(link)
+  }
+  return {
+    ...operations,
+    links: {
+      ...operations.links,
+      getCurrent: (scopeId, taskId, slot) => forgetOne(operations.links.getCurrent(scopeId, taskId, slot)),
+      bySession: (scopeId, sessionId) => forgetOne(operations.links.bySession(scopeId, sessionId)),
+      listByTask: async (scopeId, taskId) => (await operations.links.listByTask(scopeId, taskId)).map(forget),
+    },
+  }
+})
+
+/** The join an adapter forgot: every link in the scope reported as agent-started in the cloud. */
+const LISTS_EVERY_LINK_AS_AGENT_STARTED = everywhere((operations) => ({
+  ...operations,
+  links: {
+    ...operations.links,
+    listAgentStartedCloud: async (scopeId, projectId) => {
+      const page = await operations.tasks.list(scopeId, {
+        projectId,
+        status: null,
+        parent: "any",
+        includeArchived: true,
+        cursor: null,
+        limit: 100,
+      })
+      const links: TaskSessionLink[] = []
+      for (const row of page.items) links.push(...(await operations.links.listByTask(scopeId, row.id)))
+      return links
+    },
+  },
+}))
+
 const MUTANTS: readonly Mutant[] = [
   {
     breaks: "commits the work of a transaction that threw",
@@ -365,6 +406,14 @@ const MUTANTS: readonly Mutant[] = [
   {
     breaks: "reads every preset back as one nobody marked for agents",
     apply: FORGETS_THE_AGENT_MARK,
+  },
+  {
+    breaks: "reads every link back as a person's, run locally",
+    apply: FORGETS_WHAT_STARTED_A_LINK,
+  },
+  {
+    breaks: "lists every link of the project as agent-started in the cloud",
+    apply: LISTS_EVERY_LINK_AS_AGENT_STARTED,
   },
 ]
 

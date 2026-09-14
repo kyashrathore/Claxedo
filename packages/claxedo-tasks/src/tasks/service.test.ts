@@ -682,6 +682,8 @@ describe("tasks service", () => {
             presetNameAtStart: preset.name,
             configurationDigest: await startConfigurationDigest({ preset, slot: "primary" }),
             handoffText: null,
+            startedFrom: null,
+            placement: "local",
             createdAt: 10,
           })
           return bridge.start(command)
@@ -825,6 +827,8 @@ describe("tasks service", () => {
             presetNameAtStart: preset.name,
             configurationDigest: "another-configuration",
             handoffText: null,
+            startedFrom: null,
+            placement: "local",
             createdAt: 10,
           })
           return started
@@ -886,6 +890,8 @@ describe("tasks service", () => {
             presetNameAtStart: preset.name,
             configurationDigest: digest,
             handoffText: null,
+            startedFrom: null,
+            placement: "local",
             createdAt: 10,
             ...overrides,
           })

@@ -15,7 +15,7 @@ import { TasksStoreConflict, type TasksStorePort } from "../ports/store"
 import { gate, settle } from "../test-support/concurrency"
 import { OWNER, SCOPES, linkRow, presetRow, receiptRow, taskRow } from "../test-support/rows"
 
-export const TASKS_STORE_CONFORMANCE_VERSION = 8 as const
+export const TASKS_STORE_CONFORMANCE_VERSION = 9 as const
 
 export const TASKS_STORE_CONFORMANCE_SCOPE = {
   cases: [
@@ -37,6 +37,8 @@ export const TASKS_STORE_CONFORMANCE_SCOPE = {
     "an_archived_task_keeps_its_number_and_the_next_one_does_not_reuse_it",
     "a_task_created_from_a_session_reads_that_session_back_on_get_list_and_children",
     "a_preset_marked_startable_by_agents_reads_the_mark_back_on_get_and_list",
+    "a_link_is_found_by_the_session_it_names_with_what_started_it_and_where_it_runs",
+    "agent_started_cloud_links_are_listed_per_project_and_nothing_else_is",
   ],
   // NOT pinned:
   //
@@ -597,6 +599,95 @@ export function tasksStoreConformance(factory: TasksStoreConformanceFactory): re
         (await store.presets.get(CONFORMANCE_SCOPES.first, "preset-marked"))?.agentStartable,
         false,
         "an update did not clear the mark",
+      )
+    }),
+
+    conformanceCase("a link is found by the session it names, with what started it and where it runs", async () => {
+      const store = await start()
+      const origin = { sessionId: "ses_root", workspaceId: "ws_root" }
+      await store.links.insert(
+        linkRow({
+          taskId: "task-agent",
+          attempt: 1,
+          sessionRef: { sessionId: "ses_agent", workspaceId: "ws_agent" },
+          startedFrom: origin,
+          placement: "cloud",
+        }),
+      )
+      await store.links.insert(
+        linkRow({ taskId: "task-person", attempt: 1, sessionRef: { sessionId: "ses_person", workspaceId: null } }),
+      )
+      // The same session id in the other scope, started by nobody: a lookup
+      // that dropped the scope would answer this one for the first.
+      await store.links.insert(
+        linkRow({
+          taskId: "task-agent",
+          scopeId: CONFORMANCE_SCOPES.second,
+          attempt: 1,
+          sessionRef: { sessionId: "ses_agent", workspaceId: null },
+        }),
+      )
+
+      const agent = await store.links.bySession(CONFORMANCE_SCOPES.first, "ses_agent")
+      assertEqual(agent?.taskId, "task-agent", "the link was not found by its session")
+      assertEqual(agent?.startedFrom?.sessionId, "ses_root", "a read dropped the session that started the link")
+      assertEqual(agent?.startedFrom?.workspaceId, "ws_root", "a read dropped the starting session's workspace")
+      assertEqual(agent?.placement, "cloud", "a read dropped where the link runs")
+
+      const person = await store.links.bySession(CONFORMANCE_SCOPES.first, "ses_person")
+      assertEqual(person?.startedFrom, null, "a link a person started was read as started by a session")
+      assertEqual(person?.placement, "local", "a local link was read as running elsewhere")
+      assertEqual(await store.links.bySession(CONFORMANCE_SCOPES.first, "ses_nobody"), undefined, "a session nothing started was answered with a link")
+      assertEqual(
+        (await store.links.bySession(CONFORMANCE_SCOPES.second, "ses_agent"))?.startedFrom,
+        null,
+        "the other scope's link was answered with this scope's row",
+      )
+      assertEqual(
+        (await store.links.getCurrent(CONFORMANCE_SCOPES.first, "task-agent", "primary"))?.startedFrom?.sessionId,
+        "ses_root",
+        "the slot's current link dropped what started it",
+      )
+      assertEqual(
+        (await store.links.listByTask(CONFORMANCE_SCOPES.first, "task-agent"))[0]?.placement,
+        "cloud",
+        "the task's link history dropped where a link runs",
+      )
+    }),
+
+    conformanceCase("agent-started cloud links are listed per project, and nothing else is", async () => {
+      const store = await start()
+      const origin = { sessionId: "ses_root", workspaceId: "ws_root" }
+      await store.tasks.insert(taskRow({ id: "task-alpha-one", projectId: "project-alpha" }))
+      await store.tasks.insert(taskRow({ id: "task-alpha-two", projectId: "project-alpha", archivedAt: 9 }))
+      await store.tasks.insert(taskRow({ id: "task-beta", projectId: "project-beta" }))
+      await store.tasks.insert(taskRow({ id: "task-alpha-one", scopeId: CONFORMANCE_SCOPES.second, projectId: "project-alpha" }))
+
+      await store.links.insert(linkRow({ taskId: "task-alpha-one", attempt: 1, startedFrom: origin, placement: "cloud", createdAt: 1_000 }))
+      await store.links.insert(linkRow({ taskId: "task-alpha-one", attempt: 2, placement: "cloud", createdAt: 2_000 }))
+      await store.links.insert(linkRow({ taskId: "task-alpha-one", slot: "review", attempt: 1, startedFrom: origin, placement: "local", createdAt: 3_000 }))
+      await store.links.insert(linkRow({ taskId: "task-alpha-two", attempt: 1, startedFrom: origin, placement: "cloud", createdAt: 4_000 }))
+      await store.links.insert(linkRow({ taskId: "task-beta", attempt: 1, startedFrom: origin, placement: "cloud", createdAt: 5_000 }))
+      await store.links.insert(
+        linkRow({ taskId: "task-alpha-one", scopeId: CONFORMANCE_SCOPES.second, attempt: 1, startedFrom: origin, placement: "cloud", createdAt: 6_000 }),
+      )
+
+      const listed = await store.links.listAgentStartedCloud(CONFORMANCE_SCOPES.first, "project-alpha")
+      assertEqual(
+        listed.map((link) => `${link.taskId}/${link.slot}/${link.attempt}`).sort().join(" "),
+        "task-alpha-one/primary/1 task-alpha-two/primary/1",
+        "the project's agent-started cloud links are not exactly the ones listed",
+      )
+      assertEqual(listed[0]?.startedFrom?.sessionId, "ses_root", "a listed link dropped what started it")
+      assertEqual(
+        (await store.links.listAgentStartedCloud(CONFORMANCE_SCOPES.first, "project-beta")).length,
+        1,
+        "another project's links were not listed under it",
+      )
+      assertEqual(
+        (await store.links.listAgentStartedCloud(CONFORMANCE_SCOPES.first, "project-gamma")).length,
+        0,
+        "a project with no tasks listed links",
       )
     }),
   ]

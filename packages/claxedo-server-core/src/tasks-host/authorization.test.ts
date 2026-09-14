@@ -7,7 +7,7 @@
  * admitted by, so the authority here answers only for sessions.
  */
 import { describe, expect, test, vi } from "vitest"
-import { fakeBridge, presetRow, taskRow } from "@claxedo/tasks/test-support"
+import { createMemoryTasksStore, fakeBridge, presetRow, taskRow } from "@claxedo/tasks/test-support"
 import type { StartPreviewCommand, TasksActor } from "@claxedo/tasks"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
 import type { TasksCapabilityOwner, TasksCapabilityScope } from "./capability"
@@ -178,7 +178,7 @@ describe("a Tasks grant starting a task", () => {
     return {
       actor,
       task: taskRow({ id: "tsk_1", scopeId: actor.scopeId, projectId: "project-a", workspaceId }),
-      preset: presetRow({ id: "prs_1", scopeId: actor.scopeId, ownerId: actor.ownerId }),
+      preset: presetRow({ id: "prs_1", scopeId: actor.scopeId, ownerId: actor.ownerId, agentStartable: true }),
       slot: "primary",
       attempt: 1,
       continueFromPrevious: false,
@@ -191,7 +191,7 @@ describe("a Tasks grant starting a task", () => {
   test("reaches the bridge for a task preferring a workspace of its own project, or none", async () => {
     const composed = identity()
     const inner = fakeBridge()
-    const bridge = composed.bridge(inner)
+    const bridge = composed.bridge(inner, createMemoryTasksStore())
     const actor = await actorOf(composed)
     expect((await bridge.preview(previewCommand(actor, null))).ok).toBe(true)
     expect((await bridge.preview(previewCommand(actor, "ws_root"))).ok).toBe(true)
@@ -202,7 +202,7 @@ describe("a Tasks grant starting a task", () => {
   test("is refused before the bridge for a task whose stored preference is outside its project", async () => {
     const composed = identity()
     const inner = fakeBridge()
-    const bridge = composed.bridge(inner)
+    const bridge = composed.bridge(inner, createMemoryTasksStore())
     const actor = await actorOf(composed)
     for (const foreign of ["ws_other", "ws_unknown"]) {
       const answer = await bridge.preview(previewCommand(actor, foreign))
@@ -218,7 +218,7 @@ describe("a Tasks grant starting a task", () => {
   test("leaves a signed person's Start alone", async () => {
     const composed = identity()
     const inner = fakeBridge()
-    const bridge = composed.bridge(inner)
+    const bridge = composed.bridge(inner, createMemoryTasksStore())
     const person = composed.principals.actorOf(
       { mode: "signed", token: "jwt", user: { subject: "alice", tokenIdentifier: "t", issuer: "i" } },
       "org-1",

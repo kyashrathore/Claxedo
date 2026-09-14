@@ -78,9 +78,15 @@ export const ClaxedoTaskSessionLinkTable = sqliteTable(
     preset_name_at_start: text().notNull(),
     configuration_digest: text().notNull(),
     handoff_text: text(),
+    started_from_session_id: text(),
+    started_from_workspace_id: text(),
+    placement: text().notNull().default("local"),
     created_at: integer().notNull(),
   },
-  (table) => [primaryKey({ columns: [table.scope_id, table.task_id, table.slot, table.attempt] })],
+  (table) => [
+    primaryKey({ columns: [table.scope_id, table.task_id, table.slot, table.attempt] }),
+    index("claxedo_task_session_link_session_idx").on(table.scope_id, table.session_id),
+  ],
 )
 
 export const ClaxedoTaskCommandReceiptTable = sqliteTable(

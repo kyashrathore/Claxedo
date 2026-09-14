@@ -11,6 +11,9 @@ import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import type { Hono } from "hono"
 import type { D1Database } from "@cloudflare/workers-types"
 import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
+import { bearerToken } from "@claxedo/server-core/platform/auth/auth"
+import { AuthenticationError, type RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { memorySandboxPassRegister, type SandboxPassRegister } from "../platform/auth/sandbox-pass-register"
 import type { TasksActor, TasksSessionBridgePort } from "@claxedo/tasks"
 import type { TasksRuntimePrincipal } from "@claxedo/server-core/tasks-host/authorization"
 
@@ -23,7 +26,7 @@ import {
   type ControlPlaneDatabase,
 } from "../test-support/control-plane-migrations"
 import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
-import { mintTasksCapability } from "./capability"
+import { mintTasksCapability, TASKS_CAPABILITY_AUDIENCE } from "./capability"
 import { createHostedTasksComposition } from "./hosted-composition"
 
 const TASKS = "/api/claxedo/tasks"
@@ -125,18 +128,42 @@ function reportingBridge(principal: TasksRuntimePrincipal): TasksSessionBridgePo
   }
 }
 
+/**
+ * Only the two users sign in. A capability the Tasks door refuses falls
+ * through to the signed reader, and the default test adapter admits any
+ * bearer as a user, which would answer that refusal with a 200.
+ */
+function knownUsersAuthentication(): RequestAuthenticationAdapter {
+  const admitted = testRequestAuthenticationAdapter()
+  return {
+    descriptor: admitted.descriptor,
+    authenticate: async (request) => {
+      const bearer = bearerToken(request.headers.get("authorization"))
+      if (bearer !== undefined && !(bearer in ORGS)) {
+        throw new AuthenticationError(401, "invalid_credentials", "Authentication credential is invalid")
+      }
+      return await admitted.authenticate(request)
+    },
+  }
+}
+
 async function hostedApp(
   sandbox: Record<string, unknown> = {},
-  options: { signingEnv?: Record<string, string | undefined> } = {},
+  options: {
+    signingEnv?: Record<string, string | undefined>
+    passes?: SandboxPassRegister
+    authentication?: RequestAuthenticationAdapter
+  } = {},
 ) {
   const base = plane(sandbox)
-  const authentication = testRequestAuthenticationAdapter()
+  const authentication = options.authentication ?? testRequestAuthenticationAdapter()
   const tasks = createHostedTasksComposition({
     services: base.services,
     database: await database(),
     authentication,
     bridge: reportingBridge,
     ...(options.signingEnv ? { signingEnv: options.signingEnv } : {}),
+    ...(options.passes ? { passes: options.passes } : {}),
   })
   const app = createHostedCoreApp(base, {
     authentication,
@@ -389,6 +416,23 @@ describe("hosted Tasks capability", () => {
     expect(((await listed.json()) as { items: [{ title: string }] }).items[0].title).toBe(TASK.input.title)
   })
 
+  test("is refused once the register has revoked it, with nothing left to fall through to", async () => {
+    const signingEnv = await signing()
+    const passes = memorySandboxPassRegister()
+    const app = await hostedApp({}, { signingEnv, passes, authentication: knownUsersAuthentication() })
+    const { token } = await mintTasksCapability(
+      { userId: "alice", orgId: "org-1", projectId: "project-a", workspaceId: "ws_root", operations: ["read"] },
+      signingEnv,
+      { register: passes },
+    )
+    expect((await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })).status).toBe(200)
+
+    await passes.revoke({ workspaceId: "ws_root", audience: TASKS_CAPABILITY_AUDIENCE, reason: "tasks_group_disabled" })
+    const refused = await app.request(`https://core.test${TASKS}/tasks?projectId=project-a`, { headers: bearer(token) })
+    expect(refused.status).toBe(401)
+    expect(await refused.json()).toMatchObject({ error: { message: "This request is not signed" } })
+  })
+
   test("is refused when the workspace's owner is not the user the token names", async () => {
     const signingEnv = await signing()
     const app = await hostedApp({}, { signingEnv })
@@ -542,11 +586,37 @@ describe("hosted Tasks capability", () => {
     expect(await archived.json()).toMatchObject({ error: { message: expect.stringContaining("cannot reach this command") } })
   })
 
-  test("reaches Start as the workspace's owner", async () => {
+  test("is refused a preset nobody marked for agents before the bridge is reached", async () => {
     const signingEnv = await signing()
     const app = await hostedApp({}, { signingEnv })
     const { token } = await grant(signingEnv)
     await command(app, "alice", "owner-preset", PRESET)
+    const created = await command(app, "alice", "owner-task", TASK)
+    const taskId = (created.body.result as { task: { id: string } }).task.id
+
+    const preview = await app.request(`https://core.test${TASKS}/tasks/${taskId}/start-preview`, {
+      method: "POST",
+      headers: bearer(token),
+      body: JSON.stringify({
+        taskRevision: 1,
+        presetId: await presetId(app, "alice"),
+        presetRevision: 1,
+        slot: "primary",
+        attempt: 1,
+        continueFromPrevious: false,
+      }),
+    })
+    expect(preview.status).toBe(403)
+    expect(await preview.json()).toMatchObject({
+      error: { message: "Preset Review the diff is not marked as startable by agents; a person can mark it in Settings → Presets" },
+    })
+  })
+
+  test("reaches Start as the workspace's owner", async () => {
+    const signingEnv = await signing()
+    const app = await hostedApp({}, { signingEnv })
+    const { token } = await grant(signingEnv)
+    await command(app, "alice", "owner-preset", { ...PRESET, input: { ...PRESET.input, agentStartable: true } })
     const created = await command(app, "alice", "owner-task", TASK)
     const taskId = (created.body.result as { task: { id: string } }).task.id
 

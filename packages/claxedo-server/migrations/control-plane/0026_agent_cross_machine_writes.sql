@@ -15,3 +15,15 @@ create table user_agent_settings (
 -- preset that exists, because no person has marked one yet.
 
 alter table task_presets add column agent_startable integer not null default 0;
+
+-- Which session's agent started a linked attempt, and where it runs. Every
+-- link that exists was started by a person from the app, in the task's own
+-- workspace, so the backfill is null and local.
+
+alter table task_session_links add column started_from_session_id text;
+
+alter table task_session_links add column started_from_workspace_id text;
+
+alter table task_session_links add column placement text not null default 'local';
+
+create index task_session_links_session_idx on task_session_links (scope_id, session_id);

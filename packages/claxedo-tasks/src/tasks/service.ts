@@ -522,6 +522,8 @@ export function createTasksService(deps: TasksServiceDeps): TasksService {
         presetNameAtStart: preset.name,
         configurationDigest,
         handoffText: request.handoffText,
+        startedFrom: started.session.startedFrom,
+        placement: preset.execution.placement,
         createdAt: deps.clock.now(),
       }
 
