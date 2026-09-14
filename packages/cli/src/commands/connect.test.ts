@@ -229,6 +229,10 @@ describe("claxedo connect", () => {
     expect((await h.deps.store.load())?.run).toBeUndefined()
     await until(() => socket.closed, "the tunnel to close on drain")
     expect(userHostedServingState({ sessionAuthority: () => "managed-private" }).serving).toBe(false)
+    // The drain's last request withdrew readiness, so the control plane
+    // stopped routing this machine before the process was gone.
+    expect(h.cp.log.at(-1)).toMatchObject({ path: "/api/claxedo/host/enrollments/heartbeat", body: { acks: [] } })
+    expect(h.cp.routable(enrollmentIdOf(h))).toEqual([])
   })
 
   test("a restart resumes with acquire, never redeeming again", async () => {

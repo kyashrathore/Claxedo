@@ -552,6 +552,20 @@ export function createHostConnector(options: ConnectorOptions) {
       await machineBeat(options)
     },
 
+    /**
+     * Withdraw every ack in one last beat before closing. Without it a
+     * machine that exited cleanly stays routable at the control plane until
+     * its lease expires, and every client sees an offline host answer as a
+     * live one for that long.
+     */
+    async drain(): Promise<void> {
+      if (options.mode !== "machine") throw new Error("drain is for machine-mode connectors; close lets an account lease lapse")
+      if (state.status !== "enrolled") return
+      acked.clear()
+      pending.clear()
+      await machineBeat(options)
+    },
+
     /** Workspaces this machine currently publishes, sorted for stable display. */
     sharedWorkspaceIds: () => [...links.keys()].sort(),
 

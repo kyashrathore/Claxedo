@@ -561,6 +561,29 @@ describe("mode boundaries", () => {
     expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
   })
 
+  test("drain withdraws every ack in one final beat, so a clean exit reads offline within a round trip", async () => {
+    const cp = createFakeControlPlane()
+    const h = await machineHost(cp)
+    await h.connector.start()
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_a", remoteDirectory: "/srv/a" })
+    cp.assign({ enrollmentId: h.enrolled.enrollmentId, workspaceId: "ws_b", remoteDirectory: "/srv/b" })
+    h.tick()
+    await vi.waitFor(() => expect(cp.routable(h.enrolled.enrollmentId)).toEqual(["ws_a", "ws_b"]))
+    const requests = cp.log.length
+
+    await h.connector.drain()
+    h.connector.close()
+
+    expect(cp.log.length).toBe(requests + 1)
+    expect(cp.log.at(-1)).toMatchObject({ path: "/api/claxedo/host/enrollments/heartbeat", body: { acks: [] } })
+    expect(cp.routable(h.enrolled.enrollmentId)).toEqual([])
+    expect(h.tunnels.at(-1)).toBeUndefined()
+    expect(h.connector.state()).toMatchObject({ status: "stopped", reason: "closed" })
+    // Stopped: a second drain sends nothing.
+    await h.connector.drain()
+    expect(cp.log.length).toBe(requests + 1)
+  })
+
   test("unack withdraws consent and beats", async () => {
     const cp = createFakeControlPlane()
     const h = await machineHost(cp)

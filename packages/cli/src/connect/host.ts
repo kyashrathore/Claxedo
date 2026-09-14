@@ -355,6 +355,7 @@ export async function runHost(input: HostRunInput): Promise<number> {
   }
 
   unsubscribe()
+  await connector.drain()
   connector.close()
   deps.stopServing()
   await listener.close()
