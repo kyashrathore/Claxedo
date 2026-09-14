@@ -47,19 +47,22 @@ import {
   type Teammate,
 } from "../helpers/connect-host-fixture"
 import { Identifier } from "../../src/lib/id"
+import { SESSION_STREAM_LEASE_TTL_MS } from "../../../workspace-relay-protocol/src/index"
 
 const TIER_REAL = process.env.CLAXEDO_TIER_REAL_E2E === "1"
 const BACKEND_PORT = Number(process.env.CLAXEDO_REAL_CONNECT_HOST_BACKEND_PORT ?? 4583)
 
 /**
- * `packages/cli/src/connect/host.ts`: `BEAT_INTERVAL_MS = min(LEASE_TTL_MS / 3, 20_000)`
- * with a 60 s lease. The host learns an assignment, a scope change or a
- * revocation on its next beat, so "within N beats" is N × this.
+ * The CLI's own constants (`packages/cli/src/connect/paths.ts` `LEASE_TTL_MS`,
+ * `packages/cli/src/connect/host.ts` `BEAT_INTERVAL_MS = min(LEASE_TTL_MS / 3, 20_000)`),
+ * restated here because that module drags the host runtime in with it. The
+ * host learns an assignment, a scope change or a revocation on its next
+ * beat, so "within N beats" is N × the interval.
  */
-const BEAT_INTERVAL_MS = 20_000
 const LEASE_TTL_MS = 60_000
-/** `@claxedo/workspace-relay-protocol` `SESSION_STREAM_LEASE_TTL_MS`: a private-session stream renews inside this. */
-const STREAM_LEASE_TTL_MS = 15_000
+const BEAT_INTERVAL_MS = Math.min(LEASE_TTL_MS / 3, 20_000)
+/** `workspace-runtime/src/workspace-relay-host-tunnel.ts` `DEFAULT_RECONNECT_MAX_INTERVAL_MS`: the longest a host waits before redialling. */
+const HOST_TUNNEL_RECONNECT_MAX_MS = 30_000
 /** Scheduling slack on every bound; the bound itself is the configured value. */
 const SLACK_MS = 3_000
 
@@ -69,7 +72,10 @@ const TIMING: RelayTiming = {
   targetCacheTtlMs: 5_000,
   clientCheckIntervalMs: 10_000,
   hostGenerationCheckIntervalMs: 10_000,
+  hostGenerationOutageGraceAttempts: 3,
 }
+/** The plan's outage length; it must cover a whole lease so the lease is seen lapsing and renewing. */
+const OUTAGE_MS = 2 * LEASE_TTL_MS
 
 const SCRIPTED_MODEL = { providerID: "pi", modelID: "openai/gpt-4" } as const
 
@@ -142,6 +148,26 @@ function expectAgreement(view: Awaited<ReturnType<typeof routability>>, expected
     mintable: expected,
     relayTarget: expected,
   })
+}
+
+/**
+ * A boot is redeem (or acquire) then the first beat, none of it periodic, so
+ * one beat interval is the generous bound for "the process is up and beating".
+ */
+const BOOT_MS = BEAT_INTERVAL_MS + SLACK_MS
+
+async function bootedInstance(id: string, since: number, generationAbove?: number) {
+  return await until(
+    async () => {
+      const status = await connect.status(fixture, id)
+      if (status.exit) throw new Error(`${id} exited ${JSON.stringify(status.exit)}:\n${status.log}`)
+      const run = status.state?.run
+      const beat = run?.last_beat_ok_at !== undefined && run.last_beat_ok_at >= since
+      const generation = generationAbove === undefined || (run !== undefined && run.generation > generationAbove)
+      return status.state?.enrollment && beat && generation ? status : undefined
+    },
+    { since, timeoutMs: BOOT_MS, message: `${id} never enrolled and beat` },
+  )
 }
 
 async function servedByHost(instance: string, workspaceId: string) {
@@ -225,15 +251,10 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     expect(invite.code, invite.output).toBe(0)
     state.invitation = invitationTokenFrom(invite.stdout)
 
+    const startedAt = Date.now()
     await connect.start(fixture, { id: "primary", token: state.invitation, roots: [roots.root], name: "box1" })
-    const enrolled = await until(
-      async () => {
-        const status = await connect.status(fixture, "primary")
-        if (status.exit) throw new Error(`connect exited ${JSON.stringify(status.exit)}:\n${status.log}`)
-        return status.state?.enrollment && status.state.run?.last_beat_ok_at ? status : undefined
-      },
-      { timeoutMs: 60_000, message: "the host never enrolled and beat" },
-    )
+    const enrolled = await bootedInstance("primary", startedAt)
+    timing("item 1 start → enrolled + first beat", { elapsedMs: enrolled.elapsedMs, boundMs: BOOT_MS })
     state.enrollmentId = enrolled.value.state!.enrollment!.enrollment_id
     state.hostId = enrolled.value.state!.host_id
     expect(enrolled.value.log).toContain(`Enrolled as ${state.enrollmentId}`)
@@ -244,10 +265,12 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     expect(listed.map((machine) => [machine.display_name, machine.enrollment_id, machine.host_id])).toEqual([["box1", state.enrollmentId, state.hostId]])
     expect(listed[0].scope?.allowed_roots).toEqual([roots.root])
 
+    // The clock starts before the owner's command, the action whose
+    // consequence is bounded; the CLI's own run time counts against it.
+    const assignedAt = Date.now()
     const assign = await cli("host", "assign", "--machine", "box1", roots.api)
     expect(assign.code, assign.output).toBe(0)
     state.wsApi = assignedWorkspaceId(assign.stdout)
-    const assignedAt = Date.now()
     // Assigned but not yet acked: every reader says offline together.
     expectAgreement(await routability(state.wsApi, state.hostId), false, "assigned, not acked")
 
@@ -259,7 +282,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const [row, presence] = await Promise.all([servedByHost("primary", state.wsApi!), relayHostPresence(fixture, state.hostId!, state.wsApi!)])
         return row && presence.active ? { row, presence } : undefined
       },
-      { timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the host never acked the assignment and opened its tunnel" },
+      { since: assignedAt, timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the host never acked the assignment and opened its tunnel" },
     )
     expect(served.elapsedMs, "ack + tunnel took longer than two beats").toBeLessThanOrEqual(2 * BEAT_INTERVAL_MS + SLACK_MS)
     timing("item 1 assign → ack + tunnel", { elapsedMs: served.elapsedMs, boundMs: 2 * BEAT_INTERVAL_MS + SLACK_MS })
@@ -283,7 +306,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     const token = require(state.invitation, "the invitation")
 
     await connect.start(fixture, { id: "second-key", token, roots: [fixture.info.roots.root], name: "box1-clone" })
-    const second = await connect.waitExit(fixture, "second-key", 60_000)
+    const second = await connect.waitExit(fixture, "second-key", BOOT_MS)
     const secondStatus = await connect.status(fixture, "second-key")
     expect(second.exit?.code, secondStatus.log).toBe(78)
     expect(secondStatus.log).toContain("invitation_redeemed")
@@ -293,7 +316,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     const wrongSecret = `${prefix}.${invitationId}.${"A".repeat(43)}`
     const redeemsBefore = (await desktopHostRequests()).length
     await connect.start(fixture, { id: "wrong-secret", token: wrongSecret, roots: [fixture.info.roots.root] })
-    const wrong = await connect.waitExit(fixture, "wrong-secret", 60_000)
+    const wrong = await connect.waitExit(fixture, "wrong-secret", BOOT_MS)
     const wrongStatus = await connect.status(fixture, "wrong-secret")
     expect(wrong.exit?.code, wrongStatus.log).toBe(78)
     expect(wrongStatus.log).toContain("invitation_invalid")
@@ -315,25 +338,17 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     await connect.kill(fixture, "primary")
     const restartedAt = Date.now()
     await connect.start(fixture, { id: "primary" })
-    const restarted = await until(
-      async () => {
-        const status = await connect.status(fixture, "primary")
-        if (status.exit) throw new Error(`restart exited ${JSON.stringify(status.exit)}:\n${status.log}`)
-        const run = status.state?.run
-        return run && run.generation > generationBefore && run.last_beat_ok_at && run.last_beat_ok_at >= restartedAt ? status : undefined
-      },
-      { timeoutMs: 30_000, message: "the restarted host never acquired and beat" },
-    )
-    expect(restarted.elapsedMs, "acquire after restart is immediate, not a re-enrollment").toBeLessThanOrEqual(15_000)
+    const restarted = await bootedInstance("primary", restartedAt, generationBefore)
+    timing("item 3 restart → acquire + first beat", { elapsedMs: restarted.elapsedMs, boundMs: BOOT_MS })
     expect(restarted.value.state!.enrollment!.enrollment_id).toBe(enrollmentId)
     expect(restarted.value.log).not.toContain("Enrolled as")
     expect(restarted.value.log).toContain(`serving as ${enrollmentId} (generation ${generationBefore + 1})`)
     expect((await machines(fixture)).map((machine) => machine.enrollment_id)).toEqual([enrollmentId])
     const reserved = await until(
       async () => (await relayHostPresence(fixture, require(state.hostId, "the host id"), require(state.wsApi, "the api workspace"))).active || undefined,
-      { timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the restarted host never re-served the api workspace" },
+      { since: restartedAt, timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the restarted host never re-served the api workspace" },
     )
-    expect(reserved.elapsedMs).toBeLessThanOrEqual(2 * BEAT_INTERVAL_MS + SLACK_MS)
+    timing("item 3 restart → api tunnel up", { elapsedMs: reserved.elapsedMs, boundMs: 2 * BEAT_INTERVAL_MS + SLACK_MS })
 
     // Lost-response recovery, on a second machine so the first stays intact.
     const invite = await cli("host", "invite", "--name", "box2", "--root", fixture.info.roots.root)
@@ -341,10 +356,11 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     const token2 = invitationTokenFrom(invite.stdout)
     await faults.redeemResponseDrop(fixture, true)
     try {
+      const box2StartedAt = Date.now()
       await connect.start(fixture, { id: "box2", token: token2, roots: [fixture.info.roots.root], name: "box2" })
       const committed = await until(
         async () => (await faults.state(fixture)).heldRedeems >= 1 || undefined,
-        { timeoutMs: 30_000, message: "the redeem never reached the barrier" },
+        { since: box2StartedAt, timeoutMs: BOOT_MS, message: "the redeem never reached the barrier" },
       )
       expect(committed.value).toBe(true)
       // Committed at the control plane while the machine is still waiting.
@@ -357,15 +373,9 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     expect(interrupted.state?.enrollment, "the lost answer must leave no enrollment on disk").toBeUndefined()
     expect(interrupted.state?.bootstrap?.invitation_id).toBe(token2.split(".")[1])
 
+    const box2ResumedAt = Date.now()
     await connect.start(fixture, { id: "box2" })
-    const resumed = await until(
-      async () => {
-        const status = await connect.status(fixture, "box2")
-        if (status.exit) throw new Error(`box2 restart exited ${JSON.stringify(status.exit)}:\n${status.log}`)
-        return status.state?.enrollment && status.state.run?.last_beat_ok_at ? status : undefined
-      },
-      { timeoutMs: 30_000, message: "box2 never recovered its enrollment" },
-    )
+    const resumed = await bootedInstance("box2", box2ResumedAt)
     expect(resumed.value.log).toContain(`Resumed as ${resumed.value.state!.enrollment!.enrollment_id}`)
     expect(resumed.value.state!.bootstrap).toBeUndefined()
     const after = await machines(fixture)
@@ -375,8 +385,8 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     await connect.stop(fixture, "box2")
   })
 
-  test("4. a second instance from a copied state dir acquires → the first's next beat is 409 and it exits 78; the relay drops its socket; its old HTT cannot re-admit", async () => {
-    test.setTimeout(120_000)
+  test("4. a copied state dir acquires while the first instance is frozen → the relay's periodic host check closes its socket; the old HTT cannot re-admit; its next beat is 409 and it exits 78", async () => {
+    test.setTimeout(150_000)
     const enrollmentId = require(state.enrollmentId, "the enrollment id")
     const hostId = require(state.hostId, "the host id")
     const wsApi = require(state.wsApi, "the api workspace")
@@ -385,50 +395,69 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     const oldPresence = await relayHostPresence(fixture, hostId, wsApi)
     expect(oldPresence.active).toBe(true)
 
+    // Frozen, the first instance can neither beat (so it cannot learn it was
+    // superseded and stop serving) nor pong; the clone claims the next
+    // generation with the copied key and opens no tunnel of its own. The
+    // relay's heartbeat close needs three missed 15 s pings (45 s), past the
+    // bound below, so a socket gone inside it was closed by the periodic
+    // host-generation check and nothing else.
     await connect.cloneState(fixture, "primary", "clone")
-    const clonedAt = Date.now()
-    await connect.start(fixture, { id: "clone" })
-    const superseded = await connect.waitExit(fixture, "primary", 2 * BEAT_INTERVAL_MS + SLACK_MS)
-    const primary = await connect.status(fixture, "primary")
-    expect(superseded.exit?.code, primary.log).toBe(78)
-    expect(primary.log).toContain("enrollment_generation_superseded")
-    expect(superseded.exit!.at - clonedAt).toBeLessThanOrEqual(2 * BEAT_INTERVAL_MS + SLACK_MS)
-
-    const generation = await hostGeneration(fixture, enrollmentId)
-    expect(generation.body?.generation).toBe(oldGeneration + 1)
+    await connect.signal(fixture, "primary", "SIGSTOP")
+    const acquiredAt = Date.now()
+    const acquired = await connect.acquire(fixture, "clone")
+    expect(acquired.generation).toBe(oldGeneration + 1)
+    expect((await hostGeneration(fixture, enrollmentId)).body?.generation).toBe(oldGeneration + 1)
     expect((await machines(fixture)).find((machine) => machine.enrollment_id === enrollmentId)?.serving_generation).toBe(oldGeneration + 1)
 
-    // The socket the relay holds for this host is the successor's, not the
-    // superseded instance's, within the host check plus its cache of the
-    // generation the successor acquired. The successor's own dial replaces
-    // the incumbent sooner; the check is the bound either way.
-    const bound = TIMING.hostGenerationCheckIntervalMs + TIMING.hostGenerationCacheTtlMs + SLACK_MS
-    const replaced = await until(
+    const socketBound = TIMING.hostGenerationCheckIntervalMs + TIMING.hostGenerationCacheTtlMs + SLACK_MS
+    const closed = await until(
       async () => {
         const presence = await relayHostPresence(fixture, hostId, wsApi)
-        return presence.active && presence.presence!.connectedAt >= clonedAt ? presence : undefined
+        return presence.active ? undefined : presence
       },
-      { timeoutMs: bound, message: "the relay never replaced the superseded instance's tunnel" },
+      { since: acquiredAt, timeoutMs: socketBound, message: "the relay's host check never closed the superseded instance's tunnel" },
     )
-    expect(replaced.value.presence!.connectedAt - clonedAt).toBeLessThanOrEqual(bound)
-    expect(replaced.value.presence!.connectedAt).not.toBe(oldPresence.presence!.connectedAt)
-    timing("item 4 clone start → primary exit 78 / successor socket", {
-      exitMs: superseded.exit!.at - clonedAt,
-      socketReplacedMs: replaced.value.presence!.connectedAt - clonedAt,
-      socketBoundMs: bound,
-    })
+    // The relay debounces tunnel-state audits, so the record lands a moment
+    // after the directory drops the host.
+    const disconnected = await until(
+      async () => (await relayAudit(fixture, acquiredAt)).find((event) => event.action === "host_tunnel.disconnected" && event.hostId === hostId),
+      { since: acquiredAt, timeoutMs: socketBound, message: "no host_tunnel.disconnected audit for the superseded socket" },
+    )
+    expect(disconnected.value.workspaceId).toBe(wsApi)
+    timing("item 4 acquire → superseded socket closed by the host check", { closedMs: closed.elapsedMs, boundMs: socketBound })
+    expectAgreement(await routability(wsApi, hostId), false, "superseded generation's readiness is gone")
 
+    // The token the frozen instance still holds is refused at admission.
     const stale = await mintHtt(fixture, { enrollmentId, hostId, workspaceId: wsApi, generation: oldGeneration })
     const admission = await hostTunnelAdmission(fixture.info.relayUrl, hostId, wsApi, stale.hostTunnelToken)
     expect(admission.status, admission.body).toBe(403)
     expect(admission.code).toBe("host_generation_superseded")
+    const audited = (await relayAudit(fixture, acquiredAt)).find((event) => event.action === "host_tunnel.denied" && event.hostId === hostId)
+    expect(audited?.reason, "the refused admission is audited with its code").toBe("host_generation_superseded")
 
+    // Thawed, its next beat carries the old generation and is refused.
+    const thawedAt = Date.now()
+    await connect.signal(fixture, "primary", "SIGCONT")
+    const superseded = await connect.waitExit(fixture, "primary", BEAT_INTERVAL_MS + SLACK_MS)
+    const primary = await connect.status(fixture, "primary")
+    expect(superseded.exit?.code, primary.log).toBe(78)
+    expect(primary.log).toContain("enrollment_generation_superseded")
+    timing("item 4 thaw → beat 409 → exit 78", { exitMs: superseded.exit!.at - thawedAt, boundMs: BEAT_INTERVAL_MS + SLACK_MS })
+
+    // The clone process now starts on the copied state and becomes the host.
+    const cloneStartedAt = Date.now()
+    await connect.start(fixture, { id: "clone" })
+    const clone = await bootedInstance("clone", cloneStartedAt, oldGeneration + 1)
+    expect(clone.value.state!.enrollment!.enrollment_id).toBe(enrollmentId)
     state.host = "clone"
     const served = await until(
-      async () => (await servedByHost("clone", wsApi))?.revision || undefined,
-      { timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the successor never acked the api workspace" },
+      async () => {
+        const [row, presence] = await Promise.all([servedByHost("clone", wsApi), relayHostPresence(fixture, hostId, wsApi)])
+        return row && presence.active ? row : undefined
+      },
+      { since: cloneStartedAt, timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the successor never served the api workspace" },
     )
-    expect(served.value).toBe(1)
+    expect(served.value.revision).toBe(1)
     expectAgreement(await routability(wsApi, hostId), true, "successor serving")
   })
 
@@ -455,6 +484,13 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     expect(bobConnection.body?.role).toBe("editor")
     const bobToken = bobConnection.body!.runtimeAccessToken
 
+    // The host runtime's own list, filtered by the authority per session:
+    // Bob sees A there too, and nothing else.
+    const hostList = await relayFetch(fixture.info.relayUrl, wsApi, bobToken, "/session")
+    expect(hostList.status, hostList.text).toBe(200)
+    expect((hostList.json as unknown as Array<{ id: string }>).map((row) => row.id)).toEqual([state.sessionA])
+    const ownerList = await relayFetch(fixture.info.relayUrl, wsApi, (await mintConnection(fixture, wsApi)).body!.runtimeAccessToken, "/session")
+    expect((ownerList.json as unknown as Array<{ id: string }>).map((row) => row.id).sort(byText)).toEqual([state.sessionA, state.sessionB].sort(byText))
     const readA = await relayFetch(fixture.info.relayUrl, wsApi, bobToken, `/session/${encodeURIComponent(state.sessionA)}`)
     expect(readA.status, readA.text).toBe(200)
     const readB = await relayFetch(fixture.info.relayUrl, wsApi, bobToken, `/session/${encodeURIComponent(state.sessionB)}`)
@@ -508,6 +544,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     })
     expect([200, 202, 204], `Bob's prompt: ${sent.status} ${sent.text}`).toContain(sent.status)
 
+    const sentAt = Date.now()
     const alice = await mintConnection(fixture, wsApi)
     const stored = await until(
       async () => {
@@ -516,7 +553,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const rows = messages.json as Array<{ info?: { id?: string; role?: string; claxedo?: { author?: { id?: string; name?: string } } } }>
         return rows.find((row) => row.info?.id === messageID)?.info
       },
-      { timeoutMs: 60_000, message: "Bob's prompt never appeared in session A's messages on the host" },
+      { since: sentAt, timeoutMs: BOOT_MS, message: "Bob's prompt never appeared in session A's messages on the host" },
     )
     expect(stored.value.role).toBe("user")
     expect(stored.value.claxedo?.author?.name).toBe("Bob")
@@ -544,17 +581,18 @@ test.describe("real claxedo connect host @core @tier-real", () => {
       async () => scripted.counts().chat > 0
         ? await relayFetch(fixture.info.relayUrl, wsApi, alice.body!.runtimeAccessToken, `/session/${encodeURIComponent(sessionA)}/message`)
         : undefined,
-      { timeoutMs: 60_000, message: "no turn from the connect host reached the scripted model" },
+      { since: Date.now(), timeoutMs: BEAT_INTERVAL_MS, message: "no turn from the connect host reached the scripted model" },
     )
     expect(replied.value.ok).toBe(true)
   })
 
-  test("10. two folders on one enrollment are served at once; re-pointing one leaves the other served; every routability reader tracks the readiness table", async () => {
+  test("10. two folders on one enrollment are served at once; re-pointing one leaves the other served throughout; every routability reader tracks the readiness table", async () => {
     test.setTimeout(150_000)
     const hostId = require(state.hostId, "the host id")
     const wsApi = require(state.wsApi, "the api workspace")
     const roots = fixture.info.roots
 
+    const webAssignedAt = Date.now()
     const assign = await cli("host", "assign", "--machine", "box1", roots.web)
     expect(assign.code, assign.output).toBe(0)
     state.wsWeb = assignedWorkspaceId(assign.stdout)
@@ -566,9 +604,9 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const [api, web] = await Promise.all([relayHostPresence(fixture, hostId, wsApi), relayHostPresence(fixture, hostId, wsWeb)])
         return api.active && web.active ? { api, web } : undefined
       },
-      { timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the relay never held both workspace tunnels" },
+      { since: webAssignedAt, timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the relay never held both workspace tunnels" },
     )
-    expect(both.elapsedMs).toBeLessThanOrEqual(2 * BEAT_INTERVAL_MS + SLACK_MS)
+    timing("item 10 assign web → both tunnels held", { elapsedMs: both.elapsedMs, boundMs: 2 * BEAT_INTERVAL_MS + SLACK_MS })
     expectAgreement(await routability(wsWeb, hostId), true, "web acked")
     expectAgreement(await routability(wsApi, hostId), true, "api with web served")
     const webConnection = await mintConnection(fixture, wsWeb)
@@ -577,7 +615,23 @@ test.describe("real claxedo connect host @core @tier-real", () => {
 
     // Re-point web to docs: the owner route the CLI's assign uses, with the
     // workspace id the CLI reported. A new revision, so readiness lapses
-    // until the host re-acks; api is untouched throughout.
+    // until the host re-acks. api is observed every second from before the
+    // re-point until web is back: its tunnel stays held and its folder stays
+    // readable through the relay the whole time.
+    const apiConnection = await mintConnection(fixture, wsApi)
+    const apiSamples: Array<{ at: number; tunnel: boolean; read: number }> = []
+    const watch = new AbortController()
+    const apiWatch = (async () => {
+      while (!watch.signal.aborted) {
+        const [presence, file] = await Promise.all([
+          relayHostPresence(fixture, hostId, wsApi),
+          relayFetch(fixture.info.relayUrl, wsApi, apiConnection.body!.runtimeAccessToken, "/file/content?path=hello.txt", { timeoutMs: 5_000 }).catch(() => ({ status: 0 })),
+        ])
+        apiSamples.push({ at: Date.now(), tunnel: presence.active, read: file.status })
+        await sleep(1_000)
+      }
+    })()
+    const repointedAt = Date.now()
     const repointed = await fetch(`${fixture.info.backendUrl}/api/workspace/${encodeURIComponent(wsWeb)}/host-assignment`, {
       method: "POST",
       headers: { authorization: `Bearer ${fixture.info.controlPlaneToken}`, "content-type": "application/json" },
@@ -591,9 +645,13 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const [row, presence] = await Promise.all([servedByHost(state.host, wsWeb), relayHostPresence(fixture, hostId, wsWeb)])
         return row?.revision === 2 && presence.active ? row : undefined
       },
-      { timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the host never re-acked the re-pointed workspace" },
+      { since: repointedAt, timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the host never re-acked the re-pointed workspace" },
     )
-    expect(reacked.elapsedMs).toBeLessThanOrEqual(2 * BEAT_INTERVAL_MS + SLACK_MS)
+    timing("item 10 re-point → web re-acked at revision 2", { elapsedMs: reacked.elapsedMs, boundMs: 2 * BEAT_INTERVAL_MS + SLACK_MS })
+    watch.abort()
+    await apiWatch
+    expect(apiSamples.length, "the api watch took no samples").toBeGreaterThan(reacked.elapsedMs / 2_000)
+    expect(apiSamples.filter((sample) => !sample.tunnel || sample.read !== 200), `api lost its tunnel or its reads while web was re-pointed: ${JSON.stringify(apiSamples)}`).toEqual([])
     expectAgreement(await routability(wsWeb, hostId), true, "web re-acked at revision 2")
     expectAgreement(await routability(wsApi, hostId), true, "api after web re-point")
     const docsConnection = await mintConnection(fixture, wsWeb)
@@ -602,17 +660,15 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const file = await relayFetch(fixture.info.relayUrl, wsWeb, docsConnection.body!.runtimeAccessToken, "/file/content?path=hello.txt")
         return file.ok && String(file.json?.content).includes("hello from docs") ? file : undefined
       },
-      { timeoutMs: TIMING.targetCacheTtlMs + SLACK_MS, message: "the re-pointed workspace never served the docs folder" },
+      { since: Date.now(), timeoutMs: TIMING.targetCacheTtlMs + SLACK_MS, message: "the re-pointed workspace never served the docs folder" },
     )
     expect(docsFile.value.ok).toBe(true)
-    const apiFile = await relayFetch(fixture.info.relayUrl, wsApi, (await mintConnection(fixture, wsApi)).body!.runtimeAccessToken, "/file/content?path=hello.txt")
-    expect(String(apiFile.json?.content)).toContain("hello from api")
     expect((await userHostedWorkspaces(fixture)).map((row) => [row.workspace_id, row.remote_directory, row.host_online]).sort(byFirst))
       .toEqual([[wsApi, roots.api, true], [wsWeb, roots.docs, true]].sort(byFirst))
   })
 
-  test("8. a two-minute control-plane outage: beats fail transiently, the host tunnel stays, streams fail on their own lease, and the host resumes without re-enrolling", async () => {
-    test.setTimeout(300_000)
+  test("8a. a two-minute control-plane outage with the relay's resolver up: beats fail transiently, the host tunnel stays, streams fail on their own lease, and the host resumes without re-enrolling", async () => {
+    test.setTimeout(OUTAGE_MS + 120_000)
     const hostId = require(state.hostId, "the host id")
     const wsApi = require(state.wsApi, "the api workspace")
     const sessionA = require(state.sessionA, "session A")
@@ -627,19 +683,18 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     const stream = await openEventStream(fixture.info.relayUrl, wsApi, bobConnection.body!.runtimeAccessToken, sessionA)
     expect(stream.status).toBe(200)
 
-    await faults.controlPlaneOutage(fixture, true)
     const outageAt = Date.now()
-    const OUTAGE_MS = 120_000
+    await faults.controlPlaneOutage(fixture, true)
     try {
       // The stream's authority lease cannot renew: the runtime closes it
       // within its own lease TTL, which is the lease dictating, not a guess.
       const closed = await stream.closed
-      expect(closed.closedAt - outageAt, "the private-session stream outlived its unrenewable lease").toBeLessThanOrEqual(STREAM_LEASE_TTL_MS + SLACK_MS)
-      timing("item 8 outage → stream closed", { closedMs: closed.closedAt - outageAt, boundMs: STREAM_LEASE_TTL_MS + SLACK_MS })
+      expect(closed.closedAt - outageAt, "the private-session stream outlived its unrenewable lease").toBeLessThanOrEqual(SESSION_STREAM_LEASE_TTL_MS + SLACK_MS)
+      timing("item 8a outage → stream closed", { closedMs: closed.closedAt - outageAt, boundMs: SESSION_STREAM_LEASE_TTL_MS + SLACK_MS })
 
       const failing = await until(
         async () => (await connect.status(fixture, state.host)).state?.run?.last_beat_error || undefined,
-        { timeoutMs: BEAT_INTERVAL_MS + SLACK_MS, message: "the host never recorded a failing beat" },
+        { since: outageAt, timeoutMs: BEAT_INTERVAL_MS + SLACK_MS, message: "the host never recorded a failing beat" },
       )
       expect(failing.value).toContain("503")
       // The lease the control plane issued expires during the outage, so the
@@ -649,9 +704,10 @@ test.describe("real claxedo connect host @core @tier-real", () => {
           const view = await routability(wsApi, hostId)
           return !view.hostOnline ? view : undefined
         },
-        { timeoutMs: LEASE_TTL_MS + SLACK_MS, message: "the lease never lapsed at the control plane" },
+        { since: outageAt, timeoutMs: LEASE_TTL_MS + SLACK_MS, message: "the lease never lapsed at the control plane" },
       )
       expectAgreement(lapsed.value, false, "lease lapsed during outage")
+      timing("item 8a outage → lease lapsed", { elapsedMs: lapsed.elapsedMs, boundMs: LEASE_TTL_MS + SLACK_MS })
 
       while (Date.now() - outageAt < OUTAGE_MS) {
         const status = await connect.status(fixture, state.host)
@@ -659,7 +715,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const presence = await relayHostPresence(fixture, hostId, wsApi)
         expect(presence.active, "the host tunnel dropped during the outage").toBe(true)
         expect(presence.presence!.connectedAt, "the host tunnel reconnected during the outage").toBe(presenceBefore.presence!.connectedAt)
-        await sleep(10_000)
+        await sleep(TIMING.hostGenerationCheckIntervalMs)
       }
     } finally {
       await faults.controlPlaneOutage(fixture, false)
@@ -671,7 +727,7 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const run = status.state?.run
         return run?.last_beat_ok_at && run.last_beat_ok_at >= recoveredAt ? status : undefined
       },
-      { timeoutMs: BEAT_INTERVAL_MS + SLACK_MS, message: "the host never beat again after the outage" },
+      { since: recoveredAt, timeoutMs: BEAT_INTERVAL_MS + SLACK_MS, message: "the host never beat again after the outage" },
     )
     expect(recovered.value.state!.run!.generation, "recovery must not re-acquire").toBe(generation)
     expect(recovered.value.state!.enrollment!.enrollment_id).toBe(enrollmentId)
@@ -684,10 +740,82 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const view = await routability(wsApi, hostId)
         return view.hostOnline && view.mintable && view.relayTarget ? view : undefined
       },
-      { timeoutMs: BEAT_INTERVAL_MS + SLACK_MS, message: "the workspace never came back online after the outage" },
+      { since: recoveredAt, timeoutMs: BEAT_INTERVAL_MS + SLACK_MS, message: "the workspace never came back online after the outage" },
     )
     expectAgreement(online.value, true, "after the outage")
+    timing("item 8a recovery → beat + online", { beatMs: recovered.elapsedMs, onlineMs: online.elapsedMs, boundMs: BEAT_INTERVAL_MS + SLACK_MS })
     expect((await relayHostPresence(fixture, hostId, wsApi)).presence!.connectedAt).toBe(presenceBefore.presence!.connectedAt)
+  })
+
+  test("8b. the whole control plane gone from the relay's side too: the established tunnel survives the grace and then closes, new admission is 503, and the host is re-admitted on return", async () => {
+    test.setTimeout(240_000)
+    const hostId = require(state.hostId, "the host id")
+    const wsApi = require(state.wsApi, "the api workspace")
+    const enrollmentId = require(state.enrollmentId, "the enrollment id")
+    const generation = (await connect.status(fixture, state.host)).state!.run!.generation
+    const presenceBefore = await relayHostPresence(fixture, hostId, wsApi)
+    expect(presenceBefore.active).toBe(true)
+
+    // A cached generation answers at most one check; after that every check
+    // fails and the tunnel closes after the configured run of failures.
+    const graceMs = TIMING.hostGenerationOutageGraceAttempts * TIMING.hostGenerationCheckIntervalMs
+    const closeBound = TIMING.hostGenerationCacheTtlMs + graceMs + SLACK_MS
+    const outageAt = Date.now()
+    await faults.controlPlaneOutage(fixture, true, { resolver: true })
+    let closed: { elapsedMs: number }
+    try {
+      const survived = await relayHostPresence(fixture, hostId, wsApi)
+      expect(survived.active, "the tunnel must survive the first failed check").toBe(true)
+      closed = await until(
+        async () => {
+          const presence = await relayHostPresence(fixture, hostId, wsApi)
+          return presence.active ? undefined : presence
+        },
+        { since: outageAt, timeoutMs: closeBound, message: "the relay kept the tunnel past the outage grace" },
+      )
+      // Three failed checks are at least two intervals apart from the first.
+      expect(closed.elapsedMs, "the tunnel closed before the grace ran out").toBeGreaterThanOrEqual((TIMING.hostGenerationOutageGraceAttempts - 1) * TIMING.hostGenerationCheckIntervalMs)
+      // A fenced token cannot be admitted while the lookup is down, the
+      // host's own redials included.
+      const current = await mintHtt(fixture, { enrollmentId, hostId, workspaceId: wsApi, generation })
+      const admission = await hostTunnelAdmission(fixture.info.relayUrl, hostId, wsApi, current.hostTunnelToken)
+      expect(admission.status, admission.body).toBe(503)
+      expect(admission.code).toBe("host_generation_lookup_unavailable")
+      expect((await relayHostPresence(fixture, hostId, wsApi)).active).toBe(false)
+    } finally {
+      await faults.controlPlaneOutage(fixture, false)
+    }
+    const returnedAt = Date.now()
+    // The host has been redialling with exponential backoff; its next dial
+    // after the return is admitted, and its beats resume.
+    const readmitted = await until(
+      async () => {
+        const presence = await relayHostPresence(fixture, hostId, wsApi)
+        return presence.active ? presence : undefined
+      },
+      { since: returnedAt, timeoutMs: HOST_TUNNEL_RECONNECT_MAX_MS + SLACK_MS, message: "the host was never re-admitted after the resolver returned" },
+    )
+    expect(readmitted.value.presence!.connectedAt).toBeGreaterThan(presenceBefore.presence!.connectedAt)
+    const online = await until(
+      async () => {
+        const view = await routability(wsApi, hostId)
+        return view.hostOnline && view.mintable && view.relayTarget ? view : undefined
+      },
+      { since: returnedAt, timeoutMs: BEAT_INTERVAL_MS + SLACK_MS, message: "the workspace never came back online after the full outage" },
+    )
+    expectAgreement(online.value, true, "after the full outage")
+    const after = await connect.status(fixture, state.host)
+    expect(after.running).toBe(true)
+    expect(after.state!.run!.generation, "recovery must not re-acquire").toBe(generation)
+    const file = await relayFetch(fixture.info.relayUrl, wsApi, (await mintConnection(fixture, wsApi)).body!.runtimeAccessToken, "/file/content?path=hello.txt")
+    expect(file.status, file.text).toBe(200)
+    timing("item 8b full outage → tunnel closed / re-admitted", {
+      closedMs: closed.elapsedMs,
+      closeBoundMs: closeBound,
+      readmittedMs: readmitted.elapsedMs,
+      readmitBoundMs: HOST_TUNNEL_RECONNECT_MAX_MS + SLACK_MS,
+      onlineMs: online.elapsedMs,
+    })
   })
 
   test("9. tightening the roots retires the assignment outside them transactionally; the host unacks on its next beat; the workspace disappears from the catalog", async () => {
@@ -696,11 +824,11 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     const wsApi = require(state.wsApi, "the api workspace")
     const wsWeb = require(state.wsWeb, "the web workspace")
     const roots = fixture.info.roots
-    expect((await userHostedWorkspaces(fixture)).map((row) => row.workspace_id).sort()).toEqual([wsApi, wsWeb].sort())
+    expect((await userHostedWorkspaces(fixture)).map((row) => row.workspace_id).sort(byText)).toEqual([wsApi, wsWeb].sort(byText))
 
+    const scopedAt = Date.now()
     const scope = await cli("host", "scope", "--machine", "box1", "--root", roots.api)
     expect(scope.code, scope.output).toBe(0)
-    const scopedAt = Date.now()
     // Transactional: gone from the catalog on the very next read, before any beat.
     expect((await userHostedWorkspaces(fixture)).map((row) => row.workspace_id)).toEqual([wsApi])
     const retired = await routability(wsWeb, hostId)
@@ -715,16 +843,16 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const scopeApplied = status.state?.scope?.allowed_roots.join() === roots.api
         return scopeApplied && !served.some((row) => row.workspace_id === wsWeb) && status.state!.run!.last_beat_ok_at! >= scopedAt ? status : undefined
       },
-      { timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the host never dropped the retired assignment" },
+      { since: scopedAt, timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the host never dropped the retired assignment" },
     )
-    expect(unacked.elapsedMs).toBeLessThanOrEqual(2 * BEAT_INTERVAL_MS + SLACK_MS)
+    timing("item 9 scope → host unacked", { elapsedMs: unacked.elapsedMs, boundMs: 2 * BEAT_INTERVAL_MS + SLACK_MS })
     expect(unacked.value.log).toContain(`workspace ${wsWeb}: assignment withdrawn`)
     const webPresence = await until(
       async () => {
         const presence = await relayHostPresence(fixture, hostId, wsWeb)
         return presence.active ? undefined : presence
       },
-      { timeoutMs: SLACK_MS, message: "the retired workspace's tunnel stayed open" },
+      { since: scopedAt, timeoutMs: 2 * BEAT_INTERVAL_MS + SLACK_MS, message: "the retired workspace's tunnel stayed open" },
     )
     expect(webPresence.value.active).toBe(false)
     expect((await relayHostPresence(fixture, hostId, wsApi)).active).toBe(true)
@@ -752,9 +880,9 @@ test.describe("real claxedo connect host @core @tier-real", () => {
     expect((await relayFetch(fixture.info.relayUrl, wsApi, aliceToken, "/api/wr/health")).status).toBe(200)
     const auditSince = Date.now()
 
+    const revokedAt = Date.now()
     const revoke = await cli("host", "revoke", "--machine", "box1")
     expect(revoke.code, revoke.output).toBe(0)
-    const revokedAt = Date.now()
     expect((await hostGeneration(fixture, enrollmentId)).body?.revoked).toBe(true)
     expect((await machines(fixture)).map((machine) => machine.enrollment_id)).not.toContain(enrollmentId)
     expect(await userHostedWorkspaces(fixture)).toEqual([])
@@ -764,13 +892,12 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const health = await relayFetch(fixture.info.relayUrl, wsApi, aliceToken, "/api/wr/health")
         return health.status === 200 ? undefined : health
       },
-      { timeoutMs: TIMING.revocationCacheTtlMs + SLACK_MS, message: "new requests with an existing token were still served" },
+      { since: revokedAt, timeoutMs: TIMING.revocationCacheTtlMs + SLACK_MS, message: "new requests with an existing token were still served" },
     )
-    expect(refused.elapsedMs).toBeLessThanOrEqual(TIMING.revocationCacheTtlMs + SLACK_MS)
     expect([401, 403]).toContain(refused.value.status)
 
     const closed = await stream.closed
-    const streamBound = Math.max(TIMING.clientCheckIntervalMs + TIMING.revocationCacheTtlMs, STREAM_LEASE_TTL_MS) + SLACK_MS
+    const streamBound = Math.max(TIMING.clientCheckIntervalMs + TIMING.revocationCacheTtlMs, SESSION_STREAM_LEASE_TTL_MS) + SLACK_MS
     expect(closed.closedAt - revokedAt, `Bob's stream stayed open past the check bound`).toBeLessThanOrEqual(streamBound)
 
     const socketBound = TIMING.hostGenerationCheckIntervalMs + TIMING.hostGenerationCacheTtlMs + SLACK_MS
@@ -779,11 +906,10 @@ test.describe("real claxedo connect host @core @tier-real", () => {
         const presence = await relayHostPresence(fixture, hostId, wsApi)
         return presence.active ? undefined : presence
       },
-      { timeoutMs: socketBound, message: "the relay kept the revoked host's tunnel" },
+      { since: revokedAt, timeoutMs: socketBound, message: "the relay kept the revoked host's tunnel" },
     )
-    expect(Date.now() - revokedAt).toBeLessThanOrEqual(socketBound + SLACK_MS)
 
-    const exited = await connect.waitExit(fixture, state.host, BEAT_INTERVAL_MS + SLACK_MS)
+    const exited = await connect.waitExit(fixture, state.host, Math.max(1, BEAT_INTERVAL_MS + SLACK_MS - (Date.now() - revokedAt)))
     const host = await connect.status(fixture, state.host)
     expect(exited.exit?.code, host.log).toBe(78)
     expect(exited.exit!.at - revokedAt).toBeLessThanOrEqual(BEAT_INTERVAL_MS + SLACK_MS)

@@ -6,6 +6,8 @@ import { deriveRelayHostKid, mintRelayHostToken, mintRuntimeAccessToken, workspa
 import { importJWK } from "jose"
 import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 import { userHostedSurface } from "../../claxedo-host-serving/src/surface.ts"
+import { createMachineSignedTransport } from "../../claxedo-host-connector/src/machine-transport.ts"
+import { hostKeyPairFromJwk } from "../../claxedo-host-connector/src/host-identity.ts"
 
 // The `claxedo connect` half of `signed-browser-relay-fixture.mjs`: the
 // machine-side process lifecycle a spec drives through `/__fixture/connect/*`,
@@ -67,19 +69,22 @@ export async function provisionConnectRoots(root) {
  *
  * `controlPlaneOutage`: every machine-facing route (enrollment beats,
  * acquire, redeem) and the runtime's session authority answer 503. Owner
- * routes, the relay resolver and the browser's routes keep answering, which
- * is what lets the spec observe the host from the outside during the outage.
+ * routes and the browser's routes keep answering, which is what lets the
+ * spec observe the host from the outside during the outage. The relay's
+ * resolver routes stay up unless `resolverOutage` is also set, which is the
+ * whole control plane gone from the relay's point of view.
  */
 export function createFaults() {
   const held = new Set()
-  const state = { redeemResponseDrop: false, controlPlaneOutage: false, heldRedeems: 0 }
+  const state = { redeemResponseDrop: false, controlPlaneOutage: false, resolverOutage: false, heldRedeems: 0 }
   return {
     state,
     outage(url) {
       if (!state.controlPlaneOutage) return undefined
-      if (!url.pathname.startsWith("/api/claxedo/host/enrollments") && !url.pathname.startsWith("/api/runtime-authority")) {
-        return undefined
-      }
+      const gated = url.pathname.startsWith("/api/claxedo/host/enrollments")
+        || url.pathname.startsWith("/api/runtime-authority")
+        || (state.resolverOutage && url.pathname.startsWith("/internal/relay/"))
+      if (!gated) return undefined
       return Response.json({ error: { code: "control_plane_outage", message: "Fixture control-plane outage" } }, { status: 503 })
     },
     async holdRedeem(url, response) {
@@ -94,8 +99,9 @@ export function createFaults() {
       for (const release of held) release()
       held.clear()
     },
-    setControlPlaneOutage(on) {
+    setControlPlaneOutage(on, resolver = false) {
       state.controlPlaneOutage = on
+      state.resolverOutage = on && resolver
     },
   }
 }
@@ -300,6 +306,32 @@ export function connectFixtureRoutes(app, ctx) {
     const exit = await ctx.instances.waitExit(body.id, Number(body.timeoutMs) || 30_000)
     return c.json({ id: body.id, exit: exit ?? null })
   })
+  // SIGSTOP/SIGCONT: an instance frozen mid-run can neither beat nor close
+  // its own tunnels, so whatever closes them is the relay's own doing.
+  app.post("/__fixture/connect/signal", async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    if (body.signal !== "SIGSTOP" && body.signal !== "SIGCONT") return c.json({ error: "signal must be SIGSTOP or SIGCONT" }, 400)
+    await ctx.instances.signal(body.id, body.signal)
+    return c.json({ id: body.id, signal: body.signal })
+  })
+  // `acquire` from a copied state dir without a serving process: the cloned
+  // key claims the next generation through the real machine-signed transport,
+  // which is what a second instance does first on start.
+  app.post("/__fixture/connect/acquire", async (c) => {
+    const body = await c.req.json().catch(() => ({}))
+    const status = await ctx.instances.status(body.id)
+    if (!status?.state?.enrollment) return c.json({ error: `instance ${body.id} has no enrolled state` }, 409)
+    const state = status.state
+    const transport = createMachineSignedTransport({
+      controlPlaneUrl: state.control_plane_url,
+      keys: await hostKeyPairFromJwk(state.private_key_jwk),
+      enrollmentId: state.enrollment.enrollment_id,
+      hostId: state.host_id,
+      keyVersion: state.enrollment.key_version,
+      fetch: (input, init) => fetch(input, init),
+    })
+    return c.json(await transport.acquire())
+  })
   app.post("/__fixture/connect/kill", async (c) => {
     const body = await c.req.json().catch(() => ({}))
     await ctx.instances.signal(body.id, "SIGKILL")
@@ -323,7 +355,7 @@ export function connectFixtureRoutes(app, ctx) {
     return c.json(ctx.faults.state)
   })
   app.post("/__fixture/faults/control-plane-outage", (c) => {
-    ctx.faults.setControlPlaneOutage(c.req.query("on") !== "0")
+    ctx.faults.setControlPlaneOutage(c.req.query("on") !== "0", c.req.query("resolver") === "1")
     return c.json(ctx.faults.state)
   })
 

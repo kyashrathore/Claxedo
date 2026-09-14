@@ -288,7 +288,6 @@ async function startRelayFixture(input) {
             CLAXEDO_RELAY_FIXTURE_MODE: "connect",
             CLAXEDO_RELAY_RESOLVER_URL: `${input.controlPlaneUrl}/internal/relay`,
             CLAXEDO_RELAY_RESOLVER_TOKEN: resolverToken,
-            CLAXEDO_RELAY_HOST_GENERATION_URL: `${input.controlPlaneUrl}/internal/relay/host-generation`,
           }
         : {}),
     },

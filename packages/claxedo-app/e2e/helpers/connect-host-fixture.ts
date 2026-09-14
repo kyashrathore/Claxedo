@@ -24,6 +24,8 @@ export type RelayTiming = {
   targetCacheTtlMs: number
   clientCheckIntervalMs: number
   hostGenerationCheckIntervalMs: number
+  /** Consecutive failed host-generation checks an established tunnel survives. */
+  hostGenerationOutageGraceAttempts: number
 }
 
 export type ConnectFixtureInfo = {
@@ -71,6 +73,7 @@ export async function startConnectHostFixture(opts: {
         CLAXEDO_RELAY_TARGET_CACHE_TTL_MS: String(opts.timing.targetCacheTtlMs),
         CLAXEDO_E2E_RELAY_CLIENT_CHECK_INTERVAL_MS: String(opts.timing.clientCheckIntervalMs),
         CLAXEDO_E2E_RELAY_HOST_GENERATION_CHECK_INTERVAL_MS: String(opts.timing.hostGenerationCheckIntervalMs),
+        CLAXEDO_E2E_RELAY_HOST_GENERATION_OUTAGE_GRACE_ATTEMPTS: String(opts.timing.hostGenerationOutageGraceAttempts),
         ...opts.scripted.piEnv,
         CLAXEDO_E2E_SCRIPTED_MODEL_URL: opts.scripted.v1Url,
         ...claudeScriptedEnv(opts.scripted.url, opts.claudeConfigDir),
@@ -272,6 +275,7 @@ export type ConnectStatus = {
   exit: { code: number | null; signal: string | null; at: number } | null
   state: {
     host_id: string
+    control_plane_url: string
     enrollment?: { enrollment_id: string; key_version: number }
     bootstrap?: { invitation_id: string }
     run?: { pid: number; generation: number; last_beat_ok_at?: number; lease_expires_at?: number; last_beat_error?: string; served?: Array<{ workspace_id: string; revision: number; connected: boolean }> }
@@ -299,6 +303,19 @@ export const connect = {
       `connect stop ${id}`,
     )
   },
+  async signal(fixture: RunningConnectFixture, id: string, signal: "SIGSTOP" | "SIGCONT") {
+    return await json<{ id: string; signal: string }>(
+      await fetch(`${fixture.info.backendUrl}/__fixture/connect/signal`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, signal }) }),
+      `connect ${signal} ${id}`,
+    )
+  },
+  /** `acquire` with an instance's persisted key, no process: the cloned-disk claim on its own. */
+  async acquire(fixture: RunningConnectFixture, id: string) {
+    return await json<{ generation: number; generation_acquired_at: number }>(
+      await fetch(`${fixture.info.backendUrl}/__fixture/connect/acquire`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) }),
+      `connect acquire ${id}`,
+    )
+  },
   async kill(fixture: RunningConnectFixture, id: string) {
     return await json<{ exit: ConnectStatus["exit"] }>(
       await fetch(`${fixture.info.backendUrl}/__fixture/connect/kill`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) }),
@@ -323,9 +340,10 @@ export const faults = {
       "redeem-response-drop",
     )
   },
-  async controlPlaneOutage(fixture: RunningConnectFixture, on: boolean) {
-    return await json<{ controlPlaneOutage: boolean }>(
-      await fetch(`${fixture.info.backendUrl}/__fixture/faults/control-plane-outage?on=${on ? 1 : 0}`, { method: "POST" }),
+  /** `resolver: true` also takes the relay's `/internal/relay/*` routes down — the whole control plane, from the relay's side. */
+  async controlPlaneOutage(fixture: RunningConnectFixture, on: boolean, options: { resolver?: boolean } = {}) {
+    return await json<{ controlPlaneOutage: boolean; resolverOutage: boolean }>(
+      await fetch(`${fixture.info.backendUrl}/__fixture/faults/control-plane-outage?on=${on ? 1 : 0}&resolver=${options.resolver ? 1 : 0}`, { method: "POST" }),
       "control-plane-outage",
     )
   },
@@ -456,23 +474,28 @@ export async function openEventStream(relayUrl: string, workspaceId: string, tok
   return { status: response.status, openedAt, closed, abort: () => controller.abort(), received: () => chunks.join("") }
 }
 
-/** Polls until `probe` returns a value, reporting how long it took; the message names what never happened. */
+/**
+ * Polls until `probe` returns a value. `since` is the moment of the action
+ * whose consequence is awaited (an assignment, a revoke); the deadline and
+ * the reported `elapsedMs` both count from it, so observations made between
+ * the action and this call do not widen the bound. The message names what
+ * never happened.
+ */
 export async function until<T>(
   probe: () => Promise<T | undefined | false>,
-  options: { timeoutMs: number; intervalMs?: number; message: string },
+  options: { since: number; timeoutMs: number; intervalMs?: number; message: string },
 ): Promise<{ value: T; elapsedMs: number }> {
-  const started = Date.now()
   let last: unknown
   for (;;) {
     try {
       const value = await probe()
-      if (value !== undefined && value !== false) return { value: value as T, elapsedMs: Date.now() - started }
+      if (value !== undefined && value !== false) return { value: value as T, elapsedMs: Date.now() - options.since }
       last = value
     } catch (error) {
       last = error
     }
-    if (Date.now() - started > options.timeoutMs) {
-      throw new Error(`${options.message} (waited ${Date.now() - started}ms; last: ${last instanceof Error ? last.message : JSON.stringify(last)})`)
+    if (Date.now() - options.since > options.timeoutMs) {
+      throw new Error(`${options.message} (waited ${Date.now() - options.since}ms from the action; last: ${last instanceof Error ? last.message : JSON.stringify(last)})`)
     }
     await new Promise((resolve) => setTimeout(resolve, options.intervalMs ?? 500))
   }

@@ -103,7 +103,6 @@ async function connectModeOptions() {
     process.env.CLAXEDO_RELAY_RESOLVER_TOKEN?.trim(),
     resolverClientCacheOptionsFromEnv(process.env),
   )
-  if (!resolver.hostGeneration) throw new Error("connect mode needs CLAXEDO_RELAY_HOST_GENERATION_URL")
   return {
     relayHostPublicKeys: [{ publicKey: relayHostPublicKey, kid }],
     relayHostMintKid: kid,
@@ -123,15 +122,22 @@ const relayHandler = createWorkspaceRelayBun({
   ...(allowedOrigins.length ? { allowedOrigins } : {}),
   audit: recordAudit,
 }, {
-  hostTunnelPingIntervalMs: 1_000,
-  // Production has no env for these two intervals (30s each); the fixture takes
-  // them so a spec can keep its total under budget while still asserting
-  // against the value it configured.
+  // Embedded mode pings fast so tunnel pause/resume settles quickly. Connect
+  // mode keeps the production 15 s ping and 2 missed pongs (45 s to a
+  // heartbeat close), so a tunnel that closes inside the host-generation
+  // check bound was closed by that check and nothing else.
+  ...(mode === "connect" ? {} : { hostTunnelPingIntervalMs: 1_000 }),
+  // Production has no env for these intervals (30s each, 3 grace attempts);
+  // the fixture takes them so a spec can keep its total under budget while
+  // still asserting against the values it configured.
   ...(optionalInteger("CLAXEDO_E2E_RELAY_CLIENT_CHECK_INTERVAL_MS")
     ? { runtimeAccessTokenActiveCheckIntervalMs: optionalInteger("CLAXEDO_E2E_RELAY_CLIENT_CHECK_INTERVAL_MS") }
     : {}),
   ...(optionalInteger("CLAXEDO_E2E_RELAY_HOST_GENERATION_CHECK_INTERVAL_MS")
     ? { hostGenerationCheckIntervalMs: optionalInteger("CLAXEDO_E2E_RELAY_HOST_GENERATION_CHECK_INTERVAL_MS") }
+    : {}),
+  ...(optionalInteger("CLAXEDO_E2E_RELAY_HOST_GENERATION_OUTAGE_GRACE_ATTEMPTS")
+    ? { hostGenerationOutageGraceAttempts: optionalInteger("CLAXEDO_E2E_RELAY_HOST_GENERATION_OUTAGE_GRACE_ATTEMPTS") }
     : {}),
 })
 
