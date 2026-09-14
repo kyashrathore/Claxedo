@@ -51,3 +51,17 @@ if (!Element.prototype.scrollTo) {
   Element.prototype.scrollTo = (() => undefined) as typeof Element.prototype.scrollTo
 }
 window.scrollTo = (() => undefined) as typeof window.scrollTo
+
+// jsdom has no `ResizeObserver`. `@opencode-ai/session-ui`'s scrollable
+// output constructs one on mount to notice when a tool's answer outgrows its
+// box, so any rendered tool row threw before its first assertion. An observer
+// that never fires leaves the output at its measured-once state, which is
+// what a fixed-size DOM would report anyway.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  class StillResizeObserver implements ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: StillResizeObserver })
+}
