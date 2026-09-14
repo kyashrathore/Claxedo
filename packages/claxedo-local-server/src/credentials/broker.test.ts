@@ -399,26 +399,35 @@ describe("local binding authority", () => {
       secret: "sk-ant-api03-heir",
     })
     const local = broker()
-    const refusal = {
-      bindingId: "unused",
-      credentialId: rejected.id,
-      revision: getCredential(rejected.id)!.revision,
-      status: 401,
-    }
-
-    await local.authority.reportFailure(refusal)
-
-    // A single mid-turn hiccup takes nothing away: the account is still the one
-    // the provider runs on, and still usable.
-    expect(getCredential(rejected.id)).toMatchObject({ is_active: true, health: null })
-    expect(getCredential(heir.id)?.is_active).toBe(false)
-
-    await local.authority.reportFailure(refusal)
-
-    expect(getCredential(rejected.id)).toMatchObject({ is_active: false, health: "auth_failed" })
-    expect(getCredential(heir.id)?.is_active).toBe(true)
     const projection = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
-    expect((await local.authority.resolve(bindingIdOf(projection.baseUrl)))?.value).toBe("sk-ant-api03-heir")
+    const realFetch = globalThis.fetch
+    const spent: string[] = []
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      spent.push(new Headers(init?.headers).get("x-api-key") ?? "")
+      return new Response('{"type":"error"}', { status: 401 })
+    }) as typeof fetch
+    const turn = () => local.handler(new Request(`${projection.baseUrl}/v1/messages`, {
+      method: "POST",
+      headers: { "x-api-key": projection.placeholder },
+    }))
+    try {
+      expect((await turn()).status).toBe(401)
+
+      // A single mid-turn hiccup takes nothing away: the account is still the one
+      // the provider runs on, and still usable.
+      expect(getCredential(rejected.id)).toMatchObject({ is_active: true, health: null })
+      expect(getCredential(heir.id)?.is_active).toBe(false)
+
+      expect((await turn()).status).toBe(401)
+
+      expect(spent).toEqual(["sk-ant-api03-rejected-first", "sk-ant-api03-rejected-first"])
+      expect(getCredential(rejected.id)).toMatchObject({ is_active: false, health: "auth_failed" })
+      expect(getCredential(heir.id)?.is_active).toBe(true)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+    const next = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    expect((await local.authority.resolve(bindingIdOf(next.baseUrl)))?.value).toBe("sk-ant-api03-heir")
   })
 
   test("the operator's own Check needs no second opinion", async () => {
@@ -634,22 +643,126 @@ describe("local binding authority", () => {
     expect(getCredential(credential.id)?.health).toBe("auth_failed")
   })
 
-  test("moving the active mark leaves a running turn's binding resolvable", async () => {
-    const first = await activeRow("sk-ant-api03-mark-first")
+  /**
+   * `@cursor/sdk` freezes `CURSOR_BACKEND_URL`, which carries the binding id,
+   * at first import. A URL that moved with the account would leave every Cursor
+   * turn after a switch answered `binding_not_permitted` until the process
+   * restarted.
+   */
+  test("switching accounts keeps the binding URL, refuses the old placeholder and forwards the new one", async () => {
+    await activeRow("key_cursor_first", "cursor-sdk")
+    const local = broker()
+    const first = bound((await local.projectAuth({ workspaceId }))["cursor-sdk"])
+    const realFetch = globalThis.fetch
+    const upstream: Request[] = []
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      upstream.push(new Request(url, init))
+      return new Response("{}")
+    }) as typeof fetch
+    const turn = (projection: { baseUrl: string; placeholder: string }) => local.handler(new Request(
+      `${projection.baseUrl}/agent.v1.AgentService/Run`,
+      { method: "POST", headers: { Authorization: `Bearer ${projection.placeholder}` } },
+    ))
+    try {
+      expect((await turn(first)).status).toBe(200)
+      expect(upstream[0]?.headers.get("authorization")).toBe("Bearer key_cursor_first")
+
+      await activeRow("key_cursor_second", "cursor-sdk")
+
+      // The switch reaches a turn still holding the first placeholder before any
+      // projection does: it is refused rather than spent on the new account.
+      const refused = await turn(first)
+      expect(refused.status).toBe(403)
+      await expect(refused.json()).resolves.toMatchObject({ error: { code: "binding_unavailable" } })
+      expect(upstream).toHaveLength(1)
+
+      const second = bound((await local.projectAuth({ workspaceId }))["cursor-sdk"])
+      expect(second.baseUrl).toBe(first.baseUrl)
+      expect(second.placeholder).not.toBe(first.placeholder)
+      expect((await turn(second)).status).toBe(200)
+      expect(upstream[1]?.headers.get("authorization")).toBe("Bearer key_cursor_second")
+      expect((await turn(first)).status).toBe(403)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("a switch detected at projection also refuses the placeholder minted before it", async () => {
+    await activeRow("sk-ant-api03-switch-first")
+    const local = broker()
+    const first = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    const before = local.runtimeIdentity(workspaceId).leaseGeneration
+
+    await activeRow("sk-ant-api03-switch-second")
+    const second = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+
+    expect(second.baseUrl).toBe(first.baseUrl)
+    expect(local.runtimeIdentity(workspaceId).leaseGeneration).toBeGreaterThan(before)
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
+    try {
+      const turn = (placeholder: string) => local.handler(new Request(`${first.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": placeholder },
+      }))
+      expect((await turn(first.placeholder)).status).toBe(403)
+      expect((await turn(second.placeholder)).status).toBe(200)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("each workspace's lease moves on once per switch, so re-projecting one leaves another's new placeholder valid", async () => {
+    await activeRow("sk-ant-api03-lease-first")
+    const local = broker()
+    const other = "ws-other"
+    await local.projectAuth({ workspaceId })
+    await local.projectAuth({ workspaceId: other })
+
+    await activeRow("sk-ant-api03-lease-second")
+    const renewed = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
+    const generation = local.runtimeIdentity(workspaceId).leaseGeneration
+    // One generation for the whole process would move this workspace on a
+    // second time here, refusing the placeholder it was just handed.
+    await local.projectAuth({ workspaceId: other })
+    await local.authority.resolve(bindingIdOf(renewed.baseUrl))
+
+    expect(local.runtimeIdentity(workspaceId).leaseGeneration).toBe(generation)
+    const realFetch = globalThis.fetch
+    globalThis.fetch = (async (_url: string | URL | Request) => new Response("{}")) as typeof fetch
+    try {
+      const response = await local.handler(new Request(`${renewed.baseUrl}/v1/messages`, {
+        method: "POST",
+        headers: { "x-api-key": renewed.placeholder },
+      }))
+      expect(response.status).toBe(200)
+    } finally {
+      globalThis.fetch = realFetch
+    }
+  })
+
+  test("a generation issued by a switch is one the next boot starts past", async () => {
+    const dataDir = path.join(root, `switch-boot-${randomUUID().slice(0, 8)}`)
+    await activeRow("sk-ant-api03-boot-first")
+    const local = broker(dataDir)
+    const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
+    await activeRow("sk-ant-api03-boot-second")
+    await local.authority.resolve(id)
+    const switched = local.runtimeIdentity(workspaceId).leaseGeneration
+
+    // A boot that counted only boots would hand out the switched generation
+    // again, and the placeholder that generation refused would validate.
+    expect(broker(dataDir).runtimeIdentity(workspaceId).leaseGeneration).toBeGreaterThan(switched)
+  })
+
+  test("a withdrawn account stops the running turn on its binding", async () => {
+    const first = await activeRow("sk-ant-api03-withdrawn-turn")
     const local = broker()
     const id = bindingIdOf(bound((await local.projectAuth({ workspaceId }))["claude-sdk"]).baseUrl)
-
-    const second = await activeRow("sk-ant-api03-mark-second")
-    expect(getCredential(second.id)?.is_active).toBe(true)
-    expect(getCredential(first.id)?.is_active).toBe(false)
-
-    // The turn already running keeps spending the account it started on.
-    expect((await local.authority.resolve(id))?.value).toBe("sk-ant-api03-mark-first")
-    // The next projection is what moves the harness onto the new account.
-    const next = bound((await local.projectAuth({ workspaceId }))["claude-sdk"])
-    expect((await local.authority.resolve(bindingIdOf(next.baseUrl)))?.value).toBe("sk-ant-api03-mark-second")
+    expect((await local.authority.resolve(id))?.value).toBe("sk-ant-api03-withdrawn-turn")
 
     updateCredentialStatus(first.id, "revoked")
+
     expect(await local.authority.resolve(id)).toBeUndefined()
   })
 
