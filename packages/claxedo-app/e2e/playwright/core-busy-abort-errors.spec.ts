@@ -43,7 +43,7 @@
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { writeFile } from "node:fs/promises"
 import { sampleElementDuringAction } from "../helpers/geometry-oracle"
-import { installMockRuntime } from "../helpers/mock-runtime"
+import { installMockRuntime, type MockMessageRow } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-busy-abort-errors"
@@ -227,6 +227,66 @@ test.describe("core busy / abort / errors @core", () => {
     await writeFile(testInfo.outputPath("thinking-ownership.json"), JSON.stringify({ messageID, samples }, null, 2))
     expect(samples.some(sample => sample.visible > 0)).toBe(true)
     expect(samples.flatMap(sample => sample.messageIDs).filter(owner => owner !== messageID)).toEqual([])
+  })
+
+  test("Thinking stays with the new prompt while the previous turn's completion envelope is in flight", async ({ page }, testInfo) => {
+    test.fixme(true, "the prior turn's un-completed assistant wins the pending anchor, so Thinking paints beneath its reply")
+    const prevUserId = `${SESSION_ID}_prev`
+    const prevAssistantId = `${prevUserId}_r`
+    const created = 1_700_000_000_000
+    const messages = [
+      {
+        info: {
+          id: prevUserId, sessionID: SESSION_ID, role: "user",
+          time: { created },
+          agent: "build", model: { providerID: "codex", modelID: "gpt-5" },
+        },
+        parts: [{ id: `prt_${prevUserId}`, sessionID: SESSION_ID, messageID: prevUserId, type: "text", text: "previous prompt" }],
+      },
+      {
+        // Reply parts are painted, but the envelope completion has not landed:
+        // the producer's `message.updated` (with time.completed) is still in
+        // flight — the state the original send observed at 0.57–1.05s.
+        info: {
+          id: prevAssistantId, sessionID: SESSION_ID, role: "assistant", parentID: prevUserId,
+          time: { created: created + 1000 },
+          modelID: "gpt-5", providerID: "codex", mode: "auto", agent: "build",
+          path: { cwd: DIR, root: DIR }, cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        },
+        parts: [{ id: `prt_${prevAssistantId}`, sessionID: SESSION_ID, messageID: prevAssistantId, type: "text", text: "previous completed reply" }],
+      },
+    ]
+    const mock = await installMockRuntime(page, {
+      dir: DIR, sessionId: SESSION_ID, harness: "codex-app-server",
+      harnessModels: { "codex-app-server": [{ id: "gpt-5", name: "GPT-5" }] },
+      existingSession: { messages: messages as MockMessageRow[] },
+      sessionStatuses: { [SESSION_ID]: { type: "busy" } },
+      // The defect window is busy-before-pending: the new turn's assistant
+      // envelope has not announced itself, so the un-completed previous
+      // assistant still owns the Thinking anchor.
+      timingsMs: { busy: 60, pending: 4000, delta: 4000, completed: 300, idle: 150 },
+    })
+    await seedOneProject(page, DIR)
+    await page.goto(`/${slug(DIR)}/session/${SESSION_ID}`)
+    await expectAssistantReplyVisible(page, "previous completed reply")
+    const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    let submitAt = 0
+    const samples = await sampleElementDuringAction(page, SELECTORS.thinkingRow, async () => {
+      await ensureComposerModelSelected(page)
+      await input.fill("Thinking ownership probe")
+      await page.locator(SELECTORS.submitControl).last().click()
+      submitAt = await page.evaluate(() => performance.now())
+      await expect(page.locator(SELECTORS.thinkingRow)).toBeVisible()
+      await expectAssistantReplyVisible(page, "ack 1: Thinking ownership probe")
+    })
+    expect(mock.requests.promptCount).toBe(1)
+    const messageID = mock.requests.promptBodies[0]?.messageID
+    expect(messageID).toBeTruthy()
+    await writeFile(testInfo.outputPath("thinking-ownership-tail.json"), JSON.stringify({ messageID, prevUserId, submitAt, samples }, null, 2))
+    const afterSubmit = samples.filter(sample => sample.time >= submitAt)
+    expect(afterSubmit.some(sample => sample.messageIDs.includes(messageID ?? null))).toBe(true)
+    expect(afterSubmit.flatMap(sample => sample.messageIDs).filter(owner => owner !== messageID)).toEqual([])
   })
 
   test("Thinking renders while busy, then gives way to the visible reply", async ({ page }) => {
