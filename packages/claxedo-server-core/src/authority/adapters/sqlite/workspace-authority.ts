@@ -2442,6 +2442,20 @@ export function createSqliteWorkspaceAuthority(
       }
       return out
     },
+    async hostEnrollmentByHost(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const row = db.prepare<unknown[], Pick<HostEnrollmentRow, "enrollment_id" | "host_id" | "enrolled_via">>(`
+        SELECT enrollment_id, host_id, enrolled_via FROM host_enrollments
+        WHERE owner_token_identifier = ? AND host_id = ? AND revoked_at IS NULL
+      `).get(who.token_identifier, args.hostId)
+      if (!row) return undefined
+      return {
+        enrollment_id: row.enrollment_id,
+        host_id: row.host_id,
+        enrolled_via: row.enrolled_via === "invitation" ? "invitation" : "account",
+      }
+    },
     machineAuth: {
       async lookupEnrollment(enrollmentId) {
         const db = database()

@@ -989,4 +989,21 @@ describe("scope", () => {
     expect(await api.listHostEnrollments!(other)).toEqual([])
   })
 
+  test("hostEnrollmentByHost answers one live machine of the caller, with how it was enrolled", async () => {
+    const { api } = setup()
+    const { enrollment } = await enrollByAccount(api, { hostId: "host_a" })
+    const created = await invite(api)
+    const invited = await redeem(api, { token: created.token, hostId: "host_invited", keys: hostKeyPair() })
+    await enrollByAccount(api, { hostId: "host_revoked" })
+    await api.revokeHostEnrollment(owner, { hostId: "host_revoked" })
+    await enrollByAccount(api, { auth: other, hostId: "host_theirs" })
+
+    expect(await api.hostEnrollmentByHost!(owner, { hostId: "host_a" }))
+      .toEqual({ enrollment_id: enrollment.enrollment_id, host_id: "host_a", enrolled_via: "account" })
+    expect(await api.hostEnrollmentByHost!(owner, { hostId: "host_invited" }))
+      .toEqual({ enrollment_id: invited.enrollment.enrollment_id, host_id: "host_invited", enrolled_via: "invitation" })
+    expect(await api.hostEnrollmentByHost!(owner, { hostId: "host_revoked" })).toBeUndefined()
+    expect(await api.hostEnrollmentByHost!(owner, { hostId: "host_theirs" })).toBeUndefined()
+    expect(await api.hostEnrollmentByHost!(owner, { hostId: "host_unknown" })).toBeUndefined()
+  })
 })
