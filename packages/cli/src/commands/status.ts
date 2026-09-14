@@ -47,9 +47,8 @@ export async function statusLines(deps: StatusDeps): Promise<string[]> {
     `  control      ${state.control_plane_url}`,
   ]
   if (state.enrollment) {
-    lines.push(
-      `  enrollment   ${state.enrollment.enrollment_id} (via ${state.enrollment.enrolled_via}, owner ${state.enrollment.owner_display || "-"})`,
-    )
+    const owner = state.enrollment.owner_display ? `, owner ${state.enrollment.owner_display}` : ""
+    lines.push(`  enrollment   ${state.enrollment.enrollment_id} (via ${state.enrollment.enrolled_via}${owner})`)
   } else if (state.bootstrap) {
     lines.push(`  enrollment   pending: redeem of invitation ${state.bootstrap.invitation_id} did not complete`)
   } else {
