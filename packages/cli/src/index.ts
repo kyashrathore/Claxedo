@@ -39,11 +39,6 @@ async function main(argv: string[]) {
     return
   }
   if (command === "host") return hostCommand(args)
-  if (command === "up" || command === "down") {
-    console.error("replaced by `claxedo connect` — see `claxedo connect --help`")
-    process.exitCode = 1
-    return
-  }
   if (command === "deploy") return deploy(args)
   if (command === "documents") return documents(args)
   if (command === "status") return status()
