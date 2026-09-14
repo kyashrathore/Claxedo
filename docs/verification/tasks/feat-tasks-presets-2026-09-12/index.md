@@ -475,3 +475,24 @@ No server restart between the two sessions: the mount reads the consent per conn
 The eight red cases in `first-party-mcp-subagents.live.test.ts` were the embedded harness (`instructionChannel: "none"`) refusing a create that carried `instructions`; `a0ed427df9` delivers the block by the harness's channel (prefixed to the child's first prompt when the harness has none), and the fake runtime now refuses the same way. 9/9 green; claxedo-mcp 176/179 (the three known `session_create` reds).
 
 The lane's server-side closure of the whole-plugin write (`df90a65268`): `POST /activation`, `/organization-default` and `/update` refuse `pluginInstanceId: "claxedo"` (400 `agent_plugins_tool_group_required` / `agent_plugins_builtin_not_updatable`); a group default for `claxedo:<group>` now goes straight through the store.
+
+## Codex fix round on the Tasks tools and built-in plugin range (2026-09-14)
+
+`codex-gpt-6-astra-review-mcp-tasks.md` (one consultation) rated the range not merge-ready with five P1 and four P2 findings. Every fix reproduced its finding with a test that failed on the unfixed code first.
+
+| Finding | Fix commit | Proof |
+|---|---|---|
+| P1 capability directs a task into another project's workspace; P2 provenance forgery | `662ea8ee6f`, `eeccab14ef` (self-hosted bridge) | server-core `tasks-host` 45/45; claxedo-server tasks+mcp+guard 135/135; self-hosted composition 9/9 with the Start-door case red without the wrap |
+| P1 `authorizeSessionOpen` true for any grant | `662ea8ee6f` | owner-resolved `authorizeRuntimeSession`; 4 cases red before |
+| P1 node/hosted contribution dropped `enabledToolGroups` | `a5cd6e9a89` | contribution-level test: disabled group neither listed nor callable |
+| P1 ordinary cloud roots launched with no tool groups | `4369e9fb41` | `cloud-root-environment.test.ts`, hosted workspace route test; 188/189 (Pi round-trip pre-existing) |
+| P1 project-specific switch wrote every project | `eae7e739ec` | directory tests drive the real api against a per-target activation store |
+| P2 preset name resolved on page one only | `16e41ebca7` | two-page fake; refusal lists the full catalog |
+| P2 sandbox invariant guard authenticated any bearer | `475fcd9881` | exact admission matrix; stranger names in nested fields; reverting the scope fix turns the guard red |
+| P3 comments | `16e41ebca7`, `83ee95ba4f` | enums from the kit; `revoke` removed with its only (test) caller |
+
+Report-only, recorded for follow-up: a hosted cloud Start as a capability actor is refused ("this caller is not signed") because allocation needs a signed principal; the minimal design carries the grant's resolved owner into the bridge and adds an authority path that creates a cloud workspace for a canonical owner principal. The Tasks capability's 30-minute TTL has no renewal, so a cloud root older than that loses Tasks for every session. The hosted user-credential MCP mount (CLI/OAuth callers) is not gated by activation; those callers carry no project, and Tasks tools are absent for them regardless.
+
+## Claxedo tool cards in the transcript (2026-09-14)
+
+Commits `34bb27c807`, `9592abd283`, `46d1de1859`. One resolver reads Claude's `mcp__claxedo__<tool>`, Codex's bare `<tool>` with `input.server`, and the embedded engine's `claxedo_<tool>`; each first-party tool renders as a card under the Claxedo glyph with a verb, the task or session as a link, a status pill and body facts; a refusal keeps the tool's title and the whole sentence; Claxedo calls never fold into work groups; the subagent chip names configuration and model. Live on the re-seeded local stack (project DEM, preset "Alt voice", one Claude session driving `task_create`, `task_list`, `task_start` and a refused `task_start`): screenshots `claxedo-cards-{dark,light}-{1,2}.png` (1 = rows closed, 2 = bodies and refusal open) were taken in the session scratchpad and sent to the user; `.gitignore` keeps PNGs out of `docs/verification`. Task links open `/tasks/<id>` with the Tasks surface; session links open `/s/<id>`.
